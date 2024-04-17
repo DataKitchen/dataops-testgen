@@ -1,0 +1,17 @@
+**/.terraform/
+**/__pycache__/
+tests/
+*.egg-info/
+*.md
+.git*
+.idea/
+.mypy_cache/
+.pytest_cache/
+.venv/
+build/
+dist/
+instance/
+node_modules/
+scripts/
+venv/
+.ruff_cache/

@@ -1,0 +1,48 @@
+version: "3.8"
+name: testgen
+
+x-common-variables: &common-variables
+  TESTGEN_USERNAME: ${TESTGEN_USERNAME}
+  TESTGEN_PASSWORD: ${TESTGEN_PASSWORD}
+  TG_DECRYPT_SALT: ${TG_DECRYPT_SALT}
+  TG_DECRYPT_PASSWORD: ${TG_DECRYPT_PASSWORD}
+  TG_METADATA_DB_HOST: postgres
+  TG_TARGET_DB_TRUST_SERVER_CERTIFICATE: yes
+  TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL: no
+  TG_DOCKER_RELEASE_CHECK_ENABLED: no
+
+services:
+  engine:
+    image: datakitchen/dataops-testgen:v2
+    container_name: testgen
+    environment: *common-variables
+    ports:
+      - 8501:8501
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+       - startup
+
+  startup:
+    image: datakitchen/dataops-testgen:v2
+    restart: "no"
+    environment: *common-variables
+    entrypoint: ["/bin/sh","-c"]
+    command:
+    - |
+       testgen setup-system-db --yes
+       testgen upgrade-system-version
+    depends_on:
+       - postgres
+
+  postgres:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${TESTGEN_USERNAME}
+      - POSTGRES_PASSWORD=${TESTGEN_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

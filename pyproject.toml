@@ -1,0 +1,268 @@
+[build-system]
+requires = [
+    "setuptools == 69.2.0",
+    "wheel == 0.43.0",
+    "build == 1.1.1",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-ops-testgen"
+version = "2.0.0"
+description = "DataKitchen Inc. Data Quality Engine"
+urls = { "homepage" = "https://datakitchen.io" }
+authors = [
+    { "name" = "Charles Bloche", "email" = "chip@datakitchen.io" },
+    { "name" = "Tyler Stubenvoll", "email" = "tstubenvoll@datakitchen.io" },
+    { "name" = "Alejandro Fernandez", "email" = "alex@datakitchen.io" },
+    { "name" = "Anuja Waikar", "email" = "awaikar@datakitchen.io" },
+    { "name" = "Shruthy Vakkil", "email" = "svakkil@datakitchen.io" },
+    { "name" = "Arnob Bordoloi", "email" = "abordoloi@datakitchen.io" },
+    { "name" = "Saurabh Vashist", "email" = "svashist@datakitchen.io" },
+    { "name" = "Saurabh Vaidya", "email" = "saurabh@datakitchen.io" }
+]
+license = { "text" = "CLOSED"  }
+readme = "README.md"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+]
+requires-python = ">=3.10"
+
+dependencies = [
+    "PyYAML==6.0.1",
+    "click==8.1.3",
+    "sqlalchemy==1.4.46",
+    "snowflake-sqlalchemy==1.4.7",
+    "pyodbc==4.0.39",
+    "psycopg2-binary==2.9.6",
+    "pycryptodome==3.17",
+    "prettytable==3.7.0",
+    "requests_extensions==1.1.3",
+    "bz2file==0.98",
+    "trogon==0.4.0",
+    "numpy==1.25.2",
+    "pandas==2.1.0",
+    "streamlit==1.26.0",
+    "streamlit-extras==0.3.0",
+    "streamlit-aggrid==0.3.4.post3",
+    "streamlit-antd-components==0.2.2",
+    "streamlit-plotly-events==0.0.6",
+    "plotly_express==0.4.1",
+    "streamlit-option-menu==0.3.6",
+    "streamlit-authenticator==0.2.3",
+    "streamlit-javascript==0.1.5",
+    "streamlit-modal==0.1.0",
+    "progress==1.6",
+    "beautifulsoup4==4.12.3",
+    "trino==0.327.0",
+    "xlsxwriter==3.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black[d]==24.3.0",
+    "invoke==2.2.0",
+    "isort==5.13.2",
+    "ruff==0.3.4",
+    "mypy==1.9.0",
+    "pre-commit==3.6.2",
+    "types-PyYAML==6.0.12.20240311",
+    "types-setuptools==69.2.0.20240317",
+    "semver==3.0.2",
+    "pytest==8.1.1",
+    "pytest-cov==4.1.0",
+    "tomli==2.0.1",
+]
+
+release = [
+    "bumpver==2023.1129"
+]
+
+[project.entry-points.console_scripts]
+testgen = "testgen.__main__:cli"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*.toml", "*.sql", "*.yaml"]
+"testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
+"testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css"]
+"testgen.ui.components.frontend" = ["*.html", "**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
+
+[tool.setuptools.packages.find]
+# see the important note for why we glob. TL;DR: Otherwise you don't get submodules
+# https://setuptools.pypa.io/en/latest/userguide/package_discovery.html#finding-simple-packages
+include = [
+      "testgen*",
+]
+exclude = [ "*.tests", "tests*", "deploy*", "invocations*", "testlib*"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+# --strict-markers means the markers have to be defined in this file before use, which prevents mispellings.
+# --strict-config means that any warnings encountered while parsing the `pytest`configuration file will raise errors.
+# -ra: show extra test data.
+addopts = "-ra --strict-markers --strict-config"
+
+python_files = "test_*.py"
+python_classes = "Test_"
+python_functions = "test_*"
+
+
+# Look up "Testing Pyramid" for more insight into these markers.
+markers = [
+    "unit: The test is a unit test and is thus expected to be fast with little setup",
+    "integration: The test is an integration test and is thus expected to be somewhat slower with a little more setup",
+    "functional: The test is a functional test and is thus expected to be slower with greater setup",
+]
+filterwarnings = [
+    # remove when resolved: https://github.com/marshmallow-code/apispec/issues/739
+    'ignore:distutils Version classes are deprecated:DeprecationWarning:apispec'
+]
+
+# see: https://mypy.readthedocs.io/en/stable/config_file.html#using-a-pyproject-toml-file
+# for settings that do not have a comment,
+# see: https://mypy.readthedocs.io/en/stable/config_file.html
+# for an explanation of their functionality.
+# WARNING: When changing mypy configurations, be sure to test them after removing your .mypy_cache
+[tool.mypy]
+python_version = "3.10"
+check_untyped_defs = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+# This warns if any returns get cast to 'Any' due to type uncertainty by mypy. Since 'Any' is a valid return type
+# for any function, returning any from a str function would be valid. This causes it to raise a warning instead.
+warn_return_any = true
+# This shows an error-code on failure, which is useful on debugging and possibly ignoring those particular
+# lines if need-be.
+show_error_codes = true
+# This warns us if we're using '# type ignore' on a function which mypy knows it has definitions for.
+# Hopefully this allows us to phase in type-checks on more libraries.
+warn_unused_ignores = true
+# Enables PEP 420 style namespace packages. This is a complex topic,
+# but my reading suggests this is a generally 'good' idea.
+# so see: https://mypy.readthedocs.io/en/stable/config_file.html#confval-namespace_packages
+namespace_packages = true
+warn_redundant_casts = true
+# Remember that time you forgot to put a return in the function? This warns us of that.
+# i.e.,
+#
+# def foo() -> str:
+#     x = 'a' + 'x'
+# will return an error for not having the return it promised.
+warn_no_return = true
+# This attempts to warn us when we encounter code that is currently unreachable.
+warn_unreachable = true
+# Now for some configurations to improve our error messages Attempts to make the output prettier for us mere mortals.
+pretty = true
+# This tries to show some additional context around where the error is occuring
+show_error_context = true
+# Mypy appears smart enough to ignore hidden directories. But it needs to scan __pycache__ for .pyc and pyi files,
+# so it cannot honor gitignore.
+exclude = [
+    '''^(?:.*\/)+[tT]ests?''',
+    'conftest.py',
+    'venv/',
+    'build/',
+]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | env
+    | venv
+    | _build
+    | build
+    | dist
+  )/
+  | foo.py           # also separately exclude a file named foo.py in
+                     # the root of the project
+)
+'''
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+# see: https://beta.ruff.rs/docs/rules.
+# Enable the following checks
+# S - Bandit
+# F - Pyflakes
+# T10 - Debugger statements
+# I - isort
+# G - Flake8 Logging Format
+# A - Flake8 builtins
+# B - Flake8 bugbear - common bug-causes
+# UP - Use up-to-date syntax
+# ISC - Implicit String Concatonation check.
+# T20 - Don't allow print statements. use Logger.
+# RSE - Raise checks. Don't use extra parantheses.
+# Q - Add lints for quoting.
+# ARG - Check for unused arguments. __main__ excluded.
+# TRY - Catch try/except anti-patterns.
+# C4 - Lint list comprehensions
+# RUF - Ruff specific checks.
+select = ["A", "F", "S", "I", "T10", "B", "UP", "ISC", "T20", "RSE", "Q", "ARG", "TRY", "C4", "RUF"]
+# globally ignore the following error codes
+# * TRY003: Avoid specifying long messages outside the exception class
+# * S608: Hardcoded SQL
+# * I001: Unsorted imports, partially incompatible with isorts suggestions
+ignore = ["TRY003", "S608", "I001"]
+
+# Ignore the following errors in files:
+# F403 - in __init__.py: We use __all__ in our module files so this behavior is acceptable in __init__.py
+# ARG001 - unused arguments in __main__: Here until we finish our skeleton.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F403"]
+"testgen/__main__.py" = ["ARG001", "S603"]
+"tasks.py" = ["F403"]
+"tests*" = ["S101", "T201"]
+# print and empty arguments are fine here.
+"invocations/**" = ["ARG001", "T201"]
+
+
+
+# See: https://coverage.readthedocs.io/en/latest/config.html
+[tool.coverage.run]
+branch=true
+# Every time there is a new top-level module, this will need to be expanded.
+source = [
+    "testgen"
+]
+
+[tool.coverage.report]
+# We don't need to report the coverage lines on tests or templates.
+omit = ["tests/*", "templates/*"]
+# This skips __init__.py and other empty files.
+skip_empty=true
+
+[tool.bumpver]
+current_version = "2.0.0"
+version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
+commit_message = "Bump version: {old_version} -> {new_version}"
+commit = true
+tag = true
+push = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+    'version = "{version}"',
+]

@@ -1,0 +1,4 @@
+debug: false
+task:
+    # automatically assign task_name the name task-name
+    tasks.auto_dash_names: true

@@ -1,0 +1,18 @@
+{
+  "variable": {
+    "TESTGEN_VERSION": {
+      "default": ""
+    }
+  },
+  "target": {
+    "testgen": {
+      "args": {
+        "TESTGEN_VERSION": "${TESTGEN_VERSION}"
+      },
+      "dockerfile": "Dockerfile",
+      "tags": ["datakitchen/testgen-trial:${TESTGEN_VERSION}"],
+      "context": ".",
+      "platforms": ["linux/amd64", "linux/arm64"]
+    }
+  }
+}
