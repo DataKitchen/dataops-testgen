@@ -32,7 +32,7 @@ def check_for_new_docker_release() -> str:
         logger.warning("Unable to check for latest release", exc_info=True, stack_info=True)
 
 
-def get_docker_tags(url: str = "https://hub.docker.com/v2/repositories/datakitchen/testgen/tags/"):
+def get_docker_tags(url: str = "https://hub.docker.com/v2/repositories/datakitchen/dataops-testgen/tags/"):
     params = {"page_size": 25, "page": 1, "ordering": "last_updated"}
     response = requests.get(url, params=params, timeout=3)
 

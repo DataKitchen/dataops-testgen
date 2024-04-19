@@ -24,7 +24,7 @@ class ConnectionsPage(Page):
     def render(self) -> None:
         fm.render_page_header(
             "Connection",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-connection",
+            "https://docs.datakitchen.io/article/dataops-testgen-help/connect-your-database",
             lst_breadcrumbs=[
                 {"label": "Overview", "path": "overview"},
                 {"label": "Connection", "path": None},
