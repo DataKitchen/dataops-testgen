@@ -182,7 +182,7 @@ class ProfilingAnomaliesPage(Page):
 
             # Help Links
             st.markdown(
-                "[Help on Anomalies](https://docs.datakitchen.io/articles/#!dataops-testgen-help/profile-anomalies)"
+                "[Help on Anomalies](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
             )
 
             # with st.sidebar:

@@ -129,7 +129,7 @@ class TestResultsPage(Page):
 
             # Help Links
             st.markdown(
-                "[Help on Test Types](https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-test-types)"
+                "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
             )
 
             # with st.sidebar:

@@ -8,10 +8,10 @@ DataKitchen's DataOps TestGen is a data verification tool that profiles your dat
 ## Installation
 
 ### Using dk-installer (recommended)
-Install with a single command using [`dk-installer`](https://github.com/DataKitchen/dk-installer/?tab=readme-ov-file#dataops-testgen).
+Install with a single command using [`dk-installer`](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application).
 
 ```
-python dk-installer tg
+python3 dk-installer.py tg install
 ```
 
 ### Using docker compose
@@ -19,7 +19,7 @@ You can also install using the provided [`docker-compose.yml`](deploy/docker-com
 
 Make a local copy of the compose file.
 ```bash
-curl -o docker-compose.yml 'https://raw.githubusercontent.com/DataKitchen/testgen/main/deploy/docker-compose.yml'
+curl -o docker-compose.yml 'https://raw.githubusercontent.com/DataKitchen/dataops-testgen/main/deploy/docker-compose.yml'
 ```
 
 If you are interested in integrating TestGen with DataKitchen Observability platform, edit the compose file and set values for the environment variables `OBSERVABILITY_API_URL` and `OBSERVABILITY_API_KEY`.
@@ -52,15 +52,15 @@ After verifying that Testgen is running, follow [the steps for the quick start](
 Testgen includes a basic data set for you to play around.
 
 ### Using dk-installer (recommended)
-Once Testgen is running, you can use [`dk-installer`](https://github.com/DataKitchen/dk-installer/?tab=readme-ov-file#dataops-testgen) to generate the demo data:
+Once Testgen is running, you can use [`dk-installer`](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#run-the-testgen-demo-setup) to generate the demo data:
 ```bash
-python dk-installer tg run-demo
+python3 dk-installer.py tg run-demo
 ```
 
 And, if you are integrating Testgen with the DataKitchen Observability platform, you will need to pass the `--export`
 flag:
 ```bash
-python dk-installer tg run-demo --export
+python3 dk-installer.py tg run-demo --export
 ```
 
 ### Using docker compose
