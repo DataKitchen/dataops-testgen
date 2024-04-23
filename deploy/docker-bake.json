@@ -1,18 +1,20 @@
 {
-  "variable": {
-    "TESTGEN_VERSION": {
-      "default": ""
+    "variable": {
+        "TESTGEN_VERSION": {}
+    },
+    "target": {
+        "testgen": {
+            "args": {
+                "TESTGEN_VERSION": "${TESTGEN_VERSION}"
+            },
+            "dockerfile": "Dockerfile",
+            "tags": [
+              "datakitchen/dataops-testgen:v${TESTGEN_VERSION}",
+              "datakitchen/dataops-testgen:v${index(regex(\"([0-9]+\\\\.[0-9]+)\\\\.[0-9]+\", TESTGEN_VERSION), 0)}",
+              "datakitchen/dataops-testgen:v${index(regex(\"([0-9]+)\\\\.[0-9]+\\\\.[0-9]+\", TESTGEN_VERSION), 0)}"
+            ],
+            "context": ".",
+            "platforms": ["linux/amd64", "linux/arm64"]
+        }
     }
-  },
-  "target": {
-    "testgen": {
-      "args": {
-        "TESTGEN_VERSION": "${TESTGEN_VERSION}"
-      },
-      "dockerfile": "Dockerfile",
-      "tags": ["datakitchen/testgen-trial:${TESTGEN_VERSION}"],
-      "context": ".",
-      "platforms": ["linux/amd64", "linux/arm64"]
-    }
-  }
 }
