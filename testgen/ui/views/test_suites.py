@@ -3,8 +3,6 @@ import typing
 
 import streamlit as st
 
-from testgen.ui.services import connection_service
-from testgen.ui.services import table_group_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.test_suite_service as test_suite_service
@@ -14,6 +12,7 @@ from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import connection_service, table_group_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 
