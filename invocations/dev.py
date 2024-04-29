@@ -4,7 +4,9 @@ from os.path import exists, join
 from shutil import rmtree, which
 
 import tomli
-from invoke import Exit, task
+from invoke.context import Context
+from invoke.exceptions import Exit
+from invoke.tasks import task
 
 from .toolbox import ensure_tools
 
@@ -13,12 +15,12 @@ DOCKER_BUILDER_PLATFORMS = "linux/amd64,linux/arm64"
 
 
 @task
-def required_tools(ctx):
+def required_tools(ctx: Context) -> None:
     ensure_tools("git", "find", "docker")
 
 
 @task
-def install(ctx, quiet_pip=False):
+def install(ctx: Context, quiet_pip: bool = False) -> None:
     """Installs the package as a developer (editable, all optional dependencies)."""
     if quiet_pip:
         print("testgen package is being re-installed.")
@@ -26,7 +28,7 @@ def install(ctx, quiet_pip=False):
 
 
 @task
-def lint(ctx):
+def lint(ctx: Context) -> None:
     """Runs the standard suite of quality/linting tools."""
     ctx.run("isort .")
     ctx.run("black .")
@@ -35,7 +37,7 @@ def lint(ctx):
 
 
 @task
-def precommit(ctx, all_files=False):
+def precommit(ctx: Context, all_files: bool = False) -> None:
     """Runs pre-commit."""
     if which("pre-commit") is None:
         install(ctx)
@@ -47,10 +49,13 @@ def precommit(ctx, all_files=False):
 
 
 @task(pre=(required_tools,))
-def clean(ctx):
+def clean(ctx: Context) -> None:
     """Deletes old python files and build artifacts"""
-    repo_root = ctx.run("git rev-parse --show-toplevel", hide=True).stdout.strip()
+    result = ctx.run("git rev-parse --show-toplevel", hide=True)
+    if not result:
+        raise Exit("Failure running git rev-parse")
 
+    repo_root = result.stdout.strip()
     with open(join(repo_root, "pyproject.toml"), "rb") as f:
         project_name: str = tomli.load(f)["project"]["name"]
 
@@ -62,13 +67,14 @@ def clean(ctx):
 
 
 @task(pre=(required_tools,))
-def build_public_image(ctx, version: str, push=False, local=False):
+def build_public_image(ctx: Context, version: str, push: bool = False, local: bool = False) -> None:
     """Builds and pushes the TestGen image"""
     use_cmd = f"docker buildx use {DOCKER_BUILDER_NAME}"
     if push and local:
         raise Exit("Cannot use --local and --push at the same time.")
 
-    if not ctx.run(use_cmd, hide=True, warn=True).ok:
+    
+    if (result := ctx.run(use_cmd, hide=True, warn=True)) and not result.ok:
         ctx.run(f"docker buildx create --name {DOCKER_BUILDER_NAME} --platform {DOCKER_BUILDER_PLATFORMS}")
         ctx.run(use_cmd)
 
