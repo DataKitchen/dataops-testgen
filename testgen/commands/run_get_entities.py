@@ -31,7 +31,7 @@ def run_list_connections():
 def run_get_connection(connection_id):
     sql_template = read_template_sql_file("get_connection.sql", "get_entities")
     sql_template = sql_template.replace("{CONNECTION_ID}", str(connection_id))
-    rows, header = RetrieveDBResultsToList("DKTG", sql_template)
+    rows, _ = RetrieveDBResultsToList("DKTG", sql_template)
     return rows.pop()
 
 

@@ -133,7 +133,7 @@ def run_quick_start(delete_target_db: bool) -> None:
 
     # Get table group id
     project_key = params_mapping["PROJECT_KEY"]
-    rows, header = run_table_group_list(project_key)
+    rows, _ = run_table_group_list(project_key)
     connection_id = str(rows[0][2])
 
     # run qc

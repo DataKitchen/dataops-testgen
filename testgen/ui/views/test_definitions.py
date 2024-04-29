@@ -59,7 +59,7 @@ class TestDefinitionsPage(Page):
 
         # Prompt for Table Group
         with tool_bar.long_slots[1]:
-            str_table_groups_id, str_connection_id, str_schema, table_group = prompt_for_table_group(
+            str_table_groups_id, str_connection_id, _, table_group = prompt_for_table_group(
                 session.project, table_group, str_connection_id
             )
 

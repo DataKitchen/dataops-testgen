@@ -311,7 +311,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
                     strQuery = clsProfiling.GetTableSampleCount()
                     lstQueries.append(strQuery)
 
-                lstSampleTables, lstSampleColumnNames, intErrors = RunThreadedRetrievalQueryList(
+                lstSampleTables, _, intErrors = RunThreadedRetrievalQueryList(
                     "PROJECT", lstQueries, dctParms["max_threads"], spinner
                 )
                 dctSampleTables = {x[0]: [x[1], x[2]] for x in lstSampleTables}
