@@ -1,4 +1,4 @@
-__all__ = ["install", "lint", "clean", "build_public_image"]
+__all__ = ["build_public_image", "clean", "install", "lint"]
 
 from os.path import exists, join
 from shutil import rmtree, which

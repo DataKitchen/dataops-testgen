@@ -134,7 +134,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
 
 
 def show_record_detail(dct_selected_row):
-    layout_column_1, layout_column_2 = st.columns([0.5, 0.5])
+    layout_column_1, _ = st.columns([0.5, 0.5])
 
     with layout_column_1:
         str_header = "Profiling Run Information"
