@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
@@ -27,6 +28,12 @@ def get_connections(project_code):
              WHERE project_code = '{project_code}'
            ORDER BY connection_id
     """
+    return db.retrieve_data(str_sql)
+
+
+def get_table_group_names_by_connection(schema: str, connection_ids: list[str]) -> pd.DataFrame:
+    items = [f"'{item}'" for item in connection_ids]
+    str_sql = f"""select table_groups_name from {schema}.table_groups where connection_id in ({",".join(items)})"""
     return db.retrieve_data(str_sql)
 
 

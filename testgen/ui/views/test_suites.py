@@ -262,10 +262,9 @@ def show_delete_modal(modal, selected=None):
     selected_test_suite = selected[0]
 
     with modal.container():
-        test_suite_id = selected_test_suite["id"]
         test_suite_name = selected_test_suite["test_suite"]
 
-        can_be_deleted = test_suite_service.delete([test_suite_id], [test_suite_name], dry_run=True)
+        can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
 
         fm.render_html_list(
             selected_test_suite,
@@ -278,20 +277,30 @@ def show_delete_modal(modal, selected=None):
             int_data_width=700,
         )
 
+
+        if not can_be_deleted:
+            st.markdown(
+                ":orange[This Test Suite has related data, which includes test definitions and may include test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
+                unsafe_allow_html=True,
+            )
+            accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
+
         with st.form("Delete Test Suite", clear_on_submit=True):
-            disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
+            disable_delete_button = authentication_service.current_user_has_read_role() or (
+                not can_be_deleted and not accept_cascade_delete
+            )
             delete = st.form_submit_button("Delete", disabled=disable_delete_button)
 
             if delete:
-                test_suite_service.delete([test_suite_id], [test_suite_name])
-                success_message = f"Test Suite {test_suite_name} has been deleted. "
-                st.success(success_message)
-                time.sleep(1)
-                modal.close()
-                st.experimental_rerun()
-
-        if not can_be_deleted:
-            st.markdown(":orange[This Test Suite cannot be deleted because it is being used in existing tests.]")
+                if test_suite_service.are_test_suites_in_use([test_suite_name]):
+                    st.error("This Test Suite is in use by a running process and cannot be deleted.")
+                else:
+                    test_suite_service.cascade_delete([test_suite_name])
+                    success_message = f"Test Suite {test_suite_name} has been deleted. "
+                    st.success(success_message)
+                    time.sleep(1)
+                    modal.close()
+                    st.experimental_rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, selected=None):

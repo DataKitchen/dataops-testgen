@@ -25,6 +25,46 @@ def get_by_id(schema, table_group_id):
     return db.retrieve_data(sql)
 
 
+def get_test_suite_names_by_table_group_names(schema, table_group_names):
+    items = [f"'{item}'" for item in table_group_names]
+    sql = f"""select test_suite
+from {schema}.test_suites ts
+inner join {schema}.table_groups tg on tg.id = ts.table_groups_id
+where tg.table_groups_name in ({",".join(items)})
+    """
+    return db.retrieve_data(sql)
+
+
+def get_table_group_dependencies(schema, table_group_names):
+    if table_group_names is None or len(table_group_names) == 0:
+        raise ValueError("No Table Group is specified.")
+
+    table_group_items = [f"'{item}'" for item in table_group_names]
+    sql = f"""select ppr.profile_run_id from {schema}.profile_pair_rules ppr
+    INNER JOIN {schema}.profiling_runs pr ON pr.id = ppr.profile_run_id
+    INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id
+    where tg.table_groups_name in ({",".join(table_group_items)})
+    union
+    select par.table_groups_id from {schema}.profile_anomaly_results par INNER JOIN {schema}.table_groups tg ON tg.id = par.table_groups_id where tg.table_groups_name in ({",".join(table_group_items)})
+    union
+    select pr.table_groups_id from {schema}.profile_results pr INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id where tg.table_groups_name in ({",".join(table_group_items)})
+    union
+    select pr.table_groups_id from {schema}.profiling_runs pr INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id where tg.table_groups_name in ({",".join(table_group_items)})
+    union
+    select dtc.table_groups_id from {schema}.data_table_chars dtc INNER JOIN {schema}.table_groups tg ON tg.id = dtc.table_groups_id where tg.table_groups_name in ({",".join(table_group_items)})
+    union
+    select dcs.table_groups_id from {schema}.data_column_chars dcs INNER JOIN {schema}.table_groups tg ON tg.id = dcs.table_groups_id where tg.table_groups_name in ({",".join(table_group_items)});"""
+    return db.retrieve_data(sql)
+
+
+def get_table_group_usage(schema, table_group_names):
+    items = [f"'{item}'" for item in table_group_names]
+    sql = f"""select distinct pr.id from {schema}.profiling_runs pr
+INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id
+where tg.table_groups_name in ({",".join(items)}) and pr.status = 'Running'"""
+    return db.retrieve_data(sql)
+
+
 @st.cache_data(show_spinner=False)
 def get_by_connection(schema, project_code, connection_id):
     sql = _get_select_statement(schema)
@@ -98,5 +138,26 @@ def delete(schema, table_group_ids):
 
     items = [f"'{item}'" for item in table_group_ids]
     sql = f"""DELETE FROM {schema}.table_groups WHERE id in ({",".join(items)})"""
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def cascade_delete(schema, table_group_names):
+    if table_group_names is None or len(table_group_names) == 0:
+        raise ValueError("No Table Group is specified.")
+
+    table_group_items = [f"'{item}'" for item in table_group_names]
+    sql = f"""delete from {schema}.profile_pair_rules ppr
+USING {schema}.profiling_runs pr, {schema}.table_groups tg
+WHERE
+pr.id = ppr.profile_run_id
+AND tg.id = pr.table_groups_id
+AND tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.profile_anomaly_results par USING {schema}.table_groups tg where tg.id = par.table_groups_id and tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.profile_results pr USING {schema}.table_groups tg where tg.id = pr.table_groups_id and tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.profiling_runs pr USING {schema}.table_groups tg where tg.id = pr.table_groups_id and tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.data_table_chars dtc USING {schema}.table_groups tg where tg.id = dtc.table_groups_id and tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.data_column_chars dcs USING {schema}.table_groups tg where tg.id = dcs.table_groups_id and tg.table_groups_name in ({",".join(table_group_items)});
+delete from {schema}.table_groups where table_groups_name in ({",".join(table_group_items)});"""
     db.execute_sql(sql)
     st.cache_data.clear()
