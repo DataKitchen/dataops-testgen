@@ -269,7 +269,7 @@ def show_delete_modal(modal, selected=None):
 def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):
     connection_id = connection["connection_id"]
     with modal.container():
-        table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Preview"])
+        table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Test"])
 
         with table_groups_settings_tab:
             selected_table_group = selected[0] if mode == "edit" else None
@@ -400,25 +400,18 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None)
                     modal.close()
                     st.experimental_rerun()
 
-            if mode == "edit":
-                bottom_left_column, bottom_right_column = st.columns([0.5, 0.5])
-                test = bottom_left_column.button("Test")
-                status_form = bottom_right_column.empty()
-                if test:
-                    table_group_preview(entity, connection_id, project_code, status_form, show_results=False)
-
             with table_groups_preview_tab:
                 if mode == "edit":
                     preview_left_column, preview_right_column = st.columns([0.5, 0.5])
                     status_preview = preview_right_column.empty()
-                    preview = preview_left_column.button("Preview Table Group")
+                    preview = preview_left_column.button("Test Table Group")
                     if preview:
-                        table_group_preview(entity, connection_id, project_code, status_preview, show_results=True)
+                        table_group_preview(entity, connection_id, project_code, status_preview)
                 else:
                     st.write("No preview available while adding a Table Group. Save the configuration first.")
 
 
-def table_group_preview(entity, connection_id, project_code, status, show_results=False):
+def table_group_preview(entity, connection_id, project_code, status):
     status.empty()
     status.info("Connecting to the Table Group ...")
     try:
@@ -432,8 +425,7 @@ def table_group_preview(entity, connection_id, project_code, status, show_result
                 tables.add(result["table_name"])
                 columns.append(result["column_name"])
 
-            if show_results:
-                show_test_results(schemas, tables, columns, qc_results)
+            show_test_results(schemas, tables, columns, qc_results)
 
             status.empty()
             status.success("Operation has finished successfully.")
@@ -445,14 +437,12 @@ def table_group_preview(entity, connection_id, project_code, status, show_result
                 error_message = "Result is empty."
             if not all(qc_results):
                 error_message = f"Error testing the connection to the Table Group. Details: {qc_results}"
-            if show_results:
-                st.text_area("Table Group Error Details", value=error_message)
+            st.text_area("Table Group Error Details", value=error_message)
     except Exception as e:
         status.empty()
-        status.error("Error previewing the Table Group.")
+        status.error("Error testing the Table Group.")
         error_message = e.args[0]
-        if show_results:
-            st.text_area("Table Group Error Details", value=error_message)
+        st.text_area("Table Group Error Details", value=error_message)
 
 
 def show_test_results(schemas, tables, columns, qc_results):
