@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
@@ -76,7 +77,17 @@ def delete(schema, test_suite_ids):
     st.cache_data.clear()
 
 
-def get_test_suite_usage(schema, test_suite_names):
+def cascade_delete(schema: str, test_suite_names: list[str]) -> None:
+    if test_suite_names is None or len(test_suite_names) == 0:
+        raise ValueError("No Test Suite is specified.")
+
+    items = [f"'{item}'" for item in test_suite_names]
+    sql = f"""delete from {schema}.test_suites where test_suite in ({",".join(items)})"""
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def get_test_suite_dependencies(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
     test_suite_names_join = [f"'{item}'" for item in test_suite_names]
     sql = f"""
             select distinct test_suite from {schema}.test_definitions where test_suite in ({",".join(test_suite_names_join)})
@@ -84,5 +95,14 @@ def get_test_suite_usage(schema, test_suite_names):
             select distinct test_suite from {schema}.execution_queue where test_suite in ({",".join(test_suite_names_join)})
             union
             select distinct test_suite from {schema}.test_results where test_suite in ({",".join(test_suite_names_join)});
+    """
+    return db.retrieve_data(sql)
+
+
+
+def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
+    test_suite_names_join = [f"'{item}'" for item in test_suite_names]
+    sql = f"""
+            select distinct test_suite from {schema}.test_runs where test_suite in ({",".join(test_suite_names_join)}) and status = 'Running'
     """
     return db.retrieve_data(sql)

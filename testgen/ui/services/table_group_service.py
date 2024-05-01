@@ -1,8 +1,9 @@
 import streamlit as st
 
+from testgen.common.database.database_service import RetrieveDBResultsToDictList
 import testgen.ui.queries.table_group_queries as table_group_queries
 import testgen.ui.services.connection_service as connection_service
-from testgen.common.database.database_service import RetrieveDBResultsToDictList
+import testgen.ui.services.test_suite_service as test_suite_service
 
 
 def get_by_id(table_group_id: str):
@@ -25,17 +26,46 @@ def add(table_group):
     table_group_queries.add(schema, table_group)
 
 
-def delete(table_group_ids, table_group_names, dry_run=False):  # noqa ARG001
+def cascade_delete(table_group_names, dry_run=False):
+    schema = st.session_state["dbschema"]
+    test_suite_names = get_test_suite_names_by_table_group_names(table_group_names)
+    can_be_deleted = not table_group_has_dependencies(schema, table_group_names, test_suite_names)
+    if not dry_run:
+        test_suite_service.cascade_delete(test_suite_names)
+        table_group_queries.cascade_delete(schema, table_group_names)
+    return can_be_deleted
+
+
+def table_group_has_dependencies(schema, table_group_names, test_suite_names):
+    test_suite_usage_result = test_suite_service.has_test_suite_dependencies(schema, test_suite_names)
+    if not table_group_names:
+        table_group_usage_result = False
+    else:
+        table_group_usage_result = not table_group_queries.get_table_group_dependencies(schema, table_group_names).empty
+    return test_suite_usage_result or table_group_usage_result
+
+
+def are_table_groups_in_use(table_group_names):
+    if not table_group_names:
+        return False
+
     schema = st.session_state["dbschema"]
 
-    # TODO: avoid deletion of used table groups
-    # usage_result = table_group_queries.get_table_group_usage(schema, table_group_ids, table_group_names)
-    # can_be_deleted = usage_result.empty
-    can_be_deleted = True
+    test_suite_names = get_test_suite_names_by_table_group_names(table_group_names)
+    test_suites_in_use = test_suite_service.are_test_suites_in_use(test_suite_names)
 
-    if not dry_run and can_be_deleted:
-        table_group_queries.delete(schema, table_group_ids)
-    return can_be_deleted
+    table_groups_in_use_result = table_group_queries.get_table_group_usage(schema, table_group_names)
+    table_groups_in_use = not table_groups_in_use_result.empty
+
+    return test_suites_in_use or table_groups_in_use
+
+
+def get_test_suite_names_by_table_group_names(table_group_names):
+    if not table_group_names:
+        return []
+    schema = st.session_state["dbschema"]
+    test_suite_names = table_group_queries.get_test_suite_names_by_table_group_names(schema, table_group_names)
+    return test_suite_names.to_dict()["test_suite"].values()
 
 
 def test_table_group(table_group, connection_id, project_code):

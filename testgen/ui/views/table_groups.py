@@ -228,7 +228,7 @@ def show_delete_modal(modal, selected=None):
         table_group_id = selected_table_group["id"]
         table_group_name = selected_table_group["table_groups_name"]
 
-        can_be_deleted = table_group_service.delete([table_group_id], [table_group_name], dry_run=True)
+        can_be_deleted = table_group_service.cascade_delete([table_group_name], dry_run=True)
 
         fm.render_html_list(
             selected_table_group,
@@ -241,20 +241,29 @@ def show_delete_modal(modal, selected=None):
             int_data_width=700,
         )
 
+        if not can_be_deleted:
+            st.markdown(
+                ":orange[This Table Group has related data, which may include profiling, test definitions and test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
+                unsafe_allow_html=True,
+            )
+            accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
+
         with st.form("Delete Table Group", clear_on_submit=True):
-            disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
+            disable_delete_button = authentication_service.current_user_has_read_role() or (
+                not can_be_deleted and not accept_cascade_delete
+            )
             delete = st.form_submit_button("Delete", disabled=disable_delete_button)
 
             if delete:
-                table_group_service.delete([table_group_id], [table_group_name])
-                success_message = f"Table Group {table_group_name} has been deleted. "
-                st.success(success_message)
-                time.sleep(1)
-                modal.close()
-                st.experimental_rerun()
-
-        if not can_be_deleted:
-            st.markdown(":orange[This Table Group cannot be deleted because it is being used in existing tests.]")
+                if table_group_service.are_table_groups_in_use([table_group_name]):
+                    st.error("This Table Group is in use by a running process and cannot be deleted.")
+                else:
+                    table_group_service.cascade_delete([table_group_name])
+                    success_message = f"Table Group {table_group_name} has been deleted. "
+                    st.success(success_message)
+                    time.sleep(1)
+                    modal.close()
+                    st.experimental_rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):

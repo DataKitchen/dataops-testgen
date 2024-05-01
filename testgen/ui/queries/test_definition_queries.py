@@ -271,3 +271,13 @@ def delete(schema, test_definition_ids):
     sql = f"""DELETE FROM {schema}.test_definitions WHERE id in ({",".join(items)})"""
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def cascade_delete(schema, test_suite_names):
+    if test_suite_names is None or len(test_suite_names) == 0:
+        raise ValueError("No Test Suite is specified.")
+
+    items = [f"'{item}'" for item in test_suite_names]
+    sql = f"""delete from {schema}.test_definitions where test_suite in ({",".join(items)})"""
+    db.execute_sql(sql)
+    st.cache_data.clear()

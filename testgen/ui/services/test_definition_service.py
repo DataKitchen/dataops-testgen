@@ -4,6 +4,7 @@ import testgen.ui.queries.test_definition_queries as test_definition_queries
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.database_service as database_service
 import testgen.ui.services.table_group_service as table_group_service
+import testgen.ui.services.test_run_service as test_run_service
 
 
 def update_attribute(test_definition_ids, attribute, value):
@@ -28,6 +29,12 @@ def delete(test_definition_ids, dry_run=False):
     if not dry_run and can_be_deleted:
         test_definition_queries.delete(schema, test_definition_ids)
     return can_be_deleted
+
+
+def cascade_delete(test_suite_names):
+    schema = st.session_state["dbschema"]
+    test_run_service.cascade_delete(test_suite_names)
+    test_definition_queries.cascade_delete(schema, test_suite_names)
 
 
 def add(test_definition):

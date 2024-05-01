@@ -48,7 +48,7 @@ n controls over data ingested and to make values more efficient, consistent and 
    AND p.column_name NOT ILIKE ''%zip%''
    AND p.functional_data_type NOT ILIKE ''id%''
    AND p.value_ct > p.numeric_ct
-   AND p.numeric_ct::NUMERIC > (0.95 * p.value_ct::NUMERIC)', ''' Numeric Ct: '' || p.numeric_ct || '' of '' || p.value_ct || '' (Numeric Percent: '' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || '' )''::VARCHAR(200)', 'Likely', 'Review your source data and ingestion process. Consider whether it might be better to store the numeric data in a numeric column. If the alpha data is significant, you could store it in a different column.'),
+   AND p.numeric_ct::NUMERIC > (0.95 * p.value_ct::NUMERIC)', '''Numeric Ct: '' || p.numeric_ct || '' of '' || p.value_ct || '' (Numeric Percent: '' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || '' )''::VARCHAR(200)', 'Likely', 'Review your source data and ingestion process. Consider whether it might be better to store the numeric data in a numeric column. If the alpha data is significant, you could store it in a different column.'),
         ('1012', 'Char_Column_Date_Values', 'Column', 'Character Column with Mostly Date Values', 'This column is defined as alpha, but more than 95% of its values are dates. Dates in alpha columns might not sort correctly, and might contradict user expectations downstream. It''s also possible that more than one type of information is stored in the column, making it harder to retrieve.    ', 'p.general_type = ''A''
    AND p.value_ct > p.date_ct
    AND p.date_ct::NUMERIC > (0.95 * p.value_ct::NUMERIC)', ''' Date Ct: '' || p.date_ct || '' of '' || p.value_ct || '' (Date Percent: '' || ROUND(100.0 * p.date_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || '' )''::VARCHAR(200)' , 'Likely', 'Review your source data and ingestion process. Consider whether it might be better to store the date values as a date or datetime column. If the alpha data is also significant, you could store it in a different column.'),
@@ -85,7 +85,7 @@ n controls over data ingested and to make values more efficient, consistent and 
     'Under 3% of values in this column were found to be numeric. This could indicate a data error.', e'p.general_type = \'A\'
    AND p.numeric_ct::FLOAT / p.record_ct::FLOAT < 0.03
    AND p.numeric_ct > 0',
-    ''' Numeric Ct: '' || p.numeric_ct || '' of '' || p.value_ct || '' (Numeric Percent: '' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || '' )''::VARCHAR(200)',
+    '''Numeric Ct: '' || p.numeric_ct || '' of '' || p.value_ct || '' (Numeric Percent: '' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || '' )''::VARCHAR(200)',
     'Likely', 'Review your source data and follow-up with data owners to determine whether numeric values are invalid entries here.'),
    ('1024', 'Invalid_Zip3_USA', 'Column', 'Invalid USA ZIP-3 Format', 'The majority of values in this column are 3-digit zips, but divergent patterns were found. This could indicate an incorrect roll-up category or a PII concern.', 'p.distinct_pattern_ct > 1
    AND (p.column_name ilike ''%zip%'' OR p.column_name ILIKE ''%postal%'')
