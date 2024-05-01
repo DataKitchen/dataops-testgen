@@ -1,4 +1,4 @@
-__all__ = ["read_template_sql_file", "read_template_yaml_file", "get_template_files"]
+__all__ = ["get_template_files", "read_template_sql_file", "read_template_yaml_file"]
 
 import logging
 import re

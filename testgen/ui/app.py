@@ -8,9 +8,8 @@ from testgen.common.docker_service import check_basic_configuration
 from testgen.ui import bootstrap
 from testgen.ui.components import widgets as testgen
 from testgen.ui.queries import project_queries
-from testgen.ui.services import authentication_service
+from testgen.ui.services import authentication_service, javascript_service
 from testgen.ui.services import database_service as db
-from testgen.ui.services import javascript_service
 from testgen.ui.session import session
 
 logger = logging.getLogger("testgen.ui")

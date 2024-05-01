@@ -85,7 +85,7 @@ def show_create_qc_schema_modal(modal, selected_connection):
 
             if submit:
                 empty_cache()
-                bottom_left_column, bottom_right_column = st.columns([0.20, 0.80])
+                _, bottom_right_column = st.columns([0.20, 0.80])
                 operation_status = bottom_right_column.empty()
 
                 operation_status.empty()
@@ -117,9 +117,9 @@ def show_connection_form(connection, project_code):
         flavor_options = ["redshift", "snowflake", "mssql", "postgresql"]
 
         left_column, right_column = st.columns([0.75, 0.25])
-        toggle_left_column, toggle_right_column = st.columns([0.25, 0.75])
+        toggle_left_column, _ = st.columns([0.25, 0.75])
         bottom_left_column, bottom_right_column = st.columns([0.25, 0.75])
-        button_left_column, button_right_column, button_remaining_column = st.columns([0.20, 0.20, 0.60])
+        button_left_column, _, _ = st.columns([0.20, 0.20, 0.60])
 
         connection_id = connection["connection_id"]
         connection_name = connection["connection_name"]
