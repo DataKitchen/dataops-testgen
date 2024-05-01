@@ -1,3 +1,4 @@
+from time import sleep
 import typing
 
 import streamlit as st
@@ -36,7 +37,7 @@ class TestRunsPage(Page):
             str_project = st.session_state["project"]
 
             # Setup Toolbar
-            tool_bar = tb.ToolBar(4, 1, 0, None)
+            tool_bar = tb.ToolBar(4, 2, 0, None)
 
             with tool_bar.long_slots[0]:
                 # Table Groups selection -- optional criterion
@@ -44,6 +45,13 @@ class TestRunsPage(Page):
                 str_table_groups_id = fm.render_select(
                     "Table Group", df_tg, "table_groups_name", "id", boo_required=False, str_default=None
                 )
+
+            with tool_bar.short_slots[0]:
+                if st.button("⟳", help="Refresh the grid", key="refresh-button-test-runs"):
+                    st.cache_data.clear()
+                    st.toast("Page Refreshed!")
+                    sleep(1)
+                    st.experimental_rerun()
 
             with tool_bar.long_slots[1]:
                 # Table Groups selection -- optional criterion
@@ -60,7 +68,7 @@ class TestRunsPage(Page):
             dct_selected_rows = fm.render_grid_select(df, show_columns)
             dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
 
-            if tool_bar.short_slots[0].button(
+            if tool_bar.short_slots[1].button(
                 "Test Results　→",
                 help="Review test results for the selected run",
                 use_container_width=True,
