@@ -51,7 +51,7 @@ class CCATExecutionSQL:
         strInputString = strInputString.replace(
             "{NOW}", date_service.get_now_as_string_with_offset(self.minutes_offset)
         )
-        strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
+        strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message.strip())
 
         for parm, value in self.dctTestParms.items():
             strInputString = strInputString.replace("{" + parm.upper() + "}", str(value))

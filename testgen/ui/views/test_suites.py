@@ -102,7 +102,7 @@ class TestSuitesPage(Page):
             delete_modal.open()
 
         if tool_bar.short_slots[4].button(
-            "Tests　→",
+            ":green[Tests →]",
             help="View and edit Test Definitions for selected Test Suite",
             disabled=disable_buttons,
             use_container_width=True,
@@ -191,39 +191,45 @@ def show_record_detail(
 
     with right_column:
         st.write("<br/><br/>", unsafe_allow_html=True)
-        _, button_column = st.columns([0.3, 0.7])
+        _, button_column = st.columns([0.2, 0.8])
         with button_column:
-            if st.button(
-                "Show Test Generation Command for CLI",
-                help="Shows the run-test-generation CLI command",
-                use_container_width=True,
-            ):
-                show_run_test_generation_modal.open()
+            run_now_commands_tab, cli_commands_tab = st.tabs(["Test Suite Actions", "View CLI Commands"])
 
-            if st.button("Run Test Generation Now", help="Run Test Generation", use_container_width=True):
-                run_test_generation_modal.open()
+            with cli_commands_tab:
+                if st.button(
+                    "Test Generation Command",
+                    help="Shows the run-test-generation CLI command",
+                    use_container_width=True,
+                ):
+                    show_run_test_generation_modal.open()
 
-            if st.button(
-                "Show Test Execution Command for CLI", help="Shows the run-tests CLI command", use_container_width=True
-            ):
-                show_test_run_command_modal.open()
+                if st.button(
+                    "Test Execution Command",
+                    help="Shows the run-tests CLI command",
+                    use_container_width=True,
+                ):
+                    show_test_run_command_modal.open()
 
-            if st.button("Run Test Execution Now", help="Run the tests", use_container_width=True):
-                run_tests_command_modal.open()
+                if st.button(
+                    "Observability Export Command",
+                    help="Shows the export-observability CLI command",
+                    use_container_width=True,
+                ):
+                    show_export_command_modal.open()
 
-            if st.button(
-                "Show Observability Export Command for CLI",
-                help="Shows the export-observability CLI command",
-                use_container_width=True,
-            ):
-                show_export_command_modal.open()
+            with run_now_commands_tab:
+                if st.button("Run Test Generation", help="Run Test Generation", use_container_width=True):
+                    run_test_generation_modal.open()
 
-            if st.button(
-                "Run Observability Export Now",
-                help="Exports test results to Observability for the current Test Suite",
-                use_container_width=True,
-            ):
-                run_export_command_modal.open()
+                if st.button("Run Test Execution", help="Run the tests", use_container_width=True):
+                    run_tests_command_modal.open()
+
+                if st.button(
+                    "Run Observability Export",
+                    help="Exports test results to Observability for the current Test Suite",
+                    use_container_width=True,
+                ):
+                    run_export_command_modal.open()
 
 
 def show_run_test_generation(modal, selected):
@@ -234,8 +240,50 @@ def show_run_test_generation(modal, selected):
         with container:
             st.markdown(":green[**Execute Test Generation for the Test Suite**]")
 
+        warning_container = st.container()
+        options_container = st.container()
         button_container = st.empty()
         status_container = st.empty()
+
+        test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
+            selected_test_suite["test_suite"]
+        )
+        if test_ct:
+            warning_msg = ""
+            counts_msg = f"\n\nTests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
+            if unlocked_edits_ct > 0:
+                if unlocked_edits_ct > 1:
+                    warning_msg = (
+                        "Manual changes have been made to tests in this Test Suite that have not been locked. "
+                    )
+                else:
+                    warning_msg = (
+                        "A manual change has been made to a test in this Test Suite that has not been locked. "
+                    )
+            elif unlocked_test_ct > 0:
+                warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
+            warning_msg = (
+                f"{warning_msg}Generating tests now will overwrite all unlocked tests currently in the "
+                f"test suite with new tests based on the latest profiling.{counts_msg}"
+            )
+            with warning_container:
+                st.warning(warning_msg)
+                if unlocked_edits_ct > 0:
+                    lock_edits_button = st.button("Lock Edited Tests")
+                    if lock_edits_button:
+                        edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
+                        if edits_locked:
+                            st.info("Edited tests have been successfully locked.")
+
+        with options_container:
+            lst_generation_sets = test_suite_service.get_generation_set_choices()
+            if lst_generation_sets:
+                lst_generation_sets.insert(0, "(All Test Types)")
+                str_generation_set = st.selectbox("Generation Set", lst_generation_sets)
+                if str_generation_set == "(All Test Types)":
+                    str_generation_set = ""
+            else:
+                str_generation_set = ""
 
         with button_container:
             start_process_button_message = "Start"
@@ -249,7 +297,7 @@ def show_run_test_generation(modal, selected):
             status_container.info("Executing Test Generation...")
 
             try:
-                run_test_gen_queries(table_group_id, test_suite_key)
+                run_test_gen_queries(table_group_id, test_suite_key, str_generation_set)
             except Exception as e:
                 status_container.empty()
                 status_container.error(f"Process had errors: {e!s}.")

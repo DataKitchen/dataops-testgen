@@ -7,6 +7,9 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
+import testgen.ui.queries.profiling_queries as profiling_queries
+from testgen.ui.views.profiling_details import show_profiling_detail
+
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
@@ -109,7 +112,9 @@ class ProfilingAnomaliesPage(Page):
                             "suggested_action",
                         ]
                         lst_wrap_columns = ["anomaly_description", "suggested_action"]
-                        fm.render_excel_export(df_pa, lst_export_columns, "Profiling Anomalies", lst_wrap_columns)
+                        fm.render_excel_export(
+                            df_pa, lst_export_columns, "Profiling Anomalies", "{TIMESTAMP}", lst_wrap_columns
+                        )
 
                     if selected:
                         # Always show details for last selected row
@@ -139,7 +144,11 @@ class ProfilingAnomaliesPage(Page):
                                 int_data_width=700,
                             )
                         with col2:
-                            _, v_col2 = st.columns([0.3, 0.7])
+                            # _, v_col2 = st.columns([0.3, 0.7])
+                            v_col1, v_col2 = st.columns([0.5, 0.5])
+                        view_profiling(
+                            v_col1, selected_row["table_name"], selected_row["column_name"], str_profile_run_id
+                        )
                         view_bad_data(v_col2, selected_row)
 
                     # Need to render toolbar buttons after grid, so selection status is maintained
@@ -193,26 +202,6 @@ class ProfilingAnomaliesPage(Page):
 def get_db_table_group_choices(str_project_code):
     str_schema = st.session_state["dbschema"]
     return dq.run_table_groups_lookup_query(str_schema, str_project_code)
-
-
-@st.cache_data(show_spinner=False)
-def get_latest_profile_run(str_table_group):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-            WITH last_profile_run
-               AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
-                     FROM profiling_runs
-                   GROUP BY table_groups_id)
-            SELECT profile_run_id
-              FROM {str_schema}.profiling_runs r
-            INNER JOIN {str_schema}.last_profile_run l
-               ON (r.table_groups_id = l.table_groups_id
-              AND  r.profiling_starttime = l.last_profile_run_date)
-             WHERE r.table_groups_id = '{str_table_group}';
-"""
-    str_profile_run_id = db.retrieve_single_result(str_sql)
-
-    return str_profile_run_id
 
 
 @st.cache_data(show_spinner="Retrieving Data")
@@ -459,14 +448,12 @@ def view_bad_data(button_container, selected_row):
 
     with button_container:
         if st.button(
-            "Review Source Data　→", help="Review source data for highlighted anomaly", use_container_width=True
+            ":green[Source Data →]", help="Review current source data for highlighted anomaly", use_container_width=True
         ):
             bad_data_modal.open()
 
     if bad_data_modal.is_open():
         with bad_data_modal.container():
-            # fm.show_subheader(str_header)
-            # fm.show_prompt(selected_row['anomaly_name'])
             fm.render_modal_header(selected_row["anomaly_name"], None)
             st.caption(selected_row["anomaly_description"])
             fm.show_prompt(str_header)
@@ -490,6 +477,23 @@ def view_bad_data(button_container, selected_row):
                 df_bad.fillna("[NULL]", inplace=True)
                 # Display the dataframe
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+
+
+def view_profiling(button_container, str_table_name, str_column_name, str_profiling_run_id):
+    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
+
+    df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
+
+    profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
+
+    with button_container:
+        if st.button(":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True):
+            profiling_modal.open()
+
+    if profiling_modal.is_open():
+        with profiling_modal.container():
+            fm.render_modal_header(str_header, None)
+            show_profiling_detail(df.iloc[0], 300)
 
 
 def do_disposition_update(selected, str_new_status):

@@ -1,5 +1,5 @@
-from time import sleep
 import typing
+from time import sleep
 
 import streamlit as st
 

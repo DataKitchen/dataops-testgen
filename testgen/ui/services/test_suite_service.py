@@ -42,3 +42,35 @@ def are_test_suites_in_use(test_suite_names):
     schema = st.session_state["dbschema"]
     usage_result = test_suite_queries.get_test_suite_usage(schema, test_suite_names)
     return not usage_result.empty
+
+
+def get_test_suite_refresh_warning(test_suite_name):
+    if not test_suite_name:
+        return False
+    schema = st.session_state["dbschema"]
+    row_result = test_suite_queries.get_test_suite_refresh_check(schema, test_suite_name)
+
+    test_ct = None
+    unlocked_test_ct = None
+    unlocked_edits_ct = None
+    if row_result:
+        test_ct = row_result["test_ct"]
+        unlocked_test_ct = row_result["unlocked_test_ct"]
+        unlocked_edits_ct = row_result["unlocked_edits_ct"]
+
+    return test_ct, unlocked_test_ct, unlocked_edits_ct
+
+
+def get_generation_set_choices():
+    schema = st.session_state["dbschema"]
+    dfSets = test_suite_queries.get_generation_sets(schema)
+    if dfSets.empty:
+        return None
+    else:
+        return dfSets["generation_set"].to_list()
+
+
+def lock_edited_tests(test_suite_name):
+    schema = st.session_state["dbschema"]
+    tests_locked = test_suite_queries.lock_edited_tests(schema, test_suite_name)
+    return tests_locked

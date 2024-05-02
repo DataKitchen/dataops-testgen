@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
@@ -16,6 +17,8 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
+from testgen.ui.views.profiling_details import show_profiling_detail
+
 
 ALWAYS_SPIN = False
 
@@ -579,7 +582,9 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             "Message",
             "Action",
         ]
-        fm.render_excel_export(df, lst_export_columns, "Test Results", lst_wrap_colunns, lst_export_headers)
+        fm.render_excel_export(
+            df, lst_export_columns, "Test Results", "{TIMESTAMP}", lst_wrap_colunns, lst_export_headers
+        )
 
     # Display history and detail for selected row
     if not selected_rows:
@@ -600,8 +605,12 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         pg_col1, pg_col2 = st.columns([0.5, 0.5])
 
         with pg_col2:
-            _, v_col2 = st.columns([0.6, 0.4])
-        view_bad_data(v_col2, selected_row)
+            v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
+        view_edit_test(v_col1, selected_row["test_definition_id_current"])
+        view_profiling(
+            v_col2, selected_row["table_name"], selected_row["column_names"], selected_row["table_groups_id"]
+        )
+        view_bad_data(v_col3, selected_row)
 
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
@@ -785,20 +794,11 @@ def view_bad_data(button_container, selected_row):
     str_header = f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}"
     bad_data_modal = testgen.Modal(title=None, key="dk-test-data-modal", max_width=1100)
 
-    edit_test_definition_modal = testgen.Modal(title="Edit Test", key="dk-test-definition-edit-modal", max_width=1100)
-
     with button_container:
         if st.button(
-            "Review Source Data　→", help="Review source data for highlighted result", use_container_width=True
+            ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
         ):
             bad_data_modal.open()
-
-        if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
-            edit_test_definition_modal.open()
-
-    if edit_test_definition_modal.is_open():
-        test_definition_id = selected_row["test_definition_id_current"]
-        show_add_edit_modal_by_test_definition(edit_test_definition_modal, test_definition_id)
 
     if bad_data_modal.is_open():
         with bad_data_modal.container():
@@ -830,3 +830,35 @@ def view_bad_data(button_container, selected_row):
                 df_bad.fillna("[NULL]", inplace=True)
                 # Display the dataframe
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+
+
+def view_profiling(button_container, str_table_name, str_column_name, str_table_groups_id):
+    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
+
+    # Retrieve latest profiling
+    str_profiling_run_id = profiling_queries.get_latest_profile_run(str_table_groups_id)
+    if str_profiling_run_id:
+        df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
+        if not df.empty:
+            profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
+
+            with button_container:
+                if st.button(
+                    ":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True
+                ):
+                    profiling_modal.open()
+
+            if profiling_modal.is_open():
+                with profiling_modal.container():
+                    fm.render_modal_header(str_header, None)
+                    show_profiling_detail(df.iloc[0], 300)
+
+
+def view_edit_test(button_container, test_definition_id):
+    edit_test_definition_modal = testgen.Modal(title="Edit Test", key="dk-test-definition-edit-modal", max_width=1100)
+    with button_container:
+        if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
+            edit_test_definition_modal.open()
+
+    if edit_test_definition_modal.is_open():
+        show_add_edit_modal_by_test_definition(edit_test_definition_modal, test_definition_id)

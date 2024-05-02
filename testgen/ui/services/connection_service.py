@@ -1,9 +1,9 @@
 import streamlit as st
 
-from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 import testgen.ui.queries.connection_queries as connection_queries
 import testgen.ui.services.table_group_service as table_group_service
+from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
+from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
     AssignConnectParms,
     RetrieveDBResultsToList,
