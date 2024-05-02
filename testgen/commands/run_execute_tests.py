@@ -22,6 +22,7 @@ LOG = logging.getLogger("testgen.cli")
 
 def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
     booErrors = False
+    error_msg = ""
 
     LOG.info("CurrentStep: Retrieving TestExec Parameters")
     dctParms = RetrieveTestExecParms(strProjectCode, strTestSuite)
@@ -76,7 +77,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
                     spinner.next()
 
             # Execute list, returning test results
-            LOG.info("CurrentStep: Executing Non-CAT Queries")
+            LOG.info("CurrentStep: Executing Non-CAT Test Queries")
             lstTestResults, colResultNames, intErrors = RunThreadedRetrievalQueryList(
                 "PROJECT", lstTestQueries, dctParms["max_threads"], spinner
             )
@@ -87,9 +88,11 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
                 WriteListToDB("DKTG", lstTestResults, colResultNames, "test_results")
             if intErrors > 0:
                 booErrors = True
-                LOG.warning(
-                    f"Errors were encountered executing query tests. ({intErrors} errors occurred.) Please check log."
+                error_msg = (
+                    f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) "
+                    "Please check log. "
                 )
+                LOG.warning(error_msg)
         else:
             LOG.info("No tests found")
 
@@ -103,7 +106,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
         raise
 
     else:
-        return booErrors
+        return booErrors, error_msg
 
 
 def run_execution_steps_in_background(strProjectCode, strTestSuite, minutes_offset=0):
@@ -123,6 +126,8 @@ def run_execution_steps_in_background(strProjectCode, strTestSuite, minutes_offs
 def run_execution_steps(strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
     # Initialize required parms for all three steps
     booErrors = False
+    error_msg = ""
+
     strTestRunID = str(uuid.uuid4())
     strTestTime = date_service.get_now_as_string_with_offset(minutes_offset)
 
@@ -133,11 +138,14 @@ def run_execution_steps(strProjectCode, strTestSuite, minutes_offset=0, spinner=
     run_parameter_validation_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, True)
 
     LOG.info("CurrentStep: Execute Step - Test Execution")
-    if run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset, spinner):
-        booErrors = True
+    booErrors, error_msg = run_test_queries(
+        strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset, spinner
+    )
 
     LOG.info("CurrentStep: Execute Step - CAT Test Execution")
-    if run_cat_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset, spinner):
+    if run_cat_test_queries(
+        strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset, spinner
+    ):
         booErrors = True
 
     if booErrors:

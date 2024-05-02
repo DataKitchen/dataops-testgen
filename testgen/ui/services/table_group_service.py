@@ -1,9 +1,9 @@
 import streamlit as st
 
-from testgen.common.database.database_service import RetrieveDBResultsToDictList
 import testgen.ui.queries.table_group_queries as table_group_queries
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.test_suite_service as test_suite_service
+from testgen.common.database.database_service import RetrieveDBResultsToDictList
 
 
 def get_by_id(table_group_id: str):

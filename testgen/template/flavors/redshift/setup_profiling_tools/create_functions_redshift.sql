@@ -4,9 +4,7 @@ CREATE OR REPLACE FUNCTION {DATA_QC_SCHEMA}.fndk_isnum(VARCHAR)
         AS
         $$
 SELECT CASE
-            WHEN $1 ~ '^[0-9]+(\.[0-9]+)?$'   THEN 1
-            WHEN $1 ~ '\\$[0-9]+(\.[0-9]+)?$' THEN 1
-            WHEN $1 ~ '^[0-9]+(\.[0-9]+)?\\$' THEN 1
+            WHEN $1 ~ '^\\s*[+-]?\\$?\\s*[0-9]+(,[0-9]{3})*(\\.[0-9]*)?[\\%]?\\s*$'   THEN 1
             ELSE 0
         END;
 $$

@@ -124,23 +124,34 @@ SET functional_data_type = 'Period Year'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND (column_name ILIKE '%year%' OR column_name ILIKE '%yr%')
-  AND ( (min_length = 4 AND max_length = 4 AND min_text >= '1900' AND max_text <= '2200')
-   OR   (min_value >= 1900 AND max_value <= 2200 AND COALESCE(SIGN(fractional_sum), 0) = 0) );
+  AND ( (min_value >= 1900
+   AND    max_value <= DATE_PART('YEAR', NOW()) + 20
+   AND    COALESCE(fractional_sum, 0) = 0)
+         OR
+         (min_text >= '1900'
+   AND    max_text <= (DATE_PART('YEAR', NOW()) + 20)::VARCHAR
+   AND    avg_length = 4
+   AND    avg_embedded_spaces = 0)
+      );
 
 UPDATE profile_results
 SET functional_data_type = 'Period Quarter'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND avg_length BETWEEN 6 and 7
-   AND (column_name ILIKE '%qtr%' or column_name ILIKE '%quarter%')
-   AND min_text >= '1900' AND max_text <= '2200'
-   AND SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]AN\s*$';
+  AND (column_name ILIKE '%qtr%' or column_name ILIKE '%quarter%')
+  AND ( (min_value = 1 AND max_value = 4
+  AND    COALESCE(fractional_sum, 0) = 0)
+        OR
+        (min_text >= '1900' AND max_text <= '2200'
+  AND    avg_length BETWEEN 6 and 7
+  AND    SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]AN\s*$')
+      );
 
 UPDATE profile_results
 SET functional_data_type = 'Period Month'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ILIKE '%mon%'
+  AND column_name ILIKE '%mo%'
    AND (
         (max_length = 2 AND (min_text = '01' OR min_text = '1') AND max_text = '12')
          OR (min_value = 1 AND max_value = 12 AND COALESCE(SIGN(fractional_sum), 0) = 0)
@@ -214,13 +225,13 @@ UPDATE profile_results
    SET functional_data_type = 'Person Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|manager|mgr_|middle|nick|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
+  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise||org|organization|supplier|vendor|hospital|practice|clinic)(_| |)name$';
+  AND column_name ~ '^(|acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise|hco|org|organization|supplier|vendor|hospital|practice|clinic)(_| |)name$';
 
 -- 4. Assign CODE, CATEGORY, ID, ATTRIBUTE & DESCRIPTION
 /*
@@ -318,8 +329,18 @@ SET functional_data_type =
             WHEN (max_value - min_value + 1 = distinct_value_ct) AND (fractional_sum IS NULL OR fractional_sum > 0)
                 THEN 'Sequence'
             WHEN general_type='N'
-             AND (
-                    column_type ILIKE '%int%'
+             AND column_name SIMILAR TO '%(no|num|number|nbr)'
+                     AND (column_type ILIKE '%int%'
+                          OR
+                          (RTRIM(SPLIT_PART(column_type, ',', 2), ')') > '0'
+                             AND fractional_sum = 0) -- 0 implies integer;  null is float or non-numeric
+                         ) THEN
+                               CASE
+                                 WHEN ROUND(100.0 * value_ct::FLOAT/NULLIF(record_ct, 0)) > 70 THEN 'ID'
+                                                                                               ELSE 'Attribute-Numeric'
+                            END
+            WHEN general_type='N'
+             AND (  column_type ILIKE '%int%'
                       OR
                     (RTRIM(SPLIT_PART(column_type, ',', 2), ')') > '0'
                        AND fractional_sum = 0) -- 0 implies integer;  null is float or non-numeric
@@ -339,14 +360,24 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- 7. Assign 'ID-Unique' functional data type to the columns that are identity columns
 
 UPDATE profile_results
-SET functional_data_type = CASE
-                               WHEN record_ct = distinct_value_ct AND column_type IN ('smallint', 'integer', 'bigint')
-                                   AND record_ct > 50 THEN 'ID-Unique'
-                               ELSE functional_data_type END
+SET functional_data_type = 'ID-Unique'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
-  AND (functional_data_type = 'ID'
-   OR  column_type IN ('smallint', 'integer', 'bigint') );
+  AND functional_data_type IN ('ID', 'ID-Secondary')
+  AND record_ct = distinct_value_ct
+  AND record_ct > 50;
 
+-- Update alpha ID's to ID-Secondary and ID-Grouping
+
+UPDATE profile_results
+SET functional_data_type = CASE
+                             WHEN ROUND(100.0 * value_ct::FLOAT/NULLIF(record_ct, 0)) > 70
+                              AND ROUND(100.0 * distinct_value_ct::FLOAT/NULLIF(value_ct, 0)) >= 75  THEN 'ID-Secondary'
+                             WHEN ROUND(100.0 * value_ct::FLOAT/NULLIF(record_ct, 0)) > 70
+                              AND ROUND(100.0 * distinct_value_ct::FLOAT/NULLIF(value_ct, 0)) < 75 THEN 'ID-Group'
+                             ELSE functional_data_type
+                           END
+ WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type = 'ID';
 
 -- 8. Assign 'ID-FK' functional data type to the columns that are foreign keys of the identity columns identified in the previous step
 
@@ -362,6 +393,7 @@ WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
   and profile_results.table_name <> ui.table_name
   and profile_results.functional_data_type <> 'ID-Unique';
 
+-- Assign
 
 -- 9. Functional Data Type: 'Measurement Pct'
 

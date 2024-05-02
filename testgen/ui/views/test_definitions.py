@@ -44,6 +44,7 @@ class TestDefinitionsPage(Page):
             "Test Definitions",
             "https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types",
             lst_breadcrumbs=self.breadcrumbs,
+            boo_show_refresh=True,
         )
 
         tool_bar = tb.ToolBar(5, 6, 4, None, multiline=True)
@@ -233,11 +234,12 @@ def show_add_edit_modal_by_test_definition(test_definition_modal, test_definitio
     table_group = table_group_raw.iloc[0].to_dict()
 
     test_suite_raw = run_test_suite_lookup_query(table_group_id, test_suite_name)
-    test_suite = test_suite_raw.iloc[0].to_dict()
+    if not test_suite_raw.empty:
+        test_suite = test_suite_raw.iloc[0].to_dict()
 
-    show_add_edit_modal(
-        test_definition_modal, mode, project_code, table_group, test_suite, table_name, column_name, test_definition
-    )
+        show_add_edit_modal(
+            test_definition_modal, mode, project_code, table_group, test_suite, table_name, column_name, test_definition
+        )
 
 
 def show_add_edit_modal(
@@ -740,7 +742,7 @@ def show_test_defs_grid(
             "profiling_as_of_date",
             "last_manual_update",
         ]
-        lst_wrap_colunns = ["final_test_description"]
+        lst_wrap_columns = ["final_test_description"]
         lst_export_headers = [
             "Schema",
             "Table Name",
@@ -759,7 +761,8 @@ def show_test_defs_grid(
             df,
             lst_export_columns,
             f"Test Definitions for Test Suite {str_test_suite_id}",
-            lst_wrap_colunns,
+            "{TIMESTAMP}",
+            lst_wrap_columns,
             lst_export_headers,
         )
 

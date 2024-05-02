@@ -5,9 +5,7 @@ IMMUTABLE
 AS
 $$
 SELECT CASE
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'^[0-9]+(\.[0-9]+)?$') > 0 THEN 1
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'\\$[0-9]+(\.[0-9]+)?$') > 0 THEN 1
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'^[0-9]+(\.[0-9]+)?\\$') > 0 THEN 1
+            WHEN REGEXP_LIKE(strparm::VARCHAR, '^\\s*[+-]?\\$?\\s*[0-9]+(,[0-9]{3})*(\\.[0-9]*)?[\\%]?\\s*$') THEN 1
             ELSE 0
         END
 $$;

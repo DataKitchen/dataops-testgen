@@ -137,10 +137,17 @@ def run_profile(configuration: Configuration, table_group_id: str):
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
+@click.option(
+    "-gs",
+    "--generation-set",
+    help="A defined subset of tests to generate for your purpose. Use a generation_set defined for your project.",
+    required=False,
+    default=None,
+)
 @pass_configuration
-def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str):
+def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str, generation_set: str):
     LOG.info("CurrentStep: Generate Tests - Main Procedure")
-    message = run_test_gen_queries(table_group_id, test_suite_key)
+    message = run_test_gen_queries(table_group_id, test_suite_key, generation_set)
     LOG.info("Current Step: Generate Tests - Main Procedure Complete")
     display_service.echo("\n" + message)
 

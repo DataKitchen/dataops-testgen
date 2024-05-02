@@ -36,8 +36,8 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
          WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
                                               ELSE 0
        END )  AS lead_space_ct,
-  SUM( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 END ) as quoted_value_ct,
-  SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 END ) as includes_digit_ct,
+  SUM( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 ELSE 0 END ) as quoted_value_ct,
+  SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 ELSE 0 END ) as includes_digit_ct,
   SUM( CASE
          WHEN "{COL_NAME}" IN ('.', '?', ' ') THEN 1
          WHEN LOWER("{COL_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '9{2,}'

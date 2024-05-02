@@ -106,3 +106,35 @@ def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFra
             select distinct test_suite from {schema}.test_runs where test_suite in ({",".join(test_suite_names_join)}) and status = 'Running'
     """
     return db.retrieve_data(sql)
+
+
+def get_test_suite_refresh_check(schema, test_suite_name):
+    sql = f"""
+           SELECT COUNT(*) as test_ct,
+                  SUM(CASE WHEN lock_refresh = 'N' THEN 1 ELSE 0 END) as unlocked_test_ct,
+                  SUM(CASE WHEN lock_refresh = 'N' AND last_manual_update IS NOT NULL THEN 1 ELSE 0 END) as unlocked_edits_ct
+             FROM {schema}.test_definitions
+            WHERE test_suite = '{test_suite_name}';
+"""
+    return db.retrieve_data_list(sql)[0]
+
+
+def get_generation_sets(schema):
+    sql = f"""
+           SELECT DISTINCT generation_set
+             FROM {schema}.generation_sets
+           ORDER BY generation_set;
+"""
+    return db.retrieve_data(sql)
+
+
+def lock_edited_tests(schema, test_suite_name):
+    sql = f"""
+           UPDATE {schema}.test_definitions
+              SET lock_refresh = 'Y'
+            WHERE test_suite = '{test_suite_name}'
+              AND last_manual_update IS NOT NULL
+              AND lock_refresh = 'N';
+"""
+    db.execute_sql(sql)
+    return True
