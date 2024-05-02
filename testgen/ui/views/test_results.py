@@ -307,7 +307,7 @@ def get_test_definition(str_test_def_id):
 def get_test_definition_uncached(str_schema, str_test_def_id):
     str_sql = f"""
            SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
-                  tt.test_description as description,
+                  tt.test_description as description, tt.usage_notes,
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
                   d.custom_query,
                   d.severity, tt.default_severity,
@@ -444,7 +444,7 @@ def do_source_data_lookup_custom(selected_row):
         return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}\n\n{str_sql}", None
 
 
-def show_test_tweak_form(str_test_def_id):
+def show_test_def_detail(str_test_def_id):
     df = get_test_definition(str_test_def_id)
 
     specs = []
@@ -453,7 +453,14 @@ def show_test_tweak_form(str_test_def_id):
         row = df.iloc[0]
 
         specs.append(
-            fm.FieldSpec("Description", "description", fm.FormWidget.text_area, row["description"], read_only=True)
+            fm.FieldSpec(
+                "Usage Notes",
+                "usage_notes",
+                fm.FormWidget.text_area,
+                row["usage_notes"],
+                read_only=True,
+                text_multi_lines=7,
+            )
         )
         specs.append(
             fm.FieldSpec(
@@ -497,15 +504,15 @@ def show_test_tweak_form(str_test_def_id):
                 "last_manual_update",
                 fm.FormWidget.date_input,
                 row["last_manual_update"],
-                date.today().strftime("%Y-%m-%d"),
+                date.today().strftime("%Y-%m-%d hh:mm:ss"),
                 read_only=True,
             )
         )
         fm.render_form_by_field_specs(
-            "Edit Test Configuration",
+            None,
             "test_definitions",
             specs,
-            str_caption="Edit test configuration for future test runs.",
+            boo_display_only=True,
         )
 
 
@@ -619,14 +626,14 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             st.caption(empty_if_null(selected_row["measure_uom_description"]))
             fm.render_grid_select(dfh, show_hist_columns)
         with pg_col2:
-            ut_tab1, ut_tab2 = st.tabs(["History", "Test Configuration"])
+            ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
             with ut_tab1:
                 if dfh.empty:
                     st.write("Test history not available.")
                 else:
                     write_history_graph(dfh)
             with ut_tab2:
-                show_test_tweak_form(selected_row["test_definition_id_current"])
+                show_test_def_detail(selected_row["test_definition_id_current"])
         return selected_rows
 
 

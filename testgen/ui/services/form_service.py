@@ -79,6 +79,10 @@ class FieldSpec:
         read_only=False,
         required=False,
         int_key=0,
+        max_chars=None,
+        num_min=None,
+        num_max=None,
+        text_multi_lines=3,
     ):
         self.field_label = str_label
         self.column_name = str_column_name
@@ -88,6 +92,10 @@ class FieldSpec:
         self.display_only = read_only
         self.required = required
         self.key_order = int_key
+        self.max_chars = max_chars
+        self.num_min = num_min
+        self.num_max = num_max
+        self.text_multi_lines = text_multi_lines
 
     def set_select_choices(self, df_options, str_show_column_name, str_return_column_name):
         if self.widget in [FormWidget.selectbox, FormWidget.multiselect]:
@@ -104,7 +112,7 @@ class FieldSpec:
         match self.widget:
             case FormWidget.text_md:
                 st.markdown(f"**{self.field_label}**")
-                st.text(self.init_value)
+                st.markdown(self.init_value)
 
             case FormWidget.text_input:
                 self.value = st.text_input(
@@ -112,7 +120,7 @@ class FieldSpec:
                 )
 
             case FormWidget.text_area:
-                box_height = 15 * self.text_multi_lines
+                box_height = 26 * self.text_multi_lines
                 self.value = st.text_area(
                     label=self.field_label,
                     value=self.init_value,
@@ -305,7 +313,8 @@ def render_form_by_field_specs(
 
     with layout_column_1:
         # Render form
-        with st.container if boo_display_only else st.form(str_form_name, clear_on_submit=True):
+        layout_container = st.container() if boo_display_only else st.form(str_form_name, clear_on_submit=True)
+        with layout_container:
             if str_caption:
                 st.caption(f":green[{str_caption}]")
 

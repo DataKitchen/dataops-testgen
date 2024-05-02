@@ -1,5 +1,4 @@
 import typing
-from time import sleep
 
 import streamlit as st
 
@@ -38,7 +37,7 @@ class DataProfilingPage(Page):
             str_project = st.session_state["project"]
 
             # Setup Toolbar
-            tool_bar = tb.ToolBar(2, 3, 0, None)
+            tool_bar = tb.ToolBar(3, 2, 0, None)
 
             with tool_bar.long_slots[0]:
                 # Table Groups selection -- optional criterion
@@ -46,13 +45,6 @@ class DataProfilingPage(Page):
                 str_table_groups_id = fm.render_select(
                     "Table Group", df_tg, "table_groups_name", "id", boo_required=False, str_default=None
                 )
-
-            with tool_bar.short_slots[0]:
-                if st.button("⟳", help="Refresh the grid", key="refresh-button-profiling"):
-                    st.cache_data.clear()
-                    st.toast("Page Refreshed!")
-                    sleep(1)
-                    st.experimental_rerun()
 
             df, show_columns = get_db_profiling_runs(str_project, str_table_groups_id)
 
