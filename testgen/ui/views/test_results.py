@@ -16,9 +16,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
 from testgen.ui.views.profiling_details import show_profiling_detail
-
+from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
 
 ALWAYS_SPIN = False
 

@@ -15,14 +15,14 @@ logger = logging.getLogger("testgen.ui")
 
 class Router(Singleton):
     active: testgen.ui.navigation.page.Page | None
-    _default: testgen.ui.navigation.page.Page | None
-    _routes: dict[str, testgen.ui.navigation.page.Page]
+    _default: type[testgen.ui.navigation.page.Page] | None
+    _routes: dict[str, type[testgen.ui.navigation.page.Page]]
 
     def __init__(
         self,
         /,
-        routes: list[testgen.ui.navigation.page.Page],
-        default: testgen.ui.navigation.page.Page = None,
+        routes: list[type[testgen.ui.navigation.page.Page]],
+        default: type[testgen.ui.navigation.page.Page] | None = None,
     ) -> None:
         self._routes = {}
 
@@ -43,7 +43,7 @@ class Router(Singleton):
                 if type(can_activate) == str:
                     return self.navigate(to=can_activate, with_args={})
 
-                if not can_activate:
+                if not can_activate and self._default:
                     return self.navigate(to=self._default.path, with_args=with_args)
 
             if not isinstance(self.active, route):

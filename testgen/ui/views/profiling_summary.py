@@ -109,7 +109,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
     if dct_selected_rows:
         dct_selected_row = dct_selected_rows[0]
 
-    if button_slots[1].button(
+    if button_slots[0].button(
         "Profiling Results　→",
         help="Review profiling characteristics for each data column",
         use_container_width=True,
@@ -120,7 +120,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         session.current_page_args = {}
         st.experimental_rerun()
 
-    if button_slots[2].button(
+    if button_slots[1].button(
         "Anomalies　→",
         help="Review potential data problems identified in profiling",
         use_container_width=True,

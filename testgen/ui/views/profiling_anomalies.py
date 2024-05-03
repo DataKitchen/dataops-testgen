@@ -3,16 +3,15 @@ import typing
 import plotly.express as px
 import streamlit as st
 
+import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
-import testgen.ui.queries.profiling_queries as profiling_queries
-from testgen.ui.views.profiling_details import show_profiling_detail
-
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
+from testgen.ui.views.profiling_details import show_profiling_detail
 
 
 class ProfilingAnomaliesPage(Page):
