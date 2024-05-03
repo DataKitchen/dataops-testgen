@@ -60,7 +60,7 @@ class TestRunsPage(Page):
             dct_selected_rows = fm.render_grid_select(df, show_columns)
             dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
 
-            if tool_bar.short_slots[1].button(
+            if tool_bar.short_slots[0].button(
                 "Test Results　→",
                 help="Review test results for the selected run",
                 use_container_width=True,

@@ -1,5 +1,4 @@
 import dataclasses
-import importlib
 import importlib.metadata
 import typing
 
