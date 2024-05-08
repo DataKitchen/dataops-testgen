@@ -36,8 +36,8 @@ strTemplate05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE("{COL_NAME}",' '''',.-',
          WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
                                               ELSE 0
        END )  AS lead_space_ct,
-  SUM( CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 END ) as quoted_value_ct,
-  SUM( CASE WHEN "{COL_NAME}" LIKE '%[0-9]%' THEN 1 END ) as includes_digit_ct,
+  SUM( CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END ) as quoted_value_ct,
+  SUM( CASE WHEN "{COL_NAME}" LIKE '%[0-9]%' THEN 1 ELSE 0 END ) as includes_digit_ct,
   SUM( CASE
          WHEN "{COL_NAME}" IN ('.', '?') OR "{COL_NAME}" LIKE ' ' THEN 1
          WHEN LEN("{COL_NAME}") > 1

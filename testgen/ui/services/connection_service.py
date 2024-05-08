@@ -1,6 +1,7 @@
 import streamlit as st
 
 import testgen.ui.queries.connection_queries as connection_queries
+import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
 from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
@@ -58,6 +59,34 @@ def delete_connections(connection_ids):
     empty_cache()
     schema = st.session_state["dbschema"]
     return connection_queries.delete_connections(schema, connection_ids)
+
+
+def cascade_delete(connection_ids, dry_run=False):
+    schema = st.session_state["dbschema"]
+    can_be_deleted = True
+    table_group_names = get_table_group_names_by_connection(connection_ids)
+    connection_has_dependencies = table_group_names is not None and len(table_group_names) > 0
+    if connection_has_dependencies:
+        can_be_deleted = False
+    if not dry_run:
+        if connection_has_dependencies:
+            table_group_service.cascade_delete(table_group_names)
+        connection_queries.delete_connections(schema, connection_ids)
+    return can_be_deleted
+
+
+def are_connections_in_use(connection_ids):
+    table_group_names = get_table_group_names_by_connection(connection_ids)
+    table_groups_in_use = table_group_service.are_table_groups_in_use(table_group_names)
+    return table_groups_in_use
+
+
+def get_table_group_names_by_connection(connection_ids):
+    if not connection_ids:
+        return []
+    schema = st.session_state["dbschema"]
+    table_group_names = connection_queries.get_table_group_names_by_connection(schema, connection_ids)
+    return table_group_names.to_dict()["table_groups_name"].values()
 
 
 def init_profiling_sql(project_code, connection, table_group_schema=None):

@@ -24,6 +24,9 @@ class MssqlFlavorService(FlavorService):
             "&autocommit=True"
         )
 
+        if "synapse" in hostname:
+            strConnect += "&autocommit=True"
+
         return strConnect
 
     def get_pre_connection_queries(self, dctCredentials):  # noqa ARG002
@@ -34,7 +37,3 @@ class MssqlFlavorService(FlavorService):
 
     def get_concat_operator(self):
         return "+"
-
-    def get_connect_args(self):
-        return {}
-        # return {"pool_pre_ping": "True"}

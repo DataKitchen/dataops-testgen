@@ -25,7 +25,7 @@ from testgen.ui.views.test_runs import TestRunsPage
 from testgen.ui.views.test_suites import TestSuitesPage
 from testgen.utils import plugins, singleton
 
-BUILTIN_PAGES: list[Page] = [
+BUILTIN_PAGES: list[type[Page]] = [
     LoginPage,
     OverviewPage,
     TestDefinitionsPage,
@@ -82,7 +82,12 @@ def run(log_level: int = logging.INFO) -> Application:
     return Application(
         router=Router(routes=pages, default=NotFoundPage),
         menu=Menu(
-            items=[dataclasses.replace(page.menu_item, page=page.path) for page in pages if page.menu_item],
+            items=list(
+                {
+                    page.path: dataclasses.replace(page.menu_item, page=page.path)
+                    for page in pages if page.menu_item
+                }.values()
+            ),
             version=Version(
                 current=settings.VERSION,
                 latest="...",
@@ -93,7 +98,7 @@ def run(log_level: int = logging.INFO) -> Application:
     )
 
 
-def _get_schema_rev():
+def _get_schema_rev() -> str:
     revision = session.sb_schema_rev
     if not revision:
         revision = session.sb_schema_rev = get_schema_revision()
