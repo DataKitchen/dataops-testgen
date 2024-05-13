@@ -6,7 +6,7 @@ from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, Retr
 LOG = logging.getLogger("testgen.cli")
 
 
-def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
+def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -37,7 +37,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
     # Set static parms
     clsTests.project_code = dctParms["project_code"]
     clsTests.test_suite = strTestSuite
-    clsTests.generation_set = strGenerationSet
+    clsTests.generation_set = strGenerationSet if strGenerationSet is not None else ""
     clsTests.connection_id = str(dctParms["connection_id"])
     clsTests.table_groups_id = strTableGroupsID
     clsTests.sql_flavor = dctParms["sql_flavor"]
