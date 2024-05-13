@@ -1,12 +1,4 @@
--- First delete old tests that are not locked
-DELETE FROM test_definitions
-WHERE project_code = '{PROJECT_CODE}'
-  AND table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-  AND test_suite = '{TEST_SUITE}'
-  AND test_type = '{TEST_TYPE}'
-  AND COALESCE(lock_refresh, 'N') <> 'Y';
-
--- Then insert new tests where a locked test is not already present
+-- Insert new tests where a locked test is not already present
 INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
                               schema_name, table_name, column_name,
                               skip_errors, test_active, last_auto_gen_date, profiling_as_of_date,

@@ -31,7 +31,7 @@ SELECT CASE
              WHEN TRY_TO_DATE(strparm, 'YYYYMMDDHHMISS') IS NOT NULL THEN 1
 
              -- YYYYMMDD
-             WHEN TRY_TO_DATE(strparm, 'YYYYMMDD') IS NOT NULL THEN 1
+             WHEN LENGTH(strparm) = 8 AND TRY_TO_DATE(strparm, 'YYYYMMDD') IS NOT NULL THEN 1
 
              -- YYYY-MON-DD HH:MM:SS SSSSSS
              --WHEN TRY_TO_DATE(strparm, 'YYYY-MON-DD HH:MI:SS SSSSSS') IS NOT NULL THEN 1

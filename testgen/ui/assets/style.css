@@ -96,6 +96,10 @@ div[data-modal-container="true"] > div:first-child > div:first-child {
     max-height: 90vh;
     overflow-y: auto !important;
 }
+
+button[title="Show password text"] {
+    display: none;
+}
 /* ... */
 
 /* Dark mode */

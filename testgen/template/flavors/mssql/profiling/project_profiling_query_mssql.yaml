@@ -70,9 +70,7 @@ strTemplate05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE("{COL_NAME}",' '''',.-',
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'PHONE_USA'
     WHEN CAST(SUM( CASE WHEN "{COL_NAME}" LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%'
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
-    WHEN CAST(SUM( CASE WHEN "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9]'
-                          OR "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
-                          OR "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+    WHEN CAST(SUM( CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'ZIP_USA'
     WHEN CAST(SUM( CASE WHEN "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS NOT LIKE ' %'
                           AND "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '[a-z0-9 _-]%'

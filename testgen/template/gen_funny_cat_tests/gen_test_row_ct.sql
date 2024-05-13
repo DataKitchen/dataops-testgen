@@ -1,12 +1,4 @@
--- First delete old tests that are not locked
-DELETE FROM test_definitions
- WHERE project_code = '{PROJECT_CODE}'
-   AND table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-   AND test_suite = '{TEST_SUITE}'
-   AND COALESCE(lock_refresh, 'N') <> 'Y'
-   AND test_type='Row_Ct';
-
--- Then insert new tests where a locked test is not already present
+-- Insert new tests where a locked test is not already present
 INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
                               schema_name, table_name,
                               skip_errors, threshold_value,
@@ -40,8 +32,13 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                          table_name,
                          MAX(record_ct) as record_ct
                     FROM curprof c
+                  LEFT JOIN generation_sets s
+                     ON ('Row_Ct' = s.test_type
+                    AND  '{GENERATION_SET}' = s.generation_set)
                    WHERE schema_name = '{DATA_SCHEMA}'
                      AND functional_table_type LIKE '%cumulative%'
+                     AND (s.generation_set IS NOT NULL
+                      OR  '{GENERATION_SET}' = '')
                   GROUP BY project_code, table_groups_id, profile_run_id,
                            test_type, test_suite, schema_name, table_name )
 SELECT n.project_code, n.table_groups_id, n.profile_run_id,

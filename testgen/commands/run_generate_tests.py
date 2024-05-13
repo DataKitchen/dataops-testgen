@@ -6,7 +6,7 @@ from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, Retr
 LOG = logging.getLogger("testgen.cli")
 
 
-def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
+def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -37,7 +37,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
     # Set static parms
     clsTests.project_code = dctParms["project_code"]
     clsTests.test_suite = strTestSuite
-    clsTests.generation_set = strGenerationSet
+    clsTests.generation_set = strGenerationSet if strGenerationSet is not None else ""
     clsTests.connection_id = str(dctParms["connection_id"])
     clsTests.table_groups_id = strTableGroupsID
     clsTests.sql_flavor = dctParms["sql_flavor"]
@@ -56,8 +56,11 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
 
     LOG.info("CurrentStep: Compiling Test Gen Queries")
 
-    lstCustomTemplateQueries = clsTests.GetTestDerivationQueriesAsList(booClean)
+    lstFunnyTemplateQueries = clsTests.GetTestDerivationQueriesAsList(booClean)
     lstGenericTemplateQueries = []
+
+    # Delete old Tests
+    strDeleteQuery = clsTests.GetDeleteOldTestsQuery(booClean)
 
     # Retrieve test_types as parms from list of dictionaries:  test_type, selection_criteria, default_parm_columns,
     # default_parm_values
@@ -87,10 +90,10 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=""):
         if strQuery:
             lstGenericTemplateQueries.append(strQuery)
 
-    LOG.info("Test Gen Queries were compiled")
+    LOG.info("TestGen CAT Queries were compiled")
 
-    # Make sure generic test gen runs before the template gen
-    lstQueries = lstGenericTemplateQueries + lstCustomTemplateQueries
+    # Make sure delete, then generic templates run before the funny templates
+    lstQueries = [strDeleteQuery, *lstGenericTemplateQueries, *lstFunnyTemplateQueries]
 
     if lstQueries:
         LOG.info("Running Test Generation Template Queries")

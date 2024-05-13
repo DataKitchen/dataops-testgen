@@ -861,26 +861,31 @@ def run_test_type_lookup_query(str_test_type=None):
     return dq.run_test_type_lookup_query(str_schema, str_test_type)
 
 
+@st.cache_data(show_spinner=False)
 def run_connections_lookup_query(str_project_code):
     str_schema = st.session_state["dbschema"]
     return dq.run_connections_lookup_query(str_schema, str_project_code)
 
 
+@st.cache_data(show_spinner=False)
 def run_table_groups_lookup_query(str_project_code, str_connection_id=None, table_group_id=None):
     str_schema = st.session_state["dbschema"]
     return dq.run_table_groups_lookup_query(str_schema, str_project_code, str_connection_id, table_group_id)
 
 
+@st.cache_data(show_spinner=False)
 def run_table_lookup_query(str_table_groups_id):
     str_schema = st.session_state["dbschema"]
     return dq.run_table_lookup_query(str_schema, str_table_groups_id)
 
 
+@st.cache_data(show_spinner=False)
 def run_column_lookup_query(str_table_groups_id, str_table_name):
     str_schema = st.session_state["dbschema"]
     return dq.run_column_lookup_query(str_schema, str_table_groups_id, str_table_name)
 
 
+@st.cache_data(show_spinner=False)
 def run_test_suite_lookup_query(str_table_groups_id, test_suite_name=None):
     str_schema = st.session_state["dbschema"]
     return dq.run_test_suite_lookup_by_tgroup_query(str_schema, str_table_groups_id, test_suite_name)

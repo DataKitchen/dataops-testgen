@@ -84,3 +84,9 @@ class CDeriveTestsSQL:
         if booClean:
             strQuery = CleanSQL(strQuery)
         return strQuery
+
+    def GetDeleteOldTestsQuery(self, booClean: bool):
+        strQuery = self.ReplaceParms(read_template_sql_file("gen_delete_old_tests.sql", "generation"))
+        if booClean:
+            strQuery = CleanSQL(strQuery)
+        return strQuery
