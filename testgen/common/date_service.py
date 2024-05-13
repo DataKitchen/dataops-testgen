@@ -61,3 +61,8 @@ def get_timezoned_timestamp(streamlit_session, value):
         df["value"] = df["value"].dt.tz_localize("UTC").dt.tz_convert(timezone).dt.strftime("%Y-%m-%d %H:%M:%S")
         ret = df.iloc[0, 0]
     return ret
+
+
+def get_timezoned_now(streamlit_session):
+    value = datetime.utcnow()
+    return get_timezoned_timestamp(streamlit_session, value)

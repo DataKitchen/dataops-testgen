@@ -16,6 +16,7 @@ from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox
 
+import testgen.common.date_service as date_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
 from testgen.ui.components import widgets as testgen
@@ -243,7 +244,7 @@ def _generate_excel_export(
         worksheet.write("A2", str_title, title_format)
 
         if str_caption:
-            str_caption = str_caption.replace("{TIMESTAMP}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            str_caption = str_caption.replace("{TIMESTAMP}", date_service.get_timezoned_now(st.session_state))
             caption_format = workbook.add_format({"italic": True, "size": 9, "valign": "top"})
             worksheet.write("A3", str_caption, caption_format)
 
