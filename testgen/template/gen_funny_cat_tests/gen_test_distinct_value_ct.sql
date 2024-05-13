@@ -1,6 +1,5 @@
--- FIRST VERSION AND DELETE PART HANDLED IN SEPARATE SQL FILE gen_standard_tests.sql using generic parameters
-
--- Second version:  constants with changing values (1 distinct value)
+-- FIRST TYPE OF CONSTANT IS HANDLED IN SEPARATE SQL FILE gen_standard_tests.sql using generic parameters
+-- Second type:  constants with changing values (1 distinct value)
 INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
                               schema_name, table_name, column_name, skip_errors,
                               last_auto_gen_date, test_active,
@@ -77,7 +76,12 @@ newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
                INNER JOIN rightcols r
                   ON (c.schema_name = r.schema_name
                      AND c.table_name = r.table_name
-                     AND c.column_name = r.column_name) )
+                     AND c.column_name = r.column_name)
+               LEFT JOIN generation_sets s
+                  ON ('Distinct_Value_Ct' = s.test_type
+                 AND  '{GENERATION_SET}' = s.generation_set)
+               WHERE (s.generation_set IS NOT NULL
+                  OR  '{GENERATION_SET}' = '')  )
 SELECT n.project_code, n.table_groups_id, n.profile_run_id,
        n.test_type, n.test_suite,
        n.schema_name, n.table_name, n.column_name, 0 as skip_errors,

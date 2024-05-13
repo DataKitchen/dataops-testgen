@@ -176,6 +176,7 @@ class FieldSpec:
                 raise ValueError(f"Widget {self.widget} is not supported.")
 
 
+@st.cache_data(show_spinner=False)
 def _generate_excel_export(
     df_data, lst_export_columns, str_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
 ):

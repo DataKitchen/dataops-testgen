@@ -74,7 +74,8 @@ LEFT JOIN new_chars n
   ON (d.table_groups_id = n.table_groups_id
  AND  d.schema_name = n.schema_name
  AND  d.table_name = n.table_name)
- WHERE n.table_name IS NULL;
+ WHERE data_table_chars.table_id = d.table_id
+   AND n.table_name IS NULL;
 
 -- ==============================================================================
 -- |   Column Characteristics
@@ -100,7 +101,8 @@ INNER JOIN data_column_chars d
   AND  n.schema_name = d.schema_name
   AND  n.table_name = d.table_name
   AND  n.column_name = d.column_name)
- WHERE data_column_chars.table_id = d.table_id;
+ WHERE data_column_chars.table_id = d.table_id
+   AND data_column_chars.column_name = d.column_name;
 
 -- Add new records
 WITH new_chars
@@ -149,4 +151,6 @@ LEFT JOIN new_chars n
  AND  d.schema_name = n.schema_name
  AND  d.table_name = n.table_name
  AND  d.column_name = n.column_name)
- WHERE n.column_name IS NULL;
+ WHERE data_column_chars.table_id = d.table_id
+   AND data_column_chars.column_name = d.column_name
+   AND n.column_name IS NULL;

@@ -1,11 +1,3 @@
--- First delete old tests that are not locked
-DELETE FROM test_definitions
-WHERE project_code = '{PROJECT_CODE}'
-  AND table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-  AND test_suite =  '{TEST_SUITE}'
-  AND test_type = 'Constant'
-  AND COALESCE(lock_refresh, 'N') <> 'Y';
-
 -- Then insert new tests where a locked test is not already present
 INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id,
                               test_type, test_suite,
@@ -91,7 +83,12 @@ newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
                INNER JOIN rightcols r
                   ON (c.schema_name = r.schema_name
                      AND c.table_name = r.table_name
-                     AND c.column_name = r.column_name) )
+                     AND c.column_name = r.column_name)
+               LEFT JOIN generation_sets s
+                  ON ('Constant' = s.test_type
+                 AND  '{GENERATION_SET}' = s.generation_set)
+               WHERE (s.generation_set IS NOT NULL
+                  OR  '{GENERATION_SET}' = '')  )
 SELECT n.project_code, '{TABLE_GROUPS_ID}'::UUID as table_groups_id, n.profile_run_id,
        n.test_type, n.test_suite, n.schema_name, n.table_name, n.column_name,
        0 as skip_errors, '{RUN_DATE}'::TIMESTAMP as auto_gen_date,

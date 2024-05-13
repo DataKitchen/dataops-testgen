@@ -56,8 +56,11 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
 
     LOG.info("CurrentStep: Compiling Test Gen Queries")
 
-    lstCustomTemplateQueries = clsTests.GetTestDerivationQueriesAsList(booClean)
+    lstFunnyTemplateQueries = clsTests.GetTestDerivationQueriesAsList(booClean)
     lstGenericTemplateQueries = []
+
+    # Delete old Tests
+    strDeleteQuery = clsTests.GetDeleteOldTestsQuery(booClean)
 
     # Retrieve test_types as parms from list of dictionaries:  test_type, selection_criteria, default_parm_columns,
     # default_parm_values
@@ -87,10 +90,10 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
         if strQuery:
             lstGenericTemplateQueries.append(strQuery)
 
-    LOG.info("Test Gen Queries were compiled")
+    LOG.info("TestGen CAT Queries were compiled")
 
-    # Make sure generic test gen runs before the template gen
-    lstQueries = lstGenericTemplateQueries + lstCustomTemplateQueries
+    # Make sure delete, then generic templates run before the funny templates
+    lstQueries = [strDeleteQuery, *lstGenericTemplateQueries, *lstFunnyTemplateQueries]
 
     if lstQueries:
         LOG.info("Running Test Generation Template Queries")
