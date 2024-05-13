@@ -246,7 +246,7 @@ def show_run_test_generation(modal, selected):
         status_container = st.empty()
 
         test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
-            selected_test_suite["test_suite"]
+            selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
         )
         if test_ct:
             warning_msg = ""
@@ -259,7 +259,7 @@ def show_run_test_generation(modal, selected):
                     warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
             elif unlocked_test_ct > 0:
                 warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
-            warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests that can be auto-generated with new tests based on the latest profiling.{counts_msg}"
+            warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.{counts_msg}"
             with warning_container:
                 st.warning(warning_msg)
                 if unlocked_edits_ct > 0:

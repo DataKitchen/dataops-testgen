@@ -7,4 +7,5 @@ DELETE FROM test_definitions
      AND  'CAT' = t.run_type)
    WHERE d.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
      AND d.test_suite = '{TEST_SUITE}'
+     AND t.selection_criteria IS NOT NULL
      AND COALESCE(d.lock_refresh, 'N') <> 'Y' );

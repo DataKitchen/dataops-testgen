@@ -108,7 +108,7 @@ def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFra
     return db.retrieve_data(sql)
 
 
-def get_test_suite_refresh_check(schema, test_suite_name):
+def get_test_suite_refresh_check(schema, table_groups_id, test_suite_name):
     sql = f"""
            SELECT COUNT(*) as test_ct,
                   SUM(CASE WHEN COALESCE(d.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) as unlocked_test_ct,
@@ -116,8 +116,10 @@ def get_test_suite_refresh_check(schema, test_suite_name):
              FROM {schema}.test_definitions d
            INNER JOIN {schema}.test_types t
               ON (d.test_type = t.test_type)
-            WHERE d.test_suite = '{test_suite_name}'
-              AND t.run_type = 'CAT';
+            WHERE d.table_groups_id = '{table_groups_id}'::UUID
+              AND d.test_suite = '{test_suite_name}'
+              AND t.run_type = 'CAT'
+              AND t.selection_criteria IS NOT NULL;
 """
     return db.retrieve_data_list(sql)[0]
 
