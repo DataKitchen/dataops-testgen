@@ -45,38 +45,40 @@ def run_parameter_validation_queries(
     lstTestColumns = RetrieveDBResultsToDictList("DKTG", strColumnList)
 
     if len(lstTestColumns) == 0:
-        LOG.warning("Test Column list is empty")
-    # Derive test schema list -- make CSV string from list of columns
-    #  to be used as criteria for retrieving data dictionary
-    setSchemas = {s["columns"].split(".")[0] for s in lstTestColumns}
-    strSchemas = ", ".join([f"'{value}'" for value in setSchemas])
-    LOG.debug("Test column list successfully retrieved")
+        LOG.warning(f"No test columns are present to validate in Test Suite {strTestSuite}")
+        missing_columns = []
+    else:
+        # Derive test schema list -- make CSV string from list of columns
+        #  to be used as criteria for retrieving data dictionary
+        setSchemas = {s["columns"].split(".")[0] for s in lstTestColumns}
+        strSchemas = ", ".join([f"'{value}'" for value in setSchemas])
+        LOG.debug("Test column list successfully retrieved")
 
-    # Retrieve Project Column list
-    LOG.info("CurrentStep: Retrieve Test Columns for Validation")
-    clsExecute.test_schemas = strSchemas
-    strProjectColumnList = clsExecute.GetProjectTestValidationColumns()
-    if "where table_schema in ()" in strProjectColumnList:
-        raise ValueError("No schema specified in Validation Columns check")
-    lstProjectTestColumns = RetrieveDBResultsToDictList("PROJECT", strProjectColumnList)
+        # Retrieve Project Column list
+        LOG.info("CurrentStep: Retrieve Test Columns for Validation")
+        clsExecute.test_schemas = strSchemas
+        strProjectColumnList = clsExecute.GetProjectTestValidationColumns()
+        if "where table_schema in ()" in strProjectColumnList:
+            raise ValueError("No schema specified in Validation Columns check")
+        lstProjectTestColumns = RetrieveDBResultsToDictList("PROJECT", strProjectColumnList)
 
-    if len(lstProjectTestColumns) == 0:
-        LOG.info("Project Test Column list is empty")
+        if len(lstProjectTestColumns) == 0:
+            LOG.info("Project Test Column list is empty")
 
-    LOG.debug("Project column list successfully received")
-    LOG.info("CurrentStep: Compare column sets")
-    # load results into sets
-    result_set1 = {item["columns"].lower() for item in set(lstTestColumns)}
-    result_set2 = {item["columns"].lower() for item in set(lstProjectTestColumns)}
+        LOG.debug("Project column list successfully received")
+        LOG.info("CurrentStep: Compare column sets")
+        # load results into sets
+        result_set1 = {item["columns"].lower() for item in set(lstTestColumns)}
+        result_set2 = {item["columns"].lower() for item in set(lstProjectTestColumns)}
 
-    # Check if all columns exist in the table
-    missing_columns = result_set1.difference(result_set2)
+        # Check if all columns exist in the table
+        missing_columns = result_set1.difference(result_set2)
 
-    if len(missing_columns) == 0:
-        LOG.info("No missing column in Project Column list.")
+        if len(missing_columns) == 0:
+            LOG.info("No missing column in Project Column list.")
 
-    strMissingColumns = ", ".join(f"'{x}'" for x in missing_columns)
-    srtNoQuoteMissingCols = strMissingColumns.replace("'", "")
+        strMissingColumns = ", ".join(f"'{x}'" for x in missing_columns)
+        srtNoQuoteMissingCols = strMissingColumns.replace("'", "")
 
     if missing_columns:
         LOG.debug("Test Columns are missing in target database: %s", srtNoQuoteMissingCols)
@@ -127,4 +129,4 @@ def run_parameter_validation_queries(
 
         LOG.info("Validation Complete: tests referencing missing columns have been disabled.")
     else:
-        LOG.info("Validation Successful: All columns exist in target database.")
+        LOG.info("Validation Successful: No columns missing from target database.")

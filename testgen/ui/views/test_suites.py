@@ -190,7 +190,7 @@ def show_record_detail(
         )
 
     with right_column:
-        st.write("<br/><br/>", unsafe_allow_html=True)
+        # st.write("<br/><br/>", unsafe_allow_html=True)
         _, button_column = st.columns([0.2, 0.8])
         with button_column:
             run_now_commands_tab, cli_commands_tab = st.tabs(["Test Suite Actions", "View CLI Commands"])
@@ -253,19 +253,13 @@ def show_run_test_generation(modal, selected):
             counts_msg = f"\n\nTests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
             if unlocked_edits_ct > 0:
                 if unlocked_edits_ct > 1:
-                    warning_msg = (
-                        "Manual changes have been made to tests in this Test Suite that have not been locked. "
-                    )
+
+                    warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
                 else:
-                    warning_msg = (
-                        "A manual change has been made to a test in this Test Suite that has not been locked. "
-                    )
+                    warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
             elif unlocked_test_ct > 0:
                 warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
-            warning_msg = (
-                f"{warning_msg}Generating tests now will overwrite all unlocked tests currently in the "
-                f"test suite with new tests based on the latest profiling.{counts_msg}"
-            )
+            warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests that can be auto-generated with new tests based on the latest profiling.{counts_msg}"
             with warning_container:
                 st.warning(warning_msg)
                 if unlocked_edits_ct > 0:
