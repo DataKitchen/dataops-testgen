@@ -16,6 +16,7 @@ from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox
 
+import testgen.common.date_service as date_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
 from testgen.ui.components import widgets as testgen
@@ -79,6 +80,10 @@ class FieldSpec:
         read_only=False,
         required=False,
         int_key=0,
+        max_chars=None,
+        num_min=None,
+        num_max=None,
+        text_multi_lines=3,
     ):
         self.field_label = str_label
         self.column_name = str_column_name
@@ -88,6 +93,10 @@ class FieldSpec:
         self.display_only = read_only
         self.required = required
         self.key_order = int_key
+        self.max_chars = max_chars
+        self.num_min = num_min
+        self.num_max = num_max
+        self.text_multi_lines = text_multi_lines
 
     def set_select_choices(self, df_options, str_show_column_name, str_return_column_name):
         if self.widget in [FormWidget.selectbox, FormWidget.multiselect]:
@@ -104,7 +113,7 @@ class FieldSpec:
         match self.widget:
             case FormWidget.text_md:
                 st.markdown(f"**{self.field_label}**")
-                st.text(self.init_value)
+                st.markdown(self.init_value)
 
             case FormWidget.text_input:
                 self.value = st.text_input(
@@ -112,7 +121,7 @@ class FieldSpec:
                 )
 
             case FormWidget.text_area:
-                box_height = 15 * self.text_multi_lines
+                box_height = 26 * self.text_multi_lines
                 self.value = st.text_area(
                     label=self.field_label,
                     value=self.init_value,
@@ -167,7 +176,10 @@ class FieldSpec:
                 raise ValueError(f"Widget {self.widget} is not supported.")
 
 
-def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_columns=None, lst_column_headers=None):
+@st.cache_data(show_spinner=False)
+def _generate_excel_export(
+    df_data, lst_export_columns, str_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
+):
     if lst_export_columns:
         # Filter the DataFrame to keep only the columns in lst_export_columns
         df_to_export = df_data[lst_export_columns]
@@ -179,6 +191,7 @@ def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_colu
 
     if not str_title:
         str_title = "TestGen Data Export"
+    start_row = 4 if str_caption else 3
 
     # Create a BytesIO buffer to hold the Excel file
     output = BytesIO()
@@ -186,7 +199,7 @@ def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_colu
     # Create a Pandas Excel writer using XlsxWriter as the engine
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         # Write the DataFrame to an Excel file, starting from the fourth row
-        df_to_export.to_excel(writer, index=False, sheet_name="Sheet1", startrow=3)
+        df_to_export.to_excel(writer, index=False, sheet_name="Sheet1", startrow=start_row)
 
         # Access the XlsxWriter workbook and worksheet objects from the dataframe
         workbook = writer.book
@@ -199,7 +212,11 @@ def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_colu
         else:
             column_settings = [{"header": column} for column in df_to_export.columns]
         worksheet.add_table(
-            3, 0, max_row + 3, max_col - 1, {"columns": column_settings, "style": "Table Style Medium 16"}
+            start_row,
+            0,
+            max_row + start_row,
+            max_col - 1,
+            {"columns": column_settings, "style": "Table Style Medium 16"},
         )
 
         # Define the format for wrapped text
@@ -227,6 +244,11 @@ def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_colu
         # Write the title in cell A2 with formatting
         worksheet.write("A2", str_title, title_format)
 
+        if str_caption:
+            str_caption = str_caption.replace("{TIMESTAMP}", date_service.get_timezoned_now(st.session_state))
+            caption_format = workbook.add_format({"italic": True, "size": 9, "valign": "top"})
+            worksheet.write("A3", str_caption, caption_format)
+
     # Rewind the buffer
     output.seek(0)
 
@@ -234,16 +256,27 @@ def _generate_excel_export(df_data, lst_export_columns, str_title, lst_wrap_colu
     return output.getvalue()
 
 
-def render_excel_export(df, lst_export_columns, str_export_title, lst_wrap_columns=None, lst_column_headers=None):
+def render_excel_export(
+    df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
+):
     # Set up the download button
     st.download_button(
         label=":blue[**⤓**]",
         use_container_width=True,
         help="Download to Excel",
-        data=_generate_excel_export(df, lst_export_columns, str_export_title, lst_wrap_columns, lst_column_headers),
+        data=_generate_excel_export(
+            df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers
+        ),
         file_name=f"{str_export_title}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+def render_refresh_button(button_container):
+    with button_container:
+        do_refresh = st.button(":blue[**⟳**]", help="Refresh page data", use_container_width=False)
+        if do_refresh:
+            reset_post_updates("Refreshing page", True, True)
 
 
 def show_prompt(str_prompt=None):
@@ -282,7 +315,8 @@ def render_form_by_field_specs(
 
     with layout_column_1:
         # Render form
-        with st.container if boo_display_only else st.form(str_form_name, clear_on_submit=True):
+        layout_container = st.container() if boo_display_only else st.form(str_form_name, clear_on_submit=True)
+        with layout_container:
             if str_caption:
                 st.caption(f":green[{str_caption}]")
 
@@ -345,7 +379,7 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
             st.toast(str_message)
         else:
             st.success(str_message)
-        sleep(1)
+        sleep(0.5)
 
     if clear_cache:
         if lst_cached_functions:
@@ -356,9 +390,11 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
     st.experimental_rerun()
 
 
-def render_page_header(str_page_title, str_help_link=None, str_description=None, lst_breadcrumbs=None):
+def render_page_header(
+    str_page_title, str_help_link=None, str_description=None, lst_breadcrumbs=None, boo_show_refresh=False
+):
     hcol1, hcol2 = st.columns([9, 1])
-    hcol1.subheader(str_page_title)
+    hcol1.subheader(str_page_title, anchor=False)
     if str_help_link:
         with hcol2:
             st.caption(" ")
@@ -377,7 +413,11 @@ def render_page_header(str_page_title, str_help_link=None, str_description=None,
     st.session_state["last_page"] = str_page_title
 
     if lst_breadcrumbs:
-        bcol1, bcol2 = st.columns([96, 4])
+        if boo_show_refresh:
+            bcol1, bcol2, bcol3, _ = st.columns([875, 60, 60, 5])
+            render_refresh_button(bcol3)
+        else:
+            bcol1, bcol2, _ = st.columns([95, 4, 1])
         with bcol1:
             testgen.breadcrumbs(breadcrumbs=lst_breadcrumbs)
         return bcol2

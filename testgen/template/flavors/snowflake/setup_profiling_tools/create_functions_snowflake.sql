@@ -5,9 +5,7 @@ IMMUTABLE
 AS
 $$
 SELECT CASE
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'^[0-9]+(\.[0-9]+)?$') > 0 THEN 1
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'\\$[0-9]+(\.[0-9]+)?$') > 0 THEN 1
-            WHEN REGEXP_COUNT(strparm::VARCHAR,'^[0-9]+(\.[0-9]+)?\\$') > 0 THEN 1
+            WHEN REGEXP_LIKE(strparm::VARCHAR, '^\\s*[+-]?\\$?\\s*[0-9]+(,[0-9]{3})*(\\.[0-9]*)?[\\%]?\\s*$') THEN 1
             ELSE 0
         END
 $$;
@@ -33,7 +31,7 @@ SELECT CASE
              WHEN TRY_TO_DATE(strparm, 'YYYYMMDDHHMISS') IS NOT NULL THEN 1
 
              -- YYYYMMDD
-             WHEN TRY_TO_DATE(strparm, 'YYYYMMDD') IS NOT NULL THEN 1
+             WHEN LENGTH(strparm) = 8 AND TRY_TO_DATE(strparm, 'YYYYMMDD') IS NOT NULL THEN 1
 
              -- YYYY-MON-DD HH:MM:SS SSSSSS
              --WHEN TRY_TO_DATE(strparm, 'YYYY-MON-DD HH:MI:SS SSSSSS') IS NOT NULL THEN 1

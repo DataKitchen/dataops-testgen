@@ -36,8 +36,8 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
          WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
                                               ELSE 0
        END )  AS lead_space_ct,
-  SUM( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 END ) as quoted_value_ct,
-  SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 END ) as includes_digit_ct,
+  SUM( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 ELSE 0 END ) as quoted_value_ct,
+  SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 ELSE 0 END ) as includes_digit_ct,
   SUM( CASE
          WHEN "{COL_NAME}" IN ('.', '?', ' ') THEN 1
          WHEN LOWER("{COL_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '9{2,}'
@@ -64,7 +64,7 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'PHONE_USA'
     WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
-    WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^([0-9]{5}|[0-9]{5}-[0-9]{4}|[0-9]{9})$')
+    WHEN CAST(SUM( CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'ZIP_USA'
     WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^[\\w\\s\-]+\\.(txt|csv|tsv|dat|doc|pdf|xlsx)$')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'FILE_NAME'

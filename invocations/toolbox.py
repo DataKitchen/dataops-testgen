@@ -1,9 +1,9 @@
 from shutil import which
 
-from invoke import Exit
+from invoke.exceptions import Exit
 
 
-def ensure_tools(*tools):
+def ensure_tools(*tools: str) -> None:
     """
     Check the PATH to see if the required tools exist. e.g.,
 

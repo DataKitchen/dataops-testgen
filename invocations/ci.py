@@ -2,13 +2,14 @@
 Release and CI/CD tasks belong here.
 """
 
-__all__ = ["ci_dotenv", "check_valid_release_type"]
+__all__ = ["check_valid_release_type", "ci_dotenv"]
 
 
 import os
 
 import semver
-from invoke import Exit, task
+from invoke.exceptions import Exit
+from invoke.tasks import task
 
 
 @task

@@ -48,4 +48,4 @@ def register_callback(element_key, callback, *callback_args, **callback_kwargs):
     try:
         session_state._components_callbacks[element_key] = (callback, callback_args, callback_kwargs)
     except:
-        logger.debug("unexpected error registering component callback", exc_info=True, stack_info=True)
+        logger.debug("unexpected error registering component callback", exc_info=False, stack_info=False)

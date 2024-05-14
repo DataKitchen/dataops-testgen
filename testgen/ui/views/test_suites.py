@@ -102,7 +102,7 @@ class TestSuitesPage(Page):
             delete_modal.open()
 
         if tool_bar.short_slots[4].button(
-            "Tests　→",
+            ":green[Tests →]",
             help="View and edit Test Definitions for selected Test Suite",
             disabled=disable_buttons,
             use_container_width=True,
@@ -190,40 +190,46 @@ def show_record_detail(
         )
 
     with right_column:
-        st.write("<br/><br/>", unsafe_allow_html=True)
-        _, button_column = st.columns([0.3, 0.7])
+        # st.write("<br/><br/>", unsafe_allow_html=True)
+        _, button_column = st.columns([0.2, 0.8])
         with button_column:
-            if st.button(
-                "Show Test Generation Command for CLI",
-                help="Shows the run-test-generation CLI command",
-                use_container_width=True,
-            ):
-                show_run_test_generation_modal.open()
+            run_now_commands_tab, cli_commands_tab = st.tabs(["Test Suite Actions", "View CLI Commands"])
 
-            if st.button("Run Test Generation Now", help="Run Test Generation", use_container_width=True):
-                run_test_generation_modal.open()
+            with cli_commands_tab:
+                if st.button(
+                    "Test Generation Command",
+                    help="Shows the run-test-generation CLI command",
+                    use_container_width=True,
+                ):
+                    show_run_test_generation_modal.open()
 
-            if st.button(
-                "Show Test Execution Command for CLI", help="Shows the run-tests CLI command", use_container_width=True
-            ):
-                show_test_run_command_modal.open()
+                if st.button(
+                    "Test Execution Command",
+                    help="Shows the run-tests CLI command",
+                    use_container_width=True,
+                ):
+                    show_test_run_command_modal.open()
 
-            if st.button("Run Test Execution Now", help="Run the tests", use_container_width=True):
-                run_tests_command_modal.open()
+                if st.button(
+                    "Observability Export Command",
+                    help="Shows the export-observability CLI command",
+                    use_container_width=True,
+                ):
+                    show_export_command_modal.open()
 
-            if st.button(
-                "Show Observability Export Command for CLI",
-                help="Shows the export-observability CLI command",
-                use_container_width=True,
-            ):
-                show_export_command_modal.open()
+            with run_now_commands_tab:
+                if st.button("Run Test Generation", help="Run Test Generation", use_container_width=True):
+                    run_test_generation_modal.open()
 
-            if st.button(
-                "Run Observability Export Now",
-                help="Exports test results to Observability for the current Test Suite",
-                use_container_width=True,
-            ):
-                run_export_command_modal.open()
+                if st.button("Run Test Execution", help="Run the tests", use_container_width=True):
+                    run_tests_command_modal.open()
+
+                if st.button(
+                    "Run Observability Export",
+                    help="Exports test results to Observability for the current Test Suite",
+                    use_container_width=True,
+                ):
+                    run_export_command_modal.open()
 
 
 def show_run_test_generation(modal, selected):
@@ -234,8 +240,44 @@ def show_run_test_generation(modal, selected):
         with container:
             st.markdown(":green[**Execute Test Generation for the Test Suite**]")
 
+        warning_container = st.container()
+        options_container = st.container()
         button_container = st.empty()
         status_container = st.empty()
+
+        test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
+            selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
+        )
+        if test_ct:
+            warning_msg = ""
+            counts_msg = f"\n\nTests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
+            if unlocked_edits_ct > 0:
+                if unlocked_edits_ct > 1:
+
+                    warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
+                else:
+                    warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
+            elif unlocked_test_ct > 0:
+                warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
+            warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.{counts_msg}"
+            with warning_container:
+                st.warning(warning_msg)
+                if unlocked_edits_ct > 0:
+                    lock_edits_button = st.button("Lock Edited Tests")
+                    if lock_edits_button:
+                        edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
+                        if edits_locked:
+                            st.info("Edited tests have been successfully locked.")
+
+        with options_container:
+            lst_generation_sets = test_suite_service.get_generation_set_choices()
+            if lst_generation_sets:
+                lst_generation_sets.insert(0, "(All Test Types)")
+                str_generation_set = st.selectbox("Generation Set", lst_generation_sets)
+                if str_generation_set == "(All Test Types)":
+                    str_generation_set = ""
+            else:
+                str_generation_set = ""
 
         with button_container:
             start_process_button_message = "Start"
@@ -249,7 +291,7 @@ def show_run_test_generation(modal, selected):
             status_container.info("Executing Test Generation...")
 
             try:
-                run_test_gen_queries(table_group_id, test_suite_key)
+                run_test_gen_queries(table_group_id, test_suite_key, str_generation_set)
             except Exception as e:
                 status_container.empty()
                 status_container.error(f"Process had errors: {e!s}.")
@@ -262,10 +304,9 @@ def show_delete_modal(modal, selected=None):
     selected_test_suite = selected[0]
 
     with modal.container():
-        test_suite_id = selected_test_suite["id"]
         test_suite_name = selected_test_suite["test_suite"]
 
-        can_be_deleted = test_suite_service.delete([test_suite_id], [test_suite_name], dry_run=True)
+        can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
 
         fm.render_html_list(
             selected_test_suite,
@@ -278,20 +319,30 @@ def show_delete_modal(modal, selected=None):
             int_data_width=700,
         )
 
+
+        if not can_be_deleted:
+            st.markdown(
+                ":orange[This Test Suite has related data, which includes test definitions and may include test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
+                unsafe_allow_html=True,
+            )
+            accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
+
         with st.form("Delete Test Suite", clear_on_submit=True):
-            disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
+            disable_delete_button = authentication_service.current_user_has_read_role() or (
+                not can_be_deleted and not accept_cascade_delete
+            )
             delete = st.form_submit_button("Delete", disabled=disable_delete_button)
 
             if delete:
-                test_suite_service.delete([test_suite_id], [test_suite_name])
-                success_message = f"Test Suite {test_suite_name} has been deleted. "
-                st.success(success_message)
-                time.sleep(1)
-                modal.close()
-                st.experimental_rerun()
-
-        if not can_be_deleted:
-            st.markdown(":orange[This Test Suite cannot be deleted because it is being used in existing tests.]")
+                if test_suite_service.are_test_suites_in_use([test_suite_name]):
+                    st.error("This Test Suite is in use by a running process and cannot be deleted.")
+                else:
+                    test_suite_service.cascade_delete([test_suite_name])
+                    success_message = f"Test Suite {test_suite_name} has been deleted. "
+                    st.success(success_message)
+                    time.sleep(1)
+                    modal.close()
+                    st.experimental_rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, selected=None):

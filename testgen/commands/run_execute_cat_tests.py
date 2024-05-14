@@ -65,7 +65,9 @@ def FinalizeTestRun(clsCATExecute):
     RunActionQueryList(("DKTG"), lstQueries)
 
 
-def run_cat_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
+def run_cat_test_queries(
+    strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
+):
     # PARAMETERS AND SET-UP
     booErrors = False
     LOG.info("CurrentStep: Retrieving Parameters")
@@ -78,6 +80,7 @@ def run_cat_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite
     )
     clsCATExecute.test_run_id = strTestRunID
     clsCATExecute.run_date = strTestTime
+    clsCATExecute.exception_message += error_msg
 
     # Set Project Connection Params in common.db_bridgers from retrieved params
     LOG.info("CurrentStep: Assigning Connection Parms")
@@ -135,9 +138,9 @@ def run_cat_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite
                     LOG.info("Test results successfully parsed.")
                 if intErrors > 0:
                     booErrors = True
-                    LOG.warning(
-                        f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) Please check log."
-                    )
+                    cat_error_msg = f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) Please check log."
+                    LOG.warning(cat_error_msg)
+                    clsCATExecute.exception_message += cat_error_msg
         else:
             LOG.info("No valid tests were available to perform")
 
@@ -145,7 +148,7 @@ def run_cat_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite
         booErrors = True
         sqlsplit = e.args[0].split("[SQL", 1)
         errorline = sqlsplit[0].replace("'", "''") if len(sqlsplit) > 0 else "unknown error"
-        clsCATExecute.exception_message = f"{type(e).__name__}: {errorline}"
+        clsCATExecute.exception_message += f"{type(e).__name__}: {errorline}"
         raise
 
     else:

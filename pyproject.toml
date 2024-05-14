@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-ops-testgen"
-version = "2.0.0"
+version = "2.1.1"
 description = "DataKitchen Inc. Data Quality Engine"
 urls = { "homepage" = "https://datakitchen.io" }
 authors = [
@@ -63,10 +63,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "black[d]==24.3.0",
     "invoke==2.2.0",
-    "isort==5.13.2",
-    "ruff==0.3.4",
+    "ruff==0.4.1",
     "mypy==1.9.0",
     "pre-commit==3.6.2",
     "types-PyYAML==6.0.12.20240311",
@@ -164,42 +162,33 @@ show_error_context = true
 # Mypy appears smart enough to ignore hidden directories. But it needs to scan __pycache__ for .pyc and pyi files,
 # so it cannot honor gitignore.
 exclude = [
-    '''^(?:.*\/)+[tT]ests?''',
     'conftest.py',
     'venv/',
     'build/',
+    'tests/',
 ]
-
-[tool.isort]
-profile = "black"
-line_length = 120
-
-[tool.black]
-line-length = 120
-target-version = ['py310']
-include = '\.pyi?$'
-exclude = '''
-(
-  /(
-      \.eggs         # exclude a few common directories in the
-    | \.git          # root of the project
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | env
-    | venv
-    | _build
-    | build
-    | dist
-  )/
-  | foo.py           # also separately exclude a file named foo.py in
-                     # the root of the project
-)
-'''
 
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+indent-width = 4
+include = [
+    "invocations/**/*.py",
+    "testgen/**/*.py",
+    "tests/**/*.py",
+]
+exclude = [
+    ".eggs",
+    ".git",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "env",
+    "venv",
+    "_build",
+    "build",
+    "dist",
+]
 
 [tool.ruff.lint]
 # see: https://beta.ruff.rs/docs/rules.
@@ -224,8 +213,8 @@ select = ["A", "F", "S", "I", "T10", "B", "UP", "ISC", "T20", "RSE", "Q", "ARG",
 # globally ignore the following error codes
 # * TRY003: Avoid specifying long messages outside the exception class
 # * S608: Hardcoded SQL
-# * I001: Unsorted imports, partially incompatible with isorts suggestions
-ignore = ["TRY003", "S608", "I001"]
+# # F841: Unused local variable (it is instable)
+ignore = ["TRY003", "S608", "S404", "F841"]
 
 # Ignore the following errors in files:
 # F403 - in __init__.py: We use __all__ in our module files so this behavior is acceptable in __init__.py
@@ -235,10 +224,8 @@ ignore = ["TRY003", "S608", "I001"]
 "testgen/__main__.py" = ["ARG001", "S603"]
 "tasks.py" = ["F403"]
 "tests*" = ["S101", "T201"]
-# print and empty arguments are fine here.
 "invocations/**" = ["ARG001", "T201"]
-
-
+"testgen/common/encrypt.py" = ["S413"]
 
 # See: https://coverage.readthedocs.io/en/latest/config.html
 [tool.coverage.run]
@@ -255,9 +242,9 @@ omit = ["tests/*", "templates/*"]
 skip_empty=true
 
 [tool.bumpver]
-current_version = "2.0.0"
+current_version = "2.1.1"
 version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
-commit_message = "Bump version: {old_version} -> {new_version}"
+commit_message = "release: {old_version} -> {new_version}"
 commit = true
 tag = true
 push = false

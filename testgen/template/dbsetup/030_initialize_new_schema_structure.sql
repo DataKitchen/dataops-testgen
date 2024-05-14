@@ -452,6 +452,7 @@ CREATE TABLE test_types (
    run_type                VARCHAR(10),
    test_scope              VARCHAR,
    dq_dimension            VARCHAR(50),
+   health_dimension        VARCHAR(50),
    threshold_description   VARCHAR(200),
    usage_notes             VARCHAR,
    active                  VARCHAR
