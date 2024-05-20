@@ -12,7 +12,6 @@ def configure_logging(
     level: int = logging.DEBUG,
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     log_to_file: bool = False,
-    log_to_file_filter: str | None = None,
 ) -> None:
     """
     Configures the testgen logger.
@@ -35,7 +34,7 @@ def configure_logging(
     logger.addHandler(console_err_handler)
 
     if log_to_file:
-        os.mkdir("/var/log/testgen")
+        os.makedirs("/var/log/testgen", exist_ok=True)
 
         file_handler = logging.handlers.TimedRotatingFileHandler(
             "/var/log/testgen/app.log",
@@ -45,9 +44,6 @@ def configure_logging(
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
-
-        if log_to_file_filter and (filter_term := log_to_file_filter.strip()) and len(filter_term) > 0:
-            file_handler.addFilter(logging.Filter(filter_term))
 
         logger.addHandler(file_handler)
 
@@ -62,7 +58,7 @@ class LessThanFilter(logging.Filter):
 
 
 class LogPipe(threading.Thread, io.TextIOBase):
-    def __init__(self, logger: logging.Logger, log_level: int | str) -> None:
+    def __init__(self, logger: logging.Logger, log_level: int) -> None:
         threading.Thread.__init__(self)
 
         self.daemon = False

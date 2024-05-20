@@ -13,18 +13,13 @@ from env variable: `TESTGEN_DEBUG`
 defaults to: `True`
 """
 
-FILE_LOG_FILTER: str | None = os.getenv("TESTGEN_FILE_LOG_FILTER", None)
+LOG_TO_FILE: bool = os.getenv("TESTGEN_LOG_TO_FILE", "no").lower() == "yes"
 """
-When set, rotating filters for the specified logger name will be generated
-under `/var/log/testgen/`.
+When set, rotating file logs will be generated under
+`/var/log/testgen/`.
 
-Supported filters are:
-- testgen.ui
-- testgen.cli
-- (empty string to log everything)
-
-from env variable: `TESTGEN_FILE_LOG_FILTER`
-defautls to: `None`
+from env variable: `TESTGEN_LOG_TO_FILE`
+defautls to: `True`
 """
 
 APP_ENCRYPTION_SALT: str = os.getenv("TG_DECRYPT_SALT")
