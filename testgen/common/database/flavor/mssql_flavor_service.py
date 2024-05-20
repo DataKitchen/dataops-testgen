@@ -21,7 +21,6 @@ class MssqlFlavorService(FlavorService):
 
         strConnect = (
             f"mssql+pyodbc://{username}:{password}@{hostname}:{port}/{dbname}?driver=ODBC+Driver+18+for+SQL+Server"
-            "&autocommit=True"
         )
 
         if "synapse" in hostname:

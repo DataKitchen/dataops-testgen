@@ -119,15 +119,10 @@ Also, changes the logging level for the `testgen.ui` logger from `INFO` to `DEBU
 
 default: `no`
 
-#### `TESTGEN_FILE_LOG_FILTER`
-When set, rotating filters for the specified logger name will be generated under `/var/log/testgen/`.
+### `TESTGEN_LOG_TO_FILE`
+Set it to `yes` to enable rotating file logs to be written under `/var/log/testgen/`.
 
-Supported values are:
-- testgen.ui
-- testgen.cli
-- (empty string to log everything)
-
-defautls to: `testgen.cli`
+default: `no`
 
 #### `TG_DECRYPT_SALT`
 

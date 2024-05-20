@@ -28,15 +28,15 @@ from testgen.utils import plugins, singleton
 BUILTIN_PAGES: list[type[Page]] = [
     LoginPage,
     OverviewPage,
-    TestDefinitionsPage,
-    TestRunsPage,
-    TestResultsPage,
     DataProfilingPage,
     ProfilingResultsPage,
     ProfilingAnomaliesPage,
+    TestRunsPage,
+    TestResultsPage,
     ConnectionsPage,
     TableGroupsPage,
     TestSuitesPage,
+    TestDefinitionsPage,
     TestDefinitionsPageFromSuite,
     ProjectSettingsPage,
 ]
@@ -64,9 +64,8 @@ def run(log_level: int = logging.INFO) -> Application:
 
     configure_logging(
         level=log_level,
-        log_format="%(message)s",
-        log_to_file=isinstance(settings.FILE_LOG_FILTER, str),
-        log_to_file_filter=settings.FILE_LOG_FILTER,
+        log_to_file=settings.LOG_TO_FILE,
+        log_format="%(asctime)s - testgen.ui - %(levelname)s - %(message)s",
     )
 
     for plugin in installed_plugins:

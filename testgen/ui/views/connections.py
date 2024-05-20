@@ -19,7 +19,7 @@ class ConnectionsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status or "login",
     ]
-    menu_item = MenuItem(icon="compare_arrows", label="Connection")
+    menu_item = MenuItem(icon="database", label="Data Configuration", order=3)
 
     def render(self) -> None:
         fm.render_page_header(

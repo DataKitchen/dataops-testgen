@@ -1,9 +1,9 @@
 import getpass
 import logging
 import os
-import signal
 import subprocess
 import sys
+import typing
 from dataclasses import dataclass, field
 
 import click
@@ -66,24 +66,16 @@ pass_configuration = click.make_pass_decorator(Configuration)
 @click.option(
     "-v",
     "--verbose",
-    help="Increase log level from INFO to DEBUG. If used, must be entered before the command.",
+    help="Enables more detailed logging. If used, must be entered before the command.",
     is_flag=True,
     default=False,
 )
 @click.pass_context
 def cli(ctx: Context, verbose: bool):
     if verbose:
-        configure_logging(
-            level=logging.DEBUG,
-            log_to_file=isinstance(settings.FILE_LOG_FILTER, str),
-            log_to_file_filter=settings.FILE_LOG_FILTER,
-        )
+        configure_logging(level=logging.INFO, log_to_file=settings.LOG_TO_FILE)
     else:
-        configure_logging(
-            level=logging.INFO,
-            log_to_file=isinstance(settings.FILE_LOG_FILTER, str),
-            log_to_file_filter=settings.FILE_LOG_FILTER,
-        )
+        configure_logging(level=logging.WARNING, log_to_file=settings.LOG_TO_FILE)
 
     ctx.obj = Configuration(verbose=verbose)
     status_ok, message = docker_service.check_basic_configuration()
@@ -113,12 +105,12 @@ def cli(ctx: Context, verbose: bool):
     default=None,
 )
 def run_profile(configuration: Configuration, table_group_id: str):
-    display_service.echo(f"run-profile with table_group_id: {table_group_id}")
-    spinner_message = "Processing … "
-    LOG.info(spinner_message)
-    spinner = MoonSpinner(spinner_message)
+    click.echo(f"run-profile with table_group_id: {table_group_id}")
+    spinner = None
+    if not configuration.verbose:
+        spinner = MoonSpinner("Processing ... ")
     message = run_profiling_queries(table_group_id, spinner=spinner)
-    display_service.echo("\n" + message)
+    click.echo("\n" + message)
 
 
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
@@ -149,7 +141,7 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
     LOG.info("CurrentStep: Generate Tests - Main Procedure")
     message = run_test_gen_queries(table_group_id, test_suite_key, generation_set)
     LOG.info("Current Step: Generate Tests - Main Procedure Complete")
-    display_service.echo("\n" + message)
+    click.echo("\n" + message)
 
 
 @cli.command("run-tests", help="Performs tests defined for a test suite.")
@@ -170,12 +162,12 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
 )
 @pass_configuration
 def run_tests(configuration: Configuration, project_key: str, test_suite_key: str):
-    display_service.echo(f"run-tests for suite: {test_suite_key}")
-    spinner_message = "Processing … "
-    LOG.info(spinner_message)
-    spinner = MoonSpinner(spinner_message)
+    click.echo(f"run-tests for suite: {test_suite_key}")
+    spinner = None
+    if not configuration.verbose:
+        spinner = MoonSpinner("Processing ... ")
     message = run_execution_steps(project_key, test_suite_key, spinner=spinner)
-    display_service.echo("\n" + message)
+    click.echo("\n" + message)
 
 
 @cli.command("list-profiles", help="Lists all profile runs for a table group.")
@@ -304,11 +296,11 @@ def get_test_properties(configuration: Configuration, project_key: str, test_sui
 @click.option("-d", "--display", help="Show command output in the terminal.", is_flag=True, default=False)
 @pass_configuration
 def update_test_parms(configuration: Configuration, display: bool):
-    display_service.echo("update-test-properties is starting.")
+    click.echo("update-test-properties is starting.")
     LOG.info("CurrentStep: Update Test Def Parms")
     yaml_dict = display_service.from_yaml("get_test_parms.yaml", display)
     update_test_def_parms_dict(yaml_dict)
-    display_service.echo("update-test-properties has successfully finished.")
+    click.echo("update-test-properties has successfully finished.")
 
 
 @cli.command("list-tests", help="Lists the tests generated for a test suite.")
@@ -415,20 +407,19 @@ def quick_start(
 
     # Check if this is an increment or the initial state
     if iteration == 0 and not simulate_fast_forward:
-        # command initial log
-        display_service.echo("quick-start command")
+        click.echo("quick-start command")
         run_quick_start(delete_target_db)
 
     if not simulate_fast_forward:
         run_quick_start_increment(iteration)
     else:
         for iteration in range(1, 4):
-            display_service.echo(f"Running iteration: {iteration} / 3")
+            click.echo(f"Running iteration: {iteration} / 3")
             minutes_offset = 2 * iteration
             run_quick_start_increment(iteration)
             run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
 
-    display_service.echo("Quick start has successfully finished.")
+    click.echo("Quick start has successfully finished.")
 
 
 @cli.command("setup-system-db", help="Use to initialize the TestGen system database.")
@@ -441,7 +432,7 @@ def quick_start(
 @click.option("--yes", "-y", default=False, is_flag=True, required=False, help="Force yes")
 @pass_configuration
 def setup_app_db(configuration: Configuration, delete_db: bool, yes: bool):
-    display_service.echo("setup-system-db command")
+    click.echo("setup-system-db command")
 
     db = get_tg_db()
     host = get_tg_host()
@@ -458,7 +449,7 @@ def setup_app_db(configuration: Configuration, delete_db: bool, yes: bool):
 
         message = f"Are you SURE you want to {operation_message} the app database '{db}' in the host '{host}'?"
         if not click.confirm(click.style(message, fg="red")):
-            display_service.echo("Exiting without any operation performed.")
+            click.echo("Exiting without any operation performed.")
             return
 
     run_launch_db_config(delete_db)
@@ -473,9 +464,9 @@ def setup_app_db(configuration: Configuration, delete_db: bool, yes: bool):
         "project_db_host": settings.PROJECT_DATABASE_HOST,
         "project_db_schema": settings.PROJECT_DATABASE_SCHEMA,
     }
-    display_service.echo(f"App DB created: Host={host}, DB Name={db}, Schema={schema}")
-    display_service.echo(f"Project Details:{projectDetails}")
-    display_service.echo("setup-system-db has successfully finished.")
+    click.echo(f"App DB created: Host={host}, DB Name={db}, Schema={schema}")
+    click.echo(f"Project Details:{projectDetails}")
+    click.echo("setup-system-db has successfully finished.")
 
 
 @cli.command(
@@ -490,9 +481,9 @@ def do_upgrade_system_version():
     LOG.info("setup_app_db command")
 
     if run_upgrade_db_config():
-        display_service.echo("System and services were upgraded to match current TestGen version.")
+        click.echo("System and services were upgraded to match current TestGen version.")
     else:
-        display_service.echo("System and services upgrade is not required.")
+        click.echo("System and services upgrade is not required.")
 
 
 @cli.command(
@@ -559,7 +550,7 @@ def setup_profiling_tools(
             f"Are you sure you want to setup the utility functions to be able to run the profile for connection {connection_id}? [yes/No]"
         )
         if confirm.lower() != "yes":
-            display_service.echo("Exiting without any operation performed.")
+            click.echo("Exiting without any operation performed.")
             return
     project_qc_schema = run_setup_profiling_tools(
         connection_id, dry_run, create_qc_schema, db_user, db_password, skip_granting_privileges
@@ -570,7 +561,7 @@ def setup_profiling_tools(
         message = (
             f"Project DB dry run completed, no changes applied. Modified schema would have been: {project_qc_schema}"
         )
-    display_service.echo(message)
+    click.echo(message)
 
 
 @cli.command("get-test-results", help="Fetches results for a test run.")
@@ -611,11 +602,11 @@ def get_results(configuration: Configuration, test_run_id: str, fails_only: bool
 )
 @pass_configuration
 def export_data(configuration: Configuration, project_key: str, test_suite_key: str):
-    display_service.echo(f"export-observability for test suite: {test_suite_key}")
+    click.echo(f"export-observability for test suite: {test_suite_key}")
     LOG.info("CurrentStep: Main Program - Observability Export")
     run_observability_exporter(project_key, test_suite_key)
     LOG.info("CurrentStep: Main Program - Observability Export - DONE")
-    display_service.echo("\nexport-observability completed successfully.\n")
+    click.echo("\nexport-observability completed successfully.\n")
 
 
 @cli.command("list-test-types", help="Lists all available TestGen test types.")
@@ -717,13 +708,19 @@ def ui(): ...
 @ui.command("run", help="Run the browser application with default settings")
 @click.option("-d", "--debug", is_flag=True, default=False)
 def run(debug: bool):
-    stderr = None
-    stdout = None
-    process = None
+    configure_logging(
+        level=logging.INFO,
+        log_format="%(message)s",
+    )
+
+    status_code: int = -1
+    logger = logging.getLogger("testgen.ui")
+    stderr: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
+    stdout: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
+
     try:
-        logger = logging.getLogger("testgen.ui")
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
-        subprocess.check_call(
+        status_code = subprocess.check_call(
             [  # noqa: S607
                 "streamlit",
                 "run",
@@ -733,13 +730,12 @@ def run(debug: bool):
                 "--",
                 f"{'--debug' if debug else ''}",
             ],
-            stdout=logs.LogPipe(logger, logging.INFO),
-            stderr=logs.LogPipe(logger, logging.ERROR),
+            stdout=stdout,
+            stderr=stderr,
         )
     except Exception:
-        LOG.exception("Testgen UI failed to run")
-        if process:
-            process.send_signal(signal.SIGTERM)
+        LOG.exception(f"Testgen UI exited with status code {status_code}")
+        raise
     finally:
         if stderr:
             stderr.close()

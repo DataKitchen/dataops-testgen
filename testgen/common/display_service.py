@@ -61,7 +61,7 @@ def to_yaml(file_name: str, yaml_dict: dict, display: bool):
 
 
 def echo(message: str):
-    LOG.info(message)
+    click.echo(message)
 
 
 def from_yaml(file_name: str, display: bool):
