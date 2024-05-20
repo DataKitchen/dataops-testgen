@@ -28,6 +28,7 @@ class TestRunsPage(Page):
                 {"label": "Overview", "path": "overview"},
                 {"label": "Test Runs", "path": None},
             ],
+            boo_show_refresh=True,
         )
 
         if "project" not in st.session_state:
@@ -61,7 +62,7 @@ class TestRunsPage(Page):
             dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
 
             if tool_bar.short_slots[0].button(
-                "Test Results　→",
+                ":green[Test Results　→]",
                 help="Review test results for the selected run",
                 use_container_width=True,
                 disabled=not dct_selected_row,

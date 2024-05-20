@@ -28,15 +28,15 @@ from testgen.utils import plugins, singleton
 BUILTIN_PAGES: list[type[Page]] = [
     LoginPage,
     OverviewPage,
-    TestDefinitionsPage,
-    TestRunsPage,
-    TestResultsPage,
     DataProfilingPage,
     ProfilingResultsPage,
     ProfilingAnomaliesPage,
+    TestRunsPage,
+    TestResultsPage,
     ConnectionsPage,
     TableGroupsPage,
     TestSuitesPage,
+    TestDefinitionsPage,
     TestDefinitionsPageFromSuite,
     ProjectSettingsPage,
 ]

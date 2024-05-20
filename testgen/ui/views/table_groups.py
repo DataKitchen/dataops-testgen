@@ -42,7 +42,7 @@ class TableGroupsPage(Page):
         )
         connection_id = connection["connection_id"]
 
-        tool_bar = tb.ToolBar(2, 5, 0, None)
+        tool_bar = tb.ToolBar(1, 5, 0, None)
 
         with tool_bar.long_slots[0]:
             st.selectbox("Connection", [connection["connection_name"]], disabled=True)
@@ -79,17 +79,17 @@ class TableGroupsPage(Page):
         )
         profile_command_modal = testgen.Modal("Profiling Command", "dk-profiling-command-modal", max_width=1100)
 
-        if tool_bar.short_slots[0].button(
+        if tool_bar.short_slots[1].button(
             "➕ Add", help="Add a new Table Group", use_container_width=True  # NOQA RUF001
         ):
             add_modal.open()
 
         disable_buttons = selected is None
-        if tool_bar.short_slots[1].button(
+        if tool_bar.short_slots[2].button(
             "🖊️ Edit", help="Edit the selected Table Group", disabled=disable_buttons, use_container_width=True
         ):
             edit_modal.open()
-        if tool_bar.short_slots[2].button(
+        if tool_bar.short_slots[3].button(
             "❌ Delete", help="Delete the selected Table Group", disabled=disable_buttons, use_container_width=True
         ):
             delete_modal.open()

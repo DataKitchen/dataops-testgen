@@ -29,6 +29,7 @@ class DataProfilingPage(Page):
                 {"label": "Overview", "path": "overview"},
                 {"label": "Data Profiling", "path": None},
             ],
+            boo_show_refresh=True,
         )
 
         if "project" not in st.session_state:
@@ -110,7 +111,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         dct_selected_row = dct_selected_rows[0]
 
     if button_slots[0].button(
-        "Profiling Results　→",
+        ":green[Profiling　→]",
         help="Review profiling characteristics for each data column",
         use_container_width=True,
         disabled=not dct_selected_rows,
@@ -121,7 +122,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         st.experimental_rerun()
 
     if button_slots[1].button(
-        "Anomalies　→",
+        ":green[Anomalies　→]",
         help="Review potential data problems identified in profiling",
         use_container_width=True,
         disabled=not dct_selected_rows,
