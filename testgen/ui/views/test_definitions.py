@@ -26,7 +26,7 @@ class TestDefinitionsPage(Page):
         {"label": "Overview", "path": "overview"},
         {"label": "Tests Definitions", "path": None},
     ]
-    menu_item = MenuItem(icon="list_alt", label="Tests Definitions")
+    menu_item = MenuItem(icon="list_alt", label="Tests Definitions", order=4)
 
     def render(self, **_) -> None:
         # Get page parameters from session

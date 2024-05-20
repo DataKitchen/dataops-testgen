@@ -18,7 +18,7 @@ class TestRunsPage(Page):
         lambda: session.authentication_status or "login",
         lambda: session.project != None or "overview",
     ]
-    menu_item = MenuItem(icon="assignment", label="Data Quality Testing")
+    menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
 
     def render(self) -> None:
         fm.render_page_header(

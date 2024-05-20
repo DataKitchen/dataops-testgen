@@ -13,7 +13,7 @@ class OverviewPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status or "login",
     ]
-    menu_item = MenuItem(icon="home", label="Overview")
+    menu_item = MenuItem(icon="home", label="Overview", order=0)
 
     def render(self):
         form_service.render_page_header(

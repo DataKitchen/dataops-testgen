@@ -19,7 +19,7 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status or "login",
     ]
-    menu_item = MenuItem(icon="database", label="Data Profiling")
+    menu_item = MenuItem(icon="problem", label="Data Profiling", order=1)
 
     def render(self) -> None:
         fm.render_page_header(

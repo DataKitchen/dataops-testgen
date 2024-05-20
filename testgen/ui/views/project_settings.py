@@ -16,15 +16,15 @@ class ProjectSettingsPage(Page):
         lambda: session.authentication_status or "login",
         lambda: session.project is not None or "overview",
     ]
-    menu_item = MenuItem(icon="settings", label="Configuration", order=100)
+    menu_item = MenuItem(icon="settings", label="Settings", order=100)
 
     def render(self) -> None:
         form_service.render_page_header(
-            "Project Settings",
+            "Settings",
             "https://docs.datakitchen.io/article/dataops-testgen-help/configuration",
             lst_breadcrumbs=[
                 {"label": "Overview", "path": "overview"},
-                {"label": "Configuration", "path": None},
+                {"label": "Settings", "path": None},
             ],
         )
 
