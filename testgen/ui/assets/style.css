@@ -100,6 +100,10 @@ div[data-modal-container="true"] > div:first-child > div:first-child {
 button[title="Show password text"] {
     display: none;
 }
+
+.element-container:has(iframe[height="0"]) {
+    display: none !important;
+}
 /* ... */
 
 /* Dark mode */

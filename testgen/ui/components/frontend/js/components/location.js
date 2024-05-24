@@ -8,7 +8,7 @@ import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
 const Location = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight('0px');
+    Streamlit.setFrameHeight('0');
 
     van.derive(() => {
         syncHashToCurrentPage(van.val(props.current_page_code));
