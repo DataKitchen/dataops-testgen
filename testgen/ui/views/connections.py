@@ -37,28 +37,13 @@ class ConnectionsPage(Page):
 
         tool_bar = tb.ToolBar(long_slot_count=6, short_slot_count=0, button_slot_count=0, prompt=None)
 
+        enable_table_groups = connection["project_host"] and connection["project_db"] and connection["project_qc_schema"]
+
         show_connection_form(connection, project_code)
 
-        status_container = st.empty()
-        create_qc_schema_modal = testgen.Modal("Create QC utility schema", "dk-create-qc-schema-modal", max_width=1100)
-
-        if tool_bar.long_slots[0].button(
-            "Test Connection",
-            help="Verifies that the connection to the database is working",
-            use_container_width=True,
-        ):
-            verify_connection_works(connection, project_code, status_container)
-
-        if tool_bar.long_slots[-2].button(
-            "Create QC Utility schema",
-            help="Creates the required Utility schema and related functions in the target database",
-            use_container_width=True,
-        ):
-            create_qc_schema_modal.open()
-
         if tool_bar.long_slots[-1].button(
-            "Table Groups →",
-            help="Create or edit Table Groups for the selected Connection",
+            f":{'gray' if not enable_table_groups else 'green'}[Table Groups　→]",
+            help="Create or edit Table Groups for the Connection",
             use_container_width=True,
         ):
             st.session_state["connection"] = connection.to_dict()
@@ -67,14 +52,34 @@ class ConnectionsPage(Page):
             session.current_page_args = {"connection_id": connection["connection_id"]}
             st.experimental_rerun()
 
+        create_qc_schema_modal = testgen.Modal("Create QC utility schema", "dk-create-qc-schema-modal", max_width=1100)
+
+        _, col2 = st.columns([70, 30])
+
+        if col2.button(
+            "Test Connection",
+            help="Verifies that the connection to the database is working",
+            use_container_width=True,
+        ):
+            status_container = st.empty()
+            verify_connection_works(connection, project_code, status_container)
+
+        if col2.button(
+            "Create QC Utility schema...",
+            help="Creates the required Utility schema and related functions in the target database",
+            use_container_width=True,
+        ):
+            create_qc_schema_modal.open()
+
         if create_qc_schema_modal.is_open():
             show_create_qc_schema_modal(create_qc_schema_modal, connection)
 
 
 def show_create_qc_schema_modal(modal, selected_connection):
     with modal.container():
-        with st.form("Create QC Utility Schema", clear_on_submit=False):
-            skip_schema_creation = st.toggle("Skip schema creation (only populate functions)")
+        fm.render_modal_header("Create QC Utility Schema", selected_connection['project_qc_schema'])
+        with st.form(clear_on_submit=False):
+            skip_schema_creation = st.toggle("Skip schema creation -- create utility functions in existing QC Schema")
             skip_granting_privileges = st.toggle("Skip granting privileges")
             db_user = st.text_input(label="Admin db user", max_chars=40, placeholder="Optional Field")
             db_password = st.text_input(

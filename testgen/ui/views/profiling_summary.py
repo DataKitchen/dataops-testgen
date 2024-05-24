@@ -60,7 +60,7 @@ class DataProfilingPage(Page):
                 show_record_detail(dct_selected_rows[0])
                 st.markdown(":orange[Click a button to view profiling outcomes for the selected run.]")
             else:
-                st.markdown(":orange[Select a run to see more actions.]")
+                st.markdown(":orange[Select a run to see more information.]")
 
 
 @st.cache_data(show_spinner=False)
@@ -111,7 +111,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         dct_selected_row = dct_selected_rows[0]
 
     if button_slots[0].button(
-        ":green[Profiling　→]",
+        f":{'gray' if not dct_selected_rows else 'green'}[Profiling　→]",
         help="Review profiling characteristics for each data column",
         use_container_width=True,
         disabled=not dct_selected_rows,
@@ -122,7 +122,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         st.experimental_rerun()
 
     if button_slots[1].button(
-        ":green[Anomalies　→]",
+        f":{'gray' if not dct_selected_rows else 'green'}[Anomalies　→]",
         help="Review potential data problems identified in profiling",
         use_container_width=True,
         disabled=not dct_selected_rows,

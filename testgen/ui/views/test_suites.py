@@ -102,7 +102,7 @@ class TestSuitesPage(Page):
             delete_modal.open()
 
         if tool_bar.short_slots[4].button(
-            ":green[Tests →]",
+            f":{'gray' if disable_buttons else 'green'}[Tests　→]",
             help="View and edit Test Definitions for selected Test Suite",
             disabled=disable_buttons,
             use_container_width=True,

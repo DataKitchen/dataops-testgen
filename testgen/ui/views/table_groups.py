@@ -94,7 +94,7 @@ class TableGroupsPage(Page):
         ):
             delete_modal.open()
         if tool_bar.short_slots[4].button(
-            "Test Suites　→",
+            f":{'gray' if disable_buttons else 'green'}[Test Suites　→]",
             help="Create or edit Test Suites for the selected Table Group",
             disabled=disable_buttons,
             use_container_width=True,

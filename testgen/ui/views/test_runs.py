@@ -62,7 +62,7 @@ class TestRunsPage(Page):
             dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
 
             if tool_bar.short_slots[0].button(
-                ":green[Test Results　→]",
+                f":{'gray' if not dct_selected_row else 'green'}[Test Results　→]",
                 help="Review test results for the selected run",
                 use_container_width=True,
                 disabled=not dct_selected_row,
