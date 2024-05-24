@@ -6,7 +6,6 @@ from testgen.commands.run_observability_exporter import test_observability_expor
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import form_service, query_service
-from testgen.ui.services import toolbar_service as tb
 from testgen.ui.session import session
 
 
