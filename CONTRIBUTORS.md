@@ -6,11 +6,11 @@ Thanks to everyone who has contributed to DataOps TestGen!
 
 - [Javier Giulianetti](https://github.com/JavierGi) 🚇
 - [Tyler Stubenvoll](https://github.com/tjstub) 🚇 💻 
-- Diogo Basto 🚇
+- [Diogo Basto](https://www.linkedin.com/in/diogo-t-basto/) 🚇
 - [Luis Trinidad](https://www.linkedin.com/in/strinidad) 💻 🚇
 - [Aarthy Adityan](https://www.linkedin.com/in/aarthyadityan) 📖 🚇
-- Alex Fernandez 💻 📆 📖 🚇 💬
-- Charles Bloche 🤔 📆 💻 📖 💬
-- Eric Estabrooks 🤔
-- Gil Benghiat 🤔 💬
-- Chris Bergh 🤔 📖
+- [Alejandro Fernandez](https://www.linkedin.com/in/afabriciof) 💻 📆 📖 🚇 💬
+- [Charles Bloche](https://www.linkedin.com/in/charlesbloche/) 🤔 📆 💻 📖 💬
+- [Eric Estabrooks](https://www.linkedin.com/in/ericestabrooks/) 🤔
+- [Gil Benghiat](https://www.linkedin.com/in/gilbertbenghiat/) 🤔 💬
+- [Chris Bergh](https://www.linkedin.com/in/chrisbergh/) 🤔 📖
