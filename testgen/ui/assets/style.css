@@ -101,7 +101,8 @@ button[title="Show password text"] {
     display: none;
 }
 
-.element-container:has(iframe[height="0"]) {
+.element-container:has(iframe[height="0"][title="streamlit_javascript.streamlit_javascript"]),
+.element-container:has(iframe[height="0"][title="testgen.ui.components.utils.component.testgen"]) {
     display: none !important;
 }
 /* ... */
