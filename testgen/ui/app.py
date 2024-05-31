@@ -63,7 +63,7 @@ def render(log_level: int = logging.INFO):
     application.logger.debug(f"location status: {session.current_page} {session.current_page_args}")
 
 
-@st.cache_resource(validate=lambda _: not settings.IS_DEBUG)
+@st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)
 def get_application(log_level: int = logging.INFO):
     return bootstrap.run(log_level=log_level)
 
