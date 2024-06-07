@@ -102,7 +102,8 @@ CREATE TABLE profiling_runs (
    column_ct           BIGINT,
    anomaly_ct          BIGINT,
    anomaly_table_ct    BIGINT,
-   anomaly_column_ct   BIGINT
+   anomaly_column_ct   BIGINT,
+   process_id          INTEGER
 );
 
 CREATE TABLE test_suites (
@@ -495,7 +496,8 @@ CREATE TABLE test_runs (
    table_ct          INTEGER,
    column_ct         INTEGER,
    column_failed_ct  INTEGER,
-   column_warning_ct INTEGER
+   column_warning_ct INTEGER,
+   process_id        INTEGER
 );
 
 CREATE TABLE test_results (

@@ -70,7 +70,7 @@ SELECT r.id as profiling_run_id,
        r.log_message,
        r.table_ct,
        r.column_ct,
-       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct
+       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct, process_id
   FROM profiling_runs r
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id
@@ -94,7 +94,8 @@ SELECT r.id as test_run_id,
        COUNT(*) as test_ct,
        SUM(result_code) as passed_ct,
        COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0) as failed_ct,
-       COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct
+       COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct,
+       process_id
   FROM test_runs r
 INNER JOIN projects p
    ON (r.project_code = p.project_code)

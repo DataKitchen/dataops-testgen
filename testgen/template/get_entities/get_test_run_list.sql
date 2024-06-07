@@ -10,7 +10,8 @@ Select tr.test_suite as test_suite_key,
        COUNT(DISTINCT lower(r.schema_name || '.' || table_name)) as table_ct,
        COUNT(*) as result_ct,
        SUM(CASE WHEN r.result_code = 0 THEN 1 END) as fail_ct,
-       SUM(CASE WHEN r.observability_status = 'Sent' THEN 1 END) as sent_to_obs
+       SUM(CASE WHEN r.observability_status = 'Sent' THEN 1 END) as sent_to_obs,
+       process_id
 from test_runs tr
 INNER JOIN test_results r
    ON (tr.id = r.test_run_id)

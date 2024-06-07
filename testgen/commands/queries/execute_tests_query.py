@@ -32,6 +32,7 @@ class CTestExecutionSQL:
     test_suite = ""
     test_run_id = ""
     exception_message = ""
+    process_id = ""
 
     # Test Set Parameters
     dctTestParms: typing.ClassVar = {}
@@ -58,6 +59,7 @@ class CTestExecutionSQL:
         strInputString = strInputString.replace("{MULTI_COLUMN_ERROR_CONDITION}", self.multi_column_error_condition)
         strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
         strInputString = strInputString.replace("{START_TIME}", self.today)
+        strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
         strInputString = strInputString.replace(
             "{NOW}", date_service.get_now_as_string_with_offset(self.minutes_offset)
         )

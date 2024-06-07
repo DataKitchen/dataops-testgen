@@ -1,9 +1,12 @@
 import logging
+import subprocess
 import threading
 import uuid
 
 import pandas as pd
 
+import testgen.common.process_service as process_service
+from testgen import settings
 from testgen.commands.queries.profiling_query import CProfilingSQL
 from testgen.common import (
     AssignConnectParms,
@@ -13,6 +16,8 @@ from testgen.common import (
     RunActionQueryList,
     RunThreadedRetrievalQueryList,
     WriteListToDB,
+    date_service,
+    read_template_sql_file,
 )
 from testgen.common.database.database_service import empty_cache
 
@@ -215,10 +220,16 @@ def RunPairwiseContingencyCheck(clsProfiling, threshold_ratio):
 
 
 def run_profiling_in_background(table_group_id):
-    LOG.info(f"Starting run_profiling_in_background against table group_id: {table_group_id}")
-    empty_cache()
-    background_thread = threading.Thread(target=run_profiling_queries, args=(table_group_id,))
-    background_thread.start()
+    msg = f"Starting run_profiling_in_background against table group_id: {table_group_id}"
+    if settings.IS_DEBUG:
+        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
+        empty_cache()
+        background_thread = threading.Thread(target=run_profiling_queries, args=(table_group_id,))
+        background_thread.start()
+    else:
+        LOG.info(msg)
+        script = ["testgen", "run-profile", "-tg", table_group_id]
+        subprocess.Popen(script)  # NOQA S603
 
 
 def run_profiling_queries(strTableGroupsID, spinner=None):
@@ -274,6 +285,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     clsProfiling.profile_use_sampling = dctParms["profile_use_sampling"]
     clsProfiling.profile_sample_percent = dctParms["profile_sample_percent"]
     clsProfiling.profile_sample_min_count = dctParms["profile_sample_min_count"]
+    clsProfiling.process_id = process_service.get_current_process_id()
 
     # Add a record in profiling_runs table for the new profile
     strProfileRunQuery = clsProfiling.GetProfileRunInfoRecordsQuery()
@@ -465,3 +477,14 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             str_error_status = "successfully."
         message += str_error_status
     return message
+
+
+def update_profile_run_status(profile_run_id, status):
+    sql_template = read_template_sql_file("project_profile_run_record_update_status.sql", sub_directory="profiling")
+
+    sql_template = sql_template.replace("{STATUS}", status)
+    sql_template = sql_template.replace("{NOW}", date_service.get_now_as_string())
+    sql_template = sql_template.replace("{EXCEPTION_MESSAGE}", "")
+    sql_template = sql_template.replace("{PROFILE_RUN_ID}", profile_run_id)
+
+    RunActionQueryList("DKTG", [sql_template])

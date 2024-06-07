@@ -2,10 +2,12 @@ import typing
 
 import streamlit as st
 
+import testgen.common.process_service as process_service
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
+from testgen.commands.run_profiling_bridge import update_profile_run_status
 from testgen.common import date_service
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -85,7 +87,7 @@ def get_db_profiling_runs(str_project_code, str_tg=None):
                  END as status,
                  COALESCE(log_message, '(No Errors)') as log_message,
                  table_ct, column_ct,
-                 anomaly_ct, anomaly_table_ct, anomaly_column_ct
+                 anomaly_ct, anomaly_table_ct, anomaly_column_ct, process_id
            FROM {str_schema}.v_profiling_runs
           WHERE project_code = '{str_project_code}' {str_tg_condition}
           ORDER BY start_time DESC;
@@ -135,9 +137,9 @@ def open_drill_downs(dct_selected_rows, button_slots):
 
 
 def show_record_detail(dct_selected_row):
-    layout_column_1, _ = st.columns([0.5, 0.5])
+    bottom_left_column, bottom_right_column = st.columns([0.5, 0.5])
 
-    with layout_column_1:
+    with bottom_left_column:
         str_header = "Profiling Run Information"
         lst_columns = [
             "connection_name",
@@ -151,3 +153,25 @@ def show_record_detail(dct_selected_row):
             "anomaly_column_ct",
         ]
         fm.render_html_list(dct_selected_row, lst_columns, str_header, FORM_DATA_WIDTH)
+
+    with bottom_right_column:
+        st.write("<br/><br/>", unsafe_allow_html=True)
+        _, button_column = st.columns([0.3, 0.7])
+        with button_column:
+            enable_kill_button = dct_selected_row and dct_selected_row["process_id"] is not None and dct_selected_row["status"] == "Running"
+
+            if enable_kill_button:
+                if st.button(
+                    ":red[Cancel Run]",
+                    help="Kill the selected profile run",
+                    use_container_width=True,
+                    disabled=not enable_kill_button,
+                ):
+                    process_id = dct_selected_row["process_id"]
+                    profile_run_id = dct_selected_row["profiling_run_id"]
+                    status, message = process_service.kill_profile_run(process_id)
+
+                    if status:
+                        update_profile_run_status(profile_run_id, "Cancelled")
+
+                    fm.reset_post_updates(str_message=f":{'green' if status else 'red'}[{message}]", as_toast=True)

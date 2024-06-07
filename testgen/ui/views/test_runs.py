@@ -2,9 +2,11 @@ import typing
 
 import streamlit as st
 
+import testgen.common.process_service as process_service
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
+import testgen.ui.services.test_run_service as test_run_service
 import testgen.ui.services.toolbar_service as tb
 from testgen.common import date_service
 from testgen.ui.navigation.menu import MenuItem
@@ -124,7 +126,7 @@ def get_db_test_runs(str_project_code, str_tg=None, str_ts=None):
                    ROUND(100.0 * (r.column_ct - r.column_failed_ct - r.column_warning_ct)::DECIMAL(12, 4) / r.column_ct::DECIMAL(12, 4), 3) as column_passed_pct,
                    r.id::VARCHAR as test_run_id,
                    p.project_name,
-                   s.table_groups_id::VARCHAR, tg.table_groups_name, tg.table_group_schema
+                   s.table_groups_id::VARCHAR, tg.table_groups_name, tg.table_group_schema, process_id
               FROM {str_schema}.test_runs r
             INNER JOIN {str_schema}.projects p
                ON (r.project_code = p.project_code)
@@ -151,18 +153,43 @@ def get_db_test_runs(str_project_code, str_tg=None, str_ts=None):
 
 
 def open_record_detail(dct_selected_row):
-    # Show Run Detail
-    lst_detail_columns = [
-        "test_suite",
-        "test_suite_description",
-        "run_date",
-        "status",
-        "log_message",
-        "table_groups_name",
-        "test_ct",
-        "passed_ct",
-        "failed_ct",
-        "warning_ct",
-        "error_ct",
-    ]
-    fm.render_html_list(dct_selected_row, lst_detail_columns, "Run Information", 500)
+    bottom_left_column, bottom_right_column = st.columns([0.5, 0.5])
+
+    with bottom_left_column:
+        # Show Run Detail
+        lst_detail_columns = [
+            "test_suite",
+            "test_suite_description",
+            "run_date",
+            "status",
+            "log_message",
+            "table_groups_name",
+            "test_ct",
+            "passed_ct",
+            "failed_ct",
+            "warning_ct",
+            "error_ct",
+        ]
+        fm.render_html_list(dct_selected_row, lst_detail_columns, "Run Information", 500)
+
+    with bottom_right_column:
+        st.write("<br/><br/>", unsafe_allow_html=True)
+        _, button_column = st.columns([0.3, 0.7])
+        with button_column:
+            enable_kill_button = dct_selected_row and dct_selected_row["process_id"] is not None and dct_selected_row["status"] == "Running"
+
+            if enable_kill_button:
+                if st.button(
+                    ":red[Cancel Run]",
+                    help="Kill the selected test run",
+                    use_container_width=True,
+                    disabled=not enable_kill_button,
+                ):
+                    process_id = dct_selected_row["process_id"]
+                    test_run_id = dct_selected_row["test_run_id"]
+                    status, message = process_service.kill_test_run(process_id)
+
+                    if status:
+                        test_run_service.update_status(test_run_id, "Cancelled")
+
+                    fm.reset_post_updates(str_message=f":{'green' if status else 'red'}[{message}]", as_toast=True)

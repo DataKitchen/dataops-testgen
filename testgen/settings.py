@@ -1,5 +1,6 @@
 import os
 
+IS_DEBUG_LOG_LEVEL: bool = os.getenv("TESTGEN_DEBUG_LOG_LEVEL", "no").lower() == "yes"
 IS_DEBUG: bool = os.getenv("TESTGEN_DEBUG", "no").lower() == "yes"
 """
 When True invalidates the cache with the bootstrapped application
