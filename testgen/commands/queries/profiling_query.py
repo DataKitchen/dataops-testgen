@@ -46,6 +46,8 @@ class CProfilingSQL:
     sampling_table = ""
     sample_ratio = ""
 
+    process_id = None
+
     contingency_max_values = "4"
     contingency_columns = ""
 
@@ -95,6 +97,7 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{PARM_MAX_PATTERN_LENGTH}", str(self.parm_max_pattern_length))
         strInputString = strInputString.replace("{CONTINGENCY_COLUMNS}", self.contingency_columns)
         strInputString = strInputString.replace("{CONTINGENCY_MAX_VALUES}", self.contingency_max_values)
+        strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
 
         return strInputString
 

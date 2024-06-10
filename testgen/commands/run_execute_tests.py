@@ -1,7 +1,10 @@
 import logging
+import subprocess
 import threading
 import uuid
 
+import testgen.common.process_service as process_service
+from testgen import settings
 from testgen.commands.queries.execute_tests_query import CTestExecutionSQL
 from testgen.common import (
     AssignConnectParms,
@@ -49,6 +52,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
     clsExecute = CTestExecutionSQL(strProjectCode, dctParms["sql_flavor"], strTestSuite, minutes_offset)
     clsExecute.run_date = strTestTime
     clsExecute.test_run_id = strTestRunID
+    clsExecute.process_id = process_service.get_current_process_id()
     booClean = False
 
     # Add a record in Test Run table for the new Test Run
@@ -109,18 +113,23 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
         return booErrors, error_msg
 
 
-def run_execution_steps_in_background(strProjectCode, strTestSuite, minutes_offset=0):
-    LOG.info(f"Starting run_execution_steps_in_background against test suite: {strTestSuite}")
-    empty_cache()
-    background_thread = threading.Thread(
-        target=run_execution_steps,
-        args=(
-            strProjectCode,
-            strTestSuite,
-            minutes_offset,
-        ),
-    )
-    background_thread.start()
+def run_execution_steps_in_background(project_code, test_suite):
+    msg = f"Starting run_execution_steps_in_background against test suite: {test_suite}"
+    if settings.IS_DEBUG:
+        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
+        empty_cache()
+        background_thread = threading.Thread(
+            target=run_execution_steps,
+            args=(
+                project_code,
+                test_suite
+            ),
+        )
+        background_thread.start()
+    else:
+        LOG.info(msg)
+        script = ["testgen", "run-tests", "--project-key", project_code, "--test-suite-key", test_suite]
+        subprocess.Popen(script)  # NOQA S603
 
 
 def run_execution_steps(strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
