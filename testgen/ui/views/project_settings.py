@@ -7,6 +7,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import form_service, query_service
 from testgen.ui.session import session
+from testgen.ui.views.app_log_modal import view_log_file
 
 
 class ProjectSettingsPage(Page):
@@ -38,7 +39,7 @@ class ProjectSettingsPage(Page):
             form_unique_key="project-settings",
         )
 
-        _, col2 = st.columns([70, 30])
+        _, col2, col3 = st.columns([50, 25, 25])
         if col2.button("Test Observability Connection", use_container_width=False):
             status = st.empty()
             status.info("Testing your connection to DataKitchen Observability...")
@@ -54,6 +55,8 @@ class ProjectSettingsPage(Page):
                 status.error("An error occurred during the Observability connection test.")
                 error_message = e.args[0]
                 st.text_area("Error Details", value=error_message)
+
+        view_log_file(col3)
 
 
 @st.cache_data(show_spinner=False)

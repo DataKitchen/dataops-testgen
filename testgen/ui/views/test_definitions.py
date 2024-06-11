@@ -60,7 +60,7 @@ class TestDefinitionsPage(Page):
 
         # Prompt for Table Group
         with tool_bar.long_slots[1]:
-            str_table_groups_id, str_connection_id, _, table_group = prompt_for_table_group(
+            str_table_groups_id, str_connection_id, str_schema, table_group = prompt_for_table_group(
                 session.project, table_group, str_connection_id
             )
 
@@ -268,7 +268,7 @@ def show_add_edit_modal(
 
         # run type
         run_type = selected_test_type_row["run_type"]  # Can be "QUERY" or "CAT"
-        test_scope = selected_test_type_row["test_scope"]  # Can be "column", "table", "multi-column", "custom"
+        test_scope = selected_test_type_row["test_scope"]  # Can be "column", "table", "referential", "custom"
 
         # test_description
         test_description = empty_if_null(selected_test_def["test_description"]) if mode == "edit" else ""
@@ -297,7 +297,6 @@ def show_add_edit_modal(
         profile_run_id = selected_test_def["profile_run_id"] if mode == "edit" else ""
         test_suite_name = selected_test_def["test_suite"] if mode == "edit" else test_suite["test_suite"]
         test_action = empty_if_null(selected_test_def["test_action"]) if mode == "edit" else ""
-        test_mode = empty_if_null(selected_test_def["test_mode"]) if mode == "edit" else ""
         schema_name = selected_test_def["schema_name"] if mode == "edit" else table_group["table_group_schema"]
         table_name = empty_if_null(selected_test_def["table_name"]) if mode == "edit" else empty_if_null(str_table_name)
         skip_errors = selected_test_def["skip_errors"] if mode == "edit" else 0
@@ -328,6 +327,7 @@ def show_add_edit_modal(
         match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
         match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
         window_days = selected_test_def["window_days"] if mode == "edit" and selected_test_def["window_days"] else 0
+        test_mode = empty_if_null(selected_test_def["test_mode"]) if mode == "edit" else ""
 
         # export_to_observability
         test_suite_export_to_observability = test_suite["export_to_observability"]
@@ -470,10 +470,21 @@ def show_add_edit_modal(
         )
 
         # column_name
+        column_name_label = selected_test_type_row["column_name_prompt"]
+        column_name_help = selected_test_type_row["column_name_help"]
+
         if test_scope == "table":
             test_definition["column_name"] = None
-        elif test_scope == "multi-column":
-            pass  # TODO:  this will have to be modified to accommodate aggregate match tests
+            column_name_label = None
+        elif test_scope == "referential":
+            column_name_disabled = False
+            test_definition["column_name"] = st.text_input(
+                label=column_name_label,
+                value=column_name,
+                max_chars=500,
+                help=column_name_help,
+                disabled=column_name_disabled,
+            )
         elif test_scope == "custom":
             if str_column_name:
                 if mode == "add":  # query add present
@@ -488,16 +499,10 @@ def show_add_edit_modal(
                 else:  # query edit not-present
                     column_name_disabled = False
 
-            column_name_help = "Specify a brief indication of scope for this test "
-            column_name_help += "that is unique within this Test Suite for the Table and Test Type. "
-            column_name_help += "This distinguishes this test from others of the same type on the same table. \n\n"
-            column_name_help += "Example: if you are testing whether product_code is found "
-            column_name_help += "in the related table called dim_products, you might say `Ref Integrity: dim_products`."
-
             test_definition["column_name"] = st.text_input(
-                label="Test Scope",
+                label=column_name_label,
                 value=column_name,
-                max_chars=50,
+                max_chars=100,
                 help=column_name_help,
                 disabled=column_name_disabled,
             )
@@ -515,11 +520,12 @@ def show_add_edit_modal(
                 else:
                     pass  # CAT edit not-present
 
+            column_name_label = "Column Name"
             column_name_options = get_column_names(table_groups_id, test_definition["table_name"])
             column_name_help = "Select the column to test"
             column_name_index = column_name_options.index(column_name) if column_name else 0
             test_definition["column_name"] = st.selectbox(
-                label="Column Name",
+                label=column_name_label,
                 options=column_name_options,
                 index=column_name_index,
                 help=column_name_help,
@@ -535,7 +541,7 @@ def show_add_edit_modal(
         current_column = mid_left_column
         show_custom_query = False
         dynamic_attributes_length = len(dynamic_attributes)
-        dynamic_attributes_half_length = max(round(dynamic_attributes_length / 2), 1)
+        dynamic_attributes_half_length = max(round((dynamic_attributes_length + 0.5) / 2), 1)
         for i, dynamic_attribute in enumerate(dynamic_attributes):
             if i >= dynamic_attributes_half_length:
                 current_column = mid_right_column
@@ -554,20 +560,12 @@ def show_add_edit_modal(
                 else snake_case_to_title_case(dynamic_attribute)
             )
 
-            if dynamic_attribute in ["match_column_names", "match_groupby_names", "groupby_names"]:
-                test_definition[dynamic_attribute] = st.text_area(
-                    label=actual_dynamic_attributes_labels,
-                    value=value,
-                    height=1,
-                    max_chars=4000,
-                    help=actual_dynamic_attributes_help,
-                )
-            elif dynamic_attribute in ["custom_query"]:
+            if dynamic_attribute in ["custom_query"]:
                 show_custom_query = True
             else:
                 test_definition[dynamic_attribute] = current_column.text_input(
                     label=actual_dynamic_attributes_labels,
-                    max_chars=1000,
+                    max_chars=4000 if dynamic_attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
                     value=value,
                     help=actual_dynamic_attributes_help,
                 )
@@ -593,7 +591,7 @@ def show_add_edit_modal(
 
         # skip_errors
         if run_type == "QUERY":
-            test_definition["skip_errors"] = left_column.number_input(label="Skip Errors", value=skip_errors)
+            test_definition["skip_errors"] = left_column.number_input(label="Threshold Error Count", value=skip_errors)
         else:
             test_definition["skip_errors"] = skip_errors
 
@@ -615,7 +613,7 @@ def show_add_edit_modal(
         submit = bottom_left_column.button("Save", disabled=authentication_service.current_user_has_read_role())
 
         if submit:
-            if validate_form(test_scope, test_type, test_definition):
+            if validate_form(test_scope, test_type, test_definition, column_name_label):
                 if mode == "edit":
                     test_definition_service.update(test_definition)
                     test_definition_modal.close()
@@ -628,15 +626,15 @@ def show_add_edit_modal(
                         test_definition_modal.close()
 
 
-def validate_form(test_scope, test_type, test_definition):
+def validate_form(test_scope, test_type, test_definition, column_name_label):
     if test_type == "Condition_Flag" and not test_definition["threshold_value"]:
         st.error("Threshold Error Count is a required field.")
         return False
     if not test_definition["test_type"]:
         st.error("Test Type is a required field.")
         return False
-    if test_scope in ["column", "multi-column", "custom"] and not test_definition["column_name"]:
-        st.error("Test Scope is a required field.")
+    if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
+        st.error(f"{column_name_label} is a required field.")
         return False
     return True
 
@@ -647,10 +645,10 @@ def validate_test_definition_uniqueness(test_definition, test_scope):
         match test_scope:
             case "column":
                 message_bit = "and Column Name "
-            case "multi-column":
+            case "referential":
                 message_bit = "and Column Names "
             case "custom":
-                message_bit = "and Test Scope"
+                message_bit = "and Test Focus "
             case "table":
                 message_bit = ""
             case _:
@@ -660,12 +658,22 @@ def validate_test_definition_uniqueness(test_definition, test_scope):
 
 
 def prompt_for_test_type():
-    df = run_test_type_lookup_query()
-    lst_choices = ["(Select a Test Type)", *df["test_name_short"].tolist()]
+
+    col0, col1, col2, col3, col4, col5 = st.columns([0.1, 0.2, 0.2, 0.2, 0.2, 0.1])
+    col0.write("Show Types")
+    boo_show_referential = col1.checkbox(":green[⧉] Referential", True)
+    boo_show_table = col2.checkbox(":green[⊞] Table", True)
+    boo_show_column = col3.checkbox(":green[≣] Column", True)
+    boo_show_custom = col4.checkbox(":green[⛭] Custom", True)
+
+    df = run_test_type_lookup_query(str_test_type=None, boo_show_referential=boo_show_referential,
+                                    boo_show_table=boo_show_table, boo_show_column=boo_show_column,
+                                    boo_show_custom=boo_show_custom)
+    lst_choices = ["(Select a Test Type)", *df["select_name"].tolist()]
 
     str_selected = selectbox("Test Type", lst_choices)
     if str_selected:
-        row_selected = df[df["test_name_short"] == str_selected].iloc[0]
+        row_selected = df[df["test_name_short"] == str_selected.split(":", 1)[0][2:]].iloc[0]
         str_value = row_selected["test_type"]
     else:
         str_value = None
@@ -705,19 +713,19 @@ def show_test_defs_grid(
         "last_manual_update",
     ]
     show_column_headers = [
-        "schema_name",
-        "table_name",
-        "column_name",
-        "test_name_short",
-        "test_active",
-        "lock_refresh",
-        "urgency",
-        "export_to_observability",
-        "profiling_as_of_date",
-        "last_manual_update",
+        "Schema",
+        "Table",
+        "Columns / Focus",
+        "Test Name",
+        "Active",
+        "Locked",
+        "Urgency",
+        "Export to Observabilty",
+        "Based on Profiling",
+        "Last Manual Update",
     ]
 
-    show_column_headers = list(map(snake_case_to_title_case, show_column_headers))
+    # show_column_headers = list(map(snake_case_to_title_case, show_column_headers))
 
     dct_selected_row = fm.render_grid_select(
         df,
@@ -746,7 +754,7 @@ def show_test_defs_grid(
         lst_export_headers = [
             "Schema",
             "Table Name",
-            "Column/Test Scope",
+            "Column/Test Focus",
             "Test Type",
             "Description",
             "Test Threshold",
@@ -856,9 +864,11 @@ def run_project_lookup_query():
 
 
 @st.cache_data(show_spinner=False)
-def run_test_type_lookup_query(str_test_type=None):
+def run_test_type_lookup_query(str_test_type=None, boo_show_referential=True, boo_show_table=True,
+                               boo_show_column=True, boo_show_custom=True):
     str_schema = st.session_state["dbschema"]
-    return dq.run_test_type_lookup_query(str_schema, str_test_type)
+    return dq.run_test_type_lookup_query(str_schema, str_test_type, boo_show_referential, boo_show_table,
+                                         boo_show_column, boo_show_custom)
 
 
 @st.cache_data(show_spinner=False)

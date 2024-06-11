@@ -49,7 +49,7 @@ class TestResultsPage(Page):
             str_sel_test_run = None
 
         if not str_project:
-            st.write("Select a Project from the menu.")
+            st.write("Choose a Project from the menu.")
         else:
             # Setup Toolbar
             tool_bar = tb.ToolBar(3, 1, 4, None)
@@ -206,10 +206,13 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
                    c.id::VARCHAR as connection_id, ts.id::VARCHAR as test_suite_id,
                    r.test_definition_id::VARCHAR as test_definition_id_runtime,
-                   d.id::VARCHAR as test_definition_id_current
+                   d.id::VARCHAR as test_definition_id_current,
+                   r.auto_gen
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
                ON (r.test_type = tt.test_type)
+            LEFT JOIN {str_schema}.test_definitions rd
+              ON (r.test_definition_id = rd.id)
             LEFT JOIN {str_schema}.test_definitions d
                ON (r.project_code = d.project_code
               AND  r.test_suite = d.test_suite
@@ -277,19 +280,30 @@ def get_test_result_summary(str_run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_history(str_test_type, str_table_groups_id, str_table_name, str_column_names):
+def get_test_result_history(str_test_type, str_table_groups_id, str_table_name, str_column_names,
+                            str_test_definition_id, auto_gen):
     str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-           SELECT test_date, test_type,
-                  test_name_short, test_name_long, measure_uom, test_operator,
-                  threshold_value::NUMERIC, result_measure, result_status
-             FROM {str_schema}.v_test_results
+
+    if auto_gen:
+        str_where = f"""
             WHERE table_groups_id = '{str_table_groups_id}'
               AND table_name = '{str_table_name}'
               AND column_names = '{str_column_names}'
               AND test_type = '{str_test_type}'
+        """
+    else:
+        str_where = f"""
+            WHERE test_definition_id_runtime = '{str_test_definition_id}'
+        """
+
+    str_sql = f"""
+           SELECT test_date, test_type,
+                  test_name_short, test_name_long, measure_uom, test_operator,
+                  threshold_value::NUMERIC, result_measure, result_status
+             FROM {str_schema}.v_test_results {str_where}
            ORDER BY test_date DESC;
     """
+
     df = db.retrieve_data(str_sql)
     # Clean Up
     df["test_date"] = pd.to_datetime(df["test_date"])
@@ -307,7 +321,12 @@ def get_test_definition_uncached(str_schema, str_test_def_id):
     str_sql = f"""
            SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
                   tt.test_description as description, tt.usage_notes,
+                  d.column_name,
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
+                  d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
+                  d.match_table_name, d.match_column_names, d.match_subset_condition,
+                  d.match_groupby_names, d.match_having_condition, 
+                  d.window_date_column, d.window_days::VARCHAR as window_days,
                   d.custom_query,
                   d.severity, tt.default_severity,
                   d.test_active, d.lock_refresh, d.last_manual_update
@@ -358,6 +377,27 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
         str_query = str_query.replace("{BASELINE_AVG}", empty_if_null(df_test.at[0, "baseline_avg"]))
         str_query = str_query.replace("{BASELINE_SD}", empty_if_null(df_test.at[0, "baseline_sd"]))
         str_query = str_query.replace("{THRESHOLD_VALUE}", empty_if_null(df_test.at[0, "threshold_value"]))
+
+        str_substitute = empty_if_null(df_test.at[0, "subset_condition"])
+        str_substitute = "1=1" if str_substitute == "" else str_substitute
+        str_query = str_query.replace("{SUBSET_CONDITION}", str_substitute)
+
+        str_query = str_query.replace("{GROUPBY_NAMES}", empty_if_null(df_test.at[0, "groupby_names"]))
+        str_query = str_query.replace("{HAVING_CONDITION}", empty_if_null(df_test.at[0, "having_condition"]))
+        str_query = str_query.replace("{MATCH_SCHEMA_NAME}", empty_if_null(df_test.at[0, "match_schema_name"]))
+        str_query = str_query.replace("{MATCH_TABLE_NAME}", empty_if_null(df_test.at[0, "match_table_name"]))
+        str_query = str_query.replace("{MATCH_COLUMN_NAMES}", empty_if_null(df_test.at[0, "match_column_names"]))
+
+        str_substitute = empty_if_null(df_test.at[0, "match_subset_condition"])
+        str_substitute = "1=1" if str_substitute == "" else str_substitute
+        str_query = str_query.replace("{MATCH_SUBSET_CONDITION}", str_substitute)
+
+        str_query = str_query.replace("{MATCH_GROUPBY_NAMES}", empty_if_null(df_test.at[0, "match_groupby_names"]))
+        str_query = str_query.replace("{MATCH_HAVING_CONDITION}", empty_if_null(df_test.at[0, "match_having_condition"]))
+        str_query = str_query.replace("{COLUMN_NAME_NO_QUOTES}", empty_if_null(selected_row["column_names"]))
+
+        str_query = str_query.replace("{WINDOW_DATE_COLUMN}", empty_if_null(df_test.at[0, "window_date_column"]))
+        str_query = str_query.replace("{WINDOW_DAYS}", empty_if_null(df_test.at[0, "window_days"]))
 
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Test Type.")
@@ -542,7 +582,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
 
     lst_show_headers = [
         "Table Name",
-        "Columns/Scope",
+        "Columns/Focus",
         "Test Type",
         "Result Measure",
         "UOM",
@@ -575,7 +615,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         lst_export_headers = [
             "Schema Name",
             "Table Name",
-            "Columns/Scope",
+            "Columns/Focus",
             "Test Type",
             "Test Description",
             "DQ Dimension",
@@ -602,6 +642,8 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             selected_row["table_groups_id"],
             selected_row["table_name"],
             selected_row["column_names"],
+            selected_row["test_definition_id_runtime"],
+            selected_row["auto_gen"]
         )
         show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 

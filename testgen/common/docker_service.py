@@ -24,7 +24,7 @@ def check_for_new_docker_release() -> str:
 
         if latest_tag != settings.VERSION:
             logger.warning(
-                f"There is a new TestGen docker image. Please pull the latest image version {latest_tag} at your leisure."
+                f"A new TestGen upgrade is available. Please update to version {latest_tag} for new features and improvements."
             )
 
         return latest_tag  # noqa: TRY300

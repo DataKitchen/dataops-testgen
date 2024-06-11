@@ -250,7 +250,7 @@ def show_run_test_generation(modal, selected):
         )
         if test_ct:
             warning_msg = ""
-            counts_msg = f"\n\nTests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
+            counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
             if unlocked_edits_ct > 0:
                 if unlocked_edits_ct > 1:
 

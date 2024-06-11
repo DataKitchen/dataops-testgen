@@ -7,7 +7,7 @@ LEFT JOIN generation_sets s
   ON (t.test_type = s.test_type
  AND  '{GENERATION_SET}' = s.generation_set)
 WHERE t.active = 'Y'
-  AND t.selection_criteria IS NOT NULL
+  AND t.selection_criteria <> 'TEMPLATE' -- Also excludes NULL
   AND (s.generation_set IS NOT NULL
    OR  '{GENERATION_SET}' = '')
 ORDER BY test_type;

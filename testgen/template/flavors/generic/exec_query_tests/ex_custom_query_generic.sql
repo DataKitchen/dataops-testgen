@@ -9,8 +9,8 @@ SELECT '{PROJECT_CODE}'   as project_code,
        '{SCHEMA_NAME}' as schema_name,
        '{TABLE_NAME}'  as table_name,
        CASE
-         WHEN '{COLUMN_NAME_DISPLAY}' = '' OR '{COLUMN_NAME_DISPLAY}' IS NULL THEN 'N/A'
-         ELSE '{COLUMN_NAME_DISPLAY}'
+         WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+         ELSE '{COLUMN_NAME_NO_QUOTES}'
        END as column_names,
     '{SKIP_ERRORS}' as threshold_value,
     {SKIP_ERRORS} as skip_errors,

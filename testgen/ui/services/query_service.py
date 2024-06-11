@@ -39,21 +39,37 @@ def get_project_by_code(schema: str, project_code: str):
     return results.iloc[0]
 
 
-def run_test_type_lookup_query(str_schema, str_test_type=None):
+def run_test_type_lookup_query(str_schema, str_test_type=None, boo_show_referential=True, boo_show_table=True,
+                               boo_show_column=True, boo_show_custom=True):
     if str_test_type:
         str_criteria = f" AND tt.test_type = '{str_test_type}'"
     else:
         str_criteria = ""
+
+    if (boo_show_referential and boo_show_table and boo_show_column and boo_show_custom) == False:
+        str_scopes = ""
+        str_scopes += "'referential'," if boo_show_referential else ""
+        str_scopes += "'table'," if boo_show_table else ""
+        str_scopes += "'column'," if boo_show_column else ""
+        str_scopes += "'custom'," if boo_show_custom else ""
+        if str_scopes > "":
+            str_criteria += f"AND tt.test_scope in ({str_scopes[:-1]})"
+
     str_sql = f"""
             SELECT tt.id, tt.test_type, tt.id as cat_test_id,
                    tt.test_name_short, tt.test_name_long, tt.test_description,
                    tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
                    tt.default_parm_columns, tt.default_severity,
-                   tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description, tt.default_parm_prompts,
-                   tt.default_parm_help, tt.usage_notes
+                   tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description, 
+                   tt.column_name_prompt, tt.column_name_help, 
+                   tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
+                   CASE tt.test_scope WHEN 'referential' THEN '⧉ ' WHEN 'custom' THEN '⛭ ' WHEN 'table' THEN '⊞ ' WHEN 'column' THEN '≣ ' ELSE '? ' END  
+                    || tt.test_name_short || ': ' || lower(tt.test_name_long)
+                    || CASE WHEN tt.selection_criteria > '' THEN ' [auto-generated]' ELSE '' END as select_name
               FROM {str_schema}.test_types tt
              WHERE tt.active = 'Y' {str_criteria}
-            ORDER BY tt.test_name_short;
+            ORDER BY CASE tt.test_scope WHEN 'referential' THEN 1 WHEN 'custom' THEN 2 WHEN 'table' THEN 3 WHEN 'column' THEN 4 ELSE 5 END, 
+                     tt.test_name_short;
     """
     return db.retrieve_data(str_sql)
 

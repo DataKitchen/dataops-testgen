@@ -1,4 +1,4 @@
-__all__ = ["CleanSQL"]
+__all__ = ["CleanSQL", "AddQuotesToIdentifierCSV"]
 
 import re
 
@@ -14,3 +14,26 @@ def CleanSQL(strInput: str) -> str:
     parts = re.split(r"""("[^"]*"|'[^']*')""", strInput)
     parts[::2] = (" ".join(s.split()) for s in parts[::2])  # outside quotes
     return " ".join(parts)
+
+
+def AddQuotesToIdentifierCSV(strInput: str) -> str:
+    # Keywords -- identifiers to quote
+    keywords = [
+        "select",
+        "from",
+        "where",
+        "order",
+        "by",
+        "having",
+    ]
+
+    quoted_values = []
+    for value in strInput.split(","):
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            quoted_values.append(value)
+        elif any(c.isupper() or c.isspace() or value.lower() in keywords for c in value):
+            quoted_values.append(f'"{value}"')
+        else:
+            quoted_values.append(value)
+    return ", ".join(quoted_values)
