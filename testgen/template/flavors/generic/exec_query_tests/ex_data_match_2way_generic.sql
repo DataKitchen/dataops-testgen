@@ -30,20 +30,29 @@ SELECT '{PROJECT_CODE}'   as project_code,
        COUNT(*) as result_measure,
        '{SUBSET_DISPLAY}' as subset_condition,
        NULL as result_query
-FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
-         FROM
-              ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
-       FROM {SCHEMA_NAME}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-       GROUP BY {GROUPBY_NAMES}
-       {HAVING_CONDITION}
-              UNION ALL
-                SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
-       FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-       WHERE {MATCH_SUBSET_CONDITION}
-       GROUP BY {MATCH_GROUPBY_NAMES}
-                {MATCH_HAVING_CONDITION} ) a
-         GROUP BY {GROUPBY_NAMES} ) s
-         WHERE total <> match_total
-             OR (total IS NOT NULL AND match_total IS NULL)
-             OR (total IS NULL AND match_total IS NOT NULL);
+  FROM (
+         ( SELECT {GROUPBY_NAMES}
+             FROM {SCHEMA_NAME}.{TABLE_NAME}
+             WHERE {SUBSET_CONDITION}
+           GROUP BY {GROUPBY_NAMES}
+           {HAVING_CONDITION}
+            EXCEPT
+           SELECT {MATCH_COLUMN_NAMES}
+             FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+            WHERE {MATCH_SUBSET_CONDITION}
+           GROUP BY {MATCH_GROUPBY_NAMES}
+           {MATCH_HAVING_CONDITION}  )
+          UNION
+         ( SELECT {MATCH_COLUMN_NAMES}
+             FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+            WHERE {MATCH_SUBSET_CONDITION}
+           GROUP BY {MATCH_GROUPBY_NAMES}
+           {MATCH_HAVING_CONDITION}
+            EXCEPT
+           SELECT {GROUPBY_NAMES}
+             FROM {SCHEMA_NAME}.{TABLE_NAME}
+            WHERE {SUBSET_CONDITION}
+           GROUP BY {GROUPBY_NAMES}
+           {HAVING_CONDITION}
+            )
+       ) test;

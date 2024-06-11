@@ -225,7 +225,7 @@ UPDATE profile_results
    SET functional_data_type = 'Person Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
+  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'
@@ -356,6 +356,24 @@ SET functional_data_type =
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL;
 
+-- Assign City
+UPDATE profile_results
+   SET functional_data_type = 'City'
+  FROM ( SELECT p.id
+           FROM profile_results p
+         LEFT JOIN profile_results pn
+           ON p.profile_run_id = pn.profile_run_id
+          AND p.table_name = pn.table_name
+          AND p.position = pn.position - 1
+         WHERE p.profile_run_id = '{PROFILE_RUN_ID}'
+           AND p.includes_digit_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND p.numeric_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND p.date_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND  pn.functional_data_type = 'State'
+           AND p.avg_length BETWEEN 7 AND 12
+           AND p.avg_embedded_spaces < 1
+           AND p.distinct_value_ct BETWEEN 15 AND 40000 ) c
+WHERE profile_results.id = c.id;
 
 -- 7. Assign 'ID-Unique' functional data type to the columns that are identity columns
 

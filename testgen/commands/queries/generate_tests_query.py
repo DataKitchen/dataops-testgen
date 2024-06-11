@@ -75,7 +75,7 @@ class CDeriveTestsSQL:
             lstTemplate = [CleanSQL(q) for q in lstTemplate]
 
         if len(lstQueries) == 0:
-            LOG.warning("No test templates were found")
+            LOG.warning("No funny CAT test generation templates were found")
 
         return lstTemplate
 
