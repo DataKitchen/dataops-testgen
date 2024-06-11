@@ -1,6 +1,7 @@
 import typing
 
-from testgen.common import CleanSQL, AddQuotesToIdentifierCSV, date_service, read_template_sql_file
+from testgen.common import AddQuotesToIdentifierCSV, CleanSQL, date_service, read_template_sql_file
+
 
 class CTestExecutionSQL:
     flavor = ""

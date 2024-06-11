@@ -1,4 +1,4 @@
-__all__ = ["CleanSQL", "AddQuotesToIdentifierCSV"]
+__all__ = ["AddQuotesToIdentifierCSV", "CleanSQL"]
 
 import re
 
