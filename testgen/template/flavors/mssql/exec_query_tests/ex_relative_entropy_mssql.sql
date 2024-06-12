@@ -6,13 +6,13 @@
 --   Log base 2 of x = LN(x)/LN(2)
 WITH latest_ver
    AS ( SELECT {CONCAT_COLUMNS} as category,
-               COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+               CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
           FROM {SCHEMA_NAME}.{TABLE_NAME} v1
          WHERE {SUBSET_CONDITION}
          GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
    AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
-               COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+               CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
           FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
          WHERE {MATCH_SUBSET_CONDITION}
          GROUP BY {MATCH_GROUPBY_NAMES} ),
@@ -48,6 +48,6 @@ SELECT '{PROJECT_CODE}' as project_code,
        '{SUBSET_DISPLAY}' as subset_condition,
        NULL as result_query
   FROM (
-         SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
-                 + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+         SELECT 0.5 * ABS(SUM(new_pct * LOG(new_pct/avg_pct)/LOG(2)))
+                 + 0.5 * ABS(SUM(old_pct * LOG(old_pct/avg_pct)/LOG(2))) as js_divergence
            FROM dataset ) rslt;
