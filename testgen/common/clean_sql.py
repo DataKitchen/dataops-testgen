@@ -1,4 +1,4 @@
-__all__ = ["AddQuotesToIdentifierCSV", "CleanSQL"]
+__all__ = ["AddQuotesToIdentifierCSV", "CleanSQL", "ConcatColumnList"]
 
 import re
 
@@ -37,3 +37,17 @@ def AddQuotesToIdentifierCSV(strInput: str) -> str:
         else:
             quoted_values.append(value)
     return ", ".join(quoted_values)
+
+
+def ConcatColumnList(str_column_list, str_null_value):
+    # Prepares SQL expression to concatenate comma-separated column list into single SQL expression
+    str_expression = ""
+    if str_column_list:
+        if "," in str_column_list:
+            # Split each comma separated column name into individual list items
+            cols = [s.strip() for s in str_column_list.split(",")]
+            str_each = [f"COALESCE({i}, '{str_null_value}')" for i in cols]
+            str_expression = "CONCAT(" + ", ".join(str_each) + ")"
+        else:
+            str_expression = str_column_list
+    return str_expression

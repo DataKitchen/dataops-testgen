@@ -11,7 +11,7 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
-from testgen.common import date_service
+from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
@@ -398,6 +398,11 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
 
         str_query = str_query.replace("{WINDOW_DATE_COLUMN}", empty_if_null(df_test.at[0, "window_date_column"]))
         str_query = str_query.replace("{WINDOW_DAYS}", empty_if_null(df_test.at[0, "window_days"]))
+
+        str_substitute = ConcatColumnList(selected_row["column_names"], "<NULL>")
+        str_query = str_query.replace("{CONCAT_COLUMNS}", str_substitute)
+        str_substitute = ConcatColumnList(df_test.at[0, "match_groupby_names"], "<NULL>")
+        str_query = str_query.replace("{CONCAT_MATCH_GROUPBY}", str_substitute)
 
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Test Type.")

@@ -188,7 +188,7 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
 
         ('2201', 'Combo_Match', 'mssql', 'ex_data_match_generic.sql'),
         ('2202', 'Aggregate_Minimum', 'mssql', 'ex_aggregate_match_no_drops_generic.sql'),
-        ('2203', 'Distribution_Shift', 'mssql', 'ex_relative_entropy_generic.sql'),
+        ('2203', 'Distribution_Shift', 'mssql', 'ex_relative_entropy_mssql.sql'),
         ('2204', 'CUSTOM', 'mssql', 'ex_custom_query_generic.sql'),
         ('2206', 'Aggregate_Balance', 'mssql', 'ex_aggregate_match_same_generic.sql'),
         ('2207', 'Timeframe_Combo_Gain', 'mssql', 'ex_window_match_no_drops_generic.sql'),
@@ -200,8 +200,8 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2303', 'Distribution_Shift', 'postgresql', 'ex_relative_entropy_generic.sql'),
         ('2304', 'CUSTOM', 'postgresql', 'ex_custom_query_generic.sql'),
         ('2306', 'Aggregate_Balance', 'postgresql', 'ex_aggregate_match_same_generic.sql'),
-        ('2307', 'Timeframe_Combo_Gain', 'postgresql', 'ex_window_match_no_drops_generic.sql'),
-        ('2308', 'Timeframe_Combo_Match', 'postgresql', 'ex_window_match_same_generic.sql'),
+        ('2307', 'Timeframe_Combo_Gain', 'postgresql', 'ex_window_match_no_drops_postgresql.sql'),
+        ('2308', 'Timeframe_Combo_Match', 'postgresql', 'ex_window_match_same_postgresql.sql'),
         ('2309', 'Aggregate_Increase', 'postgresql', 'ex_aggregate_match_num_incr_generic.sql');
 
 TRUNCATE TABLE cat_test_conditions;
@@ -968,81 +968,81 @@ ORDER BY {COLUMN_NAME_NO_QUOTES};'),
        ) test
 ORDER BY {COLUMN_NAME_NO_QUOTES};'),
         ('1257', '1503', 'Test Results', 'Distribution_Shift', 'redshift', NULL, 'WITH latest_ver
-   AS ( SELECT COALESCE({COLUMN_NAME_NO_QUOTES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_COLUMNS} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
          WHERE {SUBSET_CONDITION}
-         GROUP BY 1 ),
+         GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
-   AS ( SELECT COALESCE({MATCH_GROUPBY_NAMES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
          WHERE {MATCH_SUBSET_CONDITION}
-         GROUP BY 1 )
+         GROUP BY {MATCH_GROUPBY_NAMES} )
 SELECT COALESCE(l.category, o.category) AS category,
        o.pct_of_total AS old_pct,
        l.pct_of_total AS new_pct
   FROM latest_ver l
 FULL JOIN older_ver o
   ON (l.category = o.category)
-ORDER BY COALESCE(l.category, o.category);'),
+ORDER BY COALESCE(l.category, o.category)'),
         ('1258', '1503', 'Test Results', 'Distribution_Shift', 'snowflake', NULL, 'WITH latest_ver
-   AS ( SELECT COALESCE({COLUMN_NAME_NO_QUOTES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_COLUMNS} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
          WHERE {SUBSET_CONDITION}
-         GROUP BY 1 ),
+         GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
-   AS ( SELECT COALESCE({MATCH_GROUPBY_NAMES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
          WHERE {MATCH_SUBSET_CONDITION}
-         GROUP BY 1 )
+         GROUP BY {MATCH_GROUPBY_NAMES} )
 SELECT COALESCE(l.category, o.category) AS category,
        o.pct_of_total AS old_pct,
        l.pct_of_total AS new_pct
   FROM latest_ver l
 FULL JOIN older_ver o
   ON (l.category = o.category)
-ORDER BY COALESCE(l.category, o.category);'),
+ORDER BY COALESCE(l.category, o.category)'),
         ('1259', '1503', 'Test Results', 'Distribution_Shift', 'mssql', NULL, 'WITH latest_ver
-   AS ( SELECT COALESCE({COLUMN_NAME_NO_QUOTES}, ''<NULL>'') as category,
-               COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+   AS ( SELECT {CONCAT_COLUMNS} as category,
+               CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
           FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
          WHERE {SUBSET_CONDITION}
-         GROUP BY 1 ),
+         GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
-   AS ( SELECT COALESCE({MATCH_GROUPBY_NAMES}, ''<NULL>'') as category,
-               COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+   AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+               CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
           FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
          WHERE {MATCH_SUBSET_CONDITION}
-         GROUP BY 1 )
+         GROUP BY {MATCH_GROUPBY_NAMES} )
 SELECT COALESCE(l.category, o.category) AS category,
        o.pct_of_total AS old_pct,
        l.pct_of_total AS new_pct
   FROM latest_ver l
 FULL JOIN older_ver o
   ON (l.category = o.category)
-ORDER BY COALESCE(l.category, o.category);'),
+ORDER BY COALESCE(l.category, o.category)'),
         ('1260', '1503', 'Test Results', 'Distribution_Shift', 'postgresql', NULL, 'WITH latest_ver
-   AS ( SELECT COALESCE({COLUMN_NAME_NO_QUOTES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_COLUMNS} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
          WHERE {SUBSET_CONDITION}
-         GROUP BY 1 ),
+         GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
-   AS ( SELECT COALESCE({MATCH_GROUPBY_NAMES}, ''<NULL>'') as category,
+   AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
           FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
          WHERE {MATCH_SUBSET_CONDITION}
-         GROUP BY 1 )
+         GROUP BY {MATCH_GROUPBY_NAMES} )
 SELECT COALESCE(l.category, o.category) AS category,
        o.pct_of_total AS old_pct,
        l.pct_of_total AS new_pct
   FROM latest_ver l
 FULL JOIN older_ver o
   ON (l.category = o.category)
-ORDER BY COALESCE(l.category, o.category);'),
+ORDER BY COALESCE(l.category, o.category)'),
    
     ('1261', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'redshift', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
   FROM {TARGET_SCHEMA}.{TABLE_NAME}
@@ -1071,14 +1071,14 @@ GROUP BY {COLUMN_NAME_NO_QUOTES}'),
         ('1263', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'mssql', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
   FROM {TARGET_SCHEMA}.{TABLE_NAME}
  WHERE {SUBSET_CONDITION}
-   AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
-   AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+   AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
+   AND {WINDOW_DATE_COLUMN} <  DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
 GROUP BY {COLUMN_NAME_NO_QUOTES}
  EXCEPT
 SELECT {COLUMN_NAME_NO_QUOTES}
   FROM {TARGET_SCHEMA}.{TABLE_NAME}
  WHERE {SUBSET_CONDITION}
-   AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+   AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
 GROUP BY {COLUMN_NAME_NO_QUOTES}'),
         ('1264', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'postgresql', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
   FROM {TARGET_SCHEMA}.{TABLE_NAME}
@@ -1146,26 +1146,26 @@ WHERE {SUBSET_CONDITION}
 SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE {SUBSET_CONDITION}
-  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
 EXCEPT
 SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE {SUBSET_CONDITION}
-  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
-  AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
+  AND {WINDOW_DATE_COLUMN} <  DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
 )
 UNION ALL
 (
 SELECT ''Latest Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE {SUBSET_CONDITION}
-  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
-  AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
+  AND {WINDOW_DATE_COLUMN} < DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
     EXCEPT
 SELECT ''Latest Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE {SUBSET_CONDITION}
-  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
 )'),
         ('1268', '1509', 'Test Results', 'Timeframe_Combo_Match', 'postgresql', NULL, '        (
 SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}

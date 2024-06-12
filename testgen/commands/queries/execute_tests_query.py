@@ -1,6 +1,6 @@
 import typing
 
-from testgen.common import AddQuotesToIdentifierCSV, CleanSQL, date_service, read_template_sql_file
+from testgen.common import AddQuotesToIdentifierCSV, CleanSQL, ConcatColumnList, date_service, read_template_sql_file
 
 
 class CTestExecutionSQL:
@@ -12,7 +12,7 @@ class CTestExecutionSQL:
     exception_message = ""
     process_id = ""
 
-    # Test Set Parameters
+    # Test Group Parameters
     dctTestParms: typing.ClassVar = {}
     sum_columns = ""
     match_sum_columns = ""
@@ -47,9 +47,9 @@ class CTestExecutionSQL:
         strInputString = strInputString.replace("{INPUT_PARAMETERS}", self._AssembleDisplayParameters())
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
-        strInputString = strInputString.replace("{SUM_COLUMNS}", self.sum_columns)
-        strInputString = strInputString.replace("{MATCH_SUM_COLUMNS}", self.match_sum_columns)
-        strInputString = strInputString.replace("{MULTI_COLUMN_ERROR_CONDITION}", self.multi_column_error_condition)
+        # strInputString = strInputString.replace("{SUM_COLUMNS}", self.sum_columns)
+        # strInputString = strInputString.replace("{MATCH_SUM_COLUMNS}", self.match_sum_columns)
+        # strInputString = strInputString.replace("{MULTI_COLUMN_ERROR_CONDITION}", self.multi_column_error_condition)
         strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
         strInputString = strInputString.replace("{START_TIME}", self.today)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
@@ -78,8 +78,16 @@ class CTestExecutionSQL:
             if parm == "column_name":
                 # Shows contents without double-quotes for display and aggregate expressions
                 strInputString = strInputString.replace("{COLUMN_NAME_NO_QUOTES}", value if value else "")
+                # Concatenates column list into single expression for relative entropy
+                str_value = ConcatColumnList(value, "<NULL>")
+                strInputString = strInputString.replace("{CONCAT_COLUMNS}", str_value if str_value else "")
+            if parm == "match_groupby_names":
+                # Concatenates column list into single expression for relative entropy
+                str_value = ConcatColumnList(value, "<NULL>")
+                strInputString = strInputString.replace("{CONCAT_MATCH_GROUPBY}", str_value if str_value else "")
             if parm == "subset_condition":
                 strInputString = strInputString.replace("{SUBSET_DISPLAY}", value.replace("'", "''") if value else "")
+
 
         # Adding escape character where ':' is referenced
         strInputString = strInputString.replace(":", "\\:")
@@ -138,6 +146,7 @@ class CTestExecutionSQL:
         self.list_multi_column_error_condition = [i + " < 0" for i in cols]
         self.multi_column_error_condition = " or ".join(self.list_multi_column_error_condition)
 
+
     def GetTestQuery(self, booClean: bool):
         strTestType = self.dctTestParms["test_type"]
         strTemplate = self.dctTestParms["template_name"]
@@ -145,8 +154,8 @@ class CTestExecutionSQL:
         if strTemplate == "":
             raise ValueError(f"No query template assigned to test_type {strTestType}")
 
-        if strTestType in {"AGG MATCH NO DROPS", "AGG MATCH SAME", "AGG MATCH NUM INCR"}:
-            self._ConstructAggregateMatchParms()
+        # if strTestType in {"AGG MATCH NO DROPS", "AGG MATCH SAME", "AGG MATCH NUM INCR"}:
+        #     self._ConstructAggregateMatchParms()
         strQ = self._GetTestQueryFromTemplate(strTemplate)
         # Final replace to cover parm within CUSTOM_QUERY parm
         strQ = strQ.replace("{DATA_SCHEMA}", self.dctTestParms["schema_name"])
