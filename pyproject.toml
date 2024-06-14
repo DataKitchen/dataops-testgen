@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-ops-testgen"
-version = "2.1.8"
+version = "2.1.9"
 description = "DataKitchen Inc. Data Quality Engine"
 urls = { "homepage" = "https://datakitchen.io" }
 authors = [
@@ -244,7 +244,7 @@ omit = ["tests/*", "templates/*"]
 skip_empty=true
 
 [tool.bumpver]
-current_version = "2.1.8"
+current_version = "2.1.9"
 version_pattern = "MAJOR.MINOR.PATCH[PYTAGNUM]"
 commit_message = "release: {old_version} -> {new_version}"
 commit = true
