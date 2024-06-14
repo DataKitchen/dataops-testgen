@@ -3,7 +3,7 @@ import logging
 from testgen.commands.queries.test_parameter_validation_query import CTestParamValidationSQL
 from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, RetrieveTestExecParms, RunActionQueryList
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def run_parameter_validation_queries(

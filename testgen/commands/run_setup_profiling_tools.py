@@ -4,7 +4,7 @@ from testgen.commands.run_get_entities import run_get_connection
 from testgen.common import AssignConnectParms, RunActionQueryList
 from testgen.common.database.database_service import get_queries_for_command
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_params_mapping(project_qc_schema: str, user: str) -> dict:

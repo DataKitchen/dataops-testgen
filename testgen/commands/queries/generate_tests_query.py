@@ -3,7 +3,7 @@ import typing
 
 from testgen.common import CleanSQL, date_service, get_template_files, read_template_sql_file
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 class CDeriveTestsSQL:

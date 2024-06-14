@@ -23,7 +23,7 @@ from testgen.common.credentials import (
 from testgen.common.encrypt import DecryptText
 from testgen.common.read_file import get_template_files
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 class CConnectParms:

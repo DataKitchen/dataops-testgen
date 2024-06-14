@@ -2,7 +2,7 @@ import logging
 
 from testgen.common import RetrieveDBResultsToList, read_template_sql_file
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def run_list_profiles(table_groups_id):

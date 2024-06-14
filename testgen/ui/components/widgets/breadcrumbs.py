@@ -3,7 +3,7 @@ import typing
 
 from testgen.ui.components.utils.component import component
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def breadcrumbs(

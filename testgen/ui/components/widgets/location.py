@@ -9,7 +9,7 @@ from testgen.ui.components.utils.callbacks import register_callback
 from testgen.ui.components.utils.component import component
 from testgen.ui.session import session
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def location(

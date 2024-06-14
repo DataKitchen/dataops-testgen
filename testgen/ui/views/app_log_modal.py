@@ -1,14 +1,16 @@
 import logging
+import os
 import re
 from datetime import date, datetime
 
 import streamlit as st
 
+import testgen.common.logs as logs
 import testgen.ui.services.form_service as fm
 from testgen.common import display_service
 from testgen.ui.components import widgets as testgen
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 # Read the log file
@@ -21,7 +23,7 @@ def _read_log(file_path):
 
     except Exception:
         st.warning(f"Log file  is unavailable: {file_path}")
-        logger.debug(f"Log viewer can't read log file {file_path}")
+        LOG.debug(f"Log viewer can't read log file {file_path}")
 
 
 # Function to filter log data by date
@@ -35,6 +37,7 @@ def _filter_by_date(log_data, start_date, end_date):
             if start_date <= log_date <= end_date:
                 filtered_data.append(line)
     return filtered_data
+
 
 # Function to search text in log data
 def _search_text(log_data, search_query):
@@ -59,13 +62,13 @@ def view_log_file(button_container):
             col1, col2, col3 = st.columns([33, 33, 33])
             log_date = col1.date_input("Log Date", value=datetime.today())
 
-            if log_date == date.today():
-                file_name = "app.log"
-            else:
-                file_name = f"app.log.{log_date.strftime('%Y-%m-%d')}"
+            log_file_location = logs.get_log_full_path()
 
-            # log_file_location = os.path.join(file_out_path, file_name)
-            log_file_location = f"/var/log/testgen/{file_name}"
+            if log_date != date.today():
+                log_file_location += log_date.strftime(".%Y-%m-%d")
+
+            log_file_name = os.path.basename(log_file_location)
+
             log_data = _read_log(log_file_location)
 
             search_query = col2.text_input("Filter by Text")
@@ -81,9 +84,9 @@ def view_log_file(button_container):
                 st.cache_data.clear()
 
             if log_data:
-                st.markdown(f"**Log File:** {log_file_location}")
+                st.markdown(f"**Log File:** {log_file_name}")
                 # TOO SLOW: st.code(body=''.join(show_data), language="log", line_numbers=True)
                 st.text_area("Log Data", value="".join(show_data), height=400)
 
                 # Download button
-                st.download_button("Download", data="".join(show_data), file_name=file_name)
+                st.download_button("Download", data="".join(show_data), file_name=log_file_name)

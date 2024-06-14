@@ -12,7 +12,8 @@ from testgen import settings
 from testgen.common import date_service, display_service, read_template_sql_file
 from testgen.common.database.database_service import ExecuteDBQuery, RetrieveDBResultsToDictList
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
+
 DEFAULT_COMPONENT_TYPE = "dataset"
 
 PAYLOAD_MAX_SIZE = 100000

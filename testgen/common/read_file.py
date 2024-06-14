@@ -9,7 +9,7 @@ from importlib.resources import as_file, files
 
 import yaml
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_template_package_resource(

@@ -12,8 +12,6 @@ from testgen.ui.services import authentication_service, javascript_service
 from testgen.ui.services import database_service as db
 from testgen.ui.session import session
 
-logger = logging.getLogger("testgen.ui")
-
 
 def render(log_level: int = logging.INFO):
     st.set_page_config(

@@ -47,7 +47,7 @@ from testgen.common import (
 )
 from testgen.utils import plugins
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 @dataclass
@@ -73,9 +73,9 @@ pass_configuration = click.make_pass_decorator(Configuration)
 @click.pass_context
 def cli(ctx: Context, verbose: bool):
     if verbose:
-        configure_logging(level=logging.INFO, log_to_file=settings.LOG_TO_FILE)
+        configure_logging(level=logging.DEBUG)
     else:
-        configure_logging(level=logging.WARNING, log_to_file=settings.LOG_TO_FILE)
+        configure_logging(level=logging.INFO)
 
     ctx.obj = Configuration(verbose=verbose)
     status_ok, message = docker_service.check_basic_configuration()
@@ -714,7 +714,7 @@ def run(debug: bool):
     )
 
     status_code: int = -1
-    logger = logging.getLogger("testgen.ui")
+    logger = logging.getLogger("testgen")
     stderr: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
     stdout: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
 

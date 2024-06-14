@@ -20,7 +20,7 @@ from testgen.common.database.database_service import empty_cache
 from .run_execute_cat_tests import run_cat_test_queries
 from .run_test_parameter_validation import run_parameter_validation_queries
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
