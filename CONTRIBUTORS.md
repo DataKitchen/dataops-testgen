@@ -4,6 +4,7 @@ Thanks to everyone who has contributed to DataOps TestGen!
 
 💻 = code, 🚇 = infrastructure, 📖 = documentation, 📆 = project management, 🤔 = product management, 💬 = user support
 
+- [Samantha Hamilton](https://www.linkedin.com/in/shamilton-darlingdocs/) 📖
 - [Javier Giulianetti](https://github.com/JavierGi) 🚇
 - [Tyler Stubenvoll](https://github.com/tjstub) 🚇 💻 
 - [Diogo Basto](https://www.linkedin.com/in/diogo-t-basto/) 🚇

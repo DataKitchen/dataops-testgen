@@ -78,7 +78,7 @@ class ConnectionsPage(Page):
 def show_create_qc_schema_modal(modal, selected_connection):
     with modal.container():
         fm.render_modal_header("Create QC Utility Schema", selected_connection["project_qc_schema"])
-        with st.form(clear_on_submit=False):
+        with st.form("Create QC Utility Schema", clear_on_submit=False):
             skip_schema_creation = st.toggle("Skip schema creation -- create utility functions in existing QC Schema")
             skip_granting_privileges = st.toggle("Skip granting privileges")
             db_user = st.text_input(label="Admin db user", max_chars=40, placeholder="Optional Field")
