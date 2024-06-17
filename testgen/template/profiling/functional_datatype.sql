@@ -220,12 +220,47 @@ SET functional_data_type =
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL;
 
+-- Update City based on position of State and Zip
+UPDATE profile_results
+   SET functional_data_type = 'City'
+ FROM profile_results c
+INNER JOIN profile_results z
+   ON (c.profile_run_id = z.profile_run_id
+  AND  c.table_name = z.table_name
+  AND  c.position + 2 = z.position
+  AND  'Zip' = z.functional_data_type)
+INNER JOIN profile_results s
+   ON (c.profile_run_id = s.profile_run_id
+  AND  c.table_name = s.table_name
+  AND  c.position + 1 = s.position
+  AND  'State' = s.functional_data_type)
+ WHERE c.profile_run_id = '09684d25-d8dd-47d0-8c02-9a6caf7c4a61'
+   AND c.column_name SIMILAR TO '%c(|i)ty%'
+   AND c.functional_data_type NOT IN ('State', 'Zip')
+   AND profile_results.id = c.id;
+  
 -- Assign Name
 UPDATE profile_results
    SET functional_data_type = 'Person Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
+  AND column_name ~ '^(approver|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
+
+-- Assign First Name
+UPDATE profile_results
+   SET functional_data_type = 'Person First Name'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND column_name SIMILAR TO '%f(|i)rst%n(|a)m%%'
+   AND avg_length <= 8
+   AND avg_embedded_spaces < 0.2;
+
+-- Assign Last Name
+UPDATE profile_results
+   SET functional_data_type = 'Person Last Name'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND column_name SIMILAR TO '%l(|a)st%n(|a)m%'
+   AND avg_length BETWEEN 5 and 8
+   AND avg_embedded_spaces < 0.2;
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'

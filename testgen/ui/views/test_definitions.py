@@ -470,8 +470,14 @@ def show_add_edit_modal(
         )
 
         # column_name
-        column_name_label = selected_test_type_row["column_name_prompt"]
-        column_name_help = selected_test_type_row["column_name_help"]
+        if selected_test_type_row["column_name_prompt"]:
+            column_name_label = selected_test_type_row["column_name_prompt"]
+        else:
+            column_name_label = "Test Focus"
+        if selected_test_type_row["column_name_help"]:
+            column_name_help = selected_test_type_row["column_name_help"]
+        else:
+            column_name_help = "Help is not available"
 
         if test_scope == "table":
             test_definition["column_name"] = None

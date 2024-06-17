@@ -47,9 +47,6 @@ class CTestExecutionSQL:
         strInputString = strInputString.replace("{INPUT_PARAMETERS}", self._AssembleDisplayParameters())
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
-        # strInputString = strInputString.replace("{SUM_COLUMNS}", self.sum_columns)
-        # strInputString = strInputString.replace("{MATCH_SUM_COLUMNS}", self.match_sum_columns)
-        # strInputString = strInputString.replace("{MULTI_COLUMN_ERROR_CONDITION}", self.multi_column_error_condition)
         strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
         strInputString = strInputString.replace("{START_TIME}", self.today)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
@@ -154,8 +151,6 @@ class CTestExecutionSQL:
         if strTemplate == "":
             raise ValueError(f"No query template assigned to test_type {strTestType}")
 
-        # if strTestType in {"AGG MATCH NO DROPS", "AGG MATCH SAME", "AGG MATCH NUM INCR"}:
-        #     self._ConstructAggregateMatchParms()
         strQ = self._GetTestQueryFromTemplate(strTemplate)
         # Final replace to cover parm within CUSTOM_QUERY parm
         strQ = strQ.replace("{DATA_SCHEMA}", self.dctTestParms["schema_name"])
