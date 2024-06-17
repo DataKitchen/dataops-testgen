@@ -13,7 +13,7 @@ from testgen.common.database.database_service import (
 )
 from testgen.common.read_file import read_template_sql_file
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_max_date(iteration: int):

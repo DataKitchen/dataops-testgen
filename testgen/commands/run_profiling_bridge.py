@@ -22,7 +22,7 @@ from testgen.common import (
 from testgen.common.database.database_service import empty_cache
 
 booClean = True
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def InitializeProfilingSQL(strProject, strSQLFlavor):

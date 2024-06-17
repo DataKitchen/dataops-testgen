@@ -6,7 +6,7 @@ import click
 import yaml
 from prettytable import PrettyTable
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def print_table(rows: list[dict], column_names: list[str]):

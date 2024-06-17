@@ -43,7 +43,7 @@ BUILTIN_PAGES: list[type[Page]] = [
     ProjectSettingsPage,
 ]
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 class Application(singleton.Singleton):
@@ -64,11 +64,7 @@ def run(log_level: int = logging.INFO) -> Application:
     pages = [*BUILTIN_PAGES]
     installed_plugins = plugins.discover()
 
-    configure_logging(
-        level=log_level,
-        log_to_file=settings.LOG_TO_FILE,
-        log_format="%(asctime)s - testgen.ui - %(levelname)s - %(message)s",
-    )
+    configure_logging(level=log_level)
 
     for plugin in installed_plugins:
         module = importlib.import_module(plugin.package)
@@ -95,7 +91,7 @@ def run(log_level: int = logging.INFO) -> Application:
                 schema=_get_schema_rev(),
             ),
         ),
-        logger=logger,
+        logger=LOG,
     )
 
 

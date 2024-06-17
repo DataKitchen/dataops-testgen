@@ -3,7 +3,7 @@ import logging
 from testgen.commands.queries.generate_tests_query import CDeriveTestsSQL
 from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, RetrieveTestGenParms, RunActionQueryList
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):

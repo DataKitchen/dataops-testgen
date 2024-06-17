@@ -10,7 +10,7 @@ from testgen.common import (
     WriteListToDB,
 )
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def RetrieveTargetTables(clsCATExecute):
