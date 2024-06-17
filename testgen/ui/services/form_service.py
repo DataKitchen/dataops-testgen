@@ -520,7 +520,7 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
   .dk-text-value {
     display: <<BLOCK>>;
     width: <<WIDTH>>px;
-    background-color: aliceblue;
+    background-color: var(--dk-text-value-background);
     text-align: left;
     font-family: 'Courier New', monospace;
     padding-left: 10px;
@@ -530,7 +530,7 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
   .dk-num-value {
     display: <<BLOCK>>;
     width: <<WIDTH>>px;
-    background-color: aliceblue;
+    background-color: var(--dk-text-value-background);
     text-align: right;
     font-family: 'Courier New', monospace;
     padding-left: 10px;
