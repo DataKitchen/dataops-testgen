@@ -234,7 +234,7 @@ INNER JOIN profile_results s
   AND  c.table_name = s.table_name
   AND  c.position + 1 = s.position
   AND  'State' = s.functional_data_type)
- WHERE c.profile_run_id = '09684d25-d8dd-47d0-8c02-9a6caf7c4a61'
+ WHERE c.profile_run_id = '{PROFILE_RUN_ID}'
    AND c.column_name SIMILAR TO '%c(|i)ty%'
    AND c.functional_data_type NOT IN ('State', 'Zip')
    AND profile_results.id = c.id;
