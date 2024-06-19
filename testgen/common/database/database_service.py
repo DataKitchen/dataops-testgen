@@ -601,8 +601,8 @@ def replace_params(query: str, params_mapping: dict) -> str:
     return query
 
 
-def get_queries_for_command(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$") -> list[str]:
-    files = sorted(get_template_files(mask=mask, sub_directory=sub_directory), key=lambda key: str(key))
+def get_queries_for_command(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", path: str | None = None) -> list[str]:
+    files = sorted(get_template_files(mask=mask, sub_directory=sub_directory, path=path), key=lambda key: str(key))
 
     queries = []
     for file in files:
