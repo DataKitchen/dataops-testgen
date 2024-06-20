@@ -314,40 +314,40 @@ profiling for the project database.
 from env variable: `DEFAULT_PROFILING_TABLE_SET`
 """
 
-DEFAULT_PROFILING_INCLUDE_MASK = os.getenv("DEFAULT_PROFILING_INCLUDE_MASK", "%%")
+DEFAULT_PROFILING_INCLUDE_MASK = os.getenv("DEFAULT_PROFILING_INCLUDE_MASK", "%")
 """
 A SQL filter supported by the project database's `LIKE` operator for
 table names to include.
 
 from env variable: `DEFAULT_PROFILING_INCLUDE_MASK`
-defaults to: `%%`
+defaults to: `%`
 """
 
-DEFAULT_PROFILING_EXCLUDE_MASK = os.getenv("DEFAULT_PROFILING_EXCLUDE_MASK", "tmp%%")
+DEFAULT_PROFILING_EXCLUDE_MASK = os.getenv("DEFAULT_PROFILING_EXCLUDE_MASK", "tmp%")
 """
 A SQL filter supported by the project database's `LIKE` operator for
 table names to exclude.
 
 from env variable: `DEFAULT_PROFILING_EXCLUDE_MASK`
-defaults to: `tmp%%`
+defaults to: `tmp%`
 """
 
-DEFAULT_PROFILING_ID_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%%id")
+DEFAULT_PROFILING_ID_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%id")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing ID columns.
 
 from env variable: `DEFAULT_PROFILING_ID_COLUMN_MASK`
-defaults to: `%%id`
+defaults to: `%id`
 """
 
-DEFAULT_PROFILING_SK_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%%sk")
+DEFAULT_PROFILING_SK_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%sk")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing surrogate key columns.
 
 from env variable: `DEFAULT_PROFILING_SK_COLUMN_MASK`
-defaults to: `%%sk`
+defaults to: `%sk`
 """
 
 DEFAULT_PROFILING_USE_SAMPLING: str = os.getenv("DEFAULT_PROFILING_USE_SAMPLING", "N")
