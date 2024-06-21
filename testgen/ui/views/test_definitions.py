@@ -1,3 +1,4 @@
+import logging
 import time
 import typing
 
@@ -15,6 +16,8 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
+
+LOG = logging.getLogger("testgen")
 
 
 class TestDefinitionsPage(Page):
@@ -49,10 +52,10 @@ class TestDefinitionsPage(Page):
 
         tool_bar = tb.ToolBar(5, 6, 4, None, multiline=True)
 
-        add_test_definition_modal = testgen.Modal("Add Test Definition", "dk-add-test-definition", max_width=1100)
-        edit_test_definition_modal = testgen.Modal("Edit Test Definition", "dk-edit-test-definition", max_width=1100)
+        add_test_definition_modal = testgen.Modal(title=None, key="dk-add-test-definition", max_width=1100)
+        edit_test_definition_modal = testgen.Modal(title=None, key="dk-edit-test-definition", max_width=1100)
         delete_test_definition_modal = testgen.Modal(
-            "Delete Test Definition", "dk-delete-test-definition", max_width=1100
+            title=None, key="dk-delete-test-definition", max_width=1100
         )
 
         with tool_bar.long_slots[0]:
@@ -180,6 +183,7 @@ class TestDefinitionsPageFromSuite(TestDefinitionsPage):
 
 def show_delete_modal(modal, selected_test_definition=None):
     with modal.container():
+        fm.render_modal_header("Delete Test", None)
         test_definition_id = selected_test_definition["id"]
         test_name_short = selected_test_definition["test_name_short"]
 
@@ -253,6 +257,7 @@ def show_add_edit_modal(
     selected_test_def=None,
 ):
     with test_definition_modal.container():
+        fm.render_modal_header("Add Test" if mode == "add" else "Edit Test", None)
         # test_type logic
         if mode == "add":
             selected_test_type, selected_test_type_row = prompt_for_test_type()

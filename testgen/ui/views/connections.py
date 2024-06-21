@@ -52,7 +52,7 @@ class ConnectionsPage(Page):
             session.current_page_args = {"connection_id": connection["connection_id"]}
             st.experimental_rerun()
 
-        create_qc_schema_modal = testgen.Modal("Create QC utility schema", "dk-create-qc-schema-modal", max_width=1100)
+        create_qc_schema_modal = testgen.Modal(title=None, key="dk-create-qc-schema-modal", max_width=1100)
 
         _, col2 = st.columns([70, 30])
 
@@ -77,7 +77,7 @@ class ConnectionsPage(Page):
 
 def show_create_qc_schema_modal(modal, selected_connection):
     with modal.container():
-        fm.render_modal_header("Create QC Utility Schema", selected_connection["project_qc_schema"])
+        fm.render_modal_header("Create QC Utility Schema", None)
         with st.form("Create QC Utility Schema", clear_on_submit=False):
             skip_schema_creation = st.toggle("Skip schema creation -- create utility functions in existing QC Schema")
             skip_granting_privileges = st.toggle("Skip granting privileges")

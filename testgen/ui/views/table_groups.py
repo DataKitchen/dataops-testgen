@@ -71,13 +71,13 @@ class TableGroupsPage(Page):
 
         selected = fm.render_grid_select(df, show_columns, show_column_headers=show_column_headers)
 
-        add_modal = testgen.Modal("Add Table Group", "dk-add-table-group-modal", max_width=1100)
-        edit_modal = testgen.Modal("Edit Table Group", "dk-edit-table-group-modal", max_width=1100)
-        delete_modal = testgen.Modal("Delete Table Group", "dk-delete-table-group-modal", max_width=1100)
+        add_modal = testgen.Modal(title=None, key="dk-add-table-group-modal", max_width=1100)
+        edit_modal = testgen.Modal(title=None, key="dk-edit-table-group-modal", max_width=1100)
+        delete_modal = testgen.Modal(title=None, key="dk-delete-table-group-modal", max_width=1100)
         profile_cli_command_modal = testgen.Modal(
-            "Profiling CLI Command", "dk-profiling-cli-command-modal", max_width=1100
+            title=None, key="dk-profiling-cli-command-modal", max_width=1100
         )
-        profile_command_modal = testgen.Modal("Profiling Command", "dk-profiling-command-modal", max_width=1100)
+        profile_command_modal = testgen.Modal(title=None, key="dk-profiling-command-modal", max_width=1100)
 
         if tool_bar.short_slots[1].button(
             "➕ Add", help="Add a new Table Group", use_container_width=True  # NOQA RUF001
@@ -182,6 +182,7 @@ def show_profile_command(modal, selected):
     selected_table_group = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Profiling Command", None)
         container = st.empty()
         with container:
             st.markdown(
@@ -215,6 +216,7 @@ def show_profile_command(modal, selected):
 
 def show_profile_cli_command(modal, selected):
     with modal.container():
+        fm.render_modal_header("Profiling CLI Command", None)
         selected_table_group = selected[0]
         table_group_id = selected_table_group["id"]
         profile_command = f"testgen run-profile --table-group-id {table_group_id}"
@@ -225,6 +227,7 @@ def show_delete_modal(modal, selected=None):
     selected_table_group = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Delete Table Group", None)
         table_group_id = selected_table_group["id"]
         table_group_name = selected_table_group["table_groups_name"]
 
@@ -269,6 +272,7 @@ def show_delete_modal(modal, selected=None):
 def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):
     connection_id = connection["connection_id"]
     with modal.container():
+        fm.render_modal_header("Edit Table Group" if mode == "edit" else "Add Table Group", None)
         table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Test"])
 
         with table_groups_settings_tab:

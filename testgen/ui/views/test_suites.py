@@ -70,22 +70,22 @@ class TestSuitesPage(Page):
 
         selected = fm.render_grid_select(df, show_columns)
 
-        add_modal = testgen.Modal("Add Test Suite", "dk-add-test_suite-modal", max_width=1100)
-        edit_modal = testgen.Modal("Edit Test Suite", "dk-edit-test_suite-modal", max_width=1100)
-        delete_modal = testgen.Modal("Delete Test Suite", "dk-delete-test_suite-modal", max_width=1100)
-        run_tests_command_modal = testgen.Modal("Run Test Execution", "dk-run-tests-command-modal", max_width=1100)
+        add_modal = testgen.Modal(title=None, key="dk-add-test_suite-modal", max_width=1100)
+        edit_modal = testgen.Modal(title=None, key="dk-edit-test_suite-modal", max_width=1100)
+        delete_modal = testgen.Modal(title=None, key="dk-delete-test_suite-modal", max_width=1100)
+        run_tests_command_modal = testgen.Modal(title=None, key="dk-run-tests-command-modal", max_width=1100)
 
         show_test_run_command_modal = testgen.Modal(
-            "Test Execution Command for CLI", "dk-show-test-run-command-modal", max_width=1100
+            title=None, key="dk-show-test-run-command-modal", max_width=1100
         )
-        run_test_generation_modal = testgen.Modal("Run Test Generation", "dk-run-test-generation-modal", max_width=1100)
+        run_test_generation_modal = testgen.Modal(title=None, key="dk-run-test-generation-modal", max_width=1100)
         show_run_test_generation_modal = testgen.Modal(
-            "Test Generation Command for CLI", "dk-show-test-generation-modal", max_width=1100
+            title=None, key="dk-show-test-generation-modal", max_width=1100
         )
 
-        run_export_command_modal = testgen.Modal("Run Observability Export", "dk-run-export-modal", max_width=1100)
+        run_export_command_modal = testgen.Modal(title=None, key="dk-run-export-modal", max_width=1100)
         show_export_command_modal = testgen.Modal(
-            "Observability Export Command for CLI", "dk-show-export-modal", max_width=1100
+            title=None, key="dk-show-export-modal", max_width=1100
         )
 
         if tool_bar.short_slots[1].button("➕ Add", help="Add a new Test Run", use_container_width=True):  # NOQA RUF001
@@ -236,6 +236,7 @@ def show_run_test_generation(modal, selected):
     selected_test_suite = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Run Test Generation", None)
         container = st.empty()
         with container:
             st.markdown(":green[**Execute Test Generation for the Test Suite**]")
@@ -304,6 +305,7 @@ def show_delete_modal(modal, selected=None):
     selected_test_suite = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Delete Test Suite", None)
         test_suite_name = selected_test_suite["test_suite"]
 
         can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
@@ -318,7 +320,6 @@ def show_delete_modal(modal, selected=None):
             "Test Suite Information",
             int_data_width=700,
         )
-
 
         if not can_be_deleted:
             st.markdown(
@@ -349,6 +350,7 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, s
     connection_id = connection["connection_id"]
     table_group_id = table_group["id"]
     with modal.container():
+        fm.render_modal_header("Edit Test Suite" if mode == "edit" else "Add Test Suite", None)
         severity_options = ["Inherit", "Failed", "Warning"]
 
         selected_test_suite = selected[0] if mode == "edit" else None
@@ -450,6 +452,7 @@ def run_tests(modal, project_code, selected):
     selected_test_suite = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Run Test Execution", None)
         container = st.empty()
         with container:
             st.markdown(":green[**Run Tests for the Test Suite**]")
@@ -481,6 +484,7 @@ def run_tests(modal, project_code, selected):
 
 def show_test_run_command(modal, project_code, selected):
     with modal.container():
+        fm.render_modal_header("Test Execution Command for CLI", None)
         selected_test_suite = selected[0]
         test_suite_name = selected_test_suite["test_suite"]
         command = f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}"
@@ -489,6 +493,7 @@ def show_test_run_command(modal, project_code, selected):
 
 def show_test_generation_command(modal, selected):
     with modal.container():
+        fm.render_modal_header("Test Generation Command for CLI", None)
         selected_test_suite = selected[0]
         test_suite_key = selected_test_suite["test_suite"]
         table_group_id = selected_test_suite["table_groups_id"]
@@ -498,6 +503,7 @@ def show_test_generation_command(modal, selected):
 
 def show_export_command(modal, selected):
     with modal.container():
+        fm.render_modal_header("Observability Export Command for CLI", None)
         selected_test_suite = selected[0]
         test_suite_key = selected_test_suite["test_suite"]
         project_key = selected_test_suite["project_code"]
@@ -509,6 +515,7 @@ def run_export_command(modal, selected):
     selected_test_suite = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Run Observability Export", None)
         container = st.empty()
         with container:
             st.markdown(":green[**Execute the test export for the current Test Suite**]")

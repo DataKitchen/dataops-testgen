@@ -908,7 +908,7 @@ def view_profiling(button_container, str_table_name, str_column_name, str_table_
 
 
 def view_edit_test(button_container, test_definition_id):
-    edit_test_definition_modal = testgen.Modal(title="Edit Test", key="dk-test-definition-edit-modal", max_width=1100)
+    edit_test_definition_modal = testgen.Modal(title=None, key="dk-test-definition-edit-modal", max_width=1100)
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
             edit_test_definition_modal.open()
