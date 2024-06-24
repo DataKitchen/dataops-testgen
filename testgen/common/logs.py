@@ -25,7 +25,10 @@ def configure_logging(
     formatter = logging.Formatter(log_format)
 
     console_out_handler = logging.StreamHandler(stream=sys.stdout)
-    console_out_handler.setLevel(logging.WARNING)
+    if settings.IS_DEBUG:
+        console_out_handler.setLevel(level)
+    else:
+        console_out_handler.setLevel(logging.WARNING)
     console_out_handler.setFormatter(formatter)
 
     console_err_handler = logging.StreamHandler(stream=sys.stderr)
