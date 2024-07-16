@@ -7,6 +7,7 @@ SELECT tg.project_code, tg.connection_id,
        tg.table_group_schema,
        s.export_to_observability,
        s.test_suite,
+       s.id::VARCHAR as test_suite_id,
        cc.url,
        cc.connect_by_url,
        CURRENT_TIMESTAMP AT TIME ZONE 'UTC' - CAST(tg.profiling_delay_days AS integer) * INTERVAL '1 day' as profiling_as_of_date

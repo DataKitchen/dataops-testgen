@@ -18,7 +18,7 @@ strTemplate02_all: |
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
 strTemplate03_ADN: MIN(LENGTH(CAST("{COL_NAME}" AS TEXT)))  AS min_length,
   MAX(LENGTH(CAST("{COL_NAME}" AS TEXT)))  AS max_length,
-  AVG(LENGTH(CAST("{COL_NAME}" AS TEXT))::FLOAT) AS avg_length,
+  AVG(NULLIF(LENGTH(CAST("{COL_NAME}" AS TEXT)), 0)::FLOAT) AS avg_length,
 strTemplate03_else:  NULL as min_length,
   NULL as max_length,
   NULL as avg_length,

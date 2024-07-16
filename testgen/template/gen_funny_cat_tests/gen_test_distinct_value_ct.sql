@@ -1,6 +1,6 @@
 -- FIRST TYPE OF CONSTANT IS HANDLED IN SEPARATE SQL FILE gen_standard_tests.sql using generic parameters
 -- Second type:  constants with changing values (1 distinct value)
-INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
+INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite, test_suite_id,
                               schema_name, table_name, column_name, skip_errors,
                               last_auto_gen_date, test_active,
                               baseline_value_ct, threshold_value, profiling_as_of_date)
@@ -68,6 +68,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                                          END ) > 1 ),
 newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
                      '{TEST_SUITE}'::VARCHAR AS test_suite,
+                     '{TEST_SUITE_ID}'::UUID AS test_suite_id,
                      c.project_code, c.table_groups_id, c.profile_run_id,
                      c.schema_name, c.table_name, c.column_name,
                      c.run_date AS last_run_date,
@@ -83,7 +84,7 @@ newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
                WHERE (s.generation_set IS NOT NULL
                   OR  '{GENERATION_SET}' = '')  )
 SELECT n.project_code, n.table_groups_id, n.profile_run_id,
-       n.test_type, n.test_suite,
+       n.test_type, n.test_suite, n.test_suite_id,
        n.schema_name, n.table_name, n.column_name, 0 as skip_errors,
        '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date, 'Y' as test_active,
        distinct_value_ct as baseline_value_ct, distinct_value_ct as threshold_value,

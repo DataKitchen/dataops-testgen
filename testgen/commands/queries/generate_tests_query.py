@@ -13,6 +13,7 @@ class CDeriveTestsSQL:
     table_groups_id = ""
     data_schema = ""
     test_suite = ""
+    test_suite_id = ""
     generation_set = ""
     as_of_date = ""
     sql_flavor = ""
@@ -38,6 +39,7 @@ class CDeriveTestsSQL:
         strInputString = strInputString.replace("{TABLE_GROUPS_ID}", self.table_groups_id)
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
         strInputString = strInputString.replace("{TEST_SUITE}", self.test_suite)
+        strInputString = strInputString.replace("{TEST_SUITE_ID}", self.test_suite_id)
         strInputString = strInputString.replace("{GENERATION_SET}", self.generation_set)
         strInputString = strInputString.replace("{AS_OF_DATE}", self.as_of_date)
         strInputString = strInputString.replace("{DATA_SCHEMA}", self.data_schema)

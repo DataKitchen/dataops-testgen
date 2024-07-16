@@ -3,7 +3,6 @@ import typing
 import plotly.express as px
 import streamlit as st
 
-import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
@@ -11,7 +10,7 @@ import testgen.ui.services.toolbar_service as tb
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
-from testgen.ui.views.profiling_details import show_profiling_detail
+from testgen.ui.views.profiling_modal import view_profiling_modal
 
 
 class ProfilingAnomaliesPage(Page):
@@ -145,8 +144,9 @@ class ProfilingAnomaliesPage(Page):
                         with col2:
                             # _, v_col2 = st.columns([0.3, 0.7])
                             v_col1, v_col2 = st.columns([0.5, 0.5])
-                        view_profiling(
-                            v_col1, selected_row["table_name"], selected_row["column_name"], str_profile_run_id
+                        view_profiling_modal(
+                            v_col1, selected_row["table_name"], selected_row["column_name"],
+                            str_profile_run_id=str_profile_run_id
                         )
                         view_bad_data(v_col2, selected_row)
 
@@ -476,23 +476,6 @@ def view_bad_data(button_container, selected_row):
                 df_bad.fillna("[NULL]", inplace=True)
                 # Display the dataframe
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
-
-
-def view_profiling(button_container, str_table_name, str_column_name, str_profiling_run_id):
-    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
-
-    df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
-
-    profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
-
-    with button_container:
-        if st.button(":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True):
-            profiling_modal.open()
-
-    if profiling_modal.is_open():
-        with profiling_modal.container():
-            fm.render_modal_header(str_header, None)
-            show_profiling_detail(df.iloc[0], 300)
 
 
 def do_disposition_update(selected, str_new_status):

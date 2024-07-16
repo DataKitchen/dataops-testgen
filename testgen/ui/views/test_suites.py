@@ -430,7 +430,7 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, s
                 if " " in entity["test_suite"]:
                     proposed_test_suite = entity["test_suite"].replace(" ", "-")
                     st.error(
-                        f"Blank spaces not allowed in field 'Test Suite Name'. Use - instead. i.e.: {proposed_test_suite}"
+                        f"Blank spaces not allowed in field 'Test Suite Name'. Use dash or underscore instead. i.e.: {proposed_test_suite}"
                     )
                 else:
                     if mode == "edit":

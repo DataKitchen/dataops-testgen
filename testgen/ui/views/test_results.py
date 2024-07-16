@@ -6,7 +6,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
@@ -16,7 +15,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_details import show_profiling_detail
+from testgen.ui.views.profiling_modal import view_profiling_modal
 from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
 
 ALWAYS_SPIN = False
@@ -55,15 +54,16 @@ class TestResultsPage(Page):
             tool_bar = tb.ToolBar(3, 1, 4, None)
 
             # Lookup Test Run
-            df = get_drill_test_run(str_sel_test_run)
-            if not df.empty:
-                with tool_bar.long_slots[0]:
-                    time_columns = ["test_date"]
-                    date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-                    df["description"] = df["test_date"] + " | " + df["test_suite_description"]
-                    str_sel_test_run = fm.render_select(
-                        "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
-                    )
+            if str_sel_test_run:
+                df = get_drill_test_run(str_sel_test_run)
+                if not df.empty:
+                    with tool_bar.long_slots[0]:
+                        time_columns = ["test_date"]
+                        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
+                        df["description"] = df["test_date"] + " | " + df["test_suite_description"]
+                        str_sel_test_run = fm.render_select(
+                            "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
+                        )
 
             if str_sel_test_run:
                 with tool_bar.long_slots[1]:
@@ -204,9 +204,12 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                    END as execution_error_ct,
                    r.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
-                   c.id::VARCHAR as connection_id, ts.id::VARCHAR as test_suite_id,
+                   c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
                    r.test_definition_id::VARCHAR as test_definition_id_runtime,
-                   d.id::VARCHAR as test_definition_id_current,
+                   CASE
+                     WHEN r.auto_gen = TRUE THEN d.id
+                                            ELSE r.test_definition_id
+                   END::VARCHAR as test_definition_id_current,
                    r.auto_gen
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
@@ -214,12 +217,12 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
             LEFT JOIN {str_schema}.test_definitions rd
               ON (r.test_definition_id = rd.id)
             LEFT JOIN {str_schema}.test_definitions d
-               ON (r.project_code = d.project_code
-              AND  r.test_suite = d.test_suite
-              AND  r.schema_name = d.schema_name
+               ON (r.test_suite_id = d.test_suite_id
               AND  r.table_name = d.table_name
               AND  r.column_names = COALESCE(d.column_name, 'N/A')
-              AND  r.test_type = d.test_type)
+              AND  r.test_type = d.test_type
+              AND  r.auto_gen = TRUE
+              AND  d.last_auto_gen_date IS NOT NULL)
             INNER JOIN {str_schema}.test_suites ts
                ON (r.project_code = ts.project_code
               AND  r.test_suite = ts.test_suite)
@@ -280,16 +283,17 @@ def get_test_result_summary(str_run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_history(str_test_type, str_table_groups_id, str_table_name, str_column_names,
+def get_test_result_history(str_test_type, str_test_suite_id, str_table_name, str_column_names,
                             str_test_definition_id, auto_gen):
     str_schema = st.session_state["dbschema"]
 
     if auto_gen:
         str_where = f"""
-            WHERE table_groups_id = '{str_table_groups_id}'
+            WHERE test_suite_id = '{str_test_suite_id}'
               AND table_name = '{str_table_name}'
               AND column_names = '{str_column_names}'
               AND test_type = '{str_test_type}'
+              AND auto_gen = TRUE
         """
     else:
         str_where = f"""
@@ -644,7 +648,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         selected_row = selected_rows[len(selected_rows) - 1]
         dfh = get_test_result_history(
             selected_row["test_type"],
-            selected_row["table_groups_id"],
+            selected_row["test_suite_id"],
             selected_row["table_name"],
             selected_row["column_names"],
             selected_row["test_definition_id_runtime"],
@@ -660,14 +664,14 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
         view_edit_test(v_col1, selected_row["test_definition_id_current"])
-        view_profiling(
-            v_col2, selected_row["table_name"], selected_row["column_names"], selected_row["table_groups_id"]
+        view_profiling_modal(
+            v_col2, selected_row["table_name"], selected_row["column_names"],
+            str_table_groups_id=selected_row["table_groups_id"]
         )
         view_bad_data(v_col3, selected_row)
 
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
-            # st.caption(selected_row["test_name_long"])
             st.markdown(f"###### {selected_row['test_description']}")
             st.caption(empty_if_null(selected_row["measure_uom_description"]))
             fm.render_grid_select(dfh, show_hist_columns)
@@ -883,28 +887,6 @@ def view_bad_data(button_container, selected_row):
                 df_bad.fillna("[NULL]", inplace=True)
                 # Display the dataframe
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
-
-
-def view_profiling(button_container, str_table_name, str_column_name, str_table_groups_id):
-    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
-
-    # Retrieve latest profiling
-    str_profiling_run_id = profiling_queries.get_latest_profile_run(str_table_groups_id)
-    if str_profiling_run_id:
-        df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
-        if not df.empty:
-            profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
-
-            with button_container:
-                if st.button(
-                    ":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True
-                ):
-                    profiling_modal.open()
-
-            if profiling_modal.is_open():
-                with profiling_modal.container():
-                    fm.render_modal_header(str_header, None)
-                    show_profiling_detail(df.iloc[0], 300)
 
 
 def view_edit_test(button_container, test_definition_id):
