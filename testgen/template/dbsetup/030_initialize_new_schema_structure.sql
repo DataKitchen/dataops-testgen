@@ -387,7 +387,7 @@ CREATE TABLE data_column_chars (
    source_process         VARCHAR(40),
    business_domain        VARCHAR(40),
    stakeholder_group      VARCHAR(40),
-   transformation_level   VARCHAR(40),
+   transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,

@@ -25,6 +25,9 @@ INNER JOIN test_suites s
   AND  d.test_suite = s.test_suite)
  WHERE test_definitions.id = d.id;
 
+CREATE INDEX ix_td_ts_tc
+   ON test_definitions(test_suite_id, table_name, column_name, test_type);
+
 ALTER TABLE table_groups
    ADD COLUMN data_source            VARCHAR(40),
    ADD COLUMN source_system          VARCHAR(40),
