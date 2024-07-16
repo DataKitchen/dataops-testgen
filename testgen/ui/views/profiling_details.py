@@ -59,7 +59,7 @@ def write_profile_screen(selected_row):
         selected_row["profile_run_id"], selected_row["table_name"], selected_row["column_name"]
     )
     if not df_screen.empty:
-        with st.expander("**Profiling Anomalies**"):
+        with st.expander("**Hygiene Issues**"):
             # fm.render_markdown_table(df_screen, ["column_name", "anomaly_name", "detail"])
             st.dataframe(df_screen, use_container_width=True, hide_index=True)
 
