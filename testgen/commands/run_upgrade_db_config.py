@@ -129,6 +129,7 @@ def run_upgrade_db_config() -> bool:
     # Retrieve and execute upgrade scripts, if any
     lstQueries, max_prefix = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
     if len(lstQueries) > 0:
+        LOG.info(f"Uppdating db config qty of queries: {len(lstQueries)}. New prefix: {max_prefix}. Queries: {lstQueries}")
         has_been_upgraded = _execute_upgrade_scripts(params_mapping, lstQueries)
     else:
         has_been_upgraded = False
