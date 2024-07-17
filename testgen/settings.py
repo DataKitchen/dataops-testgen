@@ -420,3 +420,10 @@ Current deployed version. The value is displayed in the UI menu.
 from env variable: `TESTGEN_VERSION`
 defaults to: `unknown`
 """
+
+SSL_CERT_FILE: str = os.getenv("SSL_CERT_FILE", "")
+SSL_KEY_FILE: str = os.getenv("SSL_KEY_FILE", "")
+"""
+File paths for SSL certificate and private key to support HTTPS.
+Both files must be provided.
+"""
