@@ -718,6 +718,8 @@ def run(debug: bool):
     stderr: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
     stdout: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
 
+    use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
+
     try:
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
         status_code = subprocess.check_call(
@@ -727,6 +729,8 @@ def run(debug: bool):
                 app_file,
                 "--ui.hideSidebarNav=true",
                 "--browser.gatherUsageStats=false",
+                f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
+                f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
                 "--",
                 f"{'--debug' if debug else ''}",
             ],
