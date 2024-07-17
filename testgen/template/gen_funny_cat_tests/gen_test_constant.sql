@@ -1,6 +1,6 @@
 -- Then insert new tests where a locked test is not already present
 INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id,
-                              test_type, test_suite,
+                              test_type, test_suite, test_suite_id,
                               schema_name, table_name, column_name, skip_errors,
                               last_auto_gen_date, test_active,
                               baseline_value, threshold_value, profiling_as_of_date)
@@ -69,6 +69,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                                          END ) = 1 ),
 newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
                      '{TEST_SUITE}'::VARCHAR AS test_suite,
+                     '{TEST_SUITE_ID}'::UUID AS test_suite_id,
                      c.profile_run_id,
                      c.project_code,
                      c.schema_name, c.table_name, c.column_name,
@@ -90,7 +91,7 @@ newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
                WHERE (s.generation_set IS NOT NULL
                   OR  '{GENERATION_SET}' = '')  )
 SELECT n.project_code, '{TABLE_GROUPS_ID}'::UUID as table_groups_id, n.profile_run_id,
-       n.test_type, n.test_suite, n.schema_name, n.table_name, n.column_name,
+       n.test_type, n.test_suite, n.test_suite_id, n.schema_name, n.table_name, n.column_name,
        0 as skip_errors, '{RUN_DATE}'::TIMESTAMP as auto_gen_date,
        'Y' as test_active, COALESCE(baseline_value, '') as baseline_value,
        '0' as threshold_value, '{AS_OF_DATE}'::TIMESTAMP

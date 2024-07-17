@@ -15,22 +15,6 @@ def update_attribute(schema, test_definition_ids, attribute, value):
     st.cache_data.clear()
 
 
-def get_test_definition_uniqueness(schema, test_definition):
-    sql = f"""
-            SELECT COUNT(*)
-            FROM {schema}.test_definitions d
-            WHERE True
-        """
-
-    sql += f" AND d.table_groups_id = '{test_definition['table_groups_id']}' \n"
-    sql += f" AND d.test_suite = NULLIF('{test_definition['test_suite']}','') \n"
-    sql += f" AND d.table_name = NULLIF('{test_definition['table_name']}','') \n"
-    sql += f" AND d.column_name = NULLIF('{test_definition['column_name']}','') \n"
-    sql += f" AND d.test_type = NULLIF('{test_definition['test_type']}','') \n"
-
-    return db.retrieve_data(sql)
-
-
 @st.cache_data(show_spinner=False)
 def get_test_definitions(schema, project_code, test_suite, table_name, column_name, test_definition_ids):
     if table_name:
@@ -45,7 +29,7 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
             SELECT
                    d.schema_name, d.table_name, d.column_name, t.test_name_short, t.test_name_long,
                    d.id::VARCHAR(50),
-                   d.project_code, d.table_groups_id::VARCHAR(50), d.test_suite,
+                   d.project_code, d.table_groups_id::VARCHAR(50), d.test_suite, d.test_suite_id::VARCHAR,
                    d.test_type, d.cat_test_id::VARCHAR(50),
                    d.test_active,
                    CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
@@ -78,7 +62,7 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
                    d.test_mode
               FROM {schema}.test_definitions d
             INNER JOIN {schema}.test_types t ON (d.test_type = t.test_type)
-            INNER JOIN {schema}.test_suites s ON (d.test_suite = s.test_suite)
+            INNER JOIN {schema}.test_suites s ON (d.test_suite_id = s.id)
             WHERE True
     """
 
@@ -176,6 +160,7 @@ def add(schema, test_definition):
                     profile_run_id,
                     test_type,
                     test_suite,
+                    test_suite_id,
                     test_description,
                     test_action,
                     test_mode,
@@ -221,6 +206,7 @@ def add(schema, test_definition):
                     NULL AS profile_run_id,
                     NULLIF('{test_definition["test_type"]}', '') as test_type,
                     NULLIF('{test_definition["test_suite"]}', '') as test_suite,
+                    '{test_definition["test_suite_id"]}'::UUID as test_suite_id,
                     NULLIF('{test_definition["test_description"]}', '') as test_description,
                     NULLIF('{test_definition["test_action"]}', '') as test_action,
                     NULLIF('{test_definition["test_mode"]}', '') as test_mode,

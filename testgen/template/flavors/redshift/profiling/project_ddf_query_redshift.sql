@@ -8,8 +8,9 @@ SELECT '{PROJECT_CODE}'            as project_code,
            WHEN c.data_type = 'character varying'
                THEN 'varchar(' || CAST(c.character_maximum_length AS VARCHAR) || ')'
            WHEN c.data_type = 'character' THEN 'char(' || CAST(c.character_maximum_length AS VARCHAR) || ')'
-           WHEN c.data_type = 'numeric' THEN 'numeric(' || CAST(c.numeric_precision AS VARCHAR) || ',' ||
-                                             CAST(c.numeric_scale AS VARCHAR) || ')'
+           WHEN c.data_type = 'numeric' THEN 'numeric'
+                                                || COALESCE( '(' || CAST(c.numeric_precision AS VARCHAR) || ','
+                                                                 || CAST(c.numeric_scale AS VARCHAR) || ')', '')
            ELSE c.data_type END AS data_type,
        c.character_maximum_length,
        c.ordinal_position,
@@ -28,7 +29,10 @@ SELECT '{PROJECT_CODE}'            as project_code,
                THEN 'N'
            ELSE
                'X' END          AS general_type,
-       numeric_scale > 0        as is_decimal
+       CASE
+         WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
+         ELSE numeric_scale > 0
+       END as is_decimal
 FROM information_schema.columns c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position

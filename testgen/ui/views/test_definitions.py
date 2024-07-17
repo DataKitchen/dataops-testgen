@@ -16,6 +16,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
+from testgen.ui.views.profiling_modal import view_profiling_modal
 
 LOG = logging.getLogger("testgen")
 
@@ -88,7 +89,8 @@ class TestDefinitionsPage(Page):
                     add_test_definition_modal.open()
 
                 selected = show_test_defs_grid(
-                    session.project, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container
+                    session.project, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
+                    str_table_groups_id
                 )
 
                 # Display buttons
@@ -301,6 +303,7 @@ def show_add_edit_modal(
         table_groups_id = selected_test_def["table_groups_id"] if mode == "edit" else table_group["id"]
         profile_run_id = selected_test_def["profile_run_id"] if mode == "edit" else ""
         test_suite_name = selected_test_def["test_suite"] if mode == "edit" else test_suite["test_suite"]
+        test_suite_id = test_suite["id"]
         test_action = empty_if_null(selected_test_def["test_action"]) if mode == "edit" else ""
         schema_name = selected_test_def["schema_name"] if mode == "edit" else table_group["table_group_schema"]
         table_name = empty_if_null(selected_test_def["table_name"]) if mode == "edit" else empty_if_null(str_table_name)
@@ -398,6 +401,7 @@ def show_add_edit_modal(
             "test_suite": left_column.text_input(
                 label="Test Suite Name", max_chars=200, value=test_suite_name, disabled=True
             ),
+            "test_suite_id": test_suite_id,
             "test_description": left_column.text_area(
                 label="Test Description Override",
                 max_chars=1000,
@@ -629,12 +633,8 @@ def show_add_edit_modal(
                     test_definition_service.update(test_definition)
                     test_definition_modal.close()
                 else:
-                    error_message = validate_test_definition_uniqueness(test_definition, test_scope)
-                    if error_message is not None:
-                        st.error(error_message)
-                    else:
-                        test_definition_service.add(test_definition)
-                        test_definition_modal.close()
+                    test_definition_service.add(test_definition)
+                    test_definition_modal.close()
 
 
 def validate_form(test_scope, test_type, test_definition, column_name_label):
@@ -701,10 +701,11 @@ def update_test_definition(selected, attribute, value, message):
 
 
 def show_test_defs_grid(
-    str_project_code, str_test_suite_id, str_table_name, str_column_name, do_multi_select, export_container
+    str_project_code, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
+        str_table_groups_id
 ):
     df = test_definition_service.get_test_definitions(
-        str_project_code, str_test_suite_id, str_table_name, str_column_name
+        str_project_code, str_test_suite, str_table_name, str_column_name
     )
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
 
@@ -779,7 +780,7 @@ def show_test_defs_grid(
         fm.render_excel_export(
             df,
             lst_export_columns,
-            f"Test Definitions for Test Suite {str_test_suite_id}",
+            f"Test Definitions for Test Suite {str_test_suite}",
             "{TIMESTAMP}",
             lst_wrap_columns,
             lst_export_headers,
@@ -834,6 +835,13 @@ def show_test_defs_grid(
                 int_data_width=700,
                 lst_labels=labels,
             )
+
+        _, col_profile_button = right_column.columns([0.7, 0.3])
+        view_profiling_modal(
+            col_profile_button, selected_row["table_name"], selected_row["column_name"],
+            str_table_groups_id=str_table_groups_id
+        )
+
         with right_column:
             st.write(generate_test_defs_help(row_selected["test_type"]))
 
@@ -857,9 +865,9 @@ def generate_test_defs_help(str_test_type):
 
 **Default Test Severity:** {row["default_severity"]}
 
-**Test Run Type:** {row["run_type"]}
- - CAT tests are consolidated into aggregate queries and run faster.
- - QUERY tests are executed individually and may take longer to run.
+**Test Run Type:** {row["test_scope"]}
+ - COLUMN tests are consolidated into aggregate queries and execute faster.
+ - TABLE, REFERENTIAL and CUSTOM tests are executed individually and may take longer to run.
 
 **Data Quality Dimension:** {row["dq_dimension"]}
 """

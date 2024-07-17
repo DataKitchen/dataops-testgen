@@ -124,14 +124,14 @@ def open_drill_downs(dct_selected_rows, button_slots):
         st.experimental_rerun()
 
     if button_slots[1].button(
-        f":{'gray' if not dct_selected_rows else 'green'}[Anomalies　→]",
+        f":{'gray' if not dct_selected_rows else 'green'}[Hygiene　→]",
         help="Review potential data problems identified in profiling",
         use_container_width=True,
         disabled=not dct_selected_rows,
     ):
         st.session_state["drill_profile_run"] = dct_selected_row["profiling_run_id"]
         st.session_state["drill_profile_tg"] = dct_selected_row["table_groups_id"]
-        session.current_page = "profiling/anomalies"
+        session.current_page = "profiling/hygiene"
         session.current_page_args = {}
         st.experimental_rerun()
 

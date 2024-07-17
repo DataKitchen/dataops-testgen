@@ -23,6 +23,7 @@ UPDATE test_results
                                        ELSE ''
                                      END),
       table_groups_id = d.table_groups_id,
+      test_suite_id = s.id,
       auto_gen = d.last_auto_gen_date IS NOT NULL
   FROM test_results r
 INNER JOIN test_suites s

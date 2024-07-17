@@ -18,7 +18,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     LOG.info("CurrentStep: Retrieving General Parameters for Test Suite " + strTestSuite)
     dctParms = RetrieveTestGenParms(strTableGroupsID, strTestSuite)
 
-    # Set Project Connection Parms in db_bridgers from retrieved parms
+    # Set Project Connection Parms from retrieved parms
     LOG.info("CurrentStep: Assigning Connection Parameters")
     AssignConnectParms(
         dctParms["project_code"],
@@ -37,6 +37,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     # Set static parms
     clsTests.project_code = dctParms["project_code"]
     clsTests.test_suite = strTestSuite
+    clsTests.test_suite_id = dctParms["test_suite_id"]
     clsTests.generation_set = strGenerationSet if strGenerationSet is not None else ""
     clsTests.connection_id = str(dctParms["connection_id"])
     clsTests.table_groups_id = strTableGroupsID

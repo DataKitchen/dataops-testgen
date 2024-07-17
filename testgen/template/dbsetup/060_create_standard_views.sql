@@ -9,19 +9,18 @@ DROP VIEW IF EXISTS v_latest_profile_results CASCADE;
 
 CREATE VIEW v_latest_profile_results
 AS
-  WITH last_run AS ( SELECT project_code,
-                            table_groups_id,
-                            schema_name,
-                            MAX(run_date) AS last_run_date
-                       FROM profile_results
-                      GROUP BY project_code, table_groups_id, schema_name )
-SELECT p.*
+  WITH last_run AS ( SELECT table_groups_id,
+                            MAX(profiling_starttime) AS last_run_date
+                       FROM profiling_runs
+                      GROUP BY table_groups_id )
+SELECT r.*
   FROM last_run lr
-       JOIN profile_results p
-            ON lr.project_code = p.project_code
-           AND lr.table_groups_id = p.table_groups_id
-           AND lr.schema_name = p.schema_name
-           AND lr.last_run_date = p.run_date;
+INNER JOIN profiling_runs p
+   ON lr.table_groups_id = p.table_groups_id
+  AND lr.last_run_date = p.profiling_starttime
+INNER JOIN profile_results r
+   ON p.id = r.profile_run_id;
+
 
 DROP VIEW IF EXISTS v_latest_profile_anomalies;
 
@@ -43,7 +42,7 @@ INNER JOIN profile_anomaly_types t
 INNER JOIN profiling_runs pr
    ON (r.profile_run_id = pr.id)
 INNER JOIN last_profile_date l
-   ON (r.table_groups_id = l.table_groups_id
+   ON (pr.table_groups_id = l.table_groups_id
   AND  pr.profiling_starttime = l.last_profile_run_date);
 
 
@@ -95,13 +94,14 @@ SELECT r.id as test_run_id,
        SUM(result_code) as passed_ct,
        COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0) as failed_ct,
        COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct,
-       process_id
+       r.process_id
   FROM test_runs r
 INNER JOIN projects p
    ON (r.project_code = p.project_code)
 INNER JOIN test_results tr
    ON (r.id = tr.test_run_id)
-GROUP BY r.id, r.project_code, p.project_name, r.test_suite, r.test_starttime, r.test_endtime, r.status, r.log_message;
+GROUP BY r.id, r.project_code, r.test_suite, r.test_starttime, r.test_endtime,
+         r.process_id, r.status, r.log_message, p.project_name;
 
 
 DROP VIEW IF EXISTS v_test_results;
@@ -145,32 +145,35 @@ SELECT p.project_name,
        r.project_code,
        r.table_groups_id,
        r.id as test_result_id, c.id as connection_id,
-       ts.id as test_suite_id,
+       r.test_suite_id,
        r.test_definition_id as test_definition_id_runtime,
-       d.id as test_definition_id_current,
-       r.test_run_id as test_run_id
+       CASE
+         WHEN r.auto_gen = TRUE THEN d.id
+                                ELSE r.test_definition_id
+       END as test_definition_id_current,
+       r.test_run_id as test_run_id,
+       r.auto_gen
   FROM test_results r
 INNER JOIN test_types tt
    ON (r.test_type = tt.test_type)
 LEFT JOIN test_definitions d
-   ON (r.project_code = d.project_code
-  AND  r.test_suite = d.test_suite
-  AND  r.schema_name = d.schema_name
+   ON (r.test_suite_id = d.test_suite_id
   AND  r.table_name = d.table_name
   AND  r.column_names = COALESCE(d.column_name, 'N/A')
-  AND  r.test_type = d.test_type)
+  AND  r.test_type = d.test_type
+  AND  r.auto_gen = TRUE
+  AND  d.last_auto_gen_date IS NOT NULL)
 INNER JOIN test_suites ts
-   ON (r.project_code = ts.project_code
-  AND  r.test_suite = ts.test_suite)
+   ON (r.test_suite_id = ts.id)
 INNER JOIN projects p
    ON (r.project_code = p.project_code)
 INNER JOIN table_groups tg
-   ON (d.table_groups_id = tg.id)
+   ON (r.table_groups_id = tg.id)
 INNER JOIN connections cn
    ON (tg.connection_id = cn.connection_id)
 LEFT JOIN cat_test_conditions c
    ON (cn.sql_flavor = c.sql_flavor
-  AND  d.test_type = c.test_type);
+  AND  r.test_type = c.test_type);
 
 
 DROP VIEW IF EXISTS v_queued_observability_results;

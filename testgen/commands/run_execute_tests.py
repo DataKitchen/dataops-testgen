@@ -93,7 +93,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
             if intErrors > 0:
                 booErrors = True
                 error_msg = (
-                    f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) "
+                    f"Errors were encountered executing Referential Tests. ({intErrors} errors occurred.) "
                     "Please check log. "
                 )
                 LOG.warning(error_msg)

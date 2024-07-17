@@ -84,7 +84,14 @@ CREATE TABLE table_groups
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0' ,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
-    profile_pair_rule_pct    INTEGER DEFAULT 95
+    profile_pair_rule_pct    INTEGER DEFAULT 95,
+    data_source              VARCHAR(40),
+    source_system            VARCHAR(40),
+    data_location            VARCHAR(40),
+    source_process           VARCHAR(40),
+    business_domain          VARCHAR(40),
+    stakeholder_group        VARCHAR(40),
+    transform_level          VARCHAR(40)
 );
 
 CREATE TABLE profiling_runs (
@@ -139,8 +146,9 @@ CREATE TABLE test_definitions (
          PRIMARY KEY,
    project_code           VARCHAR(30),
    table_groups_id        UUID,
-   profile_run_id       UUID,
+   profile_run_id         UUID,
    test_type              VARCHAR(200),
+   test_suite_id          UUID,
    test_suite             VARCHAR(200),
    test_description       VARCHAR(1000),
    test_action            VARCHAR(100),
@@ -354,7 +362,7 @@ CREATE TABLE data_table_chars (
    source_process        VARCHAR(40),
    business_domain       VARCHAR(40),
    stakeholder_group     VARCHAR(40),
-   transformation_level  VARCHAR(40),
+   transform_level       VARCHAR(40),
    aggregation_level     VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
@@ -379,7 +387,7 @@ CREATE TABLE data_column_chars (
    source_process         VARCHAR(40),
    business_domain        VARCHAR(40),
    stakeholder_group      VARCHAR(40),
-   transformation_level   VARCHAR(40),
+   transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,
@@ -509,6 +517,7 @@ CREATE TABLE test_results (
    test_type              VARCHAR(50)
       CONSTRAINT test_results_test_types_test_type_fk
          REFERENCES test_types,
+   test_suite_id          UUID,
    test_suite             VARCHAR(200),
    test_definition_id     UUID,
    auto_gen               BOOLEAN,
@@ -643,6 +652,9 @@ CREATE UNIQUE INDEX uix_td_id
 CREATE INDEX ix_td_tg
    ON test_definitions(table_groups_id);
 
+CREATE INDEX ix_td_ts_tc
+   ON test_definitions(test_suite_id, table_name, column_name, test_type);
+
 -- Index test_runs
 CREATE INDEX ix_trun_pc_ts_time
    ON test_runs(project_code, test_suite, test_starttime);
@@ -665,6 +677,9 @@ CREATE INDEX ix_tr_tt
 
 CREATE INDEX ix_tr_pc_sctc_tt
    ON test_results(project_code, test_suite, schema_name, table_name, column_names, test_type);
+
+CREATE INDEX ix_tr_ts_tctt
+   ON test_results(test_suite_id, table_name, column_names, test_type);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -- PROFILING OPTIMIZATION

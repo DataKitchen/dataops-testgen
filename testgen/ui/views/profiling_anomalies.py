@@ -3,7 +3,6 @@ import typing
 import plotly.express as px
 import streamlit as st
 
-import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
@@ -11,23 +10,23 @@ import testgen.ui.services.toolbar_service as tb
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
-from testgen.ui.views.profiling_details import show_profiling_detail
+from testgen.ui.views.profiling_modal import view_profiling_modal
 
 
 class ProfilingAnomaliesPage(Page):
-    path = "profiling/anomalies"
+    path = "profiling/hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status or "login",
     ]
 
     def render(self) -> None:
         export_container = fm.render_page_header(
-            "Profiling Anomalies",
+            "Hygiene Issues",
             "https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies",
             lst_breadcrumbs=[
                 {"label": "Overview", "path": "overview"},
                 {"label": "Data Profiling", "path": "profiling"},
-                {"label": "Profiling Anomalies", "path": None},
+                {"label": "Hygiene Issues", "path": None},
             ],
         )
 
@@ -62,14 +61,14 @@ class ProfilingAnomaliesPage(Page):
                 str_likelihood = st.selectbox("Issue Likelihood", lst_status_options)
 
             with tool_bar.short_slots[0]:
-                str_help = "Toggle on to perform actions on multiple anomalies"
+                str_help = "Toggle on to perform actions on multiple Hygiene Issues"
                 do_multi_select = st.toggle("Multi-Select", help=str_help)
 
             if str_table_groups_id:
                 # Get summary counts
                 df_sum = get_profiling_anomaly_summary(str_profile_run_id)
 
-                # Get anomaly list
+                # Get hygiene issue list
                 df_pa = get_profiling_anomalies(str_profile_run_id, str_likelihood)
 
                 # Retrieve disposition action (cache refreshed)
@@ -91,7 +90,7 @@ class ProfilingAnomaliesPage(Page):
                     ]
                     # TODO: Can we reintegrate percents below:
                     # tool_bar.set_prompt(
-                    #     f"Anomalies Found:  {df_sum.at[0, 'issue_ct']} issues in {df_sum.at[0, 'column_ct']} columns, {df_sum.at[0, 'table_ct']} tables in schema {df_pa.loc[0, 'schema_name']}"
+                    #     f"Hygiene Issues Found:  {df_sum.at[0, 'issue_ct']} issues in {df_sum.at[0, 'column_ct']} columns, {df_sum.at[0, 'table_ct']} tables in schema {df_pa.loc[0, 'schema_name']}"
                     # )
                     # Show main grid and retrieve selections
                     selected = fm.render_grid_select(
@@ -112,7 +111,7 @@ class ProfilingAnomaliesPage(Page):
                         ]
                         lst_wrap_columns = ["anomaly_description", "suggested_action"]
                         fm.render_excel_export(
-                            df_pa, lst_export_columns, "Profiling Anomalies", "{TIMESTAMP}", lst_wrap_columns
+                            df_pa, lst_export_columns, "Hygiene Screen", "{TIMESTAMP}", lst_wrap_columns
                         )
 
                     if selected:
@@ -121,7 +120,7 @@ class ProfilingAnomaliesPage(Page):
                     else:
                         selected_row = None
 
-                    # Display anomaly detail for selected row
+                    # Display hygiene issue detail for selected row
                     if not selected_row:
                         st.markdown(":orange[Select a record to see more information.]")
                     else:
@@ -139,14 +138,15 @@ class ProfilingAnomaliesPage(Page):
                                     "likelihood_explanation",
                                     "suggested_action",
                                 ],
-                                "Anomaly Information",
+                                "Hygiene Issue Detail",
                                 int_data_width=700,
                             )
                         with col2:
                             # _, v_col2 = st.columns([0.3, 0.7])
                             v_col1, v_col2 = st.columns([0.5, 0.5])
-                        view_profiling(
-                            v_col1, selected_row["table_name"], selected_row["column_name"], str_profile_run_id
+                        view_profiling_modal(
+                            v_col1, selected_row["table_name"], selected_row["column_name"],
+                            str_profile_run_id=str_profile_run_id
                         )
                         view_bad_data(v_col2, selected_row)
 
@@ -186,11 +186,11 @@ class ProfilingAnomaliesPage(Page):
                             lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
                         )
                 else:
-                    tool_bar.set_prompt("No Anomalies Found")
+                    tool_bar.set_prompt("No Hygiene Issues Found")
 
             # Help Links
             st.markdown(
-                "[Help on Anomalies](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
+                "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
             )
 
             # with st.sidebar:
@@ -352,11 +352,11 @@ def get_bad_data(selected_row):
                 lst_query[0]["connect_by_url"],
             )
             if df.empty:
-                return "ND", "Data that violates Anomaly criteria is not present in the current dataset.", None
+                return "ND", "Data that violates Hygiene Issue criteria is not present in the current dataset.", None
             else:
                 return "OK", None, df
         else:
-            return "NA", "A source data lookup for this Anomaly is not available.", None
+            return "NA", "A source data lookup for this Issue is not available.", None
 
     except Exception as e:
         return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}", None
@@ -432,7 +432,7 @@ def write_frequency_graph(df_tests):
     df_count = df_count.sort_values(by="frequency", ascending=True)
 
     # Create a horizontal bar chart using Plotly Express
-    fig = px.bar(df_count, x="frequency", y="anomaly_name", orientation="h", title="Anomaly Frequency")
+    fig = px.bar(df_count, x="frequency", y="anomaly_name", orientation="h", title="Issue Frequency")
     fig.update_layout(title_font={"color": "green"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     if len(df_count) <= 5:
         # fig.update_layout(bargap=0.9)
@@ -447,7 +447,7 @@ def view_bad_data(button_container, selected_row):
 
     with button_container:
         if st.button(
-            ":green[Source Data →]", help="Review current source data for highlighted anomaly", use_container_width=True
+            ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
         ):
             bad_data_modal.open()
 
@@ -458,7 +458,7 @@ def view_bad_data(button_container, selected_row):
             fm.show_prompt(str_header)
 
             # Show the detail line
-            fm.render_html_list(selected_row, ["detail"], None, 700, ["Anomaly Detail"])
+            fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
 
             with st.spinner("Retrieving source data..."):
                 bad_data_status, bad_data_msg, df_bad = get_bad_data(selected_row)
@@ -478,30 +478,13 @@ def view_bad_data(button_container, selected_row):
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
-def view_profiling(button_container, str_table_name, str_column_name, str_profiling_run_id):
-    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
-
-    df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
-
-    profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
-
-    with button_container:
-        if st.button(":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True):
-            profiling_modal.open()
-
-    if profiling_modal.is_open():
-        with profiling_modal.container():
-            fm.render_modal_header(str_header, None)
-            show_profiling_detail(df.iloc[0], 300)
-
-
 def do_disposition_update(selected, str_new_status):
     str_result = None
     if selected:
         if len(selected) > 1:
-            str_which = f"of {len(selected)} anomalies to {str_new_status}"
+            str_which = f"of {len(selected)} issues to {str_new_status}"
         elif len(selected) == 1:
-            str_which = f"of one anomaly to {str_new_status}"
+            str_which = f"of one issue to {str_new_status}"
 
         str_schema = st.session_state["dbschema"]
         if not dq.update_anomaly_disposition(selected, str_schema, str_new_status):
