@@ -4,30 +4,19 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class RedshiftFlavorService(FlavorService):
-    def get_connection_string_head(self, dctCredentials, strPW):
-        strConnect = "{}://{}:{}@".format(
-            dctCredentials["flavor"],
-            dctCredentials["user"],
-            quote_plus(strPW),
-        )
+    def get_connection_string_head(self, strPW):
+        strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@"
         return strConnect
 
-    def get_connection_string_from_fields(self, dctCredentials, strPW):
+    def get_connection_string_from_fields(self, strPW, is_password_overwritten: bool = False):  # NOQA ARG002
         # STANDARD FORMAT:  strConnect = 'flavor://username:password@host:port/database'
-        strConnect = "{}://{}:{}@{}:{}/{}".format(
-            dctCredentials["flavor"],
-            dctCredentials["user"],
-            quote_plus(strPW),
-            dctCredentials["host"],
-            dctCredentials["port"],
-            dctCredentials["dbname"],
-        )
+        strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@{self.host}:{self.port}/{self.dbname}"
         return strConnect
 
-    def get_pre_connection_queries(self, dctCredentials):
+    def get_pre_connection_queries(self):
         return [
-            "SET SEARCH_PATH = '" + dctCredentials["dbschema"] + "'",
+            "SET SEARCH_PATH = '" + self.dbschema + "'",
         ]
 
-    def get_connect_args(self):
+    def get_connect_args(self, is_password_overwritten: bool = False):  # NOQA ARG002
         return {}

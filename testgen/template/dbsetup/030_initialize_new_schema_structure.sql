@@ -60,7 +60,10 @@ CREATE TABLE connections (
    max_threads            INTEGER DEFAULT 4,
    max_query_chars        INTEGER,
    url VARCHAR(200) default '',
-   connect_by_url BOOLEAN default FALSE
+   connect_by_url BOOLEAN default FALSE,
+   connect_by_key BOOLEAN DEFAULT FALSE,
+   private_key BYTEA,
+   private_key_passphrase BYTEA
 );
 
 CREATE TABLE table_groups

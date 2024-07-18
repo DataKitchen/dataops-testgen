@@ -110,5 +110,8 @@ def validate_test(test_definition):
         connection["password"],
         connection["url"],
         connection["connect_by_url"],
+        connection["connect_by_key"],
+        connection["private_key"],
+        connection["private_key_passphrase"],
         sql_query,
     )

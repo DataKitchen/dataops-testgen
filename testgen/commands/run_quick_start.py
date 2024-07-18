@@ -80,6 +80,9 @@ def _prepare_connection_to_target_database(params_mapping):
         params_mapping["SQL_FLAVOR"],
         None,
         None,
+        False,
+        None,
+        None,
         "PROJECT",
     )
 
