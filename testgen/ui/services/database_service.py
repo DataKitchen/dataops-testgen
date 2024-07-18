@@ -244,9 +244,7 @@ def apply_df_edits(df_original, df_edited, str_table, lst_id_columns, no_update_
     return booStatus
 
 
-def _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url):
-    flavor_service = get_flavor_service(flavor)
-
+def _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url, connect_by_key, private_key, private_key_passphrase):
     connection_params = {
         "flavor": flavor if flavor != "redshift" else "postgresql",
         "user": user,
@@ -255,25 +253,30 @@ def _start_target_db_engine(flavor, host, port, db_name, user, password, url, co
         "dbname": db_name,
         "url": url,
         "connect_by_url": connect_by_url,
+        "connect_by_key": connect_by_key,
+        "private_key": private_key,
+        "private_key_passphrase": private_key_passphrase,
         "dbschema": None,
     }
-    connection_string = flavor_service.get_connection_string(connection_params, password)
+    flavor_service = get_flavor_service(flavor)
+    flavor_service.init(connection_params)
+    connection_string = flavor_service.get_connection_string(password)
     connect_args = {"connect_timeout": 3600}
     connect_args.update(flavor_service.get_connect_args())
-
     return create_engine(connection_string, connect_args=connect_args)
 
 
-def retrieve_target_db_data(flavor, host, port, db_name, user, password, url, connect_by_url, sql_query, decrypt=False):
+def retrieve_target_db_data(flavor, host, port, db_name, user, password, url, connect_by_url, connect_by_key, private_key, private_key_passphrase, sql_query, decrypt=False):
     if decrypt:
         password = DecryptText(password)
-    db_engine = _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url)
+    db_engine = _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url, connect_by_key, private_key, private_key_passphrase)
     with db_engine.connect() as connection:
         query_result = connection.execute(text(sql_query))
         return query_result.fetchall()
 
 
-def retrieve_target_db_df(flavor, host, port, db_name, user, password, sql_query, url, connect_by_url):
-    password = DecryptText(password)
-    db_engine = _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url)
+def retrieve_target_db_df(flavor, host, port, db_name, user, password, sql_query, url, connect_by_url, connect_by_key, private_key, private_key_passphrase):
+    if password:
+        password = DecryptText(password)
+    db_engine = _start_target_db_engine(flavor, host, port, db_name, user, password, url, connect_by_url, connect_by_key, private_key, private_key_passphrase)
     return pd.read_sql_query(text(sql_query), db_engine)

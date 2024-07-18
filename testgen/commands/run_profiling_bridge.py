@@ -261,6 +261,9 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         dctParms["sql_flavor"],
         dctParms["url"],
         dctParms["connect_by_url"],
+        dctParms["connect_by_key"],
+        dctParms["private_key"],
+        dctParms["private_key_passphrase"],
         "PROJECT",
     )
 

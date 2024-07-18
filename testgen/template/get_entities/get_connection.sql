@@ -13,6 +13,9 @@ SELECT
 	max_query_chars,
     project_qc_schema,
     url,
-    connect_by_url
+    connect_by_url,
+    connect_by_key,
+    private_key,
+    private_key_passphrase
 FROM connections
 WHERE connection_id = {CONNECTION_ID};

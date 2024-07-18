@@ -353,7 +353,8 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
     str_sql = f"""
             SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url
+                   c.url, c.connect_by_url,
+                   c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.target_data_lookups t
             INNER JOIN {str_schema}.table_groups tg
                ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
@@ -434,6 +435,9 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
                 str_sql,
                 lst_query[0]["url"],
                 lst_query[0]["connect_by_url"],
+                lst_query[0]["connect_by_key"],
+                lst_query[0]["private_key"],
+                lst_query[0]["private_key_passphrase"],
             )
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", None
@@ -453,7 +457,7 @@ def do_source_data_lookup_custom(selected_row):
     str_sql = f"""
             SELECT d.custom_query as lookup_query, tg.table_group_schema, c.project_qc_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url
+                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.test_definitions d
             INNER JOIN {str_schema}.table_groups tg
                ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
@@ -480,6 +484,9 @@ def do_source_data_lookup_custom(selected_row):
                 str_sql,
                 lst_query[0]["url"],
                 lst_query[0]["connect_by_url"],
+                lst_query[0]["connect_by_key"],
+                lst_query[0]["private_key"],
+                lst_query[0]["private_key_passphrase"],
             )
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", None

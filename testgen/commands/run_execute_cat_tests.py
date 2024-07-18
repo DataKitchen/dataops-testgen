@@ -95,6 +95,9 @@ def run_cat_test_queries(
         dctParms["sql_flavor"],
         dctParms["url"],
         dctParms["connect_by_url"],
+        dctParms["connect_by_key"],
+        dctParms["private_key"],
+        dctParms["private_key_passphrase"],
         "PROJECT",
     )
 
