@@ -189,7 +189,7 @@ def show_record_detail(selected, profile_cli_command_modal, profile_command_moda
         st.write("<br/><br/>", unsafe_allow_html=True)
         _, button_column = st.columns([0.3, 0.7])
         with button_column:
-            if st.button("Run Profile Command", help="Runs the run-profile command", use_container_width=True):
+            if st.button("Run Profiling", help="Performs profiling on the Table Group", use_container_width=True):
                 profile_command_modal.open()
             if st.button(
                 "Show Run Profile CLI Command", help="Shows the run-profile CLI command", use_container_width=True

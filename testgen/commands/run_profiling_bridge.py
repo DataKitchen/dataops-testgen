@@ -449,6 +449,8 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             lstQueries.append(strQuery)
             strQuery = clsProfiling.GetFunctionalTableTypeUpdateQuery()
             lstQueries.append(strQuery)
+            strQuery = clsProfiling.GetPIIFlagUpdateQuery()
+            lstQueries.append(strQuery)
             lstQueries.extend(CompileAnomalyTestQueries(clsProfiling))
             strQuery = clsProfiling.GetAnomalyRefreshQuery()
             lstQueries.append(strQuery)

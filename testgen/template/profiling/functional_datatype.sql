@@ -263,7 +263,7 @@ INNER JOIN profile_results s
   AND  c.position + 1 = s.position
   AND  'State' = s.functional_data_type)
  WHERE c.profile_run_id = '{PROFILE_RUN_ID}'
-   AND c.column_name SIMILAR TO '%c(|i)ty%'
+   AND LOWER(c.column_name) SIMILAR TO '%c(|i)ty%'
    AND c.functional_data_type NOT IN ('State', 'Zip')
    AND profile_results.id = c.id;
   
@@ -283,19 +283,19 @@ UPDATE profile_results
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
    AND avg_length <= 8
    AND avg_embedded_spaces < 0.2
-   AND (column_name SIMILAR TO '%f(|i)rst(_| |)n(|a)m%%'
-    OR  column_name SIMILAR TO '%(middle|mdl)(_| |)n(|a)m%%'
-    OR  column_name SIMILAR TO '%nick(_| |)n(|a)m%%');
+   AND (LOWER(column_name) SIMILAR TO '%f(|i)rst(_| |)n(|a)m%%'
+    OR  LOWER(column_name) SIMILAR TO '%(middle|mdl)(_| |)n(|a)m%%'
+    OR  LOWER(column_name) SIMILAR TO '%nick(_| |)n(|a)m%%');
 
 -- Assign Last Name
 UPDATE profile_results
    SET functional_data_type = 'Person Last Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
-   AND column_name SIMILAR TO '%l(|a)st(_| |)n(|a)m%'
    AND avg_length BETWEEN 5 and 8
    AND avg_embedded_spaces < 0.2
-   AND (column_name SIMILAR TO '%l(|a)st(_| |)n(|a)m%'
-    OR  column_name SIMILAR TO '%sur(_| |)n(|a)m%');
+   AND (LOWER(column_name) SIMILAR TO '%l(|a)st(_| |)n(|a)m%'
+    OR  LOWER(column_name) SIMILAR TO '%maiden(_| |)n(|a)m%'
+    OR  LOWER(column_name) SIMILAR TO '%sur(_| |)n(|a)m%');
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'
@@ -413,7 +413,7 @@ SET functional_data_type =
             WHEN (max_value - min_value + 1 = distinct_value_ct) AND (fractional_sum IS NULL OR fractional_sum > 0)
                 THEN 'Sequence'
             WHEN general_type='N'
-             AND column_name SIMILAR TO '%(no|num|number|nbr)'
+             AND LOWER(column_name) SIMILAR TO '%(no|num|number|nbr)'
                      AND (column_type ILIKE '%int%'
                           OR
                           (RTRIM(SPLIT_PART(column_type, ',', 2), ')') > '0'

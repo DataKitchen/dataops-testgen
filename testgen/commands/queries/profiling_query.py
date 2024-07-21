@@ -136,6 +136,11 @@ class CProfilingSQL:
         strQ = self.ReplaceParms(read_template_sql_file("functional_tabletype_update.sql", sub_directory="profiling"))
         return strQ
 
+    def GetPIIFlagUpdateQuery(self):
+        # Runs on DK Postgres Server
+        strQ = self.ReplaceParms(read_template_sql_file("pii_flag.sql", sub_directory="profiling"))
+        return strQ
+
     def GetAnomalyRefreshQuery(self):
         # Runs on DK Postgres Server
         strQ = self.ReplaceParms(read_template_sql_file("refresh_anomalies.sql", sub_directory="profiling"))

@@ -35,6 +35,7 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
                    CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
                    d.lock_refresh,
                    CASE WHEN d.lock_refresh = 'Y' THEN 'Yes' ELSE 'No' END as lock_refresh_display,
+                   t.test_scope, 
                    d.test_description,
                    d.profiling_as_of_date,
                    d.last_manual_update,

@@ -102,7 +102,7 @@ class ProfilingResultsPage(Page):
                     "table_name",
                     "column_name",
                     "column_type",
-                    "functional_data_type",
+                    "semantic_data_type",
                     "anomalies",
                 ]
 
@@ -121,8 +121,8 @@ class ProfilingResultsPage(Page):
                         "position",
                         "column_type",
                         "general_type",
-                        "functional_table_type",
-                        "functional_data_type",
+                        "semantic_table_type",
+                        "semantic_data_type",
                         "datatype_suggestion",
                         "anomalies",
                         "record_ct",
