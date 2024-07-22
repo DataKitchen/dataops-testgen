@@ -72,7 +72,7 @@ def write_column_header(selected_row, form_data_width):
         "schema_name",
         "general_type",
         "column_type",
-        "functional_data_type",
+        "semantic_data_type",
         "datatype_suggestion",
     ]
     fm.render_html_list(selected_row, lst_columns, str_header, form_data_width)

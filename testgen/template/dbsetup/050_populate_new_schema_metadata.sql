@@ -94,7 +94,8 @@ n controls over data ingested and to make values more efficient, consistent and 
     'p.includes_digit_ct::FLOAT/NULLIF(p.value_ct, 0)::FLOAT > 0.5 AND TRIM(fn_parsefreq(p.top_freq_values, 1, 1))  ~ ''(?i)^[0-9]+(\.[0-9]+)? ?(%|lb|oz|kg|g|mg|km|m|cm|mm|mi|ft|in)$''',
     '''Top Freq: '' || p.top_freq_values', 'Possible',
     'Review your source data and ingestion process. Consider whether it might be better to parse the numeric and unit data and store in separate columns.'),
-   ('1027', 'Variant_Coded_Values', 'Variant', 'Variant Codings for Same Values', 'This column contains more than one common variants that represent a single value or state. This can occur when data is integrated from multiple sources with different standards, or when free entry is permitted without validation. The variations can cause confusion and error for downstream data users and multiple versions of the truth. ', 'p.distinct_value_ct <= 20', '''Variants Found: '' || intersect_list', 'Definite', 'Review your source data and ingestion process. Consider cleansing this data to standardize on a single set of definitive codes.');
+   ('1027', 'Variant_Coded_Values', 'Variant', 'Variant Codings for Same Values', 'This column contains more than one common variants that represent a single value or state. This can occur when data is integrated from multiple sources with different standards, or when free entry is permitted without validation. The variations can cause confusion and error for downstream data users and multiple versions of the truth. ', 'p.distinct_value_ct <= 20', '''Variants Found: '' || intersect_list', 'Definite', 'Review your source data and ingestion process. Consider cleansing this data to standardize on a single set of definitive codes.'),
+   ('1100', 'Potential_PII', 'Column', 'Personally Identifiable Information', 'This column contains data that could be Personally Identifiable Information (PII)', 'p.pii_flag > ''''', '''Risk: '' || CASE LEFT(p.pii_flag, 1) WHEN ''A'' THEN ''HIGH'' WHEN ''B'' THEN ''MODERATE'' WHEN ''C'' THEN ''LOW'' END || '', PII Type: '' || SUBSTRING(p.pii_flag, 3)', 'Potential PII', 'PII may require steps to ensure data security and compliance with relevant privacy regulations and legal requirements. You may have to classify and inventory PII, implement appropriate access controls, encrypt data, and monitor for unauthorized access. Your organization might be required to update privacy policies and train staff on data protection practices. Note that PII that is lower-risk in isolation might be high-risk in conjunction with other data.');
 
 
 TRUNCATE TABLE test_types;
@@ -1191,7 +1192,11 @@ SELECT ''Latest Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE {SUBSET_CONDITION}
   AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
-)')
+)'),
+        ('1269', '1100', 'Profile Anomaly', 'Potential_PII', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
+        ('1270', '1100', 'Profile Anomaly', 'Potential_PII', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
+        ('1271', '1100', 'Profile Anomaly', 'Potential_PII', 'mssql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
+        ('1272', '1100', 'Profile Anomaly', 'Potential_PII', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;')
 ;
 
 

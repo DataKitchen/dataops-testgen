@@ -263,6 +263,7 @@ CREATE TABLE profile_results (
    embedded_space_ct     BIGINT,
    avg_embedded_spaces   DOUBLE PRECISION,
    std_pattern_match     VARCHAR(30),
+   pii_flag              VARCHAR(50),
    functional_data_type  VARCHAR(50),
    functional_table_type VARCHAR(50),
    sample_ratio          FLOAT

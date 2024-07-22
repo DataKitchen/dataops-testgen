@@ -1,0 +1,3 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE profile_results ADD COLUMN pii_flag VARCHAR(50);

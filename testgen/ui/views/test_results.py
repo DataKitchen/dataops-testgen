@@ -180,7 +180,8 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-                   tt.dq_dimension, r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
+                   tt.dq_dimension, tt.test_scope,  
+                   r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
                    tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
                    c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
                    CASE
@@ -671,10 +672,11 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
         view_edit_test(v_col1, selected_row["test_definition_id_current"])
-        view_profiling_modal(
-            v_col2, selected_row["table_name"], selected_row["column_names"],
-            str_table_groups_id=selected_row["table_groups_id"]
-        )
+        if selected_row["test_scope"] == "column":
+            view_profiling_modal(
+                v_col2, selected_row["table_name"], selected_row["column_names"],
+                str_table_groups_id=selected_row["table_groups_id"]
+            )
         view_bad_data(v_col3, selected_row)
 
         with pg_col1:

@@ -57,8 +57,8 @@ class ProfilingAnomaliesPage(Page):
 
             with tool_bar.long_slots[1]:
                 # Likelihood selection - optional filter
-                lst_status_options = ["All Likelihoods", "Definite", "Likely", "Possible"]
-                str_likelihood = st.selectbox("Issue Likelihood", lst_status_options)
+                lst_status_options = ["All Likelihoods", "Definite", "Likely", "Possible", "Potential PII"]
+                str_likelihood = st.selectbox("Issue Class", lst_status_options)
 
             with tool_bar.short_slots[0]:
                 str_help = "Toggle on to perform actions on multiple Hygiene Issues"
@@ -206,7 +206,10 @@ def get_db_table_group_choices(str_project_code):
 @st.cache_data(show_spinner="Retrieving Data")
 def get_profiling_anomalies(str_profile_run_id, str_likelihood):
     str_schema = st.session_state["dbschema"]
-    str_criteria = f" AND t.issue_likelihood = '{str_likelihood}'" if str_likelihood != "All Likelihoods" else ""
+    if str_likelihood == "All Likelihoods":
+        str_criteria = " AND t.issue_likelihood <> 'Potential PII'"
+    else:
+        str_criteria = f" AND t.issue_likelihood = '{str_likelihood}'"
     # Define the query -- first visible column must be first, because will hold the multi-select box
     str_sql = f"""
             SELECT r.table_name, r.column_name, r.schema_name,
@@ -216,6 +219,8 @@ def get_profiling_anomalies(str_profile_run_id, str_likelihood):
                      WHEN t.issue_likelihood = 'Possible' THEN 'Possible: speculative test that often identifies problems'
                      WHEN t.issue_likelihood = 'Likely'   THEN 'Likely: typically indicates a data problem'
                      WHEN t.issue_likelihood = 'Definite'  THEN 'Definite: indicates a highly-likely data problem'
+                     WHEN t.issue_likelihood = 'Potential PII' 
+                       THEN 'Potential PII: may require privacy policies, standards and procedures for access, storage and transmission.'
                    END as likelihood_explanation,
                    t.anomaly_description, r.detail, t.suggested_action,
                    r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime
