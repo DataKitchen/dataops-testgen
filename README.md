@@ -12,7 +12,12 @@ What does DataKitchen's DataOps Data Quality TestGen do?  It helps you understan
 It constantly <b>watches your data for data quality anomalies</b> and lets you drill into problems.
 <br></br>
 <p align="center">
-<img alt="DatKitchen Open Source Data Quality TestGen Features - Data Ingestion and Quality Testing" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.23.07 PM.png"  width="70%" >
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Data Ingestion and Quality Testing" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.23.07 PM.png"  width="70%" >
+</p>
+A <b>single place to manage Data Quality</b> across data sets, locations, and teams.
+<br></br>
+<p align="center">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Singel Placeg" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-dataops-testgen-centralize.png"  width="70%" >
 </p>
 
 ## Installation
