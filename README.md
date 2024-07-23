@@ -16,6 +16,7 @@ It constantly <b>watches your data for data quality anomalies</b> and lets you d
 </p>
 
 ## Installation
+The dk-installer program [installs DataOps Data Quality TestGen](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application).  Install the required software for TestGen and download the installer program to a new directory on your computer.
 
 ### Using dk-installer (recommended)
 Install with a single command using [`dk-installer`](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application).
