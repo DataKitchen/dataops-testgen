@@ -1,11 +1,27 @@
-# DataOps TestGen 
+# DataOps Data Quality TestGen 
 ![apache 2.0 license Badge](https://img.shields.io/badge/License%20-%20Apache%202.0%20-%20blue) ![PRs Badge](https://img.shields.io/badge/PRs%20-%20Welcome%20-%20green) [![Latest Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2Ftags%2F&query=results%5B0%5D.name&label=latest%20version&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Docker Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2F&query=pull_count&style=flat&label=docker%20pulls&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Documentation](https://img.shields.io/badge/docs-On%20datakitchen.io-06A04A?style=flat)](https://docs.datakitchen.io/articles/#!dataops-testgen-help/dataops-testgen-help) [![Static Badge](https://img.shields.io/badge/Slack-Join%20Discussion-blue?style=flat&logo=slack)](https://data-observability-slack.datakitchen.io/join)
 
-*<p style="text-align: center;">DataOps TestGen delivers simple, fast data quality test generation and execution by data profiling,  new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. DataOps TestGen is part of DataKitchen's Open Source Data Observability.</p>* 
+*<p style="text-align: center;">DataOps Data Quality TestGen delivers simple, fast data quality test generation and execution by data profiling,  new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. DataOps TestGen is part of DataKitchen's Open Source Data Observability.</p>* 
 
-![DatKitchen Open Source Data Observability](https://datakitchen.io/wp-content/uploads/2024/04/both-products.png)
+## Features
+
+What does DataKitchen's DataOps Data Quality TestGen do?  It helps you understand and <b>find data issues in new data</b>. 
+<p align="center">
+<img alt="DatKitchen Open Source Data Quality TestGen Features - New Data" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.22.57 PM.png" width="70%" >
+</p>
+It constantly <b>watches your data for data quality anomalies</b> and lets you drill into problems.
+<br></br>
+<p align="center">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Data Ingestion and Quality Testing" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.23.07 PM.png"  width="70%" >
+</p>
+A <b>single place to manage Data Quality</b> across data sets, locations, and teams.
+<br></br>
+<p align="center">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Singel Placeg" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-dataops-testgen-centralize.png"  width="70%" >
+</p>
 
 ## Installation
+The dk-installer program [installs DataOps Data Quality TestGen](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application).  Install the required software for TestGen and download the installer program to a new directory on your computer.
 
 ### Using dk-installer (recommended)
 Install with a single command using [`dk-installer`](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application).
