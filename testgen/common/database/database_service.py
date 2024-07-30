@@ -23,7 +23,7 @@ from testgen.common.credentials import (
 from testgen.common.encrypt import DecryptText
 from testgen.common.read_file import get_template_files
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 class CConnectParms:
@@ -38,6 +38,9 @@ class CConnectParms:
     sql_flavor = ""
     url = ""
     connect_by_url = ""
+    connect_by_key = ""
+    private_key = ""
+    private_key_passphrase = ""
     password = None
 
     def __init__(self, connectname):
@@ -83,6 +86,9 @@ def AssignConnectParms(
     flavor,
     url,
     connect_by_url,
+    connect_by_key,
+    private_key,
+    private_key_passphrase,
     connectname="PROJECT",
     password=None,
 ):
@@ -100,6 +106,9 @@ def AssignConnectParms(
     clsConnectParms.password = password
     clsConnectParms.url = url
     clsConnectParms.connect_by_url = connect_by_url
+    clsConnectParms.connect_by_key = connect_by_key
+    clsConnectParms.private_key = private_key
+    clsConnectParms.private_key_passphrase = private_key_passphrase
 
 
 def _RetrieveProjectPW(strProjectCode, strConnID):
@@ -169,6 +178,9 @@ def _GetDBCredentials(strCredentialSet):
             "dbtype": clsConnectParms.sql_flavor,
             "url": clsConnectParms.url,
             "connect_by_url": clsConnectParms.connect_by_url,
+            "connect_by_key": clsConnectParms.connect_by_key,
+            "private_key": clsConnectParms.private_key,
+            "private_key_passphrase": clsConnectParms.private_key_passphrase,
         }
     elif strCredentialSet == "DKTG":
         # Get credentials from functions in my_dk_credentials.py
@@ -204,9 +216,8 @@ def _InitDBConnection(strCredentialSet, strRaw="N", strAdmin="N", user_override=
         con = _InitDBConnection_appdb(dctCredentials, strCredentialSet, strRaw, strAdmin, user_override, pwd_override)
     else:
         flavor_service = get_flavor_service(dctCredentials["dbtype"])
-        con = _InitDBConnection_target_db(
-            flavor_service, dctCredentials, strCredentialSet, strRaw, user_override, pwd_override
-        )
+        flavor_service.init(dctCredentials)
+        con = _InitDBConnection_target_db(flavor_service, strCredentialSet, strRaw, user_override, pwd_override)
     return con
 
 
@@ -277,9 +288,7 @@ def _InitDBConnection_appdb(
     return con
 
 
-def _InitDBConnection_target_db(
-    flavor_service, dctCredentials, strCredentialSet, strRaw="N", user_override=None, pwd_override=None
-):
+def _InitDBConnection_target_db(flavor_service, strCredentialSet, strRaw="N", user_override=None, pwd_override=None):
     # Get DBEngine using credentials
     if strCredentialSet in dctDBEngines:
         # Retrieve existing engine from store
@@ -287,18 +296,21 @@ def _InitDBConnection_target_db(
     else:
         # Handle user override
         if user_override is not None:
-            dctCredentials["user"] = user_override
+            flavor_service.override_user(user_override)
         # Handle password override
         if pwd_override is not None:
             strPW = pwd_override
-        else:
+        elif not flavor_service.is_connect_by_key():
             strPW = _GetDBPassword(strCredentialSet)
+        else:
+            strPW = None
 
         # Open a new engine with appropriate connection parms
-        strConnect = flavor_service.get_connection_string(dctCredentials, strPW)
+        is_password_overwritten = pwd_override is not None
+        strConnect = flavor_service.get_connection_string(strPW, is_password_overwritten)
 
         connect_args = {"connect_timeout": 3600}
-        connect_args.update(flavor_service.get_connect_args())
+        connect_args.update(flavor_service.get_connect_args(is_password_overwritten))
 
         try:
             # Timeout in seconds:  1 hour = 60 * 60 second = 3600
@@ -306,10 +318,10 @@ def _InitDBConnection_target_db(
             dctDBEngines[strCredentialSet] = dbEngine
 
         except SQLAlchemyError as e:
-            raise ValueError(f"Failed to create engine for database {dctCredentials['dbname']}") from e
+            raise ValueError(f"Failed to create engine for database {flavor_service.get_db_name}") from e
 
     # Second, create a connection from our engine
-    queries = flavor_service.get_pre_connection_queries(dctCredentials)
+    queries = flavor_service.get_pre_connection_queries()
     if strRaw == "N":
         connection = dbEngine.connect()
         for query in queries:
@@ -601,8 +613,8 @@ def replace_params(query: str, params_mapping: dict) -> str:
     return query
 
 
-def get_queries_for_command(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$") -> list[str]:
-    files = sorted(get_template_files(mask=mask, sub_directory=sub_directory), key=lambda key: str(key))
+def get_queries_for_command(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", path: str | None = None) -> list[str]:
+    files = sorted(get_template_files(mask=mask, sub_directory=sub_directory, path=path), key=lambda key: str(key))
 
     queries = []
     for file in files:

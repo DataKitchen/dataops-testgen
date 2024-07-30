@@ -12,6 +12,7 @@ import testgen.ui.services.toolbar_service as tb
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 
 
@@ -71,13 +72,13 @@ class TableGroupsPage(Page):
 
         selected = fm.render_grid_select(df, show_columns, show_column_headers=show_column_headers)
 
-        add_modal = testgen.Modal("Add Table Group", "dk-add-table-group-modal", max_width=1100)
-        edit_modal = testgen.Modal("Edit Table Group", "dk-edit-table-group-modal", max_width=1100)
-        delete_modal = testgen.Modal("Delete Table Group", "dk-delete-table-group-modal", max_width=1100)
+        add_modal = testgen.Modal(title=None, key="dk-add-table-group-modal", max_width=1100)
+        edit_modal = testgen.Modal(title=None, key="dk-edit-table-group-modal", max_width=1100)
+        delete_modal = testgen.Modal(title=None, key="dk-delete-table-group-modal", max_width=1100)
         profile_cli_command_modal = testgen.Modal(
-            "Profiling CLI Command", "dk-profiling-cli-command-modal", max_width=1100
+            title=None, key="dk-profiling-cli-command-modal", max_width=1100
         )
-        profile_command_modal = testgen.Modal("Profiling Command", "dk-profiling-command-modal", max_width=1100)
+        profile_command_modal = testgen.Modal(title=None, key="dk-profiling-command-modal", max_width=1100)
 
         if tool_bar.short_slots[1].button(
             "➕ Add", help="Add a new Table Group", use_container_width=True  # NOQA RUF001
@@ -142,6 +143,15 @@ def show_record_detail(selected, profile_cli_command_modal, profile_command_moda
                 "profiling_table_set",
                 "profile_id_column_mask",
                 "profile_sk_column_mask",
+
+                "data_source",
+                "source_system",
+                "data_location",
+                "business_domain",
+                "transform_level",
+                "source_process",
+                "stakeholder_group",
+
                 "profile_use_sampling",
                 "profile_sample_percent",
                 "profile_sample_min_count",
@@ -159,6 +169,15 @@ def show_record_detail(selected, profile_cli_command_modal, profile_command_moda
                 "Explicit Table List",
                 "ID Column Mask",
                 "Surrogate Key Column Mask",
+
+                "Data Source",
+                "Source System",
+                "Data Location",
+                "Business Domain",
+                "Transform Level",
+                "Source Process",
+                "Stakeholder Group",
+
                 "Uses Record Sampling",
                 "Sample Record Percent",
                 "Sample Minimum Record Count",
@@ -170,7 +189,7 @@ def show_record_detail(selected, profile_cli_command_modal, profile_command_moda
         st.write("<br/><br/>", unsafe_allow_html=True)
         _, button_column = st.columns([0.3, 0.7])
         with button_column:
-            if st.button("Run Profile Command", help="Runs the run-profile command", use_container_width=True):
+            if st.button("Run Profiling", help="Performs profiling on the Table Group", use_container_width=True):
                 profile_command_modal.open()
             if st.button(
                 "Show Run Profile CLI Command", help="Shows the run-profile CLI command", use_container_width=True
@@ -182,6 +201,7 @@ def show_profile_command(modal, selected):
     selected_table_group = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Profiling Command", None)
         container = st.empty()
         with container:
             st.markdown(
@@ -215,6 +235,7 @@ def show_profile_command(modal, selected):
 
 def show_profile_cli_command(modal, selected):
     with modal.container():
+        fm.render_modal_header("Profiling CLI Command", None)
         selected_table_group = selected[0]
         table_group_id = selected_table_group["id"]
         profile_command = f"testgen run-profile --table-group-id {table_group_id}"
@@ -225,6 +246,7 @@ def show_delete_modal(modal, selected=None):
     selected_table_group = selected[0]
 
     with modal.container():
+        fm.render_modal_header("Delete Table Group", None)
         table_group_id = selected_table_group["id"]
         table_group_name = selected_table_group["table_groups_name"]
 
@@ -269,6 +291,7 @@ def show_delete_modal(modal, selected=None):
 def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):
     connection_id = connection["connection_id"]
     with modal.container():
+        fm.render_modal_header("Edit Table Group" if mode == "edit" else "Add Table Group", None)
         table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Test"])
 
         with table_groups_settings_tab:
@@ -299,9 +322,14 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None)
             profiling_delay_days = int(selected_table_group["profiling_delay_days"]) if mode == "edit" else 0
 
             left_column, right_column = st.columns([0.50, 0.50])
+
             profile_sampling_expander = st.expander("Sampling Parameters", expanded=False)
             with profile_sampling_expander:
                 expander_left_column, expander_right_column = st.columns([0.50, 0.50])
+
+            provenance_expander = st.expander("Data Provenance (Optional)", expanded=False)
+            with provenance_expander:
+                provenance_left_column, provenance_right_column = st.columns([0.50, 0.50])
 
             with st.form("Table Group Add / Edit", clear_on_submit=True):
                 entity = {
@@ -377,6 +405,52 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None)
                         max_value=1000000,
                         value=profile_sample_min_count,
                         help="The minimum number of records to be included in any sample (if available)",
+                    ),
+                    "data_source": provenance_left_column.text_input(
+                        label="Data Source",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["data_source"]) if mode == "edit" else "",
+                        help="Original source of all tables in this dataset. This can be overridden at the table level. (Optional)",
+                    ),
+                    "source_system": provenance_left_column.text_input(
+                        label="System of Origin",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["source_system"]) if mode == "edit" else "",
+                        help="Enterprise system source for all tables in this dataset. "
+                             "This can be overridden at the table level. (Optional)",
+                    ),
+                    "business_domain": provenance_left_column.text_input(
+                        label="Business Domain",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["business_domain"]) if mode == "edit" else "",
+                        help="Business division responsible for all tables in this dataset. "
+                             "e.g. Finance, Sales, Manufacturing. (Optional)",
+                    ),
+                    "data_location": provenance_left_column.text_input(
+                        label="Location",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["data_location"]) if mode == "edit" else "",
+                        help="Physical or virtual location of all tables in this dataset. "
+                             "e.g. Headquarters, Cloud, etc. (Optional)",
+                    ),
+                    "transform_level": provenance_right_column.text_input(
+                        label="Transform Level",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["transform_level"]) if mode == "edit" else "",
+                        help="Data warehouse processing layer. "
+                             "Indicates the processing stage: e.g. Raw, Conformed, Processed, Reporting. (Optional)",
+                    ),
+                    "source_process": provenance_right_column.text_input(
+                        label="Source Process",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["source_process"]) if mode == "edit" else "",
+                        help="The process, program or data flow that produced this data. (Optional)",
+                    ),
+                    "stakeholder_group": provenance_right_column.text_input(
+                        label="Stakeholder Group",
+                        max_chars=40,
+                        value=empty_if_null(selected_table_group["stakeholder_group"]) if mode == "edit" else "",
+                        help="Designator for data owners or stakeholders who are responsible for this data. (Optional)",
                     ),
                 }
 

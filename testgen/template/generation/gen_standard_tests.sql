@@ -1,5 +1,5 @@
 -- Insert new tests where a locked test is not already present
-INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
+INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite, test_suite_id,
                               schema_name, table_name, column_name,
                               skip_errors, test_active, last_auto_gen_date, profiling_as_of_date,
                               {DEFAULT_PARM_COLUMNS} )
@@ -35,6 +35,7 @@ SELECT '{PROJECT_CODE}' as project_code,
        n.profile_run_id,
        '{TEST_TYPE}' AS test_type,
        '{TEST_SUITE}' AS test_suite,
+       '{TEST_SUITE_ID}' AS test_suite_id,
        n.schema_name, n.table_name, n.column_name,
        0 as skip_errors, 'Y' as test_active, '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date,
        '{AS_OF_DATE}'::TIMESTAMP as profiling_as_of_date,

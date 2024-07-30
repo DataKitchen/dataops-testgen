@@ -60,7 +60,10 @@ CREATE TABLE connections (
    max_threads            INTEGER DEFAULT 4,
    max_query_chars        INTEGER,
    url VARCHAR(200) default '',
-   connect_by_url BOOLEAN default FALSE
+   connect_by_url BOOLEAN default FALSE,
+   connect_by_key BOOLEAN DEFAULT FALSE,
+   private_key BYTEA,
+   private_key_passphrase BYTEA
 );
 
 CREATE TABLE table_groups
@@ -84,7 +87,14 @@ CREATE TABLE table_groups
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0' ,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
-    profile_pair_rule_pct    INTEGER DEFAULT 95
+    profile_pair_rule_pct    INTEGER DEFAULT 95,
+    data_source              VARCHAR(40),
+    source_system            VARCHAR(40),
+    data_location            VARCHAR(40),
+    source_process           VARCHAR(40),
+    business_domain          VARCHAR(40),
+    stakeholder_group        VARCHAR(40),
+    transform_level          VARCHAR(40)
 );
 
 CREATE TABLE profiling_runs (
@@ -102,7 +112,8 @@ CREATE TABLE profiling_runs (
    column_ct           BIGINT,
    anomaly_ct          BIGINT,
    anomaly_table_ct    BIGINT,
-   anomaly_column_ct   BIGINT
+   anomaly_column_ct   BIGINT,
+   process_id          INTEGER
 );
 
 CREATE TABLE test_suites (
@@ -138,8 +149,9 @@ CREATE TABLE test_definitions (
          PRIMARY KEY,
    project_code           VARCHAR(30),
    table_groups_id        UUID,
-   profile_run_id       UUID,
+   profile_run_id         UUID,
    test_type              VARCHAR(200),
+   test_suite_id          UUID,
    test_suite             VARCHAR(200),
    test_description       VARCHAR(1000),
    test_action            VARCHAR(100),
@@ -251,6 +263,7 @@ CREATE TABLE profile_results (
    embedded_space_ct     BIGINT,
    avg_embedded_spaces   DOUBLE PRECISION,
    std_pattern_match     VARCHAR(30),
+   pii_flag              VARCHAR(50),
    functional_data_type  VARCHAR(50),
    functional_table_type VARCHAR(50),
    sample_ratio          FLOAT
@@ -353,7 +366,7 @@ CREATE TABLE data_table_chars (
    source_process        VARCHAR(40),
    business_domain       VARCHAR(40),
    stakeholder_group     VARCHAR(40),
-   transformation_level  VARCHAR(40),
+   transform_level       VARCHAR(40),
    aggregation_level     VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
@@ -378,7 +391,7 @@ CREATE TABLE data_column_chars (
    source_process         VARCHAR(40),
    business_domain        VARCHAR(40),
    stakeholder_group      VARCHAR(40),
-   transformation_level   VARCHAR(40),
+   transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,
@@ -444,6 +457,8 @@ CREATE TABLE test_types (
    measure_uom             VARCHAR(100),
    measure_uom_description VARCHAR(200),
    selection_criteria      TEXT,
+   column_name_prompt      TEXT,
+   column_name_help        TEXT,
    default_parm_columns    TEXT,
    default_parm_values     TEXT,
    default_parm_prompts    TEXT,
@@ -495,7 +510,8 @@ CREATE TABLE test_runs (
    table_ct          INTEGER,
    column_ct         INTEGER,
    column_failed_ct  INTEGER,
-   column_warning_ct INTEGER
+   column_warning_ct INTEGER,
+   process_id        INTEGER
 );
 
 CREATE TABLE test_results (
@@ -505,8 +521,10 @@ CREATE TABLE test_results (
    test_type              VARCHAR(50)
       CONSTRAINT test_results_test_types_test_type_fk
          REFERENCES test_types,
+   test_suite_id          UUID,
    test_suite             VARCHAR(200),
    test_definition_id     UUID,
+   auto_gen               BOOLEAN,
    test_time              TIMESTAMP,
    starttime              TIMESTAMP,
    endtime                TIMESTAMP,
@@ -638,6 +656,9 @@ CREATE UNIQUE INDEX uix_td_id
 CREATE INDEX ix_td_tg
    ON test_definitions(table_groups_id);
 
+CREATE INDEX ix_td_ts_tc
+   ON test_definitions(test_suite_id, table_name, column_name, test_type);
+
 -- Index test_runs
 CREATE INDEX ix_trun_pc_ts_time
    ON test_runs(project_code, test_suite, test_starttime);
@@ -660,6 +681,9 @@ CREATE INDEX ix_tr_tt
 
 CREATE INDEX ix_tr_pc_sctc_tt
    ON test_results(project_code, test_suite, schema_name, table_name, column_names, test_type);
+
+CREATE INDEX ix_tr_ts_tctt
+   ON test_results(test_suite_id, table_name, column_names, test_type);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -- PROFILING OPTIMIZATION

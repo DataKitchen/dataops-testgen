@@ -7,11 +7,14 @@ import os
 import sys
 import threading
 
+from concurrent_log_handler import ConcurrentTimedRotatingFileHandler
+
+from testgen import settings
+
 
 def configure_logging(
     level: int = logging.DEBUG,
-    log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    log_to_file: bool = False,
+    log_format: str = "[PID: %(process)s] %(asctime)s - %(levelname)s - %(message)s",
 ) -> None:
     """
     Configures the testgen logger.
@@ -22,9 +25,11 @@ def configure_logging(
     formatter = logging.Formatter(log_format)
 
     console_out_handler = logging.StreamHandler(stream=sys.stdout)
-    console_out_handler.setLevel(logging.DEBUG)
+    if settings.IS_DEBUG:
+        console_out_handler.setLevel(level)
+    else:
+        console_out_handler.setLevel(logging.WARNING)
     console_out_handler.setFormatter(formatter)
-    console_out_handler.addFilter(LessThanFilter(logging.WARNING))
 
     console_err_handler = logging.StreamHandler(stream=sys.stderr)
     console_err_handler.setLevel(logging.WARNING)
@@ -33,14 +38,14 @@ def configure_logging(
     logger.addHandler(console_out_handler)
     logger.addHandler(console_err_handler)
 
-    if log_to_file:
-        os.makedirs("/var/log/testgen", exist_ok=True)
+    if settings.LOG_TO_FILE:
+        os.makedirs(settings.LOG_FILE_PATH, exist_ok=True)
 
-        file_handler = logging.handlers.TimedRotatingFileHandler(
-            "/var/log/testgen/app.log",
+        file_handler = ConcurrentTimedRotatingFileHandler(
+            get_log_full_path(),
             when="D",
             interval=1,
-            backupCount=15,
+            backupCount=int(settings.LOG_FILE_MAX_QTY),
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
@@ -48,13 +53,8 @@ def configure_logging(
         logger.addHandler(file_handler)
 
 
-class LessThanFilter(logging.Filter):
-    def __init__(self, maximum: int, name: str = "") -> None:
-        super().__init__(name)
-        self._maximum = maximum
-
-    def filter(self, record):
-        return record.levelno < self._maximum
+def get_log_full_path() -> str:
+    return os.path.join(settings.LOG_FILE_PATH, "app.log")
 
 
 class LogPipe(threading.Thread, io.TextIOBase):

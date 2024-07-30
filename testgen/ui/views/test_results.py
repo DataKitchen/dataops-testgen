@@ -6,17 +6,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
-from testgen.common import date_service
+from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_details import show_profiling_detail
+from testgen.ui.views.profiling_modal import view_profiling_modal
 from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
 
 ALWAYS_SPIN = False
@@ -49,21 +48,22 @@ class TestResultsPage(Page):
             str_sel_test_run = None
 
         if not str_project:
-            st.write("Select a Project from the menu.")
+            st.write("Choose a Project from the menu.")
         else:
             # Setup Toolbar
             tool_bar = tb.ToolBar(3, 1, 4, None)
 
             # Lookup Test Run
-            df = get_drill_test_run(str_sel_test_run)
-            if not df.empty:
-                with tool_bar.long_slots[0]:
-                    time_columns = ["test_date"]
-                    date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-                    df["description"] = df["test_date"] + " | " + df["test_suite_description"]
-                    str_sel_test_run = fm.render_select(
-                        "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
-                    )
+            if str_sel_test_run:
+                df = get_drill_test_run(str_sel_test_run)
+                if not df.empty:
+                    with tool_bar.long_slots[0]:
+                        time_columns = ["test_date"]
+                        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
+                        df["description"] = df["test_date"] + " | " + df["test_suite_description"]
+                        str_sel_test_run = fm.render_select(
+                            "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
+                        )
 
             if str_sel_test_run:
                 with tool_bar.long_slots[1]:
@@ -180,7 +180,8 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-                   tt.dq_dimension, r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
+                   tt.dq_dimension, tt.test_scope,  
+                   r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
                    tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
                    c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
                    CASE
@@ -204,19 +205,25 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                    END as execution_error_ct,
                    r.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
-                   c.id::VARCHAR as connection_id, ts.id::VARCHAR as test_suite_id,
+                   c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
                    r.test_definition_id::VARCHAR as test_definition_id_runtime,
-                   d.id::VARCHAR as test_definition_id_current
+                   CASE
+                     WHEN r.auto_gen = TRUE THEN d.id
+                                            ELSE r.test_definition_id
+                   END::VARCHAR as test_definition_id_current,
+                   r.auto_gen
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
                ON (r.test_type = tt.test_type)
+            LEFT JOIN {str_schema}.test_definitions rd
+              ON (r.test_definition_id = rd.id)
             LEFT JOIN {str_schema}.test_definitions d
-               ON (r.project_code = d.project_code
-              AND  r.test_suite = d.test_suite
-              AND  r.schema_name = d.schema_name
+               ON (r.test_suite_id = d.test_suite_id
               AND  r.table_name = d.table_name
               AND  r.column_names = COALESCE(d.column_name, 'N/A')
-              AND  r.test_type = d.test_type)
+              AND  r.test_type = d.test_type
+              AND  r.auto_gen = TRUE
+              AND  d.last_auto_gen_date IS NOT NULL)
             INNER JOIN {str_schema}.test_suites ts
                ON (r.project_code = ts.project_code
               AND  r.test_suite = ts.test_suite)
@@ -277,19 +284,31 @@ def get_test_result_summary(str_run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_history(str_test_type, str_table_groups_id, str_table_name, str_column_names):
+def get_test_result_history(str_test_type, str_test_suite_id, str_table_name, str_column_names,
+                            str_test_definition_id, auto_gen):
     str_schema = st.session_state["dbschema"]
+
+    if auto_gen:
+        str_where = f"""
+            WHERE test_suite_id = '{str_test_suite_id}'
+              AND table_name = '{str_table_name}'
+              AND column_names = '{str_column_names}'
+              AND test_type = '{str_test_type}'
+              AND auto_gen = TRUE
+        """
+    else:
+        str_where = f"""
+            WHERE test_definition_id_runtime = '{str_test_definition_id}'
+        """
+
     str_sql = f"""
            SELECT test_date, test_type,
                   test_name_short, test_name_long, measure_uom, test_operator,
                   threshold_value::NUMERIC, result_measure, result_status
-             FROM {str_schema}.v_test_results
-            WHERE table_groups_id = '{str_table_groups_id}'
-              AND table_name = '{str_table_name}'
-              AND column_names = '{str_column_names}'
-              AND test_type = '{str_test_type}'
+             FROM {str_schema}.v_test_results {str_where}
            ORDER BY test_date DESC;
     """
+
     df = db.retrieve_data(str_sql)
     # Clean Up
     df["test_date"] = pd.to_datetime(df["test_date"])
@@ -307,7 +326,12 @@ def get_test_definition_uncached(str_schema, str_test_def_id):
     str_sql = f"""
            SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
                   tt.test_description as description, tt.usage_notes,
+                  d.column_name,
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
+                  d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
+                  d.match_table_name, d.match_column_names, d.match_subset_condition,
+                  d.match_groupby_names, d.match_having_condition, 
+                  d.window_date_column, d.window_days::VARCHAR as window_days,
                   d.custom_query,
                   d.severity, tt.default_severity,
                   d.test_active, d.lock_refresh, d.last_manual_update
@@ -330,7 +354,8 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
     str_sql = f"""
             SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url
+                   c.url, c.connect_by_url,
+                   c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.target_data_lookups t
             INNER JOIN {str_schema}.table_groups tg
                ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
@@ -359,6 +384,32 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
         str_query = str_query.replace("{BASELINE_SD}", empty_if_null(df_test.at[0, "baseline_sd"]))
         str_query = str_query.replace("{THRESHOLD_VALUE}", empty_if_null(df_test.at[0, "threshold_value"]))
 
+        str_substitute = empty_if_null(df_test.at[0, "subset_condition"])
+        str_substitute = "1=1" if str_substitute == "" else str_substitute
+        str_query = str_query.replace("{SUBSET_CONDITION}", str_substitute)
+
+        str_query = str_query.replace("{GROUPBY_NAMES}", empty_if_null(df_test.at[0, "groupby_names"]))
+        str_query = str_query.replace("{HAVING_CONDITION}", empty_if_null(df_test.at[0, "having_condition"]))
+        str_query = str_query.replace("{MATCH_SCHEMA_NAME}", empty_if_null(df_test.at[0, "match_schema_name"]))
+        str_query = str_query.replace("{MATCH_TABLE_NAME}", empty_if_null(df_test.at[0, "match_table_name"]))
+        str_query = str_query.replace("{MATCH_COLUMN_NAMES}", empty_if_null(df_test.at[0, "match_column_names"]))
+
+        str_substitute = empty_if_null(df_test.at[0, "match_subset_condition"])
+        str_substitute = "1=1" if str_substitute == "" else str_substitute
+        str_query = str_query.replace("{MATCH_SUBSET_CONDITION}", str_substitute)
+
+        str_query = str_query.replace("{MATCH_GROUPBY_NAMES}", empty_if_null(df_test.at[0, "match_groupby_names"]))
+        str_query = str_query.replace("{MATCH_HAVING_CONDITION}", empty_if_null(df_test.at[0, "match_having_condition"]))
+        str_query = str_query.replace("{COLUMN_NAME_NO_QUOTES}", empty_if_null(selected_row["column_names"]))
+
+        str_query = str_query.replace("{WINDOW_DATE_COLUMN}", empty_if_null(df_test.at[0, "window_date_column"]))
+        str_query = str_query.replace("{WINDOW_DAYS}", empty_if_null(df_test.at[0, "window_days"]))
+
+        str_substitute = ConcatColumnList(selected_row["column_names"], "<NULL>")
+        str_query = str_query.replace("{CONCAT_COLUMNS}", str_substitute)
+        str_substitute = ConcatColumnList(df_test.at[0, "match_groupby_names"], "<NULL>")
+        str_query = str_query.replace("{CONCAT_MATCH_GROUPBY}", str_substitute)
+
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Test Type.")
         return str_query
@@ -385,6 +436,9 @@ def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
                 str_sql,
                 lst_query[0]["url"],
                 lst_query[0]["connect_by_url"],
+                lst_query[0]["connect_by_key"],
+                lst_query[0]["private_key"],
+                lst_query[0]["private_key_passphrase"],
             )
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", None
@@ -404,7 +458,7 @@ def do_source_data_lookup_custom(selected_row):
     str_sql = f"""
             SELECT d.custom_query as lookup_query, tg.table_group_schema, c.project_qc_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url
+                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.test_definitions d
             INNER JOIN {str_schema}.table_groups tg
                ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
@@ -431,6 +485,9 @@ def do_source_data_lookup_custom(selected_row):
                 str_sql,
                 lst_query[0]["url"],
                 lst_query[0]["connect_by_url"],
+                lst_query[0]["connect_by_key"],
+                lst_query[0]["private_key"],
+                lst_query[0]["private_key_passphrase"],
             )
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", None
@@ -542,7 +599,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
 
     lst_show_headers = [
         "Table Name",
-        "Columns/Scope",
+        "Columns/Focus",
         "Test Type",
         "Result Measure",
         "UOM",
@@ -575,7 +632,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         lst_export_headers = [
             "Schema Name",
             "Table Name",
-            "Columns/Scope",
+            "Columns/Focus",
             "Test Type",
             "Test Description",
             "DQ Dimension",
@@ -599,9 +656,11 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         selected_row = selected_rows[len(selected_rows) - 1]
         dfh = get_test_result_history(
             selected_row["test_type"],
-            selected_row["table_groups_id"],
+            selected_row["test_suite_id"],
             selected_row["table_name"],
             selected_row["column_names"],
+            selected_row["test_definition_id_runtime"],
+            selected_row["auto_gen"]
         )
         show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
@@ -613,14 +672,15 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
         view_edit_test(v_col1, selected_row["test_definition_id_current"])
-        view_profiling(
-            v_col2, selected_row["table_name"], selected_row["column_names"], selected_row["table_groups_id"]
-        )
+        if selected_row["test_scope"] == "column":
+            view_profiling_modal(
+                v_col2, selected_row["table_name"], selected_row["column_names"],
+                str_table_groups_id=selected_row["table_groups_id"]
+            )
         view_bad_data(v_col3, selected_row)
 
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
-            # st.caption(selected_row["test_name_long"])
             st.markdown(f"###### {selected_row['test_description']}")
             st.caption(empty_if_null(selected_row["measure_uom_description"]))
             fm.render_grid_select(dfh, show_hist_columns)
@@ -838,30 +898,8 @@ def view_bad_data(button_container, selected_row):
                 st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
-def view_profiling(button_container, str_table_name, str_column_name, str_table_groups_id):
-    str_header = f"Column: {str_column_name}, Table: {str_table_name}"
-
-    # Retrieve latest profiling
-    str_profiling_run_id = profiling_queries.get_latest_profile_run(str_table_groups_id)
-    if str_profiling_run_id:
-        df = profiling_queries.get_profiling_detail(str_profiling_run_id, str_table_name, str_column_name)
-        if not df.empty:
-            profiling_modal = testgen.Modal(title=None, key="dk-anomaly-profiling-modal", max_width=1100)
-
-            with button_container:
-                if st.button(
-                    ":green[Profiling →]", help="Review profiling for highlighted column", use_container_width=True
-                ):
-                    profiling_modal.open()
-
-            if profiling_modal.is_open():
-                with profiling_modal.container():
-                    fm.render_modal_header(str_header, None)
-                    show_profiling_detail(df.iloc[0], 300)
-
-
 def view_edit_test(button_container, test_definition_id):
-    edit_test_definition_modal = testgen.Modal(title="Edit Test", key="dk-test-definition-edit-modal", max_width=1100)
+    edit_test_definition_modal = testgen.Modal(title=None, key="dk-test-definition-edit-modal", max_width=1100)
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
             edit_test_definition_modal.open()

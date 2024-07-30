@@ -1,25 +1,36 @@
 import os
 
+IS_DEBUG_LOG_LEVEL: bool = os.getenv("TESTGEN_DEBUG_LOG_LEVEL", "no").lower() == "yes"
+"""
+When set, logs will be at debug level.
+defaults to: `no`
+"""
+
 IS_DEBUG: bool = os.getenv("TESTGEN_DEBUG", "no").lower() == "yes"
 """
 When True invalidates the cache with the bootstrapped application
 causing the changes to the routing and plugins to take effect on every
 render.
 
-Also changes the logging level for the testgen.ui logger from INFO to
-DEBUG.
-
 from env variable: `TESTGEN_DEBUG`
 defaults to: `True`
 """
 
-LOG_TO_FILE: bool = os.getenv("TESTGEN_LOG_TO_FILE", "no").lower() == "yes"
+LOG_TO_FILE: bool = os.getenv("TESTGEN_LOG_TO_FILE", "yes").lower() == "yes"
 """
-When set, rotating file logs will be generated under
-`/var/log/testgen/`.
+When set, rotating file logs will be generated.
+defaults to: `True`
+"""
 
-from env variable: `TESTGEN_LOG_TO_FILE`
-defautls to: `True`
+LOG_FILE_PATH: str = os.getenv("TESTGEN_LOG_FILE_PATH", "/var/lib/testgen/log")
+"""
+When set, rotating file logs will be generated under this path.
+
+"""
+
+LOG_FILE_MAX_QTY: str = os.getenv("TESTGEN_LOG_FILE_MAX_QTY", "90")
+"""
+Maximum log files to keep, defaults to 90 days (one file per day).
 """
 
 APP_ENCRYPTION_SALT: str = os.getenv("TG_DECRYPT_SALT")
@@ -303,40 +314,40 @@ profiling for the project database.
 from env variable: `DEFAULT_PROFILING_TABLE_SET`
 """
 
-DEFAULT_PROFILING_INCLUDE_MASK = os.getenv("DEFAULT_PROFILING_INCLUDE_MASK", "%%")
+DEFAULT_PROFILING_INCLUDE_MASK = os.getenv("DEFAULT_PROFILING_INCLUDE_MASK", "%")
 """
 A SQL filter supported by the project database's `LIKE` operator for
 table names to include.
 
 from env variable: `DEFAULT_PROFILING_INCLUDE_MASK`
-defaults to: `%%`
+defaults to: `%`
 """
 
-DEFAULT_PROFILING_EXCLUDE_MASK = os.getenv("DEFAULT_PROFILING_EXCLUDE_MASK", "tmp%%")
+DEFAULT_PROFILING_EXCLUDE_MASK = os.getenv("DEFAULT_PROFILING_EXCLUDE_MASK", "tmp%")
 """
 A SQL filter supported by the project database's `LIKE` operator for
 table names to exclude.
 
 from env variable: `DEFAULT_PROFILING_EXCLUDE_MASK`
-defaults to: `tmp%%`
+defaults to: `tmp%`
 """
 
-DEFAULT_PROFILING_ID_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%%id")
+DEFAULT_PROFILING_ID_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_ID_COLUMN_MASK", "%id")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing ID columns.
 
 from env variable: `DEFAULT_PROFILING_ID_COLUMN_MASK`
-defaults to: `%%id`
+defaults to: `%id`
 """
 
-DEFAULT_PROFILING_SK_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%%sk")
+DEFAULT_PROFILING_SK_COLUMN_MASK = os.getenv("DEFAULT_PROFILING_SK_COLUMN_MASK", "%sk")
 """
 A SQL filter supported by the project database's `LIKE` operator
 representing surrogate key columns.
 
 from env variable: `DEFAULT_PROFILING_SK_COLUMN_MASK`
-defaults to: `%%sk`
+defaults to: `%sk`
 """
 
 DEFAULT_PROFILING_USE_SAMPLING: str = os.getenv("DEFAULT_PROFILING_USE_SAMPLING", "N")

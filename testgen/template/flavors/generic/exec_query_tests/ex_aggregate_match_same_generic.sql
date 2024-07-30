@@ -8,12 +8,11 @@ SELECT '{PROJECT_CODE}'   as project_code,
        CURRENT_TIMESTAMP       as endtime,
        '{SCHEMA_NAME}' as schema_name,
        '{TABLE_NAME}'  as table_name,
-       CASE WHEN '{COLUMN_NAME}' = '' OR '{COLUMN_NAME}' IS NULL THEN 'N/A' ELSE '{COLUMN_NAME}' END as column_names,
-    '{SKIP_ERRORS}' as threshold_value,
-    {SKIP_ERRORS} as skip_errors,
-    'match_schema_name = {MATCH_SCHEMA_NAME}, match_table_name = {MATCH_TABLE_NAME}, match_groupby_names = {MATCH_GROUPBY_NAMES} ,match_column_names = {MATCH_COLUMN_NAMES}, match_subset_condition = {MATCH_SUBSET_CONDITION}, match_having_condition = {MATCH_HAVING_CONDITION}, mode = {MODE}'
-       as input_parameters,
-    CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+       '{COLUMN_NAME_NO_QUOTES}' as column_names,
+       '{SKIP_ERRORS}' as threshold_value,
+       {SKIP_ERRORS} as skip_errors,
+       '{INPUT_PARAMETERS}' as input_parameters,
+       CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
        CASE
         WHEN COUNT(*) > 0 THEN
                CONCAT(
@@ -29,31 +28,22 @@ SELECT '{PROJECT_CODE}'   as project_code,
         ELSE 'No errors found.'
        END AS result_message,
        COUNT(*) as result_measure,
-       '{SUBSET_CONDITION}' as subset_condition,
+       '{SUBSET_DISPLAY}' as subset_condition,
        NULL as result_query
-FROM (
-    (SELECT {GROUPBY_NAMES}, {SUM_COLUMNS}
+FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+         FROM
+              ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
        FROM {SCHEMA_NAME}.{TABLE_NAME}
        WHERE {SUBSET_CONDITION}
        GROUP BY {GROUPBY_NAMES}
        {HAVING_CONDITION}
-           EXCEPT
-       SELECT {MATCH_GROUPBY_NAMES}, {MATCH_SUM_COLUMNS}
+              UNION ALL
+                SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
        FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
        WHERE {MATCH_SUBSET_CONDITION}
        GROUP BY {MATCH_GROUPBY_NAMES}
-       {MATCH_HAVING_CONDITION}
-	)
-      UNION
-      (SELECT {MATCH_GROUPBY_NAMES}, {MATCH_SUM_COLUMNS}
-       FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-       WHERE {MATCH_SUBSET_CONDITION}
-       GROUP BY {MATCH_GROUPBY_NAMES}
-       {MATCH_HAVING_CONDITION}
-           EXCEPT
-       SELECT {GROUPBY_NAMES}, {SUM_COLUMNS}
-       FROM {SCHEMA_NAME}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-       GROUP BY {GROUPBY_NAMES}
-       {HAVING_CONDITION})
-     ) a;
+                {MATCH_HAVING_CONDITION} ) a
+         GROUP BY {GROUPBY_NAMES} ) s
+         WHERE total <> match_total
+             OR (total IS NOT NULL AND match_total IS NULL)
+             OR (total IS NULL AND match_total IS NOT NULL);

@@ -1,5 +1,5 @@
 -- Insert new tests where a locked test is not already present
-INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite,
+INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite, test_suite_id,
                               schema_name, table_name,
                               skip_errors, threshold_value,
                               last_auto_gen_date, test_active, baseline_ct, profiling_as_of_date)
@@ -28,6 +28,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
      newtests AS (SELECT project_code, table_groups_id, profile_run_id,
                          'Row_Ct' AS test_type,
                          '{TEST_SUITE}' AS test_suite,
+                         '{TEST_SUITE_ID}'::UUID AS test_suite_id,
                          schema_name,
                          table_name,
                          MAX(record_ct) as record_ct
@@ -42,7 +43,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                   GROUP BY project_code, table_groups_id, profile_run_id,
                            test_type, test_suite, schema_name, table_name )
 SELECT n.project_code, n.table_groups_id, n.profile_run_id,
-       n.test_type, n.test_suite,
+       n.test_type, n.test_suite, n.test_suite_id,
        n.schema_name, n.table_name,
        0 as skip_errors, record_ct AS threshold_value,
        '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date,

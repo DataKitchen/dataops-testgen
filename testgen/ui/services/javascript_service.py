@@ -4,7 +4,7 @@ from streamlit_javascript import st_javascript
 
 from testgen.ui.services.authentication_service import AUTH_TOKEN_COOKIE_NAME
 
-LOG = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def copy_to_clipboard(text):

@@ -10,7 +10,7 @@ import logging
 from streamlit import session_state
 from streamlit.components.v1 import components
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def _patch_register_widget(register_widget):
@@ -48,4 +48,4 @@ def register_callback(element_key, callback, *callback_args, **callback_kwargs):
     try:
         session_state._components_callbacks[element_key] = (callback, callback_args, callback_kwargs)
     except:
-        logger.debug("unexpected error registering component callback", exc_info=False, stack_info=False)
+        LOG.debug("unexpected error registering component callback", exc_info=False, stack_info=False)

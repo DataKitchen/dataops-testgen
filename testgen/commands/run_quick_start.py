@@ -13,7 +13,7 @@ from testgen.common.database.database_service import (
 )
 from testgen.common.read_file import read_template_sql_file
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_max_date(iteration: int):
@@ -78,6 +78,9 @@ def _prepare_connection_to_target_database(params_mapping):
         params_mapping["PROJECT_SCHEMA"],
         params_mapping["TESTGEN_ADMIN_USER"],
         params_mapping["SQL_FLAVOR"],
+        None,
+        None,
+        False,
         None,
         None,
         "PROJECT",

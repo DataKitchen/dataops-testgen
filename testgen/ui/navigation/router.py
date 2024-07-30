@@ -10,7 +10,7 @@ from testgen.utils.singleton import Singleton
 
 CanActivateGuard = typing.Callable[[], bool | str]
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 class Router(Singleton):
@@ -38,6 +38,8 @@ class Router(Singleton):
         try:
             route = self._routes[to]
 
+            bc_source = route(self).path
+
             for guard in route.can_activate or []:
                 can_activate = guard()
                 if type(can_activate) == str:
@@ -51,11 +53,11 @@ class Router(Singleton):
 
             self.active.render(**(with_args or {}))
         except KeyError as k:
-            error_message = f"Navigation Exception: {k!s}"
+            error_message = f"{bc_source}: {k!s}"
             st.error(error_message)
-            logger.exception(error_message)
+            LOG.exception(error_message)
             return self.navigate(to=self._default.path, with_args=with_args)
         except Exception as e:
-            error_message = f"Navigation Exception: {e!s}"
+            error_message = f"{bc_source}: {e!s}"
             st.error(error_message)
-            logger.exception(error_message)
+            LOG.exception(error_message)

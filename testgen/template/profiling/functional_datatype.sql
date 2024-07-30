@@ -1,5 +1,4 @@
--- Updated script --
-
+-- First Clear --
 UPDATE profile_results
 SET functional_data_type  = NULL,
     functional_table_type = NULL
@@ -64,7 +63,6 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
  . Check varchar attributes  (or attributes not give date datatype)
     Look at min_length and max_length to determine if a field is date or timestamp
 
-
  */
 
 UPDATE profile_results
@@ -108,9 +106,9 @@ SET functional_data_type =
                         THEN 'Transactional Date (Qtr)'
                     ELSE 'Date (TBD)'
                 END
-            WHEN column_type = 'date' OR (general_type <> 'D' AND max_length <= 11  AND min_length > 0 )
+            WHEN column_type = 'date'
                 THEN 'Date Stamp'
-            WHEN column_type = 'timestamp' OR (general_type <> 'D' AND max_length > 11 AND min_length > 0)
+            WHEN column_type = 'timestamp'
                 THEN 'DateTime Stamp'
             ELSE functional_data_type
       END
@@ -118,6 +116,23 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND (general_type = 'D' OR (value_ct = date_ct + zero_length_ct AND value_ct > 0));
 
+-- Character Date
+UPDATE profile_results
+SET functional_data_type = 'Date Stamp'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type IS NULL
+  AND distinct_pattern_ct = 1
+  AND min_text >= '1900' AND max_text <= '2200'
+  AND TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN';
+
+-- Character Timestamp
+UPDATE profile_results
+SET functional_data_type = 'DateTime Stamp'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type IS NULL
+  AND distinct_pattern_ct = 1
+  AND TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN';
+  
 -- Assign PERIODS:  Period Year, Period Qtr, Period Month, Period Week, Period DOW
 UPDATE profile_results
 SET functional_data_type = 'Period Year'
@@ -145,6 +160,19 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
         (min_text >= '1900' AND max_text <= '2200'
   AND    avg_length BETWEEN 6 and 7
   AND    SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]AN\s*$')
+      );
+
+UPDATE profile_results
+SET functional_data_type = 'Period Year-Mon'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type IS NULL
+  AND column_name ILIKE '%mo%'
+  AND min_text >= '1900' AND max_text <= '2200'
+  AND (
+       (avg_length BETWEEN 6.8 AND 7.2
+        AND SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]NN\s*$')
+   OR  (avg_length BETWEEN 7.8 AND 8.2
+        AND UPPER(SPLIT_PART(top_patterns, '|', 2)) ~ '^\s*NNNN[-_]AAA\s*$')
       );
 
 UPDATE profile_results
@@ -220,18 +248,90 @@ SET functional_data_type =
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL;
 
+-- Update City based on position of State and Zip
+UPDATE profile_results
+   SET functional_data_type = 'City'
+ FROM profile_results c
+INNER JOIN profile_results z
+   ON (c.profile_run_id = z.profile_run_id
+  AND  c.table_name = z.table_name
+  AND  c.position + 2 = z.position
+  AND  'Zip' = z.functional_data_type)
+INNER JOIN profile_results s
+   ON (c.profile_run_id = s.profile_run_id
+  AND  c.table_name = s.table_name
+  AND  c.position + 1 = s.position
+  AND  'State' = s.functional_data_type)
+ WHERE c.profile_run_id = '{PROFILE_RUN_ID}'
+   AND LOWER(c.column_name) SIMILAR TO '%c(|i)ty%'
+   AND c.functional_data_type NOT IN ('State', 'Zip')
+   AND profile_results.id = c.id;
+  
 -- Assign Name
 UPDATE profile_results
-   SET functional_data_type = 'Person Name'
+   SET functional_data_type = 'Person Full Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(approver|first|last|full|contact|emp|employee|hcp|manager|mgr_|middle|nick|person|preferred|rep|reviewer|salesperson|spouse)(_| |)name$';
+  AND avg_length <= 20
+  AND avg_embedded_spaces BETWEEN 0.9 AND 2.0
+  AND ( column_name ~ '(approver|full|contact|emp|employee|hcp|manager|mgr_|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)(name|nm)$'
+   OR   column_name IN ('name', 'nm') );
+
+-- Assign First Name
+UPDATE profile_results
+   SET functional_data_type = 'Person Given Name'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND avg_length <= 8
+   AND avg_embedded_spaces < 0.2
+   AND (LOWER(column_name) SIMILAR TO '%f(|i)rst(_| |)n(|a)m%%'
+    OR  LOWER(column_name) SIMILAR TO '%(middle|mdl)(_| |)n(|a)m%%'
+    OR  LOWER(column_name) SIMILAR TO '%nick(_| |)n(|a)m%%');
+
+-- Assign Last Name
+UPDATE profile_results
+   SET functional_data_type = 'Person Last Name'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND avg_length BETWEEN 5 and 8
+   AND avg_embedded_spaces < 0.2
+   AND (LOWER(column_name) SIMILAR TO '%l(|a)st(_| |)n(|a)m%'
+    OR  LOWER(column_name) SIMILAR TO '%maiden(_| |)n(|a)m%'
+    OR  LOWER(column_name) SIMILAR TO '%sur(_| |)n(|a)m%');
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND column_name ~ '^(|acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise|hco|org|organization|supplier|vendor|hospital|practice|clinic)(_| |)name$';
+  AND general_type = 'A'
+  AND column_name ~ '(acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise|hco|org|organization|site|supplier|vendor|hospital|practice|clinic)(_| |)(name|nm)$';
+
+-- Assign Boolean
+/*
+ Boolean - If distinct_value_ct is equal to (1 or 2) and (min_text and max_text) values fall in the categories specified
+           Numeric column types are not boolean.
+ */
+UPDATE profile_results
+SET functional_data_type =
+        CASE WHEN general_type = 'B'
+                OR (distinct_value_ct = 2
+                    AND ((LOWER(min_text) = 'no' AND LOWER(max_text) = 'yes')
+                        OR (LOWER(min_text) = 'n' AND LOWER(max_text) = 'y')
+                        OR (LOWER(min_text) = 'false' AND LOWER(max_text) = 'true')
+                        OR (LOWER(min_text) = '0' AND LOWER(max_text) = '1')
+                        OR (min_value = 0 AND max_value = 1 AND lower(column_type) NOT ILIKE '%numeric%')))
+                THEN 'Boolean'
+          WHEN general_type = 'B'
+                OR (distinct_value_ct = 1  -- we can have only 1 value populated but it can still be boolean
+                    AND ( (LOWER(min_text) in ('no','yes') AND LOWER(max_text) in ('no','yes'))
+                        OR (LOWER(min_text) in ('n','y') AND LOWER(max_text) in ('n','y'))
+                        OR (LOWER(min_text) in ('false','true') AND LOWER(max_text) in ('f','t'))
+                        OR (LOWER(min_text) in ('0','1') AND LOWER(max_text) in ('0','1'))
+                        OR (min_value = 0 AND max_value = 1 AND lower(column_type) NOT ILIKE '%numeric%')))
+                THEN 'Boolean'
+          ELSE   functional_data_type
+        END
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type IS NULL;
+
 
 -- 4. Assign CODE, CATEGORY, ID, ATTRIBUTE & DESCRIPTION
 /*
@@ -239,19 +339,21 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
  Id - If more than 80% of records are populated and 95% are unique without spaces and consistent length
         and have a distinct record count of more than 200
  Code - If more than 80% of records are populated and 95% are unique without spaces and consistent length
-        and have a distinct record count of less than or equal to 200
- . If distinct record count is more than 200 and the field has varying length,
+        and have a distinct record count of less than or equal to 200.
+ If distinct record count is more than 200 and the field has varying length,
   Attribute - Short length with less than 3 words
   Description - More than 3 words and longer length
  . If distinct record count is between 2 and 200,
   Code - No spaces (single word) with less than 15 maximum length
   Category - Spaces allowed, no restriction on length
-
  */
-
 UPDATE profile_results
 SET functional_data_type =
-        CASE WHEN includes_digit_ct > 0
+        CASE WHEN ( lower(column_name) ~ '_(average|avg|count|ct|sum|total|tot)$'
+               OR   lower(column_name) ~ '^(average|avg|count|ct|sum|total|tot)_' )
+              AND numeric_ct = value_ct
+              AND value_ct > 1                                                         THEN 'Measurement Text'
+             WHEN includes_digit_ct > 0
               AND ( (max_length <= 20 AND avg_embedded_spaces < 0.1   -- Short without spaces
                         AND value_ct / NULLIF(record_ct, 0)::FLOAT > 0.8 -- mostly populated
                         AND distinct_value_ct / NULLIF(value_ct, 0)::FLOAT > 0.95) -- mostly unique
@@ -280,42 +382,24 @@ SET functional_data_type =
         END
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
-  AND general_type='A' AND functional_data_type IS NULL
+  AND general_type='A'
   AND LOWER(datatype_suggestion) SIMILAR TO '(%varchar%)';
 
-
--- 5. Assign BOOLEAN & FLAG
+-- 5. Assign FLAG
 /*
- Boolean - If distinct_value_ct is equal to (1 or 2) and (min_text and max_text) values fall in the categories specified
  Flag - is set only if there is an unknown data type or if it's null. Alpha values with distinct_value_ct between 3 and 5,
-        Few, short words with only alpha characters. Numeric column types are not boolean.
+        Few, short words with only alpha characters.
  */
 
 UPDATE profile_results
 SET functional_data_type =
-        CASE WHEN general_type = 'B'
-                OR (distinct_value_ct = 2
-                    AND ((LOWER(min_text) = 'no' AND LOWER(max_text) = 'yes')
-                        OR (LOWER(min_text) = 'n' AND LOWER(max_text) = 'y')
-                        OR (LOWER(min_text) = 'false' AND LOWER(max_text) = 'true')
-                        OR (LOWER(min_text) = '0' AND LOWER(max_text) = '1')
-                        OR (min_value = 0 AND max_value = 1 AND lower(column_type) NOT ILIKE '%numeric%')))
-                THEN 'Boolean'
-          WHEN general_type = 'B'
-                OR (distinct_value_ct = 1  -- we can have only 1 value populated but it can still be boolean
-                    AND ( (LOWER(min_text) in ('no','yes') AND LOWER(max_text) in ('no','yes'))
-                        OR (LOWER(min_text) in ('n','y') AND LOWER(max_text) in ('n','y'))
-                        OR (LOWER(min_text) in ('false','true') AND LOWER(max_text) in ('f','t'))
-                        OR (LOWER(min_text) in ('0','1') AND LOWER(max_text) in ('0','1'))
-                        OR (min_value = 0 AND max_value = 1 AND lower(column_type) NOT ILIKE '%numeric%')))
-                THEN 'Boolean'
+        CASE
           WHEN general_type = 'A' AND distinct_value_ct BETWEEN 3 AND 5
                     AND (lower(column_type) NOT ILIKE '%numeric%' OR lower(datatype_suggestion) NOT ILIKE '%numeric%')-- should not be decimal
                     AND (min_length > 1 AND max_length <= 7)
-                    AND (functional_data_type IS NULL OR upper(functional_data_type) = 'UNKNOWN')
-                    AND (fn_charcount(top_patterns, 'A') > 0)
+                    AND functional_data_type IS NULL
+                    AND fn_charcount(top_patterns, 'A') > 0
                 THEN 'Flag'
-          ELSE   functional_data_type
         END
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL;
@@ -329,7 +413,7 @@ SET functional_data_type =
             WHEN (max_value - min_value + 1 = distinct_value_ct) AND (fractional_sum IS NULL OR fractional_sum > 0)
                 THEN 'Sequence'
             WHEN general_type='N'
-             AND column_name SIMILAR TO '%(no|num|number|nbr)'
+             AND LOWER(column_name) SIMILAR TO '%(no|num|number|nbr)'
                      AND (column_type ILIKE '%int%'
                           OR
                           (RTRIM(SPLIT_PART(column_type, ',', 2), ')') > '0'
@@ -356,6 +440,24 @@ SET functional_data_type =
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL;
 
+-- Assign City
+UPDATE profile_results
+   SET functional_data_type = 'City'
+  FROM ( SELECT p.id
+           FROM profile_results p
+         LEFT JOIN profile_results pn
+           ON p.profile_run_id = pn.profile_run_id
+          AND p.table_name = pn.table_name
+          AND p.position = pn.position - 1
+         WHERE p.profile_run_id = '{PROFILE_RUN_ID}'
+           AND p.includes_digit_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND p.numeric_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND p.date_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
+           AND  pn.functional_data_type = 'State'
+           AND p.avg_length BETWEEN 7 AND 12
+           AND p.avg_embedded_spaces < 1
+           AND p.distinct_value_ct BETWEEN 15 AND 40000 ) c
+WHERE profile_results.id = c.id;
 
 -- 7. Assign 'ID-Unique' functional data type to the columns that are identity columns
 
@@ -399,11 +501,23 @@ WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Measurement Pct'
-WHERE functional_data_type IN ('Measurement', 'Measurement Discrete', 'UNKNOWN')
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND functional_data_type IN ('Measurement', 'Measurement Discrete', 'UNKNOWN')
    AND general_type = 'N'
    AND min_value >= -200
    AND max_value <= 200
-   AND (column_name ILIKE '%pct%' OR column_name ILIKE '%percent%')
-   AND  profile_run_id = '{PROFILE_RUN_ID}';
+   AND (column_name ILIKE '%pct%' OR column_name ILIKE '%percent%');
+
+UPDATE profile_results
+SET functional_data_type = 'Measurement Pct'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+   AND functional_data_type = 'Code'
+   AND distinct_pattern_ct between 1 and 3
+   AND value_ct = includes_digit_ct
+   AND min_text >= '0'
+   AND max_text <= '99'
+   AND TRIM(SPLIT_PART(top_patterns, '|', 2)) ~ '^N{1,3}(\.N+)?%$'
+   AND (TRIM(SPLIT_PART(top_patterns, '|', 4)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 2)
+   AND (TRIM(SPLIT_PART(top_patterns, '|', 6)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 3);
 
 --- END OF QUERY ---

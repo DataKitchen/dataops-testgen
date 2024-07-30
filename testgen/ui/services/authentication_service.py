@@ -18,7 +18,7 @@ JWT_HASHING_KEY = "dk_signature_key"
 AUTH_TOKEN_COOKIE_NAME = "dk_cookie_name"
 AUTH_TOKEN_EXPIRATION_DAYS = 5
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def load_user_session() -> None:
@@ -30,7 +30,7 @@ def load_user_session() -> None:
             if token["exp_date"] > datetime.datetime.utcnow().timestamp():
                 start_user_session(token["name"], token["username"])
         except Exception:
-            logger.debug("Invalid auth token found on cookies", exc_info=True, stack_info=True)
+            LOG.debug("Invalid auth token found on cookies", exc_info=True, stack_info=True)
 
 
 def start_user_session(name: str, username: str) -> None:

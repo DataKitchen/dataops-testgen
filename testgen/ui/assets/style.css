@@ -11,6 +11,8 @@ body {
     --sidebar-active-item-border-color: #b4e3c9;
 
     --field-underline-color: #9e9e9e;
+
+    --dk-text-value-background: aliceblue;
 }
 
 img.dk-logo-img {
@@ -118,6 +120,7 @@ button[title="Show password text"] {
         --sidebar-item-hover-color: rgba(14, 17, 23, .5);
         --sidebar-active-item-color: rgba(14, 17, 23, .5);
         --sidebar-active-item-border-color: #b4e3c9;
+        --dk-text-value-background: unset;
     }
 
     /* Main content */

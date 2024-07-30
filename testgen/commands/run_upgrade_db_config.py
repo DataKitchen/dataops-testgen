@@ -6,7 +6,7 @@ from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import replace_params
 from testgen.common.read_file import get_template_files
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_params_mapping() -> dict:
@@ -128,6 +128,7 @@ def run_upgrade_db_config() -> bool:
 
     # Retrieve and execute upgrade scripts, if any
     lstQueries, max_prefix = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
+    LOG.info(f"Updating db config qty of queries: {len(lstQueries)}. New prefix: {max_prefix}. Queries: {lstQueries}")
     if len(lstQueries) > 0:
         has_been_upgraded = _execute_upgrade_scripts(params_mapping, lstQueries)
     else:

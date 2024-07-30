@@ -15,22 +15,6 @@ def update_attribute(schema, test_definition_ids, attribute, value):
     st.cache_data.clear()
 
 
-def get_test_definition_uniqueness(schema, test_definition):
-    sql = f"""
-            SELECT COUNT(*)
-            FROM {schema}.test_definitions d
-            WHERE True
-        """
-
-    sql += f" AND d.table_groups_id = '{test_definition['table_groups_id']}' \n"
-    sql += f" AND d.test_suite = NULLIF('{test_definition['test_suite']}','') \n"
-    sql += f" AND d.table_name = NULLIF('{test_definition['table_name']}','') \n"
-    sql += f" AND d.column_name = NULLIF('{test_definition['column_name']}','') \n"
-    sql += f" AND d.test_type = NULLIF('{test_definition['test_type']}','') \n"
-
-    return db.retrieve_data(sql)
-
-
 @st.cache_data(show_spinner=False)
 def get_test_definitions(schema, project_code, test_suite, table_name, column_name, test_definition_ids):
     if table_name:
@@ -45,12 +29,13 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
             SELECT
                    d.schema_name, d.table_name, d.column_name, t.test_name_short, t.test_name_long,
                    d.id::VARCHAR(50),
-                   d.project_code, d.table_groups_id::VARCHAR(50), d.test_suite,
+                   d.project_code, d.table_groups_id::VARCHAR(50), d.test_suite, d.test_suite_id::VARCHAR,
                    d.test_type, d.cat_test_id::VARCHAR(50),
                    d.test_active,
                    CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
                    d.lock_refresh,
                    CASE WHEN d.lock_refresh = 'Y' THEN 'Yes' ELSE 'No' END as lock_refresh_display,
+                   t.test_scope, 
                    d.test_description,
                    d.profiling_as_of_date,
                    d.last_manual_update,
@@ -78,7 +63,7 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
                    d.test_mode
               FROM {schema}.test_definitions d
             INNER JOIN {schema}.test_types t ON (d.test_type = t.test_type)
-            INNER JOIN {schema}.test_suites s ON (d.test_suite = s.test_suite)
+            INNER JOIN {schema}.test_suites s ON (d.test_suite_id = s.id)
             WHERE True
     """
 
@@ -142,7 +127,7 @@ def update(schema, test_definition):
                     subset_condition = NULLIF($${test_definition["subset_condition"]}$$, ''),
                     groupby_names = NULLIF($${test_definition["groupby_names"]}$$, ''),
                     having_condition = NULLIF($${test_definition["having_condition"]}$$, ''),
-                    window_date_column = NULLIF($${test_definition["window_date_column"]}$$, ''),
+                    window_date_column = NULLIF('{test_definition["window_date_column"]}', ''),
                     match_schema_name = NULLIF('{test_definition["match_schema_name"]}', ''),
                     match_table_name = NULLIF('{test_definition["match_table_name"]}', ''),
                     match_column_names = NULLIF($${test_definition["match_column_names"]}$$, ''),
@@ -176,6 +161,7 @@ def add(schema, test_definition):
                     profile_run_id,
                     test_type,
                     test_suite,
+                    test_suite_id,
                     test_description,
                     test_action,
                     test_mode,
@@ -221,6 +207,7 @@ def add(schema, test_definition):
                     NULL AS profile_run_id,
                     NULLIF('{test_definition["test_type"]}', '') as test_type,
                     NULLIF('{test_definition["test_suite"]}', '') as test_suite,
+                    '{test_definition["test_suite_id"]}'::UUID as test_suite_id,
                     NULLIF('{test_definition["test_description"]}', '') as test_description,
                     NULLIF('{test_definition["test_action"]}', '') as test_action,
                     NULLIF('{test_definition["test_mode"]}', '') as test_mode,
@@ -232,22 +219,22 @@ def add(schema, test_definition):
                     NULLIF('{test_definition["check_result"]}', '') as check_result,
                     NULLIF('{test_definition["baseline_ct"]}', '') as baseline_ct,
                     NULLIF('{test_definition["baseline_unique_ct"]}', '') as baseline_unique_ct,
-                    NULLIF('{test_definition["baseline_value"]}', '') as baseline_value,
-                    NULLIF('{test_definition["baseline_value_ct"]}', '') as baseline_value_ct,
-                    NULLIF('{test_definition["threshold_value"]}', '') as threshold_value,
-                    NULLIF('{test_definition["baseline_sum"]}', '') as baseline_sum,
+                    NULLIF($${test_definition["baseline_value"]}$$, '') as baseline_value,
+                    NULLIF($${test_definition["baseline_value_ct"]}$$, '') as baseline_value_ct,
+                    NULLIF($${test_definition["threshold_value"]}$$, '') as threshold_value,
+                    NULLIF($${test_definition["baseline_sum"]}$$, '') as baseline_sum,
                     NULLIF('{test_definition["baseline_avg"]}', '') as baseline_avg,
                     NULLIF('{test_definition["baseline_sd"]}', '') as baseline_sd,
-                    NULLIF('{test_definition["subset_condition"]}', '') as subset_condition,
-                    NULLIF('{test_definition["groupby_names"]}', '') as groupby_names,
-                    NULLIF('{test_definition["having_condition"]}', '') as having_condition,
+                    NULLIF($${test_definition["subset_condition"]}$$, '') as subset_condition,
+                    NULLIF($${test_definition["groupby_names"]}$$, '') as groupby_names,
+                    NULLIF($${test_definition["having_condition"]}$$, '') as having_condition,
                     NULLIF('{test_definition["window_date_column"]}', '') as window_date_column,
                     NULLIF('{test_definition["match_schema_name"]}', '') as match_schema_name,
                     NULLIF('{test_definition["match_table_name"]}', '') as match_table_name,
-                    NULLIF('{test_definition["match_column_names"]}', '') as match_column_names,
-                    NULLIF('{test_definition["match_subset_condition"]}', '') as match_subset_condition,
-                    NULLIF('{test_definition["match_groupby_names"]}', '') as match_groupby_names,
-                    NULLIF('{test_definition["match_having_condition"]}', '') as match_having_condition,
+                    NULLIF($${test_definition["match_column_names"]}$$, '') as match_column_names,
+                    NULLIF($${test_definition["match_subset_condition"]}$$, '') as match_subset_condition,
+                    NULLIF($${test_definition["match_groupby_names"]}$$, '') as match_groupby_names,
+                    NULLIF($${test_definition["match_having_condition"]}$$, '') as match_having_condition,
                     COALESCE({test_definition["window_days"]}, 0) as window_days
                 ;
                 """

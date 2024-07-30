@@ -9,7 +9,7 @@ from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.services import authentication_service
 
-logger = logging.getLogger("testgen.ui")
+LOG = logging.getLogger("testgen")
 
 
 def sidebar(

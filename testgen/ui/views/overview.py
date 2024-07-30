@@ -1,3 +1,4 @@
+import logging
 import typing
 
 import streamlit as st
@@ -6,6 +7,8 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import form_service
 from testgen.ui.session import session
+
+LOG = logging.getLogger("testgen")
 
 
 class OverviewPage(Page):

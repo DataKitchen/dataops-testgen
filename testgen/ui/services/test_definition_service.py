@@ -49,14 +49,6 @@ def update(test_definition):
     return test_definition_queries.update(schema, test_definition)
 
 
-def check_test_definition_uniqueness(test_definition):
-    schema = st.session_state["dbschema"]
-    prepare_to_persist(test_definition)
-    record_count_raw = test_definition_queries.get_test_definition_uniqueness(schema, test_definition)
-    record_count = record_count_raw.iloc[0, 0]
-    return record_count
-
-
 def prepare_to_persist(test_definition):
     # severity
     if test_definition["severity"] and test_definition["severity"].startswith("Inherited"):
@@ -118,5 +110,8 @@ def validate_test(test_definition):
         connection["password"],
         connection["url"],
         connection["connect_by_url"],
+        connection["connect_by_key"],
+        connection["private_key"],
+        connection["private_key_passphrase"],
         sql_query,
     )

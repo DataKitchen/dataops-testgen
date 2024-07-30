@@ -12,8 +12,6 @@ from testgen.ui.services import authentication_service, javascript_service
 from testgen.ui.services import database_service as db
 from testgen.ui.session import session
 
-logger = logging.getLogger("testgen.ui")
-
 
 def render(log_level: int = logging.INFO):
     st.set_page_config(
@@ -95,6 +93,6 @@ def set_current_project(project_code: str) -> None:
 
 if __name__ == "__main__":
     log_level = logging.INFO
-    if settings.IS_DEBUG or "--debug" in sys.argv:
+    if settings.IS_DEBUG_LOG_LEVEL or "--debug" in sys.argv:
         log_level = logging.DEBUG
     render(log_level=log_level)

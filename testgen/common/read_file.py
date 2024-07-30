@@ -9,14 +9,16 @@ from importlib.resources import as_file, files
 
 import yaml
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def _get_template_package_resource(
     template_file_name: str | None = None,
     sub_directory: str | None = None,
+    path: str | None = None,
 ) -> Traversable:
-    path = "testgen.template"
+    if path is None:
+        path = "testgen.template"
     if sub_directory:
         path = f"{path}.{sub_directory.replace('/', '.')}"
     if template_file_name:
@@ -40,8 +42,8 @@ def read_template_sql_file(template_file_name: str, sub_directory: str | None = 
     return contents
 
 
-def get_template_files(mask: str, sub_directory: str | None = None) -> Generator[Traversable, None, None]:
-    folder = _get_template_package_resource(template_file_name=None, sub_directory=sub_directory)
+def get_template_files(mask: str, sub_directory: str | None = None, path: str | None = None) -> Generator[Traversable, None, None]:
+    folder = _get_template_package_resource(template_file_name=None, sub_directory=sub_directory, path=path)
     LOG.debug("Reading SQL folder resource: %s", str(folder))
     for entry in folder.iterdir():
         if entry.is_file() and re.search(mask, str(entry)):

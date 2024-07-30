@@ -1,7 +1,10 @@
 import logging
+import subprocess
 import threading
 import uuid
 
+import testgen.common.process_service as process_service
+from testgen import settings
 from testgen.commands.queries.execute_tests_query import CTestExecutionSQL
 from testgen.common import (
     AssignConnectParms,
@@ -17,7 +20,7 @@ from testgen.common.database.database_service import empty_cache
 from .run_execute_cat_tests import run_cat_test_queries
 from .run_test_parameter_validation import run_parameter_validation_queries
 
-LOG = logging.getLogger("testgen.cli")
+LOG = logging.getLogger("testgen")
 
 
 def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
@@ -41,6 +44,9 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
         dctParms["sql_flavor"],
         dctParms["url"],
         dctParms["connect_by_url"],
+        dctParms["connect_by_key"],
+        dctParms["private_key"],
+        dctParms["private_key_passphrase"],
         "PROJECT",
     )
 
@@ -49,6 +55,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
     clsExecute = CTestExecutionSQL(strProjectCode, dctParms["sql_flavor"], strTestSuite, minutes_offset)
     clsExecute.run_date = strTestTime
     clsExecute.test_run_id = strTestRunID
+    clsExecute.process_id = process_service.get_current_process_id()
     booClean = False
 
     # Add a record in Test Run table for the new Test Run
@@ -89,7 +96,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
             if intErrors > 0:
                 booErrors = True
                 error_msg = (
-                    f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) "
+                    f"Errors were encountered executing Referential Tests. ({intErrors} errors occurred.) "
                     "Please check log. "
                 )
                 LOG.warning(error_msg)
@@ -109,18 +116,23 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
         return booErrors, error_msg
 
 
-def run_execution_steps_in_background(strProjectCode, strTestSuite, minutes_offset=0):
-    LOG.info(f"Starting run_execution_steps_in_background against test suite: {strTestSuite}")
-    empty_cache()
-    background_thread = threading.Thread(
-        target=run_execution_steps,
-        args=(
-            strProjectCode,
-            strTestSuite,
-            minutes_offset,
-        ),
-    )
-    background_thread.start()
+def run_execution_steps_in_background(project_code, test_suite):
+    msg = f"Starting run_execution_steps_in_background against test suite: {test_suite}"
+    if settings.IS_DEBUG:
+        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
+        empty_cache()
+        background_thread = threading.Thread(
+            target=run_execution_steps,
+            args=(
+                project_code,
+                test_suite
+            ),
+        )
+        background_thread.start()
+    else:
+        LOG.info(msg)
+        script = ["testgen", "run-tests", "--project-key", project_code, "--test-suite-key", test_suite]
+        subprocess.Popen(script)  # NOQA S603
 
 
 def run_execution_steps(strProjectCode, strTestSuite, minutes_offset=0, spinner=None):

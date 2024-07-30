@@ -1,28 +1,6 @@
 import typing
 
-from testgen.common import CleanSQL, date_service, read_template_sql_file
-
-
-def add_quote_to_identifiers(strInput):
-    keywords = [
-        "select",
-        "from",
-        "where",
-        "order",
-        "by",
-        "having",
-    ]  # NOTE: In future we might have to expand the list of keywords
-
-    quoted_values = []
-    for value in strInput.split(","):
-        value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
-            quoted_values.append(value)
-        elif any(c.isupper() or c.isspace() or value.lower() in keywords for c in value):
-            quoted_values.append(f'"{value}"')
-        else:
-            quoted_values.append(value)
-    return ", ".join(quoted_values)
+from testgen.common import AddQuotesToIdentifierCSV, CleanSQL, ConcatColumnList, date_service, read_template_sql_file
 
 
 class CTestExecutionSQL:
@@ -32,8 +10,9 @@ class CTestExecutionSQL:
     test_suite = ""
     test_run_id = ""
     exception_message = ""
+    process_id = ""
 
-    # Test Set Parameters
+    # Test Group Parameters
     dctTestParms: typing.ClassVar = {}
     sum_columns = ""
     match_sum_columns = ""
@@ -46,18 +25,31 @@ class CTestExecutionSQL:
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
         self.minutes_offset = minutes_offset
 
+    def _AssembleDisplayParameters(self):
+
+        lst_parms = ["column_name", "skip_errors", "baseline_ct", "baseline_unique_ct", "baseline_value",
+                     "baseline_value_ct", "baseline_sum", "baseline_avg", "baseline_sd", "subset_condition",
+                     "groupby_names", "having_condition", "window_date_column", "window_days",
+                     "match_column_names", "match_subset_condition", "match_schema_name", "match_table_name",
+                     "match_groupby_names", "match_having_condition",
+                     ]
+        str_parms = "; ".join(f"{key}={self.dctTestParms[key]}"
+                             for key in lst_parms
+                             if key.lower() in self.dctTestParms and self.dctTestParms[key] not in [None, ""])
+        str_parms = str_parms.replace("'", "`")
+        return str_parms
+
     def _ReplaceParms(self, strInputString: str):
         strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
         strInputString = strInputString.replace("{TEST_SUITE}", self.test_suite)
         strInputString = strInputString.replace("{SQL_FLAVOR}", self.flavor)
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)
+        strInputString = strInputString.replace("{INPUT_PARAMETERS}", self._AssembleDisplayParameters())
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
-        strInputString = strInputString.replace("{SUM_COLUMNS}", self.sum_columns)
-        strInputString = strInputString.replace("{MATCH_SUM_COLUMNS}", self.match_sum_columns)
-        strInputString = strInputString.replace("{MULTI_COLUMN_ERROR_CONDITION}", self.multi_column_error_condition)
         strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
         strInputString = strInputString.replace("{START_TIME}", self.today)
+        strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
         strInputString = strInputString.replace(
             "{NOW}", date_service.get_now_as_string_with_offset(self.minutes_offset)
         )
@@ -67,21 +59,32 @@ class CTestExecutionSQL:
             # "COLUMN_NAMES",
             # "COL_NAME",
             # "COL_NAMES",
-            "MATCH_COLUMN_NAMES",
-            "MATCH_GROUPBY_NAMES",
+            # "MATCH_COLUMN_NAMES",
+            # "MATCH_GROUPBY_NAMES",
             # "MATCH_SUM_COLUMNS",
         ]
 
         for parm, value in self.dctTestParms.items():
             if value:
                 if parm.upper() in column_designators:
-                    strInputString = strInputString.replace("{" + parm.upper() + "}", add_quote_to_identifiers(value))
+                    strInputString = strInputString.replace("{" + parm.upper() + "}", AddQuotesToIdentifierCSV(value))
                 else:
                     strInputString = strInputString.replace("{" + parm.upper() + "}", value)
             else:
                 strInputString = strInputString.replace("{" + parm.upper() + "}", "")
             if parm == "column_name":
-                strInputString = strInputString.replace("{COLUMN_NAME_DISPLAY}", value if value else "")
+                # Shows contents without double-quotes for display and aggregate expressions
+                strInputString = strInputString.replace("{COLUMN_NAME_NO_QUOTES}", value if value else "")
+                # Concatenates column list into single expression for relative entropy
+                str_value = ConcatColumnList(value, "<NULL>")
+                strInputString = strInputString.replace("{CONCAT_COLUMNS}", str_value if str_value else "")
+            if parm == "match_groupby_names":
+                # Concatenates column list into single expression for relative entropy
+                str_value = ConcatColumnList(value, "<NULL>")
+                strInputString = strInputString.replace("{CONCAT_MATCH_GROUPBY}", str_value if str_value else "")
+            if parm == "subset_condition":
+                strInputString = strInputString.replace("{SUBSET_DISPLAY}", value.replace("'", "''") if value else "")
+
 
         # Adding escape character where ':' is referenced
         strInputString = strInputString.replace(":", "\\:")
@@ -140,6 +143,7 @@ class CTestExecutionSQL:
         self.list_multi_column_error_condition = [i + " < 0" for i in cols]
         self.multi_column_error_condition = " or ".join(self.list_multi_column_error_condition)
 
+
     def GetTestQuery(self, booClean: bool):
         strTestType = self.dctTestParms["test_type"]
         strTemplate = self.dctTestParms["template_name"]
@@ -147,8 +151,6 @@ class CTestExecutionSQL:
         if strTemplate == "":
             raise ValueError(f"No query template assigned to test_type {strTestType}")
 
-        if strTestType in {"AGG MATCH NO DROPS", "AGG MATCH SAME", "AGG MATCH NUM INCR"}:
-            self._ConstructAggregateMatchParms()
         strQ = self._GetTestQueryFromTemplate(strTemplate)
         # Final replace to cover parm within CUSTOM_QUERY parm
         strQ = strQ.replace("{DATA_SCHEMA}", self.dctTestParms["schema_name"])

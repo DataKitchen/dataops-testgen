@@ -98,7 +98,8 @@ def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
                      WHEN 'B' THEN 'Boolean'
                               ELSE 'N/A'
                    END as general_type,
-                   functional_table_type, functional_data_type,
+                   functional_table_type as semantic_table_type, 
+                   functional_data_type as semantic_data_type,
                    datatype_suggestion,
                    CASE WHEN s.column_name IS NOT NULL THEN 'Yes' END as anomalies,
                    -- Shared counts

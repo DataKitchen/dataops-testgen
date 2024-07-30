@@ -1,24 +1,3 @@
-/*
-CREATE OR REPLACE FUNCTION {DATA_QC_SCHEMA}.DATEDIFF(difftype character varying, firstdate timestamp without time zone, seconddate timestamp without time zone)
-RETURNS BIGINT AS $$
-BEGIN
-    RETURN CASE
-        WHEN UPPER(difftype) IN ('DAY', 'DD', 'D') THEN
-            DATE(seconddate) - DATE(firstdate)
-        WHEN UPPER(difftype) IN ('WEEK','WK', 'W') THEN
-            (DATE(seconddate) - DATE(firstdate)) / 7
-        WHEN UPPER(difftype) IN ('MON', 'MONTH', 'MM') THEN
-            (DATE_PART('year', seconddate) - DATE_PART('year', firstdate)) * 12 + (DATE_PART('month', seconddate) - DATE_PART('month', firstdate))
-        WHEN UPPER(difftype) IN ('QUARTER', 'QTR', 'Q') THEN
-            ((DATE_PART('year', seconddate) - DATE_PART('year', firstdate)) * 4) + (DATE_PART('quarter', seconddate) - DATE_PART('quarter', firstdate))
-        WHEN UPPER(difftype) IN ('YEAR', 'YY', 'Y') THEN
-            DATE_PART('year', seconddate) - DATE_PART('year', firstdate)
-        ELSE
-            NULL::BIGINT
-    END;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
-*/
 CREATE OR REPLACE FUNCTION {DATA_QC_SCHEMA}.DATEDIFF(difftype character varying, firstdate timestamp without time zone, seconddate timestamp without time zone)
 RETURNS BIGINT AS $$
     SELECT
