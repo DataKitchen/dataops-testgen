@@ -1,4 +1,6 @@
-## Configuration
+## TestGen Configuration
+
+This document describes the environment variables supported by TestGen.
 
 #### `TESTGEN_DEBUG`
 
@@ -9,7 +11,7 @@ Also, changes the logging level for the `testgen.ui` logger from `INFO` to `DEBU
 
 default: `no`
 
-### `TESTGEN_LOG_TO_FILE`
+#### `TESTGEN_LOG_TO_FILE`
 Set it to `yes` to enable rotating file logs to be written under `/var/log/testgen/`.
 
 default: `no`
