@@ -373,13 +373,15 @@ def ut_prettify_header(str_header, expand=False):
     return str_new
 
 
-def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_cached_functions=None):
+def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_cached_functions=None, style="success"):
     if str_message:
         if as_toast:
             st.toast(str_message)
+        elif style in ("error", "warning", "info", "success"):
+            getattr(st, style)(str_message)
         else:
             st.success(str_message)
-        sleep(0.5)
+        sleep(1.5)
 
     if clear_cache:
         if lst_cached_functions:
@@ -727,9 +729,10 @@ def render_edit_form(
                 else:
                     # If Hidden, add directly to dct_mods for updates
                     dct_mods[column] = row_selected[column]
-            submit = st.form_submit_button("Save Changes", disabled=authentication_service.current_user_has_read_role())
+            edit_allowed = authentication_service.current_user_has_edit_role()
+            submit = st.form_submit_button("Save Changes", disabled=not edit_allowed)
 
-            if submit:
+            if submit and edit_allowed:
                 # Construct SQL UPDATE statement based on the changed columns
                 changes = []
                 keys = []
@@ -747,6 +750,9 @@ def render_edit_form(
                     )
                     db.execute_sql(str_sql)
                     reset_post_updates("Changes have been saved.")
+            elif submit:
+                reset_post_updates("The current user does not have permission to save changes.", style="warning")
+
 
 
 def render_insert_form(
