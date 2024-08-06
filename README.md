@@ -1,11 +1,11 @@
 # DataOps Data Quality TestGen
 ![apache 2.0 license Badge](https://img.shields.io/badge/License%20-%20Apache%202.0%20-%20blue) ![PRs Badge](https://img.shields.io/badge/PRs%20-%20Welcome%20-%20green) [![Latest Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2Ftags%2F&query=results%5B0%5D.name&label=latest%20version&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Docker Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2F&query=pull_count&style=flat&label=docker%20pulls&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Documentation](https://img.shields.io/badge/docs-On%20datakitchen.io-06A04A?style=flat)](https://docs.datakitchen.io/articles/#!dataops-testgen-help/dataops-testgen-help) [![Static Badge](https://img.shields.io/badge/Slack-Join%20Discussion-blue?style=flat&logo=slack)](https://data-observability-slack.datakitchen.io/join)
 
-*<p style="text-align: center;">DataOps Data Quality TestGen can help you find data issues so you can alert your users and notify your suppliers.  It does this by delivering simple, fast data quality test generation and execution by data profiling,  new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. DataOps TestGen is part of DataKitchen's Open Source Data Observability.</p>*
+*<p style="text-align: center;">DataOps Data Quality TestGen, or "TestGen" for short, can help you find data issues so you can alert your users and notify your suppliers. It does this by delivering simple, fast data quality test generation and execution by data profiling, new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. TestGen is part of DataKitchen's Open Source Data Observability.</p>*
 
 ## Features
 
-What does DataKitchen's DataOps Data Quality TestGen do?  It helps you understand and <b>find data issues in new data</b>.
+What does DataKitchen's DataOps Data Quality TestGen do? It helps you understand and <b>find data issues in new data</b>.
 <p align="center">
 <img alt="DatKitchen Open Source Data Quality TestGen Features - New Data" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.22.57 PM.png" width="70%">
 </p>
@@ -39,7 +39,7 @@ On Unix-based operating systems, use the following command to download it to the
 curl -o dk-installer.py 'https://raw.githubusercontent.com/DataKitchen/data-observability-installer/main/dk-installer.py'
 ```
 
-* Alternatively, you can manually download the [`dk-installer.py`](https://github.com/DataKitchen/data-observability-installer/blob/main/dk-installer.py) file from the [data-observability-installer](https://github.com/DataKitchen/data-observability-installer) repo.
+* Alternatively, you can manually download the [`dk-installer.py`](https://github.com/DataKitchen/data-observability-installer/blob/main/dk-installer.py) file from the [data-observability-installer](https://github.com/DataKitchen/data-observability-installer) repository.
 * All commands listed below should be run from the folder containing this file.
 * For usage help and command options, run `python3 dk-installer.py --help` or `python3 dk-installer.py <command> --help`.
 
@@ -50,6 +50,7 @@ The installation downloads the latest Docker images for TestGen and deploys a ne
 ```shell
 python3 dk-installer.py tg install
 ```
+
 The `--port` option may be used to set a custom localhost port for the application (default: 8501).
 
 To enable SSL for HTTPS support, use the `--ssl-cert-file` and `--ssl-key-file` options to specify local file paths to your SSL certificate and key files.
@@ -63,16 +64,16 @@ The [Data Observability quickstart](https://docs.datakitchen.io/articles/open-so
 ```shell
 python3 dk-installer.py tg run-demo
 ```
+
 In the TestGen UI, you will see that new data profiling and test results have been generated.
 
 ## Product Documentation
 
-[DataOps TestGen](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help)
+[DataOps Data Quality TestGen](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help)
 
 ## Useful Commands
 
-The [dk-installer](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application) and [docker compose CLI](https://docs.docker.com/compose/reference/) can be used to operate the installed TestGen application. All commands must be run in the same folder that contains the `dk-installer.py` and `docker-compose.yaml` files used by the installation.
-
+The [dk-installer](https://github.com/DataKitchen/data-observability-installer/?tab=readme-ov-file#install-the-testgen-application) and [docker compose CLI](https://docs.docker.com/compose/reference/) can be used to operate the installed TestGen application. All commands must be run in the same folder that contains the `dk-installer.py` and `docker-compose.yml` files used by the installation.
 
 ### Remove demo data
 
@@ -93,6 +94,7 @@ New releases of TestGen are announced on the `#releases` channel on [Data Observ
 ### Uninstall the application
 
 The following command uninstalls the Docker Compose application and removes all data, containers, and images related to TestGen from your machine.
+
 ```shell
 python3 dk-installer.py tg delete
 ```
@@ -100,18 +102,21 @@ python3 dk-installer.py tg delete
 ### Access the _testgen_ CLI
 
 The [_testgen_ command line](https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-commands-and-details) can be accessed within the running container.
-```
+
+```shell
 docker compose exec engine bash
 ```
 
 Use `exit` to return to the regular terminal.
 
 ### Stop the application
+
 ```shell
 docker compose down
 ```
 
 ### Restart the application
+
 ```shell
 docker compose up -d
 ```
@@ -122,13 +127,13 @@ docker compose up -d
 We recommend you start by going through the [Data Observability Overview Demo](https://docs.datakitchen.io/articles/open-source-data-observability/data-observability-overview).
 
 ### Support
-For support requests, [join the Data Observability Slack](https://data-observability-slack.datakitchen.io/join) 👋 and ask post on #support channel.
+For support requests, [join the Data Observability Slack](https://data-observability-slack.datakitchen.io/join) 👋 and post on the `#support` channel.
 
 ### Connect to your database
 Follow [these instructions](https://docs.datakitchen.io/articles/#!dataops-testgen-help/connect-your-database) to improve the quality of data in your database.
 
 ### Community
-Talk and Learn with other data practitioners who are building with DataKitchen. Share knowledge, get help, and contribute to our open-source project.
+Talk and learn with other data practitioners who are building with DataKitchen. Share knowledge, get help, and contribute to our open-source project.
 
 Join our community here:
 
@@ -150,7 +155,7 @@ Join our community here:
 
 
 ### Contributing
-For details on contributing or running the project for development, check out our contributing guide.
+For details on contributing or running the project for development, check out our [contributing guide](CONTRIBUTING.md).
 
 ### License
-DataKitchen DataOps TestGen is Apache 2.0 licensed.
+DataKitchen's DataOps Data Quality TestGen is Apache 2.0 licensed.

@@ -10,7 +10,14 @@ This document describes how to set up your local environment for TestGen develop
 
 ### Clone repository
 
-Login to your GitHub account. Follow [GitHub's guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) to fork the [dataops-testgen](https://github.com/DataKitchen/dataops-testgen) repository, and clone your fork locally.
+Login to your GitHub account. 
+
+Fork the [dataops-testgen](https://github.com/DataKitchen/dataops-testgen) repository, following [GitHub's guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo).
+
+Clone your forked repository locally.
+```shell
+git clone https://github.com/YOUR-USERNAME/dataops-testgen
+```
 
 ### Set up virtual environment
 
@@ -33,7 +40,10 @@ pip install -e .[dev]
 
 # On Mac
 pip install -e .'[dev]'
-# [optional]
+```
+
+On Mac, you can optionally install [watchdog](https://github.com/gorakhargosh/watchdog) for better performance of the [file watcher](https://docs.streamlit.io/develop/api-reference/configuration/config.toml) used for local development.
+```shell
 xcode-select --install
 pip install watchdog
 ```
@@ -42,8 +52,8 @@ pip install watchdog
 
 Create a `local.env` file with the following environment variables, replacing the `<value>` placeholders with appropriate values. Refer to the [TestGen Configuration](configuration.md) document for other supported values.
 ```shell
-export TESTGEN_LOG_FILE_PATH=var/lib/testgen
 export TESTGEN_DEBUG=yes
+export TESTGEN_LOG_TO_FILE=no
 export TESTGEN_USERNAME=<username>
 export TESTGEN_PASSWORD=<password>
 export TG_DECRYPT_SALT=<decrypt_salt>
@@ -66,6 +76,15 @@ docker compose -f docker-compose.local.yml up -d
 Initialize the application database for TestGen. 
 ```shell
 testgen setup-system-db --yes
+```
+
+Seed the demo data.
+```shell
+testgen quick-start --delete-target-db
+testgen run-profile --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
+testgen run-test-generation --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
+testgen run-tests --project-key DEFAULT --test-suite-key default-suite-1
+testgen quick-start --simulate-fast-forward
 ```
 
 ### Patch and run Streamlit
