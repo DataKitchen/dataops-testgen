@@ -30,8 +30,6 @@ def install(ctx: Context, quiet_pip: bool = False) -> None:
 @task
 def lint(ctx: Context) -> None:
     """Runs the standard suite of quality/linting tools."""
-    ctx.run("isort .")
-    ctx.run("black .")
     ctx.run("ruff check . --fix --show-fixes")
     print("Lint complete!")
 

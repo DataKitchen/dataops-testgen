@@ -14,20 +14,6 @@ jobs:
       run: ruff check .
     secrets: inherit
 
-  black:
-    name: Lint with black
-    uses: ./.github/workflows/python-job.yml
-    with:
-      run: black --check .
-    secrets: inherit
-
-  isort:
-    name: Lint with isort
-    uses: ./.github/workflows/python-job.yml
-    with:
-      run: isort --check .
-    secrets: inherit
-
   test:
     name: Run tests
     uses: ./.github/workflows/python-job.yml

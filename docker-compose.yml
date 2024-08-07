@@ -1,4 +1,4 @@
-version: "3.8"
+
 name: testgen
 
 x-common-variables: &common-variables
@@ -9,31 +9,24 @@ x-common-variables: &common-variables
   TG_METADATA_DB_HOST: postgres
   TG_TARGET_DB_TRUST_SERVER_CERTIFICATE: yes
   TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL: no
-  TG_DOCKER_RELEASE_CHECK_ENABLED: no
+  TG_DOCKER_RELEASE_CHECK_ENABLED: yes
+
 
 services:
   engine:
     image: datakitchen/dataops-testgen:v2
     container_name: testgen
     environment: *common-variables
+    volumes:
+      - testgen_data:/var/lib/testgen
     ports:
       - 8501:8501
     extra_hosts:
       - host.docker.internal:host-gateway
     depends_on:
-       - startup
-
-  startup:
-    image: datakitchen/dataops-testgen:v2
-    restart: "no"
-    environment: *common-variables
-    entrypoint: ["/bin/sh","-c"]
-    command:
-    - |
-       testgen setup-system-db --yes
-       testgen upgrade-system-version
-    depends_on:
-       - postgres
+      - postgres
+    networks:
+      - datakitchen
 
   postgres:
     image: postgres:14.1-alpine
@@ -43,6 +36,19 @@ services:
       - POSTGRES_PASSWORD=${TESTGEN_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TESTGEN_USERNAME}"]
+      interval: 8s
+      timeout: 5s
+      retries: 3
+    networks:
+      - datakitchen
 
 volumes:
   postgres_data:
+  testgen_data:
+
+networks:
+  datakitchen:
+    name: datakitchen-network
+    external: true
