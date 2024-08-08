@@ -1,0 +1,21 @@
+name: local-testgen-db
+
+services:
+  local-postgres:
+    image: postgres:14.1-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${TESTGEN_USERNAME}
+      - POSTGRES_PASSWORD=${TESTGEN_PASSWORD}
+    ports:
+      - 5432:5432
+    volumes:
+      -  local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TESTGEN_USERNAME}"]
+      interval: 8s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  local_postgres_data:

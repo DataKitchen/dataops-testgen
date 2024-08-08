@@ -16,4 +16,4 @@ Join our [Slack community](https://data-observability-slack.datakitchen.io/join)
 
 ## Code Submission
 
-We are currently working on our development and CI process. Stay tuned for our developer contribution guide for working with the repository code and submitting pull requests.
+Follow our [development guide](docs/local_development.md) to work with the repository code locally and submit contributions.
