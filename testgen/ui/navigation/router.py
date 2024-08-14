@@ -1,63 +1,66 @@
 from __future__ import annotations
 
 import logging
-import typing
 
 import streamlit as st
 
 import testgen.ui.navigation.page
+from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
-
-CanActivateGuard = typing.Callable[[], bool | str]
 
 LOG = logging.getLogger("testgen")
 
 
 class Router(Singleton):
-    active: testgen.ui.navigation.page.Page | None
-    _default: type[testgen.ui.navigation.page.Page] | None
-    _routes: dict[str, type[testgen.ui.navigation.page.Page]]
+    _routes: dict[str, testgen.ui.navigation.page.Page]
 
     def __init__(
         self,
         /,
         routes: list[type[testgen.ui.navigation.page.Page]],
-        default: type[testgen.ui.navigation.page.Page] | None = None,
     ) -> None:
-        self._routes = {}
+        self._routes = {route.path: route(self) for route in routes}
 
-        for route in routes:
-            self._routes[route.path] = route
+    def run(self, hide_sidebar=False) -> None:
+        streamlit_pages = [route.streamlit_page for route in self._routes.values()]
 
-        self.active = None
-        self._default = default
-        if self._default:
-            self._routes[self._default.path] = self._default
+        # Don't use position="hidden" when our custom sidebar needs to be displayed
+        # The default [data-testid="stSidebarNav"] element seems to be needed to keep the sidebar DOM stable
+        # Otherwise anything custom in the sidebar randomly flickers on page navigation
+        current_page = st.navigation(streamlit_pages, position="hidden" if hide_sidebar else "sidebar")
+        
+        # This hack is needed because the auth cookie is not retrieved on the first run
+        # We have to store the page and wait for the second run
 
+        if not session.cookies_ready:
+            session.cookies_ready = True
+            session.page_pending_cookies = current_page
+        else:
+            current_page = session.page_pending_cookies or current_page
+            session.page_pending_cookies = None
+            
+            if session.page_args_pending_router:
+                session.current_page_args = session.page_args_pending_router
+                st.query_params.from_dict(session.page_args_pending_router)
+                session.page_args_pending_router = None
+
+            session.current_page = current_page.url_path
+            current_page.run()
+        
+        
     def navigate(self, /, to: str, with_args: dict | None = None) -> None:
         try:
-            route = self._routes[to]
+            if to != session.current_page:
+                route = self._routes[to]
+                session.page_args_pending_router = with_args
+                st.switch_page(route.streamlit_page)
 
-            bc_source = route(self).path
-
-            for guard in route.can_activate or []:
-                can_activate = guard()
-                if type(can_activate) == str:
-                    return self.navigate(to=can_activate, with_args={})
-
-                if not can_activate and self._default:
-                    return self.navigate(to=self._default.path, with_args=with_args)
-
-            if not isinstance(self.active, route):
-                self.active = route(self)
-
-            self.active.render(**(with_args or {}))
         except KeyError as k:
-            error_message = f"{bc_source}: {k!s}"
+            error_message = f"{to}: {k!s}"
             st.error(error_message)
             LOG.exception(error_message)
-            return self.navigate(to=self._default.path, with_args=with_args)
+            return self.navigate(to="", with_args=with_args)
         except Exception as e:
-            error_message = f"{bc_source}: {e!s}"
+            error_message = f"{to}: {e!s}"
             st.error(error_message)
             LOG.exception(error_message)

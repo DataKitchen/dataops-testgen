@@ -8,8 +8,8 @@ from testgen.common.docker_service import check_basic_configuration
 from testgen.ui import bootstrap
 from testgen.ui.components import widgets as testgen
 from testgen.ui.queries import project_queries
-from testgen.ui.services import authentication_service, javascript_service
 from testgen.ui.services import database_service as db
+from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
 
 
@@ -35,14 +35,11 @@ def render(log_level: int = logging.INFO):
     if not session.project and len(projects) > 0:
         set_current_project(projects[0]["code"])
 
-    if session.renders is None:
-        session.renders = 0
+    if session.authentication_status is None and not session.logging_out:
+        user_session_service.load_user_session()
 
-    if not session.logging_out and session.authentication_status is None:
-        authentication_service.load_user_session()
-    testgen.location(on_change=set_current_location)
-
-    if session.authentication_status and not session.logging_out:
+    hide_sidebar = not session.authentication_status or session.logging_in
+    if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
                 menu=application.menu.update_version(application.get_version()),
@@ -51,14 +48,8 @@ def render(log_level: int = logging.INFO):
                 current_project=session.project,
                 on_logout=authentication_service.end_user_session,
             )
-
-    if session.renders is not None:
-        session.renders += 1
-
-    if session.renders > 0 and session.current_page:
-        application.router.navigate(to=session.current_page, with_args=session.current_page_args)
-
-    application.logger.debug(f"location status: {session.current_page} {session.current_page_args}")
+            
+    application.router.run(hide_sidebar)
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)
@@ -89,6 +80,10 @@ def set_current_location(change: testgen.LocationChanged) -> None:
 
 def set_current_project(project_code: str) -> None:
     session.project = project_code
+
+
+def get_image_path(path: str) -> str:
+    return str(Path(__file__).parent / path)
 
 
 if __name__ == "__main__":

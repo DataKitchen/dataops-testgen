@@ -77,7 +77,7 @@ def run(log_level: int = logging.INFO) -> Application:
                 pages.append(maybe_page)
 
     return Application(
-        router=Router(routes=pages, default=NotFoundPage),
+        router=Router(routes=pages),
         menu=Menu(
             items=list(
                 {

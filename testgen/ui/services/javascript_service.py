@@ -2,7 +2,7 @@ import logging
 
 from streamlit_javascript import st_javascript
 
-from testgen.ui.services.authentication_service import AUTH_TOKEN_COOKIE_NAME
+from testgen.ui.services.user_session_service import AUTH_TOKEN_COOKIE_NAME
 
 LOG = logging.getLogger("testgen")
 
