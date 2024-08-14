@@ -2,10 +2,34 @@ from contextlib import contextmanager
 
 import streamlit
 import streamlit.components.v1 as components
-from streamlit_modal import Modal as BaseModal
 
+# This is a custom version of the "streamlit-modal" third-party library
+# The original library is not compatible with streamlit 1.30+
+# https://github.com/teamtv/streamlit_modal/issues/19
 
-class Modal(BaseModal):
+# This is temporary until we replace our modals with the new native st.dialog feature
+# https://docs.streamlit.io/develop/api-reference/execution-flow/st.dialog
+
+class Modal:
+
+    def __init__(self, title, key, padding=20, max_width=None):
+        self.title = title
+        self.padding = padding
+        self.max_width = max_width
+        self.key = key
+
+    def is_open(self):
+        return streamlit.session_state.get(f"{self.key}-opened", False)
+
+    def open(self):
+        streamlit.session_state[f"{self.key}-opened"] = True
+        streamlit.rerun()
+
+    def close(self, rerun=True):
+        streamlit.session_state[f"{self.key}-opened"] = False
+        if rerun:
+            streamlit.rerun()
+
     @contextmanager
     def container(self):
         streamlit.markdown(self._modal_styles(), unsafe_allow_html=True)
