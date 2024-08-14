@@ -77,12 +77,6 @@ def get_projects():
 
     return projects
 
-
-def set_current_location(change: testgen.LocationChanged) -> None:
-    session.current_page = change.page
-    session.current_page_args = change.args
-
-
 def set_current_project(project_code: str) -> None:
     session.project = project_code
 
