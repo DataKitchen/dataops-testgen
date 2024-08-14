@@ -72,7 +72,7 @@ class TestRunsPage(Page):
                 st.session_state["drill_test_run"] = dct_selected_row["test_run_id"]
                 session.current_page = "tests/results"
                 session.current_page_args = {}
-                st.experimental_rerun()
+                st.rerun()
 
             if dct_selected_rows:
                 open_record_detail(

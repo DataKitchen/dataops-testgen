@@ -727,7 +727,6 @@ def run(debug: bool):
                 "streamlit",
                 "run",
                 app_file,
-                "--ui.hideSidebarNav=true",
                 "--browser.gatherUsageStats=false",
                 f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
                 f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",

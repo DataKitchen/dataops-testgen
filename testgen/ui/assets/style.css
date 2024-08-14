@@ -37,39 +37,11 @@ footer {
 /* Sidebar */
 section[data-testid="stSidebar"] {
     z-index: 999;
+    background-color: var(--sidebar-background-color);
 }
 
-.appview-container > :nth-child(1 of section) {
-    top: unset;
-}
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) {
-    overflow: hidden;
-}
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) {
-    height: 100% !important;
-    padding: unset !important;
-}
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) > div {
-    height: 100% !important;
-}
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) > div > div:nth-child(1) {
-    height: 100% !important;
-}
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) > div > div:nth-child(1) > div > div:nth-child(1) {
-    height: 100% !important;
-}
-
-/* .appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) > div > div:nth-child(1) > div > div:nth-child(1) > div > div {
-    height: 100% !important;
-} */
-
-.appview-container > :nth-child(1 of section) > :nth-child(1 of div[class]) > div:nth-child(2) > div > div:nth-child(1) > div > div:not(:nth-child(1)) {
-    /* Hide the instances of CookieManager from the sidebar when loging out */
+[data-testid="stSidebarNav"],
+[data-testid="stSidebarUserContent"] {
     display: none;
 }
 /*  */
@@ -112,13 +84,13 @@ button[title="Show password text"] {
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     body {
-        --primary-text-color: rgba(255, 255, 255);;
+        --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);
-        --disabled-text-color: rgba(255, 255, 255, .5);;
+        --disabled-text-color: rgba(255, 255, 255, .5);
 
-        --sidebar-background-color: rgba(14, 17, 23, .7);
-        --sidebar-item-hover-color: rgba(14, 17, 23, .5);
-        --sidebar-active-item-color: rgba(14, 17, 23, .5);
+        --sidebar-background-color: #14181f;
+        --sidebar-item-hover-color: #10141b;
+        --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
         --dk-text-value-background: unset;
     }

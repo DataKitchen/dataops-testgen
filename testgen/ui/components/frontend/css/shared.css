@@ -24,13 +24,14 @@ body {
 
 @media (prefers-color-scheme: dark) {
     body {
-        --primary-text-color: rgba(255, 255, 255);;
+        --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);
-        --disabled-text-color: rgba(255, 255, 255, .5);;
+        --disabled-text-color: rgba(255, 255, 255, .5);
 
-        --sidebar-background-color: rgba(14, 17, 23, .7);
-        --sidebar-item-hover-color: rgba(14, 17, 23, .5);
-        --sidebar-active-item-color: rgba(14, 17, 23, .5);
+        --sidebar-background-color: #14181f;
+        --sidebar-item-hover-color: #10141b;
+        --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
+        --dk-text-value-background: unset;
     }
 }

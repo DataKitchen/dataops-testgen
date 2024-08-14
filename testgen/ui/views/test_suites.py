@@ -115,7 +115,7 @@ class TestSuitesPage(Page):
                 "table_group_id": table_group_id,
                 "test_suite_id": selected[0]["id"],
             }
-            st.experimental_rerun()
+            st.rerun()
 
         if add_modal.is_open():
             show_add_or_edit_modal(add_modal, "add", project_code, connection, table_group)
@@ -343,7 +343,7 @@ def show_delete_modal(modal, selected=None):
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, selected=None):
@@ -445,7 +445,7 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, s
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 def run_tests(modal, project_code, selected):

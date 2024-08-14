@@ -104,7 +104,7 @@ class TableGroupsPage(Page):
 
             session.current_page = "connections/table-groups/test-suites"
             session.current_page_args = {"connection_id": connection_id, "table_group_id": selected[0]["id"]}
-            st.experimental_rerun()
+            st.rerun()
 
         if add_modal.is_open():
             show_add_or_edit_modal(add_modal, "add", project_code, connection)
@@ -285,7 +285,7 @@ def show_delete_modal(modal, selected=None):
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):
@@ -472,7 +472,7 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None)
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
             with table_groups_preview_tab:
                 if mode == "edit":
