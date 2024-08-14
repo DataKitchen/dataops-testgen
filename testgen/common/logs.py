@@ -22,35 +22,36 @@ def configure_logging(
     logger = logging.getLogger("testgen")
     logger.setLevel(level)
 
-    formatter = logging.Formatter(log_format)
+    if not any(isinstance(handler, logging.StreamHandler) for handler in logger.handlers):
+        formatter = logging.Formatter(log_format)
 
-    console_out_handler = logging.StreamHandler(stream=sys.stdout)
-    if settings.IS_DEBUG:
-        console_out_handler.setLevel(level)
-    else:
-        console_out_handler.setLevel(logging.WARNING)
-    console_out_handler.setFormatter(formatter)
+        console_out_handler = logging.StreamHandler(stream=sys.stdout)
+        if settings.IS_DEBUG:
+            console_out_handler.setLevel(level)
+        else:
+            console_out_handler.setLevel(logging.WARNING)
+        console_out_handler.setFormatter(formatter)
 
-    console_err_handler = logging.StreamHandler(stream=sys.stderr)
-    console_err_handler.setLevel(logging.WARNING)
-    console_err_handler.setFormatter(formatter)
+        console_err_handler = logging.StreamHandler(stream=sys.stderr)
+        console_err_handler.setLevel(logging.WARNING)
+        console_err_handler.setFormatter(formatter)
 
-    logger.addHandler(console_out_handler)
-    logger.addHandler(console_err_handler)
+        logger.addHandler(console_out_handler)
+        logger.addHandler(console_err_handler)
 
-    if settings.LOG_TO_FILE:
-        os.makedirs(settings.LOG_FILE_PATH, exist_ok=True)
+        if settings.LOG_TO_FILE:
+            os.makedirs(settings.LOG_FILE_PATH, exist_ok=True)
 
-        file_handler = ConcurrentTimedRotatingFileHandler(
-            get_log_full_path(),
-            when="D",
-            interval=1,
-            backupCount=int(settings.LOG_FILE_MAX_QTY),
-        )
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
+            file_handler = ConcurrentTimedRotatingFileHandler(
+                get_log_full_path(),
+                when="D",
+                interval=1,
+                backupCount=int(settings.LOG_FILE_MAX_QTY),
+            )
+            file_handler.setLevel(level)
+            file_handler.setFormatter(formatter)
 
-        logger.addHandler(file_handler)
+            logger.addHandler(file_handler)
 
 
 def get_log_full_path() -> str:
