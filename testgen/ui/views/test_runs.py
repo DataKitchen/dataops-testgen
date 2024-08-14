@@ -15,9 +15,9 @@ from testgen.ui.session import session
 
 
 class TestRunsPage(Page):
-    path = "tests/runs"
+    path = "test-runs"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
         lambda: session.project != None or "overview",
     ]
     menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
@@ -70,9 +70,7 @@ class TestRunsPage(Page):
                 disabled=not dct_selected_row,
             ):
                 st.session_state["drill_test_run"] = dct_selected_row["test_run_id"]
-                session.current_page = "tests/results"
-                session.current_page_args = {}
-                st.rerun()
+                self.router.navigate("test-runs:results")
 
             if dct_selected_rows:
                 open_record_detail(

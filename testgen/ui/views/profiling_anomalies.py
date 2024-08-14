@@ -14,9 +14,9 @@ from testgen.ui.views.profiling_modal import view_profiling_modal
 
 
 class ProfilingAnomaliesPage(Page):
-    path = "profiling/hygiene"
+    path = "profiling:hygiene"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
 
     def render(self) -> None:

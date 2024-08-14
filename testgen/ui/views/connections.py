@@ -18,7 +18,7 @@ LOG = logging.getLogger("testgen")
 class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
     menu_item = MenuItem(icon="database", label="Data Configuration", order=3)
 
@@ -53,9 +53,10 @@ class ConnectionsPage(Page):
         ):
             st.session_state["connection"] = connection.to_dict()
 
-            session.current_page = "connections/table-groups"
-            session.current_page_args = {"connection_id": connection["connection_id"]}
-            st.experimental_rerun()
+            self.router.navigate(
+                "connections:table-groups",
+                {"connection_id": connection["connection_id"]},
+            )
 
         create_qc_schema_modal = testgen.Modal(title=None, key="dk-create-qc-schema-modal", max_width=1100)
 

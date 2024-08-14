@@ -22,9 +22,9 @@ LOG = logging.getLogger("testgen")
 
 
 class TestDefinitionsPage(Page):
-    path = "tests/definitions"
+    path = "test-definitions"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
     breadcrumbs: typing.ClassVar = [
         {"label": "Overview", "path": "overview"},
@@ -172,12 +172,12 @@ class TestDefinitionsPage(Page):
 
 
 class TestDefinitionsPageFromSuite(TestDefinitionsPage):
-    path = "connections/table-groups/test-suites/test-definitions"
+    path = "connections:test-definitions"
     breadcrumbs: typing.ClassVar = [
         {"label": "Overview", "path": "overview"},
         {"label": "Connections", "path": "connections"},
-        {"label": "Table Groups", "path": "connections/table-groups"},
-        {"label": "Test Suites", "path": "connections/table-groups/test-suites"},
+        {"label": "Table Groups", "path": "connections:table-groups"},
+        {"label": "Test Suites", "path": "connections:test-suites"},
         {"label": "Test Definitions", "path": None},
     ]
     menu_item = None

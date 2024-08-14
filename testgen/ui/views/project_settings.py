@@ -11,9 +11,9 @@ from testgen.ui.views.app_log_modal import view_log_file
 
 
 class ProjectSettingsPage(Page):
-    path = "settings/project"
+    path = "settings"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
         lambda: session.project is not None or "overview",
     ]
     menu_item = MenuItem(icon="settings", label="Settings", order=100)
