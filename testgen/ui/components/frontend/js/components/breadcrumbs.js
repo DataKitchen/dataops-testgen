@@ -42,7 +42,7 @@ const Breadcrumbs = (/** @type Properties */ props) => {
 };
 
 function navigate(/** @type string */ path) {
-    window.parent.postMessage({ type: 'TestgenNavigationRequest', path: path }, '*');
+    Streamlit.sendData(path);
     return false;
 }
 

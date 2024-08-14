@@ -2,6 +2,7 @@ import logging
 import sys
 
 import streamlit as st
+from pathlib import Path
 
 from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
@@ -16,6 +17,7 @@ from testgen.ui.session import session
 def render(log_level: int = logging.INFO):
     st.set_page_config(
         page_title="TestGen",
+        page_icon=get_image_path("assets/favicon.ico"),
         layout="wide",
     )
 
@@ -37,6 +39,11 @@ def render(log_level: int = logging.INFO):
 
     if session.authentication_status is None and not session.logging_out:
         user_session_service.load_user_session()
+    
+    st.logo(
+        image=get_image_path("assets/dk_logo.svg"),
+        icon_image=get_image_path("assets/dk_icon.svg")
+    )
 
     hide_sidebar = not session.authentication_status or session.logging_in
     if not hide_sidebar:
@@ -45,8 +52,6 @@ def render(log_level: int = logging.INFO):
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,
-                current_project=session.project,
-                on_logout=authentication_service.end_user_session,
             )
             
     application.router.run(hide_sidebar)

@@ -49,6 +49,12 @@ window.addEventListener('message', (event) => {
         if (componentId === 'sidebar') {
             window.top.testgen.components.Sidebar.onLogout = logout;
             window.top.testgen.components.Sidebar.onProjectChanged = changeProject;
+
+            // The parent element [data-testid="stSidebarUserContent"] randoms flickers on page navigation
+            // The [data-testid="stSidebarContent"] element seems to be stable
+            // But only when the default [data-testid="stSidebarNav"] navbar element is present
+            mountPoint = window.top.document.querySelector('[data-testid="stSidebarContent"]');
+
             window.top.testgen.components.Sidebar.StreamlitInstance = Streamlit;
         }
 
