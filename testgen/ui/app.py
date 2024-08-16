@@ -1,8 +1,8 @@
 import logging
 import sys
+from pathlib import Path
 
 import streamlit as st
-from pathlib import Path
 
 from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
