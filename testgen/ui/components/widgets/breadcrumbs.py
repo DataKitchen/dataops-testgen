@@ -2,6 +2,7 @@ import logging
 import typing
 
 from testgen.ui.components.utils.component import component
+from testgen.ui.navigation.router import Router
 
 LOG = logging.getLogger("testgen")
 
@@ -19,13 +20,13 @@ def breadcrumbs(
     :param breadcrumbs: list of dicts with label and path
     """
 
-    component(
+    path = component(
         id_="breadcrumbs",
         key=key,
-        default={},
         props={"breadcrumbs": breadcrumbs},
     )
-
+    if path:
+        Router().navigate(to=path)
 
 class Breadcrumb(typing.TypedDict):
     path: str | None

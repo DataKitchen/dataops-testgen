@@ -14,7 +14,6 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 from testgen.ui.views.connections import ConnectionsPage
 from testgen.ui.views.login import LoginPage
-from testgen.ui.views.not_found import NotFoundPage
 from testgen.ui.views.overview import OverviewPage
 from testgen.ui.views.profiling_anomalies import ProfilingAnomaliesPage
 from testgen.ui.views.profiling_results import ProfilingResultsPage
@@ -77,7 +76,7 @@ def run(log_level: int = logging.INFO) -> Application:
                 pages.append(maybe_page)
 
     return Application(
-        router=Router(routes=pages, default=NotFoundPage),
+        router=Router(routes=pages),
         menu=Menu(
             items=list(
                 {

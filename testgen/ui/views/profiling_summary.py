@@ -19,7 +19,7 @@ FORM_DATA_WIDTH = 400
 class DataProfilingPage(Page):
     path = "profiling"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
     menu_item = MenuItem(icon="problem", label="Data Profiling", order=1)
 
@@ -56,7 +56,7 @@ class DataProfilingPage(Page):
 
             dct_selected_rows = fm.render_grid_select(df, show_columns)
 
-            open_drill_downs(dct_selected_rows, tool_bar.short_slots)
+            open_drill_downs(dct_selected_rows, tool_bar.short_slots, self.router)
 
             if dct_selected_rows:
                 show_record_detail(dct_selected_rows[0])
@@ -107,7 +107,7 @@ def get_db_profiling_runs(str_project_code, str_tg=None):
     return db.retrieve_data(str_sql), show_columns
 
 
-def open_drill_downs(dct_selected_rows, button_slots):
+def open_drill_downs(dct_selected_rows, button_slots, router):
     dct_selected_row = None
     if dct_selected_rows:
         dct_selected_row = dct_selected_rows[0]
@@ -119,9 +119,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
         disabled=not dct_selected_rows,
     ):
         st.session_state["drill_profile_run"] = dct_selected_row["profiling_run_id"]
-        session.current_page = "profiling/results"
-        session.current_page_args = {}
-        st.experimental_rerun()
+        router.navigate("profiling:results")
 
     if button_slots[1].button(
         f":{'gray' if not dct_selected_rows else 'green'}[Hygiene　→]",
@@ -131,9 +129,7 @@ def open_drill_downs(dct_selected_rows, button_slots):
     ):
         st.session_state["drill_profile_run"] = dct_selected_row["profiling_run_id"]
         st.session_state["drill_profile_tg"] = dct_selected_row["table_groups_id"]
-        session.current_page = "profiling/hygiene"
-        session.current_page_args = {}
-        st.experimental_rerun()
+        router.navigate("profiling:hygiene")
 
 
 def show_record_detail(dct_selected_row):

@@ -309,7 +309,7 @@ def show_connection(connection_modal, selected_connection, mode, project_code, s
             time.sleep(1)
             if connection_modal:
                 connection_modal.close()
-            st.experimental_rerun()
+            st.rerun()
 
     test_left_column, test_mid_column, test_right_column = st.columns([0.15, 0.15, 0.70])
     test_connection = button_right_column.button("Test Connection")

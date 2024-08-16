@@ -1,13 +1,20 @@
 import typing
 
-from streamlit import session_state
+import streamlit as st
 from streamlit.runtime.state import SessionStateProxy
 
 from testgen.utils.singleton import Singleton
 
 
 class TestgenSession(Singleton):
-    renders: int
+    cookies_ready: bool
+    logging_in: bool
+    logging_out: bool
+    page_pending_cookies: st.Page
+    page_pending_login: str
+    page_pending_sidebar: str
+    page_args_pending_router: dict
+    
     current_page: str
     current_page_args: dict
 
@@ -17,7 +24,6 @@ class TestgenSession(Singleton):
     username: str
     authentication_status: bool
     auth_role: typing.Literal["admin", "edit", "read"]
-    logging_out: bool
 
     project: str
     add_project: bool
@@ -43,4 +49,4 @@ class TestgenSession(Singleton):
             del state[key]
 
 
-session = TestgenSession(session_state)
+session = TestgenSession(st.session_state)

@@ -9,7 +9,6 @@ import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
 import { Button } from './components/button.js'
 import { Select } from './components/select.js'
-import { Location } from './components/location.js'
 import { Breadcrumbs } from './components/breadcrumbs.js'
 
 let currentWindowVan = van;
@@ -19,7 +18,6 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
     const componentById = {
         select: Button,
         button: Select,
-        location: Location,
         breadcrumbs: Breadcrumbs,
         sidebar: window.top.testgen.components.Sidebar,
     };
@@ -47,8 +45,11 @@ window.addEventListener('message', (event) => {
         }
 
         if (componentId === 'sidebar') {
-            window.top.testgen.components.Sidebar.onLogout = logout;
-            window.top.testgen.components.Sidebar.onProjectChanged = changeProject;
+            // The parent element [data-testid="stSidebarUserContent"] randoms flickers on page navigation
+            // The [data-testid="stSidebarContent"] element seems to be stable
+            // But only when the default [data-testid="stSidebarNav"] navbar element is present
+            mountPoint = window.top.document.querySelector('[data-testid="stSidebarContent"]');
+
             window.top.testgen.components.Sidebar.StreamlitInstance = Streamlit;
         }
 
@@ -81,16 +82,6 @@ Streamlit.init();
 
 function shouldRenderOutsideFrame(componentId) {
     return 'sidebar' === componentId;
-}
-
-function logout(authCookieName) {
-    window.parent.postMessage({ type: 'TestgenLogout', cookie: authCookieName }, '*');
-    Streamlit.sendData({ logout: true });
-    return false;
-}
-
-function changeProject(/** @type string */ projectCode) {
-    Streamlit.sendData({ change_to_project: projectCode });
 }
 
 window.testgen = {

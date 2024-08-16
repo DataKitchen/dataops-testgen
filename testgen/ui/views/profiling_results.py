@@ -14,9 +14,9 @@ FORM_DATA_WIDTH = 400
 
 
 class ProfilingResultsPage(Page):
-    path = "profiling/results"
+    path = "profiling:results"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
 
     def render(self) -> None:

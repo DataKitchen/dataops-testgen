@@ -18,10 +18,10 @@ from testgen.ui.session import session
 
 
 class TestSuitesPage(Page):
-    path = "connections/table-groups/test-suites"
+    path = "connections:test-suites"
     can_activate: typing.ClassVar = [
         lambda: authentication_service.current_user_has_admin_role() or "overview",
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
 
     def render(self, connection_id: str | None = None, table_group_id: str | None = None) -> None:
@@ -31,7 +31,7 @@ class TestSuitesPage(Page):
             lst_breadcrumbs=[
                 {"label": "Overview", "path": "overview"},
                 {"label": "Connections", "path": "connections"},
-                {"label": "Table Groups", "path": "connections/table-groups"},
+                {"label": "Table Groups", "path": "connections:table-groups"},
                 {"label": "Test Suites", "path": None},
             ],
         )
@@ -109,13 +109,14 @@ class TestSuitesPage(Page):
         ):
             st.session_state["test_suite"] = selected[0]
 
-            session.current_page = "connections/table-groups/test-suites/test-definitions"
-            session.current_page_args = {
-                "connection_id": connection,
-                "table_group_id": table_group_id,
-                "test_suite_id": selected[0]["id"],
-            }
-            st.experimental_rerun()
+            self.router.navigate(
+                "connections:test-definitions",
+                {
+                    "connection_id": connection,
+                    "table_group_id": table_group_id,
+                    "test_suite_id": selected[0]["id"],
+                },
+            )
 
         if add_modal.is_open():
             show_add_or_edit_modal(add_modal, "add", project_code, connection, table_group)
@@ -343,7 +344,7 @@ def show_delete_modal(modal, selected=None):
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, selected=None):
@@ -445,7 +446,7 @@ def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, s
                     st.success(success_message)
                     time.sleep(1)
                     modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
 def run_tests(modal, project_code, selected):

@@ -389,7 +389,7 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
                 fcn.clear()
         else:
             st.cache_data.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 
 def render_page_header(

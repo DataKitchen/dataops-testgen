@@ -22,9 +22,9 @@ ALWAYS_SPIN = False
 
 
 class TestResultsPage(Page):
-    path = "tests/results"
+    path = "test-runs:results"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
         lambda: session.project != None or "overview",
     ]
 
@@ -34,7 +34,7 @@ class TestResultsPage(Page):
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
             lst_breadcrumbs=[
                 {"label": "Overview", "path": "overview"},
-                {"label": "Test Runs", "path": "tests/runs"},
+                {"label": "Test Runs", "path": "test-runs"},
                 {"label": "Test Results", "path": None},
             ],
         )

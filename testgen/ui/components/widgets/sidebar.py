@@ -1,24 +1,22 @@
-import dataclasses
 import logging
-import typing
 
-import streamlit as st
-
-from testgen.ui.components.utils.callbacks import register_callback
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
-from testgen.ui.services import authentication_service
+from testgen.ui.navigation.router import Router
+from testgen.ui.services import javascript_service, user_session_service
+from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
+SIDEBAR_KEY = "testgen:sidebar"
+LOGOUT_PATH = "logout"
+
 
 def sidebar(
-    key: str = "testgen:sidebar",
+    key: str = SIDEBAR_KEY,
     username: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
-    current_project: str | None = None,
-    on_logout: typing.Callable[[], None] | None = None,
 ) -> None:
     """
     Testgen custom component to display a styled menu over streamlit's
@@ -29,10 +27,12 @@ def sidebar(
     :param username: username to display at the bottom of the menu
     :param menu: menu object with all root pages
     :param current_page: page address to highlight the selected item
-    :param on_logout: callback for when user clicks logout
-    :param on_project_changed: callback for when user switches projects
     """
-    register_callback(key, _handle_callbacks, key, on_logout)
+
+    if session.page_pending_sidebar is not None:
+        path = session.page_pending_sidebar
+        session.page_pending_sidebar = None
+        Router().navigate(to=path)
 
     component(
         id_="sidebar",
@@ -40,30 +40,22 @@ def sidebar(
             "username": username,
             "menu": menu.filter_for_current_user().sort_items().asdict(),
             "current_page": current_page,
-            "current_project": current_project,
-            "auth_cookie_name": authentication_service.AUTH_TOKEN_COOKIE_NAME,
+            "logout_path": LOGOUT_PATH,
         },
         key=key,
-        default={},
+        on_change=on_change,
     )
 
+def on_change():
+    # We cannot navigate directly here
+    # because st.switch_page uses st.rerun under the hood
+    # and we get a "Calling st.rerun() within a callback is a noop" error
+    # So we store the path and navigate on the next run
 
-def _handle_callbacks(
-    key: str,
-    on_logout: typing.Callable[[], None] | None = None,
-):
-    action = st.session_state[key]
-    action = MenuAction(**action)
-
-    if action.logout and on_logout:
-        return on_logout()
-
-
-class Project(typing.TypedDict):
-    code: str
-    name: str
-
-
-@dataclasses.dataclass
-class MenuAction:
-    logout: bool | None = None
+    path = getattr(session, SIDEBAR_KEY)
+    if path == LOGOUT_PATH:
+        javascript_service.clear_component_states()
+        user_session_service.end_user_session()
+        session.page_pending_sidebar = ""
+    else:
+        session.page_pending_sidebar = path

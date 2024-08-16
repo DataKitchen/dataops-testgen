@@ -14,7 +14,7 @@ LOG = logging.getLogger("testgen")
 class OverviewPage(Page):
     path = "overview"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
     ]
     menu_item = MenuItem(icon="home", label="Overview", order=0)
 
