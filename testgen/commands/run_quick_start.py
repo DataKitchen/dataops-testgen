@@ -1,10 +1,11 @@
 import logging
 
+import click
+
 from testgen import settings
 from testgen.commands.run_get_entities import run_table_group_list
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
-from testgen.common import display_service
 from testgen.common.database.database_service import (
     AssignConnectParms,
     CreateDatabaseIfNotExists,
@@ -112,17 +113,17 @@ def run_quick_start(delete_target_db: bool) -> None:
 
     # Create DB
     target_db_name = params_mapping["PROJECT_DB"]
-    display_service.echo(f"Creating target db : {target_db_name}")
+    click.echo(f"Creating target db : {target_db_name}")
     CreateDatabaseIfNotExists(target_db_name, params_mapping, delete_target_db, drop_users_and_roles=False)
 
     # run setup
     command = "testgen setup-system-db --delete-db --yes"
-    display_service.echo(f"Running CLI command: {command}")
+    click.echo(f"Running CLI command: {command}")
     delete_db = True
     run_launch_db_config(delete_db)
 
     # Schema and Populate target db
-    display_service.echo(f"Populating target db : {target_db_name}")
+    click.echo(f"Populating target db : {target_db_name}")
     queries = [
         replace_params(read_template_sql_file("recreate_target_data_schema.sql", "quick_start"), params_mapping),
         replace_params(read_template_sql_file("populate_target_data.sql", "quick_start"), params_mapping),
@@ -141,13 +142,13 @@ def run_quick_start(delete_target_db: bool) -> None:
 
     # run qc
     command = "testgen setup-target-db-functions --connection-id <CONNECTION_ID> --create-qc-schema --yes"
-    display_service.echo(f"Running CLI command: {command}")
+    click.echo(f"Running CLI command: {command}")
     create_qc_schema = True
     db_user = params_mapping["TESTGEN_ADMIN_USER"]
     db_password = params_mapping["TESTGEN_ADMIN_PASSWORD"]
     dry_run = False
     project_qc_schema = run_setup_profiling_tools(connection_id, dry_run, create_qc_schema, db_user, db_password)
-    display_service.echo(f"Schema {project_qc_schema} has been created in the target db")
+    click.echo(f"Schema {project_qc_schema} has been created in the target db")
 
 
 def run_quick_start_increment(iteration):

@@ -34,7 +34,6 @@ from testgen.commands.run_observability_exporter import run_observability_export
 from testgen.commands.run_profiling_bridge import run_profiling_queries
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
 from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
-from testgen.commands.run_test_definition import get_test_def_parms, update_test_def_parms_dict
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.common import (
     configure_logging,
@@ -265,42 +264,6 @@ def list_test_generation(configuration: Configuration, project_key: str, test_su
     if display:
         display_service.print_table(rows, header)
     display_service.to_csv("list_test_generation.csv", rows, header)
-
-
-@cli.command("get-test-properties", help="Fetches test details for a test suite (in an editable file).")
-@click.option(
-    "-pk",
-    "--project-key",
-    required=False,
-    type=click.STRING,
-    help="The identifier for a TestGen project. Use a project_key shown in list-projects.",
-    default=settings.PROJECT_KEY,
-)
-@click.option(
-    "-ts",
-    "--test-suite-key",
-    help="The identifier for a test suite. Use a test_suite_key shown in list-test-suites.",
-    type=click.STRING,
-    required=True,
-    default=settings.DEFAULT_TEST_SUITE_KEY,
-)
-@click.option("-d", "--display", help="Show command output in the terminal.", is_flag=True, default=False)
-@pass_configuration
-def get_test_properties(configuration: Configuration, project_key: str, test_suite_key: str, display: bool):
-    LOG.info("CurrentStep: Main Program - List Test Properties")
-    yaml_dict = get_test_def_parms(project_key, test_suite_key)
-    display_service.to_yaml("get_test_parms.yaml", yaml_dict, display)
-
-
-@cli.command("update-test-properties", help="Updates test properties from changes made in the YAML file.")
-@click.option("-d", "--display", help="Show command output in the terminal.", is_flag=True, default=False)
-@pass_configuration
-def update_test_parms(configuration: Configuration, display: bool):
-    click.echo("update-test-properties is starting.")
-    LOG.info("CurrentStep: Update Test Def Parms")
-    yaml_dict = display_service.from_yaml("get_test_parms.yaml", display)
-    update_test_def_parms_dict(yaml_dict)
-    click.echo("update-test-properties has successfully finished.")
 
 
 @cli.command("list-tests", help="Lists the tests generated for a test suite.")
