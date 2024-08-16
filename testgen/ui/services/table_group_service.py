@@ -37,12 +37,14 @@ def cascade_delete(table_group_names, dry_run=False):
 
 
 def table_group_has_dependencies(schema, table_group_names, test_suite_names):
-    test_suite_usage_result = test_suite_service.has_test_suite_dependencies(schema, test_suite_names)
-    if not table_group_names:
-        table_group_usage_result = False
-    else:
-        table_group_usage_result = not table_group_queries.get_table_group_dependencies(schema, table_group_names).empty
-    return test_suite_usage_result or table_group_usage_result
+    return any(
+        (
+            table_group_names and not table_group_queries.get_table_group_dependencies(
+                schema, table_group_names
+            ).empty,
+            test_suite_service.has_test_suite_dependencies(schema, test_suite_names),
+        )
+    )
 
 
 def are_table_groups_in_use(table_group_names):

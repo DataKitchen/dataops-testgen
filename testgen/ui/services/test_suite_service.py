@@ -44,11 +44,11 @@ def are_test_suites_in_use(test_suite_names):
     return not usage_result.empty
 
 
-def get_test_suite_refresh_warning(table_groups_id, test_suite_name):
-    if not test_suite_name:
+def get_test_suite_refresh_warning(table_groups_id, test_suite_id):
+    if not test_suite_id:
         return False
     schema = st.session_state["dbschema"]
-    row_result = test_suite_queries.get_test_suite_refresh_check(schema, table_groups_id, test_suite_name)
+    row_result = test_suite_queries.get_test_suite_refresh_check(schema, table_groups_id, test_suite_id)
 
     test_ct = None
     unlocked_test_ct = None
@@ -70,7 +70,7 @@ def get_generation_set_choices():
         return dfSets["generation_set"].to_list()
 
 
-def lock_edited_tests(test_suite_name):
+def lock_edited_tests(test_suite_id):
     schema = st.session_state["dbschema"]
-    tests_locked = test_suite_queries.lock_edited_tests(schema, test_suite_name)
+    tests_locked = test_suite_queries.lock_edited_tests(schema, test_suite_id)
     return tests_locked

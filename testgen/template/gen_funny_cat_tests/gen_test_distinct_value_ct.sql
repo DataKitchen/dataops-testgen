@@ -1,6 +1,6 @@
 -- FIRST TYPE OF CONSTANT IS HANDLED IN SEPARATE SQL FILE gen_standard_tests.sql using generic parameters
 -- Second type:  constants with changing values (1 distinct value)
-INSERT INTO test_definitions (project_code, table_groups_id, profile_run_id, test_type, test_suite, test_suite_id,
+INSERT INTO test_definitions (table_groups_id, profile_run_id, test_type, test_suite_id,
                               schema_name, table_name, column_name, skip_errors,
                               last_auto_gen_date, test_active,
                               baseline_value_ct, threshold_value, profiling_as_of_date)
@@ -8,12 +8,12 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     FROM profile_results p
                   INNER JOIN profiling_runs r
                      ON (p.profile_run_id = r.id)
-                    INNER JOIN test_suites tg
-                       ON p.project_code = tg.project_code
-                      AND p.connection_id = tg.connection_id
+                    INNER JOIN test_suites ts
+                       ON p.project_code = ts.project_code
+                      AND p.connection_id = ts.connection_id
                    WHERE p.project_code = '{PROJECT_CODE}'
                      AND r.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                     AND tg.test_suite = '{TEST_SUITE}'
+                     AND ts.id = '{TEST_SUITE_ID}'
                      AND p.run_date::DATE <= '{AS_OF_DATE}'
                   GROUP BY r.table_groups_id),
      curprof AS (SELECT p.*
@@ -24,7 +24,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
      locked AS (SELECT schema_name, table_name, column_name, test_type
                   FROM test_definitions
              WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                   AND test_suite = '{TEST_SUITE}'
+                   AND test_suite_id = '{TEST_SUITE_ID}'
                    AND lock_refresh = 'Y'),
      all_runs AS ( SELECT DISTINCT p.table_groups_id, p.schema_name, p.run_date,
                           DENSE_RANK() OVER (PARTITION BY p.table_groups_id ORDER BY p.run_date DESC) as run_rank
@@ -33,7 +33,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                       ON p.connection_id = ts.connection_id
                      AND p.project_code = ts.project_code
                    WHERE p.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                     AND ts.test_suite = '{TEST_SUITE}'
+                     AND ts.id = '{TEST_SUITE_ID}'
                      AND p.run_date::DATE <= '{AS_OF_DATE}'),
      recent_runs AS (SELECT table_groups_id, schema_name, run_date, run_rank
                        FROM all_runs
@@ -67,9 +67,8 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                                             AND p.distinct_value_ct = 1     THEN 'FALSE'
                                          END ) > 1 ),
 newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
-                     '{TEST_SUITE}'::VARCHAR AS test_suite,
                      '{TEST_SUITE_ID}'::UUID AS test_suite_id,
-                     c.project_code, c.table_groups_id, c.profile_run_id,
+                     c.table_groups_id, c.profile_run_id,
                      c.schema_name, c.table_name, c.column_name,
                      c.run_date AS last_run_date,
                      c.distinct_value_ct
@@ -83,8 +82,8 @@ newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
                  AND  '{GENERATION_SET}' = s.generation_set)
                WHERE (s.generation_set IS NOT NULL
                   OR  '{GENERATION_SET}' = '')  )
-SELECT n.project_code, n.table_groups_id, n.profile_run_id,
-       n.test_type, n.test_suite, n.test_suite_id,
+SELECT n.table_groups_id, n.profile_run_id,
+       n.test_type, n.test_suite_id,
        n.schema_name, n.table_name, n.column_name, 0 as skip_errors,
        '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date, 'Y' as test_active,
        distinct_value_ct as baseline_value_ct, distinct_value_ct as threshold_value,

@@ -7,6 +7,7 @@ class CTestExecutionSQL:
     flavor = ""
     run_date = ""
     project_code = ""
+    test_suite_id = ""
     test_suite = ""
     test_run_id = ""
     exception_message = ""
@@ -18,9 +19,10 @@ class CTestExecutionSQL:
     match_sum_columns = ""
     multi_column_error_condition = ""
 
-    def __init__(self, strProjectCode, strFlavor, strTestSuite, minutes_offset=0):
+    def __init__(self, strProjectCode, strFlavor, strTestSuiteId, strTestSuite, minutes_offset=0):
         self.project_code = strProjectCode
         self.flavor = strFlavor
+        self.test_suite_id = strTestSuiteId
         self.test_suite = strTestSuite
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
         self.minutes_offset = minutes_offset
@@ -41,6 +43,7 @@ class CTestExecutionSQL:
 
     def _ReplaceParms(self, strInputString: str):
         strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
+        strInputString = strInputString.replace("{TEST_SUITE_ID}", self.test_suite_id)
         strInputString = strInputString.replace("{TEST_SUITE}", self.test_suite)
         strInputString = strInputString.replace("{SQL_FLAVOR}", self.flavor)
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)

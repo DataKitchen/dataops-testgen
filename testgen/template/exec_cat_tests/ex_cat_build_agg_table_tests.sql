@@ -67,8 +67,7 @@ WITH test_detail
        INNER JOIN cat_test_conditions c
           ON (t.test_type = c.test_type
          AND  '{SQL_FLAVOR}' = c.sql_flavor)
-        WHERE t.project_code = '{PROJECT_CODE}'
-          AND t.test_suite = '{TEST_SUITE}'
+        WHERE t.test_suite_id = '{TEST_SUITE_ID}'
           AND t.schema_name = '{SCHEMA_NAME}'
           AND t.table_name = '{TABLE_NAME}'
           AND COALESCE(t.test_active, 'Y') = 'Y'

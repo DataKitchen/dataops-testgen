@@ -184,14 +184,13 @@ def generate_tests_dialog(selected_test_suite):
     status_container = st.empty()
 
     test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
-        selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
+        selected_test_suite["table_groups_id"], selected_test_suite["id"]
     )
     if test_ct:
         warning_msg = ""
         counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
         if unlocked_edits_ct > 0:
             if unlocked_edits_ct > 1:
-
                 warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
             else:
                 warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
@@ -203,7 +202,7 @@ def generate_tests_dialog(selected_test_suite):
             if unlocked_edits_ct > 0:
                 lock_edits_button = st.button("Lock Edited Tests")
                 if lock_edits_button:
-                    edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
+                    edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["id"])
                     if edits_locked:
                         st.info("Edited tests have been successfully locked.")
 

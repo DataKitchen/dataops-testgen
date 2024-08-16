@@ -90,14 +90,13 @@ def cascade_delete(schema: str, test_suite_names: list[str]) -> None:
 def get_test_suite_dependencies(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
     test_suite_names_join = [f"'{item}'" for item in test_suite_names]
     sql = f"""
-            select distinct test_suite from {schema}.test_definitions where test_suite in ({",".join(test_suite_names_join)})
-            union
-            select distinct test_suite from {schema}.execution_queue where test_suite in ({",".join(test_suite_names_join)})
+            select distinct ts.test_suite
+                from {schema}.test_definitions td join {schema}.test_suites ts on ts.id = td.test_suite_id
+                where ts.test_suite in ({",".join(test_suite_names_join)})
             union
             select distinct test_suite from {schema}.test_results where test_suite in ({",".join(test_suite_names_join)});
     """
     return db.retrieve_data(sql)
-
 
 
 def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
@@ -108,7 +107,7 @@ def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFra
     return db.retrieve_data(sql)
 
 
-def get_test_suite_refresh_check(schema, table_groups_id, test_suite_name):
+def get_test_suite_refresh_check(schema, table_groups_id, test_suite_id):
     sql = f"""
            SELECT COUNT(*) as test_ct,
                   SUM(CASE WHEN COALESCE(d.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) as unlocked_test_ct,
@@ -117,7 +116,7 @@ def get_test_suite_refresh_check(schema, table_groups_id, test_suite_name):
            INNER JOIN {schema}.test_types t
               ON (d.test_type = t.test_type)
             WHERE d.table_groups_id = '{table_groups_id}'::UUID
-              AND d.test_suite = '{test_suite_name}'
+              AND d.test_suite_id = '{test_suite_id}'
               AND t.run_type = 'CAT'
               AND t.selection_criteria IS NOT NULL;
 """
@@ -133,11 +132,11 @@ def get_generation_sets(schema):
     return db.retrieve_data(sql)
 
 
-def lock_edited_tests(schema, test_suite_name):
+def lock_edited_tests(schema, test_suite_id):
     sql = f"""
            UPDATE {schema}.test_definitions
               SET lock_refresh = 'Y'
-            WHERE test_suite = '{test_suite_name}'
+            WHERE test_suite_id = '{test_suite_id}'
               AND last_manual_update IS NOT NULL
               AND lock_refresh = 'N';
 """
