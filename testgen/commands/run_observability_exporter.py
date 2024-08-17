@@ -5,11 +5,12 @@ import uuid
 from collections import namedtuple
 from urllib.parse import urlparse
 
+import click
 import requests
 from requests_extensions import get_session
 
 from testgen import settings
-from testgen.common import date_service, display_service, read_template_sql_file
+from testgen.common import date_service, read_template_sql_file
 from testgen.common.database.database_service import ExecuteDBQuery, RetrieveDBResultsToDictList
 
 LOG = logging.getLogger("testgen")
@@ -30,7 +31,7 @@ def calculate_chunk_size(test_outcomes):
 def post_event(event_type, payload, api_url, api_key, test_outcomes, is_test=False):
     qty_of_events = len(test_outcomes)
     if not is_test and qty_of_events == 0:
-        display_service.echo("Nothing to be sent to Observability")
+        click.echo("Nothing to be sent to Observability")
         return qty_of_events
 
     def chunkify(collection, chunk_size):
@@ -309,7 +310,7 @@ def export_test_results(project_code, test_suite):
     max_qty_events = settings.OBSERVABILITY_EXPORT_LIMIT
     qty_of_exported_events = 0
     while True:
-        display_service.echo(f"Observability Export Increment - {qty_of_exported_events} exported events so far")
+        click.echo(f"Observability Export Increment - {qty_of_exported_events} exported events so far")
         test_outcomes, updated_ids = collect_test_results(project_code, test_suite, max_qty_events)
         if len(test_outcomes) == 0:
             return qty_of_exported_events
@@ -320,7 +321,7 @@ def export_test_results(project_code, test_suite):
 def run_observability_exporter(project_code, test_suite):
     LOG.info("CurrentStep: Observability Export - Test Results")
     qty_of_exported_events = export_test_results(project_code, test_suite)
-    display_service.echo(f"{qty_of_exported_events} events have been exported.")
+    click.echo(f"{qty_of_exported_events} events have been exported.")
 
 
 def test_observability_exporter(project_code, api_url, api_key):
