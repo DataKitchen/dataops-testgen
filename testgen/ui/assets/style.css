@@ -64,6 +64,33 @@ div[data-testid="stModal"] div[role="dialog"] {
 }
 /*  */
 
+/* Theming for buttons and form inputs */
+button[data-testid="baseButton-secondary"]:hover,
+button[data-testid="baseButton-secondary"]:focus:not(:active),
+button[data-testid="baseButton-secondaryFormSubmit"]:hover,
+button[data-testid="baseButton-secondaryFormSubmit"]:focus:not(:active) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+button[data-testid="baseButton-secondary"]:active,
+button[data-testid="baseButton-secondaryFormSubmit"]:active,
+label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > span {
+    border-color: var(--primary-color);
+    background-color: var(--primary-color);
+}
+
+div[data-testid="stTextInput-RootElement"]:focus-within,
+div[data-baseweb="select"] > div:has(input[aria-expanded="true"]) {
+    border-color: var(--primary-color);
+}
+
+label[data-baseweb="radio"]:has(input[tabindex="0"]) > div:first-child,
+label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child {
+    background-color: var(--primary-color);
+}
+/* */
+
 button[title="Show password text"] {
     display: none;
 }

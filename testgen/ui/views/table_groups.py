@@ -244,7 +244,7 @@ def delete_table_group_dialog(selected):
         disable_delete_button = authentication_service.current_user_has_read_role() or (
             not can_be_deleted and not accept_cascade_delete
         )
-        delete = st.form_submit_button("Delete", disabled=disable_delete_button)
+        delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
 
         if delete:
             if table_group_service.are_table_groups_in_use([table_group_name]):

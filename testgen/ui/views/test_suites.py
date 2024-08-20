@@ -266,7 +266,7 @@ def delete_test_suite_dialog(selected):
         disable_delete_button = authentication_service.current_user_has_read_role() or (
             not can_be_deleted and not accept_cascade_delete
         )
-        delete = st.form_submit_button("Delete", disabled=disable_delete_button)
+        delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
 
         if delete:
             if test_suite_service.are_test_suites_in_use([test_suite_name]):
