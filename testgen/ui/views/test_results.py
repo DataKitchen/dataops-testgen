@@ -11,6 +11,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
 from testgen.common import ConcatColumnList, date_service
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
@@ -266,20 +267,19 @@ def get_test_disposition(str_run_id):
 def get_test_result_summary(str_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
-            SELECT test_ct as result_ct,
-                   COALESCE(error_ct, 0) as error_ct,
-                   failed_ct + warning_ct as exception_ct, warning_ct,
-                   ROUND({str_schema}.fn_pct(warning_ct, test_ct), 1) as warning_pct,
-                   failed_ct,
-                   ROUND({str_schema}.fn_pct(failed_ct, test_ct), 1) as failed_pct,
-                   passed_ct,
-                   ROUND({str_schema}.fn_pct(passed_ct, test_ct), 1) as passed_pct
+            SELECT passed_ct, warning_ct, failed_ct,
+                   COALESCE(error_ct, 0) as error_ct
               FROM {str_schema}.test_runs
              WHERE id = '{str_run_id}'::UUID;
     """
     df = db.retrieve_data(str_sql)
 
-    return df
+    return [
+        { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
+        { "label": "Warnings", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
+        { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
+        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "grey" },
+    ]
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
@@ -572,11 +572,9 @@ def show_test_def_detail(str_test_def_id):
 
 
 def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_container):
-    # Retrieve summary counts
-    df_sum = get_test_result_summary(str_run_id)
-    if not df_sum.empty:
-        if (df_sum.at[0, "result_ct"] or 0) > 0:
-            write_summary_graph(df_sum)
+    # Display summary bar
+    tests_summary = get_test_result_summary(str_run_id)
+    testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
 
     # Retrieve test results (always cached, action as null)
     df = get_test_results(str_run_id, str_sel_test_status)
@@ -693,73 +691,6 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             with ut_tab2:
                 show_test_def_detail(selected_row["test_definition_id_current"])
         return selected_rows
-
-
-def write_summary_graph(df_sum):
-    df_graph = df_sum[["passed_ct", "error_ct", "warning_ct", "failed_ct"]]
-
-    str_error_caption = f"Errors: {df_sum.at[0, 'error_ct']}, " if df_sum.at[0, "error_ct"] > 0 else ""
-    str_graph_caption = f"<i>Passed: {df_sum.at[0, 'passed_ct']} ({df_sum.at[0, 'passed_pct']}%), {str_error_caption}Warnings: {df_sum.at[0, 'warning_ct']} ({df_sum.at[0, 'warning_pct']}%), Failed: {df_sum.at[0, 'failed_ct']} ({df_sum.at[0, 'failed_pct']}%)</i>"
-
-    fig = px.bar(
-        df_graph,
-        orientation="h",
-        title=None,
-        # labels={'value': 'Tests', 'variable': 'Result Status'},
-        color_discrete_sequence=["green", "gray", "yellow", "red"],
-        barmode="stack",
-    )
-
-    fig.update_traces(
-        # hoverinfo='y+name',  # Display the y value and the trace name
-        # hovertemplate='Count: %{y}<br>Type: %{name}',  # Custom template for hover text
-        hovertemplate="%{x}"
-        # hovertemplate=None
-    )
-
-    fig.update_layout(
-        showlegend=False,
-        legend_orientation="h",
-        legend_y=-0.2,  # This value might need to be adjusted based on other chart elements
-        legend_x=0.5,
-        legend_xanchor="right",
-        legend_title_text="",
-        yaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        xaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        hovermode="closest",
-        height=100,
-        width=800,
-        margin={"l": 0, "r": 10, "b": 10, "t": 10},  # adjust margins around the plot
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-
-    fig.add_annotation(
-        text=str_graph_caption,
-        xref="paper",
-        yref="paper",  # 'paper' coordinates are relative to the layout, with (0,0) at the bottom left and (1,1) at the top right
-        x=0,
-        y=0,
-        xanchor="left",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 15, "color": "black"},
-    )
-
-    config = {"displayModeBar": False}
-    st.plotly_chart(fig, config=config)
 
 
 def write_history_graph(dfh):

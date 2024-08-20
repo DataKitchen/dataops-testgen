@@ -7,6 +7,7 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
@@ -64,9 +65,6 @@ class ProfilingAnomaliesPage(Page):
                 do_multi_select = st.toggle("Multi-Select", help=str_help)
 
             if str_table_groups_id:
-                # Get summary counts
-                df_sum = get_profiling_anomaly_summary(str_profile_run_id)
-
                 # Get hygiene issue list
                 df_pa = get_profiling_anomalies(str_profile_run_id, str_likelihood)
 
@@ -77,8 +75,11 @@ class ProfilingAnomaliesPage(Page):
                 df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
 
                 if not df_pa.empty:
+                    # Display summary bar
+                    anomalies_summary = get_profiling_anomaly_summary(str_profile_run_id)
+                    testgen.summary_bar(items=anomalies_summary, key="test_results", height=40, width=800)
                     # write_frequency_graph(df_pa)
-                    write_summary_graph(df_sum)
+                    
                     lst_show_columns = [
                         "table_name",
                         "column_name",
@@ -284,8 +285,14 @@ def get_profiling_anomaly_summary(str_profile_run_id):
              WHERE s.profile_run_id = '{str_profile_run_id}'
             GROUP BY schema_name;
     """
-    # Retrieve and return data as df
-    return db.retrieve_data(str_sql)
+    df = db.retrieve_data(str_sql)
+
+    return [
+        { "label": "Definite", "value": int(df.at[0, "definite_ct"]), "color": "red" },
+        { "label": "Likely", "value": int(df.at[0, "likely_ct"]), "color": "orange" },
+        { "label": "Possible", "value": int(df.at[0, "possible_ct"]), "color": "yellow" },
+        { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
+    ]
 
 
 @st.cache_data(show_spinner=False)
@@ -371,67 +378,6 @@ def get_bad_data(selected_row):
 
     except Exception as e:
         return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}", None
-
-
-def write_summary_graph(df_sum):
-    df_graph = df_sum[["definite_ct", "likely_ct", "possible_ct", "dismissed_ct"]]
-
-    str_graph_caption = f"<i>Definite: {df_sum.at[0, 'definite_ct']}, Likely: {df_sum.at[0, 'likely_ct']}, Possible: {df_sum.at[0, 'possible_ct']}, Dismissed: {df_sum.at[0, 'dismissed_ct']}</i>"
-
-    fig = px.bar(
-        df_graph,
-        orientation="h",
-        title=None,
-        color_discrete_sequence=["red", "orange", "yellow", "green"],
-        barmode="stack",
-    )
-
-    fig.update_traces(hovertemplate="%{x}")
-
-    fig.update_layout(
-        showlegend=False,
-        legend_orientation="h",
-        legend_y=-0.2,  # This value might need to be adjusted based on other chart elements
-        legend_x=0.5,
-        legend_xanchor="right",
-        legend_title_text="",
-        yaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        xaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        hovermode="closest",
-        height=100,
-        width=800,
-        margin={"l": 0, "r": 10, "b": 10, "t": 10},  # adjust margins around the plot
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-
-    fig.add_annotation(
-        text=str_graph_caption,
-        xref="paper",
-        yref="paper",
-        # 'paper' coordinates are relative to the layout, with (0,0) at the bottom left and (1,1) at the top right
-        x=0,
-        y=0,
-        xanchor="left",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 15, "color": "black"},
-    )
-
-    config = {"displayModeBar": False}
-    st.plotly_chart(fig, config=config)
 
 
 def write_frequency_graph(df_tests):

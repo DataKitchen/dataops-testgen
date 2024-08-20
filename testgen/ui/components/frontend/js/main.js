@@ -10,6 +10,7 @@ import { Streamlit } from './streamlit.js';
 import { Button } from './components/button.js'
 import { Select } from './components/select.js'
 import { Breadcrumbs } from './components/breadcrumbs.js'
+import { SummaryBar } from './components/summary_bar.js';
 import { ExpanderToggle } from './components/expander_toggle.js';
 
 let currentWindowVan = van;
@@ -20,6 +21,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         select: Button,
         button: Select,
         breadcrumbs: Breadcrumbs,
+        summary_bar: SummaryBar,
         expander_toggle: ExpanderToggle,
         sidebar: window.top.testgen.components.Sidebar,
     };
