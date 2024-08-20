@@ -39,7 +39,7 @@ class Router(Singleton):
             current_page = session.page_pending_cookies or current_page
             session.page_pending_cookies = None
             
-            if session.page_args_pending_router:
+            if session.page_args_pending_router is not None:
                 session.current_page_args = session.page_args_pending_router
                 st.query_params.from_dict(session.page_args_pending_router)
                 session.page_args_pending_router = None
@@ -48,7 +48,7 @@ class Router(Singleton):
             current_page.run()
         
         
-    def navigate(self, /, to: str, with_args: dict | None = None) -> None:
+    def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006
         try:
             if to != session.current_page:
                 route = self._routes[to]

@@ -94,7 +94,7 @@ class TestSuitesPage(Page):
             self.router.navigate(
                 "connections:test-definitions",
                 {
-                    "connection_id": connection,
+                    "connection_id": connection["connection_id"],
                     "table_group_id": table_group_id,
                     "test_suite_id": selected[0]["id"],
                 },
