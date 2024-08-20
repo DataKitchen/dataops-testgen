@@ -425,21 +425,6 @@ def render_page_header(
         return bcol2
 
 
-def render_modal_header(str_title, str_help_link=None, str_prompt=None):
-    hcol1, hcol2 = st.columns([9, 1])
-    hcol1.markdown(f"#### {str_title}")
-    if str_help_link:
-        with hcol2:
-            st.caption(" ")
-            render_icon_link(str_help_link)
-    st.write(
-        '<hr style="background-color: #21c354; margin-top: 0;'
-        ' margin-bottom: 0; height: 3px; border: none; border-radius: 3px;">',
-        unsafe_allow_html=True,
-    )
-    show_prompt(str_prompt)
-
-
 def render_select(
     str_label, df_options, str_show_column, str_return_column, boo_required=True, str_default=None, boo_disabled=False
 ):

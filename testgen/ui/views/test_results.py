@@ -11,12 +11,11 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
 from testgen.common import ConcatColumnList, date_service
-from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_modal
-from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
+from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False
 
@@ -673,7 +672,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
         view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
-            view_profiling_modal(
+            view_profiling_button(
                 v_col2, selected_row["table_name"], selected_row["column_names"],
                 str_table_groups_id=selected_row["table_groups_id"]
             )
@@ -857,52 +856,46 @@ def do_disposition_update(selected, str_new_status):
 
 
 def view_bad_data(button_container, selected_row):
-    str_header = f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}"
-    bad_data_modal = testgen.Modal(title=None, key="dk-test-data-modal", max_width=1100)
-
     with button_container:
         if st.button(
             ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
         ):
-            bad_data_modal.open()
+            source_data_dialog(selected_row)
 
-    if bad_data_modal.is_open():
-        with bad_data_modal.container():
-            fm.render_modal_header(selected_row["test_name_short"], None)
-            st.caption(selected_row["test_description"])
-            fm.show_prompt(str_header)
 
-            # Show detail
-            fm.render_html_list(
-                selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
-            )
+@st.dialog(title="Source Data")
+def source_data_dialog(selected_row):
+    st.markdown(f"#### {selected_row['test_name_short']}")
+    st.caption(selected_row["test_description"])
+    fm.show_prompt(f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}")
 
-            with st.spinner("Retrieving source data..."):
-                if selected_row["test_type"] == "CUSTOM":
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
-                else:
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
-            if bad_data_status in {"ND", "NA"}:
-                st.info(bad_data_msg)
-            elif bad_data_status == "ERR":
-                st.error(bad_data_msg)
-            elif df_bad is None:
-                st.error("An unknown error was encountered.")
-            else:
-                if bad_data_msg:
-                    st.info(bad_data_msg)
-                # Pretify the dataframe
-                df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-                df_bad.fillna("[NULL]", inplace=True)
-                # Display the dataframe
-                st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+    # Show detail
+    fm.render_html_list(
+        selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
+    )
+
+    with st.spinner("Retrieving source data..."):
+        if selected_row["test_type"] == "CUSTOM":
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
+        else:
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
+    if bad_data_status in {"ND", "NA"}:
+        st.info(bad_data_msg)
+    elif bad_data_status == "ERR":
+        st.error(bad_data_msg)
+    elif df_bad is None:
+        st.error("An unknown error was encountered.")
+    else:
+        if bad_data_msg:
+            st.info(bad_data_msg)
+        # Pretify the dataframe
+        df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
+        df_bad.fillna("[NULL]", inplace=True)
+        # Display the dataframe
+        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
 def view_edit_test(button_container, test_definition_id):
-    edit_test_definition_modal = testgen.Modal(title=None, key="dk-test-definition-edit-modal", max_width=1100)
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
-            edit_test_definition_modal.open()
-
-    if edit_test_definition_modal.is_open():
-        show_add_edit_modal_by_test_definition(edit_test_definition_modal, test_definition_id)
+            show_test_form_by_id(test_definition_id)

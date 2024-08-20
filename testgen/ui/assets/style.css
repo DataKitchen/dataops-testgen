@@ -56,20 +56,12 @@ section.main > :nth-child(1 of div).block-container {
 }
 /*  */
 
-/* Customization of modal widget for scrollability */
-section div[data-modal-container='true'] {
-    top: 0 !important;
-    left: unset !important;
+/* Dialog - sets the width of all st.dialog */
+/* There is no way to target "large" and "small" dialogs reliably */
+div[data-testid="stModal"] div[role="dialog"] {
+    width: calc(55rem);
 }
-
-section div[data-modal-container="true"][key^="dk-"] {
-    width: auto !important;
-}
-
-div[data-modal-container="true"] > div:first-child > div:first-child {
-    max-height: 90vh;
-    overflow-y: auto !important;
-}
+/*  */
 
 button[title="Show password text"] {
     display: none;

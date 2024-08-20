@@ -7,10 +7,9 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.toolbar_service as tb
-from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_modal
+from testgen.ui.views.profiling_modal import view_profiling_button
 
 
 class ProfilingAnomaliesPage(Page):
@@ -144,11 +143,15 @@ class ProfilingAnomaliesPage(Page):
                         with col2:
                             # _, v_col2 = st.columns([0.3, 0.7])
                             v_col1, v_col2 = st.columns([0.5, 0.5])
-                        view_profiling_modal(
+                        view_profiling_button(
                             v_col1, selected_row["table_name"], selected_row["column_name"],
                             str_profile_run_id=str_profile_run_id
                         )
-                        view_bad_data(v_col2, selected_row)
+                        with v_col2:
+                            if st.button(
+                                ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
+                            ):
+                                source_data_dialog(selected_row)
 
                     # Need to render toolbar buttons after grid, so selection status is maintained
                     if tool_bar.button_slots[0].button(
@@ -449,41 +452,31 @@ def write_frequency_graph(df_tests):
     st.plotly_chart(fig)
 
 
-def view_bad_data(button_container, selected_row):
-    str_header = f"Column: {selected_row['column_name']}, Table: {selected_row['table_name']}"
-    bad_data_modal = testgen.Modal(title=None, key="dk-anomaly-data-modal", max_width=1100)
+@st.dialog(title="Source Data")
+def source_data_dialog(selected_row):
+    st.markdown(f"#### {selected_row['anomaly_name']}")
+    st.caption(selected_row["anomaly_description"])
+    fm.show_prompt(f"Column: {selected_row['column_name']}, Table: {selected_row['table_name']}")
 
-    with button_container:
-        if st.button(
-            ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
-        ):
-            bad_data_modal.open()
+    # Show the detail line
+    fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
 
-    if bad_data_modal.is_open():
-        with bad_data_modal.container():
-            fm.render_modal_header(selected_row["anomaly_name"], None)
-            st.caption(selected_row["anomaly_description"])
-            fm.show_prompt(str_header)
-
-            # Show the detail line
-            fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
-
-            with st.spinner("Retrieving source data..."):
-                bad_data_status, bad_data_msg, df_bad = get_bad_data(selected_row)
-            if bad_data_status in {"ND", "NA"}:
-                st.info(bad_data_msg)
-            elif bad_data_status == "ERR":
-                st.error(bad_data_msg)
-            elif df_bad is None:
-                st.error("An unknown error was encountered.")
-            else:
-                if bad_data_msg:
-                    st.info(bad_data_msg)
-                # Pretify the dataframe
-                df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-                df_bad.fillna("[NULL]", inplace=True)
-                # Display the dataframe
-                st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+    with st.spinner("Retrieving source data..."):
+        bad_data_status, bad_data_msg, df_bad = get_bad_data(selected_row)
+    if bad_data_status in {"ND", "NA"}:
+        st.info(bad_data_msg)
+    elif bad_data_status == "ERR":
+        st.error(bad_data_msg)
+    elif df_bad is None:
+        st.error("An unknown error was encountered.")
+    else:
+        if bad_data_msg:
+            st.info(bad_data_msg)
+        # Pretify the dataframe
+        df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
+        df_bad.fillna("[NULL]", inplace=True)
+        # Display the dataframe
+        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
 def do_disposition_update(selected, str_new_status):

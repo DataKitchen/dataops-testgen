@@ -10,7 +10,6 @@ import testgen.ui.services.toolbar_service as tb
 from testgen.commands.run_execute_tests import run_execution_steps_in_background
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
-from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import connection_service, table_group_service
 from testgen.ui.services.string_service import empty_if_null
@@ -70,36 +69,19 @@ class TestSuitesPage(Page):
 
         selected = fm.render_grid_select(df, show_columns)
 
-        add_modal = testgen.Modal(title=None, key="dk-add-test_suite-modal", max_width=1100)
-        edit_modal = testgen.Modal(title=None, key="dk-edit-test_suite-modal", max_width=1100)
-        delete_modal = testgen.Modal(title=None, key="dk-delete-test_suite-modal", max_width=1100)
-        run_tests_command_modal = testgen.Modal(title=None, key="dk-run-tests-command-modal", max_width=1100)
-
-        show_test_run_command_modal = testgen.Modal(
-            title=None, key="dk-show-test-run-command-modal", max_width=1100
-        )
-        run_test_generation_modal = testgen.Modal(title=None, key="dk-run-test-generation-modal", max_width=1100)
-        show_run_test_generation_modal = testgen.Modal(
-            title=None, key="dk-show-test-generation-modal", max_width=1100
-        )
-
-        run_export_command_modal = testgen.Modal(title=None, key="dk-run-export-modal", max_width=1100)
-        show_export_command_modal = testgen.Modal(
-            title=None, key="dk-show-export-modal", max_width=1100
-        )
-
         if tool_bar.short_slots[1].button("➕ Add", help="Add a new Test Run", use_container_width=True):  # NOQA RUF001
-            add_modal.open()
+            add_test_suite_dialog(project_code, connection, table_group)
 
         disable_buttons = selected is None
         if tool_bar.short_slots[2].button(
             "🖊️ Edit", help="Edit the selected Test Run", disabled=disable_buttons, use_container_width=True
         ):
-            edit_modal.open()
+            edit_test_suite_dialog(project_code, connection, table_group, selected)
+
         if tool_bar.short_slots[3].button(
             "❌ Delete", help="Delete the selected Test Run", disabled=disable_buttons, use_container_width=True
         ):
-            delete_modal.open()
+            delete_test_suite_dialog(selected)
 
         if tool_bar.short_slots[4].button(
             f":{'gray' if disable_buttons else 'green'}[Tests　→]",
@@ -118,56 +100,13 @@ class TestSuitesPage(Page):
                 },
             )
 
-        if add_modal.is_open():
-            show_add_or_edit_modal(add_modal, "add", project_code, connection, table_group)
-
-        if edit_modal.is_open():
-            show_add_or_edit_modal(edit_modal, "edit", project_code, connection, table_group, selected)
-
-        if delete_modal.is_open():
-            show_delete_modal(delete_modal, selected)
-
-        if run_tests_command_modal.is_open():
-            run_tests(run_tests_command_modal, project_code, selected)
-
-        if show_test_run_command_modal.is_open():
-            show_test_run_command(show_test_run_command_modal, project_code, selected)
-
-        if run_test_generation_modal.is_open():
-            show_run_test_generation(run_test_generation_modal, selected)
-
-        if show_run_test_generation_modal.is_open():
-            show_test_generation_command(show_run_test_generation_modal, selected)
-
-        if show_export_command_modal.is_open():
-            show_export_command(show_export_command_modal, selected)
-
-        if run_export_command_modal.is_open():
-            run_export_command(run_export_command_modal, selected)
-
         if not selected:
             st.markdown(":orange[Select a row to see Test Suite details.]")
         else:
-            show_record_detail(
-                selected[0],
-                show_test_run_command_modal,
-                run_test_generation_modal,
-                show_run_test_generation_modal,
-                run_tests_command_modal,
-                show_export_command_modal,
-                run_export_command_modal,
-            )
+            show_record_detail(project_code, selected[0])
 
 
-def show_record_detail(
-    selected,
-    show_test_run_command_modal,
-    run_test_generation_modal,
-    show_run_test_generation_modal,
-    run_tests_command_modal,
-    show_export_command_modal,
-    run_export_command_modal,
-):
+def show_record_detail(project_code, selected):
     left_column, right_column = st.columns([0.5, 0.5])
 
     with left_column:
@@ -202,345 +141,333 @@ def show_record_detail(
                     help="Shows the run-test-generation CLI command",
                     use_container_width=True,
                 ):
-                    show_run_test_generation_modal.open()
+                    generate_tests_cli_dialog(selected)
 
                 if st.button(
                     "Test Execution Command",
                     help="Shows the run-tests CLI command",
                     use_container_width=True,
                 ):
-                    show_test_run_command_modal.open()
+                    run_tests_cli_dialog(project_code, selected)
 
                 if st.button(
                     "Observability Export Command",
                     help="Shows the export-observability CLI command",
                     use_container_width=True,
                 ):
-                    show_export_command_modal.open()
+                    observability_export_cli_dialog(selected)
 
             with run_now_commands_tab:
                 if st.button("Run Test Generation", help="Run Test Generation", use_container_width=True):
-                    run_test_generation_modal.open()
+                    generate_tests_dialog(selected)
 
                 if st.button("Run Test Execution", help="Run the tests", use_container_width=True):
-                    run_tests_command_modal.open()
+                    run_tests_dialog(project_code, selected)
 
                 if st.button(
                     "Run Observability Export",
                     help="Exports test results to Observability for the current Test Suite",
                     use_container_width=True,
                 ):
-                    run_export_command_modal.open()
+                    observability_export_dialog(selected)
 
 
-def show_run_test_generation(modal, selected):
-    selected_test_suite = selected[0]
+@st.dialog(title="Generate Tests")
+def generate_tests_dialog(selected_test_suite):
+    container = st.empty()
+    with container:
+        st.markdown(":green[**Execute Test Generation for the Test Suite**]")
 
-    with modal.container():
-        fm.render_modal_header("Run Test Generation", None)
-        container = st.empty()
-        with container:
-            st.markdown(":green[**Execute Test Generation for the Test Suite**]")
+    warning_container = st.container()
+    options_container = st.container()
+    button_container = st.empty()
+    status_container = st.empty()
 
-        warning_container = st.container()
-        options_container = st.container()
-        button_container = st.empty()
-        status_container = st.empty()
+    test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
+        selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
+    )
+    if test_ct:
+        warning_msg = ""
+        counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
+        if unlocked_edits_ct > 0:
+            if unlocked_edits_ct > 1:
 
-        test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
-            selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
-        )
-        if test_ct:
-            warning_msg = ""
-            counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
-            if unlocked_edits_ct > 0:
-                if unlocked_edits_ct > 1:
-
-                    warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
-                else:
-                    warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
-            elif unlocked_test_ct > 0:
-                warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
-            warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.{counts_msg}"
-            with warning_container:
-                st.warning(warning_msg)
-                if unlocked_edits_ct > 0:
-                    lock_edits_button = st.button("Lock Edited Tests")
-                    if lock_edits_button:
-                        edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
-                        if edits_locked:
-                            st.info("Edited tests have been successfully locked.")
-
-        with options_container:
-            lst_generation_sets = test_suite_service.get_generation_set_choices()
-            if lst_generation_sets:
-                lst_generation_sets.insert(0, "(All Test Types)")
-                str_generation_set = st.selectbox("Generation Set", lst_generation_sets)
-                if str_generation_set == "(All Test Types)":
-                    str_generation_set = ""
+                warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
             else:
+                warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
+        elif unlocked_test_ct > 0:
+            warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
+        warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.{counts_msg}"
+        with warning_container:
+            st.warning(warning_msg)
+            if unlocked_edits_ct > 0:
+                lock_edits_button = st.button("Lock Edited Tests")
+                if lock_edits_button:
+                    edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
+                    if edits_locked:
+                        st.info("Edited tests have been successfully locked.")
+
+    with options_container:
+        lst_generation_sets = test_suite_service.get_generation_set_choices()
+        if lst_generation_sets:
+            lst_generation_sets.insert(0, "(All Test Types)")
+            str_generation_set = st.selectbox("Generation Set", lst_generation_sets)
+            if str_generation_set == "(All Test Types)":
                 str_generation_set = ""
+        else:
+            str_generation_set = ""
 
-        with button_container:
-            start_process_button_message = "Start"
-            test_generation_button = st.button(start_process_button_message)
+    with button_container:
+        start_process_button_message = "Start"
+        test_generation_button = st.button(start_process_button_message)
 
-        if test_generation_button:
-            button_container.empty()
+    if test_generation_button:
+        button_container.empty()
 
-            table_group_id = selected_test_suite["table_groups_id"]
-            test_suite_key = selected_test_suite["test_suite"]
-            status_container.info("Executing Test Generation...")
+        table_group_id = selected_test_suite["table_groups_id"]
+        test_suite_key = selected_test_suite["test_suite"]
+        status_container.info("Executing Test Generation...")
 
-            try:
-                run_test_gen_queries(table_group_id, test_suite_key, str_generation_set)
-            except Exception as e:
-                status_container.empty()
-                status_container.error(f"Process had errors: {e!s}.")
-
+        try:
+            run_test_gen_queries(table_group_id, test_suite_key, str_generation_set)
+        except Exception as e:
             status_container.empty()
-            status_container.success("Process has successfully finished.")
+            status_container.error(f"Process had errors: {e!s}.")
+
+        status_container.empty()
+        status_container.success("Process has successfully finished.")
 
 
-def show_delete_modal(modal, selected=None):
+@st.dialog(title="Delete Test Suite")
+def delete_test_suite_dialog(selected):
     selected_test_suite = selected[0]
+    test_suite_name = selected_test_suite["test_suite"]
+    can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
 
-    with modal.container():
-        fm.render_modal_header("Delete Test Suite", None)
-        test_suite_name = selected_test_suite["test_suite"]
+    fm.render_html_list(
+        selected_test_suite,
+        [
+            "id",
+            "test_suite",
+            "test_suite_description",
+        ],
+        "Test Suite Information",
+        int_data_width=700,
+    )
 
-        can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
-
-        fm.render_html_list(
-            selected_test_suite,
-            [
-                "id",
-                "test_suite",
-                "test_suite_description",
-            ],
-            "Test Suite Information",
-            int_data_width=700,
+    if not can_be_deleted:
+        st.markdown(
+            ":orange[This Test Suite has related data, which includes test definitions and may include test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
+            unsafe_allow_html=True,
         )
+        accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
 
-        if not can_be_deleted:
-            st.markdown(
-                ":orange[This Test Suite has related data, which includes test definitions and may include test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
-                unsafe_allow_html=True,
-            )
-            accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
+    with st.form("Delete Test Suite", clear_on_submit=True):
+        disable_delete_button = authentication_service.current_user_has_read_role() or (
+            not can_be_deleted and not accept_cascade_delete
+        )
+        delete = st.form_submit_button("Delete", disabled=disable_delete_button)
 
-        with st.form("Delete Test Suite", clear_on_submit=True):
-            disable_delete_button = authentication_service.current_user_has_read_role() or (
-                not can_be_deleted and not accept_cascade_delete
-            )
-            delete = st.form_submit_button("Delete", disabled=disable_delete_button)
-
-            if delete:
-                if test_suite_service.are_test_suites_in_use([test_suite_name]):
-                    st.error("This Test Suite is in use by a running process and cannot be deleted.")
-                else:
-                    test_suite_service.cascade_delete([test_suite_name])
-                    success_message = f"Test Suite {test_suite_name} has been deleted. "
-                    st.success(success_message)
-                    time.sleep(1)
-                    modal.close()
-                    st.rerun()
+        if delete:
+            if test_suite_service.are_test_suites_in_use([test_suite_name]):
+                st.error("This Test Suite is in use by a running process and cannot be deleted.")
+            else:
+                test_suite_service.cascade_delete([test_suite_name])
+                success_message = f"Test Suite {test_suite_name} has been deleted. "
+                st.success(success_message)
+                time.sleep(1)
+                st.rerun()
 
 
-def show_add_or_edit_modal(modal, mode, project_code, connection, table_group, selected=None):
+def show_test_suite(mode, project_code, connection, table_group, selected=None):
     connection_id = connection["connection_id"]
     table_group_id = table_group["id"]
-    with modal.container():
-        fm.render_modal_header("Edit Test Suite" if mode == "edit" else "Add Test Suite", None)
-        severity_options = ["Inherit", "Failed", "Warning"]
+    severity_options = ["Inherit", "Failed", "Warning"]
 
-        selected_test_suite = selected[0] if mode == "edit" else None
+    selected_test_suite = selected[0] if mode == "edit" else None
 
-        if mode == "edit" and not selected_test_suite["severity"]:
-            selected_test_suite["severity"] = severity_options[0]
+    if mode == "edit" and not selected_test_suite["severity"]:
+        selected_test_suite["severity"] = severity_options[0]
 
-        # establish default values
-        test_suite_id = selected_test_suite["id"] if mode == "edit" else None
-        test_suite = empty_if_null(selected_test_suite["test_suite"]) if mode == "edit" else ""
-        connection_id = selected_test_suite["connection_id"] if mode == "edit" else connection_id
-        table_groups_id = selected_test_suite["table_groups_id"] if mode == "edit" else table_group_id
-        test_suite_description = empty_if_null(selected_test_suite["test_suite_description"]) if mode == "edit" else ""
-        test_action = empty_if_null(selected_test_suite["test_action"]) if mode == "edit" else ""
-        severity_index = severity_options.index(selected_test_suite["severity"]) if mode == "edit" else 0
-        export_to_observability = selected_test_suite["export_to_observability"] == "Y" if mode == "edit" else False
-        test_suite_schema = empty_if_null(selected_test_suite["test_suite_schema"]) if mode == "edit" else ""
-        component_key = empty_if_null(selected_test_suite["component_key"]) if mode == "edit" else ""
-        component_type = empty_if_null(selected_test_suite["component_type"]) if mode == "edit" else "dataset"
-        component_name = empty_if_null(selected_test_suite["component_name"]) if mode == "edit" else ""
+    # establish default values
+    test_suite_id = selected_test_suite["id"] if mode == "edit" else None
+    test_suite = empty_if_null(selected_test_suite["test_suite"]) if mode == "edit" else ""
+    connection_id = selected_test_suite["connection_id"] if mode == "edit" else connection_id
+    table_groups_id = selected_test_suite["table_groups_id"] if mode == "edit" else table_group_id
+    test_suite_description = empty_if_null(selected_test_suite["test_suite_description"]) if mode == "edit" else ""
+    test_action = empty_if_null(selected_test_suite["test_action"]) if mode == "edit" else ""
+    severity_index = severity_options.index(selected_test_suite["severity"]) if mode == "edit" else 0
+    export_to_observability = selected_test_suite["export_to_observability"] == "Y" if mode == "edit" else False
+    test_suite_schema = empty_if_null(selected_test_suite["test_suite_schema"]) if mode == "edit" else ""
+    component_key = empty_if_null(selected_test_suite["component_key"]) if mode == "edit" else ""
+    component_type = empty_if_null(selected_test_suite["component_type"]) if mode == "edit" else "dataset"
+    component_name = empty_if_null(selected_test_suite["component_name"]) if mode == "edit" else ""
 
-        left_column, right_column = st.columns([0.50, 0.50])
-        expander = st.expander("", expanded=True)
-        with expander:
-            expander_left_column, expander_right_column = st.columns([0.50, 0.50])
+    left_column, right_column = st.columns([0.50, 0.50])
+    expander = st.expander("", expanded=True)
+    with expander:
+        expander_left_column, expander_right_column = st.columns([0.50, 0.50])
 
-        with st.form("Test Suite Add / Edit", clear_on_submit=True):
-            entity = {
-                "id": test_suite_id,
-                "project_code": project_code,
-                "test_suite": left_column.text_input(
-                    label="Test Suite Name", max_chars=40, value=test_suite, disabled=(mode != "add")
-                ),
-                "connection_id": connection_id,
-                "table_groups_id": table_groups_id,
-                "test_suite_description": left_column.text_input(
-                    label="Test Suite Description", max_chars=40, value=test_suite_description
-                ),
-                "test_action": test_action,
-                "severity": right_column.selectbox(
-                    label="Severity",
-                    options=severity_options,
-                    index=severity_index,
-                    help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
-                ),
-                "test_suite_schema": test_suite_schema,
-                "export_to_observability": left_column.toggle(
-                    "Export to Observability",
-                    value=export_to_observability,
-                    help="Fields below are only required when overriding the Table Group defaults.",
-                ),
-                "component_key": expander_left_column.text_input(
-                    label="Component Key",
-                    max_chars=40,
-                    value=component_key,
-                    placeholder="Optional Field",
-                    help="Overrides the default component key mapping, which is set at Table Group level.",
-                ),
-                "component_type": expander_right_column.text_input(
-                    label="Component Type", max_chars=40, value=component_type, disabled=True
-                ),
-                "component_name": expander_left_column.text_input(
-                    label="Component Name",
-                    max_chars=40,
-                    value=component_name,
-                    placeholder="Optional Field",
-                    help="Overrides the default component name mapping, which is set at the Table Group level.",
-                ),
-            }
+    with st.form("Test Suite Add / Edit", clear_on_submit=True):
+        entity = {
+            "id": test_suite_id,
+            "project_code": project_code,
+            "test_suite": left_column.text_input(
+                label="Test Suite Name", max_chars=40, value=test_suite, disabled=(mode != "add")
+            ),
+            "connection_id": connection_id,
+            "table_groups_id": table_groups_id,
+            "test_suite_description": left_column.text_input(
+                label="Test Suite Description", max_chars=40, value=test_suite_description
+            ),
+            "test_action": test_action,
+            "severity": right_column.selectbox(
+                label="Severity",
+                options=severity_options,
+                index=severity_index,
+                help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
+            ),
+            "test_suite_schema": test_suite_schema,
+            "export_to_observability": left_column.toggle(
+                "Export to Observability",
+                value=export_to_observability,
+                help="Fields below are only required when overriding the Table Group defaults.",
+            ),
+            "component_key": expander_left_column.text_input(
+                label="Component Key",
+                max_chars=40,
+                value=component_key,
+                placeholder="Optional Field",
+                help="Overrides the default component key mapping, which is set at Table Group level.",
+            ),
+            "component_type": expander_right_column.text_input(
+                label="Component Type", max_chars=40, value=component_type, disabled=True
+            ),
+            "component_name": expander_left_column.text_input(
+                label="Component Name",
+                max_chars=40,
+                value=component_name,
+                placeholder="Optional Field",
+                help="Overrides the default component name mapping, which is set at the Table Group level.",
+            ),
+        }
 
-            submit_button_text = "Save" if mode == "edit" else "Add"
-            submit = st.form_submit_button(
-                submit_button_text, disabled=authentication_service.current_user_has_read_role()
-            )
+        submit_button_text = "Save" if mode == "edit" else "Add"
+        submit = st.form_submit_button(
+            submit_button_text, disabled=authentication_service.current_user_has_read_role()
+        )
 
-            if submit:
-                if " " in entity["test_suite"]:
-                    proposed_test_suite = entity["test_suite"].replace(" ", "-")
-                    st.error(
-                        f"Blank spaces not allowed in field 'Test Suite Name'. Use dash or underscore instead. i.e.: {proposed_test_suite}"
-                    )
+        if submit:
+            if " " in entity["test_suite"]:
+                proposed_test_suite = entity["test_suite"].replace(" ", "-")
+                st.error(
+                    f"Blank spaces not allowed in field 'Test Suite Name'. Use dash or underscore instead. i.e.: {proposed_test_suite}"
+                )
+            else:
+                if mode == "edit":
+                    test_suite_service.edit(entity)
                 else:
-                    if mode == "edit":
-                        test_suite_service.edit(entity)
-                    else:
-                        test_suite_service.add(entity)
-                    success_message = (
-                        "Changes have been saved successfully. "
-                        if mode == "edit"
-                        else "New TestSuite added successfully. "
-                    )
-                    st.success(success_message)
-                    time.sleep(1)
-                    modal.close()
-                    st.rerun()
+                    test_suite_service.add(entity)
+                success_message = (
+                    "Changes have been saved successfully. "
+                    if mode == "edit"
+                    else "New TestSuite added successfully. "
+                )
+                st.success(success_message)
+                time.sleep(1)
+                st.rerun()
 
 
-def run_tests(modal, project_code, selected):
-    selected_test_suite = selected[0]
-
-    with modal.container():
-        fm.render_modal_header("Run Test Execution", None)
-        container = st.empty()
-        with container:
-            st.markdown(":green[**Run Tests for the Test Suite**]")
-
-        button_container = st.empty()
-        status_container = st.empty()
-
-        with button_container:
-            start_process_button_message = "Start"
-            run_test_button = st.button(start_process_button_message)
-
-        if run_test_button:
-            button_container.empty()
-
-            test_suite_key = selected_test_suite["test_suite"]
-            status_container.info(f"Running tests for test suite {test_suite_key}")
-
-            try:
-                run_execution_steps_in_background(project_code, test_suite_key)
-            except Exception as e:
-                status_container.empty()
-                status_container.error(f"Process started with errors: {e!s}.")
-
-            status_container.empty()
-            status_container.success(
-                "Process has successfully started. Check details in menu item 'Data Quality Testing'."
-            )
+@st.dialog(title="Add Test Suite")
+def add_test_suite_dialog(project_code, connection, table_group):
+    show_test_suite("add", project_code, connection, table_group)
 
 
-def show_test_run_command(modal, project_code, selected):
-    with modal.container():
-        fm.render_modal_header("Test Execution Command for CLI", None)
-        selected_test_suite = selected[0]
-        test_suite_name = selected_test_suite["test_suite"]
-        command = f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}"
-        st.code(command, language="shellSession")
+@st.dialog(title="Edit Test Suite")
+def edit_test_suite_dialog(project_code, connection, table_group, selected):
+    show_test_suite("edit", project_code, connection, table_group, selected)
 
 
-def show_test_generation_command(modal, selected):
-    with modal.container():
-        fm.render_modal_header("Test Generation Command for CLI", None)
-        selected_test_suite = selected[0]
+@st.dialog(title="Run Tests")
+def run_tests_dialog(project_code, selected_test_suite):
+    container = st.empty()
+    with container:
+        st.markdown(":green[**Run Tests for the Test Suite**]")
+
+    button_container = st.empty()
+    status_container = st.empty()
+
+    with button_container:
+        start_process_button_message = "Start"
+        run_test_button = st.button(start_process_button_message)
+
+    if run_test_button:
+        button_container.empty()
+
         test_suite_key = selected_test_suite["test_suite"]
-        table_group_id = selected_test_suite["table_groups_id"]
-        command = f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_key}"
-        st.code(command, language="shellSession")
+        status_container.info(f"Running tests for test suite {test_suite_key}")
+
+        try:
+            run_execution_steps_in_background(project_code, test_suite_key)
+        except Exception as e:
+            status_container.empty()
+            status_container.error(f"Process started with errors: {e!s}.")
+
+        status_container.empty()
+        status_container.success(
+            "Process has successfully started. Check details in menu item 'Data Quality Testing'."
+        )
 
 
-def show_export_command(modal, selected):
-    with modal.container():
-        fm.render_modal_header("Observability Export Command for CLI", None)
-        selected_test_suite = selected[0]
+@st.dialog(title="Run Tests CLI Command")
+def run_tests_cli_dialog(project_code, selected_test_suite):
+    test_suite_name = selected_test_suite["test_suite"]
+    command = f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}"
+    st.code(command, language="shellSession")
+
+
+@st.dialog(title="Generate Tests CLI Command")
+def generate_tests_cli_dialog(selected_test_suite):
+    test_suite_key = selected_test_suite["test_suite"]
+    table_group_id = selected_test_suite["table_groups_id"]
+    command = f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_key}"
+    st.code(command, language="shellSession")
+
+
+@st.dialog(title="Observability Export CLI Command")
+def observability_export_cli_dialog(selected_test_suite):
+    test_suite_key = selected_test_suite["test_suite"]
+    project_key = selected_test_suite["project_code"]
+    command = f"testgen export-observability --project-key {project_key} --test-suite-key {test_suite_key}"
+    st.code(command, language="shellSession")
+
+
+@st.dialog(title="Export to Observability")
+def observability_export_dialog(selected_test_suite):
+    container = st.empty()
+    with container:
+        st.markdown(":green[**Execute the test export for the current Test Suite**]")
+
+    button_container = st.empty()
+    status_container = st.empty()
+
+    with button_container:
+        start_process_button_message = "Start"
+        test_generation_button = st.button(start_process_button_message)
+
+    if test_generation_button:
+        button_container.empty()
+
         test_suite_key = selected_test_suite["test_suite"]
         project_key = selected_test_suite["project_code"]
-        command = f"testgen export-observability --project-key {project_key} --test-suite-key {test_suite_key}"
-        st.code(command, language="shellSession")
+        status_container.info("Executing Export ...")
 
-
-def run_export_command(modal, selected):
-    selected_test_suite = selected[0]
-
-    with modal.container():
-        fm.render_modal_header("Run Observability Export", None)
-        container = st.empty()
-        with container:
-            st.markdown(":green[**Execute the test export for the current Test Suite**]")
-
-        button_container = st.empty()
-        status_container = st.empty()
-
-        with button_container:
-            start_process_button_message = "Start"
-            test_generation_button = st.button(start_process_button_message)
-
-        if test_generation_button:
-            button_container.empty()
-
-            test_suite_key = selected_test_suite["test_suite"]
-            project_key = selected_test_suite["project_code"]
-            status_container.info("Executing Export ...")
-
-            try:
-                qty_of_exported_events = export_test_results(project_key, test_suite_key)
-                status_container.empty()
-                status_container.success(
-                    f"Process has successfully finished, {qty_of_exported_events} events have been exported."
-                )
-            except Exception as e:
-                status_container.empty()
-                status_container.error(f"Process has finished with errors: {e!s}.")
+        try:
+            qty_of_exported_events = export_test_results(project_key, test_suite_key)
+            status_container.empty()
+            status_container.success(
+                f"Process has successfully finished, {qty_of_exported_events} events have been exported."
+            )
+        except Exception as e:
+            status_container.empty()
+            status_container.error(f"Process has finished with errors: {e!s}.")
