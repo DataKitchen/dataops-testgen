@@ -6,9 +6,7 @@ from datetime import date, datetime
 import streamlit as st
 
 import testgen.common.logs as logs
-import testgen.ui.services.form_service as fm
 from testgen.common import display_service
-from testgen.ui.components import widgets as testgen
 
 LOG = logging.getLogger("testgen")
 
@@ -45,48 +43,45 @@ def _search_text(log_data, search_query):
 
 
 def view_log_file(button_container):
-    log_file_modal = testgen.Modal(title=None, key="dk-view-log-modal", max_width=1100)
-
     with button_container:
         if st.button(
             "Troubleshooting　→", help="Open and review TestGen Log files", use_container_width=True
         ):
-            log_file_modal.open()
+            application_logs_dialog()
 
-    if log_file_modal.is_open():
-        with log_file_modal.container():
-            fm.render_modal_header("TestGen App Log", None, "Review/Troubleshoot daily log files")
 
-            _, file_out_path = display_service.get_in_out_paths()
+@st.dialog(title="Application Logs")
+def application_logs_dialog():
+    _, file_out_path = display_service.get_in_out_paths()
 
-            col1, col2, col3 = st.columns([33, 33, 33])
-            log_date = col1.date_input("Log Date", value=datetime.today())
+    col1, col2, col3 = st.columns([33, 33, 33])
+    log_date = col1.date_input("Log Date", value=datetime.today())
 
-            log_file_location = logs.get_log_full_path()
+    log_file_location = logs.get_log_full_path()
 
-            if log_date != date.today():
-                log_file_location += log_date.strftime(".%Y-%m-%d")
+    if log_date != date.today():
+        log_file_location += log_date.strftime(".%Y-%m-%d")
 
-            log_file_name = os.path.basename(log_file_location)
+    log_file_name = os.path.basename(log_file_location)
 
-            log_data = _read_log(log_file_location)
+    log_data = _read_log(log_file_location)
 
-            search_query = col2.text_input("Filter by Text")
-            if search_query:
-                show_data = _search_text(log_data, search_query)
-            else:
-                show_data = log_data
+    search_query = col2.text_input("Filter by Text")
+    if search_query:
+        show_data = _search_text(log_data, search_query)
+    else:
+        show_data = log_data
 
-            # Refresh button
-            col3.write(" \n ")
-            if col3.button("Refresh"):
-                # Clear cache to refresh the log data
-                st.cache_data.clear()
+    # Refresh button
+    col3.markdown("<br>", unsafe_allow_html=True)
+    if col3.button("Refresh"):
+        # Clear cache to refresh the log data
+        st.cache_data.clear()
 
-            if log_data:
-                st.markdown(f"**Log File:** {log_file_name}")
-                # TOO SLOW: st.code(body=''.join(show_data), language="log", line_numbers=True)
-                st.text_area("Log Data", value="".join(show_data), height=400)
+    if log_data:
+        st.markdown(f"**Log File:** {log_file_name}")
+        # TOO SLOW: st.code(body=''.join(show_data), language="log", line_numbers=True)
+        st.text_area("Log Data", value="".join(show_data), height=400)
 
-                # Download button
-                st.download_button("Download", data="".join(show_data), file_name=log_file_name)
+        # Download button
+        st.download_button("Download", data="".join(show_data), file_name=log_file_name)

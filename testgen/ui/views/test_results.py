@@ -15,8 +15,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_modal
-from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
+from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False
 
@@ -267,20 +267,19 @@ def get_test_disposition(str_run_id):
 def get_test_result_summary(str_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
-            SELECT test_ct as result_ct,
-                   COALESCE(error_ct, 0) as error_ct,
-                   failed_ct + warning_ct as exception_ct, warning_ct,
-                   ROUND({str_schema}.fn_pct(warning_ct, test_ct), 1) as warning_pct,
-                   failed_ct,
-                   ROUND({str_schema}.fn_pct(failed_ct, test_ct), 1) as failed_pct,
-                   passed_ct,
-                   ROUND({str_schema}.fn_pct(passed_ct, test_ct), 1) as passed_pct
+            SELECT passed_ct, warning_ct, failed_ct,
+                   COALESCE(error_ct, 0) as error_ct
               FROM {str_schema}.test_runs
              WHERE id = '{str_run_id}'::UUID;
     """
     df = db.retrieve_data(str_sql)
 
-    return df
+    return [
+        { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
+        { "label": "Warnings", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
+        { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
+        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "grey" },
+    ]
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
@@ -573,11 +572,9 @@ def show_test_def_detail(str_test_def_id):
 
 
 def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_container):
-    # Retrieve summary counts
-    df_sum = get_test_result_summary(str_run_id)
-    if not df_sum.empty:
-        if (df_sum.at[0, "result_ct"] or 0) > 0:
-            write_summary_graph(df_sum)
+    # Display summary bar
+    tests_summary = get_test_result_summary(str_run_id)
+    testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
 
     # Retrieve test results (always cached, action as null)
     df = get_test_results(str_run_id, str_sel_test_status)
@@ -673,7 +670,7 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
         view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
-            view_profiling_modal(
+            view_profiling_button(
                 v_col2, selected_row["table_name"], selected_row["column_names"],
                 str_table_groups_id=selected_row["table_groups_id"]
             )
@@ -694,73 +691,6 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             with ut_tab2:
                 show_test_def_detail(selected_row["test_definition_id_current"])
         return selected_rows
-
-
-def write_summary_graph(df_sum):
-    df_graph = df_sum[["passed_ct", "error_ct", "warning_ct", "failed_ct"]]
-
-    str_error_caption = f"Errors: {df_sum.at[0, 'error_ct']}, " if df_sum.at[0, "error_ct"] > 0 else ""
-    str_graph_caption = f"<i>Passed: {df_sum.at[0, 'passed_ct']} ({df_sum.at[0, 'passed_pct']}%), {str_error_caption}Warnings: {df_sum.at[0, 'warning_ct']} ({df_sum.at[0, 'warning_pct']}%), Failed: {df_sum.at[0, 'failed_ct']} ({df_sum.at[0, 'failed_pct']}%)</i>"
-
-    fig = px.bar(
-        df_graph,
-        orientation="h",
-        title=None,
-        # labels={'value': 'Tests', 'variable': 'Result Status'},
-        color_discrete_sequence=["green", "gray", "yellow", "red"],
-        barmode="stack",
-    )
-
-    fig.update_traces(
-        # hoverinfo='y+name',  # Display the y value and the trace name
-        # hovertemplate='Count: %{y}<br>Type: %{name}',  # Custom template for hover text
-        hovertemplate="%{x}"
-        # hovertemplate=None
-    )
-
-    fig.update_layout(
-        showlegend=False,
-        legend_orientation="h",
-        legend_y=-0.2,  # This value might need to be adjusted based on other chart elements
-        legend_x=0.5,
-        legend_xanchor="right",
-        legend_title_text="",
-        yaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        xaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        hovermode="closest",
-        height=100,
-        width=800,
-        margin={"l": 0, "r": 10, "b": 10, "t": 10},  # adjust margins around the plot
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-
-    fig.add_annotation(
-        text=str_graph_caption,
-        xref="paper",
-        yref="paper",  # 'paper' coordinates are relative to the layout, with (0,0) at the bottom left and (1,1) at the top right
-        x=0,
-        y=0,
-        xanchor="left",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 15, "color": "black"},
-    )
-
-    config = {"displayModeBar": False}
-    st.plotly_chart(fig, config=config)
 
 
 def write_history_graph(dfh):
@@ -857,52 +787,46 @@ def do_disposition_update(selected, str_new_status):
 
 
 def view_bad_data(button_container, selected_row):
-    str_header = f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}"
-    bad_data_modal = testgen.Modal(title=None, key="dk-test-data-modal", max_width=1100)
-
     with button_container:
         if st.button(
             ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
         ):
-            bad_data_modal.open()
+            source_data_dialog(selected_row)
 
-    if bad_data_modal.is_open():
-        with bad_data_modal.container():
-            fm.render_modal_header(selected_row["test_name_short"], None)
-            st.caption(selected_row["test_description"])
-            fm.show_prompt(str_header)
 
-            # Show detail
-            fm.render_html_list(
-                selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
-            )
+@st.dialog(title="Source Data")
+def source_data_dialog(selected_row):
+    st.markdown(f"#### {selected_row['test_name_short']}")
+    st.caption(selected_row["test_description"])
+    fm.show_prompt(f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}")
 
-            with st.spinner("Retrieving source data..."):
-                if selected_row["test_type"] == "CUSTOM":
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
-                else:
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
-            if bad_data_status in {"ND", "NA"}:
-                st.info(bad_data_msg)
-            elif bad_data_status == "ERR":
-                st.error(bad_data_msg)
-            elif df_bad is None:
-                st.error("An unknown error was encountered.")
-            else:
-                if bad_data_msg:
-                    st.info(bad_data_msg)
-                # Pretify the dataframe
-                df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-                df_bad.fillna("[NULL]", inplace=True)
-                # Display the dataframe
-                st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+    # Show detail
+    fm.render_html_list(
+        selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
+    )
+
+    with st.spinner("Retrieving source data..."):
+        if selected_row["test_type"] == "CUSTOM":
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
+        else:
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
+    if bad_data_status in {"ND", "NA"}:
+        st.info(bad_data_msg)
+    elif bad_data_status == "ERR":
+        st.error(bad_data_msg)
+    elif df_bad is None:
+        st.error("An unknown error was encountered.")
+    else:
+        if bad_data_msg:
+            st.info(bad_data_msg)
+        # Pretify the dataframe
+        df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
+        df_bad.fillna("[NULL]", inplace=True)
+        # Display the dataframe
+        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
 def view_edit_test(button_container, test_definition_id):
-    edit_test_definition_modal = testgen.Modal(title=None, key="dk-test-definition-edit-modal", max_width=1100)
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
-            edit_test_definition_modal.open()
-
-    if edit_test_definition_modal.is_open():
-        show_add_edit_modal_by_test_definition(edit_test_definition_modal, test_definition_id)
+            show_test_form_by_id(test_definition_id)

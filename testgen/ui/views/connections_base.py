@@ -4,118 +4,113 @@ import time
 import streamlit as st
 
 import testgen.ui.services.database_service as db
-import testgen.ui.services.form_service as fm
 from testgen.commands.run_setup_profiling_tools import get_setup_profiling_tools_queries
 from testgen.common.database.database_service import empty_cache
 from testgen.ui.services import authentication_service, connection_service
 
 
-def show_create_qc_schema_modal(modal, selected):
-    with modal.container():
-        fm.render_modal_header("Configure QC Utility Schema", None)
-        selected_connection = selected
-        connection_id = selected_connection["connection_id"]
-        project_qc_schema = selected_connection["project_qc_schema"]
-        sql_flavor = selected_connection["sql_flavor"]
-        user = selected_connection["project_user"]
+@st.dialog(title="Configure QC Utility Schema")
+def create_qc_schema_dialog(selected_connection):
+    connection_id = selected_connection["connection_id"]
+    project_qc_schema = selected_connection["project_qc_schema"]
+    sql_flavor = selected_connection["sql_flavor"]
+    user = selected_connection["project_user"]
 
-        create_qc_schema = st.toggle("Create QC Utility Schema", value=True)
-        grant_privileges = st.toggle("Grant access privileges to TestGen user", value=True)
+    create_qc_schema = st.toggle("Create QC Utility Schema", value=True)
+    grant_privileges = st.toggle("Grant access privileges to TestGen user", value=True)
 
-        user_role = None
+    user_role = None
 
-        # TODO ALEX: This textbox may be needed if we want to grant permissions to user role
-        # if sql_flavor == "snowflake":
-        #    user_role_textbox_label = f"Primary role for database user {user}"
-        #    user_role = st.text_input(label=user_role_textbox_label, max_chars=100)
+    # TODO ALEX: This textbox may be needed if we want to grant permissions to user role
+    # if sql_flavor == "snowflake":
+    #    user_role_textbox_label = f"Primary role for database user {user}"
+    #    user_role = st.text_input(label=user_role_textbox_label, max_chars=100)
 
-        admin_credentials_expander = st.expander("Admin credential options", expanded=True)
-        with admin_credentials_expander:
-            admin_connection_option_index = 0
-            admin_connection_options = ["Do not use admin credentials", "Use admin credentials with Password"]
-            if sql_flavor == "snowflake":
-                admin_connection_options.append("Use admin credentials with Key-Pair")
+    admin_credentials_expander = st.expander("Admin credential options", expanded=True)
+    with admin_credentials_expander:
+        admin_connection_option_index = 0
+        admin_connection_options = ["Do not use admin credentials", "Use admin credentials with Password"]
+        if sql_flavor == "snowflake":
+            admin_connection_options.append("Use admin credentials with Key-Pair")
 
-            admin_connection_option = st.radio(
-                "Admin credential options",
-                label_visibility="hidden",
-                options=admin_connection_options,
-                index=admin_connection_option_index,
-                horizontal=True,
+        admin_connection_option = st.radio(
+            "Admin credential options",
+            label_visibility="hidden",
+            options=admin_connection_options,
+            index=admin_connection_option_index,
+            horizontal=True,
+        )
+
+        st.markdown("</p>&nbsp;</br>", unsafe_allow_html=True)
+
+        db_user = None
+        db_password = None
+        admin_private_key_passphrase = None
+        admin_private_key = None
+        if admin_connection_option == admin_connection_options[0]:
+            st.markdown(":orange[User created in the connection dialog will be used.]")
+        else:
+            db_user = st.text_input(label="Admin db user", max_chars=40)
+        if admin_connection_option == admin_connection_options[1]:
+            db_password = st.text_input(
+                label="Admin db password", max_chars=40, type="password"
+            )
+            st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
+
+        if len(admin_connection_options) > 2 and admin_connection_option == admin_connection_options[2]:
+            admin_private_key_passphrase = st.text_input(
+                label="Private Key Passphrase",
+                key="create-qc-schema-private-key-password",
+                type="password",
+                max_chars=200,
+                help="Passphrase used while creating the private Key (leave empty if not applicable)",
             )
 
-            st.markdown("</p>&nbsp;</br>", unsafe_allow_html=True)
+            admin_uploaded_file = st.file_uploader("Upload private key (rsa_key.p8)", key="admin-uploaded-file")
+            if admin_uploaded_file:
+                admin_private_key = admin_uploaded_file.getvalue().decode("utf-8")
 
-            db_user = None
-            db_password = None
-            admin_private_key_passphrase = None
-            admin_private_key = None
-            if admin_connection_option == admin_connection_options[0]:
-                st.markdown(":orange[User created in the connection dialog will be used.]")
-            else:
-                db_user = st.text_input(label="Admin db user", max_chars=40)
-            if admin_connection_option == admin_connection_options[1]:
-                db_password = st.text_input(
-                    label="Admin db password", max_chars=40, type="password"
-                )
-                st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
+            st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
 
-            if len(admin_connection_options) > 2 and admin_connection_option == admin_connection_options[2]:
-                admin_private_key_passphrase = st.text_input(
-                    label="Private Key Passphrase",
-                    key="create-qc-schema-private-key-password",
-                    type="password",
-                    max_chars=200,
-                    help="Passphrase used while creating the private Key (leave empty if not applicable)",
-                )
+    submit = st.button("Update Configuration")
 
-                admin_uploaded_file = st.file_uploader("Upload private key (rsa_key.p8)", key="admin-uploaded-file")
-                if admin_uploaded_file:
-                    admin_private_key = admin_uploaded_file.getvalue().decode("utf-8")
+    if submit:
+        empty_cache()
+        script_expander = st.expander("Script Details")
 
-                st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
+        operation_status = st.empty()
+        operation_status.info(f"Configuring QC Utility Schema '{project_qc_schema}'...")
 
-        submit = st.button("Update Configuration")
+        try:
+            skip_granting_privileges = not grant_privileges
+            queries = get_setup_profiling_tools_queries(sql_flavor, create_qc_schema, skip_granting_privileges, project_qc_schema, user, user_role)
+            with script_expander:
+                st.code(
+                    os.linesep.join(queries),
+                    language="sql",
+                    line_numbers=True)
 
-        if submit:
-            empty_cache()
-            script_expander = st.expander("Script Details")
+            connection_service.create_qc_schema(
+                connection_id,
+                create_qc_schema,
+                db_user if db_user else None,
+                db_password if db_password else None,
+                skip_granting_privileges,
+                admin_private_key_passphrase=admin_private_key_passphrase,
+                admin_private_key=admin_private_key,
+                user_role=user_role,
+            )
+            operation_status.empty()
+            operation_status.success("Operation has finished successfully.")
 
-            operation_status = st.empty()
-            operation_status.info(f"Configuring QC Utility Schema '{project_qc_schema}'...")
-
-            try:
-                skip_granting_privileges = not grant_privileges
-                queries = get_setup_profiling_tools_queries(sql_flavor, create_qc_schema, skip_granting_privileges, project_qc_schema, user, user_role)
-                with script_expander:
-                    st.code(
-                        os.linesep.join(queries),
-                        language="sql",
-                        line_numbers=True)
-
-                connection_service.create_qc_schema(
-                    connection_id,
-                    create_qc_schema,
-                    db_user if db_user else None,
-                    db_password if db_password else None,
-                    skip_granting_privileges,
-                    admin_private_key_passphrase=admin_private_key_passphrase,
-                    admin_private_key=admin_private_key,
-                    user_role=user_role,
-                )
-                operation_status.empty()
-                operation_status.success("Operation has finished successfully.")
-
-            except Exception as e:
-                operation_status.empty()
-                operation_status.error("Error configuring QC Utility Schema.")
-                error_message = e.args[0]
-                st.text_area("Error Details", value=error_message)
+        except Exception as e:
+            operation_status.empty()
+            operation_status.error("Error configuring QC Utility Schema.")
+            error_message = e.args[0]
+            st.text_area("Error Details", value=error_message)
 
 
-def show_connection(connection_modal, selected_connection, mode, project_code, show_header=True):
-    if show_header:
-        fm.render_modal_header("Add Connection" if mode == "add" else "Edit Connection", None)
+def show_connection_form(selected_connection, mode, project_code):
     flavor_options = ["redshift", "snowflake", "mssql", "postgresql"]
     connection_options = ["Connect by Password", "Connect by Key-Pair"]
 
@@ -307,8 +302,6 @@ def show_connection(connection_modal, selected_connection, mode, project_code, s
             )
             st.success(success_message)
             time.sleep(1)
-            if connection_modal:
-                connection_modal.close()
             st.rerun()
 
     test_left_column, test_mid_column, test_right_column = st.columns([0.15, 0.15, 0.70])
