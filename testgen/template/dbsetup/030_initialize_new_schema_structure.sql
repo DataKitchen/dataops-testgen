@@ -387,42 +387,6 @@ CREATE TABLE data_column_chars (
    warnings_30_days_prior INTEGER
 );
 
-CREATE TABLE working_agg_cat_tests (
-   project_code      VARCHAR(30),
-   test_run_id       VARCHAR(100) NOT NULL,
-   test_suite        VARCHAR(200),
-   schema_name       VARCHAR(200) NOT NULL,
-   table_name        VARCHAR(200) NOT NULL,
-   cat_sequence      INTEGER      NOT NULL,
-   test_count        INTEGER,
-   test_time         TIMESTAMP,
-   start_time        TIMESTAMP,
-   end_time          TIMESTAMP,
-   column_names      TEXT,
-   test_types        TEXT,
-   test_definition_ids TEXT,
-   test_actions      TEXT,
-   test_descriptions TEXT,
-   test_parms        TEXT,
-   test_measures     TEXT,
-   test_conditions   TEXT,
-   CONSTRAINT working_agg_cat_tests_trid_sn_tn_cs
-      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence)
-);
-
-CREATE TABLE working_agg_cat_results (
-   project_code    VARCHAR(30),
-   test_run_id     VARCHAR(100) NOT NULL,
-   test_suite      VARCHAR(200),
-   schema_name     VARCHAR(200) NOT NULL,
-   table_name      VARCHAR(200) NOT NULL,
-   cat_sequence    INTEGER      NOT NULL,
-   measure_results TEXT,
-   test_results    TEXT,
-   CONSTRAINT working_agg_cat_results_tri_sn_tn_cs
-      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence)
-);
-
 CREATE TABLE test_types (
    id                      VARCHAR,
    test_type               VARCHAR(200) NOT NULL
@@ -473,8 +437,7 @@ CREATE TABLE test_runs (
    id                UUID NOT NULL
       CONSTRAINT test_runs_id_pk
          PRIMARY KEY,
-   project_code      VARCHAR(30),
-   test_suite        VARCHAR(200),
+   test_suite_id     UUID NOT NULL,
    test_starttime    TIMESTAMP,
    test_endtime      TIMESTAMP,
    status            VARCHAR(100) DEFAULT 'Running',
@@ -489,18 +452,18 @@ CREATE TABLE test_runs (
    column_ct         INTEGER,
    column_failed_ct  INTEGER,
    column_warning_ct INTEGER,
-   process_id        INTEGER
+   process_id        INTEGER,
+   CONSTRAINT test_runs_test_suites_fk
+      FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
 
 CREATE TABLE test_results (
    id                     UUID DEFAULT gen_random_uuid(),
    result_id              BIGINT GENERATED ALWAYS AS IDENTITY,
-   project_code           VARCHAR(30),
    test_type              VARCHAR(50)
       CONSTRAINT test_results_test_types_test_type_fk
          REFERENCES test_types,
-   test_suite_id          UUID,
-   test_suite             VARCHAR(200),
+   test_suite_id          UUID NOT NULL,
    test_definition_id     UUID,
    auto_gen               BOOLEAN,
    test_time              TIMESTAMP,
@@ -523,13 +486,48 @@ CREATE TABLE test_results (
    subset_condition       VARCHAR(500),
    result_query           VARCHAR(4000),
    test_description       VARCHAR(1000),
-   test_run_id            UUID,
+   test_run_id            UUID NOT NULL,
    table_groups_id        UUID,
    observability_status   VARCHAR(10),
    CONSTRAINT test_results_test_suites_project_code_test_suite_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
 
+CREATE TABLE working_agg_cat_tests (
+   test_run_id       UUID NOT NULL,
+   schema_name       VARCHAR(200) NOT NULL,
+   table_name        VARCHAR(200) NOT NULL,
+   cat_sequence      INTEGER      NOT NULL,
+   test_count        INTEGER,
+   test_time         TIMESTAMP,
+   start_time        TIMESTAMP,
+   end_time          TIMESTAMP,
+   column_names      TEXT,
+   test_types        TEXT,
+   test_definition_ids TEXT,
+   test_actions      TEXT,
+   test_descriptions TEXT,
+   test_parms        TEXT,
+   test_measures     TEXT,
+   test_conditions   TEXT,
+   CONSTRAINT working_agg_cat_tests_trid_sn_tn_cs
+      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence),
+   CONSTRAINT working_agg_cat_tests_test_runs_fk
+      FOREIGN KEY (test_run_id) REFERENCES test_runs
+);
+
+CREATE TABLE working_agg_cat_results (
+   test_run_id     UUID NOT NULL,
+   schema_name     VARCHAR(200) NOT NULL,
+   table_name      VARCHAR(200) NOT NULL,
+   cat_sequence    INTEGER      NOT NULL,
+   measure_results TEXT,
+   test_results    TEXT,
+   CONSTRAINT working_agg_cat_results_tri_sn_tn_cs
+      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence),
+   CONSTRAINT working_agg_cat_results_test_runs_fk
+      FOREIGN KEY (test_run_id) REFERENCES test_runs
+);
 
 CREATE TABLE cat_test_conditions (
    id             VARCHAR,
@@ -594,11 +592,6 @@ CREATE TABLE tg_revision (
    revision INTEGER
 );
 
--- Index working table - ORIGINAL
-CREATE INDEX working_agg_cat_tests_test_run_id_index
-   ON working_agg_cat_tests(test_run_id);
-
-
 -- Index Connections
 CREATE UNIQUE INDEX uix_con_id
    ON connections(id);
@@ -638,7 +631,7 @@ CREATE INDEX ix_td_ts_tc
 
 -- Index test_runs
 CREATE INDEX ix_trun_pc_ts_time
-   ON test_runs(project_code, test_suite, test_starttime);
+   ON test_runs(test_suite_id, test_starttime);
 
 CREATE INDEX ix_trun_time
    ON test_runs USING BRIN (test_starttime);
@@ -647,9 +640,6 @@ CREATE INDEX ix_trun_time
 CREATE UNIQUE INDEX uix_tr_id
    ON test_results(id);
 
-CREATE INDEX ix_tr_pc_ts
-   ON test_results(project_code, test_suite);
-
 CREATE INDEX ix_tr_trun
    ON test_results(test_run_id);
 
@@ -657,7 +647,7 @@ CREATE INDEX ix_tr_tt
    ON test_results(test_type);
 
 CREATE INDEX ix_tr_pc_sctc_tt
-   ON test_results(project_code, test_suite, schema_name, table_name, column_names, test_type);
+   ON test_results(test_suite_id, schema_name, table_name, column_names, test_type);
 
 CREATE INDEX ix_tr_ts_tctt
    ON test_results(test_suite_id, table_name, column_names, test_type);
@@ -705,7 +695,7 @@ CREATE INDEX ix_ares_anid
 
 -- Conditional index for Observability Export - ORIGINAL
 CREATE INDEX cix_tr_pc_ts
-   ON test_results(project_code, test_suite) WHERE observability_status = 'Queued';
+   ON test_results(test_suite_id) WHERE observability_status = 'Queued';
 
 
 INSERT INTO tg_revision (component, revision)

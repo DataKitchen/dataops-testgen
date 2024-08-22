@@ -238,9 +238,9 @@ def add(schema, test_definition):
 
 
 def get_test_definition_usage(schema, test_definition_ids):
-    test_definition_names_join = [f"'{item}'" for item in test_definition_ids]
+    ids_str = ",".join([f"'{item}'" for item in test_definition_ids])
     sql = f"""
-            select distinct test_definition_id from {schema}.test_results where test_definition_id in ({",".join(test_definition_names_join)});
+            select distinct test_definition_id from {schema}.test_results where test_definition_id in ({ids_str});
     """
     return db.retrieve_data(sql)
 
@@ -255,14 +255,13 @@ def delete(schema, test_definition_ids):
     st.cache_data.clear()
 
 
-def cascade_delete(schema, test_suite_names):
-    if test_suite_names is None or len(test_suite_names) == 0:
+def cascade_delete(schema, test_suite_ids):
+    if not test_suite_ids:
         raise ValueError("No Test Suite is specified.")
 
-    items = [f"'{item}'" for item in test_suite_names]
+    ids_str = ", ".join([f"'{item}'" for item in test_suite_ids])
     sql = f"""
-        DELETE FROM {schema}.test_definitions
-        WHERE test_suite_id in (select id from {schema}.test_suites where test_suite in ({",".join(items)}))
+        DELETE FROM {schema}.test_definitions WHERE test_suite_id in ({ids_str})
     """
     db.execute_sql(sql)
     st.cache_data.clear()

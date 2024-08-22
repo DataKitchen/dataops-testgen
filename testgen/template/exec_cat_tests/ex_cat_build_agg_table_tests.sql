@@ -1,14 +1,14 @@
 -- Create one record per CAT query: all test sets against one table, split over max chars
 INSERT INTO working_agg_cat_tests
- (project_code, test_run_id,
-  test_suite, schema_name, table_name, cat_sequence, test_count, test_time,
+ (test_run_id,
+  schema_name, table_name, cat_sequence, test_count, test_time,
   column_names, test_types, test_definition_ids,
   test_actions, test_descriptions,
   test_parms, test_measures, test_conditions)
 -- Test details from each test type
 WITH test_detail
   AS (
-       SELECT '{TEST_SUITE}' as test_suite,
+       SELECT t.test_suite_id,
               '{SCHEMA_NAME}' as schema_name, '{TABLE_NAME}' as table_name,
               '{RUN_DATE}'::TIMESTAMP as test_time,
               t.column_name, t.test_type, t.id::VARCHAR as test_definition_id,
@@ -73,7 +73,7 @@ WITH test_detail
           AND COALESCE(t.test_active, 'Y') = 'Y'
       ),
 test_detail_split
-   AS ( SELECT test_suite, schema_name, table_name, test_time,
+   AS ( SELECT test_suite_id, schema_name, table_name, test_time,
                column_name, test_type, test_definition_id, test_action, test_description,
                parms, measure, condition,
                SUM(LENGTH(condition)) OVER (PARTITION BY t.schema_name, t.table_name
@@ -82,10 +82,7 @@ test_detail_split
                                              ORDER BY t.column_name ROWS UNBOUNDED PRECEDING )
                   / {MAX_QUERY_CHARS} ) + 1 as query_split_no
           FROM test_detail t )
-SELECT
-       '{PROJECT_CODE}' as project_code,
-       '{TEST_RUN_ID}' as test_run_id,
-       d.test_suite,
+SELECT '{TEST_RUN_ID}' as test_run_id,
        d.schema_name, d.table_name,
        d.query_split_no as cat_sequence,
        COUNT(*) as test_count,
@@ -112,4 +109,4 @@ SELECT
                 '++' ORDER BY d.column_name) as conditions
 
   FROM test_detail_split d
-GROUP BY d.test_suite, d.schema_name, d.table_name, test_time, d.query_split_no;
+GROUP BY d.test_suite_id, d.schema_name, d.table_name, test_time, d.query_split_no;

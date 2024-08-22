@@ -35,7 +35,7 @@ def run_parameter_validation_queries(
     LOG.debug("Validating parameters for Test Suite %s")
 
     LOG.info("CurrentStep: Initializing Test Parameter Validation")
-    clsExecute = CTestParamValidationSQL(strProjectCode, dctParms["sql_flavor"], dctParms["test_suite_id"])
+    clsExecute = CTestParamValidationSQL(dctParms["sql_flavor"], dctParms["test_suite_id"])
     clsExecute.run_date = test_time
     clsExecute.test_run_id = test_run_id
     LOG.info("CurrentStep: Validation Class successfully initialized")

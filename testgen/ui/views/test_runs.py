@@ -85,12 +85,13 @@ class TestRunsPage(Page):
 def run_test_suite_lookup_query(str_schema, str_project, str_tg=None):
     str_tg_condition = f" AND s.table_groups_id = '{str_tg}' " if str_tg else ""
     str_sql = f"""
-           SELECT s.id::VARCHAR(50), s.test_suite, s.test_suite_description
+           SELECT s.id::VARCHAR(50),
+                  s.test_suite,
+                  COALESCE(s.test_suite_description, s.test_suite) AS test_suite_description
              FROM {str_schema}.test_suites s
-           LEFT JOIN {str_schema}.table_groups tg
-             ON (s.table_groups_id = tg.id)
+        LEFT JOIN {str_schema}.table_groups tg ON s.table_groups_id = tg.id
             WHERE s.project_code = '{str_project}' {str_tg_condition}
-           ORDER BY s.test_suite
+         ORDER BY s.test_suite
     """
     return db.retrieve_data(str_sql)
 
@@ -114,7 +115,7 @@ def get_db_test_runs(str_project_code, str_tg=None, str_ts=None):
     str_ts_condition = f" AND s.id = '{str_ts}' " if str_ts else ""
     str_sql = f"""
             SELECT r.test_starttime as run_date,
-                   r.test_suite, s.test_suite_description,
+                   s.test_suite, s.test_suite_description,
                    r.status,
                    r.duration,
                    r.test_ct, r.passed_ct, r.failed_ct, r.warning_ct, r.error_ct,
@@ -126,13 +127,13 @@ def get_db_test_runs(str_project_code, str_tg=None, str_ts=None):
                    p.project_name,
                    s.table_groups_id::VARCHAR, tg.table_groups_name, tg.table_group_schema, process_id
               FROM {str_schema}.test_runs r
-            INNER JOIN {str_schema}.projects p
-               ON (r.project_code = p.project_code)
             INNER JOIN {str_schema}.test_suites s
-              ON (r.test_suite = s.test_suite)
+              ON (r.test_suite_id = s.id)
             INNER JOIN {str_schema}.table_groups tg
               ON (s.table_groups_id = tg.id)
-          WHERE r.project_code = '{str_project_code}' {str_tg_condition} {str_ts_condition}
+            INNER JOIN {str_schema}.projects p
+               ON (s.project_code = p.project_code)
+          WHERE s.project_code = '{str_project_code}' {str_tg_condition} {str_ts_condition}
           ORDER BY r.test_starttime DESC;
     """
 

@@ -10,7 +10,7 @@ def _get_select_statement(schema):
                       profiling_include_mask, profiling_exclude_mask,
                       profiling_table_set,
                       profile_id_column_mask, profile_sk_column_mask,
-                      data_source, source_system, data_location, business_domain, 
+                      data_source, source_system, data_location, business_domain,
                       transform_level, source_process, stakeholder_group,
                       profile_use_sampling, profile_sample_percent, profile_sample_min_count,
                       profiling_delay_days
@@ -27,14 +27,16 @@ def get_by_id(schema, table_group_id):
     return db.retrieve_data(sql)
 
 
-def get_test_suite_names_by_table_group_names(schema, table_group_names):
-    items = [f"'{item}'" for item in table_group_names]
-    sql = f"""select test_suite
-from {schema}.test_suites ts
-inner join {schema}.table_groups tg on tg.id = ts.table_groups_id
-where tg.table_groups_name in ({",".join(items)})
+def get_test_suite_ids_by_table_group_names(schema, table_group_names):
+    names_str = ", ".join([f"'{item}'" for item in table_group_names])
+    sql = f"""
+        SELECT ts.id::VARCHAR
+        FROM {schema}.test_suites ts
+        INNER JOIN {schema}.table_groups tg ON tg.id = ts.table_groups_id
+        WHERE tg.table_groups_name in ({names_str})
     """
     return db.retrieve_data(sql)
+
 
 
 def get_table_group_dependencies(schema, table_group_names):

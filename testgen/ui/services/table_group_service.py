@@ -28,23 +28,26 @@ def add(table_group):
 
 def cascade_delete(table_group_names, dry_run=False):
     schema = st.session_state["dbschema"]
-    test_suite_names = get_test_suite_names_by_table_group_names(table_group_names)
-    can_be_deleted = not table_group_has_dependencies(schema, table_group_names, test_suite_names)
+    test_suite_ids = get_test_suite_ids_by_table_group_names(table_group_names)
+
+    can_be_deleted = not any(
+        (
+            table_group_has_dependencies(table_group_names),
+            test_suite_service.has_test_suite_dependencies(test_suite_ids),
+        )
+    )
+
     if not dry_run:
-        test_suite_service.cascade_delete(test_suite_names)
+        test_suite_service.cascade_delete(test_suite_ids)
         table_group_queries.cascade_delete(schema, table_group_names)
     return can_be_deleted
 
 
-def table_group_has_dependencies(schema, table_group_names, test_suite_names):
-    return any(
-        (
-            table_group_names and not table_group_queries.get_table_group_dependencies(
-                schema, table_group_names
-            ).empty,
-            test_suite_service.has_test_suite_dependencies(schema, test_suite_names),
-        )
-    )
+def table_group_has_dependencies(table_group_names):
+    if not table_group_names:
+        return False
+    schema = st.session_state["dbschema"]
+    return not table_group_queries.get_table_group_dependencies(schema, table_group_names).empty
 
 
 def are_table_groups_in_use(table_group_names):
@@ -53,8 +56,8 @@ def are_table_groups_in_use(table_group_names):
 
     schema = st.session_state["dbschema"]
 
-    test_suite_names = get_test_suite_names_by_table_group_names(table_group_names)
-    test_suites_in_use = test_suite_service.are_test_suites_in_use(test_suite_names)
+    test_suite_ids = get_test_suite_ids_by_table_group_names(table_group_names)
+    test_suites_in_use = test_suite_service.are_test_suites_in_use(test_suite_ids)
 
     table_groups_in_use_result = table_group_queries.get_table_group_usage(schema, table_group_names)
     table_groups_in_use = not table_groups_in_use_result.empty
@@ -62,12 +65,12 @@ def are_table_groups_in_use(table_group_names):
     return test_suites_in_use or table_groups_in_use
 
 
-def get_test_suite_names_by_table_group_names(table_group_names):
+def get_test_suite_ids_by_table_group_names(table_group_names):
     if not table_group_names:
         return []
     schema = st.session_state["dbschema"]
-    test_suite_names = table_group_queries.get_test_suite_names_by_table_group_names(schema, table_group_names)
-    return test_suite_names.to_dict()["test_suite"].values()
+    result = table_group_queries.get_test_suite_ids_by_table_group_names(schema, table_group_names)
+    return result.to_dict()["id"].values()
 
 
 def test_table_group(table_group, connection_id, project_code):

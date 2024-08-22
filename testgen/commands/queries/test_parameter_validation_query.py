@@ -18,14 +18,12 @@ class CTestParamValidationSQL:
     # Test Set Parameters
     dctTestParms: typing.ClassVar = {}
 
-    def __init__(self, strProjectCode, strFlavor, strTestSuiteId):
-        self.project_code = strProjectCode
+    def __init__(self, strFlavor, strTestSuiteId):
         self.flavor = strFlavor
         self.test_suite_id = strTestSuiteId
         self.today = date_service.get_now_as_string()
 
     def _ReplaceParms(self, strInputString):
-        strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
         strInputString = strInputString.replace("{TEST_SUITE_ID}", self.test_suite_id)
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)
