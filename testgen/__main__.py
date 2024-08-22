@@ -671,6 +671,7 @@ def ui(): ...
 @ui.command("run", help="Run the browser application with default settings")
 @click.option("-d", "--debug", is_flag=True, default=False)
 def run(debug: bool):
+    from testgen.ui.scripts import patch_streamlit
     configure_logging(
         level=logging.INFO,
         log_format="%(message)s",
@@ -682,6 +683,8 @@ def run(debug: bool):
     stdout: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
 
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
+
+    patch_streamlit.patch(force=True)
 
     try:
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
@@ -716,16 +719,6 @@ def list_ui_plugins():
     click.echo(click.style(len(installed_plugins), fg="bright_magenta") + click.style(" plugins installed", bold=True))
     for plugin in installed_plugins:
         click.echo(click.style(" + ", fg="bright_green") + f"{plugin.package: <30}" + f"\tversion: {plugin.version}")
-
-
-@ui.command("patch-streamlit", help="Modifies Streamlit's internals with custom static files")
-@click.option("-f", "--force", is_flag=True, default=False)
-def patch_streamlit(force: bool) -> None:
-    from testgen.ui.scripts import patch_streamlit
-
-    patched_files = patch_streamlit.patch(force=force)
-    click.echo(click.style("Patched ", bold=True) + click.style(patch_streamlit.STREAMLIT_INDEX, fg="bright_magenta"))
-    click.echo(click.style(" + ", fg="bright_green") + click.style(f"patched {len(patched_files)} files", italic=True))
 
 
 if __name__ == "__main__":
