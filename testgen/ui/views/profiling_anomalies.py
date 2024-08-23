@@ -76,8 +76,12 @@ class ProfilingAnomaliesPage(Page):
 
                 if not df_pa.empty:
                     # Display summary bar
-                    anomalies_summary = get_profiling_anomaly_summary(str_profile_run_id)
-                    testgen.summary_bar(items=anomalies_summary, key="test_results", height=40, width=800)
+                    summaries = get_profiling_anomaly_summary(str_profile_run_id)
+                    anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
+                    others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
+                    testgen.summary_bar(items=others_summary, key="test_results_summary:others", height=40, width=800)
+                    if anomalies_pii_summary:
+                        testgen.summary_bar(items=anomalies_pii_summary, key="test_results_summary:pii", height=40, width=800)
                     # write_frequency_graph(df_pa)
                     
                     lst_show_columns = [
@@ -267,23 +271,27 @@ def get_profiling_anomaly_summary(str_profile_run_id):
     str_schema = st.session_state["dbschema"]
     # Define the query
     str_sql = f"""
-            SELECT schema_name,
-                   COUNT(DISTINCT s.table_name) as table_ct,
-                   COUNT(DISTINCT s.column_name) as column_ct,
-                   COUNT(*) as issue_ct,
-                   SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                             AND t.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) as definite_ct,
-                   SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                             AND t.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) as likely_ct,
-                   SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                             AND t.issue_likelihood = 'Possible' THEN 1 ELSE 0 END) as possible_ct,
-                   SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed')
-                                  IN ('Dismissed', 'Inactive') THEN 1 ELSE 0 END) as dismissed_ct
-              FROM {str_schema}.profile_anomaly_results s
-            LEFT JOIN {str_schema}.profile_anomaly_types t
-              ON (s.anomaly_id = t.id)
-             WHERE s.profile_run_id = '{str_profile_run_id}'
-            GROUP BY schema_name;
+        SELECT
+            schema_name,
+            COUNT(DISTINCT s.table_name) as table_ct,
+            COUNT(DISTINCT s.column_name) as column_ct,
+            COUNT(*) as issue_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                        AND t.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) as definite_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                        AND t.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) as likely_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                        AND t.issue_likelihood = 'Possible' THEN 1 ELSE 0 END) as possible_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed')
+                            IN ('Dismissed', 'Inactive')
+                        AND t.issue_likelihood <> 'Potential PII' THEN 1 ELSE 0 END) as dismissed_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: HIGH%%' THEN 1 ELSE 0 END) as pii_high_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: MODERATE%%' THEN 1 ELSE 0 END) as pii_moderate_ct,
+            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') AND t.issue_likelihood = 'Potential PII' THEN 1 ELSE 0 END) as pii_dismissed_ct
+        FROM {str_schema}.profile_anomaly_results s
+        LEFT JOIN {str_schema}.profile_anomaly_types t ON (s.anomaly_id = t.id)
+        WHERE s.profile_run_id = '{str_profile_run_id}'
+        GROUP BY schema_name;
     """
     df = db.retrieve_data(str_sql)
 
@@ -292,6 +300,9 @@ def get_profiling_anomaly_summary(str_profile_run_id):
         { "label": "Likely", "value": int(df.at[0, "likely_ct"]), "color": "orange" },
         { "label": "Possible", "value": int(df.at[0, "possible_ct"]), "color": "yellow" },
         { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
+        { "label": "Potential PII Definite", "value": int(df.at[0, "pii_high_ct"]), "color": "red", "type": "PII" },
+        { "label": "Potential PII Likely", "value": int(df.at[0, "pii_moderate_ct"]), "color": "orange", "type": "PII" },
+        { "label": "Potential PII Dismissed", "value": int(df.at[0, "pii_dismissed_ct"]), "color": "grey", "type": "PII" },
     ]
 
 
