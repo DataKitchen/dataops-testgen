@@ -3,6 +3,12 @@
 
 *<p style="text-align: center;">DataOps Data Quality TestGen can help you find data issues so you can alert your users and notify your suppliers.  It does this by delivering simple, fast data quality test generation and execution by data profiling,  new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. DataOps TestGen is part of DataKitchen's Open Source Data Observability.</p>*
 
+## Documentation
+
+[DataOps TestGen Overview](https://datakitchen.io/dataops-testgen-product/)
+[DataOps TestGen Documentation](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help)
+[DataOps TestGen Case Study](https://datakitchen.io/datakitchens-data-quality-testgen-found-18-quality-issues-in-a-few-minutes-including-install-time-on-data-boston-gov-building-permit-data/)
+
 ## Features
 
 What does DataKitchen's DataOps Data Quality TestGen do?  It helps you understand and <b>find data issues in new data</b>.
@@ -64,10 +70,6 @@ The [Data Observability quickstart](https://docs.datakitchen.io/articles/open-so
 python3 dk-installer.py tg run-demo
 ```
 In the TestGen UI, you will see that new data profiling and test results have been generated.
-
-## Product Documentation
-
-[DataOps TestGen](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help)
 
 ## Useful Commands
 
