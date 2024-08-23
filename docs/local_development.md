@@ -87,12 +87,7 @@ testgen run-tests --project-key DEFAULT --test-suite-key default-suite-1
 testgen quick-start --simulate-fast-forward
 ```
 
-### Patch and run Streamlit
-Patch the Streamlit package with our custom files.
-```shell
-testgen ui patch-streamlit -f
-```
-
+### Run Streamlit
 Run the local Streamlit-based TestGen application. It will open the browser at [http://localhost:8501](http://localhost:8501).
 ```shell
 testgen ui run
