@@ -2,6 +2,12 @@
 
 This document describes the environment variables supported by TestGen.
 
+#### `TESTGEN_DEBUG_LOG_LEVEL`
+
+Sets logs to the debug level.
+
+default: `no`
+
 #### `TESTGEN_DEBUG`
 
 Invalidates the cache with the bootstrapped application causing the changes to the routing and plugins to take effect
@@ -12,9 +18,22 @@ Also, changes the logging level for the `testgen.ui` logger from `INFO` to `DEBU
 default: `no`
 
 #### `TESTGEN_LOG_TO_FILE`
-Set it to `yes` to enable rotating file logs to be written under `/var/log/testgen/`.
 
-default: `no`
+Enables generation of rotating file logs.
+
+default: `yes`
+
+#### `TESTGEN_LOG_FILE_PATH`
+
+File path under which to generate rotating file logs, when `TESTGEN_LOG_TO_FILE` is turned on.
+
+default: `/var/lib/testgen/log`
+
+#### `TESTGEN_LOG_FILE_MAX_QTY`
+
+Maximum log files to keep (one file per day), when `TESTGEN_LOG_TO_FILE` is turned on.
+
+default: `90`
 
 #### `TG_DECRYPT_SALT`
 

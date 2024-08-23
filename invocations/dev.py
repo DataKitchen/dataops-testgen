@@ -2,6 +2,7 @@ __all__ = ["build_public_image", "clean", "install", "lint"]
 
 from os.path import exists, join
 from shutil import rmtree, which
+from typing import Literal
 
 import tomli
 from invoke.context import Context
@@ -65,24 +66,29 @@ def clean(ctx: Context) -> None:
 
 
 @task(pre=(required_tools,))
-def build_public_image(ctx: Context, version: str, push: bool = False, local: bool = False) -> None:
+def build_public_image(ctx: Context, version: str, target: Literal["local", "qa", "release"]) -> None:
     """Builds and pushes the TestGen image"""
     use_cmd = f"docker buildx use {DOCKER_BUILDER_NAME}"
-    if push and local:
-        raise Exit("Cannot use --local and --push at the same time.")
 
-    
+    valid_targets = ["local", "qa", "release"]
+    if target not in valid_targets:
+        raise Exit(f"--target must be one of [{', '.join(valid_targets)}].")
+
     if (result := ctx.run(use_cmd, hide=True, warn=True)) and not result.ok:
         ctx.run(f"docker buildx create --name {DOCKER_BUILDER_NAME} --platform {DOCKER_BUILDER_PLATFORMS}")
         ctx.run(use_cmd)
 
     extra_args = []
-    if push:
+    if target in ["release", "qa"]:
         extra_args.append("--push")
-    elif local:
+    else:
         extra_args.extend(("--load", "--set=*.platform=$BUILDPLATFORM"))
+
     ctx.run(
-        f"docker buildx bake -f deploy/docker-bake.json testgen {' '.join(extra_args)} ",
-        env={"TESTGEN_VERSION": version},
+        f"docker buildx bake -f deploy/docker-bake.hcl testgen {' '.join(extra_args)} ",
+        env={
+            "TESTGEN_VERSION": version,
+            "PUBLIC_RELEASE": str(target == "release"),
+        },
         echo=True,
     )
