@@ -139,10 +139,9 @@ testgen setup-system-db --yes
 
 ### Run the TestGen UI
 
-Run the following commands to start the TestGen UI. It will open the browser at [http://localhost:8501](http://localhost:8501).
+Run the following command to start the TestGen UI. It will open the browser at [http://localhost:8501](http://localhost:8501).
 
 ```shell
-testgen ui patch-streamlit -f
 testgen ui run
 ```
 
