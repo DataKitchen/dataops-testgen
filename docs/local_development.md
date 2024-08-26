@@ -21,25 +21,34 @@ git clone https://github.com/YOUR-USERNAME/dataops-testgen
 
 ### Set up virtual environment
 
-From the root of your local repository, create a Python virtual environment.
+We recommend using a Python virtual environment to avoid any dependency conflicts with other applications installed on your machine. The [venv](https://docs.python.org/3/library/venv.html#creating-virtual-environments) module, which is part of the Python standard library, or other third-party tools, like [virtualenv](https://virtualenv.pypa.io/en/latest/) or [conda](https://docs.conda.io/en/latest/), can be used.
+
+From the root of your local repository, create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.10`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
+
+_On Linux/Mac_
 ```shell
 python3.10 -m venv venv
+source venv/bin/activate
 ```
 
-Activate the environment.
-```shell
-source venv/bin/activate
+_On Windows_
+```powershell
+py -3.10 -m venv venv
+venv\Scripts\activate
 ```
 
 ### Install dependencies
 
 Install the Python dependencies in editable mode.
-```shell
-# On Linux
-pip install -e .[dev]
 
-# On Mac
-pip install -e .'[dev]'
+_On Linux_
+```shell
+pip install -e .[dev]
+```
+
+_On Mac/Windows_
+```shell
+pip install -e ".[dev]"
 ```
 
 On Mac, you can optionally install [watchdog](https://github.com/gorakhargosh/watchdog) for better performance of the [file watcher](https://docs.streamlit.io/develop/api-reference/configuration/config.toml) used for local development.
@@ -64,6 +73,8 @@ Source the file to apply the environment variables.
 ```shell
 source local.env
 ```
+
+For the Windows equivalent, refer to [this guide](https://bennett4.medium.com/windows-alternative-to-source-env-for-setting-environment-variables-606be2a6d3e1).
 
 ### Set up Postgres instance
 
