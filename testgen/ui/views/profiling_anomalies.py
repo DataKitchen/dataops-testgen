@@ -75,13 +75,28 @@ class ProfilingAnomaliesPage(Page):
                 df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
 
                 if not df_pa.empty:
-                    # Display summary bar
+                    others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
                     summaries = get_profiling_anomaly_summary(str_profile_run_id)
-                    anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
                     others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
-                    testgen.summary_bar(items=others_summary, key="test_results_summary:others", height=40, width=800)
+                    with others_summary_column:
+                        st.html("<strong>Hygiene Issues</strong>")
+                        testgen.summary_bar(
+                            items=others_summary,
+                            key="test_results_summary:others",
+                            height=40,
+                            width=400,
+                        )
+
+                    anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
                     if anomalies_pii_summary:
-                        testgen.summary_bar(items=anomalies_pii_summary, key="test_results_summary:pii", height=40, width=800)
+                        with pii_summary_column:
+                            st.html("<strong>Potential PII</strong>")
+                            testgen.summary_bar(
+                                items=anomalies_pii_summary,
+                                key="test_results_summary:pii",
+                                height=40,
+                                width=400,
+                            )
                     # write_frequency_graph(df_pa)
                     
                     lst_show_columns = [
@@ -300,9 +315,9 @@ def get_profiling_anomaly_summary(str_profile_run_id):
         { "label": "Likely", "value": int(df.at[0, "likely_ct"]), "color": "orange" },
         { "label": "Possible", "value": int(df.at[0, "possible_ct"]), "color": "yellow" },
         { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
-        { "label": "Potential PII Definite", "value": int(df.at[0, "pii_high_ct"]), "color": "red", "type": "PII" },
-        { "label": "Potential PII Likely", "value": int(df.at[0, "pii_moderate_ct"]), "color": "orange", "type": "PII" },
-        { "label": "Potential PII Dismissed", "value": int(df.at[0, "pii_dismissed_ct"]), "color": "grey", "type": "PII" },
+        { "label": "High Risk", "value": int(df.at[0, "pii_high_ct"]), "color": "red", "type": "PII" },
+        { "label": "Moderate Risk", "value": int(df.at[0, "pii_moderate_ct"]), "color": "orange", "type": "PII" },
+        { "label": "Dismissed", "value": int(df.at[0, "pii_dismissed_ct"]), "color": "grey", "type": "PII" },
     ]
 
 
