@@ -592,6 +592,9 @@ CREATE TABLE tg_revision (
    revision INTEGER
 );
 
+
+CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
+
 -- Index Connections
 CREATE UNIQUE INDEX uix_con_id
    ON connections(id);
