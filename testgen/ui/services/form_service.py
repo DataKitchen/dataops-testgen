@@ -259,11 +259,19 @@ def _generate_excel_export(
 def render_excel_export(
     df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
 ):
-    # Set up the download button
+
+    if st.button(label=":blue[**⤓**]", use_container_width=True):
+        download_excel(df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers)
+
+
+@st.dialog(title="Download to Excel")
+def download_excel(
+    df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
+):
+    st.write(f'**Are you sure you want to download "{str_export_title}.xlsx"?**')
+
     st.download_button(
-        label=":blue[**⤓**]",
-        use_container_width=True,
-        help="Download to Excel",
+        label="Yes",
         data=_generate_excel_export(
             df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers
         ),
