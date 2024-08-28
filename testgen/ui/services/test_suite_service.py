@@ -19,36 +19,37 @@ def add(test_suite):
     test_suite_queries.add(schema, test_suite)
 
 
-def cascade_delete(test_suite_names, dry_run=False):
-    if not test_suite_names:
+def cascade_delete(test_suite_ids, dry_run=False):
+    if not test_suite_ids:
         return True
     schema = st.session_state["dbschema"]
-    can_be_deleted = not has_test_suite_dependencies(schema, test_suite_names)
+    can_be_deleted = not has_test_suite_dependencies(test_suite_ids)
     if not dry_run:
-        test_definition_service.cascade_delete(test_suite_names)
-        test_suite_queries.cascade_delete(schema, test_suite_names)
+        test_definition_service.cascade_delete(test_suite_ids)
+        test_suite_queries.delete(schema, test_suite_ids)
     return can_be_deleted
 
 
-def has_test_suite_dependencies(schema, test_suite_names):
-    if not test_suite_names:
+def has_test_suite_dependencies(test_suite_ids: list[str]):
+    schema = st.session_state["dbschema"]
+    if not test_suite_ids:
         return False
-    return not test_suite_queries.get_test_suite_dependencies(schema, test_suite_names).empty
+    return not test_suite_queries.get_test_suite_dependencies(schema, test_suite_ids).empty
 
 
-def are_test_suites_in_use(test_suite_names):
-    if not test_suite_names:
+def are_test_suites_in_use(test_suite_ids: list[str]):
+    if not test_suite_ids:
         return False
     schema = st.session_state["dbschema"]
-    usage_result = test_suite_queries.get_test_suite_usage(schema, test_suite_names)
+    usage_result = test_suite_queries.get_test_suite_usage(schema, test_suite_ids)
     return not usage_result.empty
 
 
-def get_test_suite_refresh_warning(table_groups_id, test_suite_name):
-    if not test_suite_name:
+def get_test_suite_refresh_warning(test_suite_id):
+    if not test_suite_id:
         return False
     schema = st.session_state["dbschema"]
-    row_result = test_suite_queries.get_test_suite_refresh_check(schema, table_groups_id, test_suite_name)
+    row_result = test_suite_queries.get_test_suite_refresh_check(schema, test_suite_id)
 
     test_ct = None
     unlocked_test_ct = None
@@ -70,7 +71,7 @@ def get_generation_set_choices():
         return dfSets["generation_set"].to_list()
 
 
-def lock_edited_tests(test_suite_name):
+def lock_edited_tests(test_suite_id):
     schema = st.session_state["dbschema"]
-    tests_locked = test_suite_queries.lock_edited_tests(schema, test_suite_name)
+    tests_locked = test_suite_queries.lock_edited_tests(schema, test_suite_id)
     return tests_locked

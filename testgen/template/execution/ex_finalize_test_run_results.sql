@@ -26,12 +26,8 @@ UPDATE test_results
       test_suite_id = s.id,
       auto_gen = d.last_auto_gen_date IS NOT NULL
   FROM test_results r
-INNER JOIN test_suites s
-   ON (r.project_code = s.project_code
-  AND  r.test_suite = s.test_suite)
-INNER JOIN test_definitions d
-   ON (r.test_definition_id = d.id)
-INNER JOIN test_types tt
-   ON (r.test_type = tt.test_type)
+INNER JOIN test_suites s ON r.test_suite_id = s.id
+INNER JOIN test_definitions d ON r.test_definition_id = d.id
+INNER JOIN test_types tt ON r.test_type = tt.test_type
 WHERE r.test_run_id = '{TEST_RUN_ID}'
   AND test_results.id = r.id;

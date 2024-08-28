@@ -154,11 +154,12 @@ def run_test_run_lookup_by_date(str_project_code, str_run_date):
 def get_drill_test_run(str_test_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
-           SELECT id::VARCHAR as test_run_id,
-                  test_starttime as test_date,
-                  test_suite as test_suite_description
-             FROM {str_schema}.test_runs
-            WHERE id = '{str_test_run_id}'::UUID;
+           SELECT tr.id::VARCHAR as test_run_id,
+                  tr.test_starttime as test_date,
+                  ts.test_suite as test_suite_description
+             FROM {str_schema}.test_runs tr
+       INNER JOIN {str_schema}.test_suites ts ON tr.test_suite_id = ts.id
+            WHERE tr.id = '{str_test_run_id}'::UUID;
     """
     return db.retrieve_data(str_sql)
 
@@ -180,7 +181,7 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-                   tt.dq_dimension, tt.test_scope,  
+                   tt.dq_dimension, tt.test_scope,
                    r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
                    tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
                    c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
@@ -203,7 +204,7 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                    CASE
                      WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
                    END as execution_error_ct,
-                   r.project_code, r.table_groups_id::VARCHAR,
+                   p.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
                    c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
                    r.test_definition_id::VARCHAR as test_definition_id_runtime,
@@ -225,10 +226,9 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
               AND  r.auto_gen = TRUE
               AND  d.last_auto_gen_date IS NOT NULL)
             INNER JOIN {str_schema}.test_suites ts
-               ON (r.project_code = ts.project_code
-              AND  r.test_suite = ts.test_suite)
+               ON r.test_suite_id = ts.id
             INNER JOIN {str_schema}.projects p
-               ON (r.project_code = p.project_code)
+               ON (ts.project_code = p.project_code)
             INNER JOIN {str_schema}.table_groups tg
                ON (ts.table_groups_id = tg.id)
             INNER JOIN {str_schema}.connections cn
@@ -267,7 +267,9 @@ def get_test_disposition(str_run_id):
 def get_test_result_summary(str_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
-            SELECT passed_ct, warning_ct, failed_ct,
+            SELECT passed_ct,
+                   warning_ct,
+                   failed_ct,
                    COALESCE(error_ct, 0) as error_ct
               FROM {str_schema}.test_runs
              WHERE id = '{str_run_id}'::UUID;
@@ -329,7 +331,7 @@ def get_test_definition_uncached(str_schema, str_test_def_id):
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
                   d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
                   d.match_table_name, d.match_column_names, d.match_subset_condition,
-                  d.match_groupby_names, d.match_having_condition, 
+                  d.match_groupby_names, d.match_having_condition,
                   d.window_date_column, d.window_days::VARCHAR as window_days,
                   d.custom_query,
                   d.severity, tt.default_severity,

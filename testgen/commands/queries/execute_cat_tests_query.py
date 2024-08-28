@@ -20,8 +20,9 @@ class CCATExecutionSQL:
     replace_qc_schema = ""
     dctTestParms: typing.ClassVar = {}
 
-    def __init__(self, strProjectCode, strTestSuite, strSQLFlavor, max_query_chars, minutes_offset=0):
+    def __init__(self, strProjectCode, strTestSuiteId, strTestSuite, strSQLFlavor, max_query_chars, minutes_offset=0):
         # Defaults
+        self.test_suite_id = strTestSuiteId
         self.test_suite = strTestSuite
         self.project_code = strProjectCode
         flavor_service = database_service.get_flavor_service(strSQLFlavor)
@@ -36,6 +37,7 @@ class CCATExecutionSQL:
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)
         strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
         strInputString = strInputString.replace("{TEST_SUITE}", self.test_suite)
+        strInputString = strInputString.replace("{TEST_SUITE_ID}", self.test_suite_id)
         # NOTE:  REPLACE_QC_SCHEMA is parm replaced to run build query: sets the actual value to replace.
         #        DATA_QC_SCHEMA is parm in cat_test_conditions that build query replaces via SQL.
         strInputString = strInputString.replace("{REPLACE_QC_SCHEMA}", self.replace_qc_schema)

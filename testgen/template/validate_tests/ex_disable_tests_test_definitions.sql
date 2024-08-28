@@ -1,5 +1,4 @@
-update test_definitions
-set test_active = 'N'
- where project_code = '{PROJECT_CODE}'
-   and test_suite = '{TEST_SUITE}'
-   and test_active = 'D';
+UPDATE test_definitions
+   SET test_active = 'N'
+ WHERE test_suite_id = '{TEST_SUITE_ID}'
+   AND test_active = 'D';

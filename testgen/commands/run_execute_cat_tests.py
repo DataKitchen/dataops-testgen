@@ -76,7 +76,7 @@ def run_cat_test_queries(
 
     LOG.info("CurrentStep: Initializing CAT Query Generator")
     clsCATExecute = CCATExecutionSQL(
-        strProjectCode, strTestSuite, dctParms["sql_flavor"], dctParms["max_query_chars"], minutes_offset
+        strProjectCode, dctParms["test_suite_id"], strTestSuite, dctParms["sql_flavor"], dctParms["max_query_chars"], minutes_offset
     )
     clsCATExecute.test_run_id = strTestRunID
     clsCATExecute.run_date = strTestTime

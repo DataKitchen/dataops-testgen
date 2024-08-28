@@ -1,6 +1,6 @@
-SELECT '{PROJECT_CODE}' as project_code, '{TEST_TYPE}' as test_type,
+SELECT '{TEST_TYPE}' as test_type,
        '{TEST_DEFINITION_ID}' as test_definition_id,
-       '{TEST_SUITE}' as test_suite,
+       '{TEST_SUITE_ID}' as test_suite_id,
        '{RUN_DATE}' as test_time, '{START_TIME}' as starttime,CURRENT_TIMESTAMP as endtime,
        '{SCHEMA_NAME}' as schema_name, '{TABLE_NAME}' as table_name, '{COLUMN_NAME}' as column_names,
        {SKIP_ERRORS} as skip_errors,

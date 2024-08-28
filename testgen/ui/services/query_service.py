@@ -60,15 +60,15 @@ def run_test_type_lookup_query(str_schema, str_test_type=None, boo_show_referent
                    tt.test_name_short, tt.test_name_long, tt.test_description,
                    tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
                    tt.default_parm_columns, tt.default_severity,
-                   tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description, 
-                   tt.column_name_prompt, tt.column_name_help, 
+                   tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description,
+                   tt.column_name_prompt, tt.column_name_help,
                    tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
-                   CASE tt.test_scope WHEN 'referential' THEN '⧉ ' WHEN 'custom' THEN '⛭ ' WHEN 'table' THEN '⊞ ' WHEN 'column' THEN '≣ ' ELSE '? ' END  
+                   CASE tt.test_scope WHEN 'referential' THEN '⧉ ' WHEN 'custom' THEN '⛭ ' WHEN 'table' THEN '⊞ ' WHEN 'column' THEN '≣ ' ELSE '? ' END
                     || tt.test_name_short || ': ' || lower(tt.test_name_long)
                     || CASE WHEN tt.selection_criteria > '' THEN ' [auto-generated]' ELSE '' END as select_name
               FROM {str_schema}.test_types tt
              WHERE tt.active = 'Y' {str_criteria}
-            ORDER BY CASE tt.test_scope WHEN 'referential' THEN 1 WHEN 'custom' THEN 2 WHEN 'table' THEN 3 WHEN 'column' THEN 4 ELSE 5 END, 
+            ORDER BY CASE tt.test_scope WHEN 'referential' THEN 1 WHEN 'custom' THEN 2 WHEN 'table' THEN 3 WHEN 'column' THEN 4 ELSE 5 END,
                      tt.test_name_short;
     """
     return db.retrieve_data(str_sql)
@@ -175,57 +175,19 @@ def run_test_suite_lookup_by_project_query(str_schema, str_project):
     return db.retrieve_data(str_sql)
 
 
-def run_last_test_run(str_schema, str_project_code):
-    str_sql = f"""
-           SELECT MIN(EXTRACT(DAY FROM (CURRENT_DATE - r.test_starttime))) as days_back
-             FROM {str_schema}.test_runs r
-            WHERE r.project_code = '{str_project_code}'
-              AND r.status = 'Complete';
-    """
-    return db.retrieve_data(str_sql)
-
-
 def run_test_run_lookup_by_date(str_schema, str_project_code, str_run_date):
     str_sql = f"""
-           SELECT r.id::VARCHAR(50),
-                  r.test_starttime::VARCHAR || ' - ' || s.test_suite as test_run_desc
-             FROM {str_schema}.test_runs r
-            LEFT JOIN {str_schema}.test_suites s
-              ON (r.project_code = s.project_code
-             AND  r.test_suite = s.test_suite)
-            WHERE r.project_code = '{str_project_code}'
-              AND r.test_starttime::DATE = '{str_run_date}'
-           ORDER BY r.test_starttime DESC
+        SELECT
+            r.id::VARCHAR(50),
+            r.test_starttime::VARCHAR || ' - ' || s.test_suite as test_run_desc
+        FROM {str_schema}.test_runs r
+        LEFT JOIN {str_schema}.test_suites s ON  r.test_suite_id = s.id)
+        WHERE
+            s.project_code = '{str_project_code}'
+            AND r.test_starttime::DATE = '{str_run_date}'
+        ORDER BY r.test_starttime DESC
     """
     return db.retrieve_data(str_sql)
-
-
-def update_anomaly_disposition_old(selected, str_schema, str_new_status):
-    int_batch_size = 50
-
-    def finalize_query(status, ids):
-        return f"""UPDATE {str_schema}.profile_anomaly_results
-                      SET disposition = NULLIF('{status}', 'No Decision')
-                    WHERE id IN ({ids.rstrip(',')});"""
-
-    lst_ids = [row["id"] for row in selected if "id" in row]
-    lst_updates = []
-    i = 0
-    str_ids = ""
-
-    for my_id in lst_ids:
-        i += 1
-        str_ids += f" '{my_id}'::UUID,"
-        if i >= int_batch_size:
-            lst_updates.append(finalize_query(str_new_status, str_ids))
-            # reset for next batch
-            i = 0
-    if i > 0:
-        lst_updates.append(finalize_query(str_new_status, str_ids))
-    for upd in lst_updates:
-        db.execute_sql(upd)
-
-    return True
 
 
 def update_anomaly_disposition(selected, str_schema, str_new_status):

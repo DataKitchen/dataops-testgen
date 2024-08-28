@@ -67,48 +67,35 @@ def add(schema, test_suite):
     st.cache_data.clear()
 
 
-def delete(schema, test_suite_ids):
-    if test_suite_ids is None or len(test_suite_ids) == 0:
+def delete(schema, test_suite_ids: list[str]):
+    if not test_suite_ids:
         raise ValueError("No table group is specified.")
 
-    items = [f"'{item}'" for item in test_suite_ids]
-    sql = f"""DELETE FROM {schema}.test_suites WHERE id in ({",".join(items)})"""
+    ids_str = ",".join([f"'{item}'" for item in test_suite_ids])
+    sql = f"""DELETE FROM {schema}.test_suites WHERE id in ({ids_str})"""
     db.execute_sql(sql)
     st.cache_data.clear()
 
 
-def cascade_delete(schema: str, test_suite_names: list[str]) -> None:
-    if test_suite_names is None or len(test_suite_names) == 0:
-        raise ValueError("No Test Suite is specified.")
-
-    items = [f"'{item}'" for item in test_suite_names]
-    sql = f"""delete from {schema}.test_suites where test_suite in ({",".join(items)})"""
-    db.execute_sql(sql)
-    st.cache_data.clear()
-
-
-def get_test_suite_dependencies(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
-    test_suite_names_join = [f"'{item}'" for item in test_suite_names]
+def get_test_suite_dependencies(schema: str, test_suite_ids: list[str]) -> pd.DataFrame:
+    ids_str = ", ".join([f"'{item}'" for item in test_suite_ids])
     sql = f"""
-            select distinct test_suite from {schema}.test_definitions where test_suite in ({",".join(test_suite_names_join)})
-            union
-            select distinct test_suite from {schema}.execution_queue where test_suite in ({",".join(test_suite_names_join)})
-            union
-            select distinct test_suite from {schema}.test_results where test_suite in ({",".join(test_suite_names_join)});
+        SELECT DISTINCT test_suite_id FROM {schema}.test_definitions WHERE test_suite_id in ({ids_str})
+        UNION
+        SELECT DISTINCT test_suite_id FROM {schema}.test_results WHERE test_suite_id in ({ids_str});
     """
     return db.retrieve_data(sql)
 
 
-
-def get_test_suite_usage(schema: str, test_suite_names: list[str]) -> pd.DataFrame:
-    test_suite_names_join = [f"'{item}'" for item in test_suite_names]
+def get_test_suite_usage(schema: str, test_suite_ids: list[str]) -> pd.DataFrame:
+    ids_str = ", ".join([f"'{item}'" for item in test_suite_ids])
     sql = f"""
-            select distinct test_suite from {schema}.test_runs where test_suite in ({",".join(test_suite_names_join)}) and status = 'Running'
+        SELECT DISTINCT test_suite_id FROM {schema}.test_runs WHERE test_suite_id in ({ids_str}) AND status = 'Running'
     """
     return db.retrieve_data(sql)
 
 
-def get_test_suite_refresh_check(schema, table_groups_id, test_suite_name):
+def get_test_suite_refresh_check(schema, test_suite_id):
     sql = f"""
            SELECT COUNT(*) as test_ct,
                   SUM(CASE WHEN COALESCE(d.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) as unlocked_test_ct,
@@ -116,8 +103,7 @@ def get_test_suite_refresh_check(schema, table_groups_id, test_suite_name):
              FROM {schema}.test_definitions d
            INNER JOIN {schema}.test_types t
               ON (d.test_type = t.test_type)
-            WHERE d.table_groups_id = '{table_groups_id}'::UUID
-              AND d.test_suite = '{test_suite_name}'
+            WHERE d.test_suite_id = '{test_suite_id}'
               AND t.run_type = 'CAT'
               AND t.selection_criteria IS NOT NULL;
 """
@@ -133,11 +119,11 @@ def get_generation_sets(schema):
     return db.retrieve_data(sql)
 
 
-def lock_edited_tests(schema, test_suite_name):
+def lock_edited_tests(schema, test_suite_id):
     sql = f"""
            UPDATE {schema}.test_definitions
               SET lock_refresh = 'Y'
-            WHERE test_suite = '{test_suite_name}'
+            WHERE test_suite_id = '{test_suite_id}'
               AND last_manual_update IS NOT NULL
               AND lock_refresh = 'N';
 """

@@ -11,7 +11,7 @@ WITH seq_digit  AS (
       seq_table AS (
                  SELECT nbr FROM seq_table_raw WHERE nbr > 0),
       raw_results AS (
-                 SELECT t.project_code, t.test_run_id, t.test_suite, t.schema_name, t.table_name, t.cat_sequence, t.test_count,
+                 SELECT t.test_run_id, t.schema_name, t.table_name, t.cat_sequence, t.test_count,
                         t.test_time, t.start_time, t.end_time, t.column_names, t.test_types, t.test_definition_ids,
                         t.test_actions, t.test_descriptions,
                         t.test_parms, t.test_measures, t.test_conditions,
@@ -26,8 +26,7 @@ WITH seq_digit  AS (
                     AND t.column_names > ''
       ),
       parsed_results AS (
-                 SELECT t.test_suite,
-                        t.schema_name,
+                 SELECT t.schema_name,
                         t.table_name,
                         t.test_time,
                         t.start_time,
@@ -48,13 +47,12 @@ WITH seq_digit  AS (
                         CROSS JOIN seq_table s
       )
 INSERT INTO test_results
-         (project_code, test_run_id,
-          test_type, test_definition_id,
-          test_suite, test_time, starttime, endtime, schema_name, table_name, column_names,
+         (test_run_id, test_type, test_definition_id, test_suite_id,
+          test_time, starttime, endtime, schema_name, table_name, column_names,
           skip_errors, input_parameters, result_code,
           result_measure, test_action, subset_condition, result_query, test_description)
-SELECT '{PROJECT_CODE}' as project_code, '{TEST_RUN_ID}' as test_run_id,
-        r.test_type, r.test_definition_id::UUID, r.test_suite, r.test_time, r.start_time, r.end_time,
+SELECT '{TEST_RUN_ID}' as test_run_id,
+        r.test_type, r.test_definition_id::UUID, '{TEST_SUITE_ID}'::UUID, r.test_time, r.start_time, r.end_time,
         r.schema_name, r.table_name, r.column_name,
         0 as skip_errors,
         r.test_parms as input_parameters,

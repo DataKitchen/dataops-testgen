@@ -1,86 +1,79 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
--- ==============================================================================
--- |   Creates Standard Views:
--- |      Runs on new or existing schema, so DROP VIEWS IF EXIST first
--- ==============================================================================
+-- Step 1: Drop everything that depends on the current state
 
-DROP VIEW IF EXISTS v_latest_profile_results CASCADE;
+DROP VIEW v_test_runs; -- Not needed, unused
+DROP VIEW v_test_results;
+DROP VIEW v_queued_observability_results;
+DROP INDEX cix_tr_pc_ts;
+DROP INDEX ix_tr_pc_ts; -- Not needed, replaced by a FK
+DROP INDEX ix_tr_pc_sctc_tt;
+DROP INDEX ix_trun_pc_ts_time;
+DROP INDEX working_agg_cat_tests_test_run_id_index; -- Not needed, given the column is a FK
 
-CREATE VIEW v_latest_profile_results
-AS
-  WITH last_run AS ( SELECT table_groups_id,
-                            MAX(profiling_starttime) AS last_run_date
-                       FROM profiling_runs
-                      GROUP BY table_groups_id )
-SELECT r.*
-  FROM last_run lr
-INNER JOIN profiling_runs p
-   ON lr.table_groups_id = p.table_groups_id
-  AND lr.last_run_date = p.profiling_starttime
-INNER JOIN profile_results r
-   ON p.id = r.profile_run_id;
+-- Step 2: Adjust the tables
 
+ALTER TABLE test_runs ADD COLUMN test_suite_id UUID;
 
-DROP VIEW IF EXISTS v_latest_profile_anomalies;
+    UPDATE test_runs
+       SET test_suite_id = ts.id
+      FROM test_runs tr
+INNER JOIN test_suites AS ts ON tr.test_suite = ts.test_suite AND tr.project_code = ts.project_code;
 
-CREATE VIEW v_latest_profile_anomalies
-   AS
-WITH last_profile_date
-   AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
-         FROM profiling_runs
-       GROUP BY table_groups_id)
-SELECT r.id, r.project_code, r.table_groups_id,
-       r.profile_run_id, pr.profiling_starttime as profile_run_date,
-       r.schema_name, r.table_name, r.column_name, r.column_type,
-       t.anomaly_name, t.anomaly_description, t.issue_likelihood,
-       r.detail,
-       t.suggested_action, r.disposition
-  FROM profile_anomaly_results r
-INNER JOIN profile_anomaly_types t
-   ON r.anomaly_id = t.id
-INNER JOIN profiling_runs pr
-   ON (r.profile_run_id = pr.id)
-INNER JOIN last_profile_date l
-   ON (pr.table_groups_id = l.table_groups_id
-  AND  pr.profiling_starttime = l.last_profile_run_date);
+ALTER TABLE test_runs ALTER COLUMN test_suite_id SET NOT NULL;
 
 
-DROP VIEW IF EXISTS v_inactive_anomalies;
+    UPDATE test_results
+       SET test_suite_id = ts.id
+      FROM test_results tr
+INNER JOIN test_suites AS ts ON tr.test_suite = ts.test_suite AND tr.project_code = ts.project_code
+     WHERE tr.test_suite_id is NULL;
 
-CREATE VIEW v_inactive_anomalies
- AS
-SELECT DISTINCT anomaly_id, table_groups_id, schema_name, table_name, column_name, column_id
-  FROM profile_anomaly_results
- WHERE disposition = 'Inactive';
-
-
-DROP VIEW IF EXISTS v_profiling_runs;
-
-CREATE VIEW v_profiling_runs
- AS
-SELECT r.id as profiling_run_id,
-       r.project_code, cc.connection_name, r.connection_id, r.table_groups_id,
-       tg.table_groups_name,
-       tg.table_group_schema as schema_name,
-       r.profiling_starttime as start_time,
-       TO_CHAR(r.profiling_endtime - r.profiling_starttime, 'HH24:MI:SS') as duration,
-       r.status,
-       r.log_message,
-       r.table_ct,
-       r.column_ct,
-       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct, process_id
-  FROM profiling_runs r
-INNER JOIN table_groups tg
-   ON r.table_groups_id = tg.id
-INNER JOIN connections cc
-   ON r.connection_id = cc.connection_id
-GROUP BY r.id, r.project_code, cc.connection_name, r.connection_id,
-         r.table_groups_id, tg.table_groups_name, tg.table_group_schema,
-         r.profiling_starttime, r.profiling_endtime, r.status;
+ALTER TABLE test_results ALTER COLUMN test_suite_id SET NOT NULL;
+ALTER TABLE test_results ALTER COLUMN test_run_id SET NOT NULL;
 
 
-DROP VIEW IF EXISTS v_test_results;
+ALTER TABLE working_agg_cat_tests RENAME COLUMN test_run_id TO varchar_test_run_id;
+ALTER TABLE working_agg_cat_tests ADD COLUMN test_run_id UUID;
+UPDATE working_agg_cat_tests SET test_run_id = varchar_test_run_id::UUID;
+ALTER TABLE working_agg_cat_tests ALTER COLUMN test_run_id SET NOT NULL;
+ALTER TABLE working_agg_cat_tests DROP COLUMN varchar_test_run_id;
+
+
+ALTER TABLE working_agg_cat_results RENAME COLUMN test_run_id TO varchar_test_run_id;
+ALTER TABLE working_agg_cat_results ADD COLUMN test_run_id UUID;
+UPDATE working_agg_cat_results SET test_run_id = varchar_test_run_id::UUID;
+ALTER TABLE working_agg_cat_results ALTER COLUMN test_run_id SET NOT NULL;
+ALTER TABLE working_agg_cat_results DROP COLUMN varchar_test_run_id;
+
+-- Step 3: Clean up
+
+ALTER TABLE test_runs
+DROP COLUMN test_suite,
+DROP COLUMN project_code;
+
+ALTER TABLE test_results
+DROP COLUMN test_suite,
+DROP COLUMN project_code;
+
+ALTER TABLE working_agg_cat_tests
+DROP COLUMN project_code,
+DROP COLUMN test_suite;
+
+ALTER TABLE working_agg_cat_results
+DROP COLUMN project_code,
+DROP COLUMN test_suite;
+
+-- Step 4: Re-create views and indexes
+
+CREATE INDEX ix_tr_pc_sctc_tt
+   ON test_results(test_suite_id, schema_name, table_name, column_names, test_type);
+
+CREATE INDEX cix_tr_pc_ts
+   ON test_results(test_suite_id) WHERE observability_status = 'Queued';
+
+CREATE INDEX ix_trun_pc_ts_time
+   ON test_runs(test_suite_id, test_starttime);
 
 CREATE VIEW v_test_results
 AS
@@ -150,9 +143,6 @@ INNER JOIN connections cn
 LEFT JOIN cat_test_conditions c
    ON (cn.sql_flavor = c.sql_flavor
   AND  r.test_type = c.test_type);
-
-
-DROP VIEW IF EXISTS v_queued_observability_results;
 
 CREATE VIEW v_queued_observability_results
   AS

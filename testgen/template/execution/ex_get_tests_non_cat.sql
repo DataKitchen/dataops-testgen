@@ -1,7 +1,7 @@
 SELECT tt.test_type,
-       s.id::VARCHAR as test_definition_id,
-       COALESCE(s.test_description, tt.test_description) as test_description,
-       COALESCE(s.test_action, g.test_action, '')      as test_action,
+       td.id::VARCHAR                                       AS test_definition_id,
+       COALESCE(td.test_description, tt.test_description)   AS test_description,
+       COALESCE(td.test_action, ts.test_action, '')         AS test_action,
        schema_name,
        table_name,
        column_name,
@@ -33,15 +33,14 @@ SELECT tt.test_type,
        coalesce(match_having_condition, '')            as match_having_condition,
        coalesce(custom_query, '')                      as custom_query,
        coalesce(tm.template_name, '')                  as template_name
-FROM test_definitions s
-         INNER JOIN test_suites g
-                    ON (s.test_suite = g.test_suite)
+FROM test_definitions td
+         INNER JOIN test_suites ts
+                    ON (td.test_suite_id = ts.id)
          INNER JOIN test_types tt
-                    ON (s.test_type = tt.test_type)
+                    ON (td.test_type = tt.test_type)
          LEFT JOIN test_templates tm
-                    ON (s.test_type = tm.test_type
+                    ON (td.test_type = tm.test_type
                    AND  '{SQL_FLAVOR}' = tm.sql_flavor)
-WHERE s.project_code = '{PROJECT_CODE}'
-  AND s.test_suite = '{TEST_SUITE}'
+WHERE td.test_suite_id = '{TEST_SUITE_ID}'
   AND tt.run_type = 'QUERY'
-  AND s.test_active = 'Y';
+  AND td.test_active = 'Y';

@@ -184,14 +184,13 @@ def generate_tests_dialog(selected_test_suite):
     status_container = st.empty()
 
     test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(
-        selected_test_suite["table_groups_id"], selected_test_suite["test_suite"]
+        selected_test_suite["id"]
     )
     if test_ct:
         warning_msg = ""
         counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
         if unlocked_edits_ct > 0:
             if unlocked_edits_ct > 1:
-
                 warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
             else:
                 warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
@@ -203,7 +202,7 @@ def generate_tests_dialog(selected_test_suite):
             if unlocked_edits_ct > 0:
                 lock_edits_button = st.button("Lock Edited Tests")
                 if lock_edits_button:
-                    edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["test_suite"])
+                    edits_locked = test_suite_service.lock_edited_tests(selected_test_suite["id"])
                     if edits_locked:
                         st.info("Edited tests have been successfully locked.")
 
@@ -241,8 +240,8 @@ def generate_tests_dialog(selected_test_suite):
 @st.dialog(title="Delete Test Suite")
 def delete_test_suite_dialog(selected):
     selected_test_suite = selected[0]
-    test_suite_name = selected_test_suite["test_suite"]
-    can_be_deleted = test_suite_service.cascade_delete([test_suite_name], dry_run=True)
+    test_suite_id = selected_test_suite["id"]
+    can_be_deleted = test_suite_service.cascade_delete([test_suite_id], dry_run=True)
 
     fm.render_html_list(
         selected_test_suite,
@@ -269,11 +268,11 @@ def delete_test_suite_dialog(selected):
         delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
 
         if delete:
-            if test_suite_service.are_test_suites_in_use([test_suite_name]):
+            if test_suite_service.are_test_suites_in_use([test_suite_id]):
                 st.error("This Test Suite is in use by a running process and cannot be deleted.")
             else:
-                test_suite_service.cascade_delete([test_suite_name])
-                success_message = f"Test Suite {test_suite_name} has been deleted. "
+                test_suite_service.cascade_delete([test_suite_id])
+                success_message = f"Test Suite {selected_test_suite['test_suite']} has been deleted. "
                 st.success(success_message)
                 time.sleep(1)
                 st.rerun()
@@ -458,12 +457,10 @@ def observability_export_dialog(selected_test_suite):
     if test_generation_button:
         button_container.empty()
 
-        test_suite_key = selected_test_suite["test_suite"]
-        project_key = selected_test_suite["project_code"]
         status_container.info("Executing Export ...")
 
         try:
-            qty_of_exported_events = export_test_results(project_key, test_suite_key)
+            qty_of_exported_events = export_test_results(selected_test_suite["id"])
             status_container.empty()
             status_container.success(
                 f"Process has successfully finished, {qty_of_exported_events} events have been exported."

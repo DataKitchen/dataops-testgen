@@ -31,10 +31,10 @@ def delete(test_definition_ids, dry_run=False):
     return can_be_deleted
 
 
-def cascade_delete(test_suite_names):
+def cascade_delete(test_suite_ids: list[str]):
     schema = st.session_state["dbschema"]
-    test_run_service.cascade_delete(test_suite_names)
-    test_definition_queries.cascade_delete(schema, test_suite_names)
+    test_run_service.cascade_delete(test_suite_ids)
+    test_definition_queries.cascade_delete(schema, test_suite_ids)
 
 
 def add(test_definition):
