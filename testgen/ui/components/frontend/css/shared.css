@@ -21,6 +21,21 @@ body {
     --sidebar-active-item-border-color: #b4e3c9;
 
     --field-underline-color: #9e9e9e;
+
+    --button-text-color: var(--primary-text-color);
+
+    --button-hover-state-background: var(--primary-color);
+    --button-hover-state-opacity: 0.12;
+
+    --button-basic-text-color: var(--primary-color);
+    --button-basic-background: transparent;
+
+    --button-flat-text-color: rgba(255, 255, 255);
+    --button-flat-background: rgba(0, 0, 0, .54);
+
+    --button-stroked-text-color: var(--primary-color);
+    --button-stroked-background: transparent;
+    --button-stroked-border: 1px solid rgba(0, 0, 0, .12);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,5 +50,11 @@ body {
         --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
         --dk-text-value-background: unset;
+
+        --button-text-color: var(--primary-text-color);
+
+        --button-flat-background: rgba(255, 255, 255, .54);
+
+        --button-stroked-border: 1px solid rgba(255, 255, 255, .12);
     }
 }

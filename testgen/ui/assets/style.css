@@ -16,6 +16,7 @@ body {
     --dk-text-value-background: aliceblue;
     --dk-card-background: #fff;
 
+    --dk-tooltip-background: rgb(255, 255, 255);
 }
 
 img.dk-logo-img {
@@ -140,6 +141,41 @@ button[title="Show password text"] {
     gap: unset;
 }
 
+/* Tooltips */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::after {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    content: attr(data-tooltip);
+    left: 0;
+    top: calc(100% + 10px);
+    border-radius: 4px;
+    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
+    color: var(--primary-text-color);
+    background-color: var(--dk-tooltip-background);
+    z-index: 10;
+    padding: 8px;
+    width: 200px;
+    transform: translateY(-20px);
+    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
+}
+
+[data-tooltip]:hover::after {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 300ms;
+}
+
+[data-tooltip-position="right"]::after {
+    left: unset;
+    right: 0;
+}
+/*  */
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     body {
@@ -154,6 +190,7 @@ button[title="Show password text"] {
         --sidebar-active-item-border-color: #b4e3c9;
         --dk-text-value-background: unset;
         --dk-card-background: #14181f;
+        --dk-tooltip-background: rgb(14, 17, 23);
     }
 
     /* Main content */
