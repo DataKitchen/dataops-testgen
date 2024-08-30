@@ -21,18 +21,21 @@ def get_by_table_group(schema, project_code, table_group_id):
                 suites.component_key,
                 suites.component_type,
                 suites.component_name,
-                COALESCE(last_run.test_ct, 0) as test_ct,
-                last_run.test_starttime as latest_run_start,
-                last_run.passed_ct as last_run_passed_ct,
-                last_run.warning_ct as last_run_warning_ct,
-                last_run.failed_ct as last_run_failed_ct,
-                last_run.error_ct as last_run_error_ct
+                COUNT(definitions.id) as test_ct,
+                MAX(last_run.test_starttime) as latest_run_start,
+                MAX(last_run.passed_ct) as last_run_passed_ct,
+                MAX(last_run.warning_ct) as last_run_warning_ct,
+                MAX(last_run.failed_ct) as last_run_failed_ct,
+                MAX(last_run.error_ct) as last_run_error_ct
             FROM {schema}.test_suites as suites
             LEFT OUTER JOIN (
                 SELECT * FROM {schema}.test_runs ORDER BY test_starttime DESC LIMIT 1
-            ) AS last_run ON (last_run.project_code = suites.project_code AND last_run.test_suite = suites.test_suite)
+            ) AS last_run ON (last_run.test_suite_id = suites.id)
+            LEFT OUTER JOIN {schema}.test_definitions AS definitions
+                ON (definitions.test_suite_id = suites.id)
             WHERE suites.project_code = '{project_code}'
                 AND suites.table_groups_id = '{table_group_id}'
+            GROUP BY suites.id
             ORDER BY suites.test_suite;
     """
     return db.retrieve_data(sql)

@@ -1,5 +1,6 @@
 import time
 import typing
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -76,7 +77,7 @@ class TestSuitesPage(Page):
                         icon="output",
                         tooltip="Export results to observability",
                         tooltip_position="right",
-                        on_click=lambda: observability_export_dialog(test_suite),
+                        on_click=partial(observability_export_dialog, test_suite),
                         key=f"test_suite:keys:export:{test_suite['id']}",
                     )
                     testgen.button(
@@ -84,7 +85,7 @@ class TestSuitesPage(Page):
                         icon="edit",
                         tooltip="Edit test suite",
                         tooltip_position="right",
-                        on_click=lambda: edit_test_suite_dialog(project_code, connection, table_group, test_suite),
+                        on_click=partial(edit_test_suite_dialog, project_code, connection, table_group, test_suite),
                         key=f"test_suite:keys:edit:{test_suite['id']}",
                     )
                     testgen.button(
@@ -92,7 +93,7 @@ class TestSuitesPage(Page):
                         icon="delete",
                         tooltip="Delete test suite",
                         tooltip_position="right",
-                        on_click=lambda: delete_test_suite_dialog(test_suite),
+                        on_click=partial(delete_test_suite_dialog, test_suite),
                         key=f"test_suite:keys:delete:{test_suite['id']}",
                     )
 
@@ -141,13 +142,13 @@ class TestSuitesPage(Page):
                     testgen.button(
                         type="stroked",
                         label="Run Tests",
-                        on_click=lambda: run_tests_dialog(project_code, test_suite),
+                        on_click=partial(run_tests_dialog, project_code, test_suite),
                         key=f"test_suite:keys:runtests:{test_suite['id']}",
                     )
                     testgen.button(
                         type="stroked",
                         label="Generate Tests",
-                        on_click=lambda: generate_tests_dialog(test_suite),
+                        on_click=partial(generate_tests_dialog, test_suite),
                         key=f"test_suite:keys:generatetests:{test_suite['id']}",
                     )
 
