@@ -1,5 +1,6 @@
 body {
     --primary-color: #06a04a;
+    --link-color: #1976d2;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
@@ -93,6 +94,21 @@ label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child
     background-color: var(--primary-color);
 }
 /* */
+
+/* Theming for links */
+body a,
+body a:active,
+body a:hover,
+body a:visited {
+    color: var(--link-color);
+}
+
+body a,
+body a:active,
+body a:visited {
+    text-decoration: unset;
+}
+/*  */
 
 button[title="Show password text"] {
     display: none;

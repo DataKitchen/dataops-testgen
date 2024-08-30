@@ -9,11 +9,11 @@ body {
 
 body {
     --primary-color: #06a04a;
-
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
+    --link-color: #1976d2;
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
