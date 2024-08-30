@@ -7,7 +7,7 @@ TooltipPosition = typing.Literal["left", "right"]
 
 
 def button(
-    type: ButtonType = "basic",
+    type_: ButtonType = "basic",
     label: str | None = None,
     icon: str | None = None,
     tooltip: str | None = None,
@@ -24,10 +24,10 @@ def button(
     :param on_click: click handler for this button
     """
 
-    props = {"type": type}
-    if type != "icon":
+    props = {"type": type_}
+    if type_ != "icon":
         if not label:
-            raise ValueError(f"A label is required for {type} buttons")
+            raise ValueError(f"A label is required for {type_} buttons")
         props.update({"label": label})
 
     if icon:

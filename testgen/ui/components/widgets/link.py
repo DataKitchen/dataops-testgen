@@ -1,7 +1,7 @@
 import random
 
-from testgen.ui.navigation.router import Router
 from testgen.ui.components.utils.component import component
+from testgen.ui.navigation.router import Router
 
 
 def link(
@@ -18,7 +18,7 @@ def link(
     key: str | None = None,
 ) -> None:
     if not key:
-        key = f"testgen:link:{round(random.random() * 10_000)}"
+        key = f"testgen:link:{round(random.random() * 10_000)}"  # noqa: S311
 
     props = {
         "href": href,

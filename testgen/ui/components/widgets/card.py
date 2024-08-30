@@ -30,7 +30,7 @@ def card(
                     header_html += f'<h4 class="{CARD_TITLE_CLASS}">{title}</h4>'
                 if subtitle:
                     header_html += f'<small class="{CARD_SUBTITLE_CLASS}">{subtitle}</small>'
-                header_html += '</div>'
+                header_html += "</div>"
                 st.html(header_html)
 
         actions_column.html(f'<i class="{CARD_ACTIONS_CLASS}"></i>')

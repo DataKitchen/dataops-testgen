@@ -11,11 +11,11 @@ import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.commands.run_execute_tests import run_execution_steps_in_background
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import connection_service, table_group_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.components import widgets as testgen
 
 
 class TestSuitesPage(Page):
@@ -73,7 +73,7 @@ class TestSuitesPage(Page):
             with testgen.card(title=test_suite["test_suite"], subtitle=subtitle) as test_suite_card:
                 with test_suite_card.actions:
                     testgen.button(
-                        type="icon",
+                        type_="icon",
                         icon="output",
                         tooltip="Export results to observability",
                         tooltip_position="right",
@@ -81,7 +81,7 @@ class TestSuitesPage(Page):
                         key=f"test_suite:keys:export:{test_suite['id']}",
                     )
                     testgen.button(
-                        type="icon",
+                        type_="icon",
                         icon="edit",
                         tooltip="Edit test suite",
                         tooltip_position="right",
@@ -89,7 +89,7 @@ class TestSuitesPage(Page):
                         key=f"test_suite:keys:edit:{test_suite['id']}",
                     )
                     testgen.button(
-                        type="icon",
+                        type_="icon",
                         icon="delete",
                         tooltip="Delete test suite",
                         tooltip_position="right",
@@ -114,7 +114,7 @@ class TestSuitesPage(Page):
                         </div>
                     """)
 
-                if (latest_run_start := test_suite['latest_run_start']) and not pd.isnull(latest_run_start):
+                if (latest_run_start := test_suite["latest_run_start"]) and not pd.isnull(latest_run_start):
                     with latest_run_section:
                         st.html('<i class="no-flex-gap"></i>')
                         st.html('<h6 style="padding: 0px;">Latest Run</h6>')
@@ -140,13 +140,13 @@ class TestSuitesPage(Page):
 
                 with actions_section:
                     testgen.button(
-                        type="stroked",
+                        type_="stroked",
                         label="Run Tests",
                         on_click=partial(run_tests_dialog, project_code, test_suite),
                         key=f"test_suite:keys:runtests:{test_suite['id']}",
                     )
                     testgen.button(
-                        type="stroked",
+                        type_="stroked",
                         label="Generate Tests",
                         on_click=partial(generate_tests_dialog, test_suite),
                         key=f"test_suite:keys:generatetests:{test_suite['id']}",
