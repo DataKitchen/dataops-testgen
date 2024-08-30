@@ -1,5 +1,7 @@
 import logging
 
+import streamlit as st
+
 from testgen.ui.components.utils.component import component
 
 LOG = logging.getLogger("testgen")
@@ -10,7 +12,7 @@ def expander_toggle(
     expand_label: str | None = None,
     collapse_label: str | None = None,
     key: str = "testgen:expander_toggle",
-) -> None:
+) -> bool:
     """
     Testgen component to display a toggle for an expandable container.
 
@@ -21,6 +23,9 @@ def expander_toggle(
     :param key: unique key to give the component a persisting state
     """
     LOG.debug(key)
+
+    if key in st.session_state:
+        default = st.session_state[key]
 
     return component(
         id_="expander_toggle",

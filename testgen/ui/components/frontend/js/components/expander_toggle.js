@@ -18,7 +18,6 @@ const ExpanderToggle = (/** @type Properties */ props) => {
         window.testgen.loadedStylesheets.expanderToggle = true;
     }
 
-    console.log(props)
     const expandedState = van.state(!!props.default.val);
     const expandLabel = props.expandLabel.val || 'Expand';
     const collapseLabel = props.collapseLabel.val || 'Collapse';
