@@ -7,8 +7,8 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_run_service as test_run_service
-import testgen.ui.services.toolbar_service as tb
 from testgen.common import date_service
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
@@ -22,63 +22,66 @@ class TestRunsPage(Page):
     ]
     menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
 
-    def render(self) -> None:
-        fm.render_page_header(
+    def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
+        project_code = project_code or st.session_state["project"]
+        
+        testgen.page_header(
             "Test Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Test Runs", "path": None},
-            ],
-            boo_show_refresh=True,
         )
 
-        if "project" not in st.session_state:
-            st.write("You must select a Project in the Home Page.")
+        # Setup Toolbar
+        group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
+
+        with group_filter_column:
+            # Table Groups selection -- optional criterion
+            df_tg = get_db_table_group_choices(project_code)
+            table_groups_id = testgen.toolbar_select(
+                options=df_tg,
+                value_column="id",
+                display_column="table_groups_name",
+                default_value=table_group_id,
+                bind_to_query="table_group_id",
+                label="Table Group",
+            )
+
+        with suite_filter_column:
+            # Table Groups selection -- optional criterion
+            df_ts = get_db_test_suite_choices(project_code, table_groups_id)
+            test_suite_id = testgen.toolbar_select(
+                options=df_ts,
+                value_column="id",
+                display_column="test_suite",
+                default_value=test_suite_id,
+                bind_to_query="test_suite_id",
+                label="Test Suite",
+            )
+
+        df, show_columns = get_db_test_runs(project_code, table_groups_id, test_suite_id)
+
+        time_columns = ["run_date"]
+        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
+
+        dct_selected_rows = fm.render_grid_select(df, show_columns)
+        dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
+
+        if actions_column.button(
+            f":{'gray' if not dct_selected_row else 'green'}[Test Results　→]",
+            help="Review test results for the selected run",
+            disabled=not dct_selected_row,
+        ):
+            self.router.navigate("test-runs:results", { "run_id": dct_selected_row["test_run_id"] })
+
+        fm.render_refresh_button(actions_column)
+
+        if dct_selected_rows:
+            open_record_detail(
+                dct_selected_rows[0],
+            )
+            st.markdown(":orange[Click button to access test results for selected run.]")
         else:
-            str_project = st.session_state["project"]
-
-            # Setup Toolbar
-            tool_bar = tb.ToolBar(4, 1, 0, None)
-
-            with tool_bar.long_slots[0]:
-                # Table Groups selection -- optional criterion
-                df_tg = get_db_table_group_choices(str_project)
-                str_table_groups_id = fm.render_select(
-                    "Table Group", df_tg, "table_groups_name", "id", boo_required=False, str_default=None
-                )
-
-            with tool_bar.long_slots[1]:
-                # Table Groups selection -- optional criterion
-                df_ts = get_db_test_suite_choices(str_project, str_table_groups_id)
-                str_test_suite_id = fm.render_select(
-                    "Test Suite", df_ts, "test_suite_description", "id", boo_required=False, str_default=None
-                )
-
-            df, show_columns = get_db_test_runs(str_project, str_table_groups_id, str_test_suite_id)
-
-            time_columns = ["run_date"]
-            date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-
-            dct_selected_rows = fm.render_grid_select(df, show_columns)
-            dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
-
-            if tool_bar.short_slots[0].button(
-                f":{'gray' if not dct_selected_row else 'green'}[Test Results　→]",
-                help="Review test results for the selected run",
-                use_container_width=True,
-                disabled=not dct_selected_row,
-            ):
-                st.session_state["drill_test_run"] = dct_selected_row["test_run_id"]
-                self.router.navigate("test-runs:results")
-
-            if dct_selected_rows:
-                open_record_detail(
-                    dct_selected_rows[0],
-                )
-                st.markdown(":orange[Click button to access test results for selected run.]")
-            else:
-                st.markdown(":orange[Select a run to access test results.]")
+            st.markdown(":orange[Select a run to access test results.]")
 
 
 @st.cache_data(show_spinner=False)

@@ -4,9 +4,14 @@ import testgen.ui.queries.test_suite_queries as test_suite_queries
 import testgen.ui.services.test_definition_service as test_definition_service
 
 
-def get_by_table_group(project_code, table_group_id):
+def get_by_project(project_code, table_group_id=None):
     schema = st.session_state["dbschema"]
-    return test_suite_queries.get_by_table_group(schema, project_code, table_group_id)
+    return test_suite_queries.get_by_project(schema, project_code, table_group_id)
+
+
+def get_by_id(test_suite_id):
+    schema = st.session_state["dbschema"]
+    return test_suite_queries.get_by_id(schema, test_suite_id).iloc[0]
 
 
 def edit(test_suite):

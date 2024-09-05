@@ -5,7 +5,59 @@ import testgen.ui.services.database_service as db
 
 
 @st.cache_data(show_spinner=False)
-def get_by_table_group(schema, project_code, table_group_id):
+def get_by_project(schema, project_code, table_group_id=None):
+    sql = f"""
+            SELECT
+                suites.id::VARCHAR(50),
+                suites.project_code,
+                suites.test_suite,
+                suites.connection_id::VARCHAR(50),
+                connections.connection_name,
+                suites.table_groups_id::VARCHAR(50),
+                groups.table_groups_name,
+                suites.test_suite_description,
+                suites.test_action,
+                CASE WHEN suites.severity IS NULL THEN 'Inherit' ELSE suites.severity END,
+                suites.export_to_observability,
+                suites.test_suite_schema,
+                suites.component_key,
+                suites.component_type,
+                suites.component_name,
+                COUNT(definitions.id) as test_ct,
+                last_run.id as latest_run_id,
+                MAX(last_run.test_starttime) as latest_run_start,
+                MAX(last_run.passed_ct) as last_run_passed_ct,
+                MAX(last_run.warning_ct) as last_run_warning_ct,
+                MAX(last_run.failed_ct) as last_run_failed_ct,
+                MAX(last_run.error_ct) as last_run_error_ct
+            FROM {schema}.test_suites as suites
+            LEFT OUTER JOIN (
+                SELECT * FROM {schema}.test_runs ORDER BY test_starttime DESC LIMIT 1
+            ) AS last_run ON (last_run.test_suite_id = suites.id)
+            LEFT OUTER JOIN {schema}.test_definitions AS definitions
+                ON (definitions.test_suite_id = suites.id)
+            LEFT OUTER JOIN {schema}.connections AS connections
+                ON (connections.connection_id = suites.connection_id)
+            LEFT OUTER JOIN {schema}.table_groups as groups
+                ON (groups.id = suites.table_groups_id)
+            WHERE suites.project_code = '{project_code}'
+            """
+    
+    if table_group_id:
+        sql += f"""
+               AND suites.table_groups_id = '{table_group_id}'
+               """
+
+    sql += """
+            GROUP BY suites.id, groups.table_groups_name, connections.connection_id, last_run.id
+            ORDER BY suites.test_suite;
+    """
+    
+    return db.retrieve_data(sql)
+
+
+@st.cache_data(show_spinner=False)
+def get_by_id(schema, test_suite_id):
     sql = f"""
             SELECT
                 suites.id::VARCHAR(50),
@@ -20,24 +72,10 @@ def get_by_table_group(schema, project_code, table_group_id):
                 suites.test_suite_schema,
                 suites.component_key,
                 suites.component_type,
-                suites.component_name,
-                COUNT(definitions.id) as test_ct,
-                MAX(last_run.test_starttime) as latest_run_start,
-                MAX(last_run.passed_ct) as last_run_passed_ct,
-                MAX(last_run.warning_ct) as last_run_warning_ct,
-                MAX(last_run.failed_ct) as last_run_failed_ct,
-                MAX(last_run.error_ct) as last_run_error_ct
+                suites.component_name
             FROM {schema}.test_suites as suites
-            LEFT OUTER JOIN (
-                SELECT * FROM {schema}.test_runs ORDER BY test_starttime DESC LIMIT 1
-            ) AS last_run ON (last_run.test_suite_id = suites.id)
-            LEFT OUTER JOIN {schema}.test_definitions AS definitions
-                ON (definitions.test_suite_id = suites.id)
-            WHERE suites.project_code = '{project_code}'
-                AND suites.table_groups_id = '{table_group_id}'
-            GROUP BY suites.id
-            ORDER BY suites.test_suite;
-    """
+            WHERE suites.id = '{test_suite_id}';
+        """
     return db.retrieve_data(sql)
 
 

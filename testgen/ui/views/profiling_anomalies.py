@@ -3,221 +3,207 @@ import typing
 import plotly.express as px
 import streamlit as st
 
+import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-import testgen.ui.services.toolbar_service as tb
+from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import project_service
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
 
 
 class ProfilingAnomaliesPage(Page):
-    path = "profiling:hygiene"
+    path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 
-    def render(self) -> None:
-        export_container = fm.render_page_header(
+    def render(self, run_id: str, issue_class: str | None = None, **_kwargs) -> None:
+        run_date, _table_group_id, table_group_name, project_code = profiling_queries.lookup_db_parentage_from_run(
+            run_id
+        )
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
+        project_service.set_current_project(project_code)
+
+        testgen.page_header(
             "Hygiene Issues",
             "https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Data Profiling", "path": "profiling"},
-                {"label": "Hygiene Issues", "path": None},
+            breadcrumbs=[
+                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
+                { "label": f"{table_group_name} | {run_date}" },
             ],
         )
 
-        if "project" not in st.session_state:
-            st.write("Select a Project from the Overview page.")
-        else:
-            str_project = st.session_state["project"]
+        others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
+        liklihood_filter_column, actions_column, export_button_column = st.columns([.3, .5, .2], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(export_button_column)
 
-            # Setup Toolbar
-            tool_bar = tb.ToolBar(3, 1, 4, None)
-
-            # Look for drill-down from another page
-            # No need to clear -- will be sent every time page is accessed
-            str_drill_tg = st.session_state.get("drill_profile_tg")
-            str_drill_prun = st.session_state.get("drill_profile_run")
-
-            with tool_bar.long_slots[0]:
-                # Table Groups selection
-                df_tg = get_db_table_group_choices(str_project)
-                str_drill_tg_name = (
-                    df_tg[df_tg["id"] == str_drill_tg]["table_groups_name"].values[0] if str_drill_tg else None
-                )
-                str_table_groups_id = fm.render_select(
-                    "Table Group", df_tg, "table_groups_name", "id", str_default=str_drill_tg_name, boo_disabled=True
-                )
-
-            str_profile_run_id = str_drill_prun
-
-            with tool_bar.long_slots[1]:
-                # Likelihood selection - optional filter
-                lst_status_options = ["All Likelihoods", "Definite", "Likely", "Possible", "Potential PII"]
-                str_likelihood = st.selectbox("Issue Class", lst_status_options)
-
-            with tool_bar.short_slots[0]:
-                str_help = "Toggle on to perform actions on multiple Hygiene Issues"
-                do_multi_select = st.toggle("Multi-Select", help=str_help)
-
-            if str_table_groups_id:
-                # Get hygiene issue list
-                df_pa = get_profiling_anomalies(str_profile_run_id, str_likelihood)
-
-                # Retrieve disposition action (cache refreshed)
-                df_action = get_anomaly_disposition(str_profile_run_id)
-                # Update action from disposition df
-                action_map = df_action.set_index("id")["action"].to_dict()
-                df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
-
-                if not df_pa.empty:
-                    others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
-                    summaries = get_profiling_anomaly_summary(str_profile_run_id)
-                    others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
-                    with others_summary_column:
-                        st.html("<strong>Hygiene Issues</strong>")
-                        testgen.summary_bar(
-                            items=others_summary,
-                            key="test_results_summary:others",
-                            height=40,
-                            width=400,
-                        )
-
-                    anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
-                    if anomalies_pii_summary:
-                        with pii_summary_column:
-                            st.html("<strong>Potential PII</strong>")
-                            testgen.summary_bar(
-                                items=anomalies_pii_summary,
-                                key="test_results_summary:pii",
-                                height=40,
-                                width=400,
-                            )
-                    # write_frequency_graph(df_pa)
-                    
-                    lst_show_columns = [
-                        "table_name",
-                        "column_name",
-                        "issue_likelihood",
-                        "action",
-                        "anomaly_name",
-                        "detail",
-                    ]
-                    # TODO: Can we reintegrate percents below:
-                    # tool_bar.set_prompt(
-                    #     f"Hygiene Issues Found:  {df_sum.at[0, 'issue_ct']} issues in {df_sum.at[0, 'column_ct']} columns, {df_sum.at[0, 'table_ct']} tables in schema {df_pa.loc[0, 'schema_name']}"
-                    # )
-                    # Show main grid and retrieve selections
-                    selected = fm.render_grid_select(
-                        df_pa, lst_show_columns, int_height=400, do_multi_select=do_multi_select
-                    )
-
-                    with export_container:
-                        lst_export_columns = [
-                            "schema_name",
-                            "table_name",
-                            "column_name",
-                            "anomaly_name",
-                            "issue_likelihood",
-                            "anomaly_description",
-                            "action",
-                            "detail",
-                            "suggested_action",
-                        ]
-                        lst_wrap_columns = ["anomaly_description", "suggested_action"]
-                        fm.render_excel_export(
-                            df_pa, lst_export_columns, "Hygiene Screen", "{TIMESTAMP}", lst_wrap_columns
-                        )
-
-                    if selected:
-                        # Always show details for last selected row
-                        selected_row = selected[len(selected) - 1]
-                    else:
-                        selected_row = None
-
-                    # Display hygiene issue detail for selected row
-                    if not selected_row:
-                        st.markdown(":orange[Select a record to see more information.]")
-                    else:
-                        col1, col2 = st.columns([0.7, 0.3])
-                        with col1:
-                            fm.render_html_list(
-                                selected_row,
-                                [
-                                    "anomaly_name",
-                                    "table_name",
-                                    "column_name",
-                                    "column_type",
-                                    "anomaly_description",
-                                    "detail",
-                                    "likelihood_explanation",
-                                    "suggested_action",
-                                ],
-                                "Hygiene Issue Detail",
-                                int_data_width=700,
-                            )
-                        with col2:
-                            # _, v_col2 = st.columns([0.3, 0.7])
-                            v_col1, v_col2 = st.columns([0.5, 0.5])
-                        view_profiling_button(
-                            v_col1, selected_row["table_name"], selected_row["column_name"],
-                            str_profile_run_id=str_profile_run_id
-                        )
-                        with v_col2:
-                            if st.button(
-                                ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
-                            ):
-                                source_data_dialog(selected_row)
-
-                    # Need to render toolbar buttons after grid, so selection status is maintained
-                    if tool_bar.button_slots[0].button(
-                        "✓", help="Confirm this issue as relevant for this run", disabled=not selected
-                    ):
-                        fm.reset_post_updates(
-                            do_disposition_update(selected, "Confirmed"),
-                            as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
-                        )
-                    if tool_bar.button_slots[1].button(
-                        "✘", help="Dismiss this issue as not relevant for this run", disabled=not selected
-                    ):
-                        fm.reset_post_updates(
-                            do_disposition_update(selected, "Dismissed"),
-                            as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
-                        )
-                    if tool_bar.button_slots[2].button(
-                        "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
-                    ):
-                        fm.reset_post_updates(
-                            do_disposition_update(selected, "Inactive"),
-                            as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
-                        )
-                    if tool_bar.button_slots[3].button("↩︎", help="Clear action", disabled=not selected):
-                        fm.reset_post_updates(
-                            do_disposition_update(selected, "No Decision"),
-                            as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
-                        )
-                else:
-                    tool_bar.set_prompt("No Hygiene Issues Found")
-
-            # Help Links
-            st.markdown(
-                "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
+        with liklihood_filter_column:
+            # Likelihood selection - optional filter
+            status_options = ["All Likelihoods", "Definite", "Likely", "Possible", "Potential PII"]
+            issue_class = testgen.toolbar_select(
+                options=status_options,
+                default_value=issue_class,
+                required=True,
+                bind_to_query="issue_class",
+                label="Issue Class",
             )
 
-            # with st.sidebar:
-            #     st.divider()
+        with actions_column:
+            str_help = "Toggle on to perform actions on multiple Hygiene Issues"
+            do_multi_select = st.toggle("Multi-Select", help=str_help)
+
+        # Get hygiene issue list
+        df_pa = get_profiling_anomalies(run_id, issue_class)
+
+        # Retrieve disposition action (cache refreshed)
+        df_action = get_anomaly_disposition(run_id)
+        # Update action from disposition df
+        action_map = df_action.set_index("id")["action"].to_dict()
+        df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
+
+        if not df_pa.empty:
+            summaries = get_profiling_anomaly_summary(run_id)
+            others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
+            with others_summary_column:
+                testgen.summary_bar(
+                    items=others_summary,
+                    label="Hygiene Issues",
+                    key="test_results_summary:others",
+                    height=40,
+                    width=400,
+                )
+
+            anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
+            if anomalies_pii_summary:
+                with pii_summary_column:
+                    testgen.summary_bar(
+                        items=anomalies_pii_summary,
+                        label="Potential PII",
+                        key="test_results_summary:pii",
+                        height=40,
+                        width=400,
+                    )
+            # write_frequency_graph(df_pa)
+            
+            lst_show_columns = [
+                "table_name",
+                "column_name",
+                "issue_likelihood",
+                "action",
+                "anomaly_name",
+                "detail",
+            ]
+
+            # Show main grid and retrieve selections
+            selected = fm.render_grid_select(
+                df_pa, lst_show_columns, int_height=400, do_multi_select=do_multi_select
+            )
+
+            with export_button_column:
+                lst_export_columns = [
+                    "schema_name",
+                    "table_name",
+                    "column_name",
+                    "anomaly_name",
+                    "issue_likelihood",
+                    "anomaly_description",
+                    "action",
+                    "detail",
+                    "suggested_action",
+                ]
+                lst_wrap_columns = ["anomaly_description", "suggested_action"]
+                fm.render_excel_export(
+                    df_pa, lst_export_columns, "Hygiene Screen", "{TIMESTAMP}", lst_wrap_columns
+                )
+
+            if selected:
+                # Always show details for last selected row
+                selected_row = selected[len(selected) - 1]
+            else:
+                selected_row = None
+
+            # Display hygiene issue detail for selected row
+            if not selected_row:
+                st.markdown(":orange[Select a record to see more information.]")
+            else:
+                col1, col2 = st.columns([0.7, 0.3])
+                with col1:
+                    fm.render_html_list(
+                        selected_row,
+                        [
+                            "anomaly_name",
+                            "table_name",
+                            "column_name",
+                            "column_type",
+                            "anomaly_description",
+                            "detail",
+                            "likelihood_explanation",
+                            "suggested_action",
+                        ],
+                        "Hygiene Issue Detail",
+                        int_data_width=700,
+                    )
+                with col2:
+                    # _, v_col2 = st.columns([0.3, 0.7])
+                    v_col1, v_col2 = st.columns([0.5, 0.5])
+                view_profiling_button(
+                    v_col1, selected_row["table_name"], selected_row["column_name"],
+                    str_profile_run_id=run_id
+                )
+                with v_col2:
+                    if st.button(
+                        ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
+                    ):
+                        source_data_dialog(selected_row)
+
+            # Need to render toolbar buttons after grid, so selection status is maintained
+            if actions_column.button(
+                "✓", help="Confirm this issue as relevant for this run", disabled=not selected
+            ):
+                fm.reset_post_updates(
+                    do_disposition_update(selected, "Confirmed"),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
+                )
+            if actions_column.button(
+                "✘", help="Dismiss this issue as not relevant for this run", disabled=not selected
+            ):
+                fm.reset_post_updates(
+                    do_disposition_update(selected, "Dismissed"),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
+                )
+            if actions_column.button(
+                "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
+            ):
+                fm.reset_post_updates(
+                    do_disposition_update(selected, "Inactive"),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
+                )
+            if actions_column.button("↩︎", help="Clear action", disabled=not selected):
+                fm.reset_post_updates(
+                    do_disposition_update(selected, "No Decision"),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=[get_anomaly_disposition, get_profiling_anomaly_summary],
+                )
+        else:
+            st.markdown(":green[**No Hygiene Issues Found**]")
+
+        # Help Links
+        st.markdown(
+            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
+        )
 
 
 @st.cache_data(show_spinner=False)

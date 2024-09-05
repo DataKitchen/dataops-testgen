@@ -33,7 +33,7 @@ def card(
                 header_html += "</div>"
                 st.html(header_html)
 
-        actions_column.html(f'<i class="{CARD_ACTIONS_CLASS}"></i>')
+        actions_column.html(f'<i class="{CARD_ACTIONS_CLASS} flex-row flex-end"></i>')
 
         yield CardContext(actions=actions_column)
 

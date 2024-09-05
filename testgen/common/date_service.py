@@ -52,13 +52,13 @@ def create_timezoned_column_in_dataframe(streamlit_session, df, new_column_name,
         )
 
 
-def get_timezoned_timestamp(streamlit_session, value):
+def get_timezoned_timestamp(streamlit_session, value, dateformat="%b %-d, %-I:%M %p"):
     ret = None
     if value and "browser_timezone" in streamlit_session:
         data = {"value": [value]}
         df = pd.DataFrame(data)
         timezone = streamlit_session["browser_timezone"]
-        df["value"] = df["value"].dt.tz_localize("UTC").dt.tz_convert(timezone).dt.strftime("%Y-%m-%d %H:%M:%S")
+        df["value"] = df["value"].dt.tz_localize("UTC").dt.tz_convert(timezone).dt.strftime(dateformat)
         ret = df.iloc[0, 0]
     return ret
 

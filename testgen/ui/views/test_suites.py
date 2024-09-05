@@ -7,69 +7,60 @@ import streamlit as st
 
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.form_service as fm
+import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.commands.run_execute_tests import run_execution_steps_in_background
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.ui.components import widgets as testgen
+from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import connection_service, table_group_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 
 
 class TestSuitesPage(Page):
-    path = "connections:test-suites"
+    path = "test-suites"
     can_activate: typing.ClassVar = [
         lambda: authentication_service.current_user_has_admin_role() or "overview",
         lambda: session.authentication_status,
     ]
+    menu_item = MenuItem(icon="list_alt", label="Test Suites", order=4)
 
-    def render(self, connection_id: str | None = None, table_group_id: str | None = None) -> None:
-        fm.render_page_header(
+    def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
+        project_code = st.session_state["project"]
+
+        testgen.page_header(
             "Test Suites",
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-test-suite",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Connections", "path": "connections"},
-                {"label": "Table Groups", "path": "connections:table-groups"},
-                {"label": "Test Suites", "path": None},
-            ],
         )
 
-        # Get page parameters from session
-        project_code = st.session_state["project"]
-        connection = connection_service.get_by_id(connection_id) if connection_id else st.session_state["connection"]
+        group_filter_column, actions_column = st.columns([.2, .8], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
 
-        table_group = st.session_state.get("table_group")
-        if table_group_id:
-            table_group = table_group_service.get_by_id(table_group_id)
-            table_group = table_group.iloc[0]
+        with group_filter_column:
+            df_tg = get_db_table_group_choices(project_code)
+            table_group_id = testgen.toolbar_select(
+                options=df_tg,
+                value_column="id",
+                display_column="table_groups_name",
+                default_value=table_group_id,
+                label="Table Group",
+                bind_to_query="table_group_id",
+            )
 
-        connection_id = connection["connection_id"]
-        table_group_id = table_group["id"]
+        df = test_suite_service.get_by_project(project_code, table_group_id)
 
-        tool_bar = st.columns([.2, .2, .4, .2], vertical_alignment="bottom")
-
-        with tool_bar[0]:
-            st.selectbox("Connection", [connection["connection_name"]], disabled=True)
-
-        with tool_bar[1]:
-            st.selectbox("Table Group", [table_group["table_groups_name"]], disabled=True)
-
-        with tool_bar[3]:
+        with actions_column:
             st.button(
                 ":material/add: Add Test Suite",
                 key="test_suite:keys:add",
                 help="Add a new test suite",
-                use_container_width=True,
-                on_click=lambda: add_test_suite_dialog(project_code, connection, table_group),
+                on_click=lambda: add_test_suite_dialog(project_code, df_tg),
             )
 
-        df = test_suite_service.get_by_table_group(project_code, table_group_id)
-
         for _, test_suite in df.iterrows():
-            subtitle = f"{connection['connection_name']} > {table_group['table_groups_name']}"
+            subtitle = f"{test_suite['connection_name']} > {test_suite['table_groups_name']}"
             with testgen.card(title=test_suite["test_suite"], subtitle=subtitle) as test_suite_card:
                 with test_suite_card.actions:
                     testgen.button(
@@ -85,7 +76,7 @@ class TestSuitesPage(Page):
                         icon="edit",
                         tooltip="Edit test suite",
                         tooltip_position="right",
-                        on_click=partial(edit_test_suite_dialog, project_code, connection, table_group, test_suite),
+                        on_click=partial(edit_test_suite_dialog, project_code, df_tg, test_suite),
                         key=f"test_suite:keys:edit:{test_suite['id']}",
                     )
                     testgen.button(
@@ -102,7 +93,8 @@ class TestSuitesPage(Page):
                 with main_section:
                     testgen.link(
                         label=f"{test_suite['test_ct']} tests definitions",
-                        href="test-definitions",
+                        href="test-suites:definitions",
+                        params={ "test_suite_id": test_suite["id"] },
                         right_icon="chevron_right",
                         key=f"test_suite:keys:go-to-definitions:{test_suite['id']}",
                     )
@@ -116,11 +108,12 @@ class TestSuitesPage(Page):
 
                 if (latest_run_start := test_suite["latest_run_start"]) and not pd.isnull(latest_run_start):
                     with latest_run_section:
-                        st.html('<i class="no-flex-gap"></i>')
+                        testgen.no_flex_gap()
                         st.html('<h6 style="padding: 0px;">Latest Run</h6>')
                         testgen.link(
                             label=latest_run_start.strftime("%B %d, %H:%M %p"),
-                            href="test-runs",
+                            href="test-runs:results",
+                            params={ "run_id": str(test_suite["latest_run_id"]) },
                             right_icon="chevron_right",
                             style="margin-bottom: 8px;",
                             height=29,
@@ -153,19 +146,23 @@ class TestSuitesPage(Page):
                     )
 
 
+@st.cache_data(show_spinner=False)
+def get_db_table_group_choices(project_code):
+    schema = st.session_state["dbschema"]
+    return dq.run_table_groups_lookup_query(schema, project_code)
+
+
 @st.dialog(title="Add Test Suite")
-def add_test_suite_dialog(project_code, connection, table_group):
-    show_test_suite("add", project_code, connection, table_group)
+def add_test_suite_dialog(project_code, table_groups_df):
+    show_test_suite("add", project_code, table_groups_df)
 
 
 @st.dialog(title="Edit Test Suite")
-def edit_test_suite_dialog(project_code, connection, table_group, selected):
-    show_test_suite("edit", project_code, connection, table_group, selected)
+def edit_test_suite_dialog(project_code, table_groups_df, selected):
+    show_test_suite("edit", project_code, table_groups_df, selected)
 
 
-def show_test_suite(mode, project_code, connection, table_group, selected=None):
-    connection_id = connection["connection_id"]
-    table_group_id = table_group["id"]
+def show_test_suite(mode, project_code, table_groups_df, selected=None):
     severity_options = ["Inherit", "Failed", "Warning"]
     selected_test_suite = selected if mode == "edit" else None
 
@@ -175,8 +172,8 @@ def show_test_suite(mode, project_code, connection, table_group, selected=None):
     # establish default values
     test_suite_id = selected_test_suite["id"] if mode == "edit" else None
     test_suite = empty_if_null(selected_test_suite["test_suite"]) if mode == "edit" else ""
-    connection_id = selected_test_suite["connection_id"] if mode == "edit" else connection_id
-    table_groups_id = selected_test_suite["table_groups_id"] if mode == "edit" else table_group_id
+    connection_id = selected_test_suite["connection_id"] if mode == "edit" else None
+    table_groups_id = selected_test_suite["table_groups_id"] if mode == "edit" else None
     test_suite_description = empty_if_null(selected_test_suite["test_suite_description"]) if mode == "edit" else ""
     test_action = empty_if_null(selected_test_suite["test_action"]) if mode == "edit" else ""
     severity_index = severity_options.index(selected_test_suite["severity"]) if mode == "edit" else 0
@@ -200,6 +197,12 @@ def show_test_suite(mode, project_code, connection, table_group, selected=None):
             ),
             "connection_id": connection_id,
             "table_groups_id": table_groups_id,
+            "table_groups_name": right_column.selectbox(
+                label="Table Group",
+                options=table_groups_df["table_groups_name"],
+                index=int(table_groups_df[table_groups_df["id"] == table_groups_id].index[0]) if table_groups_id else 0,
+                disabled=(mode != "add"),
+            ),
             "test_suite_description": left_column.text_input(
                 label="Test Suite Description", max_chars=40, value=test_suite_description
             ),
@@ -253,6 +256,10 @@ def show_test_suite(mode, project_code, connection, table_group, selected=None):
                 if mode == "edit":
                     test_suite_service.edit(entity)
                 else:
+                    selected_table_group_name = entity["table_groups_name"]
+                    selected_table_group = table_groups_df[table_groups_df["table_groups_name"] == selected_table_group_name].iloc[0]
+                    entity["connection_id"] = selected_table_group["connection_id"]
+                    entity["table_groups_id"] = selected_table_group["id"]
                     test_suite_service.add(entity)
                 success_message = (
                     "Changes have been saved successfully. "
