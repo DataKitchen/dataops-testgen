@@ -92,7 +92,7 @@ class TestSuitesPage(Page):
 
                 with main_section:
                     testgen.link(
-                        label=f"{test_suite['test_ct']} tests definitions",
+                        label=f"{test_suite['last_run_test_ct']} tests definitions",
                         href="test-suites:definitions",
                         params={ "test_suite_id": test_suite["id"] },
                         right_icon="chevron_right",

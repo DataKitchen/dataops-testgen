@@ -54,15 +54,19 @@ def toolbar_select(
     else:
         kwargs["options"] = options
         if default_value in options:
-            kwargs["index"] = options.index(default_value)
+            kwargs["index"] = options.index(default_value) + (0 if required else 1)
 
     if bind_to_query:
         kwargs["key"] = kwargs.get("key", f"toolbar_select_{bind_to_query}")
+        if default_value is not None and kwargs.get("index") is None:
+            Router().set_query_params({ bind_to_query: None }) # Unset the query params if the current value is not valid
 
         def update_query_params():
             query_value = st.session_state[kwargs["key"]]
-            if isinstance(options, pd.DataFrame):
-                query_value = options.loc[options[display_column] == query_value, value_column].iloc[0] if query_value != "---" else None
+            if not required and query_value == "---":
+                query_value = None
+            elif isinstance(options, pd.DataFrame):
+                query_value = options.loc[options[display_column] == query_value, value_column].iloc[0]
             Router().set_query_params({ bind_to_query: query_value })
 
         kwargs["on_change"] = update_query_params

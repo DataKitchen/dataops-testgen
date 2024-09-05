@@ -7,6 +7,10 @@ import testgen.ui.services.database_service as db
 @st.cache_data(show_spinner=False)
 def get_by_project(schema, project_code, table_group_id=None):
     sql = f"""
+            WITH last_run_date 
+                AS (SELECT test_suite_id, MAX(test_starttime) as test_starttime
+                        FROM testgen.test_runs
+                    GROUP BY test_suite_id)
             SELECT
                 suites.id::VARCHAR(50),
                 suites.project_code,
@@ -23,23 +27,23 @@ def get_by_project(schema, project_code, table_group_id=None):
                 suites.component_key,
                 suites.component_type,
                 suites.component_name,
-                COUNT(definitions.id) as test_ct,
-                last_run.id as latest_run_id,
-                MAX(last_run.test_starttime) as latest_run_start,
-                MAX(last_run.passed_ct) as last_run_passed_ct,
-                MAX(last_run.warning_ct) as last_run_warning_ct,
-                MAX(last_run.failed_ct) as last_run_failed_ct,
-                MAX(last_run.error_ct) as last_run_error_ct
+                last_run.id as latest_run_id, 
+                last_run.test_starttime as latest_run_start, 
+                last_run.passed_ct + last_run.warning_ct + last_run.failed_ct + last_run.error_ct as last_run_test_ct,
+                last_run.passed_ct as last_run_passed_ct, 
+                last_run.warning_ct as last_run_warning_ct, 
+                last_run.failed_ct as last_run_failed_ct, 
+                last_run.error_ct as last_run_error_ct 
             FROM {schema}.test_suites as suites
-            LEFT OUTER JOIN (
-                SELECT * FROM {schema}.test_runs ORDER BY test_starttime DESC LIMIT 1
-            ) AS last_run ON (last_run.test_suite_id = suites.id)
-            LEFT OUTER JOIN {schema}.test_definitions AS definitions
-                ON (definitions.test_suite_id = suites.id)
-            LEFT OUTER JOIN {schema}.connections AS connections
-                ON (connections.connection_id = suites.connection_id)
-            LEFT OUTER JOIN {schema}.table_groups as groups
-                ON (groups.id = suites.table_groups_id)
+            LEFT JOIN last_run_date lrd
+                ON (suites.id = lrd.test_suite_id)
+            LEFT JOIN {schema}.test_runs last_run
+                ON (lrd.test_suite_id = last_run.test_suite_id
+                AND  lrd.test_starttime = last_run.test_starttime)
+            LEFT JOIN {schema}.connections AS connections 
+                ON (connections.connection_id = suites.connection_id) 
+            LEFT JOIN {schema}.table_groups as groups 
+                ON (groups.id = suites.table_groups_id) 
             WHERE suites.project_code = '{project_code}'
             """
     
@@ -49,7 +53,6 @@ def get_by_project(schema, project_code, table_group_id=None):
                """
 
     sql += """
-            GROUP BY suites.id, groups.table_groups_name, connections.connection_id, last_run.id
             ORDER BY suites.test_suite;
     """
     
