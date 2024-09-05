@@ -3,7 +3,7 @@
  * @type {object}
  * @property {string} id - id of the specific component to be rendered
  * @property {string} key - user key of the specific component to be rendered
- * @property {object} props - object with the props to pass to the rendered component 
+ * @property {object} props - object with the props to pass to the rendered component
  */
 import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
@@ -13,6 +13,7 @@ import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Select } from './components/select.js'
 import { SummaryBar } from './components/summary_bar.js';
+import { SortingSelector } from './components/sorting_selector.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -24,6 +25,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         expander_toggle: ExpanderToggle,
         link: Link,
         select: Select,
+        sorting_selector: SortingSelector,
         sidebar: window.top.testgen.components.Sidebar,
         summary_bar: SummaryBar,
     };
