@@ -1,5 +1,6 @@
 body {
     --primary-color: #06a04a;
+    --link-color: #1976d2;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
@@ -14,6 +15,9 @@ body {
     --field-underline-color: #9e9e9e;
 
     --dk-text-value-background: aliceblue;
+    --dk-card-background: #fff;
+
+    --dk-tooltip-background: rgb(255, 255, 255);
 }
 
 img.dk-logo-img {
@@ -91,6 +95,21 @@ label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child
 }
 /* */
 
+/* Theming for links */
+body a,
+body a:active,
+body a:hover,
+body a:visited {
+    color: var(--link-color);
+}
+
+body a,
+body a:active,
+body a:visited {
+    text-decoration: unset;
+}
+/*  */
+
 button[title="Show password text"] {
     display: none;
 }
@@ -100,6 +119,78 @@ button[title="Show password text"] {
     display: none !important;
 }
 /* ... */
+
+/* Cards Component */
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) {
+    background-color: var(--dk-card-background);
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) .testgen_card-header > .testgen_card-title {
+    margin: unset;
+    padding: unset;
+    line-height: 25px;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) .testgen_card-header > .testgen_card-subtitle {
+    margin: unset;
+    padding: unset;
+    margin-top: 4px;
+    line-height: 15px;
+    color: var(--caption-text-color);
+    font-style: italic;
+}
+
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] {
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-end;
+}
+
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
+    width: auto !important;
+    max-height: 40px;
+}
+/* ... */
+
+[data-testid="stVerticalBlock"]:has(> div.element-container > div.stHtml > i.no-flex-gap) {
+    gap: unset;
+}
+
+/* Tooltips */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::after {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    content: attr(data-tooltip);
+    left: 0;
+    top: calc(100% + 10px);
+    border-radius: 4px;
+    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
+    color: var(--primary-text-color);
+    background-color: var(--dk-tooltip-background);
+    z-index: 10;
+    padding: 8px;
+    width: 200px;
+    transform: translateY(-20px);
+    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
+}
+
+[data-tooltip]:hover::after {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 300ms;
+}
+
+[data-tooltip-position="right"]::after {
+    left: unset;
+    right: 0;
+}
+/*  */
 
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
@@ -114,6 +205,8 @@ button[title="Show password text"] {
         --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
         --dk-text-value-background: unset;
+        --dk-card-background: #14181f;
+        --dk-tooltip-background: rgb(14, 17, 23);
     }
 
     /* Main content */
