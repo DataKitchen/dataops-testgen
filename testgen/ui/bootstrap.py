@@ -3,11 +3,9 @@ import importlib
 import inspect
 import logging
 
-import streamlit
-
 from testgen import settings
 from testgen.commands.run_upgrade_db_config import get_schema_revision
-from testgen.common import configure_logging, docker_service
+from testgen.common import configure_logging, version_service
 from testgen.ui.navigation.menu import Menu, Version
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
@@ -51,10 +49,14 @@ class Application(singleton.Singleton):
         self.logger = logger
 
     def get_version(self) -> Version:
+        latest_version = self.menu.version.latest
+        if not session.latest_version:
+            latest_version = version_service.get_latest_version()
+
         return Version(
             current=settings.VERSION,
-            latest=check_for_upgrade(),
-            schema=_get_schema_rev(),
+            latest=latest_version,
+            schema=get_schema_revision(),
         )
 
 
@@ -86,22 +88,8 @@ def run(log_level: int = logging.INFO) -> Application:
             version=Version(
                 current=settings.VERSION,
                 latest="...",
-                schema=_get_schema_rev(),
+                schema=get_schema_revision(),
             ),
         ),
         logger=LOG,
     )
-
-
-@streamlit.cache_resource(show_spinner=False)
-def _get_schema_rev() -> str:
-    revision = session.sb_schema_rev
-    if not revision:
-        revision = session.sb_schema_rev = get_schema_revision()
-    return revision
-
-
-@streamlit.cache_resource(show_spinner=False)
-def check_for_upgrade():
-    return docker_service.check_for_new_docker_release()
-

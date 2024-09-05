@@ -1,4 +1,5 @@
 import os
+import typing
 
 IS_DEBUG_LOG_LEVEL: bool = os.getenv("TESTGEN_DEBUG_LOG_LEVEL", "no").lower() == "yes"
 """
@@ -415,13 +416,48 @@ from env variable: `OBSERVABILITY_DEFAULT_COMPONENT_KEY`
 defaults to: `default`
 """
 
-CHECK_FOR_LATEST_VERSION: bool = os.getenv("TG_DOCKER_RELEASE_CHECK_ENABLED", "yes").lower() == "yes"
+CHECK_FOR_LATEST_VERSION: typing.Literal["pypi", "docker", "no"] = typing.cast(
+    typing.Literal["pypi", "docker", "no"],
+    os.getenv("TG_RELEASE_CHECK", os.getenv("TG_DOCKER_RELEASE_CHECK_ENABLED", "pypi")).lower(),
+)
 """
-When True, enables calling Docker Hub API to fetch the latest released
+When set to, enables calling Docker Hub API to fetch the latest released
 image tag. The fetched tag is displayed in the UI menu.
 
 from env variable: `TG_DOCKER_RELEASE_CHECK_ENABLED`
-defaults to: `True`
+choices: `pypi`, `docker`, `no`
+defaults to: `pypi`
+"""
+
+DOCKER_HUB_REPOSITORY: str = os.getenv(
+    "TESTGEN_DOCKER_HUB_REPO",
+    "datakitchen/dataops-testgen",
+)
+"""
+URL to the docker hub repository containing the dataops testgen image.
+Used to check for new releases when `CHECK_FOR_LATEST_VERSION` is set to
+`docker`.
+
+from env variable: `TESTGEN_DOCKER_HUB_URL`
+defaults to: datakitchen/dataops-testgen
+"""
+
+DOCKER_HUB_USERNAME: str | None = os.getenv("TESTGEN_DOCKER_HUB_USERNAME", None)
+"""
+Username to authenticate against Docker Hub API before fetching the list
+of tags. Required if `DOCKER_HUB_REPOSITORY` is a private repository.
+
+from env variable: `TESTGEN_DOCKER_HUB_USERNAME`
+defaults to: None
+"""
+
+DOCKER_HUB_PASSWORD: str | None = os.getenv("TESTGEN_DOCKER_HUB_PASSWORD", None)
+"""
+Password to authenticate against Docker Hub API before fetching the list
+of tags. Required if `DOCKER_HUB_REPOSITORY` is a private repository.
+
+from env variable: `TESTGEN_DOCKER_HUB_PASSWORD`
+defaults to: None
 """
 
 VERSION: str = os.getenv("TESTGEN_VERSION", "unknown")

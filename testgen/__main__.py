@@ -43,6 +43,7 @@ from testgen.common import (
     get_tg_host,
     get_tg_schema,
     logs,
+    version_service,
 )
 from testgen.utils import plugins
 
@@ -60,7 +61,7 @@ pass_configuration = click.make_pass_decorator(Configuration)
 
 @tui()
 @click.group(
-    help=f"This version: {settings.VERSION} \n\nLatest version: {docker_service.check_for_new_docker_release()} \n\nSchema revision: {get_schema_revision()}"
+    help=f"This version: {settings.VERSION} \n\nLatest version: {version_service.get_latest_version()} \n\nSchema revision: {get_schema_revision()}"
 )
 @click.option(
     "-v",
