@@ -1,5 +1,3 @@
-import random
-
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
 
@@ -8,6 +6,7 @@ def link(
     href: str,
     label: str,
     *,
+    params: dict = {},  # noqa: B006
     underline: bool = True,
     left_icon: str | None = None,
     left_icon_size: float = 20.0,
@@ -15,13 +14,11 @@ def link(
     right_icon_size: float = 20.0,
     height: float | None = 21.0,
     style: str | None = None,
-    key: str | None = None,
+    key: str = "testgen:link",
 ) -> None:
-    if not key:
-        key = f"testgen:link:{round(random.random() * 10_000)}"  # noqa: S311
-
     props = {
         "href": href,
+        "params": params,
         "label": label,
         "height": height,
         "underline": underline,
@@ -37,4 +34,4 @@ def link(
 
     clicked = component(id_="link", key=key, props=props)
     if clicked:
-        Router().navigate(to=href, with_args={})
+        Router().navigate(to=href, with_args=params)

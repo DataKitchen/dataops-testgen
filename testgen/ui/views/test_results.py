@@ -9,10 +9,10 @@ import streamlit as st
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-import testgen.ui.services.toolbar_service as tb
 from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
@@ -25,143 +25,121 @@ class TestResultsPage(Page):
     path = "test-runs:results"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project != None or "overview",
+        lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
-    def render(self) -> None:
-        export_container = fm.render_page_header(
+    def render(self, run_id: str, status: str | None = None, **_kwargs) -> None:
+        run_date, test_suite_name, project_code = get_drill_test_run(run_id)
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
+        project_service.set_current_project(project_code)
+
+        testgen.page_header(
             "Test Results",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Test Runs", "path": "test-runs"},
-                {"label": "Test Results", "path": None},
+            breadcrumbs=[
+                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": project_code } },
+                { "label": f"{test_suite_name} | {run_date}" },
             ],
         )
 
-        str_project = st.session_state["project"] if "project" in st.session_state else None
+        # Display summary bar
+        tests_summary = get_test_result_summary(run_id)
+        testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
 
-        # Look for drill-down from another page
-        if "drill_test_run" in st.session_state:
-            str_sel_test_run = st.session_state["drill_test_run"]
-        else:
-            str_sel_test_run = None
+        # Setup Toolbar
+        status_filter_column, actions_column, export_button_column = st.columns([.3, .5, .2], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(export_button_column)
 
-        if not str_project:
-            st.write("Choose a Project from the menu.")
-        else:
-            # Setup Toolbar
-            tool_bar = tb.ToolBar(3, 1, 4, None)
-
-            # Lookup Test Run
-            if str_sel_test_run:
-                df = get_drill_test_run(str_sel_test_run)
-                if not df.empty:
-                    with tool_bar.long_slots[0]:
-                        time_columns = ["test_date"]
-                        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-                        df["description"] = df["test_date"] + " | " + df["test_suite_description"]
-                        str_sel_test_run = fm.render_select(
-                            "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
-                        )
-
-            if str_sel_test_run:
-                with tool_bar.long_slots[1]:
-                    lst_status_options = [
-                        "Failures and Warnings",
-                        "Failed Tests",
-                        "Tests with Warnings",
-                        "Passed Tests",
-                    ]
-                    str_sel_status = st.selectbox("Result Priority", lst_status_options)
-
-                with tool_bar.short_slots[0]:
-                    str_help = "Toggle on to perform actions on multiple results"
-                    do_multi_select = st.toggle("Multi-Select", help=str_help)
-
-                match str_sel_status:
-                    case "Failures and Warnings":
-                        str_sel_status = "'Failed','Warning'"
-                    case "Failed Tests":
-                        str_sel_status = "'Failed'"
-                    case "Tests with Warnings":
-                        str_sel_status = "'Warning'"
-                    case "Passed Tests":
-                        str_sel_status = "'Passed'"
-
-                # Display main grid and retrieve selection
-                selected = show_result_detail(str_sel_test_run, str_sel_status, do_multi_select, export_container)
-
-                # Need to render toolbar buttons after grid, so selection status is maintained
-                disable_dispo = True if not selected or str_sel_status == "'Passed'" else False
-                if tool_bar.button_slots[0].button(
-                    "✓", help="Confirm this issue as relevant for this run", disabled=disable_dispo
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Confirmed"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[1].button(
-                    "✘", help="Dismiss this issue as not relevant for this run", disabled=disable_dispo
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Dismissed"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[2].button(
-                    "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Inactive"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[3].button("⟲", help="Clear action", disabled=not selected):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "No Decision"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-
-            # Help Links
-            st.markdown(
-                "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
+        with status_filter_column:
+            status_options = [
+                "Failures and Warnings",
+                "Failed Tests",
+                "Tests with Warnings",
+                "Passed Tests",
+            ]
+            status = testgen.toolbar_select(
+                options=status_options,
+                default_value=status,
+                required=True,
+                bind_to_query="status",
+                label="Result Status",
             )
 
-            # with st.sidebar:
-            #     st.divider()
+        with actions_column:
+            str_help = "Toggle on to perform actions on multiple results"
+            do_multi_select = st.toggle("Multi-Select", help=str_help)
 
+        match status:
+            case "Failures and Warnings":
+                status = "'Failed','Warning'"
+            case "Failed Tests":
+                status = "'Failed'"
+            case "Tests with Warnings":
+                status = "'Warning'"
+            case "Passed Tests":
+                status = "'Passed'"
 
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def run_test_suite_lookup_by_project_query(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_test_suite_lookup_by_project_query(str_schema, str_project_code)
+        # Display main grid and retrieve selection
+        selected = show_result_detail(run_id, status, do_multi_select, export_button_column)
 
+        # Need to render toolbar buttons after grid, so selection status is maintained
+        disable_dispo = True if not selected or status == "'Passed'" else False
+        if actions_column.button(
+            "✓", help="Confirm this issue as relevant for this run", disabled=disable_dispo
+        ):
+            fm.reset_post_updates(
+                do_disposition_update(selected, "Confirmed"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[get_test_disposition],
+            )
+        if actions_column.button(
+            "✘", help="Dismiss this issue as not relevant for this run", disabled=disable_dispo
+        ):
+            fm.reset_post_updates(
+                do_disposition_update(selected, "Dismissed"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[get_test_disposition],
+            )
+        if actions_column.button(
+            "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
+        ):
+            fm.reset_post_updates(
+                do_disposition_update(selected, "Inactive"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[get_test_disposition],
+            )
+        if actions_column.button("⟲", help="Clear action", disabled=not selected):
+            fm.reset_post_updates(
+                do_disposition_update(selected, "No Decision"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[get_test_disposition],
+            )
 
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def run_test_run_lookup_by_date(str_project_code, str_run_date):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_test_run_lookup_by_date(str_schema, str_project_code, str_run_date)
+        # Help Links
+        st.markdown(
+            "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
+        )
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
 def get_drill_test_run(str_test_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
-           SELECT tr.id::VARCHAR as test_run_id,
-                  tr.test_starttime as test_date,
-                  ts.test_suite as test_suite_description
+           SELECT tr.test_starttime as test_date,
+                  ts.test_suite,
+                  ts.project_code
              FROM {str_schema}.test_runs tr
        INNER JOIN {str_schema}.test_suites ts ON tr.test_suite_id = ts.id
             WHERE tr.id = '{str_test_run_id}'::UUID;
     """
-    return db.retrieve_data(str_sql)
+    df = db.retrieve_data(str_sql)
+    if not df.empty:
+        return df.at[0, "test_date"], df.at[0, "test_suite"], df.at[0, "project_code"]
 
 
 @st.cache_data(show_spinner="Retrieving Results")
@@ -574,10 +552,6 @@ def show_test_def_detail(str_test_def_id):
 
 
 def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_container):
-    # Display summary bar
-    tests_summary = get_test_result_summary(str_run_id)
-    testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
-
     # Retrieve test results (always cached, action as null)
     df = get_test_results(str_run_id, str_sel_test_status)
     # Retrieve disposition action (cache refreshed)

@@ -95,9 +95,9 @@ def validate_test(test_definition):
         sql_query = sql_query.replace("{DATA_SCHEMA}", schema)
 
     table_group_id = test_definition["table_groups_id"]
-    table_group_df = table_group_service.get_by_id(table_group_id)
+    table_group = table_group_service.get_by_id(table_group_id)
 
-    connection_id = table_group_df.iloc[0]["connection_id"]
+    connection_id = table_group["connection_id"]
 
     connection = connection_service.get_by_id(connection_id, hide_passwords=False)
 

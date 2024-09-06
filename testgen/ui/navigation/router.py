@@ -28,6 +28,7 @@ class Router(Singleton):
         # The default [data-testid="stSidebarNav"] element seems to be needed to keep the sidebar DOM stable
         # Otherwise anything custom in the sidebar randomly flickers on page navigation
         current_page = st.navigation(streamlit_pages, position="hidden" if hide_sidebar else "sidebar")
+        session.current_page_args = st.query_params
         
         # This hack is needed because the auth cookie is not retrieved on the first run
         # We have to store the page and wait for the second run
@@ -64,3 +65,10 @@ class Router(Singleton):
             error_message = f"{to}: {e!s}"
             st.error(error_message)
             LOG.exception(error_message)
+
+    
+    def set_query_params(self, with_args: dict = {}) -> None:  # noqa: B006
+        params = st.query_params
+        params.update(with_args)
+        params = {k: v for k, v in params.items() if v not in [None, "None", ""]}
+        st.query_params.from_dict(params)

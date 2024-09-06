@@ -19,7 +19,6 @@ from streamlit_extras.no_default_selectbox import selectbox
 import testgen.common.date_service as date_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
-from testgen.ui.components import widgets as testgen
 
 """
 Shared rendering of UI elements
@@ -260,7 +259,7 @@ def render_excel_export(
     df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
 ):
 
-    if st.button(label=":blue[**⤓**]", use_container_width=True):
+    if st.button(label=":material/download: Export", help="Download to Excel"):
         download_excel(df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers)
 
 
@@ -271,7 +270,7 @@ def download_excel(
     st.write(f'**Are you sure you want to download "{str_export_title}.xlsx"?**')
 
     st.download_button(
-        label="Yes",
+        label="Download",
         data=_generate_excel_export(
             df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers
         ),
@@ -279,10 +278,9 @@ def download_excel(
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
-
 def render_refresh_button(button_container):
     with button_container:
-        do_refresh = st.button(":blue[**⟳**]", help="Refresh page data", use_container_width=False)
+        do_refresh = st.button(":material/refresh:", help="Refresh page data", use_container_width=False)
         if do_refresh:
             reset_post_updates("Refreshing page", True, True)
 
@@ -398,39 +396,6 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
         else:
             st.cache_data.clear()
     st.rerun()
-
-
-def render_page_header(
-    str_page_title, str_help_link=None, str_description=None, lst_breadcrumbs=None, boo_show_refresh=False
-):
-    hcol1, hcol2 = st.columns([9, 1])
-    hcol1.subheader(str_page_title, anchor=False)
-    if str_help_link:
-        with hcol2:
-            st.caption(" ")
-            render_icon_link(str_help_link)
-    st.write(
-        '<hr style="background-color: #21c354; margin-top: 0;'
-        ' margin-bottom: 0; height: 3px; border: none; border-radius: 3px;">',
-        unsafe_allow_html=True,
-    )
-    if str_description:
-        st.caption(str_description)
-
-    if "last_page" in st.session_state:
-        if str_page_title != st.session_state["last_page"]:
-            st.cache_data.clear()
-    st.session_state["last_page"] = str_page_title
-
-    if lst_breadcrumbs:
-        if boo_show_refresh:
-            bcol1, bcol2, bcol3, _ = st.columns([875, 60, 60, 5])
-            render_refresh_button(bcol3)
-        else:
-            bcol1, bcol2, _ = st.columns([95, 4, 1])
-        with bcol1:
-            testgen.breadcrumbs(breadcrumbs=lst_breadcrumbs)
-        return bcol2
 
 
 def render_select(

@@ -3,9 +3,10 @@ import typing
 import streamlit as st
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import form_service, query_service
+from testgen.ui.services import form_service, project_service
 from testgen.ui.session import session
 from testgen.ui.views.app_log_modal import view_log_file
 
@@ -18,18 +19,15 @@ class ProjectSettingsPage(Page):
     ]
     menu_item = MenuItem(icon="settings", label="Settings", order=100)
 
-    def render(self) -> None:
-        form_service.render_page_header(
+    def render(self, project_code: str | None = None, **_kwargs) -> None:
+        project = project_service.get_project_by_code(project_code or session.project)
+
+        testgen.page_header(
             "Settings",
             "https://docs.datakitchen.io/article/dataops-testgen-help/configuration",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Settings", "path": None},
-            ],
         )
 
-        project = get_current_project(session.project)
-
+        testgen.whitespace(1)
         form_service.render_edit_form(
             "",
             project,
@@ -57,13 +55,6 @@ class ProjectSettingsPage(Page):
                 st.text_area("Error Details", value=error_message)
 
         view_log_file(col3)
-
-
-@st.cache_data(show_spinner=False)
-def get_current_project(code: str):
-    if not code:
-        return None
-    return query_service.get_project_by_code(session.dbschema, code)
 
 
 def set_add_new_project():

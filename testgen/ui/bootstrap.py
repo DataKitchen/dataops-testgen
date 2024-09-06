@@ -20,7 +20,7 @@ from testgen.ui.views.profiling_results import ProfilingResultsPage
 from testgen.ui.views.profiling_summary import DataProfilingPage
 from testgen.ui.views.project_settings import ProjectSettingsPage
 from testgen.ui.views.table_groups import TableGroupsPage
-from testgen.ui.views.test_definitions import TestDefinitionsPage, TestDefinitionsPageFromSuite
+from testgen.ui.views.test_definitions import TestDefinitionsPage
 from testgen.ui.views.test_results import TestResultsPage
 from testgen.ui.views.test_runs import TestRunsPage
 from testgen.ui.views.test_suites import TestSuitesPage
@@ -38,7 +38,6 @@ BUILTIN_PAGES: list[type[Page]] = [
     TableGroupsPage,
     TestSuitesPage,
     TestDefinitionsPage,
-    TestDefinitionsPageFromSuite,
     ProjectSettingsPage,
 ]
 

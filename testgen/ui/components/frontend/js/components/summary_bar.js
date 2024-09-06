@@ -8,6 +8,7 @@
  * @typedef Properties
  * @type {object}
  * @property {Array.<SummaryItem>} items
+ * @property {string} label
  * @property {number} height
  * @property {number} width
  */
@@ -30,9 +31,10 @@ const SummaryBar = (/** @type Properties */ props) => {
     const height = props.height.val || 24;
     const width = props.width.val;
     const summaryItems = props.items.val;
+    const label = props.label.val;
     const total = summaryItems.reduce((sum, item) => sum + item.value, 0);
 
-    Streamlit.setFrameHeight(height + 24);
+    Streamlit.setFrameHeight(height + 24 + (label ? 24 : 0));
 
     if (!window.testgen.loadedStylesheets.summaryBar) {
         document.adoptedStyleSheets.push(stylesheet);
@@ -41,6 +43,12 @@ const SummaryBar = (/** @type Properties */ props) => {
     
     return div(
         { class: 'tg-summary-bar-wrapper' },
+        () => {
+            return label ? div(
+                { class: 'tg-summary-bar--label' },
+                label,
+            ) : null;
+        },
         div(
             {
                 class: 'tg-summary-bar',
@@ -62,6 +70,10 @@ const SummaryBar = (/** @type Properties */ props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tg-summary-bar--label {
+    margin-bottom: 4px;
+}
+
 .tg-summary-bar {
     height: 100%;
     display: flex;
