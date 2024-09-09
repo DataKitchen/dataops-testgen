@@ -80,6 +80,33 @@ GROUP BY r.id, r.project_code, cc.connection_name, r.connection_id,
          r.profiling_starttime, r.profiling_endtime, r.status;
 
 
+DROP VIEW IF EXISTS v_test_runs;
+
+CREATE VIEW v_test_runs
+ AS
+SELECT r.id as test_run_id,
+       p.project_code,
+       p.project_name,
+       ts.test_suite,
+       r.test_starttime,
+       TO_CHAR(r.test_endtime - r.test_starttime, 'HH24:MI:SS') as duration,
+       r.status, r.log_message,
+       COUNT(*) as test_ct,
+       SUM(result_code) as passed_ct,
+       COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0) as failed_ct,
+       COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct,
+       r.process_id
+  FROM test_runs r
+INNER JOIN test_suites ts
+   ON (r.test_suite_id = ts.id)
+INNER JOIN projects p
+   ON (ts.project_code = p.project_code)
+INNER JOIN test_results tr
+   ON (r.id = tr.test_run_id)
+GROUP BY r.id, p.project_code, ts.test_suite, r.test_starttime, r.test_endtime,
+         r.process_id, r.status, r.log_message, p.project_name;
+
+
 DROP VIEW IF EXISTS v_test_results;
 
 CREATE VIEW v_test_results
