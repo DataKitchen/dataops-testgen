@@ -27,9 +27,7 @@ class TestgenSession(Singleton):
 
     project: str
     add_project: bool
-
-    sb_latest_rel: str
-    sb_schema_rev: str
+    latest_version: str | None
 
     def __init__(self, state: SessionStateProxy) -> None:
         super().__setattr__("_state", state)
@@ -49,4 +47,4 @@ class TestgenSession(Singleton):
             del state[key]
 
 
-session = TestgenSession(st.session_state)
+session: TestgenSession = TestgenSession(st.session_state)
