@@ -32,7 +32,8 @@ def sidebar(
     if session.page_pending_sidebar is not None:
         path = session.page_pending_sidebar
         session.page_pending_sidebar = None
-        Router().navigate(to=path)
+        params = { "project_code": session.project } if path != "" else {}
+        Router().navigate(to=path, with_args=params)
 
     component(
         id_="sidebar",

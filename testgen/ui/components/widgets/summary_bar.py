@@ -8,6 +8,7 @@ LOG = logging.getLogger("testgen")
 
 def summary_bar(
     items: list["SummaryItem"],
+    label: str | None = None,
     height: int | None = None,
     width: int | None = None,
     key: str = "testgen:summary_bar",
@@ -26,7 +27,7 @@ def summary_bar(
         id_="summary_bar",
         key=key,
         default={},
-        props={"items": items, "height": height, "width": width},
+        props={"items": items, "label": label, "height": height, "width": width},
     )
 
 

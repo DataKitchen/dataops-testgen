@@ -8,7 +8,7 @@ from testgen.common.database.database_service import RetrieveDBResultsToDictList
 
 def get_by_id(table_group_id: str):
     schema = st.session_state["dbschema"]
-    return table_group_queries.get_by_id(schema, table_group_id)
+    return table_group_queries.get_by_id(schema, table_group_id).iloc[0]
 
 
 def get_by_connection(project_code, connection_id):

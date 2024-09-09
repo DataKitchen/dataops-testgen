@@ -1,10 +1,7 @@
-import logging
 import typing
 
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
-
-LOG = logging.getLogger("testgen")
 
 
 def breadcrumbs(
@@ -20,14 +17,15 @@ def breadcrumbs(
     :param breadcrumbs: list of dicts with label and path
     """
 
-    path = component(
+    data = component(
         id_="breadcrumbs",
         key=key,
         props={"breadcrumbs": breadcrumbs},
     )
-    if path:
-        Router().navigate(to=path)
+    if data:
+        Router().navigate(to=data["path"], with_args=data["params"])
 
 class Breadcrumb(typing.TypedDict):
     path: str | None
+    params: dict
     label: str

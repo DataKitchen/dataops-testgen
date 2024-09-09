@@ -67,7 +67,7 @@ def lookup_db_parentage_from_run(str_profile_run_id):
     str_schema = st.session_state["dbschema"]
     # Define the query
     str_sql = f"""
-            SELECT profiling_starttime as profile_run_date, g.table_groups_name
+            SELECT profiling_starttime as profile_run_date, table_groups_id, g.table_groups_name, g.project_code
               FROM {str_schema}.profiling_runs pr
              INNER JOIN {str_schema}.table_groups g
                 ON pr.table_groups_id = g.id
@@ -75,7 +75,7 @@ def lookup_db_parentage_from_run(str_profile_run_id):
     """
     df = db.retrieve_data(str_sql)
     if not df.empty:
-        return df.at[0, "profile_run_date"], df.at[0, "table_groups_name"]
+        return df.at[0, "profile_run_date"], df.at[0, "table_groups_id"], df.at[0, "table_groups_name"], df.at[0, "project_code"]
 
 
 @st.cache_data(show_spinner="Retrieving Data")

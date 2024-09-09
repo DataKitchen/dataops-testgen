@@ -59,6 +59,14 @@ section[data-testid="stSidebar"] {
 section.main > :nth-child(1 of div).block-container {
     padding: 24px;
 }
+
+div[data-testid="stVerticalBlock"] {
+    gap: 0.5rem;
+}
+
+div[data-testid="collapsedControl"] {
+    top: 0.5rem;
+}
 /*  */
 
 /* Dialog - sets the width of all st.dialog */
@@ -139,19 +147,26 @@ button[title="Show password text"] {
     color: var(--caption-text-color);
     font-style: italic;
 }
+/* ... */
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] {
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
     width: 100%;
     flex-direction: row;
-    justify-content: flex-end;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card-actions) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
     width: auto !important;
     max-height: 40px;
 }
-/* ... */
+
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
+    justify-content: flex-start;
+}
+
+[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
+    justify-content: flex-end;
+}
 
 [data-testid="stVerticalBlock"]:has(> div.element-container > div.stHtml > i.no-flex-gap) {
     gap: unset;

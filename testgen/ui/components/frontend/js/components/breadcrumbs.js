@@ -2,6 +2,7 @@
  * @typedef Breadcrumb
  * @type {object}
  * @property {string} path
+ * @property {object} params
  * @property {string} label
  * 
  * @typedef Properties
@@ -30,7 +31,7 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                 { class: 'tg-breadcrumbs' },
                 breadcrumbs.reduce((items, b, idx) => {
                     const isLastItem = idx === breadcrumbs.length - 1;
-                    items.push(a({ class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`, href: `#/${b.path}`, onclick: () => navigate(b.path) }, b.label))
+                    items.push(a({ class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`, href: `#/${b.path}`, onclick: () => navigate(b.path, b.params) }, b.label))
                     if (!isLastItem) {
                         items.push(span({class: 'tg-breadcrumbs--arrow'}, '>'));
                     }
@@ -41,8 +42,8 @@ const Breadcrumbs = (/** @type Properties */ props) => {
     )
 };
 
-function navigate(/** @type string */ path) {
-    Streamlit.sendData(path);
+function navigate(/** @type string */ path, /** @type object */ params) {
+    Streamlit.sendData({ path, params });
     return false;
 }
 
