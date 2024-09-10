@@ -1,15 +1,50 @@
-from collections.abc import Iterable
+import itertools
+import re
+from collections.abc import Callable, Iterable
+from typing import Any
 
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from testgen.ui.components.utils.component import component
+from testgen.ui.navigation.router import Router
+
+
+def _slugfy(text) -> str:
+    return re.sub(r"[^a-z]+", "-", text.lower())
+
+
+def _state_to_str(columns, state):
+    state_parts = []
+    state_dict = dict(state)
+    try:
+        for col_label, col_id in columns:
+            if col_id in state_dict:
+                state_parts.append(".".join((_slugfy(col_label), state_dict[col_id].lower())))
+        return "-".join(state_parts) or "-"
+    except Exception:
+        return None
+
+
+def _state_from_str(columns, state_str):
+    col_slug_to_id = {_slugfy(col_label): col_id for col_label, col_id in columns}
+    state_part_re = re.compile("".join(("(", "|".join(col_slug_to_id.keys()), r")\.(asc|desc)")))
+    state = []
+    try:
+        for state_part in state_str.split("-"):
+            if match := state_part_re.match(state_part):
+                state.append([col_slug_to_id[match.group(1)], match.group(2).upper()])
+    except Exception as e:
+        return None
+    return state
 
 
 def sorting_selector(
     columns: Iterable[tuple[str, str]],
     default: Iterable[tuple[str, str]] = (),
+    on_change: Callable[[], Any] | None = None,
     popover_label: str = "Sort",
+    query_param: str | None = "sort",
     key: str = "testgen:sorting_selector",
 ) -> list[tuple[str, str]]:
     """
@@ -24,16 +59,37 @@ def sorting_selector(
     Returns a list of 2-tuples, being: (<database column reference>, <direction: ASC|DESC>)
     """
 
+    state = None
+
     ctx = get_script_run_ctx()
     try:
         state = ctx.session_state[key]
     except KeyError:
+        pass
+
+    if state is None and query_param and (state_str := st.query_params.get(query_param)):
+        state = _state_from_str(columns, state_str)
+
+    if state is None:
         state = default
 
     with st.popover(popover_label):
-        return component(
+        new_state = component(
             id_="sorting_selector",
             key=key,
-            default=default,
+            default=state,
+            on_change=on_change,
             props={"columns": columns, "state": state},
         )
+
+    # For some unknown reason, sometimes, streamlit returns None as the component status
+    new_state = [] if new_state is None else new_state
+
+    if query_param:
+        if tuple(itertools.chain(*default)) == tuple(itertools.chain(*new_state)):
+            value = None
+        else:
+            value = _state_to_str(columns, new_state)
+        Router().set_query_params({query_param: value})
+
+    return new_state
