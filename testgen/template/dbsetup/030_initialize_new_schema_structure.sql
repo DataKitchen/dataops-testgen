@@ -588,6 +588,9 @@ CREATE TABLE tg_revision (
    revision INTEGER
 );
 
+
+CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
+
 -- Index working table - ORIGINAL
 CREATE INDEX working_agg_cat_tests_test_run_id_index
    ON working_agg_cat_tests(test_run_id);

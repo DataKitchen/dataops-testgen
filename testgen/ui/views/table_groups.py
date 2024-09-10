@@ -3,6 +3,7 @@ import typing
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
@@ -257,11 +258,7 @@ def show_table_group_form(mode, project_code, connection, selected=None):
 
         # establish default values
         table_group_id = selected_table_group["id"] if mode == "edit" else None
-        table_groups_name = (
-            selected_table_group["table_groups_name"]
-            if mode == "edit"
-            else f'{connection["connection_name"]}_table_group'
-        )
+        table_groups_name = selected_table_group["table_groups_name"] if mode == "edit" else ""
         table_group_schema = selected_table_group["table_group_schema"] if mode == "edit" else ""
         profiling_table_set = (
             selected_table_group["profiling_table_set"]
@@ -418,18 +415,25 @@ def show_table_group_form(mode, project_code, connection, selected=None):
             )
 
             if submit:
-                if mode == "edit":
-                    table_group_service.edit(entity)
+
+                if not entity["table_groups_name"]:
+                    st.error("'Name' is required. ")
+                    return
+
+                try:
+                    if mode == "edit":
+                        table_group_service.edit(entity)
+                        success_message = "Changes have been saved successfully. "
+                    else:
+                        table_group_service.add(entity)
+                        success_message = "New Table Group added successfully. "
+                except IntegrityError:
+                    st.error("A Table Group with the same name already exists. ")
+                    return
                 else:
-                    table_group_service.add(entity)
-                success_message = (
-                    "Changes have been saved successfully. "
-                    if mode == "edit"
-                    else "New Table Group added successfully. "
-                )
-                st.success(success_message)
-                time.sleep(1)
-                st.rerun()
+                    st.success(success_message)
+                    time.sleep(1)
+                    st.rerun()
 
         with table_groups_preview_tab:
             if mode == "edit":
