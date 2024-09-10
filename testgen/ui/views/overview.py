@@ -3,9 +3,9 @@ import typing
 
 import streamlit as st
 
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import form_service
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -18,8 +18,8 @@ class OverviewPage(Page):
     ]
     menu_item = MenuItem(icon="home", label="Overview", order=0)
 
-    def render(self):
-        form_service.render_page_header(
+    def render(self, **_kwargs):
+        testgen.page_header(
             "Welcome to DataOps TestGen",
             "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
         )

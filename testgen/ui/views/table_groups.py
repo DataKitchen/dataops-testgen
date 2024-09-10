@@ -9,9 +9,10 @@ import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
-import testgen.ui.services.toolbar_service as tb
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 
@@ -21,32 +22,25 @@ class TableGroupsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: authentication_service.current_user_has_admin_role() or "overview",
         lambda: session.authentication_status,
+        lambda: "connection_id" in session.current_page_args or "connections",
     ]
 
-    def render(self, connection_id: int | None = None) -> None:
-        fm.render_page_header(
+    def render(self, connection_id: str, **_kwargs) -> None:
+        connection = connection_service.get_by_id(connection_id, hide_passwords=False)
+        project_code = connection["project_code"]
+        project_service.set_current_project(project_code)
+
+        testgen.page_header(
             "Table Groups",
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-table-group",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Connections", "path": "connections"},
-                {"label": "Table Groups", "path": None},
+            breadcrumbs=[
+                { "label": "Connections", "path": "connections", "params": { "project_code": project_code } },
+                { "label": connection["connection_name"] },
             ],
         )
 
-        # Get page parameters from session
-        project_code = st.session_state["project"]
-        connection = (
-            connection_service.get_by_id(connection_id, hide_passwords=False)
-            if connection_id
-            else st.session_state["connection"]
-        )
-        connection_id = connection["connection_id"]
-
-        tool_bar = tb.ToolBar(1, 5, 0, None)
-
-        with tool_bar.long_slots[0]:
-            st.selectbox("Connection", [connection["connection_name"]], disabled=True)
+        _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
 
         df = table_group_service.get_by_connection(project_code, connection_id)
 
@@ -72,33 +66,30 @@ class TableGroupsPage(Page):
 
         selected = fm.render_grid_select(df, show_columns, show_column_headers=show_column_headers)
 
-        if tool_bar.short_slots[1].button(
-            "➕ Add", help="Add a new Table Group", use_container_width=True  # NOQA RUF001
+        if actions_column.button(
+            ":material/add: Add", help="Add a new Table Group"
         ):
             add_table_group_dialog(project_code, connection)
 
         disable_buttons = selected is None
-        if tool_bar.short_slots[2].button(
-            "🖊️ Edit", help="Edit the selected Table Group", disabled=disable_buttons, use_container_width=True
+        if actions_column.button(
+            ":material/edit: Edit", help="Edit the selected Table Group", disabled=disable_buttons
         ):
             edit_table_group_dialog(project_code, connection, selected)
 
-        if tool_bar.short_slots[3].button(
-            "❌ Delete", help="Delete the selected Table Group", disabled=disable_buttons, use_container_width=True
+        if actions_column.button(
+            ":material/delete: Delete", help="Delete the selected Table Group", disabled=disable_buttons
         ):
             delete_table_group_dialog(selected)
 
-        if tool_bar.short_slots[4].button(
+        if actions_column.button(
             f":{'gray' if disable_buttons else 'green'}[Test Suites　→]",
             help="Create or edit Test Suites for the selected Table Group",
             disabled=disable_buttons,
-            use_container_width=True,
         ):
-            st.session_state["table_group"] = selected[0]
-
             self.router.navigate(
-                "connections:test-suites",
-                {"connection_id": connection_id, "table_group_id": selected[0]["id"]},
+                "test-suites",
+                {"table_group_id": selected[0]["id"]},
             )
 
         if not selected:

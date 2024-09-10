@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string} href
+ * @property {object} params
  * @property {string} label
  * @property {boolean} underline
  * @property {string?} left_icon
@@ -28,7 +29,7 @@ const Link = (/** @type Properties */ props) => {
         {
             class: `tg-link ${props.underline.val ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: () => navigate(props.href.val),
+            onclick: () => navigate(props.href.val, props.params.val),
         },
         div(
             {class: 'tg-link--wrapper'},
@@ -50,8 +51,8 @@ const LinkIcon = (
     );
 };
 
-function navigate(href) {
-    Streamlit.sendData({ href });
+function navigate(href, params) {
+    Streamlit.sendData({ href, params });
 }
 
 const stylesheet = new CSSStyleSheet();

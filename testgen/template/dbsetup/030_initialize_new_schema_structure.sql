@@ -511,9 +511,7 @@ CREATE TABLE working_agg_cat_tests (
    test_measures     TEXT,
    test_conditions   TEXT,
    CONSTRAINT working_agg_cat_tests_trid_sn_tn_cs
-      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence),
-   CONSTRAINT working_agg_cat_tests_test_runs_fk
-      FOREIGN KEY (test_run_id) REFERENCES test_runs
+      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence)
 );
 
 CREATE TABLE working_agg_cat_results (
@@ -524,9 +522,7 @@ CREATE TABLE working_agg_cat_results (
    measure_results TEXT,
    test_results    TEXT,
    CONSTRAINT working_agg_cat_results_tri_sn_tn_cs
-      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence),
-   CONSTRAINT working_agg_cat_results_test_runs_fk
-      FOREIGN KEY (test_run_id) REFERENCES test_runs
+      PRIMARY KEY (test_run_id, schema_name, table_name, cat_sequence)
 );
 
 CREATE TABLE cat_test_conditions (
@@ -595,6 +591,10 @@ CREATE TABLE tg_revision (
 
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
 
+-- Index working table - ORIGINAL
+CREATE INDEX working_agg_cat_tests_test_run_id_index
+   ON working_agg_cat_tests(test_run_id);
+
 -- Index Connections
 CREATE UNIQUE INDEX uix_con_id
    ON connections(id);
@@ -620,6 +620,9 @@ CREATE INDEX ix_ts_con
    ON test_suites(connection_id);
 
 -- Index test_definitions
+CREATE INDEX ix_td_ts_fk
+   ON test_definitions(test_suite_id);
+
 CREATE INDEX ix_td_pc_stc_tst
    ON test_definitions(test_suite_id, schema_name, table_name, column_name, test_type);
 
@@ -633,6 +636,9 @@ CREATE INDEX ix_td_ts_tc
    ON test_definitions(test_suite_id, table_name, column_name, test_type);
 
 -- Index test_runs
+CREATE INDEX ix_trun_ts_fk
+   ON test_runs(test_suite_id);
+
 CREATE INDEX ix_trun_pc_ts_time
    ON test_runs(test_suite_id, test_starttime);
 
@@ -642,6 +648,9 @@ CREATE INDEX ix_trun_time
 -- Index test_results
 CREATE UNIQUE INDEX uix_tr_id
    ON test_results(id);
+
+CREATE INDEX ix_tr_pc_ts
+   ON test_results(test_suite_id);
 
 CREATE INDEX ix_tr_trun
    ON test_results(test_run_id);

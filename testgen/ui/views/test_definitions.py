@@ -7,12 +7,13 @@ from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
+import testgen.ui.services.table_group_service as table_group_service
 import testgen.ui.services.test_definition_service as test_definition_service
-import testgen.ui.services.toolbar_service as tb
+import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.common import date_service
-from testgen.ui.navigation.menu import MenuItem
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import authentication_service
+from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
@@ -21,138 +22,119 @@ LOG = logging.getLogger("testgen")
 
 
 class TestDefinitionsPage(Page):
-    path = "test-definitions"
+    path = "test-suites:definitions"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: "test_suite_id" in session.current_page_args or "test-suites",
     ]
-    breadcrumbs: typing.ClassVar = [
-        {"label": "Overview", "path": "overview"},
-        {"label": "Tests Definitions", "path": None},
-    ]
-    menu_item = MenuItem(icon="list_alt", label="Tests Definitions", order=4)
 
-    def render(self, **_) -> None:
-        # Get page parameters from session
-        project_code = st.session_state["project"]
+    def render(self, test_suite_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
+        test_suite = test_suite_service.get_by_id(test_suite_id)
+        table_group = table_group_service.get_by_id(test_suite["table_groups_id"])
+        project_code = table_group["project_code"]
+        project_service.set_current_project(project_code)
 
-        connection = st.session_state["connection"] if "connection" in st.session_state.keys() else None
-        table_group = st.session_state["table_group"] if "table_group" in st.session_state.keys() else None
-        test_suite = st.session_state["test_suite"] if "test_suite" in st.session_state.keys() else None
-
-        str_table_name = st.session_state["table_name"] if "table_name" in st.session_state.keys() else None
-
-        str_column_name = None
-
-        export_container = fm.render_page_header(
+        testgen.page_header(
             "Test Definitions",
             "https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types",
-            lst_breadcrumbs=self.breadcrumbs,
-            boo_show_refresh=True,
+            breadcrumbs=[
+                { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
+                { "label": test_suite["test_suite"] },
+            ],
         )
 
-        tool_bar = tb.ToolBar(5, 6, 4, None, multiline=True)
+        table_filter_column, column_filter_column, table_actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+        testgen.flex_row_end(table_actions_column)
 
-        with tool_bar.long_slots[0]:
-            str_connection_id, connection = prompt_for_connection(session.project, connection)
+        actions_column, disposition_column = st.columns([.5, .5])
+        testgen.flex_row_start(actions_column)
+        testgen.flex_row_end(disposition_column)
 
-        # Prompt for Table Group
-        with tool_bar.long_slots[1]:
-            str_table_groups_id, str_connection_id, str_schema, table_group = prompt_for_table_group(
-                session.project, table_group, str_connection_id
+        with table_filter_column:
+            table_options = run_table_lookup_query(table_group["id"])
+            table_name = testgen.toolbar_select(
+                options=table_options,
+                value_column="table_name",
+                default_value=table_name,
+                bind_to_query="table_name",
+                required=True,
+                label="Table Name",
+            )
+        with column_filter_column:
+            column_options = get_column_names(table_group["id"], table_name)
+            column_name = testgen.toolbar_select(
+                options=column_options,
+                default_value=column_name,
+                bind_to_query="column_name",
+                label="Column Name",
+                disabled=not table_name,
             )
 
-        # Prompt for Test Suite
-        if str_table_groups_id:
-            with tool_bar.long_slots[2]:
-                str_test_suite, test_suite = prompt_for_test_suite(str_table_groups_id, test_suite)
-            with tool_bar.long_slots[3]:
-                str_table_name = prompt_for_table_name(str_table_groups_id, str_table_name)
-            if str_table_name:
-                with tool_bar.long_slots[4]:
-                    str_column_name = prompt_for_column_name(str_table_groups_id, str_table_name)
+        with disposition_column:
+            str_help = "Toggle on to perform actions on multiple test definitions"
+            do_multi_select = st.toggle("Multi-Select", help=str_help)
 
-            if str_test_suite and str_table_name:
-                with tool_bar.short_slots[5]:
-                    str_help = "Toggle on to perform actions on multiple test definitions"
-                    do_multi_select = st.toggle("Multi-Select", help=str_help)
+        if actions_column.button(
+            ":material/add: Add", help="Add a new Test Definition"
+        ):
+            add_test_dialog(project_code, table_group, test_suite, table_name, column_name)
 
-                if tool_bar.short_slots[0].button(
-                    "➕ Add", help="Add a new Test Definition", use_container_width=True  # NOQA RUF001
-                ):
-                    add_test_dialog(project_code, table_group, test_suite, str_table_name, str_column_name)
+        selected = show_test_defs_grid(
+            session.project, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
+            table_group["id"]
+        )
+        fm.render_refresh_button(table_actions_column)
 
-                selected = show_test_defs_grid(
-                    session.project, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
-                    str_table_groups_id
-                )
+        # Display buttons
+        if disposition_column.button("✓", help="Activate for future runs", disabled=not selected):
+            fm.reset_post_updates(
+                update_test_definition(selected, "test_active", True, "Activated"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[],
+            )
+        if disposition_column.button("✘", help="Inactivate Test for future runs", disabled=not selected):
+            fm.reset_post_updates(
+                update_test_definition(selected, "test_active", False, "Inactivated"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[],
+            )
+        if disposition_column.button(
+            "🔒", help="Protect from future test generation", disabled=not selected
+        ):
+            fm.reset_post_updates(
+                update_test_definition(selected, "lock_refresh", True, "Locked"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[],
+            )
+        if disposition_column.button(
+            "🔐", help="Unlock for future test generation", disabled=not selected
+        ):
+            fm.reset_post_updates(
+                update_test_definition(selected, "lock_refresh", False, "Unlocked"),
+                as_toast=True,
+                clear_cache=True,
+                lst_cached_functions=[],
+            )
 
-                # Display buttons
-                if tool_bar.button_slots[0].button("✓", help="Activate for future runs", disabled=not selected):
-                    fm.reset_post_updates(
-                        update_test_definition(selected, "test_active", True, "Activated"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
-                if tool_bar.button_slots[1].button("✘", help="Inactivate Test for future runs", disabled=not selected):
-                    fm.reset_post_updates(
-                        update_test_definition(selected, "test_active", False, "Inactivated"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
-                if tool_bar.button_slots[2].button(
-                    "🔒", help="Protect from future test generation", disabled=not selected
-                ):
-                    fm.reset_post_updates(
-                        update_test_definition(selected, "lock_refresh", True, "Locked"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
-                if tool_bar.button_slots[3].button(
-                    "🔐", help="Unlock for future test generation", disabled=not selected
-                ):
-                    fm.reset_post_updates(
-                        update_test_definition(selected, "lock_refresh", False, "Unlocked"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
+        if selected:
+            selected_test_def = selected[0]
 
-                if selected:
-                    selected_test_def = selected[0]
+        if actions_column.button(
+            ":material/edit: Edit",
+            help="Edit the Test Definition",
+            disabled=not selected,
+        ):
+            edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
-                if tool_bar.short_slots[1].button(
-                    "🖊️ Edit",  # RUF001
-                    help="Edit the Test Definition",
-                    use_container_width=True,
-                    disabled=not selected,
-                ):
-                    edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def)
-
-                if tool_bar.short_slots[2].button(
-                    "❌ Delete",
-                    help="Delete the selected Test Definition",
-                    use_container_width=True,
-                    disabled=not selected,
-                ):
-                    delete_test_dialog(selected_test_def)
-
-            else:
-                st.markdown(":orange[Select a Test Suite and Table Name to view Test Definition details.]")            
-
-
-class TestDefinitionsPageFromSuite(TestDefinitionsPage):
-    path = "connections:test-definitions"
-    breadcrumbs: typing.ClassVar = [
-        {"label": "Overview", "path": "overview"},
-        {"label": "Connections", "path": "connections"},
-        {"label": "Table Groups", "path": "connections:table-groups"},
-        {"label": "Test Suites", "path": "connections:test-suites"},
-        {"label": "Test Definitions", "path": None},
-    ]
-    menu_item = None
+        if actions_column.button(
+            ":material/delete: Delete",
+            help="Delete the selected Test Definition",
+            disabled=not selected,
+        ):
+            delete_test_dialog(selected_test_def)          
 
 
 @st.dialog("Delete Test")
@@ -200,7 +182,6 @@ def show_test_form_by_id(test_definition_id):
     selected_test_raw = test_definition_service.get_test_definitions(test_definition_ids=[test_definition_id])
     test_definition = selected_test_raw.iloc[0].to_dict()
 
-    mode = "edit"
     project_code = test_definition["project_code"]
     table_group_id = test_definition["table_groups_id"]
     test_suite_name = test_definition["test_suite"]
@@ -856,23 +837,11 @@ def generate_test_defs_help(str_test_type):
 
 
 @st.cache_data(show_spinner=False)
-def run_project_lookup_query():
-    str_schema = st.session_state["dbschema"]
-    return dq.run_project_lookup_query(str_schema)
-
-
-@st.cache_data(show_spinner=False)
 def run_test_type_lookup_query(str_test_type=None, boo_show_referential=True, boo_show_table=True,
                                boo_show_column=True, boo_show_custom=True):
     str_schema = st.session_state["dbschema"]
     return dq.run_test_type_lookup_query(str_schema, str_test_type, boo_show_referential, boo_show_table,
                                          boo_show_column, boo_show_custom)
-
-
-@st.cache_data(show_spinner=False)
-def run_connections_lookup_query(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_connections_lookup_query(str_schema, str_project_code)
 
 
 @st.cache_data(show_spinner=False)
@@ -897,99 +866,6 @@ def run_column_lookup_query(str_table_groups_id, str_table_name):
 def run_test_suite_lookup_query(str_table_groups_id, test_suite_name=None):
     str_schema = st.session_state["dbschema"]
     return dq.run_test_suite_lookup_by_tgroup_query(str_schema, str_table_groups_id, test_suite_name)
-
-
-def prompt_for_connection(str_project_code, selected_connection):
-    str_id = None
-
-    df = run_connections_lookup_query(str_project_code)
-    lst_choices = df["connection_name"].tolist()
-
-    if selected_connection:
-        connection_name = selected_connection["connection_name"]
-        selected_connection_index = lst_choices.index(connection_name)
-    else:
-        selected_connection_index = 0
-
-    str_name = st.selectbox("Connection", lst_choices, index=selected_connection_index)
-    if str_name:
-        str_id = df.loc[df["connection_name"] == str_name, "id"].iloc[0]
-        connection = df.loc[df["connection_name"] == str_name].iloc[0]
-    return str_id, connection
-
-
-def prompt_for_table_group(str_project_code, selected_table_group, str_connection_id):
-    str_id = None
-    str_schema = None
-    table_group = None
-
-    df = run_table_groups_lookup_query(str_project_code, str_connection_id)
-    lst_choices = df["table_groups_name"].tolist()
-
-    table_group_name = None
-    if selected_table_group:
-        table_group_name = selected_table_group["table_groups_name"]
-
-    if table_group_name and table_group_name in lst_choices:
-        selected_table_group_index = lst_choices.index(table_group_name)
-    else:
-        selected_table_group_index = 0
-
-    str_name = st.selectbox("Table Group", lst_choices, index=selected_table_group_index)
-    if str_name:
-        str_id = df.loc[df["table_groups_name"] == str_name, "id"].iloc[0]
-        str_connection_id = df.loc[df["table_groups_name"] == str_name, "connection_id"].iloc[0]
-        str_schema = df.loc[df["table_groups_name"] == str_name, "table_group_schema"].iloc[0]
-        table_group = df.loc[df["table_groups_name"] == str_name].iloc[0]
-    return str_id, str_connection_id, str_schema, table_group
-
-
-def prompt_for_test_suite(str_table_groups_id, selected_test_suite):
-    df = run_test_suite_lookup_query(str_table_groups_id)
-    lst_choices = df["test_suite"].tolist()
-
-    test_suite = None
-    test_suite_name = None
-    if selected_test_suite:
-        test_suite_name = selected_test_suite["test_suite"]
-
-    if test_suite_name and test_suite_name in lst_choices:
-        test_suite_index = lst_choices.index(test_suite_name)
-    else:
-        test_suite_index = 0
-
-    str_name = st.selectbox("Test Suite", lst_choices, index=test_suite_index)
-    if str_name:
-        test_suite = df.loc[df["test_suite"] == str_name].iloc[0]
-
-    return str_name, test_suite
-
-
-def prompt_for_table_name(str_table_groups_id, selected_table_name):
-    df = run_table_lookup_query(str_table_groups_id)
-    lst_choices = df["table_name"].tolist()
-
-    if selected_table_name and selected_table_name in lst_choices:
-        table_name_index = lst_choices.index(selected_table_name) + 1
-    else:
-        table_name_index = 0
-
-    def table_name_callback():
-        st.session_state["table_name"] = st.session_state.new_table_name
-
-    str_name = selectbox(
-        "Table Name", lst_choices, index=table_name_index, key="new_table_name", on_change=table_name_callback
-    )
-
-    return str_name
-
-
-def prompt_for_column_name(str_table_groups_id, str_table_name):
-    lst_choices = get_column_names(str_table_groups_id, str_table_name)
-    # Using extras selectbox to allow no entry
-    str_name = selectbox("Column Name", lst_choices, key="column-name-main-drop-down")
-
-    return str_name
 
 
 def get_column_names(str_table_groups_id, str_table_name):

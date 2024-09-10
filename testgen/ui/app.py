@@ -8,9 +8,8 @@ from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
 from testgen.ui import bootstrap
 from testgen.ui.components import widgets as testgen
-from testgen.ui.queries import project_queries
 from testgen.ui.services import database_service as db
-from testgen.ui.services import javascript_service, user_session_service
+from testgen.ui.services import javascript_service, project_service, user_session_service
 from testgen.ui.session import session
 
 
@@ -33,9 +32,9 @@ def render(log_level: int = logging.INFO):
 
     session.dbschema = db.get_schema()
 
-    projects = get_projects()
+    projects = project_service.get_projects()
     if not session.project and len(projects) > 0:
-        set_current_project(projects[0]["code"])
+        project_service.set_current_project(projects[0]["code"])
 
     if session.authentication_status is None and not session.logging_out:
         user_session_service.load_user_session()
@@ -66,19 +65,6 @@ def set_locale():
     timezone = javascript_service.get_browser_locale_timezone()
     if timezone is not None and timezone != 0:
         st.session_state["browser_timezone"] = timezone
-
-
-@st.cache_data(show_spinner=False)
-def get_projects():
-    projects = project_queries.get_projects()
-    projects = [
-        {"code": project["project_code"], "name": project["project_name"]} for project in projects.to_dict("records")
-    ]
-
-    return projects
-
-def set_current_project(project_code: str) -> None:
-    session.project = project_code
 
 
 def get_image_path(path: str) -> str:

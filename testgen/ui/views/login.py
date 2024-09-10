@@ -17,7 +17,7 @@ class LoginPage(Page):
         lambda: not session.authentication_status or session.logging_in or "overview",
     ]
 
-    def render(self) -> None:
+    def render(self, **_kwargs) -> None:
         auth_data = user_session_service.get_auth_data()
 
         authenticator = stauth.Authenticate(
