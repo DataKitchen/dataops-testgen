@@ -39,40 +39,35 @@ class ProfilingAnomaliesPage(Page):
         )
 
         others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
-        (liklihood_filter_column, issue_type_filter_column, actions_column, export_button_column) = (
-            st.columns([.16, .34, .32, .18], vertical_alignment="bottom")
+        (liklihood_filter_column, issue_type_filter_column, sort_column, actions_column, export_button_column) = (
+            st.columns([.16, .34, .08, .32, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
 
         with liklihood_filter_column:
-            # Likelihood selection - optional filter
-            status_options = ["All Likelihoods", "Definite", "Likely", "Possible", "Potential PII"]
             issue_class = testgen.toolbar_select(
-                options=status_options,
+                options=["Definite", "Likely", "Possible", "Potential PII"],
                 default_value=issue_class,
-                required=True,
+                required=False,
                 bind_to_query="issue_class",
                 label="Issue Class",
             )
 
         with issue_type_filter_column:
-            # Issue filter (optional)
             issue_type_options = get_issue_types()
-            issue_type = testgen.toolbar_select(
-                options=["All Issue Types", *issue_type_options["anomaly_name"]],
-                default_value=issue_type,
-                required=True,
+            issue_type_id = testgen.toolbar_select(
+                options=issue_type_options,
+                default_value=None if issue_class == "Potential PII" else issue_type,
+                value_column="id",
+                display_column="anomaly_name",
+                required=False,
                 bind_to_query="issue_type",
                 label="Issue Type",
+                disabled=issue_class == "Potential PII",
             )
-            issue_type_id = dict(zip(issue_type_options["anomaly_name"], issue_type_options["id"], strict=False)).get(issue_type)
 
-        with actions_column:
-            str_help = "Toggle on to perform actions on multiple Hygiene Issues"
-            do_multi_select = st.toggle("Multi-Select", help=str_help)
-
-        with export_button_column:
+        with sort_column:
             sortable_columns = (
                 ("Table", "r.table_name"),
                 ("Column", "r.column_name"),
@@ -80,8 +75,13 @@ class ProfilingAnomaliesPage(Page):
                 ("Likelihood", "likelihood_order"),
                 ("Action", "r.disposition"),
             )
-            default = (("r.table_name", "ASC"), ("r.column_name", "ASC"))
+            default = [(sortable_columns[i][1], "ASC") for i in (0, 1)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
+
+        with actions_column:
+            str_help = "Toggle on to perform actions on multiple Hygiene Issues"
+            do_multi_select = st.toggle("Multi-Select", help=str_help)
+
 
         # Get hygiene issue list
         df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, sorting_columns)
@@ -245,7 +245,7 @@ def get_db_table_group_choices(str_project_code):
 @st.cache_data(show_spinner="Retrieving Data")
 def get_profiling_anomalies(str_profile_run_id, str_likelihood, issue_type_id, sorting_columns):
     str_schema = st.session_state["dbschema"]
-    if str_likelihood == "All Likelihoods":
+    if str_likelihood is None:
         str_criteria = " AND t.issue_likelihood <> 'Potential PII'"
     else:
         str_criteria = f" AND t.issue_likelihood = '{str_likelihood}'"
@@ -309,7 +309,7 @@ def get_anomaly_disposition(str_profile_run_id):
     return df[["id", "action"]]
 
 
-@st.cache_data(show_spinner="Retrieving Status")
+@st.cache_data(show_spinner=False)
 def get_issue_types():
     schema = st.session_state["dbschema"]
     df = db.retrieve_data(f"SELECT id, anomaly_name FROM {schema}.profile_anomaly_types")

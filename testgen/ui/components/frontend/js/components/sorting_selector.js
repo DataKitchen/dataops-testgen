@@ -2,13 +2,18 @@ import {Streamlit} from "../streamlit.js";
 import van from '../van.min.js';
 
 /**
+ * @typedef ColDef
+ * @type {Array.<string, string>}
  *
- * @typedef Properties
+ * @typedef StateItem
+ * @type {Array.<string, string>}
+ *
+ *  @typedef Properties
  * @type {object}
- * @property {Array} columns
- * @property {Array} default
+ * @property {Array.<ColDef>} columns
+ * @property {Array.<StateItem>} state
  */
-const { a, hr, button, div, i, img, label, option, select, span } = van.tags;
+const { button, div, i, span } = van.tags;
 
 const SortingSelector = (/** @type {Properties} */ props) => {
 
@@ -70,7 +75,11 @@ const SortingSelector = (/** @type {Properties} */ props) => {
     prevComponentState.forEach(([colId, direction]) => selectColumn(colId, direction));
 
     const reset = () => {
-        columns.map(([colLabel, colId]) => (componentState[colId].val = { direction: defaultDirection, order: null }));
+        columns.map(
+            ([colLabel, colId]) => (
+                componentState[colId].val = { direction: defaultDirection, order: null }
+            )
+        );
         selectedDiv.innerHTML = ``;
     }
 

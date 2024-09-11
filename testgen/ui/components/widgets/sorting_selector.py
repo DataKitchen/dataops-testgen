@@ -53,6 +53,10 @@ def sorting_selector(
     # Parameters
     :param columns: Iterable of 2-tuples, being: (<column label>, <database column reference>)
     :param default: Iterable of 2-tuples, being: (<database column reference>, <direction: ASC|DESC>)
+    :param on_change: Callable that will be called when the component state is updated
+    :param popover_label: Label to be applied to the pop-over button. Default: 'Sort'
+    :param query_param: Name of the query parameter that will store the component state. Can be disabled by setting
+                        to None. Default: 'sort'.
     :param key: unique key to give the component a persisting state
 
     # Return value
@@ -82,7 +86,7 @@ def sorting_selector(
             props={"columns": columns, "state": state},
         )
 
-    # For some unknown reason, sometimes, streamlit returns None as the component status
+    # For some unknown reason, sometimes, streamlit returns None as the component state
     new_state = [] if new_state is None else new_state
 
     if query_param:
