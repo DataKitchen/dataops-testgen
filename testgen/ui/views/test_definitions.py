@@ -510,7 +510,8 @@ def show_test_form(
         if i >= dynamic_attributes_half_length:
             current_column = mid_right_column
 
-        value = empty_if_null(selected_test_def[dynamic_attribute]) if mode == "edit" else ""
+        default_value = "" if dynamic_attribute != "threshold_value" else 0
+        value = empty_if_null(selected_test_def[dynamic_attribute]) if mode == "edit" else default_value
 
         actual_dynamic_attributes_labels = (
             dynamic_attributes_labels[i]
