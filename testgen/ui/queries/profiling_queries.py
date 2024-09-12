@@ -79,8 +79,13 @@ def lookup_db_parentage_from_run(str_profile_run_id):
 
 
 @st.cache_data(show_spinner="Retrieving Data")
-def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
+def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name, sorting_columns = None):
     str_schema = st.session_state["dbschema"]
+    sorting_columns_str = (
+        "p.schema_name, p.table_name, position"
+        if sorting_columns is None
+        else ", ".join(" ".join(col) for col in sorting_columns)
+    )
     str_sql = f"""
           SELECT   -- Identifiers
                    id::VARCHAR, dk_id,
@@ -98,7 +103,7 @@ def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
                      WHEN 'B' THEN 'Boolean'
                               ELSE 'N/A'
                    END as general_type,
-                   functional_table_type as semantic_table_type, 
+                   functional_table_type as semantic_table_type,
                    functional_data_type as semantic_data_type,
                    datatype_suggestion,
                    CASE WHEN s.column_name IS NOT NULL THEN 'Yes' END as anomalies,
@@ -142,7 +147,7 @@ def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
           WHERE p.profile_run_id = '{str_profile_run_id}'::UUID
             AND p.table_name ILIKE '{str_table_name}'
             AND p.column_name ILIKE '{str_column_name}'
-          ORDER BY p.schema_name, p.table_name, position;
+          ORDER BY {sorting_columns_str};
     """
 
     return db.retrieve_data(str_sql)

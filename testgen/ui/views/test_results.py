@@ -28,7 +28,7 @@ class TestResultsPage(Page):
         lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
-    def render(self, run_id: str, status: str | None = None, **_kwargs) -> None:
+    def render(self, run_id: str, status: str | None = None, test_type: str | None = None, **_kwargs) -> None:
         run_date, test_suite_name, project_code = get_drill_test_run(run_id)
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
         project_service.set_current_project(project_code)
@@ -47,7 +47,9 @@ class TestResultsPage(Page):
         testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
 
         # Setup Toolbar
-        status_filter_column, actions_column, export_button_column = st.columns([.3, .5, .2], vertical_alignment="bottom")
+        status_filter_column, test_type_filter_column, sort_column, actions_column, export_button_column = st.columns(
+            [.2, .2, .08, .4, .12], vertical_alignment="bottom"
+        )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
 
@@ -60,11 +62,35 @@ class TestResultsPage(Page):
             ]
             status = testgen.toolbar_select(
                 options=status_options,
-                default_value=status,
-                required=True,
+                default_value=status or "Failures and Warnings",
+                required=False,
                 bind_to_query="status",
                 label="Result Status",
             )
+
+        with test_type_filter_column:
+            test_type = testgen.toolbar_select(
+                options=get_test_types(),
+                value_column="test_type",
+                display_column="test_name_short",
+                default_value=test_type,
+                required=False,
+                bind_to_query="test_type",
+                label="Test Type",
+            )
+
+        with sort_column:
+            sortable_columns = (
+                ("Table Name", "r.table_name"),
+                ("Columns/Focus", "r.column_names"),
+                ("Test Type", "r.test_type"),
+                ("UOM", "tt.measure_uom"),
+                ("Result Measure", "result_measure"),
+                ("Status", "result_status"),
+                ("Action", "r.disposition"),
+            )
+            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
             str_help = "Toggle on to perform actions on multiple results"
@@ -81,10 +107,17 @@ class TestResultsPage(Page):
                 status = "'Passed'"
 
         # Display main grid and retrieve selection
-        selected = show_result_detail(run_id, status, do_multi_select, export_button_column)
+        selected = show_result_detail(
+            run_id, status, test_type, sorting_columns, do_multi_select, export_button_column
+        )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
         disable_dispo = True if not selected or status == "'Passed'" else False
+
+        affected_cached_functions = [get_test_disposition]
+        if "r.disposition" in dict(sorting_columns):
+            affected_cached_functions.append(get_test_results)
+
         if actions_column.button(
             "✓", help="Confirm this issue as relevant for this run", disabled=disable_dispo
         ):
@@ -92,7 +125,7 @@ class TestResultsPage(Page):
                 do_disposition_update(selected, "Confirmed"),
                 as_toast=True,
                 clear_cache=True,
-                lst_cached_functions=[get_test_disposition],
+                lst_cached_functions=affected_cached_functions,
             )
         if actions_column.button(
             "✘", help="Dismiss this issue as not relevant for this run", disabled=disable_dispo
@@ -101,7 +134,7 @@ class TestResultsPage(Page):
                 do_disposition_update(selected, "Dismissed"),
                 as_toast=True,
                 clear_cache=True,
-                lst_cached_functions=[get_test_disposition],
+                lst_cached_functions=affected_cached_functions,
             )
         if actions_column.button(
             "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
@@ -110,14 +143,14 @@ class TestResultsPage(Page):
                 do_disposition_update(selected, "Inactive"),
                 as_toast=True,
                 clear_cache=True,
-                lst_cached_functions=[get_test_disposition],
+                lst_cached_functions=affected_cached_functions,
             )
         if actions_column.button("⟲", help="Clear action", disabled=not selected):
             fm.reset_post_updates(
                 do_disposition_update(selected, "No Decision"),
                 as_toast=True,
                 clear_cache=True,
-                lst_cached_functions=[get_test_disposition],
+                lst_cached_functions=affected_cached_functions,
             )
 
         # Help Links
@@ -142,20 +175,32 @@ def get_drill_test_run(str_test_run_id):
         return df.at[0, "test_date"], df.at[0, "test_suite"], df.at[0, "project_code"]
 
 
-@st.cache_data(show_spinner="Retrieving Results")
-def get_test_results(str_run_id, str_sel_test_status):
+@st.cache_data(show_spinner=False)
+def get_test_types():
     schema = st.session_state["dbschema"]
-    return get_test_results_uncached(schema, str_run_id, str_sel_test_status)
+    df = db.retrieve_data(f"SELECT test_type, test_name_short FROM {schema}.test_types")
+    return df
 
 
-def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
+@st.cache_data(show_spinner="Retrieving Results")
+def get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns):
+    schema = st.session_state["dbschema"]
+    return get_test_results_uncached(schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns)
+
+
+def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns):
     # First visible row first, so multi-select checkbox will render
+    str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
+    test_type_clause = f"AND r.test_type = '{test_type_id}'" if test_type_id else ""
+    status_clause = f" AND r.result_status IN ({str_sel_test_status})" if str_sel_test_status else ""
     str_sql = f"""
             WITH run_results
                AS (SELECT *
                      FROM {str_schema}.test_results r
-                    WHERE r.test_run_id = '{str_run_id}'
-                      AND r.result_status IN ({str_sel_test_status})
+                    WHERE
+                      r.test_run_id = '{str_run_id}'
+                      {status_clause}
+                      {test_type_clause}
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
@@ -214,7 +259,7 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
             LEFT JOIN {str_schema}.cat_test_conditions c
                ON (cn.sql_flavor = c.sql_flavor
               AND  r.test_type = c.test_type)
-            ORDER BY schema_name, table_name, column_names, test_type;
+            {str_order_by} ;
     """
     df = db.retrieve_data(str_sql)
 
@@ -551,9 +596,9 @@ def show_test_def_detail(str_test_def_id):
         )
 
 
-def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_container):
+def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_columns, do_multi_select, export_container):
     # Retrieve test results (always cached, action as null)
-    df = get_test_results(str_run_id, str_sel_test_status)
+    df = get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns)
     # Retrieve disposition action (cache refreshed)
     df_action = get_test_disposition(str_run_id)
     # Update action from disposition df
