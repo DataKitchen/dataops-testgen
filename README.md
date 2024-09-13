@@ -86,7 +86,7 @@ Create and activate a virtual environment with a TestGen-compatible version of P
 
 _On Linux/Mac_
 ```shell
-python3.10 -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 ```
 
@@ -108,28 +108,32 @@ testgen --help
 
 ### Set up the application database in PostgresSQL
 
-Set appropriate values for the following environment variables (use `export variable=value` for Linux/Mac and `set variable=value` for Windows). Refer to the [TestGen Configuration](configuration.md) document for more details, defaults, and other supported configuration.
-
+Create a `local.env` file with the following environment variables, replacing the `<value>` placeholders with appropriate values. Refer to the [TestGen Configuration](docs/configuration.md) document for more details, defaults, and other supported configuration.
 ```shell
 # Connection parameters for the PostgreSQL server
-TG_METADATA_DB_HOST
-TG_METADATA_DB_PORT
+export TG_METADATA_DB_HOST=<postgres_hostname>
+export TG_METADATA_DB_PORT=<postgres_port>
 
-# PostgreSQL admin role with privileges to create roles, users, database and schema
-# This role will be used by the next step to initialize the application database
-DATABASE_ADMIN_USER
-DATABASE_ADMIN_PASSWORD
+# Connection credentials for the PostgreSQL server
+# This role must have privileges to create roles, users, database and schema so that the application database can be initialized
+export TG_METADATA_DB_USER=<postgres_username>
+export TG_METADATA_DB_PASSWORD=<postgres_password>
 
-# Credentials to be used for encrypting secrets in application database
-TG_DECRYPT_SALT
-TG_DECRYPT_PASSWORD
+# Set a password and arbitrary string (the "salt") to be used for encrypting secrets in the application database
+export TG_DECRYPT_PASSWORD=<encryption_password>
+export TG_DECRYPT_SALT=<encryption_salt>
 
-# Default admin user to be created for TestGen
-TESTGEN_USERNAME
-TESTGEN_PASSWORD
+# Set credentials for the default admin user to be created for TestGen
+export TESTGEN_USERNAME=<username>
+export TESTGEN_PASSWORD=<password>
 
-# Accessible path for storing application logs
-TESTGEN_LOG_FILE_PATH
+# Set an accessible path for storing application logs
+export TESTGEN_LOG_FILE_PATH=<path_for_logs>
+```
+
+Source the file to apply the environment variables. For the Windows equivalent, refer to [this guide](https://bennett4.medium.com/windows-alternative-to-source-env-for-setting-environment-variables-606be2a6d3e1).
+```shell
+source local.env
 ```
 
 Make sure the PostgreSQL database server is up and running. Initialize the application database for TestGen. 
