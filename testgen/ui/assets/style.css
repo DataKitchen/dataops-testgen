@@ -1,6 +1,7 @@
 body {
     --primary-color: #06a04a;
     --link-color: #1976d2;
+    --error-color: #EF5350;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
@@ -126,7 +127,6 @@ button[title="Show password text"] {
 .element-container:has(iframe[height="0"][title="testgen.ui.components.utils.component.testgen"]) {
     display: none !important;
 }
-/* ... */
 
 /* Cards Component */
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) {
@@ -170,6 +170,14 @@ button[title="Show password text"] {
 
 [data-testid="stVerticalBlock"]:has(> div.element-container > div.stHtml > i.no-flex-gap) {
     gap: unset;
+}
+
+/* Stylistic equivalent of st.caption("text") for customization
+Use as st.html('<p class="caption" style="...">text</p>') */
+.caption {
+    color: var(--caption-text-color);
+    font-size: 14px;
+    margin-bottom: 0;
 }
 
 /* Tooltips */
