@@ -4,7 +4,6 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import streamlit as st
-from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
@@ -65,9 +64,8 @@ def sorting_selector(
 
     state = None
 
-    ctx = get_script_run_ctx()
     try:
-        state = ctx.session_state[key]
+        state = st.session_state[key]
     except KeyError:
         pass
 
