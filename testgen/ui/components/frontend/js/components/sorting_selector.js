@@ -29,7 +29,7 @@ const SortingSelector = (/** @type {Properties} */ props) => {
 
     const columnLabel = columns.reduce((acc, [colLabel, colId]) => ({ ...acc, [colId]: colLabel}), {});
 
-    Streamlit.setFrameHeight(130 + 30 * columns.length);
+    Streamlit.setFrameHeight(100 + 30 * columns.length);
 
     const componentState = columns.reduce(
         (state, [colLabel, colId]) => (
@@ -83,16 +83,16 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         selectedDiv.innerHTML = ``;
     }
 
+    const externalComponentState = () => Object.entries(componentState).filter(
+        ([colId, colState]) => colState.val.order !== null
+    ).sort(
+        ([colIdA, colStateA], [colIdB, colStateB]) => colStateA.val.order - colStateB.val.order
+    ).map(
+        ([colId, colState]) => [colId, colState.val.direction]
+    )
+
     const apply = () => {
-        Streamlit.sendData(
-            Object.entries(componentState).filter(
-                ([colId, colState]) => colState.val.order !== null
-            ).sort(
-                ([colIdA, colStateA], [colIdB, colStateB]) => colStateA.val.order - colStateB.val.order
-            ).map(
-                ([colId, colState]) => [colId, colState.val.direction]
-            )
-        );
+        Streamlit.sendData(externalComponentState());
     }
 
     const columnItem = (colId) => {
@@ -120,6 +120,12 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         columns.map(([colLabel, colId]) => van.derive(() => columnItem(colId))),
     )
 
+    const resetDisabled = () => Object.entries(componentState).filter(
+        ([colId, colState]) => colState.val.order != null
+    ).length === 0;
+
+    const applyDisabled = () => externalComponentState().toString() === (props.state.val || []).toString();
+
     return div(
         { class: 'tg-sort-selector' },
         div(
@@ -137,11 +143,15 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         div(
             { class: `tg-sort-selector--footer` },
             button(
-                { onclick: reset },
+                {
+                    onclick: reset,
+                    style: `color: var(--button-text-color);`,
+                    disabled: van.derive(resetDisabled),
+                },
                 span(`Reset`),
             ),
             button(
-                { onclick: apply },
+                { onclick: apply, disabled: van.derive(applyDisabled) },
                 span(`Apply`),
             )
         )
@@ -189,7 +199,7 @@ stylesheet.replace(`
 
 .tg-sort-selector--column-list {
     border-bottom: 3px dotted var(--disabled-text-color);
-    padding-bottom: 16px;
+    padding-bottom: 8px;
     margin-bottom: 8px;
 }
 
@@ -197,6 +207,7 @@ stylesheet.replace(`
     text-align: right;
     text-transform: uppercase;
     font-size: 70%;
+    color: var(--secondary-text-color);
 }
 
 .tg-sort-selector--footer {
@@ -213,6 +224,11 @@ stylesheet.replace(`
     padding: 5px 20px;
     border-radius: 5px;
 }
+
+.tg-sort-selector--footer button[disabled] {
+    color: var(--disabled-text-color) !important;
+}
+
 
 @media (prefers-color-scheme: dark) {
     .tg-sort-selector--column-list button:hover {
