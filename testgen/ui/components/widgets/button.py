@@ -15,7 +15,7 @@ def button(
     on_click: typing.Callable[..., None] | None = None,
     style: str | None = None,
     key: str | None = None,
-) -> None:
+) -> typing.Any:
     """
     Testgen component to create custom styled buttons.
 
@@ -40,4 +40,4 @@ def button(
     if style:
         props.update({"style": style})
 
-    component(id_="button", key=key, props=props, on_change=on_click)
+    return component(id_="button", key=key, props=props, on_change=on_click)
