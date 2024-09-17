@@ -14,4 +14,5 @@ from testgen.ui.components.widgets.page import (
     whitespace,
 )
 from testgen.ui.components.widgets.sidebar import sidebar
+from testgen.ui.components.widgets.sorting_selector import sorting_selector
 from testgen.ui.components.widgets.summary_bar import summary_bar

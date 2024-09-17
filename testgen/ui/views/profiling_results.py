@@ -36,25 +36,27 @@ class ProfilingResultsPage(Page):
                 { "label": f"{table_group_name} | {run_date}" },
             ],
         )
-        
-        table_filter_column, column_filter_column, export_button_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+
+        table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
+            [.3, .3, .08, .32], vertical_alignment="bottom"
+        )
 
         with table_filter_column:
             # Table Name filter
             df = profiling_queries.run_table_lookup_query(table_group_id)
             table_name = testgen.toolbar_select(
-                options=df, 
+                options=df,
                 value_column="table_name",
                 default_value=table_name,
                 bind_to_query="table_name",
                 label="Table Name",
             )
-            
+
         with column_filter_column:
             # Column Name filter
             df = profiling_queries.run_column_lookup_query(table_group_id, table_name)
             column_name = testgen.toolbar_select(
-                options=df, 
+                options=df,
                 value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
@@ -62,14 +64,26 @@ class ProfilingResultsPage(Page):
                 disabled=not table_name,
             )
 
+        with sort_column:
+            sortable_columns = (
+                ("Schema Name", "p.schema_name"),
+                ("Table Name", "p.table_name"),
+                ("Column Name", "p.column_name"),
+                ("Column Type", "p.column_type"),
+                ("Semantic Data Type", "semantic_data_type"),
+                ("Anomalies", "anomalies"),
+            )
+            default_sorting = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            sorting_columns = testgen.sorting_selector(sortable_columns, default_sorting)
+
         # Use SQL wildcard to match all values
-        if not table_name:  
+        if not table_name:
             table_name = "%%"
         if not column_name:
             column_name = "%%"
 
         # Display main results grid
-        df = profiling_queries.get_profiling_detail(run_id, table_name, column_name)
+        df = profiling_queries.get_profiling_detail(run_id, table_name, column_name, sorting_columns)
         show_columns = [
             "schema_name",
             "table_name",

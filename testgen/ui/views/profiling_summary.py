@@ -25,7 +25,7 @@ class DataProfilingPage(Page):
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         project_code = project_code or session.project
-        
+
         testgen.page_header(
             "Profiling Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/investigate-profiling",
