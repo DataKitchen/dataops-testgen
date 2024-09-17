@@ -188,7 +188,7 @@ def get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_colu
     return get_test_results_uncached(schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns)
 
 
-def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns):
+def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_type_id=None, sorting_columns=None):
     # First visible row first, so multi-select checkbox will render
     str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
     test_type_clause = f"AND r.test_type = '{test_type_id}'" if test_type_id else ""
