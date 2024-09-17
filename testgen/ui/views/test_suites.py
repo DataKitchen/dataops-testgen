@@ -124,10 +124,11 @@ class TestSuitesPage(Page):
                                 { "label": "Passed", "value": int(test_suite["last_run_passed_ct"]), "color": "green" },
                                 { "label": "Warnings", "value": int(test_suite["last_run_warning_ct"]), "color": "yellow" },
                                 { "label": "Failed", "value": int(test_suite["last_run_failed_ct"]), "color": "red" },
-                                { "label": "Errors", "value": int(test_suite["last_run_error_ct"]), "color": "grey" },
+                                { "label": "Errors", "value": int(test_suite["last_run_error_ct"]), "color": "brown" },
+                                { "label": "Dismissed", "value": int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
                             ],
-                            height=30,
-                            width=100,
+                            height=20,
+                            width=350,
                             key=f"test_suite:keys:run-rummary:{test_suite['id']}",
                         )
 

@@ -180,6 +180,14 @@ Use as st.html('<p class="caption" style="...">text</p>') */
     margin-bottom: 0;
 }
 
+/* Stylistic equivalent of testgen.link() to match font style of links
+Use as st.html('<p class="line" style="...">text</p>') */
+.line {
+    font-size: 14px;
+    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
+    line-height: 16.5px;
+}
+
 /* Tooltips */
 [data-tooltip] {
     position: relative;
