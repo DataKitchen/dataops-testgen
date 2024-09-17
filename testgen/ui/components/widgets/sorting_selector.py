@@ -28,13 +28,11 @@ def _state_to_str(columns, state):
 def _state_from_str(columns, state_str):
     col_slug_to_id = {_slugfy(col_label): col_id for col_label, col_id in columns}
     state_part_re = re.compile("".join(("(", "|".join(col_slug_to_id.keys()), r")\.(asc|desc)")))
-    state = []
-    try:
-        for state_part in state_str.split("-"):
-            if match := state_part_re.match(state_part):
-                state.append([col_slug_to_id[match.group(1)], match.group(2).upper()])
-    except Exception as e:
-        return None
+    state = [
+        [col_slug_to_id[col_slug], direction.upper()]
+        for col_slug, direction
+        in state_part_re.findall(state_str)
+    ]
     return state
 
 
