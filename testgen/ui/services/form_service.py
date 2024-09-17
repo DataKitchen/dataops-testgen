@@ -19,6 +19,7 @@ from streamlit_extras.no_default_selectbox import selectbox
 import testgen.common.date_service as date_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
+from testgen.ui.navigation.router import Router
 
 """
 Shared rendering of UI elements
@@ -766,8 +767,10 @@ def render_grid_select(
     str_prompt=None,
     int_height=400,
     do_multi_select=False,
+    bind_to_query=None,
     show_column_headers=None,
     render_highlights=True,
+    key="aggrid",
 ):
     show_prompt(str_prompt)
 
@@ -841,7 +844,18 @@ function(params) {
 
     gb = GridOptionsBuilder.from_dataframe(df)
     selection_mode = "multiple" if do_multi_select else "single"
-    gb.configure_selection(selection_mode=selection_mode, use_checkbox=do_multi_select)
+
+    pre_selected_rows = None
+    if bind_to_query:
+        query_value = st.query_params.get(bind_to_query)
+        # Workaround for this open issue: https://github.com/PablocFonseca/streamlit-aggrid/issues/207#issuecomment-1793039564
+        pre_selected_rows = { query_value: True } if isinstance(query_value, str) and query_value.isdigit() else None
+
+    gb.configure_selection(
+        selection_mode=selection_mode,
+        use_checkbox=do_multi_select,
+        pre_selected_rows=pre_selected_rows,
+    )
 
     all_columns = list(df.columns)
 
@@ -896,10 +910,18 @@ function(params) {
                 "padding-bottom": "0px !important",
             }
         },
+        # Key is needed for query binding to work
+        # Changing selection mode does not work if same key is used for both modes
+        key=f"{key}_{selection_mode}",
     )
 
-    if len(grid_data["selected_rows"]):
-        return grid_data["selected_rows"]
+    selected_rows = grid_data["selected_rows"]
+    if bind_to_query:
+        Router().set_query_params({
+            bind_to_query: selected_rows[0].get("_selectedRowNodeInfo", {}).get("nodeRowIndex") if len(selected_rows) else None,
+        })
+    if len(selected_rows):
+        return selected_rows
 
 
 def render_logo(logo_path: str = logo_file):

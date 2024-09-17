@@ -127,7 +127,11 @@ class ProfilingAnomaliesPage(Page):
 
             # Show main grid and retrieve selections
             selected = fm.render_grid_select(
-                df_pa, lst_show_columns, int_height=400, do_multi_select=do_multi_select
+                df_pa,
+                lst_show_columns,
+                int_height=400,
+                do_multi_select=do_multi_select,
+                bind_to_query="selected",
             )
 
             with export_button_column:
@@ -149,7 +153,7 @@ class ProfilingAnomaliesPage(Page):
 
             if selected:
                 # Always show details for last selected row
-                selected_row = selected[len(selected) - 1]
+                selected_row = selected[0]
             else:
                 selected_row = None
 
