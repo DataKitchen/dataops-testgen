@@ -7,10 +7,67 @@ import testgen.ui.services.database_service as db
 @st.cache_data(show_spinner=False)
 def get_by_project(schema, project_code, table_group_id=None):
     sql = f"""
-            WITH last_run_date 
-                AS (SELECT test_suite_id, MAX(test_starttime) as test_starttime
-                        FROM testgen.test_runs
-                    GROUP BY test_suite_id)
+            WITH last_gen_date AS (
+                SELECT test_suite_id,
+                    MAX(last_auto_gen_date) as auto_gen_date
+                FROM {schema}.test_definitions
+                GROUP BY test_suite_id
+            ),
+            last_run_date AS (
+                SELECT test_suite_id,
+                    MAX(test_starttime) as test_starttime
+                FROM {schema}.test_runs
+                GROUP BY test_suite_id
+            ),
+            last_run AS (
+                SELECT test_runs.test_suite_id,
+                    test_runs.id,
+                    test_runs.test_starttime,
+                    COUNT(*) as test_ct,
+                    SUM(
+                        CASE
+                            WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                            AND test_results.result_status = 'Passed' THEN 1
+                            ELSE 0
+                        END
+                    ) as passed_ct,
+                    SUM(
+                        CASE
+                            WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                            AND test_results.result_status = 'Warning' THEN 1
+                            ELSE 0
+                        END
+                    ) as warning_ct,
+                    SUM(
+                        CASE
+                            WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                            AND test_results.result_status = 'Failed' THEN 1
+                            ELSE 0
+                        END
+                    ) as failed_ct,
+                    SUM(
+                        CASE
+                            WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                            AND test_results.result_status = 'Error' THEN 1
+                            ELSE 0
+                        END
+                    ) as error_ct,
+                    SUM(
+                        CASE
+                            WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
+                            ELSE 0
+                        END
+                    ) as dismissed_ct
+                FROM last_run_date lrd
+                    LEFT JOIN {schema}.test_runs ON (
+                        lrd.test_suite_id = test_runs.test_suite_id
+                        AND lrd.test_starttime = test_runs.test_starttime
+                    )
+                    LEFT JOIN {schema}.test_results ON (
+                        test_runs.id = test_results.test_run_id
+                    )
+                GROUP BY test_runs.id
+            )
             SELECT
                 suites.id::VARCHAR(50),
                 suites.project_code,
@@ -27,19 +84,20 @@ def get_by_project(schema, project_code, table_group_id=None):
                 suites.component_key,
                 suites.component_type,
                 suites.component_name,
+                last_gen_date.auto_gen_date as latest_auto_gen_date,
                 last_run.id as latest_run_id, 
                 last_run.test_starttime as latest_run_start, 
-                last_run.passed_ct + last_run.warning_ct + last_run.failed_ct + last_run.error_ct as last_run_test_ct,
+                last_run.test_ct as last_run_test_ct,
                 last_run.passed_ct as last_run_passed_ct, 
                 last_run.warning_ct as last_run_warning_ct, 
                 last_run.failed_ct as last_run_failed_ct, 
-                last_run.error_ct as last_run_error_ct 
+                last_run.error_ct as last_run_error_ct,
+                last_run.dismissed_ct as last_run_dismissed_ct
             FROM {schema}.test_suites as suites
-            LEFT JOIN last_run_date lrd
-                ON (suites.id = lrd.test_suite_id)
-            LEFT JOIN {schema}.test_runs last_run
-                ON (lrd.test_suite_id = last_run.test_suite_id
-                AND  lrd.test_starttime = last_run.test_starttime)
+            LEFT JOIN last_gen_date
+                ON (suites.id = last_gen_date.test_suite_id)
+            LEFT JOIN last_run
+                ON (suites.id = last_run.test_suite_id)
             LEFT JOIN {schema}.connections AS connections 
                 ON (connections.connection_id = suites.connection_id) 
             LEFT JOIN {schema}.table_groups as groups 

@@ -287,23 +287,57 @@ def get_test_disposition(str_run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_summary(str_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-            SELECT passed_ct,
-                   warning_ct,
-                   failed_ct,
-                   COALESCE(error_ct, 0) as error_ct
-              FROM {str_schema}.test_runs
-             WHERE id = '{str_run_id}'::UUID;
+def get_test_result_summary(run_id):
+    schema = st.session_state["dbschema"]
+    sql = f"""
+    SELECT SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Passed' THEN 1
+                ELSE 0
+            END
+        ) as passed_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Warning' THEN 1
+                ELSE 0
+            END
+        ) as warning_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Failed' THEN 1
+                ELSE 0
+            END
+        ) as failed_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Error' THEN 1
+                ELSE 0
+            END
+        ) as error_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
+                ELSE 0
+            END
+        ) as dismissed_ct
+    FROM {schema}.test_runs
+        LEFT JOIN {schema}.test_results ON (
+            test_runs.id = test_results.test_run_id
+        )
+    WHERE test_runs.id = '{run_id}'::UUID;
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
 
     return [
         { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
         { "label": "Warnings", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
         { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
-        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "grey" },
+        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "brown" },
+        { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
     ]
 
 
