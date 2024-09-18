@@ -12,11 +12,13 @@ import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.commands.run_execute_tests import run_execution_steps_in_background
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
+from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
+from testgen.utils import to_int
 
 
 class TestSuitesPage(Page):
@@ -66,7 +68,7 @@ class TestSuitesPage(Page):
                     testgen.button(
                         type_="icon",
                         icon="output",
-                        tooltip="Export results to observability",
+                        tooltip="Export results to Observability",
                         tooltip_position="right",
                         on_click=partial(observability_export_dialog, test_suite),
                         key=f"test_suite:keys:export:{test_suite['id']}",
@@ -91,46 +93,46 @@ class TestSuitesPage(Page):
                 main_section, latest_run_section, actions_section = st.columns([.4, .4, .2])
 
                 with main_section:
+                    testgen.no_flex_gap()
                     testgen.link(
-                        label=f"{test_suite['last_run_test_ct']} tests definitions",
+                        label=f"{to_int(test_suite['last_run_test_ct'])} tests definitions",
                         href="test-suites:definitions",
                         params={ "test_suite_id": test_suite["id"] },
                         right_icon="chevron_right",
                         key=f"test_suite:keys:go-to-definitions:{test_suite['id']}",
                     )
 
-                    st.html(f"""
-                        <div>
-                            <h6 style="padding: 0px; margin-bottom: 4px;">Description</h6>
-                            <p style="margin: 0px;">{test_suite['test_suite_description']}</p>
-                        </div>
-                    """)
+                    testgen.caption("Description")
+                    st.markdown(test_suite["test_suite_description"] or "--")
 
-                if (latest_run_start := test_suite["latest_run_start"]) and not pd.isnull(latest_run_start):
-                    with latest_run_section:
-                        testgen.no_flex_gap()
-                        st.html('<h6 style="padding: 0px;">Latest Run</h6>')
+                with latest_run_section:
+                    testgen.no_flex_gap()
+                    st.caption("Latest Run")
+
+                    if (latest_run_start := test_suite["latest_run_start"]) and pd.notnull(latest_run_start):
                         testgen.link(
-                            label=latest_run_start.strftime("%B %d, %H:%M %p"),
+                            label=date_service.get_timezoned_timestamp(st.session_state, latest_run_start),
                             href="test-runs:results",
                             params={ "run_id": str(test_suite["latest_run_id"]) },
-                            right_icon="chevron_right",
                             style="margin-bottom: 8px;",
                             height=29,
                             key=f"test_suite:keys:go-to-runs:{test_suite['id']}",
                         )
-                        testgen.summary_bar(
-                            items=[
-                                { "label": "Passed", "value": int(test_suite["last_run_passed_ct"]), "color": "green" },
-                                { "label": "Warnings", "value": int(test_suite["last_run_warning_ct"]), "color": "yellow" },
-                                { "label": "Failed", "value": int(test_suite["last_run_failed_ct"]), "color": "red" },
-                                { "label": "Errors", "value": int(test_suite["last_run_error_ct"]), "color": "brown" },
-                                { "label": "Dismissed", "value": int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
-                            ],
-                            height=20,
-                            width=350,
-                            key=f"test_suite:keys:run-rummary:{test_suite['id']}",
-                        )
+                        if to_int(test_suite["last_run_test_ct"]):
+                            testgen.summary_bar(
+                                items=[
+                                    { "label": "Passed", "value": to_int(test_suite["last_run_passed_ct"]), "color": "green" },
+                                    { "label": "Warnings", "value": to_int(test_suite["last_run_warning_ct"]), "color": "yellow" },
+                                    { "label": "Failed", "value": to_int(test_suite["last_run_failed_ct"]), "color": "red" },
+                                    { "label": "Errors", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
+                                    { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
+                                ],
+                                height=20,
+                                width=350,
+                                key=f"test_suite:keys:run-rummary:{test_suite['id']}",
+                            )
+                    else:
+                        st.markdown("--")
 
                 with actions_section:
                     testgen.button(

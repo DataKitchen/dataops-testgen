@@ -11,6 +11,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
+from testgen.utils import to_int
 
 STALE_PROFILE_DAYS = 30
 
@@ -29,8 +30,8 @@ class OverviewPage(Page):
         testgen.page_header(
             "Project Overview",
             "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
-        )  
-        
+        )
+
         render_project_summary(table_groups_df)
 
         st.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
@@ -54,13 +55,13 @@ def render_project_summary(table_groups: pd.DataFrame) -> None:
             #         delta=project_score_delta or 0,
             #         label_visibility="collapsed",
             #     )
-            
+
             with summary_column:
                 st.caption("Project Summary")
                 st.html(f"""<b>{len(table_groups.index)}</b> table groups
                             <br><b>{int(table_groups['latest_tests_suite_ct'].sum())}</b> test suites
                             <br><b>{int(table_groups['latest_tests_ct'].sum())}</b> test definitions
-                            """) 
+                            """)
 
 
 @st.fragment
@@ -72,7 +73,7 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
         # Without this CSS, the "hidden" elements in the expanded state take up space
         testgen.no_flex_gap()
 
-        with test_suite_card.actions:        
+        with test_suite_card.actions:
             expand_toggle = testgen.expander_toggle(key=f"toggle_{key}")
 
         profile_column, tests_column = st.columns([.5, .5])
@@ -90,54 +91,60 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
 
         with profile_column:
             testgen.no_flex_gap()
-            profile_days_ago = (datetime.utcnow() - table_group["latest_profile_start"]).days
-            st.html(f"""<p class="caption">Latest profile {f'<span style="color: var(--error-color);">({profile_days_ago} days ago)</span>' if profile_days_ago > STALE_PROFILE_DAYS else ""}</p>""")
+            latest_profile_start = table_group["latest_profile_start"]
 
-            if (latest_profile_id := table_group["latest_profile_id"]) and not pd.isnull(latest_profile_id):
+            stale_message = ""
+            if pd.notnull(latest_profile_start) and (profile_days_ago := (datetime.utcnow() - latest_profile_start).days) > STALE_PROFILE_DAYS:
+                stale_message = f'<span style="color: var(--red);">({profile_days_ago} days ago)</span>'
+            testgen.caption(f"Latest profile {stale_message}")
+
+            if pd.notnull(latest_profile_start):
                 testgen.link(
-                    label=date_service.get_timezoned_timestamp(st.session_state, table_group["latest_profile_start"]),
+                    label=date_service.get_timezoned_timestamp(st.session_state, latest_profile_start),
                     href="profiling-runs:results",
-                    params={ "run_id": str(latest_profile_id) },
-                    key=f"overview:keys:go-to-profile:{latest_profile_id}",
+                    params={ "run_id": str(table_group["latest_profile_id"]) },
+                    key=f"overview:keys:go-to-profile:{table_group['latest_profile_id']}",
                 )
-                
-                st.html(f"""
-                            <b>{int(table_group["latest_anomalies_ct"])}</b> anomalies in <b>{int(table_group["latest_profile_table_ct"])}</b> tables
-                            """)
 
-                testgen.summary_bar(
-                    items=[
-                        { "label": "Definite", "value": int(table_group["latest_anomalies_definite_ct"]), "color": "red" },
-                        { "label": "Likely", "value": int(table_group["latest_anomalies_likely_ct"]), "color": "orange" },
-                        { "label": "Possible", "value": int(table_group["latest_anomalies_possible_ct"]), "color": "yellow" },
-                        { "label": "Dismissed", "value": int(table_group["latest_anomalies_dismissed_ct"]), "color": "grey" },
-                    ],
-                    key=f"anomalies_{key}",
-                    height=12,
-                    width=280,
-                )
+                anomaly_count = to_int(table_group["latest_anomalies_ct"])
+                st.html(f"""
+                        <b>{anomaly_count}</b> hygiene issues in <b>{to_int(table_group["latest_profile_table_ct"])}</b> tables
+                        """)
+
+                if anomaly_count:
+                    testgen.summary_bar(
+                        items=[
+                            { "label": "Definite", "value": to_int(table_group["latest_anomalies_definite_ct"]), "color": "red" },
+                            { "label": "Likely", "value": to_int(table_group["latest_anomalies_likely_ct"]), "color": "orange" },
+                            { "label": "Possible", "value": to_int(table_group["latest_anomalies_possible_ct"]), "color": "yellow" },
+                            { "label": "Dismissed", "value": to_int(table_group["latest_anomalies_dismissed_ct"]), "color": "grey" },
+                        ],
+                        key=f"anomalies_{key}",
+                        height=12,
+                        width=280,
+                    )
             else:
                 st.markdown("--")
 
         with tests_column:
             testgen.no_flex_gap()
             st.caption("Latest test results")
-            total_tests = int(table_group["latest_tests_ct"]) if not pd.isnull(table_group["latest_tests_ct"]) else 0
+            total_tests = to_int(table_group["latest_tests_ct"])
             if total_tests:
-                passed_tests = int(table_group["latest_tests_passed_ct"])
-                
+                passed_tests = to_int(table_group["latest_tests_passed_ct"])
+
                 st.html(f"""
                             <p style="margin: -6px 0 8px;">{round(passed_tests * 100 / total_tests)}% passed</p>
-                            <b>{total_tests}</b> tests in <b>{int(table_group["latest_tests_suite_ct"])}</b> test suites
+                            <b>{total_tests}</b> tests in <b>{to_int(table_group["latest_tests_suite_ct"])}</b> test suites
                             """)
-                
+
                 testgen.summary_bar(
                 items=[
                     { "label": "Passed", "value": passed_tests, "color": "green" },
-                    { "label": "Warnings", "value": int(table_group["latest_tests_warning_ct"]), "color": "yellow" },
-                    { "label": "Failed", "value": int(table_group["latest_tests_failed_ct"]), "color": "red" },
-                    { "label": "Errors", "value": int(table_group["latest_tests_error_ct"]), "color": "brown" },
-                    { "label": "Dismissed", "value": int(table_group["latest_tests_dismissed_ct"]), "color": "grey" },
+                    { "label": "Warnings", "value": to_int(table_group["latest_tests_warning_ct"]), "color": "yellow" },
+                    { "label": "Failed", "value": to_int(table_group["latest_tests_failed_ct"]), "color": "red" },
+                    { "label": "Errors", "value": to_int(table_group["latest_tests_error_ct"]), "color": "brown" },
+                    { "label": "Dismissed", "value": to_int(table_group["latest_tests_dismissed_ct"]), "color": "grey" },
                 ],
                 key=f"tests_{key}",
                 height=12,
@@ -148,10 +155,10 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
 
         if expand_toggle:
             render_table_group_expanded(table_group["id"], project_code, key)
-            
+
 
 def render_table_group_expanded(table_group_id: str, project_code: str, key: int) -> None:
-    st.html('<hr style="margin: 8px 0 12px;">')
+    testgen.divider(8, 12)
 
     column_spec = [0.25, 0.15, 0.15, 0.5]
     suite_column, generation_column, run_column, results_column = st.columns(column_spec)
@@ -177,39 +184,41 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: i
             params={ "test_suite_id": str(test_suite["id"]) },
             key=f"overview:keys:go-to-definitions:{test_suite['id']}",
         )
-        st.html(f'<p class="caption" style="margin-top: -16px;">{test_suite["last_run_test_ct"]} tests</p>')
+        testgen.caption(f"{to_int(test_suite['last_run_test_ct'])} tests", "margin-top: -16px;")
 
-    if (latest_generation := test_suite["latest_auto_gen_date"]) and not pd.isnull(latest_generation):
-        generation_column.html(f'<p class="line">{date_service.get_timezoned_timestamp(st.session_state, latest_generation)}</p>')
-    else:
-        generation_column.markdown("--")
+    with generation_column:
+        if (latest_generation := test_suite["latest_auto_gen_date"]) and pd.notnull(latest_generation):
+            st.html(f'<p class="line">{date_service.get_timezoned_timestamp(st.session_state, latest_generation)}</p>')
+        else:
+            st.markdown("--")
 
-    latest_run_id = test_suite["latest_run_id"]
-    if latest_run_id and not pd.isnull(latest_run_id):
-        with run_column:
+    with run_column:
+        if (latest_run_start := test_suite["latest_run_start"]) and pd.notnull(latest_run_start):
             testgen.link(
-                label=date_service.get_timezoned_timestamp(st.session_state, test_suite["latest_run_start"]),
+                label=date_service.get_timezoned_timestamp(st.session_state, latest_run_start),
                 href="test-runs:results",
-                params={ "run_id": str(latest_run_id) },
-                key=f"overview:keys:go-to-run:{latest_run_id}",
+                params={ "run_id": str(test_suite["latest_run_id"]) },
+                key=f"overview:keys:go-to-run:{test_suite['latest_run_id']}",
             )
+        else:
+            st.markdown("--")
 
-        with results_column:
+    with results_column:
+        if to_int(test_suite["last_run_test_ct"]):
             testgen.summary_bar(
                 items=[
-                    { "label": "Passed", "value": int(test_suite["last_run_passed_ct"]), "color": "green" },
-                    { "label": "Warnings", "value": int(test_suite["last_run_warning_ct"]), "color": "yellow" },
-                    { "label": "Failed", "value": int(test_suite["last_run_failed_ct"]), "color": "red" },
-                    { "label": "Errors", "value": int(test_suite["last_run_error_ct"]), "color": "brown" },
-                    { "label": "Dismissed", "value": int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
+                    { "label": "Passed", "value": to_int(test_suite["last_run_passed_ct"]), "color": "green" },
+                    { "label": "Warnings", "value": to_int(test_suite["last_run_warning_ct"]), "color": "yellow" },
+                    { "label": "Failed", "value": to_int(test_suite["last_run_failed_ct"]), "color": "red" },
+                    { "label": "Errors", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
+                    { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
                 ],
                 key=f"tests_{key}",
                 height=8,
                 width=200,
             )
-    else:
-        run_column.markdown("--")
-        results_column.html("--<br><br>")
+        else:
+            st.markdown("--")
 
 
 def get_table_groups_summary(project_code: str) -> pd.DataFrame:
