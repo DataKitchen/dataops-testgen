@@ -312,7 +312,9 @@ def show_test_form(
     dynamic_attributes = dynamic_attributes_raw.split(",")
 
     dynamic_attributes_labels_raw = selected_test_type_row["default_parm_prompts"]
-    dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
+    dynamic_attributes_labels = ""
+    if dynamic_attributes_labels_raw:
+        dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
     dynamic_attributes_help_raw = selected_test_type_row["default_parm_help"]
     if not dynamic_attributes_help_raw:
@@ -640,7 +642,7 @@ def prompt_for_test_type():
     df = run_test_type_lookup_query(str_test_type=None, boo_show_referential=boo_show_referential,
                                     boo_show_table=boo_show_table, boo_show_column=boo_show_column,
                                     boo_show_custom=boo_show_custom)
-    lst_choices = ["(Select a Test Type)", *df["select_name"].tolist()]
+    lst_choices = df["select_name"].tolist()
 
     str_selected = selectbox("Test Type", lst_choices)
     if str_selected:
