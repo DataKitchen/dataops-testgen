@@ -312,7 +312,9 @@ def show_test_form(
     dynamic_attributes = dynamic_attributes_raw.split(",")
 
     dynamic_attributes_labels_raw = selected_test_type_row["default_parm_prompts"]
-    dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
+    dynamic_attributes_labels = ""
+    if dynamic_attributes_labels_raw:
+        dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
     dynamic_attributes_help_raw = selected_test_type_row["default_parm_help"]
     if not dynamic_attributes_help_raw:
