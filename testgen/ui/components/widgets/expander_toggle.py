@@ -1,10 +1,6 @@
-import logging
-
 import streamlit as st
 
 from testgen.ui.components.utils.component import component
-
-LOG = logging.getLogger("testgen")
 
 
 def expander_toggle(
@@ -22,7 +18,6 @@ def expander_toggle(
     :param collapse_label: label for expanded state, default="Collapse"
     :param key: unique key to give the component a persisting state
     """
-    LOG.debug(key)
 
     if key in st.session_state:
         default = st.session_state[key]
