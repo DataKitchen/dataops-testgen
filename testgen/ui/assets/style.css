@@ -3,6 +3,15 @@ body {
     --link-color: #1976d2;
     --error-color: #EF5350;
 
+    --red: #EF5350;
+    --orange: #FF9800;
+    --yellow: #FDD835;
+    --green: #9CCC65;
+    --purple: #AB47BC;
+    --blue: #42A5F5;
+    --brown: #8D6E63;
+    --grey: #BDBDBD;
+
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
@@ -129,10 +138,6 @@ button[title="Show password text"] {
 }
 
 /* Cards Component */
-[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) {
-    background-color: var(--dk-card-background);
-}
-
 [data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) .testgen_card-header > .testgen_card-title {
     margin: unset;
     padding: unset;
@@ -148,6 +153,10 @@ button[title="Show password text"] {
     font-style: italic;
 }
 /* ... */
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.bg-white) {
+    background-color: var(--dk-card-background);
+}
 
 [data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
     width: 100%;
@@ -173,19 +182,20 @@ button[title="Show password text"] {
 }
 
 /* Stylistic equivalent of st.caption("text") for customization
-Use as st.html('<p class="caption" style="...">text</p>') */
+Use as testgen.caption("text", "extra_styles") */
 .caption {
     color: var(--caption-text-color);
     font-size: 14px;
     margin-bottom: 0;
 }
 
-/* Stylistic equivalent of testgen.link() to match font style of links
-Use as st.html('<p class="line" style="...">text</p>') */
-.line {
+/* Stylistic equivalent of testgen.link() to match font size/style of links
+Use as testgen.text("text", "extra_styles") */
+.text {
     font-size: 14px;
     font-family: 'Roboto', 'Helvetica Neue', sans-serif;
     line-height: 16.5px;
+    margin-bottom: 0;
 }
 
 /* Tooltips */

@@ -20,7 +20,7 @@ def card(
     extra_css_class: str = "",
 ) -> typing.Generator["CardContext", None, None]:
     with st.container(border=border):
-        st.html(f'<i class="{CARD_CLASS} {extra_css_class}"></i>')
+        st.html(f'<i class="bg-white {CARD_CLASS} {extra_css_class}"></i>')
 
         title_column, actions_column = st.columns([.5, .5], vertical_alignment="center")
         if title or subtitle:
