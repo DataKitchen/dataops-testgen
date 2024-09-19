@@ -3,6 +3,7 @@
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs
 from testgen.ui.components.widgets.button import button
 from testgen.ui.components.widgets.card import card
+from testgen.ui.components.widgets.dialog import dialog
 from testgen.ui.components.widgets.expander_toggle import expander_toggle
 from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import (

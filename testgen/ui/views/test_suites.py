@@ -155,12 +155,12 @@ def get_db_table_group_choices(project_code):
     return dq.run_table_groups_lookup_query(schema, project_code)
 
 
-@st.dialog(title="Add Test Suite")
+@testgen.dialog(title="Add Test Suite", key="add_test_suite_dialog_args")
 def add_test_suite_dialog(project_code, table_groups_df):
     show_test_suite("add", project_code, table_groups_df)
 
 
-@st.dialog(title="Edit Test Suite")
+@testgen.dialog(title="Edit Test Suite", key="edit_test_suite_dialog_args")
 def edit_test_suite_dialog(project_code, table_groups_df, selected):
     show_test_suite("edit", project_code, table_groups_df, selected)
 
@@ -274,7 +274,7 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
                 st.rerun()
 
 
-@st.dialog(title="Delete Test Suite")
+@testgen.dialog(title="Delete Test Suite", key="delete_test_suite_dialog_args")
 def delete_test_suite_dialog(selected_test_suite):
     test_suite_id = selected_test_suite["id"]
     test_suite_name = selected_test_suite["test_suite"]
@@ -324,7 +324,7 @@ def delete_test_suite_dialog(selected_test_suite):
                 st.rerun()
 
 
-@st.dialog(title="Run Tests")
+@testgen.dialog(title="Run Tests", key="run_tests_dialog_args")
 def run_tests_dialog(project_code, selected_test_suite):
     test_suite_key = selected_test_suite["test_suite"]
     start_process_button_message = "Start"
@@ -364,7 +364,7 @@ def run_tests_dialog(project_code, selected_test_suite):
         )
 
 
-@st.dialog(title="Generate Tests")
+@testgen.dialog(title="Generate Tests", key="generate_tests_dialog_args")
 def generate_tests_dialog(selected_test_suite):
     test_suite_id = selected_test_suite["id"]
     test_suite_key = selected_test_suite["test_suite"]
@@ -441,7 +441,7 @@ def generate_tests_dialog(selected_test_suite):
         status_container.success("Process has successfully finished.")
 
 
-@st.dialog(title="Export to Observability")
+@testgen.dialog(title="Export to Observability", key="export_to_obs_dialog_args")
 def observability_export_dialog(selected_test_suite):
     project_key = selected_test_suite["project_code"]
     test_suite_key = selected_test_suite["test_suite"]
