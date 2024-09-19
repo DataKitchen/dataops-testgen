@@ -66,3 +66,17 @@ def get_timezoned_timestamp(streamlit_session, value, dateformat="%b %-d, %-I:%M
 def get_timezoned_now(streamlit_session):
     value = datetime.utcnow()
     return get_timezoned_timestamp(streamlit_session, value)
+
+
+def get_formatted_duration(duration: str) -> str:
+    hour, minute, second = duration.split(":")
+    formatted = ""
+    if int(hour):
+        formatted += f"{int(hour)!s}h"
+    if int(minute):
+        formatted += f" {int(minute)!s}m"
+    if int(second):
+        formatted += f" {int(second)!s}s"
+
+    formatted = formatted.strip() or "< 1s"
+    return formatted

@@ -1,5 +1,7 @@
 import typing
+from functools import partial
 
+import pandas as pd
 import streamlit as st
 
 import testgen.common.process_service as process_service
@@ -12,6 +14,9 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
+from testgen.utils import to_int
+
+PAGE_SIZE = 50
 
 
 class TestRunsPage(Page):
@@ -24,21 +29,18 @@ class TestRunsPage(Page):
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         project_code = project_code or st.session_state["project"]
-        
+
         testgen.page_header(
             "Test Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
         )
 
-        # Setup Toolbar
         group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
-        testgen.flex_row_end(actions_column)
 
         with group_filter_column:
-            # Table Groups selection -- optional criterion
-            df_tg = get_db_table_group_choices(project_code)
+            table_groups_df = get_db_table_group_choices(project_code)
             table_groups_id = testgen.toolbar_select(
-                options=df_tg,
+                options=table_groups_df,
                 value_column="id",
                 display_column="table_groups_name",
                 default_value=table_group_id,
@@ -47,10 +49,9 @@ class TestRunsPage(Page):
             )
 
         with suite_filter_column:
-            # Table Groups selection -- optional criterion
-            df_ts = get_db_test_suite_choices(project_code, table_groups_id)
+            test_suites_df = get_db_test_suite_choices(project_code, table_groups_id)
             test_suite_id = testgen.toolbar_select(
-                options=df_ts,
+                options=test_suites_df,
                 value_column="id",
                 display_column="test_suite",
                 default_value=test_suite_id,
@@ -58,140 +59,207 @@ class TestRunsPage(Page):
                 label="Test Suite",
             )
 
-        df, show_columns = get_db_test_runs(project_code, table_groups_id, test_suite_id)
-
-        time_columns = ["run_date"]
-        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-
-        dct_selected_rows = fm.render_grid_select(df, show_columns)
-        dct_selected_row = dct_selected_rows[0] if dct_selected_rows else None
-
-        if actions_column.button(
-            f":{'gray' if not dct_selected_row else 'green'}[Test Results　→]",
-            help="Review test results for the selected run",
-            disabled=not dct_selected_row,
-        ):
-            self.router.navigate("test-runs:results", { "run_id": dct_selected_row["test_run_id"] })
-
+        testgen.flex_row_end(actions_column)
         fm.render_refresh_button(actions_column)
 
-        if dct_selected_rows:
-            open_record_detail(
-                dct_selected_rows[0],
+        testgen.whitespace(0.5)
+        list_container = st.container(border=True)
+
+        test_runs_df = get_db_test_runs(project_code, table_groups_id, test_suite_id)
+
+        run_count = len(test_runs_df)
+        page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+
+        with list_container:
+            testgen.css_class("bg-white")
+            column_spec = [.3, .2, .5]
+
+            run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
+            header_styles = "font-size: 12px; text-transform: uppercase; margin-bottom: 8px;"
+            testgen.caption("Start Time | Table Group | Test Suite", header_styles, run_column)
+            testgen.caption("Status | Duration", header_styles, status_column)
+            testgen.caption("Results Summary", header_styles, results_column)
+            testgen.divider(-8)
+
+            paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
+            for index, test_run in paginated_df.iterrows():
+                with st.container():
+                    render_test_run_row(test_run, column_spec)
+
+                    if (index + 1) % PAGE_SIZE and index != run_count - 1:
+                        testgen.divider(-4, 4)
+
+
+def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
+    test_run_id = test_run["test_run_id"]
+    status = test_run["status"]
+
+    run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
+
+    with run_column:
+        start_time = date_service.get_timezoned_timestamp(st.session_state, test_run["test_starttime"]) if pd.notnull(test_run["test_starttime"]) else "--"
+        testgen.no_flex_gap()
+        testgen.link(
+            label=start_time,
+            href="test-runs:results",
+            params={ "run_id": str(test_run_id) },
+            height=18,
+            key=f"test_run:keys:go-to-run:{test_run_id}",
+        )
+        testgen.caption(
+            f"{test_run['table_groups_name']} > {test_run['test_suite']}",
+            "margin-top: -9px;"
+        )
+
+    with status_column:
+        testgen.flex_row_start()
+
+        status_display_map = {
+            "Running": { "label": "Running", "color": "blue" },
+            "Complete": { "label": "Completed", "color": "" },
+            "Error": { "label": "Error", "color": "red" },
+            "Cancelled": { "label": "Canceled", "color": "purple" },
+        }
+        status_attrs = status_display_map.get(status, { "label": "Unknown", "color": "grey" })
+
+        st.html(f"""
+                <p class="text" style="color: var(--{status_attrs["color"]})">{status_attrs["label"]}</p>
+                <p class="caption">{date_service.get_formatted_duration(test_run["duration"])}</p>
+                """)
+
+        if status == "Error" and (log_message := test_run["log_message"]):
+            st.markdown("", help=log_message)
+
+        if status == "Running" and pd.notnull(test_run["process_id"]):
+            testgen.button(
+                type_="stroked",
+                label="Cancel Run",
+                style="width: auto; height: 32px; color: var(--purple); margin-left: 16px;",
+                on_click=partial(on_cancel_run, test_run),
+                key=f"test_run:keys:cancel-run:{test_run_id}",
             )
-            st.markdown(":orange[Click button to access test results for selected run.]")
+
+    with results_column:
+        if to_int(test_run["test_ct"]):
+            testgen.summary_bar(
+                items=[
+                    { "label": "Passed", "value": to_int(test_run["passed_ct"]), "color": "green" },
+                    { "label": "Warnings", "value": to_int(test_run["warning_ct"]), "color": "yellow" },
+                    { "label": "Failed", "value": to_int(test_run["failed_ct"]), "color": "red" },
+                    { "label": "Errors", "value": to_int(test_run["error_ct"]), "color": "brown" },
+                    { "label": "Dismissed", "value": to_int(test_run["dismissed_ct"]), "color": "grey" },
+                ],
+                height=10,
+                width=300,
+                key=f"test_run:keys:summary:{test_run_id}",
+            )
         else:
-            st.markdown(":orange[Select a run to access test results.]")
+            st.markdown("--")
+
+
+def on_cancel_run(test_run: pd.Series) -> None:
+    process_status, process_message = process_service.kill_test_run(test_run["process_id"])
+    if process_status:
+        test_run_service.update_status(test_run["test_run_id"], "Cancelled")
+
+    fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
 
 @st.cache_data(show_spinner=False)
-def run_test_suite_lookup_query(str_schema, str_project, str_tg=None):
-    str_tg_condition = f" AND s.table_groups_id = '{str_tg}' " if str_tg else ""
-    str_sql = f"""
-           SELECT s.id::VARCHAR(50),
-                  s.test_suite,
-                  COALESCE(s.test_suite_description, s.test_suite) AS test_suite_description
-             FROM {str_schema}.test_suites s
-        LEFT JOIN {str_schema}.table_groups tg ON s.table_groups_id = tg.id
-            WHERE s.project_code = '{str_project}' {str_tg_condition}
-         ORDER BY s.test_suite
+def run_test_suite_lookup_query(schema: str, project_code: str, table_groups_id: str | None = None) -> pd.DataFrame:
+    table_group_condition = f" AND test_suites.table_groups_id = '{table_groups_id}' " if table_groups_id else ""
+    sql = f"""
+    SELECT test_suites.id::VARCHAR(50),
+        test_suites.test_suite
+    FROM {schema}.test_suites
+        LEFT JOIN {schema}.table_groups ON test_suites.table_groups_id = table_groups.id
+    WHERE test_suites.project_code = '{project_code}'
+    {table_group_condition}
+    ORDER BY test_suites.test_suite
     """
-    return db.retrieve_data(str_sql)
+    return db.retrieve_data(sql)
 
 
 @st.cache_data(show_spinner=False)
-def get_db_table_group_choices(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(str_schema, str_project_code)
+def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
+    schema = st.session_state["dbschema"]
+    return dq.run_table_groups_lookup_query(schema, project_code)
 
 
 @st.cache_data(show_spinner=False)
-def get_db_test_suite_choices(str_project_code, str_table_groups_id=None):
-    str_schema = st.session_state["dbschema"]
-    return run_test_suite_lookup_query(str_schema, str_project_code, str_table_groups_id)
+def get_db_test_suite_choices(project_code: str, table_groups_id: str | None = None) -> pd.DataFrame:
+    schema = st.session_state["dbschema"]
+    return run_test_suite_lookup_query(schema, project_code, table_groups_id)
 
 
 # @st.cache_data(show_spinner="Retrieving Data")
-def get_db_test_runs(str_project_code, str_tg=None, str_ts=None):
-    str_schema = st.session_state["dbschema"]
-    str_tg_condition = f" AND s.table_groups_id = '{str_tg}' " if str_tg else ""
-    str_ts_condition = f" AND s.id = '{str_ts}' " if str_ts else ""
-    str_sql = f"""
-            SELECT r.test_starttime as run_date,
-                   s.test_suite, s.test_suite_description,
-                   r.status,
-                   r.duration,
-                   r.test_ct, r.passed_ct, r.failed_ct, r.warning_ct, r.error_ct,
-                   ROUND(100.0 * r.passed_ct::DECIMAL(12, 4) / r.test_ct::DECIMAL(12, 4), 3) as passed_pct,
-                   COALESCE(r.log_message, 'Test run completed successfully.') as log_message,
-                   r.column_ct, r.column_failed_ct, r.column_warning_ct,
-                   ROUND(100.0 * (r.column_ct - r.column_failed_ct - r.column_warning_ct)::DECIMAL(12, 4) / r.column_ct::DECIMAL(12, 4), 3) as column_passed_pct,
-                   r.id::VARCHAR as test_run_id,
-                   p.project_name,
-                   s.table_groups_id::VARCHAR, tg.table_groups_name, tg.table_group_schema, process_id
-              FROM {str_schema}.test_runs r
-            INNER JOIN {str_schema}.test_suites s
-              ON (r.test_suite_id = s.id)
-            INNER JOIN {str_schema}.table_groups tg
-              ON (s.table_groups_id = tg.id)
-            INNER JOIN {str_schema}.projects p
-               ON (s.project_code = p.project_code)
-          WHERE s.project_code = '{str_project_code}' {str_tg_condition} {str_ts_condition}
-          ORDER BY r.test_starttime DESC;
+def get_db_test_runs(project_code: str, table_groups_id: str | None = None, test_suite_id: str | None = None) -> pd.DataFrame:
+    schema = st.session_state["dbschema"]
+    table_group_condition = f" AND test_suites.table_groups_id = '{table_groups_id}' " if table_groups_id else ""
+    test_suite_condition = f" AND test_suites.id = '{test_suite_id}' " if test_suite_id else ""
+    sql = f"""
+    WITH run_results AS (
+        SELECT test_run_id,
+            SUM(
+                CASE
+                    WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Passed' THEN 1
+                    ELSE 0
+                END
+            ) as passed_ct,
+            SUM(
+                CASE
+                    WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Warning' THEN 1
+                    ELSE 0
+                END
+            ) as warning_ct,
+            SUM(
+                CASE
+                    WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Failed' THEN 1
+                    ELSE 0
+                END
+            ) as failed_ct,
+            SUM(
+                CASE
+                    WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Error' THEN 1
+                    ELSE 0
+                END
+            ) as error_ct,
+            SUM(
+                CASE
+                    WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
+                    ELSE 0
+                END
+            ) as dismissed_ct
+        FROM {schema}.test_results
+        GROUP BY test_run_id
+    )
+    SELECT test_runs.id::VARCHAR as test_run_id,
+        test_runs.test_starttime,
+        table_groups.table_groups_name,
+        test_suites.test_suite,
+        test_runs.status,
+        test_runs.duration,
+        test_runs.process_id,
+        test_runs.log_message,
+        test_runs.test_ct,
+        run_results.passed_ct,
+        run_results.warning_ct,
+        run_results.failed_ct,
+        run_results.error_ct,
+        run_results.dismissed_ct
+    FROM {schema}.test_runs
+        LEFT JOIN run_results ON (test_runs.id = run_results.test_run_id)
+        INNER JOIN {schema}.test_suites ON (test_runs.test_suite_id = test_suites.id)
+        INNER JOIN {schema}.table_groups ON (test_suites.table_groups_id = table_groups.id)
+        INNER JOIN {schema}.projects ON (test_suites.project_code = projects.project_code)
+    WHERE test_suites.project_code = '{project_code}'
+    {table_group_condition}
+    {test_suite_condition}
+    ORDER BY test_runs.test_starttime DESC;
     """
 
-    show_columns = [
-        "run_date",
-        "test_suite",
-        "test_suite_description",
-        "status",
-        "duration",
-        "test_ct",
-        "failed_ct",
-        "warning_ct",
-    ]
-
-    return db.retrieve_data(str_sql), show_columns
-
-
-def open_record_detail(dct_selected_row):
-    bottom_left_column, bottom_right_column = st.columns([0.5, 0.5])
-
-    with bottom_left_column:
-        # Show Run Detail
-        lst_detail_columns = [
-            "test_suite",
-            "test_suite_description",
-            "run_date",
-            "status",
-            "log_message",
-            "table_groups_name",
-            "test_ct",
-            "passed_ct",
-            "failed_ct",
-            "warning_ct",
-            "error_ct",
-        ]
-        fm.render_html_list(dct_selected_row, lst_detail_columns, "Run Information", 500)
-
-    with bottom_right_column:
-        st.write("<br/><br/>", unsafe_allow_html=True)
-        _, button_column = st.columns([0.3, 0.7])
-        with button_column:
-            enable_kill_button = dct_selected_row and dct_selected_row["process_id"] is not None and dct_selected_row["status"] == "Running"
-
-            if enable_kill_button:
-                if st.button(
-                    ":red[Cancel Run]",
-                    help="Kill the selected test run",
-                    use_container_width=True,
-                    disabled=not enable_kill_button,
-                ):
-                    process_id = dct_selected_row["process_id"]
-                    test_run_id = dct_selected_row["test_run_id"]
-                    status, message = process_service.kill_test_run(process_id)
-
-                    if status:
-                        test_run_service.update_status(test_run_id, "Cancelled")
-
-                    fm.reset_post_updates(str_message=f":{'green' if status else 'red'}[{message}]", as_toast=True)
+    return db.retrieve_data(sql)

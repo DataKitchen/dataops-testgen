@@ -13,6 +13,7 @@ def button(
     tooltip: str | None = None,
     tooltip_position: TooltipPosition = "left",
     on_click: typing.Callable[..., None] | None = None,
+    style: str | None = None,
     key: str | None = None,
 ) -> None:
     """
@@ -35,5 +36,8 @@ def button(
 
     if tooltip:
         props.update({"tooltip": tooltip, "tooltipPosition": tooltip_position})
+
+    if style:
+        props.update({"style": style})
 
     component(id_="button", key=key, props=props, on_change=on_click)

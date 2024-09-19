@@ -21,7 +21,7 @@ def page_header(
             st.page_link(help_link, label=" ", icon=":material/help:")
 
     if breadcrumbs:
-        tg_breadcrumbs(breadcrumbs=breadcrumbs)  
+        tg_breadcrumbs(breadcrumbs=breadcrumbs)
 
     st.write(
         '<hr style="background-color: #21c354; margin-top: -8px;'
@@ -31,12 +31,12 @@ def page_header(
     if "last_page" in st.session_state:
         if title != st.session_state["last_page"]:
             st.cache_data.clear()
-    st.session_state["last_page"] = title 
+    st.session_state["last_page"] = title
 
 
 def toolbar_select(
     options: pd.DataFrame | list[str],
-    value_column: str | None = None, 
+    value_column: str | None = None,
     display_column: str | None = None,
     default_value = None,
     required: bool = False,
@@ -75,12 +75,28 @@ def toolbar_select(
 
     if selected and isinstance(options, pd.DataFrame):
         return options.loc[options[display_column] == selected, value_column].iloc[0]
-    
+
     return selected
 
 
 def whitespace(size: float, container: DeltaGenerator | None = None):
     _apply_html(f'<div style="height: {size}rem"></div>', container)
+
+
+def divider(margin_top: int = 0, margin_bottom: int = 0, container: DeltaGenerator | None = None):
+    _apply_html(f'<hr style="margin: {margin_top}px 0 {margin_bottom}px;">', container)
+
+
+def text(text: str, styles: str = "", container: DeltaGenerator | None = None):
+    _apply_html(f'<p class="text" style="{styles}">{text}</p>', container)
+
+
+def caption(text: str, styles: str = "", container: DeltaGenerator | None = None):
+    _apply_html(f'<p class="caption" style="{styles}">{text}</p>', container)
+
+
+def css_class(css_classes: str, container: DeltaGenerator | None = None):
+    _apply_html(f'<i class="{css_classes}"></i>', container)
 
 
 def flex_row_start(container: DeltaGenerator | None = None):
@@ -93,7 +109,7 @@ def flex_row_end(container: DeltaGenerator | None = None):
 
 def no_flex_gap(container: DeltaGenerator | None = None):
     _apply_html('<i class="no-flex-gap"></i>', container)
-    
+
 
 def _apply_html(html: str, container: DeltaGenerator | None = None):
     if container:

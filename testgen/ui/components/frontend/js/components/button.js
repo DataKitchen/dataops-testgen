@@ -7,6 +7,7 @@
  * @property {(string|null)} tooltip
  * @property {(string|null)} tooltipPosition
  * @property {(Function|null)} onclick
+ * @property {string?} style
  */
 import { enforceElementWidth } from '../utils.js';
 import van from '../van.min.js';
@@ -42,6 +43,7 @@ const Button = (/** @type Properties */ props) => {
     return button(
         {
             class: `tg-button tg-${props.type.val}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+            style: props.style?.val,
             onclick: onClickHandler,
         },
         span({class: 'tg-button-focus-state-indicator'}, ''),

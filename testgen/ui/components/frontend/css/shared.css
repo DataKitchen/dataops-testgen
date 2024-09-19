@@ -9,11 +9,22 @@ body {
 
 body {
     --primary-color: #06a04a;
+    --link-color: #1976d2;
+    --error-color: #EF5350;
+
+    --red: #EF5350;
+    --orange: #FF9800;
+    --yellow: #FDD835;
+    --green: #9CCC65;
+    --purple: #AB47BC;
+    --blue: #42A5F5;
+    --brown: #8D6E63;
+    --grey: #BDBDBD;
+
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
-    --link-color: #1976d2;
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
