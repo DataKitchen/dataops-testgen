@@ -29,7 +29,14 @@ class TestResultsPage(Page):
     ]
 
     def render(self, run_id: str, status: str | None = None, test_type: str | None = None, **_kwargs) -> None:
-        run_date, test_suite_name, project_code = get_drill_test_run(run_id)
+        run_parentage = get_drill_test_run(run_id)
+        if not run_parentage:
+            self.router.navigate_with_warning(
+                f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
+                "test-runs",
+            )
+
+        run_date, test_suite_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
         project_service.set_current_project(project_code)
 
@@ -160,17 +167,17 @@ class TestResultsPage(Page):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_drill_test_run(str_test_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
+def get_drill_test_run(test_run_id: str) -> tuple[pd.Timestamp, str, str] | None:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
            SELECT tr.test_starttime as test_date,
                   ts.test_suite,
                   ts.project_code
-             FROM {str_schema}.test_runs tr
-       INNER JOIN {str_schema}.test_suites ts ON tr.test_suite_id = ts.id
-            WHERE tr.id = '{str_test_run_id}'::UUID;
+             FROM {schema}.test_runs tr
+       INNER JOIN {schema}.test_suites ts ON tr.test_suite_id = ts.id
+            WHERE tr.id = '{test_run_id}'::UUID;
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
     if not df.empty:
         return df.at[0, "test_date"], df.at[0, "test_suite"], df.at[0, "project_code"]
 

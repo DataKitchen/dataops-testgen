@@ -14,11 +14,12 @@ from testgen.common.database.database_service import (
 from testgen.common.encrypt import DecryptText, EncryptText
 
 
-def get_by_id(connection_id, hide_passwords: bool = True):
+def get_by_id(connection_id: str, hide_passwords: bool = True) -> dict | None:
     connections_df = connection_queries.get_by_id(connection_id)
     decrypt_connections(connections_df, hide_passwords)
-    connection = connections_df.to_dict(orient="records")[0]
-    return connection
+    connections_list = connections_df.to_dict(orient="records")
+    if len(connections_list):
+        return connections_list[0]
 
 
 def get_connections(project_code, hide_passwords: bool = False):

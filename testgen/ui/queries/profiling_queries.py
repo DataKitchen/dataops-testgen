@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
@@ -63,19 +64,18 @@ def run_column_lookup_query(str_table_groups_id, str_table_name):
 
 
 @st.cache_data(show_spinner=False)
-def lookup_db_parentage_from_run(str_profile_run_id):
-    str_schema = st.session_state["dbschema"]
-    # Define the query
-    str_sql = f"""
+def lookup_db_parentage_from_run(profile_run_id: str) -> tuple[pd.Timestamp, str, str, str] | None:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
             SELECT profiling_starttime as profile_run_date, table_groups_id, g.table_groups_name, g.project_code
-              FROM {str_schema}.profiling_runs pr
-             INNER JOIN {str_schema}.table_groups g
+              FROM {schema}.profiling_runs pr
+             INNER JOIN {schema}.table_groups g
                 ON pr.table_groups_id = g.id
-             WHERE pr.id = '{str_profile_run_id}'
+             WHERE pr.id = '{profile_run_id}'
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
     if not df.empty:
-        return df.at[0, "profile_run_date"], df.at[0, "table_groups_id"], df.at[0, "table_groups_name"], df.at[0, "project_code"]
+        return df.at[0, "profile_run_date"], str(df.at[0, "table_groups_id"]), df.at[0, "table_groups_name"], df.at[0, "project_code"]
 
 
 @st.cache_data(show_spinner="Retrieving Data")

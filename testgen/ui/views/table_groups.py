@@ -27,6 +27,12 @@ class TableGroupsPage(Page):
 
     def render(self, connection_id: str, **_kwargs) -> None:
         connection = connection_service.get_by_id(connection_id, hide_passwords=False)
+        if not connection:
+            self.router.navigate_with_warning(
+                f"Connection with ID '{connection_id}' does not exist. Redirecting to list of Connections ...",
+                "connections",
+            )
+
         project_code = connection["project_code"]
         project_service.set_current_project(project_code)
 
