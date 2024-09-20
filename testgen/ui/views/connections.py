@@ -57,7 +57,7 @@ class ConnectionsPage(Page):
                 {"connection_id": connection["connection_id"]},
             )
 
-    @testgen.dialog(title="Configure QC Utility Schema", key="config_qc_dialog_args")
+    @st.dialog(title="Configure QC Utility Schema")
     def create_qc_schema_dialog(self, selected_connection):
         connection_id = selected_connection["connection_id"]
         project_qc_schema = selected_connection["project_qc_schema"]
