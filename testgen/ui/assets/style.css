@@ -81,7 +81,7 @@ div[data-testid="collapsedControl"] {
 
 /* Dialog - sets the width of all st.dialog */
 /* There is no way to target "large" and "small" dialogs reliably */
-div[data-testid="stModal"] div[role="dialog"] {
+div[data-testid="stDialog"] div[role="dialog"] {
     width: calc(55rem);
 }
 /*  */
