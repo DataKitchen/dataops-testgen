@@ -118,7 +118,7 @@ def get_by_project(schema, project_code, table_group_id=None):
 
 
 @st.cache_data(show_spinner=False)
-def get_by_id(schema, test_suite_id):
+def get_by_id(schema: str, test_suite_id: str) -> pd.DataFrame:
     sql = f"""
             SELECT
                 suites.id::VARCHAR(50),

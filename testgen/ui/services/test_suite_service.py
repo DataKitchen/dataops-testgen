@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.queries.test_suite_queries as test_suite_queries
@@ -9,9 +10,13 @@ def get_by_project(project_code, table_group_id=None):
     return test_suite_queries.get_by_project(schema, project_code, table_group_id)
 
 
-def get_by_id(test_suite_id):
+def get_by_id(test_suite_id: str) -> pd.Series:
     schema = st.session_state["dbschema"]
-    return test_suite_queries.get_by_id(schema, test_suite_id).iloc[0]
+    df = test_suite_queries.get_by_id(schema, test_suite_id)
+    if not df.empty:
+        return df.iloc[0]
+    else:
+        return pd.Series()
 
 
 def edit(test_suite):

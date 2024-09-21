@@ -30,6 +30,12 @@ class TestDefinitionsPage(Page):
 
     def render(self, test_suite_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
         test_suite = test_suite_service.get_by_id(test_suite_id)
+        if test_suite.empty:
+            self.router.navigate_with_warning(
+                f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
+                "test-suites",
+            )
+
         table_group = table_group_service.get_by_id(test_suite["table_groups_id"])
         project_code = table_group["project_code"]
         project_service.set_current_project(project_code)

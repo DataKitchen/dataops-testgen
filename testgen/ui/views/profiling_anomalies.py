@@ -23,9 +23,14 @@ class ProfilingAnomaliesPage(Page):
     ]
 
     def render(self, run_id: str, issue_class: str | None = None, issue_type: str | None = None, **_kwargs) -> None:
-        run_date, _table_group_id, table_group_name, project_code = profiling_queries.lookup_db_parentage_from_run(
-            run_id
-        )
+        run_parentage = profiling_queries.lookup_db_parentage_from_run(run_id)
+        if not run_parentage:
+            self.router.navigate_with_warning(
+                f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
+                "profiling-runs",
+            )
+            
+        run_date, _table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
         project_service.set_current_project(project_code)
 

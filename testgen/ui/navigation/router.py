@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import streamlit as st
 
@@ -65,6 +66,13 @@ class Router(Singleton):
             error_message = f"{to}: {e!s}"
             st.error(error_message)
             LOG.exception(error_message)
+
+    
+    def navigate_with_warning(self, warning: str, to: str, with_args: dict = {}) -> None:  # noqa: B006
+        st.warning(warning)
+        time.sleep(3)
+        self.navigate(to, with_args)
+
 
     def set_query_params(self, with_args: dict) -> None:
         params = st.query_params
