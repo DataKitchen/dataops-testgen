@@ -91,39 +91,25 @@ class TestDefinitionsPage(Page):
         )
         fm.render_refresh_button(table_actions_column)
 
-        # Display buttons
-        if disposition_column.button("✓", help="Activate for future runs", disabled=not selected):
-            fm.reset_post_updates(
-                update_test_definition(selected, "test_active", True, "Activated"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=[],
-            )
-        if disposition_column.button("✘", help="Inactivate Test for future runs", disabled=not selected):
-            fm.reset_post_updates(
-                update_test_definition(selected, "test_active", False, "Inactivated"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=[],
-            )
-        if disposition_column.button(
-            "🔒", help="Protect from future test generation", disabled=not selected
-        ):
-            fm.reset_post_updates(
-                update_test_definition(selected, "lock_refresh", True, "Locked"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=[],
-            )
-        if disposition_column.button(
-            "🔐", help="Unlock for future test generation", disabled=not selected
-        ):
-            fm.reset_post_updates(
-                update_test_definition(selected, "lock_refresh", False, "Unlocked"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=[],
-            )
+        disposition_actions = [
+            { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
+            { "icon": "✘", "help": "Inactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Inactivated" },
+            { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
+            { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
+        ]
+
+        for action in disposition_actions:
+            action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=not selected)
+
+        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+        for action in disposition_actions:
+            if action["button"]:
+                fm.reset_post_updates(
+                    update_test_definition(selected, action["attribute"], action["value"], action["message"]),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=[],
+                )
 
         if selected:
             selected_test_def = selected[0]

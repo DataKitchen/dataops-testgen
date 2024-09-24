@@ -197,41 +197,26 @@ class ProfilingAnomaliesPage(Page):
             if "r.disposition" in dict(sorting_columns):
                 cached_functions.append(get_profiling_anomalies)
 
+            disposition_actions = [
+                { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
+                { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
+                { "icon": "🔇", "help": "Mute this test to deactivate it for future runs", "status": "Inactive" },
+                { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
+            ]
+
             # Need to render toolbar buttons after grid, so selection status is maintained
-            if actions_column.button(
-                "✓", help="Confirm this issue as relevant for this run", disabled=not selected
-            ):
-                fm.reset_post_updates(
-                    do_disposition_update(selected, "Confirmed"),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=cached_functions,
-                )
-            if actions_column.button(
-                "✘", help="Dismiss this issue as not relevant for this run", disabled=not selected
-            ):
-                fm.reset_post_updates(
-                    do_disposition_update(selected, "Dismissed"),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=cached_functions,
-                )
-            if actions_column.button(
-                "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
-            ):
-                fm.reset_post_updates(
-                    do_disposition_update(selected, "Inactive"),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=cached_functions,
-                )
-            if actions_column.button("↩︎", help="Clear action", disabled=not selected):
-                fm.reset_post_updates(
-                    do_disposition_update(selected, "No Decision"),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=cached_functions,
-                )
+            for action in disposition_actions:
+                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
+
+            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+            for action in disposition_actions:
+                if action["button"]:
+                    fm.reset_post_updates(
+                        do_disposition_update(selected, action["status"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=cached_functions,
+                    )
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
 
