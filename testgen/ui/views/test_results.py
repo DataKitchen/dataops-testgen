@@ -62,14 +62,14 @@ class TestResultsPage(Page):
 
         with status_filter_column:
             status_options = [
-                "Failures and Warnings",
-                "Failed Tests",
-                "Tests with Warnings",
-                "Passed Tests",
+                "Failed + Warning",
+                "Failed",
+                "Warning",
+                "Passed",
             ]
             status = testgen.toolbar_select(
                 options=status_options,
-                default_value=status or "Failures and Warnings",
+                default_value=status or "Failed + Warning",
                 required=False,
                 bind_to_query="status",
                 label="Result Status",
@@ -104,13 +104,13 @@ class TestResultsPage(Page):
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
         match status:
-            case "Failures and Warnings":
+            case "Failed + Warning":
                 status = "'Failed','Warning'"
-            case "Failed Tests":
+            case "Failed":
                 status = "'Failed'"
-            case "Tests with Warnings":
+            case "Warning":
                 status = "'Warning'"
-            case "Passed Tests":
+            case "Passed":
                 status = "'Passed'"
 
         # Display main grid and retrieve selection
@@ -341,9 +341,9 @@ def get_test_result_summary(run_id):
 
     return [
         { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
-        { "label": "Warnings", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
+        { "label": "Warning", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
         { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
-        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "brown" },
+        { "label": "Error", "value": int(df.at[0, "error_ct"]), "color": "brown" },
         { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
     ]
 

@@ -122,9 +122,9 @@ class TestSuitesPage(Page):
                             testgen.summary_bar(
                                 items=[
                                     { "label": "Passed", "value": to_int(test_suite["last_run_passed_ct"]), "color": "green" },
-                                    { "label": "Warnings", "value": to_int(test_suite["last_run_warning_ct"]), "color": "yellow" },
+                                    { "label": "Warning", "value": to_int(test_suite["last_run_warning_ct"]), "color": "yellow" },
                                     { "label": "Failed", "value": to_int(test_suite["last_run_failed_ct"]), "color": "red" },
-                                    { "label": "Errors", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
+                                    { "label": "Error", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
                                     { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
                                 ],
                                 height=20,
