@@ -105,11 +105,7 @@ class ProfilingResultsPage(Page):
             with st.expander("📜 **Table CREATE script with suggested datatypes**"):
                 st.code(generate_create_script(df), "sql")
 
-        selected_row = fm.render_grid_select(
-            df,
-            show_columns,
-            bind_to_query="selected",
-        )
+        selected_row = fm.render_grid_select(df, show_columns)
 
         with export_button_column:
             testgen.flex_row_end()

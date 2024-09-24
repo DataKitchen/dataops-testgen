@@ -667,12 +667,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     ]
 
     selected_rows = fm.render_grid_select(
-        df,
-        lst_show_columns,
-        do_multi_select=do_multi_select,
-        show_column_headers=lst_show_headers,
-        key="grid:test-results",
-        bind_to_query="selected",
+        df, lst_show_columns, do_multi_select=do_multi_select, show_column_headers=lst_show_headers
     )
 
     with export_container:
@@ -717,7 +712,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     if not selected_rows:
         st.markdown(":orange[Select a record to see more information.]")
     else:
-        selected_row = selected_rows[0]
+        selected_row = selected_rows[len(selected_rows) - 1]
         dfh = get_test_result_history(
             selected_row["test_type"],
             selected_row["test_suite_id"],
