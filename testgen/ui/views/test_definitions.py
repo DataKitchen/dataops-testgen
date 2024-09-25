@@ -39,6 +39,7 @@ class TestDefinitionsPage(Page):
         table_group = table_group_service.get_by_id(test_suite["table_groups_id"])
         project_code = table_group["project_code"]
         project_service.set_current_project(project_code)
+        user_can_edit = authentication_service.current_user_has_edit_role()
 
         testgen.page_header(
             "Test Definitions",
@@ -80,7 +81,7 @@ class TestDefinitionsPage(Page):
             str_help = "Toggle on to perform actions on multiple test definitions"
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
-        if actions_column.button(
+        if user_can_edit and actions_column.button(
             ":material/add: Add", help="Add a new Test Definition"
         ):
             add_test_dialog(project_code, table_group, test_suite, table_name, column_name)
@@ -114,14 +115,14 @@ class TestDefinitionsPage(Page):
         if selected:
             selected_test_def = selected[0]
 
-        if actions_column.button(
+        if user_can_edit and actions_column.button(
             ":material/edit: Edit",
             help="Edit the Test Definition",
             disabled=not selected,
         ):
             edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
-        if actions_column.button(
+        if user_can_edit and actions_column.button(
             ":material/delete: Delete",
             help="Delete the selected Test Definition",
             disabled=not selected,

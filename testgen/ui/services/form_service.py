@@ -631,6 +631,7 @@ def render_edit_form(
     lst_key_columns,
     lst_disabled=None,
     str_text_display=None,
+    submit_disabled=False,
     form_unique_key: str | None = None,
 ):
     show_header(str_form_name)
@@ -687,7 +688,7 @@ def render_edit_form(
                 else:
                     # If Hidden, add directly to dct_mods for updates
                     dct_mods[column] = row_selected[column]
-            edit_allowed = authentication_service.current_user_has_edit_role()
+            edit_allowed = not submit_disabled and authentication_service.current_user_has_edit_role()
             submit = st.form_submit_button("Save Changes", disabled=not edit_allowed)
 
             if submit and edit_allowed:

@@ -20,8 +20,8 @@ from testgen.ui.session import session
 class TableGroupsPage(Page):
     path = "connections:table-groups"
     can_activate: typing.ClassVar = [
-        lambda: authentication_service.current_user_has_admin_role() or "overview",
         lambda: session.authentication_status,
+        lambda: authentication_service.current_user_has_admin_role(),
         lambda: "connection_id" in session.current_page_args or "connections",
     ]
 

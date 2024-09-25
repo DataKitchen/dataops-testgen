@@ -12,7 +12,7 @@ import testgen.ui.services.query_service as dq
 from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
@@ -715,7 +715,8 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
 
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
-        view_edit_test(v_col1, selected_row["test_definition_id_current"])
+        if authentication_service.current_user_has_edit_role():
+            view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
             view_profiling_button(
                 v_col2, selected_row["table_name"], selected_row["column_names"],

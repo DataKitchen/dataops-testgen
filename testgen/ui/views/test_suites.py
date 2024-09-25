@@ -24,10 +24,9 @@ from testgen.utils import to_int
 class TestSuitesPage(Page):
     path = "test-suites"
     can_activate: typing.ClassVar = [
-        lambda: authentication_service.current_user_has_admin_role() or "overview",
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="list_alt", label="Test Suites", order=4)
+    menu_item = MenuItem(icon="list_alt", label="Test Suites", order=3)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         project_code = st.session_state["project"]
@@ -52,43 +51,46 @@ class TestSuitesPage(Page):
             )
 
         df = test_suite_service.get_by_project(project_code, table_group_id)
+        user_can_edit = authentication_service.current_user_has_edit_role()
 
-        with actions_column:
-            st.button(
-                ":material/add: Add Test Suite",
-                key="test_suite:keys:add",
-                help="Add a new test suite",
-                on_click=lambda: add_test_suite_dialog(project_code, df_tg),
-            )
+        if user_can_edit:
+            with actions_column:
+                st.button(
+                    ":material/add: Add Test Suite",
+                    key="test_suite:keys:add",
+                    help="Add a new test suite",
+                    on_click=lambda: add_test_suite_dialog(project_code, df_tg),
+                )
 
         for _, test_suite in df.iterrows():
             subtitle = f"{test_suite['connection_name']} > {test_suite['table_groups_name']}"
             with testgen.card(title=test_suite["test_suite"], subtitle=subtitle) as test_suite_card:
-                with test_suite_card.actions:
-                    testgen.button(
-                        type_="icon",
-                        icon="output",
-                        tooltip="Export results to Observability",
-                        tooltip_position="right",
-                        on_click=partial(observability_export_dialog, test_suite),
-                        key=f"test_suite:keys:export:{test_suite['id']}",
-                    )
-                    testgen.button(
-                        type_="icon",
-                        icon="edit",
-                        tooltip="Edit test suite",
-                        tooltip_position="right",
-                        on_click=partial(edit_test_suite_dialog, project_code, df_tg, test_suite),
-                        key=f"test_suite:keys:edit:{test_suite['id']}",
-                    )
-                    testgen.button(
-                        type_="icon",
-                        icon="delete",
-                        tooltip="Delete test suite",
-                        tooltip_position="right",
-                        on_click=partial(delete_test_suite_dialog, test_suite),
-                        key=f"test_suite:keys:delete:{test_suite['id']}",
-                    )
+                if user_can_edit:
+                    with test_suite_card.actions:
+                        testgen.button(
+                            type_="icon",
+                            icon="output",
+                            tooltip="Export results to Observability",
+                            tooltip_position="right",
+                            on_click=partial(observability_export_dialog, test_suite),
+                            key=f"test_suite:keys:export:{test_suite['id']}",
+                        )
+                        testgen.button(
+                            type_="icon",
+                            icon="edit",
+                            tooltip="Edit test suite",
+                            tooltip_position="right",
+                            on_click=partial(edit_test_suite_dialog, project_code, df_tg, test_suite),
+                            key=f"test_suite:keys:edit:{test_suite['id']}",
+                        )
+                        testgen.button(
+                            type_="icon",
+                            icon="delete",
+                            tooltip="Delete test suite",
+                            tooltip_position="right",
+                            on_click=partial(delete_test_suite_dialog, test_suite),
+                            key=f"test_suite:keys:delete:{test_suite['id']}",
+                        )
 
                 main_section, latest_run_section, actions_section = st.columns([.4, .4, .2])
 
@@ -134,19 +136,20 @@ class TestSuitesPage(Page):
                     else:
                         st.markdown("--")
 
-                with actions_section:
-                    testgen.button(
-                        type_="stroked",
-                        label="Run Tests",
-                        on_click=partial(run_tests_dialog, project_code, test_suite),
-                        key=f"test_suite:keys:runtests:{test_suite['id']}",
-                    )
-                    testgen.button(
-                        type_="stroked",
-                        label="Generate Tests",
-                        on_click=partial(generate_tests_dialog, test_suite),
-                        key=f"test_suite:keys:generatetests:{test_suite['id']}",
-                    )
+                if user_can_edit:
+                    with actions_section:
+                        testgen.button(
+                            type_="stroked",
+                            label="Run Tests",
+                            on_click=partial(run_tests_dialog, project_code, test_suite),
+                            key=f"test_suite:keys:runtests:{test_suite['id']}",
+                        )
+                        testgen.button(
+                            type_="stroked",
+                            label="Generate Tests",
+                            on_click=partial(generate_tests_dialog, test_suite),
+                            key=f"test_suite:keys:generatetests:{test_suite['id']}",
+                        )
 
 
 @st.cache_data(show_spinner=False)

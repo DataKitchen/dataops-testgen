@@ -23,7 +23,7 @@ class ConnectionsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="database", label="Data Configuration", order=3)
+    menu_item = MenuItem(icon="database", label="Data Configuration", order=4)
 
     def render(self, project_code: str, **_kwargs) -> None:
         dataframe = connection_service.get_connections(project_code)
