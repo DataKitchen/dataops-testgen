@@ -144,9 +144,9 @@ def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
             testgen.summary_bar(
                 items=[
                     { "label": "Passed", "value": to_int(test_run["passed_ct"]), "color": "green" },
-                    { "label": "Warnings", "value": to_int(test_run["warning_ct"]), "color": "yellow" },
+                    { "label": "Warning", "value": to_int(test_run["warning_ct"]), "color": "yellow" },
                     { "label": "Failed", "value": to_int(test_run["failed_ct"]), "color": "red" },
-                    { "label": "Errors", "value": to_int(test_run["error_ct"]), "color": "brown" },
+                    { "label": "Error", "value": to_int(test_run["error_ct"]), "color": "brown" },
                     { "label": "Dismissed", "value": to_int(test_run["dismissed_ct"]), "color": "grey" },
                 ],
                 height=10,
