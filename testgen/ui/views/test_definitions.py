@@ -569,6 +569,12 @@ def show_test_form(
                 bottom_right_column.success("Validation is successful.")
             except Exception as e:
                 bottom_right_column.error(f"Test validation failed with error: {e}")
+        else:
+            # This is needed to fix a strange bug in Streamlit when using dialog + input fields + button
+            # If an input field is changed and the button is clicked immediately (without unfocusing the input first),
+            # two fragment reruns happen successively, one for unfocusing the input and the other for clicking the button
+            # Some or all (it seems random) of the input fields disappear when this happens
+            time.sleep(0.1)
 
     submit = bottom_left_column.button("Save", disabled=authentication_service.current_user_has_read_role())
 

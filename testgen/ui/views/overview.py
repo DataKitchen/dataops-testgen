@@ -188,7 +188,7 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: i
 
     with generation_column:
         if (latest_generation := test_suite["latest_auto_gen_date"]) and pd.notnull(latest_generation):
-            st.html(f'<p class="line">{date_service.get_timezoned_timestamp(st.session_state, latest_generation)}</p>')
+            testgen.text(date_service.get_timezoned_timestamp(st.session_state, latest_generation))
         else:
             st.markdown("--")
 

@@ -8,7 +8,7 @@ from testgen.ui.views.profiling_details import show_profiling_detail
 
 LOG = logging.getLogger("testgen")
 
-BUTTON_TEXT = ":green[Profiling　→]"   # Profiling　⚲
+BUTTON_TEXT = "Profiling　→"   # Profiling　⚲
 BUTTON_HELP = "Review profiling for highlighted column"
 
 

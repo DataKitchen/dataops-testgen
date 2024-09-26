@@ -837,7 +837,7 @@ def do_disposition_update(selected, str_new_status):
 def view_bad_data(button_container, selected_row):
     with button_container:
         if st.button(
-            ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
+            "Source Data →", help="Review current source data for highlighted result", use_container_width=True
         ):
             source_data_dialog(selected_row)
 
