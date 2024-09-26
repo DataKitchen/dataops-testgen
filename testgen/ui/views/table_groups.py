@@ -164,11 +164,18 @@ class TableGroupsPage(Page):
             )
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 
-        with st.form("Delete Table Group", clear_on_submit=True):
+        with st.form("Delete Table Group", clear_on_submit=True, border=False):
             disable_delete_button = authentication_service.current_user_has_read_role() or (
                 not can_be_deleted and not accept_cascade_delete
             )
-            delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
+            _, button_column = st.columns([.85, .15])
+            with button_column:
+                delete = st.form_submit_button(
+                    "Delete",
+                    disabled=disable_delete_button,
+                    type="primary",
+                    use_container_width=True,
+                )
 
             if delete:
                 if table_group_service.are_table_groups_in_use([table_group_name]):
@@ -375,7 +382,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                         success_message = "Changes have been saved successfully. "
                     else:
                         table_group_service.add(entity)
-                        success_message = "New Table Group added successfully. "
+                        success_message = "New table group added successfully. "
                 except IntegrityError:
                     st.error("A Table Group with the same name already exists. ")
                     return

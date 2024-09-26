@@ -1,3 +1,4 @@
+import pandas as pd
 import testgen.ui.services.database_service as db
 
 """
@@ -84,35 +85,35 @@ def run_connections_lookup_query(str_schema, str_project_code):
     return db.retrieve_data(str_sql)
 
 
-def run_table_groups_lookup_query(str_schema, str_project_code, connection_id=None, table_group_id=None):
-    str_sql = f"""
+def run_table_groups_lookup_query(schema: str, project_code: str, connection_id: str | None = None, table_group_id: str | None = None) -> pd.DataFrame:
+    sql = f"""
            SELECT tg.id::VARCHAR(50), tg.table_groups_name, tg.connection_id, tg.table_group_schema
-             FROM {str_schema}.table_groups tg
+             FROM {schema}.table_groups tg
     """
 
     if connection_id:
-        str_sql += f"""
-             inner join {str_schema}.connections c on c.connection_id = tg.connection_id
+        sql += f"""
+             inner join {schema}.connections c on c.connection_id = tg.connection_id
         """
 
-    str_sql += f"""
-                       WHERE tg.project_code = '{str_project_code}'
+    sql += f"""
+                       WHERE tg.project_code = '{project_code}'
     """
 
     if table_group_id:
-        str_sql += f"""
+        sql += f"""
                 AND tg.id = '{table_group_id}'::UUID
         """
 
     if connection_id:
-        str_sql += f"""
+        sql += f"""
                 AND c.id = '{connection_id}'::UUID
         """
 
-    str_sql += """
+    sql += """
            ORDER BY table_groups_name
     """
-    return db.retrieve_data(str_sql)
+    return db.retrieve_data(sql)
 
 
 def run_table_lookup_query(str_schema, str_table_groups_id):

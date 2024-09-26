@@ -68,7 +68,10 @@ def get_timezoned_now(streamlit_session):
     return get_timezoned_timestamp(streamlit_session, value)
 
 
-def get_formatted_duration(duration: str) -> str:
+def get_formatted_duration(duration: str | None) -> str:
+    if not duration:
+        return "--"
+
     hour, minute, second = duration.split(":")
     formatted = ""
     if int(hour):

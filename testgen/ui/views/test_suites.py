@@ -103,7 +103,7 @@ class TestSuitesPage(Page):
                 with main_section:
                     testgen.no_flex_gap()
                     testgen.link(
-                        label=f"{to_int(test_suite['last_run_test_ct'])} tests definitions",
+                        label=f"{to_int(test_suite['test_ct'])} tests definitions",
                         href="test-suites:definitions",
                         params={ "test_suite_id": test_suite["id"] },
                         right_icon="chevron_right",
@@ -143,16 +143,22 @@ class TestSuitesPage(Page):
 
                 if user_can_edit:
                     with actions_section:
+                        run_disabled = not to_int(test_suite["test_ct"])
                         testgen.button(
                             type_="stroked",
                             label="Run Tests",
+                            tooltip="No test definitions to run" if run_disabled else None,
                             on_click=partial(run_tests_dialog, project_code, test_suite),
+                            disabled=run_disabled,
                             key=f"test_suite:keys:runtests:{test_suite['id']}",
                         )
+                        generate_disabled = pd.isnull(test_suite["latest_profiling_date"])
                         testgen.button(
                             type_="stroked",
                             label="Generate Tests",
+                            tooltip="No profiling data available for test generation" if generate_disabled else None,
                             on_click=partial(generate_tests_dialog, test_suite),
+                            disabled=generate_disabled,
                             key=f"test_suite:keys:generatetests:{test_suite['id']}",
                         )
 
@@ -303,7 +309,7 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
                 success_message = (
                     "Changes have been saved successfully. "
                     if mode == "edit"
-                    else "New TestSuite added successfully. "
+                    else "New test suite added successfully. "
                 )
                 st.success(success_message)
                 time.sleep(1)

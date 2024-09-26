@@ -156,9 +156,16 @@ def delete_test_dialog(selected_test_definition):
         int_data_width=700,
     )
 
-    with st.form("Delete Test Definition", clear_on_submit=True):
+    with st.form("Delete Test Definition", clear_on_submit=True, border=False):
         disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
-        delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
+        _, button_column = st.columns([.85, .15])
+        with button_column:
+            delete = st.form_submit_button(
+                "Delete",
+                disabled=disable_delete_button,
+                type="primary",
+                use_container_width=True,
+            )
 
         if delete:
             test_definition_service.delete([test_definition_id])
