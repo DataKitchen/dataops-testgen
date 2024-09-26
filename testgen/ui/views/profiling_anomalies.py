@@ -29,7 +29,7 @@ class ProfilingAnomaliesPage(Page):
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
-            
+
         run_date, _table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
         project_service.set_current_project(project_code)

@@ -135,7 +135,7 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                 with st.container():
                     testgen.flex_row_start()
                     testgen.text(f"""
-                                 <b>{to_int(table_group['latest_profile_table_ct'])}</b> tables &nbsp;|&nbsp; 
+                                 <b>{to_int(table_group['latest_profile_table_ct'])}</b> tables &nbsp;|&nbsp;
                                  <b>{to_int(table_group['latest_profile_column_ct'])}</b> tables &nbsp;|
                                  """)
                     testgen.link(

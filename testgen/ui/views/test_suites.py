@@ -167,7 +167,7 @@ def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["test_suites_ct"]:
         return False
-    
+
     testgen.whitespace(5)
     if not project_summary_df["connections_ct"]:
         testgen.empty_state(

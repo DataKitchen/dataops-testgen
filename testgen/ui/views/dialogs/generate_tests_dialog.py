@@ -1,4 +1,5 @@
 import time
+
 import pandas as pd
 import streamlit as st
 
@@ -49,7 +50,7 @@ def generate_tests_dialog(test_suite: pd.Series) -> None:
 
     with st.container():
         st.markdown(f"Execute test generation for the test suite **{test_suite_name}**?")
-    
+
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
             f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_name}",
@@ -75,6 +76,6 @@ def generate_tests_dialog(test_suite: pd.Series) -> None:
             status_container.error(f"Test generation encountered errors: {e!s}.")
 
         status_container.success(f"Test generation completed for test suite **{test_suite_name}**.")
-        time.sleep(1)  
+        time.sleep(1)
         st.cache_data.clear()
         st.rerun()

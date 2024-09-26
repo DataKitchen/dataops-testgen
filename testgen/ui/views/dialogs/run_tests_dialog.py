@@ -1,4 +1,5 @@
 import time
+
 import pandas as pd
 import streamlit as st
 
@@ -76,7 +77,7 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
                     style="margin-left: auto; border-radius: 4px; border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
             else:
-                time.sleep(1)  
+                time.sleep(1)
                 st.cache_data.clear()
                 st.rerun()
 

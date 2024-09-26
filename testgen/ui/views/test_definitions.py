@@ -127,7 +127,7 @@ class TestDefinitionsPage(Page):
             help="Delete the selected Test Definition",
             disabled=not selected,
         ):
-            delete_test_dialog(selected_test_def)          
+            delete_test_dialog(selected_test_def)
 
 
 @st.dialog("Delete Test")

@@ -56,7 +56,7 @@ class TableGroupsPage(Page):
                 button_onclick=partial(self.add_table_group_dialog, project_code, connection),
             )
             return
-        
+
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 

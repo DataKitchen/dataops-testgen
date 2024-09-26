@@ -73,7 +73,7 @@ def run_profiling_dialog(project_code: str, table_group: pd.Series | None = None
                     style="margin-left: auto; border-radius: 4px; border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
             else:
-                time.sleep(1)  
+                time.sleep(1)
                 st.cache_data.clear()
                 st.rerun()
 
