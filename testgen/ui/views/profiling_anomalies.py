@@ -188,7 +188,7 @@ class ProfilingAnomaliesPage(Page):
                 )
                 with v_col2:
                     if st.button(
-                        ":green[Source Data →]", help="Review current source data for highlighted issue", use_container_width=True
+                        "Source Data →", help="Review current source data for highlighted issue", use_container_width=True
                     ):
                         source_data_dialog(selected_row)
 

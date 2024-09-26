@@ -168,7 +168,6 @@ class ConnectionsPage(Page):
         bottom_left_column, bottom_right_column = st.columns([0.25, 0.75])
         button_left_column, button_right_column = st.columns([0.20, 0.80])
         connection_status_wrapper = st.container()
-        connection_status_container = connection_status_wrapper.empty()
 
         connection_id = selected_connection["connection_id"] if mode == "edit" else None
         connection_name = selected_connection["connection_name"] if mode == "edit" else ""
@@ -382,18 +381,28 @@ class ConnectionsPage(Page):
         test_connection = button_left_column.button("Test Connection")
 
         if test_connection:
-            connection_status_container.empty()
-            connection_status_container.info("Testing the connection...")
-
+            single_element_container = connection_status_wrapper.empty()
+            single_element_container.info("Connecting ...")
             connection_status = self.test_connection(new_connection)
-            renderer = {
-                True: connection_status_container.success,
-                False: connection_status_container.error,
-            }[connection_status.successful]
 
-            renderer(connection_status.message)
-            if not connection_status.successful and connection_status.details:
-                st.text_area("Connection Error Details", value=connection_status.details)
+            with single_element_container.container():
+                renderer = {
+                    True: st.success,
+                    False: st.error,
+                }[connection_status.successful]
+
+                renderer(connection_status.message)
+                if not connection_status.successful and connection_status.details:
+                    st.caption("Connection Error Details")
+
+                    with st.container(border=True):
+                        st.markdown(connection_status.details)
+        else:
+            # This is needed to fix a strange bug in Streamlit when using dialog + input fields + button
+            # If an input field is changed and the button is clicked immediately (without unfocusing the input first),
+            # two fragment reruns happen successively, one for unfocusing the input and the other for clicking the button
+            # Some or all (it seems random) of the input fields disappear when this happens
+            time.sleep(0.1)
 
     def test_connection(self, connection: dict) -> "ConnectionStatus":
         if connection["connect_by_key"] and connection["connection_id"] is None:
