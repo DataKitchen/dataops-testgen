@@ -39,7 +39,7 @@ class TestRunsPage(Page):
 
         with group_filter_column:
             table_groups_df = get_db_table_group_choices(project_code)
-            table_groups_id = testgen.toolbar_select(
+            table_group_id = testgen.select(
                 options=table_groups_df,
                 value_column="id",
                 display_column="table_groups_name",
@@ -49,8 +49,8 @@ class TestRunsPage(Page):
             )
 
         with suite_filter_column:
-            test_suites_df = get_db_test_suite_choices(project_code, table_groups_id)
-            test_suite_id = testgen.toolbar_select(
+            test_suites_df = get_db_test_suite_choices(project_code, table_group_id)
+            test_suite_id = testgen.select(
                 options=test_suites_df,
                 value_column="id",
                 display_column="test_suite",
@@ -65,7 +65,7 @@ class TestRunsPage(Page):
         testgen.whitespace(0.5)
         list_container = st.container(border=True)
 
-        test_runs_df = get_db_test_runs(project_code, table_groups_id, test_suite_id)
+        test_runs_df = get_db_test_runs(project_code, table_group_id, test_suite_id)
 
         run_count = len(test_runs_df)
         page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)

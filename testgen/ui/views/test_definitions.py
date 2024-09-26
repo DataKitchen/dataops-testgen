@@ -59,7 +59,7 @@ class TestDefinitionsPage(Page):
 
         with table_filter_column:
             table_options = run_table_lookup_query(table_group["id"])
-            table_name = testgen.toolbar_select(
+            table_name = testgen.select(
                 options=table_options,
                 value_column="table_name",
                 default_value=table_name,
@@ -69,7 +69,7 @@ class TestDefinitionsPage(Page):
             )
         with column_filter_column:
             column_options = get_column_names(table_group["id"], table_name)
-            column_name = testgen.toolbar_select(
+            column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",

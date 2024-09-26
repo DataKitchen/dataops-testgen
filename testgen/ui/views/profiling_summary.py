@@ -39,7 +39,7 @@ class DataProfilingPage(Page):
 
         with group_filter_column:
             table_groups_df = get_db_table_group_choices(project_code)
-            table_group_id = testgen.toolbar_select(
+            table_group_id = testgen.select(
                 options=table_groups_df,
                 value_column="id",
                 display_column="table_groups_name",

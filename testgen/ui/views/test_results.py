@@ -67,7 +67,7 @@ class TestResultsPage(Page):
                 "Warning",
                 "Passed",
             ]
-            status = testgen.toolbar_select(
+            status = testgen.select(
                 options=status_options,
                 default_value=status or "Failed + Warning",
                 required=False,
@@ -76,7 +76,7 @@ class TestResultsPage(Page):
             )
 
         with test_type_filter_column:
-            test_type = testgen.toolbar_select(
+            test_type = testgen.select(
                 options=get_test_types(),
                 value_column="test_type",
                 display_column="test_name_short",

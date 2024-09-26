@@ -36,13 +36,14 @@ class TestSuitesPage(Page):
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-test-suite",
         )
 
+        table_groups_df = get_db_table_group_choices(project_code)
+        add_button_onclick = partial(add_test_suite_dialog, project_code, table_groups_df)
         group_filter_column, actions_column = st.columns([.2, .8], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 
         with group_filter_column:
-            df_tg = get_db_table_group_choices(project_code)
-            table_group_id = testgen.toolbar_select(
-                options=df_tg,
+            table_group_id = testgen.select(
+                options=table_groups_df,
                 value_column="id",
                 display_column="table_groups_name",
                 default_value=table_group_id,
@@ -59,7 +60,7 @@ class TestSuitesPage(Page):
                     ":material/add: Add Test Suite",
                     key="test_suite:keys:add",
                     help="Add a new test suite",
-                    on_click=lambda: add_test_suite_dialog(project_code, df_tg),
+                    on_click=add_button_onclick,
                 )
 
         for _, test_suite in df.iterrows():
@@ -80,7 +81,7 @@ class TestSuitesPage(Page):
                             icon="edit",
                             tooltip="Edit test suite",
                             tooltip_position="right",
-                            on_click=partial(edit_test_suite_dialog, project_code, df_tg, test_suite),
+                            on_click=partial(edit_test_suite_dialog, project_code, table_groups_df, test_suite),
                             key=f"test_suite:keys:edit:{test_suite['id']}",
                         )
                         testgen.button(

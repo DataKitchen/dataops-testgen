@@ -14,10 +14,10 @@ from testgen.ui.components.widgets.page import (
     no_flex_gap,
     page_header,
     text,
-    toolbar_select,
     whitespace,
 )
 from testgen.ui.components.widgets.paginator import paginator
+from testgen.ui.components.widgets.select import select
 from testgen.ui.components.widgets.sidebar import sidebar
 from testgen.ui.components.widgets.sorting_selector import sorting_selector
 from testgen.ui.components.widgets.summary_bar import summary_bar

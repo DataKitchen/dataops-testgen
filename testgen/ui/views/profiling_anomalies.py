@@ -51,7 +51,7 @@ class ProfilingAnomaliesPage(Page):
         testgen.flex_row_end(export_button_column)
 
         with liklihood_filter_column:
-            issue_class = testgen.toolbar_select(
+            issue_class = testgen.select(
                 options=["Definite", "Likely", "Possible", "Potential PII"],
                 default_value=issue_class,
                 required=False,
@@ -61,7 +61,7 @@ class ProfilingAnomaliesPage(Page):
 
         with issue_type_filter_column:
             issue_type_options = get_issue_types()
-            issue_type_id = testgen.toolbar_select(
+            issue_type_id = testgen.select(
                 options=issue_type_options,
                 default_value=None if issue_class == "Potential PII" else issue_type,
                 value_column="id",
