@@ -12,7 +12,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 
 class ProfilingAnomaliesPage(Page):

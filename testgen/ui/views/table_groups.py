@@ -10,12 +10,12 @@ import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
-from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 
 
 class TableGroupsPage(Page):
@@ -114,7 +114,7 @@ class TableGroupsPage(Page):
                     testgen.button(
                         type_="stroked",
                         label="Run Profiling",
-                        on_click=partial(run_profiling_dialog, table_group),
+                        on_click=partial(run_profiling_dialog, project_code, table_group),
                         key=f"tablegroups:keys:runprofiling:{table_group['id']}",
                     )
 
@@ -170,44 +170,6 @@ class TableGroupsPage(Page):
                     st.success(success_message)
                     time.sleep(1)
                     st.rerun()
-
-
-@st.dialog(title="Run Profiling")
-def run_profiling_dialog(table_group: pd.Series) -> None:
-    table_group_id = table_group["id"]
-
-    with st.container():
-        st.markdown(
-            f"Execute profiling for the Table Group :green[{table_group['table_groups_name']}]?"
-            " Profiling will be performed in a background process"
-        )
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
-        st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            profile_button = st.button("Start", use_container_width=True)
-
-    if profile_button:
-        button_container.empty()
-
-        status_container.info("Executing Profiling...")
-
-        try:
-            run_profiling_in_background(table_group_id)
-        except Exception as e:
-            status_container.empty()
-            status_container.error(f"Process started with errors: {e!s}.")
-
-        status_container.empty()
-        status_container.success(
-            "Process has successfully started. Check 'Data Profiling' item in the menu to see the progress."
-        )
 
 
 def show_table_group_form(mode, project_code: str, connection: dict, table_group: pd.Series | None = None):

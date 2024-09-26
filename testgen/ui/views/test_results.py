@@ -15,7 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False

@@ -9,8 +9,6 @@ import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_suite_service as test_suite_service
-from testgen.commands.run_execute_tests import run_execution_steps_in_background
-from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
@@ -18,6 +16,8 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
+from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import to_int
 
 
@@ -325,123 +325,6 @@ def delete_test_suite_dialog(selected_test_suite):
                 st.success(success_message)
                 time.sleep(1)
                 st.rerun()
-
-
-@st.dialog(title="Run Tests")
-def run_tests_dialog(project_code, selected_test_suite):
-    test_suite_key = selected_test_suite["test_suite"]
-    start_process_button_message = "Start"
-
-    with st.container():
-        st.markdown(f"Run tests for the test suite :green[{test_suite_key}]?")
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
-        st.code(
-            f"testgen run-tests --project-key {project_code} --test-suite-key {selected_test_suite['test_suite']}",
-            language="shellSession"
-        )
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    run_test_button = None
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            run_test_button = st.button(start_process_button_message, use_container_width=True)
-
-    if run_test_button:
-        button_container.empty()
-
-        status_container.info(f"Running tests for test suite {test_suite_key}")
-
-        try:
-            run_execution_steps_in_background(project_code, test_suite_key)
-        except Exception as e:
-            status_container.empty()
-            status_container.error(f"Process started with errors: {e!s}.")
-
-        status_container.empty()
-        status_container.success(
-            "Process has successfully started. Check details in menu item 'Data Quality Testing'."
-        )
-
-
-@st.dialog(title="Generate Tests")
-def generate_tests_dialog(selected_test_suite):
-    test_suite_id = selected_test_suite["id"]
-    test_suite_key = selected_test_suite["test_suite"]
-    table_group_id = selected_test_suite["table_groups_id"]
-    start_process_button_message = "Start"
-
-    with st.container():
-        st.markdown(f"Execute the test generation for test suite :green[{test_suite_key}]?")
-
-    warning_container = st.container()
-    options_container = st.container()
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
-        st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_key}",
-            language="shellSession",
-        )
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    test_ct, unlocked_test_ct, unlocked_edits_ct = test_suite_service.get_test_suite_refresh_warning(test_suite_id)
-    if test_ct:
-        warning_msg = ""
-        counts_msg = f"\n\nAuto-Generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}"
-        if unlocked_edits_ct > 0:
-            if unlocked_edits_ct > 1:
-
-                warning_msg = "Manual changes have been made to auto-generated tests in this Test Suite that have not been locked. "
-            else:
-                warning_msg = "A manual change has been made to an auto-generated test in this Test Suite that has not been locked. "
-        elif unlocked_test_ct > 0:
-            warning_msg = "Auto-generated tests are present in this Test Suite that have not been locked. "
-        warning_msg = f"{warning_msg}Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.{counts_msg}"
-        with warning_container:
-            st.warning(warning_msg)
-            if unlocked_edits_ct > 0:
-                lock_edits_button = st.button("Lock Edited Tests")
-                if lock_edits_button:
-                    edits_locked = test_suite_service.lock_edited_tests(test_suite_id)
-                    if edits_locked:
-                        st.info("Edited tests have been successfully locked.")
-
-    with options_container:
-        lst_generation_sets = test_suite_service.get_generation_set_choices()
-        if lst_generation_sets:
-            lst_generation_sets.insert(0, "(All Test Types)")
-            str_generation_set = st.selectbox("Generation Set", lst_generation_sets)
-            if str_generation_set == "(All Test Types)":
-                str_generation_set = ""
-        else:
-            str_generation_set = ""
-
-    test_generation_button = None
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            test_generation_button = st.button(start_process_button_message, use_container_width=True)
-
-    if test_generation_button:
-        button_container.empty()
-
-        table_group_id = selected_test_suite["table_groups_id"]
-        test_suite_key = selected_test_suite["test_suite"]
-        status_container.info("Executing Test Generation...")
-
-        try:
-            run_test_gen_queries(table_group_id, test_suite_key, str_generation_set)
-        except Exception as e:
-            status_container.empty()
-            status_container.error(f"Process had errors: {e!s}.")
-
-        status_container.empty()
-        status_container.success("Process has successfully finished.")
 
 
 @st.dialog(title="Export to Observability")
