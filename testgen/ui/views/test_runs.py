@@ -13,7 +13,10 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
+from testgen.ui.services import authentication_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import to_int
 
 PAGE_SIZE = 10
@@ -28,12 +31,14 @@ class TestRunsPage(Page):
     menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
-        project_code = project_code or st.session_state["project"]
-
         testgen.page_header(
             "Test Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
         )
+
+        project_code = project_code or session.project
+        if render_empty_state(project_code):
+            return
 
         group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
 
@@ -59,7 +64,16 @@ class TestRunsPage(Page):
                 label="Test Suite",
             )
 
-        testgen.flex_row_end(actions_column)
+        with actions_column:
+            testgen.flex_row_end(actions_column)
+
+            if authentication_service.current_user_has_edit_role():
+                st.button(
+                    ":material/play_arrow: Run Tests",
+                    help="Run tests for a test suite",
+                    on_click=partial(run_tests_dialog, project_code, None, test_suite_id)
+                )
+
         fm.render_refresh_button(actions_column)
 
         testgen.whitespace(0.5)
@@ -89,6 +103,40 @@ class TestRunsPage(Page):
                     if (index + 1) % PAGE_SIZE and index != run_count - 1:
                         testgen.divider(-4, 4)
 
+
+def render_empty_state(project_code: str) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["test_runs_ct"]:
+        return False
+    
+    testgen.whitespace(5)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    elif not project_summary_df["table_groups_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    elif not project_summary_df["test_suites_ct"] or not project_summary_df["test_definitions_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TestSuite,
+            action_label="Go to Test Suites",
+            link_href="test-suites",
+        )
+    else:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TestExecution,
+            action_label="Run Tests",
+            button_onclick=partial(run_tests_dialog, project_code),
+            button_icon="play_arrow",
+        )
+    return True
 
 def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
     test_run_id = test_run["test_run_id"]

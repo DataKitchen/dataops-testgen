@@ -14,6 +14,7 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
@@ -29,15 +30,19 @@ class TestSuitesPage(Page):
     menu_item = MenuItem(icon="list_alt", label="Test Suites", order=3)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
-        project_code = st.session_state["project"]
 
         testgen.page_header(
             "Test Suites",
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-test-suite",
         )
 
+        project_code = project_code or session.project
         table_groups_df = get_db_table_group_choices(project_code)
         add_button_onclick = partial(add_test_suite_dialog, project_code, table_groups_df)
+
+        if render_empty_state(project_code, add_button_onclick):
+            return
+
         group_filter_column, actions_column = st.columns([.2, .8], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 
@@ -150,6 +155,34 @@ class TestSuitesPage(Page):
                             on_click=partial(generate_tests_dialog, test_suite),
                             key=f"test_suite:keys:generatetests:{test_suite['id']}",
                         )
+
+
+def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["test_suites_ct"]:
+        return False
+    
+    testgen.whitespace(5)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    elif not project_summary_df["table_groups_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    else:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TestSuite,
+            action_label="Add Test Suite",
+            button_onclick=add_button_onclick,
+        )
+    return True
 
 
 @st.cache_data(show_spinner=False)

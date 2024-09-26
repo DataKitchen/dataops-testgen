@@ -13,7 +13,10 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
+from testgen.ui.services import authentication_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import to_int
 
 FORM_DATA_WIDTH = 400
@@ -28,12 +31,14 @@ class DataProfilingPage(Page):
     menu_item = MenuItem(icon="problem", label="Data Profiling", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
-        project_code = project_code or session.project
-
         testgen.page_header(
             "Profiling Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/investigate-profiling",
         )
+
+        project_code = project_code or session.project
+        if render_empty_state(project_code):
+            return
 
         group_filter_column, actions_column = st.columns([.3, .7], vertical_alignment="bottom")
 
@@ -48,7 +53,15 @@ class DataProfilingPage(Page):
                 label="Table Group",
             )
 
-        testgen.flex_row_end(actions_column)
+        with actions_column:
+            testgen.flex_row_end()
+
+            if authentication_service.current_user_has_edit_role():
+                st.button(
+                    ":material/play_arrow: Run Profiling",
+                    help="Run profiling for a table group",
+                    on_click=partial(run_profiling_dialog, project_code, None, table_group_id)
+                )
         fm.render_refresh_button(actions_column)
 
         testgen.whitespace(0.5)
@@ -78,6 +91,35 @@ class DataProfilingPage(Page):
 
                     if (index + 1) % PAGE_SIZE and index != run_count - 1:
                         testgen.divider(-4, 4)
+
+
+def render_empty_state(project_code: str) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["profiling_runs_ct"]:
+        return False
+    
+    testgen.whitespace(5)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    elif not project_summary_df["table_groups_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    else:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Profiling,
+            action_label="Run Profiling",
+            button_onclick=partial(run_profiling_dialog, project_code),
+            button_icon="play_arrow",
+        )
+    return True
 
 
 def render_profiling_run_row(profiling_run: pd.Series, column_spec: list[int]) -> None:

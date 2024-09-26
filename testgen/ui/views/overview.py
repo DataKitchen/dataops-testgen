@@ -9,6 +9,7 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
 from testgen.utils import to_int
@@ -24,19 +25,43 @@ class OverviewPage(Page):
     menu_item = MenuItem(icon="home", label="Overview", order=0)
 
     def render(self, project_code: str | None = None, **_kwargs):
-        project_code = project_code or session.project
-        table_groups_df: pd.DataFrame = get_table_groups_summary(project_code)
-
         testgen.page_header(
             "Project Overview",
             "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
         )
 
+        project_code = project_code or session.project
+        table_groups_df: pd.DataFrame = get_table_groups_summary(project_code)
         render_project_summary(table_groups_df)
+
+        if render_empty_state(project_code):
+            return
 
         st.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
         for index, table_group in table_groups_df.iterrows():
             render_table_group_card(table_group, project_code, index)
+
+
+def render_empty_state(project_code: str) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["profiling_runs_ct"] or project_summary_df["test_runs_ct"]:
+        return False
+
+    testgen.whitespace(3)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    else:
+        testgen.empty_state(
+            text=testgen.EmptyStateText.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateText.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    return True
 
 
 def render_project_summary(table_groups: pd.DataFrame) -> None:

@@ -46,10 +46,19 @@ class TableGroupsPage(Page):
             ],
         )
 
+        df = table_group_service.get_by_connection(project_code, connection_id)
+
+        if df.empty:
+            testgen.whitespace(3)
+            testgen.empty_state(
+                text=testgen.EmptyStateText.TableGroup,
+                action_label="Add Table Group",
+                button_onclick=partial(self.add_table_group_dialog, project_code, connection),
+            )
+            return
+        
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
-
-        df = table_group_service.get_by_connection(project_code, connection_id)
 
         for _, table_group in df.iterrows():
             with testgen.card(title=table_group["table_groups_name"]) as table_group_card:
