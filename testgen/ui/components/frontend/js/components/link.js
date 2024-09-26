@@ -10,8 +10,10 @@
  * @property {string?} right_icon
  * @property {number?} right_icon_size
  * @property {number?} height
+ * @property {number?} width
  * @property {string?} style
  */
+import { enforceElementWidth } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -19,6 +21,9 @@ const { a, div, i, span } = van.tags;
 
 const Link = (/** @type Properties */ props) => {
     Streamlit.setFrameHeight(props.height?.val || 24);
+    if (props.width?.val) {
+        enforceElementWidth(window.frameElement, props.width.val);
+    }
 
     if (!window.testgen.loadedStylesheets.link) {
         document.adoptedStyleSheets.push(stylesheet);

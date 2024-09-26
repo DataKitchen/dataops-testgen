@@ -7,6 +7,7 @@
  * @property {(string|null)} tooltip
  * @property {(string|null)} tooltipPosition
  * @property {(Function|null)} onclick
+ * @property {(bool)} disabled
  * @property {string?} style
  */
 import { enforceElementWidth } from '../utils.js';
@@ -45,6 +46,7 @@ const Button = (/** @type Properties */ props) => {
             class: `tg-button tg-${props.type.val}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: props.style?.val,
             onclick: onClickHandler,
+            disabled: !!props.disabled?.val,
         },
         span({class: 'tg-button-focus-state-indicator'}, ''),
         props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
@@ -118,6 +120,15 @@ button.tg-button:has(span) {
     padding: 8px 16px;
 }
 
+button.tg-button:not(.tg-icon-button):has(span):has(i) {
+    padding-left: 8px;
+}
+
+button.tg-button[disabled] {
+    color: var(--disabled-text-color);
+    cursor: not-allowed;
+}
+
 button.tg-button.tg-icon-button > i {
     font-size: 18px;
 }
@@ -126,7 +137,7 @@ button.tg-button > i:has(+ span) {
     margin-right: 8px;
 }
 
-button.tg-button:hover .tg-button-focus-state-indicator::before {
+button.tg-button:hover:not([disabled]) .tg-button-focus-state-indicator::before {
     opacity: var(--button-hover-state-opacity);
 }
 `);

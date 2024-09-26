@@ -74,7 +74,7 @@ div[data-testid="stVerticalBlock"] {
     gap: 0.5rem;
 }
 
-div[data-testid="collapsedControl"] {
+div[data-testid="stSidebarCollapsedControl"] {
     top: 0.5rem;
 }
 /*  */
@@ -166,22 +166,22 @@ button[title="Show password text"] {
     background-color: var(--dk-card-background);
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
     width: 100%;
     flex-direction: row;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
     width: auto !important;
     max-height: 40px;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
     justify-content: flex-start;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
     justify-content: flex-end;
 }
 

@@ -13,6 +13,7 @@ def button(
     tooltip: str | None = None,
     tooltip_position: TooltipPosition = "left",
     on_click: typing.Callable[..., None] | None = None,
+    disabled: bool = False,
     style: str | None = None,
     key: str | None = None,
 ) -> typing.Any:
@@ -25,7 +26,7 @@ def button(
     :param on_click: click handler for this button
     """
 
-    props = {"type": type_}
+    props = {"type": type_, "disabled": disabled}
     if type_ != "icon":
         if not label:
             raise ValueError(f"A label is required for {type_} buttons")
