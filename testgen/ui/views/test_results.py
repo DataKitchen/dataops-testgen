@@ -12,7 +12,7 @@ import testgen.ui.services.query_service as dq
 from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.profiling_modal import view_profiling_button
@@ -62,14 +62,14 @@ class TestResultsPage(Page):
 
         with status_filter_column:
             status_options = [
-                "Failures and Warnings",
-                "Failed Tests",
-                "Tests with Warnings",
-                "Passed Tests",
+                "Failed + Warning",
+                "Failed",
+                "Warning",
+                "Passed",
             ]
             status = testgen.toolbar_select(
                 options=status_options,
-                default_value=status or "Failures and Warnings",
+                default_value=status or "Failed + Warning",
                 required=False,
                 bind_to_query="status",
                 label="Result Status",
@@ -104,13 +104,13 @@ class TestResultsPage(Page):
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
         match status:
-            case "Failures and Warnings":
+            case "Failed + Warning":
                 status = "'Failed','Warning'"
-            case "Failed Tests":
+            case "Failed":
                 status = "'Failed'"
-            case "Tests with Warnings":
+            case "Warning":
                 status = "'Warning'"
-            case "Passed Tests":
+            case "Passed":
                 status = "'Passed'"
 
         # Display main grid and retrieve selection
@@ -125,40 +125,25 @@ class TestResultsPage(Page):
         if "r.disposition" in dict(sorting_columns):
             affected_cached_functions.append(get_test_results)
 
-        if actions_column.button(
-            "✓", help="Confirm this issue as relevant for this run", disabled=disable_dispo
-        ):
-            fm.reset_post_updates(
-                do_disposition_update(selected, "Confirmed"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=affected_cached_functions,
-            )
-        if actions_column.button(
-            "✘", help="Dismiss this issue as not relevant for this run", disabled=disable_dispo
-        ):
-            fm.reset_post_updates(
-                do_disposition_update(selected, "Dismissed"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=affected_cached_functions,
-            )
-        if actions_column.button(
-            "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
-        ):
-            fm.reset_post_updates(
-                do_disposition_update(selected, "Inactive"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=affected_cached_functions,
-            )
-        if actions_column.button("⟲", help="Clear action", disabled=not selected):
-            fm.reset_post_updates(
-                do_disposition_update(selected, "No Decision"),
-                as_toast=True,
-                clear_cache=True,
-                lst_cached_functions=affected_cached_functions,
-            )
+        disposition_actions = [
+            { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
+            { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
+            { "icon": "🔇", "help": "Mute this test to deactivate it for future runs", "status": "Inactive" },
+            { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
+        ]
+
+        for action in disposition_actions:
+            action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
+
+        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+        for action in disposition_actions:
+            if action["button"]:
+                fm.reset_post_updates(
+                    do_disposition_update(selected, action["status"]),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=affected_cached_functions,
+                )
 
         # Help Links
         st.markdown(
@@ -341,9 +326,9 @@ def get_test_result_summary(run_id):
 
     return [
         { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
-        { "label": "Warnings", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
+        { "label": "Warning", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
         { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
-        { "label": "Errors", "value": int(df.at[0, "error_ct"]), "color": "brown" },
+        { "label": "Error", "value": int(df.at[0, "error_ct"]), "color": "brown" },
         { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
     ]
 
@@ -667,12 +652,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     ]
 
     selected_rows = fm.render_grid_select(
-        df,
-        lst_show_columns,
-        do_multi_select=do_multi_select,
-        show_column_headers=lst_show_headers,
-        key="grid:test-results",
-        bind_to_query="selected",
+        df, lst_show_columns, do_multi_select=do_multi_select, show_column_headers=lst_show_headers
     )
 
     with export_container:
@@ -717,7 +697,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     if not selected_rows:
         st.markdown(":orange[Select a record to see more information.]")
     else:
-        selected_row = selected_rows[0]
+        selected_row = selected_rows[len(selected_rows) - 1]
         dfh = get_test_result_history(
             selected_row["test_type"],
             selected_row["test_suite_id"],
@@ -735,7 +715,8 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
 
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
-        view_edit_test(v_col1, selected_row["test_definition_id_current"])
+        if authentication_service.current_user_has_edit_role():
+            view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
             view_profiling_button(
                 v_col2, selected_row["table_name"], selected_row["column_names"],
@@ -856,7 +837,7 @@ def do_disposition_update(selected, str_new_status):
 def view_bad_data(button_container, selected_row):
     with button_container:
         if st.button(
-            ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
+            "Source Data →", help="Review current source data for highlighted result", use_container_width=True
         ):
             source_data_dialog(selected_row)
 
