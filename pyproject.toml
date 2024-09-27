@@ -60,6 +60,7 @@ dependencies = [
     "concurrent_log_handler==0.9.25",
     "cryptography==42.0.8",
     "validators==0.33.0",
+    "reportlab==4.2.2",
 ]
 
 [project.optional-dependencies]
