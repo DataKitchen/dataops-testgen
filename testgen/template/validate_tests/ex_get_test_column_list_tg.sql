@@ -1,5 +1,6 @@
-SELECT DISTINCT schema_name || '.' || table_name || '.' || column_name AS columns
-  FROM ( SELECT cat_test_id,
+  SELECT schema_name || '.' || table_name || '.' || column_name AS columns,
+         ARRAY_AGG(cat_test_id) as test_id_array
+   FROM (SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
                 TRIM(UNNEST(STRING_TO_ARRAY(column_name, ','))) as column_name
@@ -47,4 +48,6 @@ SELECT DISTINCT schema_name || '.' || table_name || '.' || column_name AS column
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
-         AND t.test_scope = 'referential' ) cols;
+         AND t.test_scope = 'referential' ) cols
+   WHERE column_name SIMILAR TO '[A-Za-z0-9_]+'
+GROUP BY columns;

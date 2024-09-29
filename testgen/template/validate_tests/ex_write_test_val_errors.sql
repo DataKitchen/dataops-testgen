@@ -21,9 +21,8 @@ INSERT INTO test_results
             '{TEST_RUN_ID}' as test_run_id,
             NULL as input_parameters,
             0 as result_code,
-            -- TODO: show only missing columns referenced in this test
-            left('ERROR - TEST COLUMN MISSING: {MISSING_COLUMNS_NO_QUOTES}', 470) AS result_message,
+            test_definition_status AS result_message,
             NULL as result_measure
        FROM test_definitions
-      WHERE test_active = '-1'
+      WHERE test_active = 'D'
         AND test_suite_id = '{TEST_SUITE_ID}';

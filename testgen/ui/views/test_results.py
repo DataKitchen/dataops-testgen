@@ -210,14 +210,14 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                    (1 - r.result_code)::INTEGER as exception_ct,
                    CASE
                      WHEN result_status = 'Warning'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as warning_ct,
                    CASE
                      WHEN result_status = 'Failed'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as failed_ct,
                    CASE
-                     WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                     WHEN result_message ILIKE 'Inactivated%%' THEN 1
                    END as execution_error_ct,
                    p.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
