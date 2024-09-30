@@ -17,7 +17,7 @@ from testgen.ui.session import session
 from testgen.utils import to_int
 
 FORM_DATA_WIDTH = 400
-PAGE_SIZE = 50
+PAGE_SIZE = 10
 
 
 class DataProfilingPage(Page):

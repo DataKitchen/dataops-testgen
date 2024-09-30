@@ -16,7 +16,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
 from testgen.utils import to_int
 
-PAGE_SIZE = 50
+PAGE_SIZE = 10
 
 
 class TestRunsPage(Page):
