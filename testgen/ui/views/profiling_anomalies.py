@@ -104,7 +104,6 @@ class ProfilingAnomaliesPage(Page):
                 testgen.summary_bar(
                     items=others_summary,
                     label="Hygiene Issues",
-                    key="test_results_summary:others",
                     height=40,
                     width=400,
                 )
@@ -115,7 +114,6 @@ class ProfilingAnomaliesPage(Page):
                     testgen.summary_bar(
                         items=anomalies_pii_summary,
                         label="Potential PII",
-                        key="test_results_summary:pii",
                         height=40,
                         width=400,
                     )

@@ -131,7 +131,6 @@ class TestSuitesPage(Page):
                                 ],
                                 height=20,
                                 width=350,
-                                key=f"test_suite:keys:run-rummary:{test_suite['id']}",
                             )
                     else:
                         st.markdown("--")

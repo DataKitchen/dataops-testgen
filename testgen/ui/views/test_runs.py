@@ -16,7 +16,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
 from testgen.utils import to_int
 
-PAGE_SIZE = 50
+PAGE_SIZE = 10
 
 
 class TestRunsPage(Page):
@@ -151,7 +151,6 @@ def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
                 ],
                 height=10,
                 width=300,
-                key=f"test_run:keys:summary:{test_run_id}",
             )
         else:
             st.markdown("--")

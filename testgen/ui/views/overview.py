@@ -119,7 +119,6 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                             { "label": "Possible", "value": to_int(table_group["latest_anomalies_possible_ct"]), "color": "yellow" },
                             { "label": "Dismissed", "value": to_int(table_group["latest_anomalies_dismissed_ct"]), "color": "grey" },
                         ],
-                        key=f"anomalies_{key}",
                         height=12,
                         width=280,
                     )
@@ -146,7 +145,6 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                     { "label": "Error", "value": to_int(table_group["latest_tests_error_ct"]), "color": "brown" },
                     { "label": "Dismissed", "value": to_int(table_group["latest_tests_dismissed_ct"]), "color": "grey" },
                 ],
-                key=f"tests_{key}",
                 height=12,
                 width=350,
             )
@@ -154,10 +152,10 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                 st.markdown("--")
 
         if expand_toggle:
-            render_table_group_expanded(table_group["id"], project_code, key)
+            render_table_group_expanded(table_group["id"], project_code)
 
 
-def render_table_group_expanded(table_group_id: str, project_code: str, key: int) -> None:
+def render_table_group_expanded(table_group_id: str, project_code: str) -> None:
     testgen.divider(8, 12)
 
     column_spec = [0.25, 0.15, 0.15, 0.5]
@@ -170,11 +168,11 @@ def render_table_group_expanded(table_group_id: str, project_code: str, key: int
 
     test_suites_df: pd.DataFrame = test_suite_service.get_by_project(project_code, table_group_id)
 
-    for index, suite in test_suites_df.iterrows():
-        render_test_suite_item(suite, column_spec, f"{key}_{index}")
+    for suite in test_suites_df:
+        render_test_suite_item(suite, column_spec)
 
 
-def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: int) -> None:
+def render_test_suite_item(test_suite: pd.Series, column_spec: list[int]) -> None:
     suite_column, generation_column, run_column, results_column = st.columns(column_spec)
     with suite_column:
         testgen.no_flex_gap()
@@ -213,7 +211,6 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: i
                     { "label": "Error", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
                     { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
                 ],
-                key=f"tests_{key}",
                 height=8,
                 width=200,
             )

@@ -23,7 +23,7 @@ def get_by_project(schema, project_code, table_group_id=None):
                 SELECT test_runs.test_suite_id,
                     test_runs.id,
                     test_runs.test_starttime,
-                    COUNT(*) as test_ct,
+                    test_runs.test_ct,
                     SUM(
                         CASE
                             WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'

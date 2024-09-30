@@ -13,7 +13,6 @@ import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Paginator } from './components/paginator.js';
 import { Select } from './components/select.js'
-import { SummaryBar } from './components/summary_bar.js';
 import { SortingSelector } from './components/sorting_selector.js';
 
 let currentWindowVan = van;
@@ -29,7 +28,6 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         select: Select,
         sorting_selector: SortingSelector,
         sidebar: window.top.testgen.components.Sidebar,
-        summary_bar: SummaryBar,
     };
 
     if (Object.keys(componentById).includes(id)) {

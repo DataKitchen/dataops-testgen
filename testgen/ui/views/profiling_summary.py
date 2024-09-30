@@ -17,7 +17,7 @@ from testgen.ui.session import session
 from testgen.utils import to_int
 
 FORM_DATA_WIDTH = 400
-PAGE_SIZE = 50
+PAGE_SIZE = 10
 
 
 class DataProfilingPage(Page):
@@ -151,7 +151,6 @@ def render_profiling_run_row(profiling_run: pd.Series, column_spec: list[int]) -
                 ],
                 height=10,
                 width=280,
-                key=f"test_run:keys:summary:{profiling_run_id}",
             )
             testgen.link(
                 label=f"View {anomaly_count} issues",
