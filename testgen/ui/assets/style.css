@@ -241,6 +241,32 @@ Use as testgen.text("text", "extra_styles") */
 }
 /*  */
 
+/* Summary bar component */
+.tg-summary-bar--label {
+    margin-bottom: 4px;
+}
+
+.tg-summary-bar {
+    height: 100%;
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.tg-summary-bar--item {
+    height: 100%;
+}
+
+.tg-summary-bar--caption {
+    margin-top: 4px;
+    color: var(--caption-text-color);
+    font-style: italic;
+}
+/*  */
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     body {

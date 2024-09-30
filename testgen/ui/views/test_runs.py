@@ -151,7 +151,6 @@ def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
                 ],
                 height=10,
                 width=300,
-                key=f"test_run:keys:summary:{test_run_id}",
             )
         else:
             st.markdown("--")

@@ -51,7 +51,7 @@ class TestResultsPage(Page):
 
         # Display summary bar
         tests_summary = get_test_result_summary(run_id)
-        testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
+        testgen.summary_bar(items=tests_summary, height=40, width=800)
 
         # Setup Toolbar
         status_filter_column, test_type_filter_column, sort_column, actions_column, export_button_column = st.columns(
