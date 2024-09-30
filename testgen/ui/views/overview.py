@@ -168,7 +168,7 @@ def render_table_group_expanded(table_group_id: str, project_code: str) -> None:
 
     test_suites_df: pd.DataFrame = test_suite_service.get_by_project(project_code, table_group_id)
 
-    for suite in test_suites_df:
+    for _, suite in test_suites_df.iterrows():
         render_test_suite_item(suite, column_spec)
 
 
