@@ -21,13 +21,15 @@ from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import to_int
 
+PAGE_ICON = "rule"
+
 
 class TestSuitesPage(Page):
     path = "test-suites"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="list_alt", label="Test Suites", order=3)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Test Suites", order=3)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
 
@@ -168,23 +170,30 @@ def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
     if project_summary_df["test_suites_ct"]:
         return False
 
+    label="No test suites yet"
     testgen.whitespace(5)
     if not project_summary_df["connections_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Connection,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TableGroup,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
             link_href="connections:table-groups",
             link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
         )
     else:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TestSuite,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TestSuite,
             action_label="Add Test Suite",
             button_onclick=add_button_onclick,
         )

@@ -8,7 +8,7 @@ from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import css_class, whitespace
 
 
-class EmptyStateText(Enum):
+class EmptyStateMessage(Enum):
     Connection = (
         "Begin by connecting your database.",
         "TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.",
@@ -32,7 +32,9 @@ class EmptyStateText(Enum):
 
 
 def empty_state(
-    text: EmptyStateText,
+    label: str,
+    icon: str,
+    message: EmptyStateMessage,
     action_label: str,
     link_href: str | None = None,
     link_params: dict | None = None,
@@ -44,8 +46,9 @@ def empty_state(
         whitespace(5)
         st.html(f"""
                 <div style="text-align: center;">
-                    <b>{text.value[0]}</b>
-                    <p>{text.value[1]}</p>
+                    <p style="font-size: 24px; color: var(--secondary-text-color);">{label}</p>
+                    <p><i class="material-symbols-rounded" style="font-size: 60px; color: var(--disabled-text-color);">{icon}</i></p>
+                    <p><b>{message.value[0]}</b><br>{message.value[1]}</p>
                 </div>
                 """)
         _, center_column, _ = st.columns([.4, .3, .4])

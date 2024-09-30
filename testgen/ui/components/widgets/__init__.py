@@ -3,7 +3,7 @@
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs
 from testgen.ui.components.widgets.button import button
 from testgen.ui.components.widgets.card import card
-from testgen.ui.components.widgets.empty_state import EmptyStateText, empty_state
+from testgen.ui.components.widgets.empty_state import EmptyStateMessage, empty_state
 from testgen.ui.components.widgets.expander_toggle import expander_toggle
 from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import (

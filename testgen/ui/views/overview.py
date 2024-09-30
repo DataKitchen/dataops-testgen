@@ -15,6 +15,7 @@ from testgen.ui.session import session
 from testgen.utils import to_int
 
 STALE_PROFILE_DAYS = 30
+PAGE_ICON = "home"
 
 
 class OverviewPage(Page):
@@ -22,7 +23,7 @@ class OverviewPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="home", label="Overview", order=0)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Overview", order=0)
 
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
@@ -47,16 +48,21 @@ def render_empty_state(project_code: str) -> bool:
     if project_summary_df["profiling_runs_ct"] or project_summary_df["test_runs_ct"]:
         return False
 
+    label="Your project is empty"
     testgen.whitespace(3)
     if not project_summary_df["connections_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Connection,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
         )
     else:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateText.TableGroup,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
             link_href="connections:table-groups",
             link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }

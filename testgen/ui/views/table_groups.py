@@ -51,7 +51,9 @@ class TableGroupsPage(Page):
         if df.empty:
             testgen.whitespace(3)
             testgen.empty_state(
-                text=testgen.EmptyStateText.TableGroup,
+                label="No table groups yet",
+                icon="table_view",
+                message=testgen.EmptyStateMessage.TableGroup,
                 action_label="Add Table Group",
                 button_onclick=partial(self.add_table_group_dialog, project_code, connection),
             )

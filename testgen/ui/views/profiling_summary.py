@@ -21,6 +21,7 @@ from testgen.utils import to_int
 
 FORM_DATA_WIDTH = 400
 PAGE_SIZE = 10
+PAGE_ICON = "data_thresholding"
 
 
 class DataProfilingPage(Page):
@@ -28,7 +29,7 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="problem", label="Data Profiling", order=1)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Data Profiling", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
@@ -98,23 +99,30 @@ def render_empty_state(project_code: str) -> bool:
     if project_summary_df["profiling_runs_ct"]:
         return False
 
+    label = "No profiling runs yet"
     testgen.whitespace(5)
     if not project_summary_df["connections_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Connection,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TableGroup,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
             link_href="connections:table-groups",
             link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
         )
     else:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Profiling,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Profiling,
             action_label="Run Profiling",
             button_onclick=partial(run_profiling_dialog, project_code),
             button_icon="play_arrow",

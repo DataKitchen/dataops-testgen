@@ -20,6 +20,7 @@ from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import to_int
 
 PAGE_SIZE = 10
+PAGE_ICON = "labs"
 
 
 class TestRunsPage(Page):
@@ -28,7 +29,7 @@ class TestRunsPage(Page):
         lambda: session.authentication_status,
         lambda: session.project != None or "overview",
     ]
-    menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Data Quality Testing", order=2)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
@@ -109,29 +110,38 @@ def render_empty_state(project_code: str) -> bool:
     if project_summary_df["test_runs_ct"]:
         return False
 
+    label="No test runs yet"
     testgen.whitespace(5)
     if not project_summary_df["connections_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.Connection,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TableGroup,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
             link_href="connections:table-groups",
             link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
         )
     elif not project_summary_df["test_suites_ct"] or not project_summary_df["test_definitions_ct"]:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TestSuite,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TestSuite,
             action_label="Go to Test Suites",
             link_href="test-suites",
         )
     else:
         testgen.empty_state(
-            text=testgen.EmptyStateText.TestExecution,
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TestExecution,
             action_label="Run Tests",
             button_onclick=partial(run_tests_dialog, project_code),
             button_icon="play_arrow",
