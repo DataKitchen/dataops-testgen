@@ -215,7 +215,6 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                    r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
                    tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
                    c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
-                   tt.threshold_description, tt.usage_notes, -- These are used in the PDF report
                    CASE
                      WHEN r.result_code <> 1 THEN r.disposition
                         ELSE 'Passed'
@@ -243,7 +242,10 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                      WHEN r.auto_gen = TRUE THEN d.id
                                             ELSE r.test_definition_id
                    END::VARCHAR as test_definition_id_current,
-                   r.auto_gen
+                   r.auto_gen,
+
+                   tt.threshold_description, tt.usage_notes, r.test_time -- These are used in the PDF report
+
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
                ON (r.test_type = tt.test_type)

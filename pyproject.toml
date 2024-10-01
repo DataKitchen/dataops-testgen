@@ -225,8 +225,9 @@ select = ["A", "F", "S", "I", "T10", "B", "UP", "ISC", "T20", "RSE", "Q", "ARG",
 # globally ignore the following error codes
 # * TRY003: Avoid specifying long messages outside the exception class
 # * S608: Hardcoded SQL
-# # F841: Unused local variable (it is instable)
-ignore = ["TRY003", "S608", "S404", "F841"]
+# * F841: Unused local variable (it is instable)
+# * B023: Buggy: https://github.com/astral-sh/ruff/issues/7847
+ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 
 # Ignore the following errors in files:
 # F403 - in __init__.py: We use __all__ in our module files so this behavior is acceptable in __init__.py
