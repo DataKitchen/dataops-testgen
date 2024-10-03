@@ -23,7 +23,7 @@ def breadcrumbs(
         props={"breadcrumbs": breadcrumbs},
     )
     if data:
-        Router().navigate(to=data["path"], with_args=data["params"])
+        Router().navigate(to=data["href"], with_args=data["params"])
 
 class Breadcrumb(typing.TypedDict):
     path: str | None

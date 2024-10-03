@@ -13,28 +13,27 @@
  * @property {number?} width
  * @property {string?} style
  */
-import { enforceElementWidth } from '../utils.js';
+import { enforceElementWidth, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
 const { a, div, i, span } = van.tags;
 
 const Link = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight(props.height?.val || 24);
-    if (props.width?.val) {
-        enforceElementWidth(window.frameElement, props.width.val);
-    }
+    loadStylesheet('link', stylesheet);
 
-    if (!window.testgen.loadedStylesheets.link) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.link = true;
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(props.height?.val || 24);
+        if (props.width?.val) {
+            enforceElementWidth(window.frameElement, props.width.val);
+        }
     }
 
     return a(
         {
-            class: `tg-link ${props.underline.val ? 'tg-link--underline' : ''}`,
+            class: `tg-link ${props.underline?.val ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: () => navigate(props.href.val, props.params.val),
+            onclick: () => emitEvent(props.href.val, props.params.val),
         },
         div(
             {class: 'tg-link--wrapper'},
@@ -51,13 +50,13 @@ const LinkIcon = (
     /** @type string */position,
 ) => {
     return i(
-        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${size.val}px;`},
+        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${size?.val || 20}px;`},
         icon,
     );
 };
 
-function navigate(href, params) {
-    Streamlit.sendData({ href, params });
+function emitEvent(href, params) {
+    Streamlit.sendData({ event: 'LinkClicked', href, params });
 }
 
 const stylesheet = new CSSStyleSheet();

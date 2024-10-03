@@ -10,7 +10,7 @@
  * @property {(bool)} disabled
  * @property {string?} style
  */
-import { enforceElementWidth } from '../utils.js';
+import { enforceElementWidth, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -23,21 +23,20 @@ const BUTTON_TYPE = {
 };
 
 const Button = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight(40);
+    loadStylesheet('button', stylesheet);
 
     const isIconOnly = props.type === BUTTON_TYPE.ICON || (props.icon?.val && !props.label?.val);
-    if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
-        enforceElementWidth(window.frameElement, 40);
+    
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(40);
+        if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
+            enforceElementWidth(window.frameElement, 40);
+        }
     }
 
     if (props.tooltip) {
         window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
         window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
-    }
-
-    if (!window.testgen.loadedStylesheets.button) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.button = true;
     }
 
     const onClickHandler = props.onclick || post;
