@@ -9,17 +9,16 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_run_service as test_run_service
-from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.utils import to_int
 
-PAGE_SIZE = 10
+PAGE_SIZE = 50
 PAGE_ICON = "labs"
 
 
@@ -78,31 +77,24 @@ class TestRunsPage(Page):
         fm.render_refresh_button(actions_column)
 
         testgen.whitespace(0.5)
-        list_container = st.container(border=True)
+        list_container = st.container()
 
         test_runs_df = get_db_test_runs(project_code, table_group_id, test_suite_id)
-
-        run_count = len(test_runs_df)
-        page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+        page_index = testgen.paginator(count=len(test_runs_df), page_size=PAGE_SIZE)
+        paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
-            testgen.css_class("bg-white")
-            column_spec = [.3, .2, .5]
-
-            run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
-            header_styles = "font-size: 12px; text-transform: uppercase; margin-bottom: 8px;"
-            testgen.caption("Start Time | Table Group | Test Suite", header_styles, run_column)
-            testgen.caption("Status | Duration", header_styles, status_column)
-            testgen.caption("Results Summary", header_styles, results_column)
-            testgen.divider(-8)
-
-            paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-            for index, test_run in paginated_df.iterrows():
-                with st.container():
-                    render_test_run_row(test_run, column_spec)
-
-                    if (index + 1) % PAGE_SIZE and index != run_count - 1:
-                        testgen.divider(-4, 4)
+            event_data = component(
+                id_="test_runs",
+                key="test_runs",
+                props={"items": paginated_df.to_json(orient="records")},
+            )
+            if event_data:
+                event = event_data["event"]
+                if event == "LinkClicked":
+                    self.router.navigate(to=event_data["href"], with_args=event_data.get("params"))      
+                elif event == "RunCanceled":
+                    on_cancel_run(event_data["test_run"])
 
 
 def render_empty_state(project_code: str) -> bool:
@@ -147,71 +139,6 @@ def render_empty_state(project_code: str) -> bool:
             button_icon="play_arrow",
         )
     return True
-
-def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
-    test_run_id = test_run["test_run_id"]
-    status = test_run["status"]
-
-    run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
-
-    with run_column:
-        start_time = date_service.get_timezoned_timestamp(st.session_state, test_run["test_starttime"]) if pd.notnull(test_run["test_starttime"]) else "--"
-        testgen.no_flex_gap()
-        testgen.link(
-            label=start_time,
-            href="test-runs:results",
-            params={ "run_id": str(test_run_id) },
-            height=18,
-            key=f"test_run:keys:go-to-run:{test_run_id}",
-        )
-        testgen.caption(
-            f"{test_run['table_groups_name']} > {test_run['test_suite']}",
-            "margin-top: -9px;"
-        )
-
-    with status_column:
-        testgen.flex_row_start()
-
-        status_display_map = {
-            "Running": { "label": "Running", "color": "blue" },
-            "Complete": { "label": "Completed", "color": "" },
-            "Error": { "label": "Error", "color": "red" },
-            "Cancelled": { "label": "Canceled", "color": "purple" },
-        }
-        status_attrs = status_display_map.get(status, { "label": "Unknown", "color": "grey" })
-
-        st.html(f"""
-                <p class="text" style="color: var(--{status_attrs["color"]})">{status_attrs["label"]}</p>
-                <p class="caption">{date_service.get_formatted_duration(test_run["duration"])}</p>
-                """)
-
-        if status == "Error" and (log_message := test_run["log_message"]):
-            st.markdown("", help=log_message)
-
-        if status == "Running" and pd.notnull(test_run["process_id"]):
-            testgen.button(
-                type_="stroked",
-                label="Cancel Run",
-                style="width: auto; height: 32px; color: var(--purple); margin-left: 16px;",
-                on_click=partial(on_cancel_run, test_run),
-                key=f"test_run:keys:cancel-run:{test_run_id}",
-            )
-
-    with results_column:
-        if to_int(test_run["test_ct"]):
-            testgen.summary_bar(
-                items=[
-                    { "label": "Passed", "value": to_int(test_run["passed_ct"]), "color": "green" },
-                    { "label": "Warning", "value": to_int(test_run["warning_ct"]), "color": "yellow" },
-                    { "label": "Failed", "value": to_int(test_run["failed_ct"]), "color": "red" },
-                    { "label": "Error", "value": to_int(test_run["error_ct"]), "color": "brown" },
-                    { "label": "Dismissed", "value": to_int(test_run["dismissed_ct"]), "color": "grey" },
-                ],
-                height=10,
-                width=300,
-            )
-        else:
-            st.markdown("--")
 
 
 def on_cancel_run(test_run: pd.Series) -> None:
