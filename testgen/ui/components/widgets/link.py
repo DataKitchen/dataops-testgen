@@ -13,6 +13,7 @@ def link(
     right_icon: str | None = None,
     right_icon_size: float = 20.0,
     height: float | None = 21.0,
+    width: float | None = None,
     style: str | None = None,
     key: str = "testgen:link",
 ) -> None:
@@ -31,6 +32,9 @@ def link(
 
     if style:
         props.update({"style": style})
+
+    if width:
+        props.update({"width": width})
 
     clicked = component(id_="link", key=key, props=props)
     if clicked:

@@ -15,7 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False
@@ -67,7 +67,7 @@ class TestResultsPage(Page):
                 "Warning",
                 "Passed",
             ]
-            status = testgen.toolbar_select(
+            status = testgen.select(
                 options=status_options,
                 default_value=status or "Failed + Warning",
                 required=False,
@@ -76,7 +76,7 @@ class TestResultsPage(Page):
             )
 
         with test_type_filter_column:
-            test_type = testgen.toolbar_select(
+            test_type = testgen.select(
                 options=get_test_types(),
                 value_column="test_type",
                 display_column="test_name_short",

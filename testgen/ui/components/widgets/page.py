@@ -1,11 +1,8 @@
-import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
-from streamlit_extras.no_default_selectbox import selectbox
 
 from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
-from testgen.ui.navigation.router import Router
 
 
 def page_header(
@@ -32,51 +29,6 @@ def page_header(
         if title != st.session_state["last_page"]:
             st.cache_data.clear()
     st.session_state["last_page"] = title
-
-
-def toolbar_select(
-    options: pd.DataFrame | list[str],
-    value_column: str | None = None,
-    display_column: str | None = None,
-    default_value = None,
-    required: bool = False,
-    bind_to_query: str | None = None,
-    **kwargs,
-):
-    kwargs = {**kwargs}
-
-    if isinstance(options, pd.DataFrame):
-        value_column = value_column or options.columns[0]
-        display_column = display_column or value_column
-        kwargs["options"] = options[display_column]
-        if default_value in options[value_column].values:
-            kwargs["index"] = int(options[options[value_column] == default_value].index[0]) + (0 if required else 1)
-    else:
-        kwargs["options"] = options
-        if default_value in options:
-            kwargs["index"] = options.index(default_value) + (0 if required else 1)
-
-    if bind_to_query:
-        kwargs["key"] = kwargs.get("key", f"toolbar_select_{bind_to_query}")
-        if default_value is not None and kwargs.get("index") is None:
-            Router().set_query_params({ bind_to_query: None }) # Unset the query params if the current value is not valid
-
-        def update_query_params():
-            query_value = st.session_state[kwargs["key"]]
-            if not required and query_value == "---":
-                query_value = None
-            elif isinstance(options, pd.DataFrame):
-                query_value = options.loc[options[display_column] == query_value, value_column].iloc[0]
-            Router().set_query_params({ bind_to_query: query_value })
-
-        kwargs["on_change"] = update_query_params
-
-    selected = st.selectbox(**kwargs) if required else selectbox(**kwargs)
-
-    if selected and isinstance(options, pd.DataFrame):
-        return options.loc[options[display_column] == selected, value_column].iloc[0]
-
-    return selected
 
 
 def whitespace(size: float, container: DeltaGenerator | None = None):

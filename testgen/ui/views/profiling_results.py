@@ -51,7 +51,7 @@ class ProfilingResultsPage(Page):
         with table_filter_column:
             # Table Name filter
             df = profiling_queries.run_table_lookup_query(table_group_id)
-            table_name = testgen.toolbar_select(
+            table_name = testgen.select(
                 options=df,
                 value_column="table_name",
                 default_value=table_name,
@@ -62,7 +62,7 @@ class ProfilingResultsPage(Page):
         with column_filter_column:
             # Column Name filter
             df = profiling_queries.run_column_lookup_query(table_group_id, table_name)
-            column_name = testgen.toolbar_select(
+            column_name = testgen.select(
                 options=df,
                 value_column="column_name",
                 default_value=column_name,

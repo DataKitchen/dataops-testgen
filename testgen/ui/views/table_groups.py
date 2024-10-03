@@ -10,12 +10,12 @@ import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
-from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 
 
 class TableGroupsPage(Page):
@@ -46,10 +46,21 @@ class TableGroupsPage(Page):
             ],
         )
 
+        df = table_group_service.get_by_connection(project_code, connection_id)
+
+        if df.empty:
+            testgen.whitespace(3)
+            testgen.empty_state(
+                label="No table groups yet",
+                icon="table_view",
+                message=testgen.EmptyStateMessage.TableGroup,
+                action_label="Add Table Group",
+                button_onclick=partial(self.add_table_group_dialog, project_code, connection),
+            )
+            return
+
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
-
-        df = table_group_service.get_by_connection(project_code, connection_id)
 
         for _, table_group in df.iterrows():
             with testgen.card(title=table_group["table_groups_name"]) as table_group_card:
@@ -114,7 +125,7 @@ class TableGroupsPage(Page):
                     testgen.button(
                         type_="stroked",
                         label="Run Profiling",
-                        on_click=partial(run_profiling_dialog, table_group),
+                        on_click=partial(run_profiling_dialog, project_code, table_group),
                         key=f"tablegroups:keys:runprofiling:{table_group['id']}",
                     )
 
@@ -155,11 +166,18 @@ class TableGroupsPage(Page):
             )
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 
-        with st.form("Delete Table Group", clear_on_submit=True):
+        with st.form("Delete Table Group", clear_on_submit=True, border=False):
             disable_delete_button = authentication_service.current_user_has_read_role() or (
                 not can_be_deleted and not accept_cascade_delete
             )
-            delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
+            _, button_column = st.columns([.85, .15])
+            with button_column:
+                delete = st.form_submit_button(
+                    "Delete",
+                    disabled=disable_delete_button,
+                    type="primary",
+                    use_container_width=True,
+                )
 
             if delete:
                 if table_group_service.are_table_groups_in_use([table_group_name]):
@@ -170,44 +188,6 @@ class TableGroupsPage(Page):
                     st.success(success_message)
                     time.sleep(1)
                     st.rerun()
-
-
-@st.dialog(title="Run Profiling")
-def run_profiling_dialog(table_group: pd.Series) -> None:
-    table_group_id = table_group["id"]
-
-    with st.container():
-        st.markdown(
-            f"Execute profiling for the Table Group :green[{table_group['table_groups_name']}]?"
-            " Profiling will be performed in a background process"
-        )
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
-        st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            profile_button = st.button("Start", use_container_width=True)
-
-    if profile_button:
-        button_container.empty()
-
-        status_container.info("Executing Profiling...")
-
-        try:
-            run_profiling_in_background(table_group_id)
-        except Exception as e:
-            status_container.empty()
-            status_container.error(f"Process started with errors: {e!s}.")
-
-        status_container.empty()
-        status_container.success(
-            "Process has successfully started. Check 'Data Profiling' item in the menu to see the progress."
-        )
 
 
 def show_table_group_form(mode, project_code: str, connection: dict, table_group: pd.Series | None = None):
@@ -404,7 +384,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                         success_message = "Changes have been saved successfully. "
                     else:
                         table_group_service.add(entity)
-                        success_message = "New Table Group added successfully. "
+                        success_message = "New table group added successfully. "
                 except IntegrityError:
                     st.error("A Table Group with the same name already exists. ")
                     return
