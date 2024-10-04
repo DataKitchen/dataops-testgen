@@ -10,7 +10,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.commands.run_profiling_bridge import update_profile_run_status
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.utils.component import component
+from testgen.ui.components.widgets import TestGenComponentId, testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
@@ -74,20 +74,10 @@ class DataProfilingPage(Page):
         paginated_df = profiling_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
-            component_key = "testgen:profiling_runs"
-            def handle_event():
-                if event_data := st.session_state.get(component_key):
-                    event = event_data["event"]
-                    if event == "LinkClicked":
-                        self.router.navigate(to=event_data["href"], with_args=event_data.get("params"))      
-                    elif event == "RunCanceled":
-                        on_cancel_run(event_data["profiling_run"])
-                        
-            component(
-                id_="profiling_runs",
-                key=component_key,
-                props={"items": paginated_df.to_json(orient="records")},
-                on_change=handle_event,
+            testgen_component(
+                TestGenComponentId.ProfililngRuns,
+                props={ "items": paginated_df.to_json(orient="records") },
+                event_handlers={ "RunCanceled": on_cancel_run }
             )
             
 

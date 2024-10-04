@@ -1,4 +1,5 @@
 import van from './van.min.js';
+import { Streamlit } from './streamlit.js';
 
 function enforceElementWidth(
     /** @type Element */element,
@@ -28,4 +29,11 @@ function wrapProps(/** @type object */props) {
     return props;
 }
 
-export { enforceElementWidth, loadStylesheet, wrapProps };
+function emitEvent(
+    /** @type string */event,
+    /** @type object */data = {},
+) {
+    Streamlit.sendData({ event, ...data, _id: Math.random() }) // Identify the event so its handler is called once
+}
+
+export { emitEvent, enforceElementWidth, loadStylesheet, wrapProps };

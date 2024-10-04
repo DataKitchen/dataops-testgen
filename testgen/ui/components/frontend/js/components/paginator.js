@@ -7,7 +7,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { loadStylesheet } from '../utils.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 
 const { div, span, i, button } = van.tags;
 
@@ -35,7 +35,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val = 0;
-                    emitEvent(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === 0,
             },
@@ -46,7 +46,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val--;
-                    emitEvent(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === 0,
             },
@@ -57,7 +57,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val++;
-                    emitEvent(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === Math.ceil(count.val / pageSize.val) - 1,
             },
@@ -68,7 +68,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val = Math.ceil(count.val / pageSize.val) - 1;
-                    emitEvent(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === Math.ceil(count.val / pageSize.val) - 1,
             },
@@ -77,8 +77,8 @@ const Paginator = (/** @type Properties */ props) => {
     );
 };
 
-function emitEvent(/** @type number */pageIndex) {
-    Streamlit.sendData({ event: 'PageChanged', pageIndex })
+function changePage(/** @type number */page_index) {
+    emitEvent('PageChanged', { page_index })
 }
 
 const stylesheet = new CSSStyleSheet();

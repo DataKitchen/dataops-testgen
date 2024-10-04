@@ -10,7 +10,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_run_service as test_run_service
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.utils.component import component
+from testgen.ui.components.widgets import TestGenComponentId, testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
@@ -84,17 +84,11 @@ class TestRunsPage(Page):
         paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
-            event_data = component(
-                id_="test_runs",
-                key="test_runs",
-                props={"items": paginated_df.to_json(orient="records")},
+            testgen_component(
+                TestGenComponentId.TestRuns,
+                props={ "items": paginated_df.to_json(orient="records") },
+                event_handlers={ "RunCanceled": on_cancel_run }
             )
-            if event_data:
-                event = event_data["event"]
-                if event == "LinkClicked":
-                    self.router.navigate(to=event_data["href"], with_args=event_data.get("params"))      
-                elif event == "RunCanceled":
-                    on_cancel_run(event_data["test_run"])
 
 
 def render_empty_state(project_code: str) -> bool:

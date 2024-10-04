@@ -10,7 +10,7 @@
  * @property {(bool)} disabled
  * @property {string?} style
  */
-import { enforceElementWidth, loadStylesheet } from '../utils.js';
+import { emitEvent, enforceElementWidth, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -39,7 +39,7 @@ const Button = (/** @type Properties */ props) => {
         window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
     }
 
-    const onClickHandler = props.onclick || post;
+    const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
     return button(
         {
             class: `tg-button tg-${props.type.val}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
@@ -52,10 +52,6 @@ const Button = (/** @type Properties */ props) => {
         !isIconOnly ? span(props.label) : undefined,
     );
 };
-
-function post() {
-    Streamlit.sendData({ value: Math.random() });
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

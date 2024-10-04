@@ -29,6 +29,8 @@ class TestgenSession(Singleton):
     add_project: bool
     latest_version: str | None
 
+    testgen_event_id: str | None
+
     def __init__(self, state: SessionStateProxy) -> None:
         super().__setattr__("_state", state)
 

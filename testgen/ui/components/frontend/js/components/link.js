@@ -13,7 +13,7 @@
  * @property {number?} width
  * @property {string?} style
  */
-import { enforceElementWidth, loadStylesheet } from '../utils.js';
+import { emitEvent, enforceElementWidth, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -33,7 +33,7 @@ const Link = (/** @type Properties */ props) => {
         {
             class: `tg-link ${props.underline?.val ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: () => emitEvent(props.href.val, props.params.val),
+            onclick: () => emitEvent('LinkClicked', { href: props.href.val, params: props.params.val }),
         },
         div(
             {class: 'tg-link--wrapper'},
@@ -54,10 +54,6 @@ const LinkIcon = (
         icon,
     );
 };
-
-function emitEvent(href, params) {
-    Streamlit.sendData({ event: 'LinkClicked', href, params });
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

@@ -9,7 +9,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { wrapProps } from '../utils.js';
+import { emitEvent, wrapProps } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -79,11 +79,7 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
                 type: 'stroked',
                 label: 'Cancel Run',
                 style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
-                onclick: () => Streamlit.sendData({
-                    event: 'RunCanceled',
-                    test_run: item,
-                    _id: Math.random(), // Forces on_change component handler to be triggered on every click
-                }),
+                onclick: () => emitEvent('RunCanceled', { payload: item }),
             })) : null,
         ),
         div(

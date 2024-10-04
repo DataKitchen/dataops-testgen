@@ -11,7 +11,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { loadStylesheet } from '../utils.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 
 const { a, div, span } = van.tags;
 
@@ -31,7 +31,11 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                 { class: 'tg-breadcrumbs' },
                 breadcrumbs.reduce((items, b, idx) => {
                     const isLastItem = idx === breadcrumbs.length - 1;
-                    items.push(a({ class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`, href: `#/${b.path}`, onclick: () => emiEvent(b.path, b.params) }, b.label))
+                    items.push(a({
+                        class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`,
+                        onclick: () => emitEvent('LinkClicked', { href: b.path, params: b.params }) },
+                        b.label,
+                    ));
                     if (!isLastItem) {
                         items.push(span({class: 'tg-breadcrumbs--arrow'}, '>'));
                     }
@@ -41,11 +45,6 @@ const Breadcrumbs = (/** @type Properties */ props) => {
         }
     )
 };
-
-function emiEvent(/** @type string */ href, /** @type object */ params) {
-    Streamlit.sendData({ event: 'LinkClicked', href, params });
-    return false;
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
