@@ -9,7 +9,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, wrapProps } from '../utils.js';
+import { emitEvent, resizeFrameHeightToElement, wrapProps } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -22,33 +22,36 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         try {
             items = JSON.parse(props.items?.val);
         } catch { }
-        Streamlit.setFrameHeight(44 + 84.5 * items.length);
+        Streamlit.setFrameHeight(100 * items.length);
         return items;
     });
     const columns = ['20%', '20%', '20%', '40%'];
 
+    const tableId = 'profiling-runs-table';
+    resizeFrameHeightToElement(tableId);
+
     return div(
-        () => div(
-            { class: 'table' },
-            div(
-                { class: 'table-header flex-row' },
-                span(
-                    { style: `flex: ${columns[0]}` },
-                    'Start Time | Table Group',
-                ),
-                span(
-                    { style: `flex: ${columns[1]}` },
-                    'Status | Duration',
-                ),
-                span(
-                    { style: `flex: ${columns[2]}` },
-                    'Schema',
-                ),
-                span(
-                    { style: `flex: ${columns[3]}` },
-                    'Hygiene Issues',
-                ),
+        { class: 'table', id: tableId },
+        div(
+            { class: 'table-header flex-row' },
+            span(
+                { style: `flex: ${columns[0]}` },
+                'Start Time | Table Group',
             ),
+            span(
+                { style: `flex: ${columns[1]}` },
+                'Status | Duration',
+            ),
+            span(
+                { style: `flex: ${columns[2]}` },
+                'Schema',
+            ),
+            span(
+                { style: `flex: ${columns[3]}` },
+                'Hygiene Issues',
+            ),
+        ),
+        () => div(
             profilingRunItems.val.map(item => ProfilingRunItem(item, columns)),
         ),
     );

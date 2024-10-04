@@ -9,7 +9,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, wrapProps } from '../utils.js';
+import { emitEvent, resizeFrameHeightToElement, wrapProps } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -22,29 +22,32 @@ const TestRuns = (/** @type Properties */ props) => {
         try {
             items = JSON.parse(props.items?.val);
         } catch { }
-        Streamlit.setFrameHeight(44 + 60.5 * items.length);
+        Streamlit.setFrameHeight(100 * items.length);
         return items;
     });
     const columns = ['30%', '20%', '50%'];
 
+    const tableId = 'test-runs-table';
+    resizeFrameHeightToElement(tableId);
+
     return div(
-        () => div(
-            { class: 'table' },
-            div(
-                { class: 'table-header flex-row' },
-                span(
-                    { style: `flex: ${columns[0]}` },
-                    'Start Time | Table Group | Test Suite',
-                ),
-                span(
-                    { style: `flex: ${columns[1]}` },
-                    'Status | Duration',
-                ),
-                span(
-                    { style: `flex: ${columns[2]}` },
-                    'Results Summary',
-                ),
+        { class: 'table', id: tableId },
+        div(
+            { class: 'table-header flex-row' },
+            span(
+                { style: `flex: ${columns[0]}` },
+                'Start Time | Table Group | Test Suite',
             ),
+            span(
+                { style: `flex: ${columns[1]}` },
+                'Status | Duration',
+            ),
+            span(
+                { style: `flex: ${columns[2]}` },
+                'Results Summary',
+            ),
+        ),
+        () => div(
             testRunItems.val.map(item => TestRunItem(item, columns)),
         ),
     );

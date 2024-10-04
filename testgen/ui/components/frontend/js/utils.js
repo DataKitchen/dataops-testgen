@@ -12,6 +12,16 @@ function enforceElementWidth(
     observer.observe(element);
 }
 
+function resizeFrameHeightToElement(/** @type string */elementId) {
+    const observer = new ResizeObserver(() => {
+        const height = document.getElementById(elementId).offsetHeight;
+        if (height) {
+            Streamlit.setFrameHeight(height);
+        }
+    });
+    observer.observe(window.frameElement);
+}
+
 function loadStylesheet(
     /** @type string */key,
     /** @type CSSStyleSheet */stylesheet,
@@ -36,4 +46,4 @@ function emitEvent(
     Streamlit.sendData({ event, ...data, _id: Math.random() }) // Identify the event so its handler is called once
 }
 
-export { emitEvent, enforceElementWidth, loadStylesheet, wrapProps };
+export { emitEvent, enforceElementWidth, loadStylesheet, resizeFrameHeightToElement, wrapProps };
