@@ -10,7 +10,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.commands.run_profiling_bridge import update_profile_run_status
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets import TestGenComponentId, testgen_component
+from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
@@ -75,7 +75,7 @@ class DataProfilingPage(Page):
 
         with list_container:
             testgen_component(
-                TestGenComponentId.ProfililngRuns,
+                "profiling_runs",
                 props={ "items": paginated_df.to_json(orient="records") },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )

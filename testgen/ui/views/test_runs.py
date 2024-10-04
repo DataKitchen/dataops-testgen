@@ -10,7 +10,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_run_service as test_run_service
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets import TestGenComponentId, testgen_component
+from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
@@ -85,7 +85,7 @@ class TestRunsPage(Page):
 
         with list_container:
             testgen_component(
-                TestGenComponentId.TestRuns,
+                "test_runs",
                 props={ "items": paginated_df.to_json(orient="records") },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
