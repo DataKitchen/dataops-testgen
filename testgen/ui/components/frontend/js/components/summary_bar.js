@@ -13,7 +13,7 @@
  * @property {number} width
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
+import { loadStylesheet } from '../utils.js';
 
 const { div, span } = van.tags;
 const colorMap = {
@@ -28,19 +28,14 @@ const colorMap = {
 }
 
 const SummaryBar = (/** @type Properties */ props) => {
+    loadStylesheet('summaryBar', stylesheet);
+
     const height = props.height.val || 24;
     const width = props.width.val;
     const summaryItems = props.items.val;
-    const label = props.label.val;
+    const label = props.label?.val;
     const total = summaryItems.reduce((sum, item) => sum + item.value, 0);
 
-    Streamlit.setFrameHeight(height + 24 + (label ? 24 : 0));
-
-    if (!window.testgen.loadedStylesheets.summaryBar) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.summaryBar = true;
-    }
-    
     return div(
         { class: 'tg-summary-bar-wrapper' },
         () => {
@@ -62,7 +57,7 @@ const SummaryBar = (/** @type Properties */ props) => {
         () => {
             return total ? div(
                 { class: `tg-summary-bar--caption` },
-                summaryItems.map(item => `${item.label}: ${item.value}`).join(', '),
+                summaryItems.map(item => `${item.label}: ${item.value || 0}`).join(', '),
             ) : null;
         },
     );

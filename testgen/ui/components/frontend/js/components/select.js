@@ -13,16 +13,13 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { loadStylesheet } from '../utils.js';
 
 const { div, label, option, select } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
+    loadStylesheet('select', stylesheet);
     Streamlit.setFrameHeight();
-
-    if (!window.testgen.loadedStylesheets.select) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.select = true;
-    }
 
     const domId = Math.random().toString(36).substring(2);
     const changeHandler = props.onChange || post;

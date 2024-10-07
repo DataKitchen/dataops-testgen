@@ -15,7 +15,7 @@ from testgen.ui.views.login import LoginPage
 from testgen.ui.views.overview import OverviewPage
 from testgen.ui.views.profiling_anomalies import ProfilingAnomaliesPage
 from testgen.ui.views.profiling_results import ProfilingResultsPage
-from testgen.ui.views.profiling_summary import DataProfilingPage
+from testgen.ui.views.profiling_runs import DataProfilingPage
 from testgen.ui.views.project_settings import ProjectSettingsPage
 from testgen.ui.views.table_groups import TableGroupsPage
 from testgen.ui.views.test_definitions import TestDefinitionsPage

@@ -11,15 +11,15 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 
 const { a, div, span } = van.tags;
 
 const Breadcrumbs = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight(24);
+    loadStylesheet('breadcrumbs', stylesheet);
 
-    if (!window.testgen.loadedStylesheets.breadcrumbs) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.breadcrumbs = true;
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(24);
     }
 
     return div(
@@ -31,7 +31,11 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                 { class: 'tg-breadcrumbs' },
                 breadcrumbs.reduce((items, b, idx) => {
                     const isLastItem = idx === breadcrumbs.length - 1;
-                    items.push(a({ class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`, href: `#/${b.path}`, onclick: () => navigate(b.path, b.params) }, b.label))
+                    items.push(a({
+                        class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`,
+                        onclick: () => emitEvent('LinkClicked', { href: b.path, params: b.params }) },
+                        b.label,
+                    ));
                     if (!isLastItem) {
                         items.push(span({class: 'tg-breadcrumbs--arrow'}, '>'));
                     }
@@ -41,11 +45,6 @@ const Breadcrumbs = (/** @type Properties */ props) => {
         }
     )
 };
-
-function navigate(/** @type string */ path, /** @type object */ params) {
-    Streamlit.sendData({ path, params });
-    return false;
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
