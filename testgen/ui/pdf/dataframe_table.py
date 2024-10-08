@@ -29,6 +29,7 @@ PARA_STYLE_CELL_NULL = ParagraphStyle(
     PARA_STYLE_CELL_NUMERIC,
     alignment=enums.TA_CENTER,
     textColor=COLOR_FADED_TEXT,
+    fontName="Courier-Oblique",
 )
 
 PARA_STYLE_CELL_HEADER = ParagraphStyle(

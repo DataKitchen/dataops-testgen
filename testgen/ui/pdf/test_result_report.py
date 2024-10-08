@@ -2,12 +2,10 @@ import pandas
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import inch
 from reportlab.platypus import (
     CondPageBreak,
     KeepTogether,
     Paragraph,
-    SimpleDocTemplate,
     Table,
     TableStyle,
 )
@@ -25,14 +23,13 @@ from testgen.ui.pdf.style import (
     PARA_STYLE_TITLE,
     TABLE_STYLE_DEFAULT,
 )
+from testgen.ui.pdf.templates import DatakitchenTemplate
 from testgen.ui.services.database_service import get_schema
 from testgen.ui.services.test_results_service import (
     do_source_data_lookup,
     do_source_data_lookup_custom,
     get_test_result_history,
 )
-
-MARGIN = 0.4 * inch
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
@@ -108,7 +105,7 @@ def build_summary_table(document, tr_data):
         ("Date", test_timestamp, None, "Table Group", tr_data["table_groups_name"]),
         ("Database/Schema", tr_data["schema_name"], None, "Test Suite", tr_data["test_suite"]),
         ("Table", tr_data["table_name"], None, "Data Quality Dimension", tr_data["dq_dimension"]),
-        ("Column", tr_data["column_names"], None, "Risk Level", tr_data["severity"]),
+        ("Column", tr_data["column_names"], None, "Disposition", tr_data["disposition"] or "No Decision"),
     ]
 
     summary_table_col_widths = [n * document.width for n in (.2, .1, .2, .2, .15, .15)]
@@ -179,7 +176,6 @@ def build_sql_query_conntent(sample_data_tuple):
 
 
 def get_report_content(document, tr_data):
-
     yield Paragraph("TestGen Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, tr_data)
 
@@ -208,5 +204,5 @@ def get_report_content(document, tr_data):
 
 
 def create_report(filename, tr_data):
-    doc = SimpleDocTemplate(filename, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN)
+    doc = DatakitchenTemplate(filename)
     doc.build(flowables=list(get_report_content(doc, tr_data)))

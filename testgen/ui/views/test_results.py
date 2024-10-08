@@ -1,6 +1,8 @@
 import tempfile
 import typing
 from datetime import date
+from io import BytesIO
+from zipfile import ZipFile
 
 import pandas as pd
 import plotly.express as px
@@ -244,7 +246,8 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                    END::VARCHAR as test_definition_id_current,
                    r.auto_gen,
 
-                   tt.threshold_description, tt.usage_notes, r.test_time -- These are used in the PDF report
+                   -- These are used in the PDF report
+                   tt.threshold_description, tt.usage_notes, r.test_time
 
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
@@ -543,23 +546,33 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
         view_bad_data(v_col3, selected_row)
 
         with v_col4:
+
+            report_eligible_rows = [
+                row for row in selected_rows
+                if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
+            ]
+
             if st.button(
-                ":material/file_save: Report",
+                ":material/file_save: Issue Report",
                 use_container_width=True,
+                disabled=not report_eligible_rows,
+                help="Generate PDF reports for the selected results that are not muted or dismissed and are not Passed",
             ):
-
-                def _generate():
-                    with tempfile.NamedTemporaryFile() as pdf_file:
-                        create_report(pdf_file.name, selected_row)
-                        return pdf_file.read()
-
-                download_dialog(
-                    dialog_title="Download Issue Report",
-                    file_name="testgen_issue_report.pdf",
-                    mime_type="application/pdf",
-                    file_content_func=_generate,
-                )
-
+                dialog_title = "Download Issue Report"
+                if len(report_eligible_rows) == 1:
+                    download_dialog(
+                        dialog_title=dialog_title,
+                        file_name=get_report_file_name(report_eligible_rows[0]),
+                        mime_type="application/pdf",
+                        file_content_func=lambda: get_report_content(report_eligible_rows[0]),
+                    )
+                else:
+                    download_dialog(
+                        dialog_title=dialog_title,
+                        file_name="testgen_issue_reports.zip",
+                        mime_type="application/zip",
+                        file_content_func=lambda: get_report_content_zip(report_eligible_rows),
+                    )
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
             st.markdown(f"###### {selected_row['test_description']}")
@@ -714,3 +727,27 @@ def view_edit_test(button_container, test_definition_id):
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
             show_test_form_by_id(test_definition_id)
+
+
+def get_report_file_name(tr_data):
+    td_id = tr_data["test_definition_id_runtime"][:6]
+    tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
+    return f"testgen_issue_report_{td_id}_{tr_time}.pdf"
+
+
+def get_report_content(tr_data):
+    with BytesIO() as buffer:
+        create_report(buffer, tr_data)
+        buffer.seek(0)
+        return buffer.read()
+
+
+def get_report_content_zip(tr_data_list):
+    with tempfile.NamedTemporaryFile() as zip_file:
+        with ZipFile(zip_file.name, "w") as zip_writer:
+            for tr_data in tr_data_list:
+                zip_writer.writestr(
+                    get_report_file_name(tr_data),
+                    get_report_content(tr_data),
+                )
+        return zip_file.read()
