@@ -1,8 +1,6 @@
-import tempfile
 import typing
 from datetime import date
 from io import BytesIO
-from zipfile import ZipFile
 
 import pandas as pd
 import plotly.express as px
@@ -14,7 +12,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets.download_dialog import download_dialog
+from testgen.ui.components.widgets.download_dialog import download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import authentication_service, project_service
@@ -562,17 +560,17 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
                 if len(report_eligible_rows) == 1:
                     download_dialog(
                         dialog_title=dialog_title,
-                        file_name=get_report_file_name(report_eligible_rows[0]),
-                        mime_type="application/pdf",
-                        file_content_func=lambda: get_report_content(report_eligible_rows[0]),
+                        file_content_func=get_report_file_data,
+                        args=(report_eligible_rows[0],),
                     )
                 else:
-                    download_dialog(
-                        dialog_title=dialog_title,
-                        file_name="testgen_issue_reports.zip",
-                        mime_type="application/zip",
-                        file_content_func=lambda: get_report_content_zip(report_eligible_rows),
+                    zip_func = zip_multi_file_data(
+                        "testgen_issue_reports.zip",
+                        get_report_file_data,
+                        [(arg,) for arg in selected_rows],
                     )
+                    download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
             st.markdown(f"###### {selected_row['test_description']}")
@@ -729,25 +727,14 @@ def view_edit_test(button_container, test_definition_id):
             show_test_form_by_id(test_definition_id)
 
 
-def get_report_file_name(tr_data):
+def get_report_file_data(progress_gen, tr_data):
     td_id = tr_data["test_definition_id_runtime"][:6]
     tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
-    return f"testgen_issue_report_{td_id}_{tr_time}.pdf"
+    file_name = f"testgen_issue_report_{td_id}_{tr_time}.pdf"
 
-
-def get_report_content(tr_data):
     with BytesIO() as buffer:
+        progress_gen.send(None)
         create_report(buffer, tr_data)
+        progress_gen.send(1.0)
         buffer.seek(0)
-        return buffer.read()
-
-
-def get_report_content_zip(tr_data_list):
-    with tempfile.NamedTemporaryFile() as zip_file:
-        with ZipFile(zip_file.name, "w") as zip_writer:
-            for tr_data in tr_data_list:
-                zip_writer.writestr(
-                    get_report_file_name(tr_data),
-                    get_report_content(tr_data),
-                )
-        return zip_file.read()
+        return file_name, "application/pdf", buffer.read()
