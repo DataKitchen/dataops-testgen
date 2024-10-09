@@ -136,14 +136,14 @@ SELECT p.project_name,
        (1 - r.result_code)::INTEGER as exception_ct,
        CASE
          WHEN result_status = 'Warning'
-          AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+          AND result_message NOT ILIKE 'Inactivated%' THEN 1
        END::INTEGER as warning_ct,
        CASE
          WHEN result_status = 'Failed'
-          AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+          AND result_message NOT ILIKE 'Inactivated%' THEN 1
        END::INTEGER as failed_ct,
        CASE
-         WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+         WHEN result_message ILIKE 'Inactivated%' THEN 1
        END as execution_error_ct,
        p.project_code,
        r.table_groups_id,

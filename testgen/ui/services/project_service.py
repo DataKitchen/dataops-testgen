@@ -24,4 +24,4 @@ def get_project_by_code(code: str):
     if not code:
         return None
     return query_service.get_project_by_code(session.dbschema, code)
-    
+

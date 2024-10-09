@@ -1,5 +1,6 @@
 import {Streamlit} from "../streamlit.js";
 import van from '../van.min.js';
+import { loadStylesheet } from '../utils.js';
 
 /**
  * @typedef ColDef
@@ -16,20 +17,18 @@ import van from '../van.min.js';
 const { button, div, i, span } = van.tags;
 
 const SortingSelector = (/** @type {Properties} */ props) => {
+    loadStylesheet('sortingSelector', stylesheet);
 
     let defaultDirection = "ASC";
-
-    if (!window.testgen.loadedStylesheets.sortingSelector) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.sortSelector = true;
-    }
 
     const columns = props.columns.val;
     const prevComponentState = props.state.val || [];
 
     const columnLabel = columns.reduce((acc, [colLabel, colId]) => ({ ...acc, [colId]: colLabel}), {});
 
-    Streamlit.setFrameHeight(100 + 30 * columns.length);
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(100 + 30 * columns.length);
+    }
 
     const componentState = columns.reduce(
         (state, [colLabel, colId]) => (

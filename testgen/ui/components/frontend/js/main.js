@@ -13,8 +13,9 @@ import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Paginator } from './components/paginator.js';
 import { Select } from './components/select.js'
-import { SummaryBar } from './components/summary_bar.js';
 import { SortingSelector } from './components/sorting_selector.js';
+import { TestRuns } from './pages/test_runs.js';
+import { ProfilingRuns } from './pages/profiling_runs.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -29,7 +30,8 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         select: Select,
         sorting_selector: SortingSelector,
         sidebar: window.top.testgen.components.Sidebar,
-        summary_bar: SummaryBar,
+        test_runs: TestRuns,
+        profiling_runs: ProfilingRuns,
     };
 
     if (Object.keys(componentById).includes(id)) {

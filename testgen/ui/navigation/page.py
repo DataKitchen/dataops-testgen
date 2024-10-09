@@ -40,7 +40,7 @@ class Page(abc.ABC):
 
         session.current_page_args = session.current_page_args or {}
         self._validate_project_query_param()
-        
+
         self.render(**session.current_page_args)
 
     def _validate_project_query_param(self) -> None:

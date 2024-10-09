@@ -7,20 +7,18 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 
 const { div, span, i, button } = van.tags;
 
 const Paginator = (/** @type Properties */ props) => {
-    const count = props.count.val;
-    const pageSize = props.pageSize.val;
+    loadStylesheet('paginator', stylesheet);
 
-    Streamlit.setFrameHeight(32);
-
-    if (!window.testgen.loadedStylesheets.expanderToggle) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.expanderToggle = true;
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(32);
     }
 
+    const { count, pageSize } = props;
     const pageIndexState = van.state(props.pageIndex.val || 0);
 
     return div(
@@ -29,7 +27,7 @@ const Paginator = (/** @type Properties */ props) => {
             { class: 'tg-paginator--label' },
             () => {
                 const pageIndex = pageIndexState.val;
-                return `${pageSize * pageIndex + 1} - ${Math.min(count, pageSize * (pageIndex + 1))} of ${count}`
+                return `${pageSize.val * pageIndex + 1} - ${Math.min(count.val, pageSize.val * (pageIndex + 1))} of ${count.val}`;
             },
         ),
         button(
@@ -37,7 +35,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val = 0;
-                    Streamlit.sendData(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === 0,
             },
@@ -48,7 +46,7 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val--;
-                    Streamlit.sendData(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
                 disabled: () => pageIndexState.val === 0,
             },
@@ -59,9 +57,9 @@ const Paginator = (/** @type Properties */ props) => {
                 class: 'tg-paginator--button',
                 onclick: () => {
                     pageIndexState.val++;
-                    Streamlit.sendData(pageIndexState.val);
+                    changePage(pageIndexState.val);
                 },
-                disabled: () => pageIndexState.val === Math.ceil(count / pageSize) - 1,
+                disabled: () => pageIndexState.val === Math.ceil(count.val / pageSize.val) - 1,
             },
             i({class: 'material-symbols-rounded'}, 'chevron_right')
         ),
@@ -69,15 +67,19 @@ const Paginator = (/** @type Properties */ props) => {
             {
                 class: 'tg-paginator--button',
                 onclick: () => {
-                    pageIndexState.val = Math.ceil(count / pageSize) - 1;
-                    Streamlit.sendData(pageIndexState.val);
+                    pageIndexState.val = Math.ceil(count.val / pageSize.val) - 1;
+                    changePage(pageIndexState.val);
                 },
-                disabled: () => pageIndexState.val === Math.ceil(count / pageSize) - 1,
+                disabled: () => pageIndexState.val === Math.ceil(count.val / pageSize.val) - 1,
             },
             i({class: 'material-symbols-rounded'}, 'last_page')
         ),
     );
 };
+
+function changePage(/** @type number */page_index) {
+    emitEvent('PageChanged', { page_index })
+}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

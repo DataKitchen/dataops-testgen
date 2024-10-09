@@ -30,7 +30,7 @@ from testgen.ui.services.test_results_service import (
     get_test_result_history as get_test_result_history_uncached,
 )
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False
@@ -66,7 +66,7 @@ class TestResultsPage(Page):
 
         # Display summary bar
         tests_summary = get_test_result_summary(run_id)
-        testgen.summary_bar(items=tests_summary, key="test_results", height=40, width=800)
+        testgen.summary_bar(items=tests_summary, height=40, width=800)
 
         # Setup Toolbar
         status_filter_column, test_type_filter_column, sort_column, actions_column, export_button_column = st.columns(
@@ -82,7 +82,7 @@ class TestResultsPage(Page):
                 "Warning",
                 "Passed",
             ]
-            status = testgen.toolbar_select(
+            status = testgen.select(
                 options=status_options,
                 default_value=status or "Failed + Warning",
                 required=False,
@@ -91,7 +91,7 @@ class TestResultsPage(Page):
             )
 
         with test_type_filter_column:
-            test_type = testgen.toolbar_select(
+            test_type = testgen.select(
                 options=get_test_types(),
                 value_column="test_type",
                 display_column="test_name_short",
@@ -225,14 +225,14 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                    (1 - r.result_code)::INTEGER as exception_ct,
                    CASE
                      WHEN result_status = 'Warning'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as warning_ct,
                    CASE
                      WHEN result_status = 'Failed'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as failed_ct,
                    CASE
-                     WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                     WHEN result_message ILIKE 'Inactivated%%' THEN 1
                    END as execution_error_ct,
                    p.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,

@@ -9,14 +9,17 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_run_service as test_run_service
-from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
+from testgen.ui.services import authentication_service
 from testgen.ui.session import session
-from testgen.utils import to_int
+from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 
 PAGE_SIZE = 50
+PAGE_ICON = "labs"
 
 
 class TestRunsPage(Page):
@@ -25,21 +28,23 @@ class TestRunsPage(Page):
         lambda: session.authentication_status,
         lambda: session.project != None or "overview",
     ]
-    menu_item = MenuItem(icon="labs", label="Data Quality Testing", order=2)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Data Quality Testing", order=2)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
-        project_code = project_code or st.session_state["project"]
-
         testgen.page_header(
             "Test Runs",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
         )
 
+        project_code = project_code or session.project
+        if render_empty_state(project_code):
+            return
+
         group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
 
         with group_filter_column:
             table_groups_df = get_db_table_group_choices(project_code)
-            table_groups_id = testgen.toolbar_select(
+            table_group_id = testgen.select(
                 options=table_groups_df,
                 value_column="id",
                 display_column="table_groups_name",
@@ -49,8 +54,8 @@ class TestRunsPage(Page):
             )
 
         with suite_filter_column:
-            test_suites_df = get_db_test_suite_choices(project_code, table_groups_id)
-            test_suite_id = testgen.toolbar_select(
+            test_suites_df = get_db_test_suite_choices(project_code, table_group_id)
+            test_suite_id = testgen.select(
                 options=test_suites_df,
                 value_column="id",
                 display_column="test_suite",
@@ -59,102 +64,75 @@ class TestRunsPage(Page):
                 label="Test Suite",
             )
 
-        testgen.flex_row_end(actions_column)
+        with actions_column:
+            testgen.flex_row_end(actions_column)
+
+            if authentication_service.current_user_has_edit_role():
+                st.button(
+                    ":material/play_arrow: Run Tests",
+                    help="Run tests for a test suite",
+                    on_click=partial(run_tests_dialog, project_code, None, test_suite_id)
+                )
+
         fm.render_refresh_button(actions_column)
 
         testgen.whitespace(0.5)
-        list_container = st.container(border=True)
+        list_container = st.container()
 
-        test_runs_df = get_db_test_runs(project_code, table_groups_id, test_suite_id)
-
-        run_count = len(test_runs_df)
-        page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+        test_runs_df = get_db_test_runs(project_code, table_group_id, test_suite_id)
+        page_index = testgen.paginator(count=len(test_runs_df), page_size=PAGE_SIZE)
+        paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
-            testgen.css_class("bg-white")
-            column_spec = [.3, .2, .5]
-
-            run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
-            header_styles = "font-size: 12px; text-transform: uppercase; margin-bottom: 8px;"
-            testgen.caption("Start Time | Table Group | Test Suite", header_styles, run_column)
-            testgen.caption("Status | Duration", header_styles, status_column)
-            testgen.caption("Results Summary", header_styles, results_column)
-            testgen.divider(-8)
-
-            paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-            for index, test_run in paginated_df.iterrows():
-                with st.container():
-                    render_test_run_row(test_run, column_spec)
-
-                    if (index + 1) % PAGE_SIZE and index != run_count - 1:
-                        testgen.divider(-4, 4)
-
-
-def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
-    test_run_id = test_run["test_run_id"]
-    status = test_run["status"]
-
-    run_column, status_column, results_column = st.columns(column_spec, vertical_alignment="top")
-
-    with run_column:
-        start_time = date_service.get_timezoned_timestamp(st.session_state, test_run["test_starttime"]) if pd.notnull(test_run["test_starttime"]) else "--"
-        testgen.no_flex_gap()
-        testgen.link(
-            label=start_time,
-            href="test-runs:results",
-            params={ "run_id": str(test_run_id) },
-            height=18,
-            key=f"test_run:keys:go-to-run:{test_run_id}",
-        )
-        testgen.caption(
-            f"{test_run['table_groups_name']} > {test_run['test_suite']}",
-            "margin-top: -9px;"
-        )
-
-    with status_column:
-        testgen.flex_row_start()
-
-        status_display_map = {
-            "Running": { "label": "Running", "color": "blue" },
-            "Complete": { "label": "Completed", "color": "" },
-            "Error": { "label": "Error", "color": "red" },
-            "Cancelled": { "label": "Canceled", "color": "purple" },
-        }
-        status_attrs = status_display_map.get(status, { "label": "Unknown", "color": "grey" })
-
-        st.html(f"""
-                <p class="text" style="color: var(--{status_attrs["color"]})">{status_attrs["label"]}</p>
-                <p class="caption">{date_service.get_formatted_duration(test_run["duration"])}</p>
-                """)
-
-        if status == "Error" and (log_message := test_run["log_message"]):
-            st.markdown("", help=log_message)
-
-        if status == "Running" and pd.notnull(test_run["process_id"]):
-            testgen.button(
-                type_="stroked",
-                label="Cancel Run",
-                style="width: auto; height: 32px; color: var(--purple); margin-left: 16px;",
-                on_click=partial(on_cancel_run, test_run),
-                key=f"test_run:keys:cancel-run:{test_run_id}",
+            testgen_component(
+                "test_runs",
+                props={ "items": paginated_df.to_json(orient="records") },
+                event_handlers={ "RunCanceled": on_cancel_run }
             )
 
-    with results_column:
-        if to_int(test_run["test_ct"]):
-            testgen.summary_bar(
-                items=[
-                    { "label": "Passed", "value": to_int(test_run["passed_ct"]), "color": "green" },
-                    { "label": "Warning", "value": to_int(test_run["warning_ct"]), "color": "yellow" },
-                    { "label": "Failed", "value": to_int(test_run["failed_ct"]), "color": "red" },
-                    { "label": "Error", "value": to_int(test_run["error_ct"]), "color": "brown" },
-                    { "label": "Dismissed", "value": to_int(test_run["dismissed_ct"]), "color": "grey" },
-                ],
-                height=10,
-                width=300,
-                key=f"test_run:keys:summary:{test_run_id}",
-            )
-        else:
-            st.markdown("--")
+
+def render_empty_state(project_code: str) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["test_runs_ct"]:
+        return False
+
+    label="No test runs yet"
+    testgen.whitespace(5)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    elif not project_summary_df["table_groups_ct"]:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    elif not project_summary_df["test_suites_ct"] or not project_summary_df["test_definitions_ct"]:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TestSuite,
+            action_label="Go to Test Suites",
+            link_href="test-suites",
+        )
+    else:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.TestExecution,
+            action_label="Run Tests",
+            button_onclick=partial(run_tests_dialog, project_code),
+            button_icon="play_arrow",
+        )
+    return True
 
 
 def on_cancel_run(test_run: pd.Series) -> None:

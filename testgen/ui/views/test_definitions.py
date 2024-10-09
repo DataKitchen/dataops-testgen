@@ -16,7 +16,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 LOG = logging.getLogger("testgen")
 
@@ -59,7 +59,7 @@ class TestDefinitionsPage(Page):
 
         with table_filter_column:
             table_options = run_table_lookup_query(table_group["id"])
-            table_name = testgen.toolbar_select(
+            table_name = testgen.select(
                 options=table_options,
                 value_column="table_name",
                 default_value=table_name,
@@ -69,7 +69,7 @@ class TestDefinitionsPage(Page):
             )
         with column_filter_column:
             column_options = get_column_names(table_group["id"], table_name)
-            column_name = testgen.toolbar_select(
+            column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
@@ -127,7 +127,7 @@ class TestDefinitionsPage(Page):
             help="Delete the selected Test Definition",
             disabled=not selected,
         ):
-            delete_test_dialog(selected_test_def)          
+            delete_test_dialog(selected_test_def)
 
 
 @st.dialog("Delete Test")
@@ -156,9 +156,16 @@ def delete_test_dialog(selected_test_definition):
         int_data_width=700,
     )
 
-    with st.form("Delete Test Definition", clear_on_submit=True):
+    with st.form("Delete Test Definition", clear_on_submit=True, border=False):
         disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
-        delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
+        _, button_column = st.columns([.85, .15])
+        with button_column:
+            delete = st.form_submit_button(
+                "Delete",
+                disabled=disable_delete_button,
+                type="primary",
+                use_container_width=True,
+            )
 
         if delete:
             test_definition_service.delete([test_definition_id])

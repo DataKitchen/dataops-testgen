@@ -1,7 +1,15 @@
 import logging
+from collections import defaultdict
+from itertools import chain
 
 from testgen.commands.queries.test_parameter_validation_query import CTestParamValidationSQL
-from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, RetrieveTestExecParms, RunActionQueryList
+from testgen.common import (
+    AssignConnectParms,
+    RetrieveDBResultsToDictList,
+    RetrieveDBResultsToList,
+    RetrieveTestExecParms,
+    RunActionQueryList,
+)
 
 LOG = logging.getLogger("testgen")
 
@@ -45,15 +53,15 @@ def run_parameter_validation_queries(
     # Retrieve Test Column list
     LOG.info("CurrentStep: Retrieve Test Columns for Validation")
     strColumnList = clsExecute.GetTestValidationColumns(booClean)
-    lstTestColumns = RetrieveDBResultsToDictList("DKTG", strColumnList)
+    test_columns, _ = RetrieveDBResultsToList("DKTG", strColumnList)
 
-    if len(lstTestColumns) == 0:
+    if not test_columns:
         LOG.warning(f"No test columns are present to validate in Test Suite {strTestSuite}")
         missing_columns = []
     else:
         # Derive test schema list -- make CSV string from list of columns
         #  to be used as criteria for retrieving data dictionary
-        setSchemas = {s["columns"].split(".")[0] for s in lstTestColumns}
+        setSchemas = {col.split(".")[0] for col, _ in test_columns}
         strSchemas = ", ".join([f"'{value}'" for value in setSchemas])
         LOG.debug("Test column list successfully retrieved")
 
@@ -71,7 +79,7 @@ def run_parameter_validation_queries(
         LOG.debug("Project column list successfully received")
         LOG.info("CurrentStep: Compare column sets")
         # load results into sets
-        result_set1 = {item["columns"].lower() for item in set(lstTestColumns)}
+        result_set1 = {col.lower() for col, _ in test_columns}
         result_set2 = {item["columns"].lower() for item in set(lstProjectTestColumns)}
 
         # Check if all columns exist in the table
@@ -80,11 +88,8 @@ def run_parameter_validation_queries(
         if len(missing_columns) == 0:
             LOG.info("No missing column in Project Column list.")
 
-        strMissingColumns = ", ".join(f"'{x}'" for x in missing_columns)
-        srtNoQuoteMissingCols = strMissingColumns.replace("'", "")
-
     if missing_columns:
-        LOG.debug("Test Columns are missing in target database: %s", srtNoQuoteMissingCols)
+        LOG.debug("Test Columns are missing in target database: %s", ", ".join(missing_columns))
 
         # Extracting schema.tables that are missing from the result sets
         tables_set1 = {elem.rsplit(".", 1)[0] for elem in result_set1}
@@ -94,25 +99,46 @@ def run_parameter_validation_queries(
         missing_tables = tables_set1.difference(tables_set2)
 
         if missing_tables:
-            strMissingtables = ", ".join(f"'{x}'" for x in missing_tables)
+            LOG.info("Missing tables: %s", ", ".join(missing_tables))
         else:
             LOG.info("No missing tables in Project Column list.")
-            strMissingtables = "''"
 
         # Flag test_definitions tests with missing columns:
         LOG.info("CurrentStep: Flagging Tests That Failed Validation")
-        clsExecute.missing_columns = strMissingColumns
-        clsExecute.missing_tables = strMissingtables
+
         # Flag Value is D if called from execute_tests_qry.py, otherwise N to disable now
         if booRunFromTestExec:
             clsExecute.flag_val = "D"
-            strTempMessage = "Tests that failed parameter validation have been flagged."
+            LOG.debug("Tests that failed parameter validation will be flagged.")
         else:
             clsExecute.flag_val = "N"
-            strTempMessage = "Tests that failed parameter validation have been set to inactive."
-        strFlagTests = clsExecute.FlagTestsWithFailedValidation()
-        RunActionQueryList("DKTG", [strFlagTests])
-        LOG.debug(strTempMessage)
+            LOG.debug("Tests that failed parameter validation will be deactivated.")
+
+        tests_missing_tables = defaultdict(list)
+        tests_missing_columns = defaultdict(list)
+        for column_name, test_ids in test_columns:
+            column_name = column_name.lower()
+            table_name = column_name.rsplit(".", 1)[0]
+            if table_name in missing_tables:
+                tests_missing_tables[table_name].extend(test_ids)
+            elif column_name in missing_columns:
+                tests_missing_columns[column_name].extend(test_ids)
+
+        clsExecute.test_ids = list(set(chain(*tests_missing_tables.values(), *tests_missing_columns.values())))
+        strPrepFlagTests = clsExecute.PrepFlagTestsWithFailedValidation()
+        RunActionQueryList("DKTG", [strPrepFlagTests])
+
+        for column_name, test_ids in tests_missing_columns.items():
+            clsExecute.message = f"Missing column: {column_name}"
+            clsExecute.test_ids = test_ids
+            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
+            RunActionQueryList("DKTG", [strFlagTests])
+
+        for table_name, test_ids in tests_missing_tables.items():
+            clsExecute.message = f"Missing table: {table_name}"
+            clsExecute.test_ids = test_ids
+            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
+            RunActionQueryList("DKTG", [strFlagTests])
 
         # when run_parameter_validation_queries() is called from execute_tests_query.py:
         # we disable tests and write validation errors to test_results table.

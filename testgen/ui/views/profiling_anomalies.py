@@ -12,7 +12,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 
 class ProfilingAnomaliesPage(Page):
@@ -29,7 +29,7 @@ class ProfilingAnomaliesPage(Page):
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
-            
+
         run_date, _table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
         project_service.set_current_project(project_code)
@@ -51,7 +51,7 @@ class ProfilingAnomaliesPage(Page):
         testgen.flex_row_end(export_button_column)
 
         with liklihood_filter_column:
-            issue_class = testgen.toolbar_select(
+            issue_class = testgen.select(
                 options=["Definite", "Likely", "Possible", "Potential PII"],
                 default_value=issue_class,
                 required=False,
@@ -61,7 +61,7 @@ class ProfilingAnomaliesPage(Page):
 
         with issue_type_filter_column:
             issue_type_options = get_issue_types()
-            issue_type_id = testgen.toolbar_select(
+            issue_type_id = testgen.select(
                 options=issue_type_options,
                 default_value=None if issue_class == "Potential PII" else issue_type,
                 value_column="id",
@@ -104,7 +104,6 @@ class ProfilingAnomaliesPage(Page):
                 testgen.summary_bar(
                     items=others_summary,
                     label="Hygiene Issues",
-                    key="test_results_summary:others",
                     height=40,
                     width=400,
                 )
@@ -115,7 +114,6 @@ class ProfilingAnomaliesPage(Page):
                     testgen.summary_bar(
                         items=anomalies_pii_summary,
                         label="Potential PII",
-                        key="test_results_summary:pii",
                         height=40,
                         width=400,
                     )

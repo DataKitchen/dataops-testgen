@@ -9,11 +9,13 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
 from testgen.utils import to_int
 
 STALE_PROFILE_DAYS = 30
+PAGE_ICON = "home"
 
 
 class OverviewPage(Page):
@@ -21,22 +23,51 @@ class OverviewPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="home", label="Overview", order=0)
+    menu_item = MenuItem(icon=PAGE_ICON, label="Overview", order=0)
 
     def render(self, project_code: str | None = None, **_kwargs):
-        project_code = project_code or session.project
-        table_groups_df: pd.DataFrame = get_table_groups_summary(project_code)
-
         testgen.page_header(
             "Project Overview",
             "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
         )
 
+        project_code = project_code or session.project
+        table_groups_df: pd.DataFrame = get_table_groups_summary(project_code)
         render_project_summary(table_groups_df)
+
+        if render_empty_state(project_code):
+            return
 
         st.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
         for index, table_group in table_groups_df.iterrows():
             render_table_group_card(table_group, project_code, index)
+
+
+def render_empty_state(project_code: str) -> bool:
+    project_summary_df = project_queries.get_summary_by_code(project_code)
+    if project_summary_df["profiling_runs_ct"] or project_summary_df["test_runs_ct"]:
+        return False
+
+    label="Your project is empty"
+    testgen.whitespace(3)
+    if not project_summary_df["connections_ct"]:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Connection,
+            action_label="Go to Connections",
+            link_href="connections",
+        )
+    else:
+        testgen.empty_state(
+            label=label,
+            icon=PAGE_ICON,
+            message=testgen.EmptyStateMessage.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateMessage.TableGroup,
+            action_label="Go to Table Groups",
+            link_href="connections:table-groups",
+            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+        )
+    return True
 
 
 def render_project_summary(table_groups: pd.DataFrame) -> None:
@@ -107,9 +138,19 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                 )
 
                 anomaly_count = to_int(table_group["latest_anomalies_ct"])
-                st.html(f"""
-                        <b>{anomaly_count}</b> hygiene issues in <b>{to_int(table_group["latest_profile_table_ct"])}</b> tables
-                        """)
+                with st.container():
+                    testgen.flex_row_start()
+                    testgen.text(f"""
+                                 <b>{to_int(table_group['latest_profile_table_ct'])}</b> tables &nbsp;|&nbsp;
+                                 <b>{to_int(table_group['latest_profile_column_ct'])}</b> tables &nbsp;|
+                                 """)
+                    testgen.link(
+                        label=f"{anomaly_count} hygiene issues",
+                        href="profiling-runs:hygiene",
+                        params={ "run_id": str(table_group["latest_profile_id"]) },
+                        width=150,
+                        key=f"overview:keys:go-to-issues:{table_group['latest_profile_id']}",
+                    )
 
                 if anomaly_count:
                     testgen.summary_bar(
@@ -119,7 +160,6 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                             { "label": "Possible", "value": to_int(table_group["latest_anomalies_possible_ct"]), "color": "yellow" },
                             { "label": "Dismissed", "value": to_int(table_group["latest_anomalies_dismissed_ct"]), "color": "grey" },
                         ],
-                        key=f"anomalies_{key}",
                         height=12,
                         width=280,
                     )
@@ -132,11 +172,8 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
             total_tests = to_int(table_group["latest_tests_ct"])
             if total_tests:
                 passed_tests = to_int(table_group["latest_tests_passed_ct"])
-
-                st.html(f"""
-                            <p style="margin: -6px 0 8px;">{round(passed_tests * 100 / total_tests)}% passed</p>
-                            <b>{total_tests}</b> tests in <b>{to_int(table_group["latest_tests_suite_ct"])}</b> test suites
-                            """)
+                testgen.text(f"{round(passed_tests * 100 / total_tests)}% passed")
+                testgen.text(f"<b>{total_tests}</b> tests in <b>{to_int(table_group['latest_tests_suite_ct'])}</b> test suites", "margin: 12px 0 12px;")
 
                 testgen.summary_bar(
                 items=[
@@ -146,7 +183,6 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                     { "label": "Error", "value": to_int(table_group["latest_tests_error_ct"]), "color": "brown" },
                     { "label": "Dismissed", "value": to_int(table_group["latest_tests_dismissed_ct"]), "color": "grey" },
                 ],
-                key=f"tests_{key}",
                 height=12,
                 width=350,
             )
@@ -154,10 +190,10 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                 st.markdown("--")
 
         if expand_toggle:
-            render_table_group_expanded(table_group["id"], project_code, key)
+            render_table_group_expanded(table_group["id"], project_code)
 
 
-def render_table_group_expanded(table_group_id: str, project_code: str, key: int) -> None:
+def render_table_group_expanded(table_group_id: str, project_code: str) -> None:
     testgen.divider(8, 12)
 
     column_spec = [0.25, 0.15, 0.15, 0.5]
@@ -170,11 +206,11 @@ def render_table_group_expanded(table_group_id: str, project_code: str, key: int
 
     test_suites_df: pd.DataFrame = test_suite_service.get_by_project(project_code, table_group_id)
 
-    for index, suite in test_suites_df.iterrows():
-        render_test_suite_item(suite, column_spec, f"{key}_{index}")
+    for _, suite in test_suites_df.iterrows():
+        render_test_suite_item(suite, column_spec)
 
 
-def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: int) -> None:
+def render_test_suite_item(test_suite: pd.Series, column_spec: list[int]) -> None:
     suite_column, generation_column, run_column, results_column = st.columns(column_spec)
     with suite_column:
         testgen.no_flex_gap()
@@ -184,7 +220,7 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: i
             params={ "test_suite_id": str(test_suite["id"]) },
             key=f"overview:keys:go-to-definitions:{test_suite['id']}",
         )
-        testgen.caption(f"{to_int(test_suite['last_run_test_ct'])} tests", "margin-top: -16px;")
+        testgen.caption(f"{to_int(test_suite['test_ct'])} tests", "margin-top: -16px;")
 
     with generation_column:
         if (latest_generation := test_suite["latest_auto_gen_date"]) and pd.notnull(latest_generation):
@@ -213,7 +249,6 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int], key: i
                     { "label": "Error", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
                     { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
                 ],
-                key=f"tests_{key}",
                 height=8,
                 width=200,
             )
@@ -235,6 +270,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
             latest_run.id,
             latest_run.profiling_starttime,
             latest_run.table_ct,
+            latest_run.column_ct,
             latest_run.anomaly_ct,
             SUM(
                 CASE
@@ -337,6 +373,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         latest_profile.id as latest_profile_id,
         latest_profile.profiling_starttime as latest_profile_start,
         latest_profile.table_ct as latest_profile_table_ct,
+        latest_profile.column_ct as latest_profile_column_ct,
         latest_profile.anomaly_ct as latest_anomalies_ct,
         latest_profile.definite_ct as latest_anomalies_definite_ct,
         latest_profile.likely_ct as latest_anomalies_likely_ct,

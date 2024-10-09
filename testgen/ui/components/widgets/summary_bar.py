@@ -1,17 +1,23 @@
-import logging
 import typing
 
-from testgen.ui.components.utils.component import component
+import streamlit as st
 
-LOG = logging.getLogger("testgen")
-
+COLOR_MAP = {
+    "red": "#EF5350",
+    "orange": "#FF9800",
+    "yellow": "#FDD835",
+    "green": "#9CCC65",
+    "purple": "#AB47BC",
+    "blue": "#42A5F5",
+    "brown": "#8D6E63",
+    "grey": "#BDBDBD",
+}
 
 def summary_bar(
     items: list["SummaryItem"],
     label: str | None = None,
-    height: int | None = None,
+    height: int = 24,
     width: int | None = None,
-    key: str = "testgen:summary_bar",
 ) -> None:
     """
     Testgen component to display a summary status bar.
@@ -23,12 +29,37 @@ def summary_bar(
     :param key: unique key to give the component a persisting state
     """
 
-    component(
-        id_="summary_bar",
-        key=key,
-        default={},
-        props={"items": items, "label": label, "height": height, "width": width},
-    )
+    label_div = ""
+    item_spans = ""
+    caption_div = ""
+
+    if label:
+        label_div = f"""
+        <div class="tg-summary-bar--label">
+        {label}
+        </div>
+        """
+
+    total = sum(item["value"] for item in items)
+    if total:
+        item_spans = "".join([ f'<span class="tg-summary-bar--item" style="width: {item["value"] * 100 / total}%; background-color: {COLOR_MAP.get(item["color"], item["color"])};"></span>' for item in items ])
+
+        caption = ", ".join([ f"{item['label']}: {item['value']}" for item in items ])
+        caption_div = f"""
+        <div class="tg-summary-bar--caption">
+            {caption}
+        </div>
+        """
+
+    st.html(f"""
+            <div class="tg-summary-bar-wrapper">
+                {label_div}
+                <div class="tg-summary-bar" style="height: {height}px; max-width: {f'{width}px' if width else '100%'};">
+                    {item_spans}
+                </div>
+                {caption_div}
+            </div>
+            """)
 
 
 class SummaryItem(typing.TypedDict):
