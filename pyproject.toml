@@ -60,6 +60,7 @@ dependencies = [
     "concurrent_log_handler==0.9.25",
     "cryptography==42.0.8",
     "validators==0.33.0",
+    "reportlab==4.2.2",
 ]
 
 [project.optional-dependencies]
@@ -224,8 +225,9 @@ select = ["A", "F", "S", "I", "T10", "B", "UP", "ISC", "T20", "RSE", "Q", "ARG",
 # globally ignore the following error codes
 # * TRY003: Avoid specifying long messages outside the exception class
 # * S608: Hardcoded SQL
-# # F841: Unused local variable (it is instable)
-ignore = ["TRY003", "S608", "S404", "F841"]
+# * F841: Unused local variable (it is instable)
+# * B023: Buggy: https://github.com/astral-sh/ruff/issues/7847
+ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 
 # Ignore the following errors in files:
 # F403 - in __init__.py: We use __all__ in our module files so this behavior is acceptable in __init__.py
@@ -237,6 +239,7 @@ ignore = ["TRY003", "S608", "S404", "F841"]
 "tests*" = ["S101", "T201"]
 "invocations/**" = ["ARG001", "T201"]
 "testgen/common/encrypt.py" = ["S413"]
+"testgen/ui/pdf/dk_logo.py" = ["T201"]
 
 # See: https://coverage.readthedocs.io/en/latest/config.html
 [tool.coverage.run]

@@ -11,7 +11,7 @@ from time import sleep
 
 import pandas as pd
 import streamlit as st
-import validators
+from attrs import validators
 from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox

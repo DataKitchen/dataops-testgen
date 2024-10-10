@@ -1,5 +1,6 @@
 import typing
 from datetime import date
+from io import BytesIO
 
 import pandas as pd
 import plotly.express as px
@@ -9,11 +10,25 @@ import streamlit as st
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-from testgen.common import ConcatColumnList, date_service
+from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.download_dialog import download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
+from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
+from testgen.ui.services.test_definition_service import (
+    get_test_definition as get_test_definition_uncached,
+)
+from testgen.ui.services.test_results_service import (
+    do_source_data_lookup as do_source_data_lookup_uncached,
+)
+from testgen.ui.services.test_results_service import (
+    do_source_data_lookup_custom as do_source_data_lookup_custom_uncached,
+)
+from testgen.ui.services.test_results_service import (
+    get_test_result_history as get_test_result_history_uncached,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
@@ -227,7 +242,11 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                      WHEN r.auto_gen = TRUE THEN d.id
                                             ELSE r.test_definition_id
                    END::VARCHAR as test_definition_id_current,
-                   r.auto_gen
+                   r.auto_gen,
+
+                   -- These are used in the PDF report
+                   tt.threshold_description, tt.usage_notes, r.test_time
+
               FROM run_results r
             INNER JOIN {str_schema}.test_types tt
                ON (r.test_type = tt.test_type)
@@ -334,63 +353,9 @@ def get_test_result_summary(run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_history(str_test_type, str_test_suite_id, str_table_name, str_column_names,
-                            str_test_definition_id, auto_gen):
-    str_schema = st.session_state["dbschema"]
-
-    if auto_gen:
-        str_where = f"""
-            WHERE test_suite_id = '{str_test_suite_id}'
-              AND table_name = '{str_table_name}'
-              AND column_names = '{str_column_names}'
-              AND test_type = '{str_test_type}'
-              AND auto_gen = TRUE
-        """
-    else:
-        str_where = f"""
-            WHERE test_definition_id_runtime = '{str_test_definition_id}'
-        """
-
-    str_sql = f"""
-           SELECT test_date, test_type,
-                  test_name_short, test_name_long, measure_uom, test_operator,
-                  threshold_value::NUMERIC, result_measure, result_status
-             FROM {str_schema}.v_test_results {str_where}
-           ORDER BY test_date DESC;
-    """
-
-    df = db.retrieve_data(str_sql)
-    # Clean Up
-    df["test_date"] = pd.to_datetime(df["test_date"])
-
-    return df
-
-
-@st.cache_data(show_spinner=ALWAYS_SPIN)
 def get_test_definition(str_test_def_id):
     str_schema = st.session_state["dbschema"]
     return get_test_definition_uncached(str_schema, str_test_def_id)
-
-
-def get_test_definition_uncached(str_schema, str_test_def_id):
-    str_sql = f"""
-           SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
-                  tt.test_description as description, tt.usage_notes,
-                  d.column_name,
-                  d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
-                  d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
-                  d.match_table_name, d.match_column_names, d.match_subset_condition,
-                  d.match_groupby_names, d.match_having_condition,
-                  d.window_date_column, d.window_days::VARCHAR as window_days,
-                  d.custom_query,
-                  d.severity, tt.default_severity,
-                  d.test_active, d.lock_refresh, d.last_manual_update
-             FROM {str_schema}.test_definitions d
-           INNER JOIN {str_schema}.test_types tt
-              ON (d.test_type = tt.test_type)
-            WHERE d.id = '{str_test_def_id}';
-    """
-    return db.retrieve_data(str_sql)
 
 
 @st.cache_data(show_spinner=False)
@@ -399,155 +364,16 @@ def do_source_data_lookup(selected_row):
     return do_source_data_lookup_uncached(schema, selected_row)
 
 
-def do_source_data_lookup_uncached(str_schema, selected_row, sql_only=False):
-    # Define the query
-    str_sql = f"""
-            SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
-                   c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url,
-                   c.connect_by_key, c.private_key, c.private_key_passphrase
-              FROM {str_schema}.target_data_lookups t
-            INNER JOIN {str_schema}.table_groups tg
-               ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
-            INNER JOIN {str_schema}.connections c
-               ON (tg.connection_id = c.connection_id)
-               AND (t.sql_flavor = c.sql_flavor)
-             WHERE t.error_type = 'Test Results'
-               AND t.test_id = '{selected_row["test_type_id"]}'
-               AND t.lookup_query > '';
-    """
-
-    def replace_parms(df_test, str_query):
-        if df_test.empty:
-            raise ValueError("This test definition is no longer present.")
-
-        str_query = str_query.replace("{TARGET_SCHEMA}", empty_if_null(lst_query[0]["table_group_schema"]))
-        str_query = str_query.replace("{TABLE_NAME}", empty_if_null(selected_row["table_name"]))
-        str_query = str_query.replace("{COLUMN_NAME}", empty_if_null(selected_row["column_names"]))
-        str_query = str_query.replace("{DATA_QC_SCHEMA}", empty_if_null(lst_query[0]["project_qc_schema"]))
-        str_query = str_query.replace("{TEST_DATE}", str(empty_if_null(selected_row["test_date"])))
-
-        str_query = str_query.replace("{CUSTOM_QUERY}", empty_if_null(df_test.at[0, "custom_query"]))
-        str_query = str_query.replace("{BASELINE_VALUE}", empty_if_null(df_test.at[0, "baseline_value"]))
-        str_query = str_query.replace("{BASELINE_CT}", empty_if_null(df_test.at[0, "baseline_ct"]))
-        str_query = str_query.replace("{BASELINE_AVG}", empty_if_null(df_test.at[0, "baseline_avg"]))
-        str_query = str_query.replace("{BASELINE_SD}", empty_if_null(df_test.at[0, "baseline_sd"]))
-        str_query = str_query.replace("{THRESHOLD_VALUE}", empty_if_null(df_test.at[0, "threshold_value"]))
-
-        str_substitute = empty_if_null(df_test.at[0, "subset_condition"])
-        str_substitute = "1=1" if str_substitute == "" else str_substitute
-        str_query = str_query.replace("{SUBSET_CONDITION}", str_substitute)
-
-        str_query = str_query.replace("{GROUPBY_NAMES}", empty_if_null(df_test.at[0, "groupby_names"]))
-        str_query = str_query.replace("{HAVING_CONDITION}", empty_if_null(df_test.at[0, "having_condition"]))
-        str_query = str_query.replace("{MATCH_SCHEMA_NAME}", empty_if_null(df_test.at[0, "match_schema_name"]))
-        str_query = str_query.replace("{MATCH_TABLE_NAME}", empty_if_null(df_test.at[0, "match_table_name"]))
-        str_query = str_query.replace("{MATCH_COLUMN_NAMES}", empty_if_null(df_test.at[0, "match_column_names"]))
-
-        str_substitute = empty_if_null(df_test.at[0, "match_subset_condition"])
-        str_substitute = "1=1" if str_substitute == "" else str_substitute
-        str_query = str_query.replace("{MATCH_SUBSET_CONDITION}", str_substitute)
-
-        str_query = str_query.replace("{MATCH_GROUPBY_NAMES}", empty_if_null(df_test.at[0, "match_groupby_names"]))
-        str_query = str_query.replace("{MATCH_HAVING_CONDITION}", empty_if_null(df_test.at[0, "match_having_condition"]))
-        str_query = str_query.replace("{COLUMN_NAME_NO_QUOTES}", empty_if_null(selected_row["column_names"]))
-
-        str_query = str_query.replace("{WINDOW_DATE_COLUMN}", empty_if_null(df_test.at[0, "window_date_column"]))
-        str_query = str_query.replace("{WINDOW_DAYS}", empty_if_null(df_test.at[0, "window_days"]))
-
-        str_substitute = ConcatColumnList(selected_row["column_names"], "<NULL>")
-        str_query = str_query.replace("{CONCAT_COLUMNS}", str_substitute)
-        str_substitute = ConcatColumnList(df_test.at[0, "match_groupby_names"], "<NULL>")
-        str_query = str_query.replace("{CONCAT_MATCH_GROUPBY}", str_substitute)
-
-        if str_query is None or str_query == "":
-            raise ValueError("Lookup query is not defined for this Test Type.")
-        return str_query
-
-    try:
-        # Retrieve SQL for customer lookup
-        lst_query = db.retrieve_data_list(str_sql)
-
-        if sql_only:
-            return lst_query, replace_parms, None
-
-        # Retrieve and return data as df
-        if lst_query:
-            df_test = get_test_definition(selected_row["test_definition_id_current"])
-
-            str_sql = replace_parms(df_test, lst_query[0]["lookup_query"])
-            df = db.retrieve_target_db_df(
-                lst_query[0]["sql_flavor"],
-                lst_query[0]["project_host"],
-                lst_query[0]["project_port"],
-                lst_query[0]["project_db"],
-                lst_query[0]["project_user"],
-                lst_query[0]["project_pw_encrypted"],
-                str_sql,
-                lst_query[0]["url"],
-                lst_query[0]["connect_by_url"],
-                lst_query[0]["connect_by_key"],
-                lst_query[0]["private_key"],
-                lst_query[0]["private_key_passphrase"],
-            )
-            if df.empty:
-                return "ND", "Data that violates Test criteria is not present in the current dataset.", None
-            else:
-                return "OK", None, df
-        else:
-            return "NA", "A source data lookup for this Test is not available.", None
-
-    except Exception as e:
-        return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}\n\n{str_sql}", None
+@st.cache_data(show_spinner=False)
+def do_source_data_lookup_custom(selected_row):
+    schema = st.session_state["dbschema"]
+    return do_source_data_lookup_custom_uncached(schema, selected_row)
 
 
 @st.cache_data(show_spinner=False)
-def do_source_data_lookup_custom(selected_row):
-    str_schema = st.session_state["dbschema"]
-    # Define the query
-    str_sql = f"""
-            SELECT d.custom_query as lookup_query, tg.table_group_schema, c.project_qc_schema,
-                   c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
-              FROM {str_schema}.test_definitions d
-            INNER JOIN {str_schema}.table_groups tg
-               ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
-            INNER JOIN {str_schema}.connections c
-               ON (tg.connection_id = c.connection_id)
-             WHERE d.id = '{selected_row["test_definition_id_current"]}';
-    """
-
-    try:
-        # Retrieve SQL for customer lookup
-        lst_query = db.retrieve_data_list(str_sql)
-
-        # Retrieve and return data as df
-        if lst_query:
-            str_sql = lst_query[0]["lookup_query"]
-            str_sql = str_sql.replace("{DATA_SCHEMA}", empty_if_null(lst_query[0]["table_group_schema"]))
-            df = db.retrieve_target_db_df(
-                lst_query[0]["sql_flavor"],
-                lst_query[0]["project_host"],
-                lst_query[0]["project_port"],
-                lst_query[0]["project_db"],
-                lst_query[0]["project_user"],
-                lst_query[0]["project_pw_encrypted"],
-                str_sql,
-                lst_query[0]["url"],
-                lst_query[0]["connect_by_url"],
-                lst_query[0]["connect_by_key"],
-                lst_query[0]["private_key"],
-                lst_query[0]["private_key_passphrase"],
-            )
-            if df.empty:
-                return "ND", "Data that violates Test criteria is not present in the current dataset.", None
-            else:
-                return "OK", None, df
-        else:
-            return "NA", "A source data lookup for this Test is not available.", None
-
-    except Exception as e:
-        return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}\n\n{str_sql}", None
+def get_test_result_history(selected_row):
+    schema = st.session_state["dbschema"]
+    return get_test_result_history_uncached(schema, selected_row)
 
 
 def show_test_def_detail(str_test_def_id):
@@ -698,14 +524,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
         st.markdown(":orange[Select a record to see more information.]")
     else:
         selected_row = selected_rows[len(selected_rows) - 1]
-        dfh = get_test_result_history(
-            selected_row["test_type"],
-            selected_row["test_suite_id"],
-            selected_row["table_name"],
-            selected_row["column_names"],
-            selected_row["test_definition_id_runtime"],
-            selected_row["auto_gen"]
-        )
+        dfh = get_test_result_history(selected_row)
         show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
         time_columns = ["test_date"]
@@ -714,7 +533,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
         pg_col1, pg_col2 = st.columns([0.5, 0.5])
 
         with pg_col2:
-            v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
+            v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
         if authentication_service.current_user_has_edit_role():
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
@@ -723,6 +542,41 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
                 str_table_groups_id=selected_row["table_groups_id"]
             )
         view_bad_data(v_col3, selected_row)
+
+        with v_col4:
+
+            report_eligible_rows = [
+                row for row in selected_rows
+                if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
+            ]
+
+            if do_multi_select:
+                report_btn_help = (
+                    "Generate PDF reports for the selected results that are not muted or dismissed and are not Passed"
+                )
+            else:
+                report_btn_help = "Generate PDF report for selected result"
+
+            if st.button(
+                ":material/file_save: Issue Report",
+                use_container_width=True,
+                disabled=not report_eligible_rows,
+                help=report_btn_help,
+            ):
+                dialog_title = "Download Issue Report"
+                if len(report_eligible_rows) == 1:
+                    download_dialog(
+                        dialog_title=dialog_title,
+                        file_content_func=get_report_file_data,
+                        args=(report_eligible_rows[0],),
+                    )
+                else:
+                    zip_func = zip_multi_file_data(
+                        "testgen_issue_reports.zip",
+                        get_report_file_data,
+                        [(arg,) for arg in selected_rows],
+                    )
+                    download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
         with pg_col1:
             fm.show_subheader(selected_row["test_name_short"])
@@ -837,7 +691,7 @@ def do_disposition_update(selected, str_new_status):
 def view_bad_data(button_container, selected_row):
     with button_container:
         if st.button(
-            "Source Data →", help="Review current source data for highlighted result", use_container_width=True
+            "Source Data　→", help="Review current source data for highlighted result", use_container_width=True
         ):
             source_data_dialog(selected_row)
 
@@ -855,13 +709,13 @@ def source_data_dialog(selected_row):
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
-            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
+            bad_data_status, bad_data_msg, query, df_bad = do_source_data_lookup_custom(selected_row)
         else:
-            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
+            bad_data_status, bad_data_msg, query, df_bad = do_source_data_lookup(selected_row)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
-        st.error(bad_data_msg)
+        st.error(f"{bad_data_msg}\n\n{query}")
     elif df_bad is None:
         st.error("An unknown error was encountered.")
     else:
@@ -878,3 +732,16 @@ def view_edit_test(button_container, test_definition_id):
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
             show_test_form_by_id(test_definition_id)
+
+
+def get_report_file_data(progress_gen, tr_data):
+    td_id = tr_data["test_definition_id_runtime"][:6]
+    tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
+    file_name = f"testgen_issue_report_{td_id}_{tr_time}.pdf"
+
+    with BytesIO() as buffer:
+        progress_gen.send(None)
+        create_report(buffer, tr_data)
+        progress_gen.send(1.0)
+        buffer.seek(0)
+        return file_name, "application/pdf", buffer.read()
