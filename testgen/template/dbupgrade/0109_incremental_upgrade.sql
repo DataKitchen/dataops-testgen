@@ -18,7 +18,8 @@ ALTER TABLE test_runs ADD COLUMN test_suite_id UUID;
     UPDATE test_runs
        SET test_suite_id = ts.id
       FROM test_runs tr
-INNER JOIN test_suites AS ts ON tr.test_suite = ts.test_suite AND tr.project_code = ts.project_code;
+INNER JOIN test_suites AS ts ON tr.test_suite = ts.test_suite AND tr.project_code = ts.project_code
+     WHERE test_runs.id = tr.id;
 
 ALTER TABLE test_runs ALTER COLUMN test_suite_id SET NOT NULL;
 
@@ -27,7 +28,8 @@ ALTER TABLE test_runs ALTER COLUMN test_suite_id SET NOT NULL;
        SET test_suite_id = ts.id
       FROM test_results tr
 INNER JOIN test_suites AS ts ON tr.test_suite = ts.test_suite AND tr.project_code = ts.project_code
-     WHERE tr.test_suite_id is NULL;
+     WHERE tr.test_suite_id is NULL
+       AND test_results.id = tr.id;
 
 ALTER TABLE test_results ALTER COLUMN test_suite_id SET NOT NULL;
 ALTER TABLE test_results ALTER COLUMN test_run_id SET NOT NULL;

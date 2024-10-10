@@ -16,7 +16,8 @@ DROP INDEX ix_td_pc_stc_tst;
        SET test_suite_id = ts.id
       FROM test_definitions td
 INNER JOIN test_suites AS ts ON td.test_suite = ts.test_suite AND td.project_code = ts.project_code
-     WHERE td.test_suite_id is NULL;
+     WHERE td.test_suite_id is NULL
+       AND test_definitions.id = td.id;
 
 ALTER TABLE test_definitions ALTER COLUMN test_suite_id SET NOT NULL;
 
