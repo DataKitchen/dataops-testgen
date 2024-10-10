@@ -39,15 +39,9 @@ RESULT_STATUS_COLORS = {
     "Failed": HexColor(0xE94D4A),
 }
 
+
 def build_summary_table(document, tr_data):
     status_color = RESULT_STATUS_COLORS.get(tr_data["result_status"], COLOR_GRAY_BG)
-
-    TABLE_HEADER_CELL_CMD = (
-        ("FONT", "Helvetica-Bold"),
-        ("ALIGN", "RIGHT"),
-        ("BACKGROUND", COLOR_GREEN_BG),
-    )
-
     summary_table_style = TableStyle(
         (
             # All-table styles
@@ -55,8 +49,18 @@ def build_summary_table(document, tr_data):
             ("BACKGROUND", (0, 0), (-1, -1), COLOR_GRAY_BG),
 
             # Header cells
-            *[(cmd[0], (3, 3), (3, -1), *cmd[1:]) for cmd in TABLE_HEADER_CELL_CMD],
-            *[(cmd[0], (0, 0), (0, -1), *cmd[1:]) for cmd in TABLE_HEADER_CELL_CMD],
+            *[
+                (cmd[0], *coords, *cmd[1:])
+                for coords in (
+                    ((3, 3), (3, -1)),
+                    ((0, 0), (0, -1))
+                )
+                for cmd in (
+                    ("FONT", "Helvetica-Bold"),
+                    ("ALIGN", "RIGHT"),
+                    ("BACKGROUND", COLOR_GREEN_BG),
+                )
+            ],
 
             # Layout
             ("SPAN", (1, 0), (4, 0)),
@@ -76,11 +80,16 @@ def build_summary_table(document, tr_data):
             ("FONT", (1, 1), (1, 1), "Helvetica-Bold"),
 
             # Status cell
-            ("BACKGROUND", (5, 0), (5, 0), status_color),
-            ("FONT", (5, 0), (5, 0), "Helvetica", 14),
-            ("ALIGN", (5, 0), (5, 0), "CENTER"),
-            ("VALIGN", (5, 0), (5, 0), "MIDDLE"),
-            ("TEXTCOLOR", (5, 0), (5, 0), colors.white),
+            *[
+                (cmd[0], (5, 0), (5, 0), *cmd[1:])
+                for cmd in (
+                    ("BACKGROUND", status_color),
+                    ("FONT", "Helvetica", 14),
+                    ("ALIGN", "CENTER"),
+                    ("VALIGN", "MIDDLE"),
+                    ("TEXTCOLOR", colors.white),
+                )
+            ],
         ),
         parent=TABLE_STYLE_DEFAULT,
     )

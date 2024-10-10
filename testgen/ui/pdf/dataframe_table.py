@@ -42,15 +42,22 @@ PARA_STYLE_CELL_HEADER = ParagraphStyle(
 
 TABLE_STYLE_DATA = TableStyle(
     (
-        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+        # All table
         ("GRID", (0, 0), (-1, -1), 0.5, COLOR_GRAY_BG),
-        ("INNERGRID", (0, 0), (-1, 0), 1, colors.white),
-        ("BACKGROUND", (0, 0), (-1, 0), COLOR_GRAY_BG),
-        ("LEFTPADDING", (0, 0), (-1, 0), 4),
-        ("RIGHTPADDING", (0, 0), (-1, 0), 4),
-        ("TOPPADDING", (0, 0), (-1, 0), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
 
+        # Header
+        *[
+            (cmd[0], (0, 0), (-1, 0), *cmd[1:])
+            for cmd in (
+                ("INNERGRID", 1, colors.white),
+                ("BACKGROUND", COLOR_GRAY_BG),
+                ("VALIGN", "MIDDLE"),
+                ("LEFTPADDING", 4),
+                ("RIGHTPADDING", 4),
+                ("TOPPADDING", 6),
+                ("BOTTOMPADDING", 6),
+            )
+        ],
     ),
     parent=TABLE_STYLE_DEFAULT,
 )
@@ -102,7 +109,7 @@ class VerticalHeaderCell(Flowable):
         ret = self.flowable.drawOn(
             canvas,
             y,
-            -(x + self.available_width + (self.available_width - self.flowable_width) / 2),
+            -(x + self.available_width - (self.available_width - self.flowable_width) / 2),
             _sW,
         )
         canvas.restoreState()
@@ -124,11 +131,11 @@ class DataFrameTableBuilder:
 
     null_para = Paragraph("NULL", style=PARA_STYLE_CELL_NULL)
 
-    def __init__(self, dataframe, available_width, col_padding=16, header_exp_limit=0.45):
+    def __init__(self, dataframe, available_width, col_padding=16, max_header_exp_factor=0.4):
         self._dataframe = dataframe
         self.available_width = available_width
         self.col_padding = col_padding
-        self.header_exp_limit = header_exp_limit
+        self.max_header_exp_factor = max_header_exp_factor
         self.omitted_columns = []
         self.col_len_data = pandas.DataFrame(columns=["width", "max_width"], index=iter(dataframe))
         self.table_data = None
@@ -165,8 +172,10 @@ class DataFrameTableBuilder:
         layout_columns = min(layout_columns, int(len(self.table_data) / min_rows))
 
         if layout_columns > 1:
-            columns = BalancedColumns(flowables, layout_columns, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
-            # Converting the BC to a list to honor the `flowables` input type, for consistency
+            columns = BalancedColumns(
+                flowables, layout_columns, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0
+            )
+            # Honoring the `flowables` input type, for consistency
             return [columns] if isinstance(flowables, Iterable) else columns
         else:
             return flowables
@@ -176,18 +185,22 @@ class DataFrameTableBuilder:
             [Paragraph(label, style=PARA_STYLE_CELL_HEADER) for label in self.table_data.columns],
             index=self.table_data.columns,
         )
-        expansible_width = self._get_expansible_width()
 
         min_max_widths = header_cells.map(self._calc_cell_width)
+
         min_widths = min_max_widths.map(lambda t: t[0])
         min_exp_appetite = self._calc_expansion_appetite(min_widths)
 
-        if min_exp_appetite.sum() <= expansible_width:
+        # If the minimal expansion fits into the available width, the columns are expanded.
+        # Otherwise, the header is converted to vertical text
+        if min_exp_appetite.sum() <= self._get_expansible_width():
             self.col_len_data["width"] += min_exp_appetite
 
+            # If the maximum expansion would grow the table width under the `max_header_exp_factor`,
+            # it's expanded to match
             max_widths = min_max_widths.map(lambda t: t[1])
             max_exp_appetite = self._calc_expansion_appetite(max_widths)
-            if (max_exp_appetite.sum() + self._get_current_width()) / self.available_width <= self.header_exp_limit:
+            if max_exp_appetite.sum() / self._get_current_width() <= self.max_header_exp_factor:
                 self.col_len_data["width"] += max_exp_appetite
         else:
             header_cells = header_cells.map(VerticalHeaderCell)

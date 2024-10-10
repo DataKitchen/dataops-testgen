@@ -41,8 +41,11 @@ def download_dialog(
     file_content_func: Callable[[Generator, ...], tuple[str, str, str|bytes]],
     args: Iterable = (),
     progress_bar_msg: str = "Generating file...",
+    key: str = "download_dialog",
 ):
     """Wrapping a dialog and a download button together to allow generating the file contents only when needed."""
+
+    file_ready_key = f"{key}:file_ready"
 
     def _dialog_content():
 
@@ -52,6 +55,16 @@ def download_dialog(
         with st.container(height=55, border=False):
             _, button_col, _ = st.columns([.3, .4, .3])
 
+        # The goal of this `file_ready` state is to prevent the file to be generated again after the user clicks
+        # the download button. Streamlit's way to close a dialog is to hit st.rerun(), which we should call when
+        # we get True from the download button being pushed, however it has to be rendered again for that, which
+        # means the file will be generated again. To avoid that, we simply call st.rerun() BEFORE generating the
+        # file, based on this session state. The drawback is that the dialog will unexpectedly close once by the
+        # next time it is opened after being closed by the user before "Download" is clicked.
+        if st.session_state.get(file_ready_key):
+            del st.session_state[file_ready_key]
+            st.rerun()
+
         def _get_progress_gen():
             while True:
                 progress = yield
@@ -60,6 +73,7 @@ def download_dialog(
         file_name, file_type, file_content = file_content_func(_get_progress_gen(), *args)
 
         p_bar.progress(1.0, "Done!")
+        st.session_state[file_ready_key] = True
 
         with button_col:
             st.download_button(
