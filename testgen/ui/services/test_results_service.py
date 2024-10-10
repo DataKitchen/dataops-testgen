@@ -76,7 +76,7 @@ def do_source_data_lookup_custom(db_schema, tr_data):
             else:
                 return "OK", None, str_sql, df
         else:
-            return "NA", "A source data lookup for this Test is not available.", None, None
+            return "NA", "Source data lookup is not available for this test.", None, None
 
     except Exception as e:
         return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}", str_sql, None

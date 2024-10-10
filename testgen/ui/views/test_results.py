@@ -550,11 +550,18 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
                 if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
             ]
 
+            if do_multi_select:
+                report_btn_help = (
+                    "Generate PDF reports for the selected results that are not muted or dismissed and are not Passed"
+                )
+            else:
+                report_btn_help = "Generate PDF report for selected result"
+
             if st.button(
                 ":material/file_save: Issue Report",
                 use_container_width=True,
                 disabled=not report_eligible_rows,
-                help="Generate PDF reports for the selected results that are not muted or dismissed and are not Passed",
+                help=report_btn_help,
             ):
                 dialog_title = "Download Issue Report"
                 if len(report_eligible_rows) == 1:

@@ -35,7 +35,6 @@ def zip_multi_file_data(
     return _file_content_func
 
 
-
 def download_dialog(
     dialog_title: str,
     file_content_func: Callable[[Generator, ...], tuple[str, str, str|bytes]],
@@ -53,7 +52,7 @@ def download_dialog(
             p_bar = st.progress(0.0, progress_bar_msg)
 
         with st.container(height=55, border=False):
-            _, button_col, _ = st.columns([.3, .4, .3])
+            _, button_col = st.columns([.8, .2])
 
         # The goal of this `file_ready` state is to prevent the file to be generated again after the user clicks
         # the download button. Streamlit's way to close a dialog is to hit st.rerun(), which we should call when
@@ -72,7 +71,7 @@ def download_dialog(
 
         file_name, file_type, file_content = file_content_func(_get_progress_gen(), *args)
 
-        p_bar.progress(1.0, "Done!")
+        p_bar.progress(1.0, "File ready for download.")
         st.session_state[file_ready_key] = True
 
         with button_col:
