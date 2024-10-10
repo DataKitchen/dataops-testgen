@@ -7,7 +7,7 @@ from testgen.utils.singleton import Singleton
 
 
 class TestgenSession(Singleton):
-    cookies_ready: bool
+    cookies_ready: int
     logging_in: bool
     logging_out: bool
     page_pending_cookies: st.Page
