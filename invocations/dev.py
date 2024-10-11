@@ -1,5 +1,6 @@
 __all__ = ["build_public_image", "clean", "install", "lint"]
 
+import re
 from os.path import exists, join
 from shutil import rmtree, which
 from typing import Literal
@@ -13,11 +14,19 @@ from .toolbox import ensure_tools
 
 DOCKER_BUILDER_NAME = "dk-builder"
 DOCKER_BUILDER_PLATFORMS = "linux/amd64,linux/arm64"
+TESTGEN_DEFAULT_BASE_LABEL = "v1"
 
 
 @task
 def required_tools(ctx: Context) -> None:
     ensure_tools("git", "find", "docker")
+
+@task
+def prep_dk_builer(ctx: Context) -> None:
+    use_cmd = f"docker buildx use {DOCKER_BUILDER_NAME}"
+    if (result := ctx.run(use_cmd, hide=True, warn=True)) and not result.ok:
+        ctx.run(f"docker buildx create --name {DOCKER_BUILDER_NAME} --platform {DOCKER_BUILDER_PLATFORMS}")
+        ctx.run(use_cmd)
 
 
 @task
@@ -65,30 +74,52 @@ def clean(ctx: Context) -> None:
     print("Cleaning finished!")
 
 
-@task(pre=(required_tools,))
-def build_public_image(ctx: Context, version: str, target: Literal["local", "qa", "release"]) -> None:
-    """Builds and pushes the TestGen image"""
-    use_cmd = f"docker buildx use {DOCKER_BUILDER_NAME}"
+@task(
+    pre=(required_tools, prep_dk_builer),
+    iterable=["label"],
+    help={
+        "target": "Docker bake target. Valid values are: base, qa, release",
+        "label": "Image label. The repository is pre-determined by the target. Set more than one to push multiple tags.",
+        "load": "Load locally instead of pushing",
+        "base_label": "TestGen's base image tag to be used to build TestGen's images",
+        "version": "TestGen's version to be considered to generate the lables",
+    })
+def build_public_image(
+    ctx: Context,
+    target: Literal["base", "qa", "release"],
+    label: list[str],
+    version: str = "",
 
-    valid_targets = ["local", "qa", "release"]
+    load: bool = False,
+    base_label: str = TESTGEN_DEFAULT_BASE_LABEL,
+    debug: bool = False
+) -> None:
+    """Builds and pushes the TestGen image"""
+
+    valid_targets = ("base", "qa", "release")
     if target not in valid_targets:
         raise Exit(f"--target must be one of [{', '.join(valid_targets)}].")
 
-    if (result := ctx.run(use_cmd, hide=True, warn=True)) and not result.ok:
-        ctx.run(f"docker buildx create --name {DOCKER_BUILDER_NAME} --platform {DOCKER_BUILDER_PLATFORMS}")
-        ctx.run(use_cmd)
+    if (label and version) or not (label or version):
+        raise Exit("Exactly one argument should be set for [label] or [version]")
 
-    extra_args = []
-    if target in ["release", "qa"]:
-        extra_args.append("--push")
-    else:
-        extra_args.extend(("--load", "--set=*.platform=$BUILDPLATFORM"))
+    if version:
+        if match := re.match(r"(\d+)\.(\d+)\.(\d+)", version):
+            major, minor, patch = match.groups()
+            label = [f"v{major}.{minor}.{patch}", f"v{major}.{minor}", f"v{major}"]
+        else:
+            raise Exit("Version has to be in <major>.<minor>.<patch> format")
+
+    extra_args = ["--load", "--set=*.platform=$BUILDPLATFORM"] if load else ["--push"]
+    if debug:
+        extra_args.append("--print")
 
     ctx.run(
-        f"docker buildx bake -f deploy/docker-bake.hcl testgen {' '.join(extra_args)} ",
+        f"docker buildx bake -f deploy/docker-bake.hcl testgen-{target} {' '.join(extra_args)} ",
         env={
+            "TESTGEN_LABELS": " ".join(label),
+            "TESTGEN_BASE_LABEL": base_label,
             "TESTGEN_VERSION": version,
-            "PUBLIC_RELEASE": str(target == "release"),
         },
         echo=True,
     )
