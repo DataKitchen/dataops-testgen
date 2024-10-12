@@ -1,5 +1,6 @@
 import logging
 import sys
+from pathlib import Path
 
 import streamlit as st
 
@@ -7,15 +8,15 @@ from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
 from testgen.ui import bootstrap
 from testgen.ui.components import widgets as testgen
-from testgen.ui.queries import project_queries
-from testgen.ui.services import authentication_service, javascript_service
 from testgen.ui.services import database_service as db
+from testgen.ui.services import javascript_service, project_service, user_session_service
 from testgen.ui.session import session
 
 
 def render(log_level: int = logging.INFO):
     st.set_page_config(
         page_title="TestGen",
+        page_icon=get_image_path("assets/favicon.ico"),
         layout="wide",
     )
 
@@ -31,34 +32,28 @@ def render(log_level: int = logging.INFO):
 
     session.dbschema = db.get_schema()
 
-    projects = get_projects()
+    projects = project_service.get_projects()
     if not session.project and len(projects) > 0:
-        set_current_project(projects[0]["code"])
+        project_service.set_current_project(projects[0]["code"])
 
-    if session.renders is None:
-        session.renders = 0
+    if session.authentication_status is None and not session.logging_out:
+        user_session_service.load_user_session()
+    
+    st.logo(
+        image=get_image_path("assets/dk_logo.svg"),
+        icon_image=get_image_path("assets/dk_icon.svg")
+    )
 
-    if not session.logging_out and session.authentication_status is None:
-        authentication_service.load_user_session()
-    testgen.location(on_change=set_current_location)
-
-    if session.authentication_status and not session.logging_out:
+    hide_sidebar = not session.authentication_status or session.logging_in
+    if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,
-                current_project=session.project,
-                on_logout=authentication_service.end_user_session,
             )
-
-    if session.renders is not None:
-        session.renders += 1
-
-    if session.renders > 0 and session.current_page:
-        application.router.navigate(to=session.current_page, with_args=session.current_page_args)
-
-    application.logger.debug(f"location status: {session.current_page} {session.current_page_args}")
+            
+    application.router.run(hide_sidebar)
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)
@@ -72,23 +67,8 @@ def set_locale():
         st.session_state["browser_timezone"] = timezone
 
 
-@st.cache_data(show_spinner=False)
-def get_projects():
-    projects = project_queries.get_projects()
-    projects = [
-        {"code": project["project_code"], "name": project["project_name"]} for project in projects.to_dict("records")
-    ]
-
-    return projects
-
-
-def set_current_location(change: testgen.LocationChanged) -> None:
-    session.current_page = change.page
-    session.current_page_args = change.args
-
-
-def set_current_project(project_code: str) -> None:
-    session.project = project_code
+def get_image_path(path: str) -> str:
+    return str(Path(__file__).parent / path)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
-INSERT INTO test_runs (id, project_code, test_suite, test_starttime, process_id)
+INSERT INTO test_runs (id, test_suite_id, test_starttime, process_id)
 (SELECT '{TEST_RUN_ID}' :: UUID  as id,
-        '{PROJECT_CODE}' as project_code,
-        '{TEST_SUITE}' as test_suite,
+        '{TEST_SUITE_ID}' as test_suite_id,
         '{RUN_DATE}' as test_starttime,
         '{PROCESS_ID}'as process_id);

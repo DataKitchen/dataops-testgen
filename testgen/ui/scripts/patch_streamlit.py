@@ -35,7 +35,7 @@ def patch(force: bool = False) -> list[str]:
     return [op.split(":")[0] for op in operations]
 
 
-def _patch_streamlit_index(*operations: list[str], force: bool = False) -> None:
+def _patch_streamlit_index(*operations: str, force: bool = False) -> None:
     """
     Patches the index.html inside streamlit package to inject Testgen's
     own styles and scripts before rendering time.

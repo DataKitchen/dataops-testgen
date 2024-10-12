@@ -1,259 +1,144 @@
 import time
 import typing
+from functools import partial
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.exc import IntegrityError
 
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
-import testgen.ui.services.toolbar_service as tb
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 
 
 class TableGroupsPage(Page):
-    path = "connections/table-groups"
+    path = "connections:table-groups"
     can_activate: typing.ClassVar = [
-        lambda: authentication_service.current_user_has_admin_role() or "overview",
-        lambda: session.authentication_status or "login",
+        lambda: session.authentication_status,
+        lambda: authentication_service.current_user_has_admin_role(),
+        lambda: "connection_id" in session.current_page_args or "connections",
     ]
 
-    def render(self, connection_id: int | None = None) -> None:
-        fm.render_page_header(
+    def render(self, connection_id: str, **_kwargs) -> None:
+        connection = connection_service.get_by_id(connection_id, hide_passwords=False)
+        if not connection:
+            self.router.navigate_with_warning(
+                f"Connection with ID '{connection_id}' does not exist. Redirecting to list of Connections ...",
+                "connections",
+            )
+
+        project_code = connection["project_code"]
+        project_service.set_current_project(project_code)
+
+        testgen.page_header(
             "Table Groups",
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-table-group",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Connections", "path": "connections"},
-                {"label": "Table Groups", "path": None},
+            breadcrumbs=[
+                { "label": "Connections", "path": "connections", "params": { "project_code": project_code } },
+                { "label": connection["connection_name"] },
             ],
         )
 
-        # Get page parameters from session
-        project_code = st.session_state["project"]
-        connection = (
-            connection_service.get_by_id(connection_id, hide_passwords=False)
-            if connection_id
-            else st.session_state["connection"]
-        )
-        connection_id = connection["connection_id"]
-
-        tool_bar = tb.ToolBar(1, 5, 0, None)
-
-        with tool_bar.long_slots[0]:
-            st.selectbox("Connection", [connection["connection_name"]], disabled=True)
+        _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
+        testgen.flex_row_end(actions_column)
 
         df = table_group_service.get_by_connection(project_code, connection_id)
 
-        show_columns = [
-            "table_groups_name",
-            "table_group_schema",
-            "profiling_include_mask",
-            "profiling_exclude_mask",
-            "profiling_table_set",
-            "profile_use_sampling",
-            "profiling_delay_days",
-        ]
+        for _, table_group in df.iterrows():
+            with testgen.card(title=table_group["table_groups_name"]) as table_group_card:
+                with table_group_card.actions:
+                    testgen.button(
+                        type_="icon",
+                        icon="edit",
+                        tooltip="Edit table group",
+                        tooltip_position="right",
+                        on_click=partial(self.edit_table_group_dialog, project_code, connection, table_group),
+                        key=f"tablegroups:keys:edit:{table_group['id']}",
+                    )
+                    testgen.button(
+                        type_="icon",
+                        icon="delete",
+                        tooltip="Delete table group",
+                        tooltip_position="right",
+                        on_click=partial(self.delete_table_group_dialog, table_group),
+                        key=f"tablegroups:keys:delete:{table_group['id']}",
+                    )
 
-        show_column_headers = [
-            "Table Groups Name",
-            "DB Schema",
-            "Tables to Include Mask",
-            "Tables to Exclude Mask",
-            "Explicit Table List",
-            "Uses Record Sampling",
-            "Min Profiling Age (Days)",
-        ]
+                main_section, actions_section = st.columns([.8, .2])
 
-        selected = fm.render_grid_select(df, show_columns, show_column_headers=show_column_headers)
+                with main_section:
+                    testgen.link(
+                        label="Test Suites",
+                        href="test-suites",
+                        params={"table_group_id": table_group["id"]},
+                        right_icon="chevron_right",
+                        key=f"tablegroups:keys:go-to-tsuites:{table_group['id']}",
+                    )
 
-        add_modal = testgen.Modal(title=None, key="dk-add-table-group-modal", max_width=1100)
-        edit_modal = testgen.Modal(title=None, key="dk-edit-table-group-modal", max_width=1100)
-        delete_modal = testgen.Modal(title=None, key="dk-delete-table-group-modal", max_width=1100)
-        profile_cli_command_modal = testgen.Modal(
-            title=None, key="dk-profiling-cli-command-modal", max_width=1100
-        )
-        profile_command_modal = testgen.Modal(title=None, key="dk-profiling-command-modal", max_width=1100)
+                    col1, col2, col3 = st.columns([1/3] * 3, vertical_alignment="bottom")
+                    col4, col5, col6 = st.columns([1/3] * 3, vertical_alignment="bottom")
 
-        if tool_bar.short_slots[1].button(
-            "➕ Add", help="Add a new Table Group", use_container_width=True  # NOQA RUF001
-        ):
-            add_modal.open()
+                    with col1:
+                        testgen.no_flex_gap()
+                        testgen.caption("DB Schema")
+                        st.markdown(table_group["table_group_schema"] or "--")
+                    with col2:
+                        testgen.no_flex_gap()
+                        testgen.caption("Tables to Include Mask")
+                        st.markdown(table_group["profiling_include_mask"] or "--")
+                    with col3:
+                        testgen.no_flex_gap()
+                        testgen.caption("Tables to Exclude Mask")
+                        st.markdown(table_group["profiling_exclude_mask"] or "--")
+                    with col4:
+                        testgen.no_flex_gap()
+                        testgen.caption("Explicit Table List")
+                        st.markdown(table_group["profiling_table_set"] or "--")
+                    with col5:
+                        testgen.no_flex_gap()
+                        testgen.caption("Uses Record Sampling")
+                        st.markdown(table_group["profile_use_sampling"] or "N")
+                    with col6:
+                        testgen.no_flex_gap()
+                        testgen.caption("Min Profiling Age (Days)")
+                        st.markdown(table_group["profiling_delay_days"] or "0")
 
-        disable_buttons = selected is None
-        if tool_bar.short_slots[2].button(
-            "🖊️ Edit", help="Edit the selected Table Group", disabled=disable_buttons, use_container_width=True
-        ):
-            edit_modal.open()
-        if tool_bar.short_slots[3].button(
-            "❌ Delete", help="Delete the selected Table Group", disabled=disable_buttons, use_container_width=True
-        ):
-            delete_modal.open()
-        if tool_bar.short_slots[4].button(
-            f":{'gray' if disable_buttons else 'green'}[Test Suites　→]",
-            help="Create or edit Test Suites for the selected Table Group",
-            disabled=disable_buttons,
-            use_container_width=True,
-        ):
-            st.session_state["table_group"] = selected[0]
+                with actions_section:
+                    testgen.button(
+                        type_="stroked",
+                        label="Run Profiling",
+                        on_click=partial(run_profiling_dialog, table_group),
+                        key=f"tablegroups:keys:runprofiling:{table_group['id']}",
+                    )
 
-            session.current_page = "connections/table-groups/test-suites"
-            session.current_page_args = {"connection_id": connection_id, "table_group_id": selected[0]["id"]}
-            st.experimental_rerun()
-
-        if add_modal.is_open():
-            show_add_or_edit_modal(add_modal, "add", project_code, connection)
-
-        if edit_modal.is_open():
-            show_add_or_edit_modal(edit_modal, "edit", project_code, connection, selected)
-
-        if delete_modal.is_open():
-            show_delete_modal(delete_modal, selected)
-
-        if profile_cli_command_modal.is_open():
-            show_profile_cli_command(profile_cli_command_modal, selected)
-
-        if profile_command_modal.is_open():
-            show_profile_command(profile_command_modal, selected)
-
-        if not selected:
-            st.markdown(":orange[Select a row to see Table Group details.]")
-        else:
-            show_record_detail(selected[0], profile_cli_command_modal, profile_command_modal)
-
-
-def show_record_detail(selected, profile_cli_command_modal, profile_command_modal):
-    left_column, right_column = st.columns([0.5, 0.5])
-
-    with left_column:
-        fm.render_html_list(
-            selected,
-            lst_columns=[
-                "id",
-                "project_code",
-                "table_groups_name",
-                "table_group_schema",
-                "profiling_include_mask",
-                "profiling_exclude_mask",
-                "profiling_table_set",
-                "profile_id_column_mask",
-                "profile_sk_column_mask",
-
-                "data_source",
-                "source_system",
-                "data_location",
-                "business_domain",
-                "transform_level",
-                "source_process",
-                "stakeholder_group",
-
-                "profile_use_sampling",
-                "profile_sample_percent",
-                "profile_sample_min_count",
-                "profiling_delay_days",
-            ],
-            str_section_header="Table Group Information",
-            int_data_width=700,
-            lst_labels=[
-                "id",
-                "Project",
-                "Table Groups Name",
-                "Database Schema",
-                "Tables to Include Mask",
-                "Tables to Exlude Mask",
-                "Explicit Table List",
-                "ID Column Mask",
-                "Surrogate Key Column Mask",
-
-                "Data Source",
-                "Source System",
-                "Data Location",
-                "Business Domain",
-                "Transform Level",
-                "Source Process",
-                "Stakeholder Group",
-
-                "Uses Record Sampling",
-                "Sample Record Percent",
-                "Sample Minimum Record Count",
-                "Minimum Profiling Age (Days)",
-            ],
+        actions_column.button(
+            ":material/add: Add Table Group",
+            help="Add a new Table Group",
+            on_click=partial(self.add_table_group_dialog, project_code, connection)
         )
 
-    with right_column:
-        st.write("<br/><br/>", unsafe_allow_html=True)
-        _, button_column = st.columns([0.3, 0.7])
-        with button_column:
-            if st.button("Run Profiling", help="Performs profiling on the Table Group", use_container_width=True):
-                profile_command_modal.open()
-            if st.button(
-                "Show Run Profile CLI Command", help="Shows the run-profile CLI command", use_container_width=True
-            ):
-                profile_cli_command_modal.open()
+    @st.dialog(title="Add Table Group")
+    def add_table_group_dialog(self, project_code, connection):
+        show_table_group_form("add", project_code, connection)
 
+    @st.dialog(title="Edit Table Group")
+    def edit_table_group_dialog(self, project_code: str, connection: dict, table_group: pd.Series):
+        show_table_group_form("edit", project_code, connection, table_group)
 
-def show_profile_command(modal, selected):
-    selected_table_group = selected[0]
-
-    with modal.container():
-        fm.render_modal_header("Profiling Command", None)
-        container = st.empty()
-        with container:
-            st.markdown(
-                ":green[Execute Profile for the Table Group (since can take time, it is performed in background)]"
-            )
-
-        button_container = st.empty()
-        status_container = st.empty()
-
-        with button_container:
-            start_process_button_message = "Start"
-            profile_button = st.button(start_process_button_message)
-
-        if profile_button:
-            button_container.empty()
-
-            table_group_id = selected_table_group["id"]
-            status_container.info("Executing Profiling...")
-
-            try:
-                run_profiling_in_background(table_group_id)
-            except Exception as e:
-                status_container.empty()
-                status_container.error(f"Process started with errors: {e!s}.")
-
-            status_container.empty()
-            status_container.success(
-                "Process has successfully started. Check 'Data Profiling' item in the menu to see the progress."
-            )
-
-
-def show_profile_cli_command(modal, selected):
-    with modal.container():
-        fm.render_modal_header("Profiling CLI Command", None)
-        selected_table_group = selected[0]
-        table_group_id = selected_table_group["id"]
-        profile_command = f"testgen run-profile --table-group-id {table_group_id}"
-        st.code(profile_command, language="shellSession")
-
-
-def show_delete_modal(modal, selected=None):
-    selected_table_group = selected[0]
-
-    with modal.container():
-        fm.render_modal_header("Delete Table Group", None)
-        table_group_id = selected_table_group["id"]
-        table_group_name = selected_table_group["table_groups_name"]
-
+    @st.dialog(title="Delete Table Group")
+    def delete_table_group_dialog(self, table_group: pd.Series):
+        table_group_name = table_group["table_groups_name"]
         can_be_deleted = table_group_service.cascade_delete([table_group_name], dry_run=True)
 
         fm.render_html_list(
-            selected_table_group,
+            table_group,
             [
                 "id",
                 "table_groups_name",
@@ -274,7 +159,7 @@ def show_delete_modal(modal, selected=None):
             disable_delete_button = authentication_service.current_user_has_read_role() or (
                 not can_be_deleted and not accept_cascade_delete
             )
-            delete = st.form_submit_button("Delete", disabled=disable_delete_button)
+            delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
 
             if delete:
                 if table_group_service.are_table_groups_in_use([table_group_name]):
@@ -284,205 +169,259 @@ def show_delete_modal(modal, selected=None):
                     success_message = f"Table Group {table_group_name} has been deleted. "
                     st.success(success_message)
                     time.sleep(1)
-                    modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
 
-def show_add_or_edit_modal(modal, mode, project_code, connection, selected=None):
+@st.dialog(title="Run Profiling")
+def run_profiling_dialog(table_group: pd.Series) -> None:
+    table_group_id = table_group["id"]
+
+    with st.container():
+        st.markdown(
+            f"Execute profiling for the Table Group :green[{table_group['table_groups_name']}]?"
+            " Profiling will be performed in a background process"
+        )
+
+    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
+        st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
+
+    button_container = st.empty()
+    status_container = st.empty()
+
+    with button_container:
+        _, button_column = st.columns([.85, .15])
+        with button_column:
+            profile_button = st.button("Start", use_container_width=True)
+
+    if profile_button:
+        button_container.empty()
+
+        status_container.info("Executing Profiling...")
+
+        try:
+            run_profiling_in_background(table_group_id)
+        except Exception as e:
+            status_container.empty()
+            status_container.error(f"Process started with errors: {e!s}.")
+
+        status_container.empty()
+        status_container.success(
+            "Process has successfully started. Check 'Data Profiling' item in the menu to see the progress."
+        )
+
+
+def show_table_group_form(mode, project_code: str, connection: dict, table_group: pd.Series | None = None):
     connection_id = connection["connection_id"]
-    with modal.container():
-        fm.render_modal_header("Edit Table Group" if mode == "edit" else "Add Table Group", None)
-        table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Test"])
+    table_groups_settings_tab, table_groups_preview_tab = st.tabs(["Table Group Settings", "Test"])
 
-        with table_groups_settings_tab:
-            selected_table_group = selected[0] if mode == "edit" else None
+    table_group_id = None
+    table_groups_name = ""
+    table_group_schema = ""
+    profiling_table_set = ""
+    profiling_include_mask = "%"
+    profiling_exclude_mask = "tmp%"
+    profile_id_column_mask = "%_id"
+    profile_sk_column_mask = "%_sk"
+    profile_use_sampling = False
+    profile_sample_percent = 30
+    profile_sample_min_count = 15000
+    profiling_delay_days = 0
 
+    with table_groups_settings_tab:
+        selected_table_group = table_group if mode == "edit" else None
+
+        if selected_table_group is not None:
             # establish default values
-            table_group_id = selected_table_group["id"] if mode == "edit" else None
-            table_groups_name = (
-                selected_table_group["table_groups_name"]
-                if mode == "edit"
-                else f'{connection["connection_name"]}_table_group'
-            )
-            table_group_schema = selected_table_group["table_group_schema"] if mode == "edit" else ""
-            profiling_table_set = (
-                selected_table_group["profiling_table_set"]
-                if mode == "edit" and selected_table_group["profiling_table_set"]
-                else ""
-            )
-            profiling_include_mask = selected_table_group["profiling_include_mask"] if mode == "edit" else "%"
-            profiling_exclude_mask = selected_table_group["profiling_exclude_mask"] if mode == "edit" else "tmp%"
-            profile_id_column_mask = selected_table_group["profile_id_column_mask"] if mode == "edit" else "%_id"
-            profile_sk_column_mask = selected_table_group["profile_sk_column_mask"] if mode == "edit" else "%_sk"
-            profile_use_sampling = selected_table_group["profile_use_sampling"] == "Y" if mode == "edit" else False
-            profile_sample_percent = int(selected_table_group["profile_sample_percent"]) if mode == "edit" else 30
-            profile_sample_min_count = (
-                int(selected_table_group["profile_sample_min_count"]) if mode == "edit" else 15000
-            )
-            profiling_delay_days = int(selected_table_group["profiling_delay_days"]) if mode == "edit" else 0
+            table_group_id = selected_table_group["id"]
+            table_groups_name = selected_table_group["table_groups_name"]
+            table_group_schema = selected_table_group["table_group_schema"]
+            profiling_table_set = selected_table_group["profiling_table_set"]
+            profiling_include_mask = selected_table_group["profiling_include_mask"]
+            profiling_exclude_mask = selected_table_group["profiling_exclude_mask"]
+            profile_id_column_mask = selected_table_group["profile_id_column_mask"]
+            profile_sk_column_mask = selected_table_group["profile_sk_column_mask"]
+            profile_use_sampling = selected_table_group["profile_use_sampling"] == "Y"
+            profile_sample_percent = int(selected_table_group["profile_sample_percent"])
+            profile_sample_min_count = int(selected_table_group["profile_sample_min_count"])
+            profiling_delay_days = int(selected_table_group["profiling_delay_days"])
 
-            left_column, right_column = st.columns([0.50, 0.50])
+        left_column, right_column = st.columns([0.50, 0.50])
 
-            profile_sampling_expander = st.expander("Sampling Parameters", expanded=False)
-            with profile_sampling_expander:
-                expander_left_column, expander_right_column = st.columns([0.50, 0.50])
+        profile_sampling_expander = st.expander("Sampling Parameters", expanded=False)
+        with profile_sampling_expander:
+            expander_left_column, expander_right_column = st.columns([0.50, 0.50])
 
-            provenance_expander = st.expander("Data Provenance (Optional)", expanded=False)
-            with provenance_expander:
-                provenance_left_column, provenance_right_column = st.columns([0.50, 0.50])
+        provenance_expander = st.expander("Data Provenance (Optional)", expanded=False)
+        with provenance_expander:
+            provenance_left_column, provenance_right_column = st.columns([0.50, 0.50])
 
-            with st.form("Table Group Add / Edit", clear_on_submit=True):
-                entity = {
-                    "id": table_group_id,
-                    "project_code": project_code,
-                    "connection_id": connection["connection_id"],
-                    "table_groups_name": left_column.text_input(
-                        label="Name",
-                        max_chars=40,
-                        value=table_groups_name,
-                        help="A unique name to describe the table group",
-                    ),
-                    "profiling_include_mask": left_column.text_input(
-                        label="Tables to Include Mask",
-                        max_chars=40,
-                        value=profiling_include_mask,
-                        help="A SQL filter supported by your database's LIKE operator for table names to include",
-                    ),
-                    "profiling_exclude_mask": left_column.text_input(
-                        label="Tables to Exclude Mask",
-                        max_chars=40,
-                        value=profiling_exclude_mask,
-                        help="A SQL filter supported by your database's LIKE operator for table names to exclude",
-                    ),
-                    "profiling_table_set": left_column.text_input(
-                        label="Explicit Table List",
-                        max_chars=2000,
-                        value=profiling_table_set,
-                        help="A list of specific table names to include, separated by commas",
-                    ),
-                    "table_group_schema": right_column.text_input(
-                        label="Schema",
-                        max_chars=40,
-                        value=table_group_schema,
-                        help="The database schema containing the tables in the Table Group",
-                    ),
-                    "profile_id_column_mask": right_column.text_input(
-                        label="Profiling ID column mask",
-                        max_chars=40,
-                        value=profile_id_column_mask,
-                        help="A SQL filter supported by your database's LIKE operator representing ID columns (optional)",
-                    ),
-                    "profile_sk_column_mask": right_column.text_input(
-                        label="Profiling Surrogate Key column mask",
-                        max_chars=40,
-                        value=profile_sk_column_mask,
-                        help="A SQL filter supported by your database's LIKE operator representing surrogate key columns (optional)",
-                    ),
-                    "profiling_delay_days": right_column.number_input(
-                        label="Min Profiling Age, Days",
-                        min_value=0,
-                        max_value=999,
-                        value=profiling_delay_days,
-                        help="The number of days to wait before new profiling will be available to generate tests",
-                    ),
-                    "profile_use_sampling": left_column.toggle(
-                        "Use profile sampling",
-                        value=profile_use_sampling,
-                        help="Toggle on to base profiling on a sample of records instead of the full table",
-                    ),
-                    "profile_sample_percent": str(
-                        expander_left_column.number_input(
-                            label="Sample percent",
-                            min_value=1,
-                            max_value=100,
-                            value=profile_sample_percent,
-                            help="Percent of records to include in the sample, unless the calculated count falls below the specified minimum.",
-                        )
-                    ),
-                    "profile_sample_min_count": expander_right_column.number_input(
-                        label="Min Sample Record Count",
+        with st.form("Table Group Add / Edit", clear_on_submit=True, border=False):
+            entity = {
+                "id": table_group_id,
+                "project_code": project_code,
+                "connection_id": connection["connection_id"],
+                "table_groups_name": left_column.text_input(
+                    label="Name",
+                    max_chars=40,
+                    value=table_groups_name,
+                    help="A unique name to describe the table group",
+                ),
+                "profiling_include_mask": left_column.text_input(
+                    label="Tables to Include Mask",
+                    max_chars=40,
+                    value=profiling_include_mask,
+                    help="A SQL filter supported by your database's LIKE operator for table names to include",
+                ),
+                "profiling_exclude_mask": left_column.text_input(
+                    label="Tables to Exclude Mask",
+                    max_chars=40,
+                    value=profiling_exclude_mask,
+                    help="A SQL filter supported by your database's LIKE operator for table names to exclude",
+                ),
+                "profiling_table_set": left_column.text_input(
+                    label="Explicit Table List",
+                    max_chars=2000,
+                    value=profiling_table_set,
+                    help="A list of specific table names to include, separated by commas",
+                ),
+                "table_group_schema": right_column.text_input(
+                    label="Schema",
+                    max_chars=40,
+                    value=table_group_schema,
+                    help="The database schema containing the tables in the Table Group",
+                ),
+                "profile_id_column_mask": right_column.text_input(
+                    label="Profiling ID column mask",
+                    max_chars=40,
+                    value=profile_id_column_mask,
+                    help="A SQL filter supported by your database's LIKE operator representing ID columns (optional)",
+                ),
+                "profile_sk_column_mask": right_column.text_input(
+                    label="Profiling Surrogate Key column mask",
+                    max_chars=40,
+                    value=profile_sk_column_mask,
+                    help="A SQL filter supported by your database's LIKE operator representing surrogate key columns (optional)",
+                ),
+                "profiling_delay_days": right_column.number_input(
+                    label="Min Profiling Age, Days",
+                    min_value=0,
+                    max_value=999,
+                    value=profiling_delay_days,
+                    help="The number of days to wait before new profiling will be available to generate tests",
+                ),
+                "profile_use_sampling": left_column.toggle(
+                    "Use profile sampling",
+                    value=profile_use_sampling,
+                    help="Toggle on to base profiling on a sample of records instead of the full table",
+                ),
+                "profile_sample_percent": str(
+                    expander_left_column.number_input(
+                        label="Sample percent",
                         min_value=1,
-                        max_value=1000000,
-                        value=profile_sample_min_count,
-                        help="The minimum number of records to be included in any sample (if available)",
-                    ),
-                    "data_source": provenance_left_column.text_input(
-                        label="Data Source",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["data_source"]) if mode == "edit" else "",
-                        help="Original source of all tables in this dataset. This can be overridden at the table level. (Optional)",
-                    ),
-                    "source_system": provenance_left_column.text_input(
-                        label="System of Origin",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["source_system"]) if mode == "edit" else "",
-                        help="Enterprise system source for all tables in this dataset. "
-                             "This can be overridden at the table level. (Optional)",
-                    ),
-                    "business_domain": provenance_left_column.text_input(
-                        label="Business Domain",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["business_domain"]) if mode == "edit" else "",
-                        help="Business division responsible for all tables in this dataset. "
-                             "e.g. Finance, Sales, Manufacturing. (Optional)",
-                    ),
-                    "data_location": provenance_left_column.text_input(
-                        label="Location",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["data_location"]) if mode == "edit" else "",
-                        help="Physical or virtual location of all tables in this dataset. "
-                             "e.g. Headquarters, Cloud, etc. (Optional)",
-                    ),
-                    "transform_level": provenance_right_column.text_input(
-                        label="Transform Level",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["transform_level"]) if mode == "edit" else "",
-                        help="Data warehouse processing layer. "
-                             "Indicates the processing stage: e.g. Raw, Conformed, Processed, Reporting. (Optional)",
-                    ),
-                    "source_process": provenance_right_column.text_input(
-                        label="Source Process",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["source_process"]) if mode == "edit" else "",
-                        help="The process, program or data flow that produced this data. (Optional)",
-                    ),
-                    "stakeholder_group": provenance_right_column.text_input(
-                        label="Stakeholder Group",
-                        max_chars=40,
-                        value=empty_if_null(selected_table_group["stakeholder_group"]) if mode == "edit" else "",
-                        help="Designator for data owners or stakeholders who are responsible for this data. (Optional)",
-                    ),
-                }
+                        max_value=100,
+                        value=profile_sample_percent,
+                        help="Percent of records to include in the sample, unless the calculated count falls below the specified minimum.",
+                    )
+                ),
+                "profile_sample_min_count": expander_right_column.number_input(
+                    label="Min Sample Record Count",
+                    min_value=1,
+                    max_value=1000000,
+                    value=profile_sample_min_count,
+                    help="The minimum number of records to be included in any sample (if available)",
+                ),
+                "data_source": provenance_left_column.text_input(
+                    label="Data Source",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["data_source"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Original source of all tables in this dataset. This can be overridden at the table level. (Optional)",
+                ),
+                "source_system": provenance_left_column.text_input(
+                    label="System of Origin",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["source_system"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Enterprise system source for all tables in this dataset. "
+                            "This can be overridden at the table level. (Optional)",
+                ),
+                "business_domain": provenance_left_column.text_input(
+                    label="Business Domain",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["business_domain"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Business division responsible for all tables in this dataset. "
+                            "e.g. Finance, Sales, Manufacturing. (Optional)",
+                ),
+                "data_location": provenance_left_column.text_input(
+                    label="Location",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["data_location"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Physical or virtual location of all tables in this dataset. "
+                            "e.g. Headquarters, Cloud, etc. (Optional)",
+                ),
+                "transform_level": provenance_right_column.text_input(
+                    label="Transform Level",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["transform_level"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Data warehouse processing layer. "
+                            "Indicates the processing stage: e.g. Raw, Conformed, Processed, Reporting. (Optional)",
+                ),
+                "source_process": provenance_right_column.text_input(
+                    label="Source Process",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["source_process"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="The process, program or data flow that produced this data. (Optional)",
+                ),
+                "stakeholder_group": provenance_right_column.text_input(
+                    label="Stakeholder Group",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["stakeholder_group"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Designator for data owners or stakeholders who are responsible for this data. (Optional)",
+                ),
+            }
 
-                submit_button_text = "Save" if mode == "edit" else "Add"
+            _, button_column = st.columns([.85, .15])
+            with button_column:
                 submit = st.form_submit_button(
-                    submit_button_text, disabled=authentication_service.current_user_has_read_role()
+                    "Save" if mode == "edit" else "Add",
+                    use_container_width=True,
+                    disabled=authentication_service.current_user_has_read_role(),
                 )
 
-                if submit:
+            if submit:
+                if not entity["table_groups_name"]:
+                    st.error("'Name' is required. ")
+                    return
+
+                try:
                     if mode == "edit":
                         table_group_service.edit(entity)
+                        success_message = "Changes have been saved successfully. "
                     else:
                         table_group_service.add(entity)
-                    success_message = (
-                        "Changes have been saved successfully. "
-                        if mode == "edit"
-                        else "New Table Group added successfully. "
-                    )
+                        success_message = "New Table Group added successfully. "
+                except IntegrityError:
+                    st.error("A Table Group with the same name already exists. ")
+                    return
+                else:
                     st.success(success_message)
                     time.sleep(1)
-                    modal.close()
-                    st.experimental_rerun()
+                    st.rerun()
 
-            with table_groups_preview_tab:
-                if mode == "edit":
-                    preview_left_column, preview_right_column = st.columns([0.5, 0.5])
-                    status_preview = preview_right_column.empty()
-                    preview = preview_left_column.button("Test Table Group")
-                    if preview:
-                        table_group_preview(entity, connection_id, project_code, status_preview)
-                else:
-                    st.write("No preview available while adding a Table Group. Save the configuration first.")
+        with table_groups_preview_tab:
+            if mode == "edit":
+                preview_left_column, preview_right_column = st.columns([0.5, 0.5])
+                status_preview = preview_right_column.empty()
+                preview = preview_left_column.button("Test Table Group")
+                if preview:
+                    table_group_preview(entity, connection_id, project_code, status_preview)
+            else:
+                st.write("No preview available while adding a Table Group. Save the configuration first.")
 
 
 def table_group_preview(entity, connection_id, project_code, status):

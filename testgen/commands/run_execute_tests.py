@@ -52,7 +52,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
 
     LOG.info("CurrentStep: Initializing Query Generator")
 
-    clsExecute = CTestExecutionSQL(strProjectCode, dctParms["sql_flavor"], strTestSuite, minutes_offset)
+    clsExecute = CTestExecutionSQL(strProjectCode, dctParms["sql_flavor"], dctParms["test_suite_id"], strTestSuite, minutes_offset)
     clsExecute.run_date = strTestTime
     clsExecute.test_run_id = strTestRunID
     clsExecute.process_id = process_service.get_current_process_id()

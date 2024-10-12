@@ -5,12 +5,17 @@ import uuid
 from collections import namedtuple
 from urllib.parse import urlparse
 
+import click
 import requests
 from requests_extensions import get_session
 
 from testgen import settings
-from testgen.common import date_service, display_service, read_template_sql_file
-from testgen.common.database.database_service import ExecuteDBQuery, RetrieveDBResultsToDictList
+from testgen.common import date_service, read_template_sql_file
+from testgen.common.database.database_service import (
+    ExecuteDBQuery,
+    RetrieveDBResultsToDictList,
+    RetrieveDBResultsToList,
+)
 
 LOG = logging.getLogger("testgen")
 
@@ -30,7 +35,7 @@ def calculate_chunk_size(test_outcomes):
 def post_event(event_type, payload, api_url, api_key, test_outcomes, is_test=False):
     qty_of_events = len(test_outcomes)
     if not is_test and qty_of_events == 0:
-        display_service.echo("Nothing to be sent to Observability")
+        click.echo("Nothing to be sent to Observability")
         return qty_of_events
 
     def chunkify(collection, chunk_size):
@@ -70,23 +75,22 @@ def _get_api_endpoint(api_url: str | None, event_type: str) -> str:
     return f"{parsed_url.scheme!s}://{parsed_url.netloc!s}{parsed_url.path!s}/events/v1/{event_type}"
 
 
-def collect_event_data(project_code, test_suite):
+def collect_event_data(test_suite_id):
     try:
         event_data_query = (
             read_template_sql_file("get_event_data.sql", "observability")
-            .replace("{PROJECT_CODE}", project_code)
-            .replace("{TEST_SUITE}", test_suite)
+            .replace("{TEST_SUITE_ID}", test_suite_id)
         )
 
         event_data_query_result = RetrieveDBResultsToDictList("DKTG", event_data_query)
         if not event_data_query_result:
             LOG.error(
-                f"Could not get event data for exporting to Observability. Test suite '{test_suite}' - project_code '{project_code}'. EXITING!"
+                f"Could not get event data for exporting to Observability. Test suite '{test_suite_id}'. EXITING!"
             )
             sys.exit(1)
         if len(event_data_query_result) == 0:
             LOG.error(
-                f"Event data query is empty. Test suite '{test_suite}' - project_code '{project_code}'. Exiting export to Observability!"
+                f"Event data query is empty. Test suite '{test_suite_id}'. Exiting export to Observability!"
             )
             sys.exit(1)
 
@@ -96,7 +100,7 @@ def collect_event_data(project_code, test_suite):
         api_url = event.observability_api_url
     except Exception:
         LOG.exception(
-            f"Error collecting event data for exporting to Observability. Test suite '{test_suite}' - project_code '{project_code}'"
+            f"Error collecting event data for exporting to Observability. Test suite '{test_suite_id}'"
         )
         sys.exit(2)
     else:
@@ -202,12 +206,11 @@ def _get_processed_profiling_table_set(profiling_table_set):
     return items_remove_blank
 
 
-def collect_test_results(project_code, test_suite, max_qty_events):
+def collect_test_results(test_suite_id, max_qty_events):
     try:
         query = (
             read_template_sql_file("get_test_results.sql", "observability")
-            .replace("{PROJECT_CODE}", project_code)
-            .replace("{TEST_SUITE}", test_suite)
+            .replace("{TEST_SUITE_ID}", test_suite_id)
             .replace("{MAX_QTY_EVENTS}", str(max_qty_events))
         )
         query_results = RetrieveDBResultsToDictList("DKTG", query)
@@ -282,15 +285,14 @@ def _get_input_parameters(input_parameters):
     return ret
 
 
-def mark_exported_results(project_code, test_suite, ids):
+def mark_exported_results(test_suite_id, ids):
     if len(ids) == 0:
         return
 
     result_ids = ", ".join(ids)
     query = (
         read_template_sql_file("update_test_results_exported_to_observability.sql", "observability")
-        .replace("{PROJECT_CODE}", project_code)
-        .replace("{TEST_SUITE}", test_suite)
+        .replace("{TEST_SUITE_ID}", test_suite_id)
         .replace("{RESULT_IDS}", result_ids)
     )
     try:
@@ -303,24 +305,28 @@ def mark_exported_results(project_code, test_suite, ids):
         sys.exit(3)
 
 
-def export_test_results(project_code, test_suite):
+def export_test_results(test_suite_id):
     LOG.info("Observability Export V2 - Privileged UI")
-    event, api_url, api_key = collect_event_data(project_code, test_suite)
+    event, api_url, api_key = collect_event_data(test_suite_id)
     max_qty_events = settings.OBSERVABILITY_EXPORT_LIMIT
     qty_of_exported_events = 0
     while True:
-        display_service.echo(f"Observability Export Increment - {qty_of_exported_events} exported events so far")
-        test_outcomes, updated_ids = collect_test_results(project_code, test_suite, max_qty_events)
+        click.echo(f"Observability Export Increment - {qty_of_exported_events} exported events so far")
+        test_outcomes, updated_ids = collect_test_results(test_suite_id, max_qty_events)
         if len(test_outcomes) == 0:
             return qty_of_exported_events
         qty_of_exported_events += post_event("test-outcomes", event, api_url, api_key, test_outcomes)
-        mark_exported_results(project_code, test_suite, updated_ids)
+        mark_exported_results(test_suite_id, updated_ids)
 
 
 def run_observability_exporter(project_code, test_suite):
     LOG.info("CurrentStep: Observability Export - Test Results")
-    qty_of_exported_events = export_test_results(project_code, test_suite)
-    display_service.echo(f"{qty_of_exported_events} events have been exported.")
+    result = RetrieveDBResultsToList(
+        "DKTG",
+        f"SELECT id::VARCHAR FROM test_suites WHERE test_suite = '{test_suite}' AND project_code = '{project_code}'"
+    )
+    qty_of_exported_events = export_test_results(result[0][0][0])
+    click.echo(f"{qty_of_exported_events} events have been exported.")
 
 
 def test_observability_exporter(project_code, api_url, api_key):

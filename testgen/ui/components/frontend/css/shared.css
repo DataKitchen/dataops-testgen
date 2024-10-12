@@ -9,10 +9,22 @@ body {
 
 body {
     --primary-color: #06a04a;
+    --link-color: #1976d2;
+    --error-color: #EF5350;
+
+    --red: #EF5350;
+    --orange: #FF9800;
+    --yellow: #FDD835;
+    --green: #9CCC65;
+    --purple: #AB47BC;
+    --blue: #42A5F5;
+    --brown: #8D6E63;
+    --grey: #BDBDBD;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
+    --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
@@ -20,17 +32,40 @@ body {
     --sidebar-active-item-border-color: #b4e3c9;
 
     --field-underline-color: #9e9e9e;
+
+    --button-text-color: var(--primary-text-color);
+
+    --button-hover-state-background: var(--primary-color);
+    --button-hover-state-opacity: 0.12;
+
+    --button-basic-text-color: var(--primary-color);
+    --button-basic-background: transparent;
+
+    --button-flat-text-color: rgba(255, 255, 255);
+    --button-flat-background: rgba(0, 0, 0, .54);
+
+    --button-stroked-text-color: var(--primary-color);
+    --button-stroked-background: transparent;
+    --button-stroked-border: 1px solid rgba(0, 0, 0, .12);
 }
 
 @media (prefers-color-scheme: dark) {
     body {
-        --primary-text-color: rgba(255, 255, 255);;
+        --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);
-        --disabled-text-color: rgba(255, 255, 255, .5);;
+        --disabled-text-color: rgba(255, 255, 255, .5);
+        --caption-text-color: rgba(250, 250, 250, .6); /* Match Streamlit's caption color */
 
-        --sidebar-background-color: rgba(14, 17, 23, .7);
-        --sidebar-item-hover-color: rgba(14, 17, 23, .5);
-        --sidebar-active-item-color: rgba(14, 17, 23, .5);
+        --sidebar-background-color: #14181f;
+        --sidebar-item-hover-color: #10141b;
+        --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
+        --dk-text-value-background: unset;
+
+        --button-text-color: var(--primary-text-color);
+
+        --button-flat-background: rgba(255, 255, 255, .54);
+
+        --button-stroked-border: 1px solid rgba(255, 255, 255, .12);
     }
 }

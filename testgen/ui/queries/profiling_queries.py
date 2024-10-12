@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
@@ -63,24 +64,30 @@ def run_column_lookup_query(str_table_groups_id, str_table_name):
 
 
 @st.cache_data(show_spinner=False)
-def lookup_db_parentage_from_run(str_profile_run_id):
-    str_schema = st.session_state["dbschema"]
-    # Define the query
-    str_sql = f"""
-            SELECT profiling_starttime as profile_run_date, g.table_groups_name
-              FROM {str_schema}.profiling_runs pr
-             INNER JOIN {str_schema}.table_groups g
+def lookup_db_parentage_from_run(profile_run_id: str) -> tuple[pd.Timestamp, str, str, str] | None:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+            SELECT profiling_starttime as profile_run_date, table_groups_id, g.table_groups_name, g.project_code
+              FROM {schema}.profiling_runs pr
+             INNER JOIN {schema}.table_groups g
                 ON pr.table_groups_id = g.id
-             WHERE pr.id = '{str_profile_run_id}'
+             WHERE pr.id = '{profile_run_id}'
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
     if not df.empty:
-        return df.at[0, "profile_run_date"], df.at[0, "table_groups_name"]
+        return df.at[0, "profile_run_date"], str(df.at[0, "table_groups_id"]), df.at[0, "table_groups_name"], df.at[0, "project_code"]
 
 
 @st.cache_data(show_spinner="Retrieving Data")
-def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
+def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name, sorting_columns = None):
     str_schema = st.session_state["dbschema"]
+    if sorting_columns is None:
+        order_by_str = "ORDER BY p.schema_name, p.table_name, position"
+    elif len(sorting_columns):
+        order_by_str = "ORDER BY " + ", ".join(" ".join(col) for col in sorting_columns)
+    else:
+        order_by_str = ""
+
     str_sql = f"""
           SELECT   -- Identifiers
                    id::VARCHAR, dk_id,
@@ -98,7 +105,7 @@ def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
                      WHEN 'B' THEN 'Boolean'
                               ELSE 'N/A'
                    END as general_type,
-                   functional_table_type as semantic_table_type, 
+                   functional_table_type as semantic_table_type,
                    functional_data_type as semantic_data_type,
                    datatype_suggestion,
                    CASE WHEN s.column_name IS NOT NULL THEN 'Yes' END as anomalies,
@@ -142,7 +149,7 @@ def get_profiling_detail(str_profile_run_id, str_table_name, str_column_name):
           WHERE p.profile_run_id = '{str_profile_run_id}'::UUID
             AND p.table_name ILIKE '{str_table_name}'
             AND p.column_name ILIKE '{str_column_name}'
-          ORDER BY p.schema_name, p.table_name, position;
+          {order_by_str};
     """
 
     return db.retrieve_data(str_sql)

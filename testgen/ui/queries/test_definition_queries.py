@@ -29,13 +29,13 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
             SELECT
                    d.schema_name, d.table_name, d.column_name, t.test_name_short, t.test_name_long,
                    d.id::VARCHAR(50),
-                   d.project_code, d.table_groups_id::VARCHAR(50), d.test_suite, d.test_suite_id::VARCHAR,
+                   s.project_code, d.table_groups_id::VARCHAR(50), s.test_suite, d.test_suite_id::VARCHAR,
                    d.test_type, d.cat_test_id::VARCHAR(50),
                    d.test_active,
                    CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
                    d.lock_refresh,
                    CASE WHEN d.lock_refresh = 'Y' THEN 'Yes' ELSE 'No' END as lock_refresh_display,
-                   t.test_scope, 
+                   t.test_scope,
                    d.test_description,
                    d.profiling_as_of_date,
                    d.last_manual_update,
@@ -68,11 +68,11 @@ def get_test_definitions(schema, project_code, test_suite, table_name, column_na
     """
 
     if project_code:
-        sql += f"""             AND d.project_code = '{project_code}'
+        sql += f"""             AND s.project_code = '{project_code}'
         """
 
     if test_suite:
-        sql += f""" AND d.test_suite = '{test_suite}' {table_condition} {column_condition}
+        sql += f""" AND s.test_suite = '{test_suite}' {table_condition} {column_condition}
         """
     if test_definition_ids:
         sql += f""" AND d.id in ({"'" + "','".join(test_definition_ids) + "'"})
@@ -97,16 +97,15 @@ def update(schema, test_definition):
                     export_to_observability = NULLIF('{test_definition["export_to_observability"]}', ''),
                     column_name = NULLIF($${test_definition["column_name"]}$$, ''),
                     watch_level = NULLIF('{test_definition["watch_level"]}', ''),
-                    project_code = NULLIF('{test_definition["project_code"]}', ''),
                     table_groups_id = '{test_definition["table_groups_id"]}'::UUID,
                     """
 
     if test_definition["profile_run_id"]:
-        sql += f"""  profile_run_id = '{test_definition["profile_run_id"]}'::UUID,
-                """
+        sql += f"profile_run_id = '{test_definition['profile_run_id']}'::UUID,\n"
+    if test_definition["test_suite_id"]:
+        sql += f"test_suite_id = '{test_definition['test_suite_id']}'::UUID,\n"
 
     sql += f"""     test_type = NULLIF('{test_definition["test_type"]}', ''),
-                    test_suite = NULLIF('{test_definition["test_suite"]}', ''),
                     test_description = NULLIF($${test_definition["test_description"]}$$, ''),
                     test_action = NULLIF('{test_definition["test_action"]}', ''),
                     test_mode = NULLIF('{test_definition["test_mode"]}', ''),
@@ -156,11 +155,9 @@ def add(schema, test_definition):
                     export_to_observability,
                     column_name,
                     watch_level,
-                    project_code,
                     table_groups_id,
                     profile_run_id,
                     test_type,
-                    test_suite,
                     test_suite_id,
                     test_description,
                     test_action,
@@ -202,11 +199,9 @@ def add(schema, test_definition):
                     NULLIF('{test_definition["export_to_observability"]}', '') as export_to_observability,
                     NULLIF('{test_definition["column_name"]}', '') as column_name,
                     NULLIF('{test_definition["watch_level"]}', '') as watch_level,
-                    NULLIF('{test_definition["project_code"]}', '') as project_code,
                     '{test_definition["table_groups_id"]}'::UUID as table_groups_id,
                     NULL AS profile_run_id,
                     NULLIF('{test_definition["test_type"]}', '') as test_type,
-                    NULLIF('{test_definition["test_suite"]}', '') as test_suite,
                     '{test_definition["test_suite_id"]}'::UUID as test_suite_id,
                     NULLIF('{test_definition["test_description"]}', '') as test_description,
                     NULLIF('{test_definition["test_action"]}', '') as test_action,
@@ -243,9 +238,9 @@ def add(schema, test_definition):
 
 
 def get_test_definition_usage(schema, test_definition_ids):
-    test_definition_names_join = [f"'{item}'" for item in test_definition_ids]
+    ids_str = ",".join([f"'{item}'" for item in test_definition_ids])
     sql = f"""
-            select distinct test_definition_id from {schema}.test_results where test_definition_id in ({",".join(test_definition_names_join)});
+            select distinct test_definition_id from {schema}.test_results where test_definition_id in ({ids_str});
     """
     return db.retrieve_data(sql)
 
@@ -260,11 +255,13 @@ def delete(schema, test_definition_ids):
     st.cache_data.clear()
 
 
-def cascade_delete(schema, test_suite_names):
-    if test_suite_names is None or len(test_suite_names) == 0:
+def cascade_delete(schema, test_suite_ids):
+    if not test_suite_ids:
         raise ValueError("No Test Suite is specified.")
 
-    items = [f"'{item}'" for item in test_suite_names]
-    sql = f"""delete from {schema}.test_definitions where test_suite in ({",".join(items)})"""
+    ids_str = ", ".join([f"'{item}'" for item in test_suite_ids])
+    sql = f"""
+        DELETE FROM {schema}.test_definitions WHERE test_suite_id in ({ids_str})
+    """
     db.execute_sql(sql)
     st.cache_data.clear()

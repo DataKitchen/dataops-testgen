@@ -85,8 +85,9 @@ DROP VIEW IF EXISTS v_test_runs;
 CREATE VIEW v_test_runs
  AS
 SELECT r.id as test_run_id,
-       r.project_code, p.project_name,
-       r.test_suite,
+       p.project_code,
+       p.project_name,
+       ts.test_suite,
        r.test_starttime,
        TO_CHAR(r.test_endtime - r.test_starttime, 'HH24:MI:SS') as duration,
        r.status, r.log_message,
@@ -96,11 +97,13 @@ SELECT r.id as test_run_id,
        COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct,
        r.process_id
   FROM test_runs r
+INNER JOIN test_suites ts
+   ON (r.test_suite_id = ts.id)
 INNER JOIN projects p
-   ON (r.project_code = p.project_code)
+   ON (ts.project_code = p.project_code)
 INNER JOIN test_results tr
    ON (r.id = tr.test_run_id)
-GROUP BY r.id, r.project_code, r.test_suite, r.test_starttime, r.test_endtime,
+GROUP BY r.id, p.project_code, ts.test_suite, r.test_starttime, r.test_endtime,
          r.process_id, r.status, r.log_message, p.project_name;
 
 
@@ -133,16 +136,16 @@ SELECT p.project_name,
        (1 - r.result_code)::INTEGER as exception_ct,
        CASE
          WHEN result_status = 'Warning'
-          AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+          AND result_message NOT ILIKE 'Inactivated%' THEN 1
        END::INTEGER as warning_ct,
        CASE
          WHEN result_status = 'Failed'
-          AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+          AND result_message NOT ILIKE 'Inactivated%' THEN 1
        END::INTEGER as failed_ct,
        CASE
-         WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%' THEN 1
+         WHEN result_message ILIKE 'Inactivated%' THEN 1
        END as execution_error_ct,
-       r.project_code,
+       p.project_code,
        r.table_groups_id,
        r.id as test_result_id, c.id as connection_id,
        r.test_suite_id,
@@ -166,7 +169,7 @@ LEFT JOIN test_definitions d
 INNER JOIN test_suites ts
    ON (r.test_suite_id = ts.id)
 INNER JOIN projects p
-   ON (r.project_code = p.project_code)
+   ON (ts.project_code = p.project_code)
 INNER JOIN table_groups tg
    ON (r.table_groups_id = tg.id)
 INNER JOIN connections cn
@@ -192,7 +195,7 @@ SELECT
        END as sample_min_count,
        tg.id as group_id,
        tg.profile_use_sampling = 'Y' as uses_sampling,
-       r.project_code,
+       ts.project_code,
        CASE
          WHEN tg.profile_use_sampling = 'Y' THEN tg.profile_sample_percent
        END as sample_percentage,
@@ -207,7 +210,8 @@ SELECT
 
        r.column_names,
        r.table_name,
-       r.test_suite,
+       ts.test_suite,
+       ts.id AS test_suite_id,
        r.input_parameters,
        r.test_definition_id,
        tt.test_name_short as type,
@@ -234,14 +238,13 @@ INNER JOIN test_types tt
 INNER JOIN test_definitions d
    ON (r.test_definition_id = d.id)
 INNER JOIN test_suites ts
-   ON (r.project_code = ts.project_code
-  AND  r.test_suite = ts.test_suite)
+   ON r.test_suite_id = ts.id
 INNER JOIN table_groups tg
    ON (d.table_groups_id = tg.id)
 INNER JOIN connections cn
    ON (tg.connection_id = cn.connection_id)
 INNER JOIN projects p
-   ON (r.project_code = p.project_code)
+   ON (ts.project_code = p.project_code)
 INNER JOIN cat_test_conditions c
    ON (cn.sql_flavor = c.sql_flavor
   AND  d.test_type = c.test_type)

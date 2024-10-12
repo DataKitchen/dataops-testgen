@@ -28,10 +28,9 @@ RUN python3 -m pip install --no-deps /tmp/dk --prefix=/dk
 ENV PYTHONPATH ${PYTHONPATH}:/dk/lib/python3.10/site-packages
 ENV PATH="$PATH:/dk/bin:/opt/mssql-tools/bin/"
 
-RUN TG_METADATA_DB_USER=- TG_METADATA_DB_PASSWORD=- TG_METADATA_DB_HOST=- TG_METADATA_DB_PORT=- testgen ui patch-streamlit
-
 ARG TESTGEN_VERSION
 ENV TESTGEN_VERSION=v$TESTGEN_VERSION
+ENV TG_RELEASE_CHECK=docker
 
 ENV STREAMLIT_SERVER_MAX_UPLOAD_SIZE=200
 

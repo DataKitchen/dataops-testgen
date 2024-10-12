@@ -19,5 +19,4 @@ from test_suites ts
 join connections c on c.connection_id = ts.connection_id
 join projects pr on pr.project_code = ts.project_code
 join table_groups tg on tg.id = ts.table_groups_id
-where pr.project_code = '{PROJECT_CODE}'
-and ts.test_suite = '{TEST_SUITE}'
+where ts.id = '{TEST_SUITE_ID}'

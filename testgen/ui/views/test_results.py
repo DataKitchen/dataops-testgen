@@ -9,178 +9,194 @@ import streamlit as st
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-import testgen.ui.services.toolbar_service as tb
 from testgen.common import ConcatColumnList, date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_modal
-from testgen.ui.views.test_definitions import show_add_edit_modal_by_test_definition
+from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.test_definitions import show_test_form_by_id
 
 ALWAYS_SPIN = False
 
 
 class TestResultsPage(Page):
-    path = "tests/results"
+    path = "test-runs:results"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status or "login",
-        lambda: session.project != None or "overview",
+        lambda: session.authentication_status,
+        lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
-    def render(self) -> None:
-        export_container = fm.render_page_header(
+    def render(self, run_id: str, status: str | None = None, test_type: str | None = None, **_kwargs) -> None:
+        run_parentage = get_drill_test_run(run_id)
+        if not run_parentage:
+            self.router.navigate_with_warning(
+                f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
+                "test-runs",
+            )
+
+        run_date, test_suite_name, project_code = run_parentage
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
+        project_service.set_current_project(project_code)
+
+        testgen.page_header(
             "Test Results",
             "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
-            lst_breadcrumbs=[
-                {"label": "Overview", "path": "overview"},
-                {"label": "Test Runs", "path": "tests/runs"},
-                {"label": "Test Results", "path": None},
+            breadcrumbs=[
+                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": project_code } },
+                { "label": f"{test_suite_name} | {run_date}" },
             ],
         )
 
-        str_project = st.session_state["project"] if "project" in st.session_state else None
+        # Display summary bar
+        tests_summary = get_test_result_summary(run_id)
+        testgen.summary_bar(items=tests_summary, height=40, width=800)
 
-        # Look for drill-down from another page
-        if "drill_test_run" in st.session_state:
-            str_sel_test_run = st.session_state["drill_test_run"]
-        else:
-            str_sel_test_run = None
+        # Setup Toolbar
+        status_filter_column, test_type_filter_column, sort_column, actions_column, export_button_column = st.columns(
+            [.2, .2, .08, .4, .12], vertical_alignment="bottom"
+        )
+        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(export_button_column)
 
-        if not str_project:
-            st.write("Choose a Project from the menu.")
-        else:
-            # Setup Toolbar
-            tool_bar = tb.ToolBar(3, 1, 4, None)
-
-            # Lookup Test Run
-            if str_sel_test_run:
-                df = get_drill_test_run(str_sel_test_run)
-                if not df.empty:
-                    with tool_bar.long_slots[0]:
-                        time_columns = ["test_date"]
-                        date_service.accommodate_dataframe_to_timezone(df, st.session_state, time_columns)
-                        df["description"] = df["test_date"] + " | " + df["test_suite_description"]
-                        str_sel_test_run = fm.render_select(
-                            "Test Run", df, "description", "test_run_id", boo_required=True, boo_disabled=True
-                        )
-
-            if str_sel_test_run:
-                with tool_bar.long_slots[1]:
-                    lst_status_options = [
-                        "Failures and Warnings",
-                        "Failed Tests",
-                        "Tests with Warnings",
-                        "Passed Tests",
-                    ]
-                    str_sel_status = st.selectbox("Result Priority", lst_status_options)
-
-                with tool_bar.short_slots[0]:
-                    str_help = "Toggle on to perform actions on multiple results"
-                    do_multi_select = st.toggle("Multi-Select", help=str_help)
-
-                match str_sel_status:
-                    case "Failures and Warnings":
-                        str_sel_status = "'Failed','Warning'"
-                    case "Failed Tests":
-                        str_sel_status = "'Failed'"
-                    case "Tests with Warnings":
-                        str_sel_status = "'Warning'"
-                    case "Passed Tests":
-                        str_sel_status = "'Passed'"
-
-                # Display main grid and retrieve selection
-                selected = show_result_detail(str_sel_test_run, str_sel_status, do_multi_select, export_container)
-
-                # Need to render toolbar buttons after grid, so selection status is maintained
-                disable_dispo = True if not selected or str_sel_status == "'Passed'" else False
-                if tool_bar.button_slots[0].button(
-                    "✓", help="Confirm this issue as relevant for this run", disabled=disable_dispo
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Confirmed"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[1].button(
-                    "✘", help="Dismiss this issue as not relevant for this run", disabled=disable_dispo
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Dismissed"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[2].button(
-                    "🔇", help="Mute this test to deactivate it for future runs", disabled=not selected
-                ):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "Inactive"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-                if tool_bar.button_slots[3].button("⟲", help="Clear action", disabled=not selected):
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, "No Decision"),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[get_test_disposition],
-                    )
-
-            # Help Links
-            st.markdown(
-                "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
+        with status_filter_column:
+            status_options = [
+                "Failed + Warning",
+                "Failed",
+                "Warning",
+                "Passed",
+            ]
+            status = testgen.toolbar_select(
+                options=status_options,
+                default_value=status or "Failed + Warning",
+                required=False,
+                bind_to_query="status",
+                label="Result Status",
             )
 
-            # with st.sidebar:
-            #     st.divider()
+        with test_type_filter_column:
+            test_type = testgen.toolbar_select(
+                options=get_test_types(),
+                value_column="test_type",
+                display_column="test_name_short",
+                default_value=test_type,
+                required=False,
+                bind_to_query="test_type",
+                label="Test Type",
+            )
+
+        with sort_column:
+            sortable_columns = (
+                ("Table Name", "r.table_name"),
+                ("Columns/Focus", "r.column_names"),
+                ("Test Type", "r.test_type"),
+                ("UOM", "tt.measure_uom"),
+                ("Result Measure", "result_measure"),
+                ("Status", "result_status"),
+                ("Action", "r.disposition"),
+            )
+            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            sorting_columns = testgen.sorting_selector(sortable_columns, default)
+
+        with actions_column:
+            str_help = "Toggle on to perform actions on multiple results"
+            do_multi_select = st.toggle("Multi-Select", help=str_help)
+
+        match status:
+            case "Failed + Warning":
+                status = "'Failed','Warning'"
+            case "Failed":
+                status = "'Failed'"
+            case "Warning":
+                status = "'Warning'"
+            case "Passed":
+                status = "'Passed'"
+
+        # Display main grid and retrieve selection
+        selected = show_result_detail(
+            run_id, status, test_type, sorting_columns, do_multi_select, export_button_column
+        )
+
+        # Need to render toolbar buttons after grid, so selection status is maintained
+        disable_dispo = True if not selected or status == "'Passed'" else False
+
+        affected_cached_functions = [get_test_disposition]
+        if "r.disposition" in dict(sorting_columns):
+            affected_cached_functions.append(get_test_results)
+
+        disposition_actions = [
+            { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
+            { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
+            { "icon": "🔇", "help": "Mute this test to deactivate it for future runs", "status": "Inactive" },
+            { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
+        ]
+
+        for action in disposition_actions:
+            action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
+
+        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+        for action in disposition_actions:
+            if action["button"]:
+                fm.reset_post_updates(
+                    do_disposition_update(selected, action["status"]),
+                    as_toast=True,
+                    clear_cache=True,
+                    lst_cached_functions=affected_cached_functions,
+                )
+
+        # Help Links
+        st.markdown(
+            "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
+        )
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def run_test_suite_lookup_by_project_query(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_test_suite_lookup_by_project_query(str_schema, str_project_code)
-
-
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def run_test_run_lookup_by_date(str_project_code, str_run_date):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_test_run_lookup_by_date(str_schema, str_project_code, str_run_date)
-
-
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_drill_test_run(str_test_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-           SELECT id::VARCHAR as test_run_id,
-                  test_starttime as test_date,
-                  test_suite as test_suite_description
-             FROM {str_schema}.test_runs
-            WHERE id = '{str_test_run_id}'::UUID;
+def get_drill_test_run(test_run_id: str) -> tuple[pd.Timestamp, str, str] | None:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+           SELECT tr.test_starttime as test_date,
+                  ts.test_suite,
+                  ts.project_code
+             FROM {schema}.test_runs tr
+       INNER JOIN {schema}.test_suites ts ON tr.test_suite_id = ts.id
+            WHERE tr.id = '{test_run_id}'::UUID;
     """
-    return db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
+    if not df.empty:
+        return df.at[0, "test_date"], df.at[0, "test_suite"], df.at[0, "project_code"]
+
+
+@st.cache_data(show_spinner=False)
+def get_test_types():
+    schema = st.session_state["dbschema"]
+    df = db.retrieve_data(f"SELECT test_type, test_name_short FROM {schema}.test_types")
+    return df
 
 
 @st.cache_data(show_spinner="Retrieving Results")
-def get_test_results(str_run_id, str_sel_test_status):
+def get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns):
     schema = st.session_state["dbschema"]
-    return get_test_results_uncached(schema, str_run_id, str_sel_test_status)
+    return get_test_results_uncached(schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns)
 
 
-def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
+def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_type_id=None, sorting_columns=None):
     # First visible row first, so multi-select checkbox will render
+    str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
+    test_type_clause = f"AND r.test_type = '{test_type_id}'" if test_type_id else ""
+    status_clause = f" AND r.result_status IN ({str_sel_test_status})" if str_sel_test_status else ""
     str_sql = f"""
             WITH run_results
                AS (SELECT *
                      FROM {str_schema}.test_results r
-                    WHERE r.test_run_id = '{str_run_id}'
-                      AND r.result_status IN ({str_sel_test_status})
+                    WHERE
+                      r.test_run_id = '{str_run_id}'
+                      {status_clause}
+                      {test_type_clause}
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-                   tt.dq_dimension, tt.test_scope,  
+                   tt.dq_dimension, tt.test_scope,
                    r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
                    tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
                    c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
@@ -194,16 +210,16 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
                    (1 - r.result_code)::INTEGER as exception_ct,
                    CASE
                      WHEN result_status = 'Warning'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as warning_ct,
                    CASE
                      WHEN result_status = 'Failed'
-                      AND result_message NOT ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
                    END::INTEGER as failed_ct,
                    CASE
-                     WHEN result_message ILIKE 'ERROR - TEST COLUMN MISSING%%' THEN 1
+                     WHEN result_message ILIKE 'Inactivated%%' THEN 1
                    END as execution_error_ct,
-                   r.project_code, r.table_groups_id::VARCHAR,
+                   p.project_code, r.table_groups_id::VARCHAR,
                    r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
                    c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
                    r.test_definition_id::VARCHAR as test_definition_id_runtime,
@@ -225,10 +241,9 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
               AND  r.auto_gen = TRUE
               AND  d.last_auto_gen_date IS NOT NULL)
             INNER JOIN {str_schema}.test_suites ts
-               ON (r.project_code = ts.project_code
-              AND  r.test_suite = ts.test_suite)
+               ON r.test_suite_id = ts.id
             INNER JOIN {str_schema}.projects p
-               ON (r.project_code = p.project_code)
+               ON (ts.project_code = p.project_code)
             INNER JOIN {str_schema}.table_groups tg
                ON (ts.table_groups_id = tg.id)
             INNER JOIN {str_schema}.connections cn
@@ -236,7 +251,7 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status):
             LEFT JOIN {str_schema}.cat_test_conditions c
                ON (cn.sql_flavor = c.sql_flavor
               AND  r.test_type = c.test_type)
-            ORDER BY schema_name, table_name, column_names, test_type;
+            {str_order_by} ;
     """
     df = db.retrieve_data(str_sql)
 
@@ -264,23 +279,58 @@ def get_test_disposition(str_run_id):
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_summary(str_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-            SELECT test_ct as result_ct,
-                   COALESCE(error_ct, 0) as error_ct,
-                   failed_ct + warning_ct as exception_ct, warning_ct,
-                   ROUND({str_schema}.fn_pct(warning_ct, test_ct), 1) as warning_pct,
-                   failed_ct,
-                   ROUND({str_schema}.fn_pct(failed_ct, test_ct), 1) as failed_pct,
-                   passed_ct,
-                   ROUND({str_schema}.fn_pct(passed_ct, test_ct), 1) as passed_pct
-              FROM {str_schema}.test_runs
-             WHERE id = '{str_run_id}'::UUID;
+def get_test_result_summary(run_id):
+    schema = st.session_state["dbschema"]
+    sql = f"""
+    SELECT SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Passed' THEN 1
+                ELSE 0
+            END
+        ) as passed_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Warning' THEN 1
+                ELSE 0
+            END
+        ) as warning_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Failed' THEN 1
+                ELSE 0
+            END
+        ) as failed_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Error' THEN 1
+                ELSE 0
+            END
+        ) as error_ct,
+        SUM(
+            CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
+                ELSE 0
+            END
+        ) as dismissed_ct
+    FROM {schema}.test_runs
+        LEFT JOIN {schema}.test_results ON (
+            test_runs.id = test_results.test_run_id
+        )
+    WHERE test_runs.id = '{run_id}'::UUID;
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
 
-    return df
+    return [
+        { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
+        { "label": "Warning", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
+        { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
+        { "label": "Error", "value": int(df.at[0, "error_ct"]), "color": "brown" },
+        { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
+    ]
 
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
@@ -330,7 +380,7 @@ def get_test_definition_uncached(str_schema, str_test_def_id):
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
                   d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
                   d.match_table_name, d.match_column_names, d.match_subset_condition,
-                  d.match_groupby_names, d.match_having_condition, 
+                  d.match_groupby_names, d.match_having_condition,
                   d.window_date_column, d.window_days::VARCHAR as window_days,
                   d.custom_query,
                   d.severity, tt.default_severity,
@@ -572,15 +622,9 @@ def show_test_def_detail(str_test_def_id):
         )
 
 
-def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_container):
-    # Retrieve summary counts
-    df_sum = get_test_result_summary(str_run_id)
-    if not df_sum.empty:
-        if (df_sum.at[0, "result_ct"] or 0) > 0:
-            write_summary_graph(df_sum)
-
+def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_columns, do_multi_select, export_container):
     # Retrieve test results (always cached, action as null)
-    df = get_test_results(str_run_id, str_sel_test_status)
+    df = get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns)
     # Retrieve disposition action (cache refreshed)
     df_action = get_test_disposition(str_run_id)
     # Update action from disposition df
@@ -671,9 +715,10 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
 
         with pg_col2:
             v_col1, v_col2, v_col3 = st.columns([0.33, 0.33, 0.33])
-        view_edit_test(v_col1, selected_row["test_definition_id_current"])
+        if authentication_service.current_user_has_edit_role():
+            view_edit_test(v_col1, selected_row["test_definition_id_current"])
         if selected_row["test_scope"] == "column":
-            view_profiling_modal(
+            view_profiling_button(
                 v_col2, selected_row["table_name"], selected_row["column_names"],
                 str_table_groups_id=selected_row["table_groups_id"]
             )
@@ -694,73 +739,6 @@ def show_result_detail(str_run_id, str_sel_test_status, do_multi_select, export_
             with ut_tab2:
                 show_test_def_detail(selected_row["test_definition_id_current"])
         return selected_rows
-
-
-def write_summary_graph(df_sum):
-    df_graph = df_sum[["passed_ct", "error_ct", "warning_ct", "failed_ct"]]
-
-    str_error_caption = f"Errors: {df_sum.at[0, 'error_ct']}, " if df_sum.at[0, "error_ct"] > 0 else ""
-    str_graph_caption = f"<i>Passed: {df_sum.at[0, 'passed_ct']} ({df_sum.at[0, 'passed_pct']}%), {str_error_caption}Warnings: {df_sum.at[0, 'warning_ct']} ({df_sum.at[0, 'warning_pct']}%), Failed: {df_sum.at[0, 'failed_ct']} ({df_sum.at[0, 'failed_pct']}%)</i>"
-
-    fig = px.bar(
-        df_graph,
-        orientation="h",
-        title=None,
-        # labels={'value': 'Tests', 'variable': 'Result Status'},
-        color_discrete_sequence=["green", "gray", "yellow", "red"],
-        barmode="stack",
-    )
-
-    fig.update_traces(
-        # hoverinfo='y+name',  # Display the y value and the trace name
-        # hovertemplate='Count: %{y}<br>Type: %{name}',  # Custom template for hover text
-        hovertemplate="%{x}"
-        # hovertemplate=None
-    )
-
-    fig.update_layout(
-        showlegend=False,
-        legend_orientation="h",
-        legend_y=-0.2,  # This value might need to be adjusted based on other chart elements
-        legend_x=0.5,
-        legend_xanchor="right",
-        legend_title_text="",
-        yaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        xaxis={
-            "showticklabels": False,  # hides y-axis labels
-            "showgrid": False,  # removes grid lines
-            "zeroline": False,  # removes the zero line
-            "showline": False,  # hides the axis line
-            "title_text": "",
-        },
-        hovermode="closest",
-        height=100,
-        width=800,
-        margin={"l": 0, "r": 10, "b": 10, "t": 10},  # adjust margins around the plot
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-    )
-
-    fig.add_annotation(
-        text=str_graph_caption,
-        xref="paper",
-        yref="paper",  # 'paper' coordinates are relative to the layout, with (0,0) at the bottom left and (1,1) at the top right
-        x=0,
-        y=0,
-        xanchor="left",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 15, "color": "black"},
-    )
-
-    config = {"displayModeBar": False}
-    st.plotly_chart(fig, config=config)
 
 
 def write_history_graph(dfh):
@@ -857,52 +835,46 @@ def do_disposition_update(selected, str_new_status):
 
 
 def view_bad_data(button_container, selected_row):
-    str_header = f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}"
-    bad_data_modal = testgen.Modal(title=None, key="dk-test-data-modal", max_width=1100)
-
     with button_container:
         if st.button(
-            ":green[Source Data →]", help="Review current source data for highlighted result", use_container_width=True
+            "Source Data →", help="Review current source data for highlighted result", use_container_width=True
         ):
-            bad_data_modal.open()
+            source_data_dialog(selected_row)
 
-    if bad_data_modal.is_open():
-        with bad_data_modal.container():
-            fm.render_modal_header(selected_row["test_name_short"], None)
-            st.caption(selected_row["test_description"])
-            fm.show_prompt(str_header)
 
-            # Show detail
-            fm.render_html_list(
-                selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
-            )
+@st.dialog(title="Source Data")
+def source_data_dialog(selected_row):
+    st.markdown(f"#### {selected_row['test_name_short']}")
+    st.caption(selected_row["test_description"])
+    fm.show_prompt(f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}")
 
-            with st.spinner("Retrieving source data..."):
-                if selected_row["test_type"] == "CUSTOM":
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
-                else:
-                    bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
-            if bad_data_status in {"ND", "NA"}:
-                st.info(bad_data_msg)
-            elif bad_data_status == "ERR":
-                st.error(bad_data_msg)
-            elif df_bad is None:
-                st.error("An unknown error was encountered.")
-            else:
-                if bad_data_msg:
-                    st.info(bad_data_msg)
-                # Pretify the dataframe
-                df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-                df_bad.fillna("[NULL]", inplace=True)
-                # Display the dataframe
-                st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+    # Show detail
+    fm.render_html_list(
+        selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
+    )
+
+    with st.spinner("Retrieving source data..."):
+        if selected_row["test_type"] == "CUSTOM":
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup_custom(selected_row)
+        else:
+            bad_data_status, bad_data_msg, df_bad = do_source_data_lookup(selected_row)
+    if bad_data_status in {"ND", "NA"}:
+        st.info(bad_data_msg)
+    elif bad_data_status == "ERR":
+        st.error(bad_data_msg)
+    elif df_bad is None:
+        st.error("An unknown error was encountered.")
+    else:
+        if bad_data_msg:
+            st.info(bad_data_msg)
+        # Pretify the dataframe
+        df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
+        df_bad.fillna("[NULL]", inplace=True)
+        # Display the dataframe
+        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
 
 def view_edit_test(button_container, test_definition_id):
-    edit_test_definition_modal = testgen.Modal(title=None, key="dk-test-definition-edit-modal", max_width=1100)
     with button_container:
         if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
-            edit_test_definition_modal.open()
-
-    if edit_test_definition_modal.is_open():
-        show_add_edit_modal_by_test_definition(edit_test_definition_modal, test_definition_id)
+            show_test_form_by_id(test_definition_id)

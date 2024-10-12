@@ -15,7 +15,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     # Set General Parms
     booClean = False
 
-    LOG.info("CurrentStep: Retrieving General Parameters for Test Suite " + strTestSuite)
+    LOG.info("CurrentStep: Retrieving General Parameters for Test Suite %s", strTestSuite)
     dctParms = RetrieveTestGenParms(strTableGroupsID, strTestSuite)
 
     # Set Project Connection Parms from retrieved parms
@@ -40,21 +40,22 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     # Set static parms
     clsTests.project_code = dctParms["project_code"]
     clsTests.test_suite = strTestSuite
-    clsTests.test_suite_id = dctParms["test_suite_id"]
     clsTests.generation_set = strGenerationSet if strGenerationSet is not None else ""
+    clsTests.test_suite_id = dctParms["test_suite_id"] if dctParms["test_suite_id"] else ""
     clsTests.connection_id = str(dctParms["connection_id"])
     clsTests.table_groups_id = strTableGroupsID
     clsTests.sql_flavor = dctParms["sql_flavor"]
-
     clsTests.data_schema = dctParms["table_group_schema"]
     if dctParms["profiling_as_of_date"] is not None:
         clsTests.as_of_date = dctParms["profiling_as_of_date"].strftime("%Y-%m-%d %H:%M:%S")
 
-    if dctParms["test_suite"] is None:
+    if dctParms["test_suite_id"]:
+        clsTests.test_suite_id = dctParms["test_suite_id"]
+    else:
         LOG.info("CurrentStep: Creating new Test Suite")
         strQuery = clsTests.GetInsertTestSuiteSQL(booClean)
         if strQuery:
-            RunActionQueryList("DKTG", [strQuery])
+            clsTests.test_suite_id, = RunActionQueryList("DKTG", [strQuery])
         else:
             raise ValueError("Test Suite not found and could not be created")
 

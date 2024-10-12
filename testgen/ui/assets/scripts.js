@@ -7,12 +7,6 @@ window.addEventListener('load', function() {
 });
 
 window.addEventListener('message', async function(event) {
-    if (event.data.type === 'TestgenNavigationRequest') {
-        if (window.location.hash.replace('#', '') !== event.data.path) {
-            window.location.hash = event.data.path;
-        }
-    }
-
     if (event.data.type === 'TestgenCopyToClipboard') {
         await copyToClipboard(event.data.text || '');
     }

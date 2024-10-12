@@ -7,28 +7,26 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "data-ops-testgen"
-version = "2.2.0"
-description = "DataKitchen Inc. Data Quality Engine"
-urls = { "homepage" = "https://datakitchen.io" }
+name = "dataops-testgen"
+version = "2.8.1"
+description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
-    { "name" = "Charles Bloche", "email" = "chip@datakitchen.io" },
-    { "name" = "Tyler Stubenvoll", "email" = "tstubenvoll@datakitchen.io" },
-    { "name" = "Alejandro Fernandez", "email" = "alex@datakitchen.io" },
-    { "name" = "Anuja Waikar", "email" = "awaikar@datakitchen.io" },
-    { "name" = "Shruthy Vakkil", "email" = "svakkil@datakitchen.io" },
-    { "name" = "Arnob Bordoloi", "email" = "abordoloi@datakitchen.io" },
-    { "name" = "Saurabh Vashist", "email" = "svashist@datakitchen.io" },
-    { "name" = "Saurabh Vaidya", "email" = "saurabh@datakitchen.io" }
+    { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
 ]
-license = { "text" = "CLOSED"  }
+maintainers = [
+    { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
+]
 readme = "README.md"
 classifiers = [
-    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 5 - Production/Stable",
     "Operating System :: OS Independent",
-    "Programming Language :: Python",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
 ]
+keywords = [ "dataops", "data", "quality", "testing", "database", "profiling" ]
 requires-python = ">=3.10"
 
 dependencies = [
@@ -36,16 +34,16 @@ dependencies = [
     "click==8.1.3",
     "sqlalchemy==1.4.46",
     "snowflake-sqlalchemy==1.4.7",
-    "pyodbc==4.0.39",
-    "psycopg2-binary==2.9.6",
+    "pyodbc==5.0.0",
+    "psycopg2-binary==2.9.9",
     "pycryptodome==3.17",
     "prettytable==3.7.0",
     "requests_extensions==1.1.3",
     "bz2file==0.98",
     "trogon==0.4.0",
-    "numpy==1.25.2",
-    "pandas==2.1.0",
-    "streamlit==1.26.0",
+    "numpy==1.26.4",
+    "pandas==2.1.4",
+    "streamlit==1.38.0",
     "streamlit-extras==0.3.0",
     "streamlit-aggrid==0.3.4.post3",
     "streamlit-antd-components==0.2.2",
@@ -54,7 +52,6 @@ dependencies = [
     "streamlit-option-menu==0.3.6",
     "streamlit-authenticator==0.2.3",
     "streamlit-javascript==0.1.5",
-    "streamlit-modal==0.1.0",
     "progress==1.6",
     "beautifulsoup4==4.12.3",
     "trino==0.327.0",
@@ -62,6 +59,7 @@ dependencies = [
     "psutil==5.9.8",
     "concurrent_log_handler==0.9.25",
     "cryptography==42.0.8",
+    "validators==0.33.0",
 ]
 
 [project.optional-dependencies]
@@ -79,11 +77,21 @@ dev = [
 ]
 
 release = [
-    "bumpver==2023.1129"
+    "build==1.2.1",
+    "bumpver==2023.1129",
+    "twine==5.1.1",
 ]
 
 [project.entry-points.console_scripts]
 testgen = "testgen.__main__:cli"
+
+[project.urls]
+"Source Code" = "https://github.com/DataKitchen/dataops-testgen"
+"Bug Tracker" = "https://github.com/DataKitchen/dataops-testgen/issues"
+"Documentation" = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/dataops-testgen-help"
+"Release Notes" = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-release-notes"
+"Slack" = "https://data-observability-slack.datakitchen.io/join"
+"Homepage" = "https://example.com"
 
 [tool.setuptools]
 include-package-data = true

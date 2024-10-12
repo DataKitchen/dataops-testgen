@@ -34,7 +34,6 @@ from testgen.commands.run_observability_exporter import run_observability_export
 from testgen.commands.run_profiling_bridge import run_profiling_queries
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
 from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
-from testgen.commands.run_test_definition import get_test_def_parms, update_test_def_parms_dict
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.common import (
     configure_logging,
@@ -44,6 +43,7 @@ from testgen.common import (
     get_tg_host,
     get_tg_schema,
     logs,
+    version_service,
 )
 from testgen.utils import plugins
 
@@ -61,7 +61,7 @@ pass_configuration = click.make_pass_decorator(Configuration)
 
 @tui()
 @click.group(
-    help=f"This version: {settings.VERSION} \n\nLatest version: {docker_service.check_for_new_docker_release()} \n\nSchema revision: {get_schema_revision()}"
+    help=f"This version: {settings.VERSION} \n\nLatest version: {version_service.get_latest_version()} \n\nSchema revision: {get_schema_revision()}"
 )
 @click.option(
     "-v",
@@ -265,42 +265,6 @@ def list_test_generation(configuration: Configuration, project_key: str, test_su
     if display:
         display_service.print_table(rows, header)
     display_service.to_csv("list_test_generation.csv", rows, header)
-
-
-@cli.command("get-test-properties", help="Fetches test details for a test suite (in an editable file).")
-@click.option(
-    "-pk",
-    "--project-key",
-    required=False,
-    type=click.STRING,
-    help="The identifier for a TestGen project. Use a project_key shown in list-projects.",
-    default=settings.PROJECT_KEY,
-)
-@click.option(
-    "-ts",
-    "--test-suite-key",
-    help="The identifier for a test suite. Use a test_suite_key shown in list-test-suites.",
-    type=click.STRING,
-    required=True,
-    default=settings.DEFAULT_TEST_SUITE_KEY,
-)
-@click.option("-d", "--display", help="Show command output in the terminal.", is_flag=True, default=False)
-@pass_configuration
-def get_test_properties(configuration: Configuration, project_key: str, test_suite_key: str, display: bool):
-    LOG.info("CurrentStep: Main Program - List Test Properties")
-    yaml_dict = get_test_def_parms(project_key, test_suite_key)
-    display_service.to_yaml("get_test_parms.yaml", yaml_dict, display)
-
-
-@cli.command("update-test-properties", help="Updates test properties from changes made in the YAML file.")
-@click.option("-d", "--display", help="Show command output in the terminal.", is_flag=True, default=False)
-@pass_configuration
-def update_test_parms(configuration: Configuration, display: bool):
-    click.echo("update-test-properties is starting.")
-    LOG.info("CurrentStep: Update Test Def Parms")
-    yaml_dict = display_service.from_yaml("get_test_parms.yaml", display)
-    update_test_def_parms_dict(yaml_dict)
-    click.echo("update-test-properties has successfully finished.")
 
 
 @cli.command("list-tests", help="Lists the tests generated for a test suite.")
@@ -708,6 +672,7 @@ def ui(): ...
 @ui.command("run", help="Run the browser application with default settings")
 @click.option("-d", "--debug", is_flag=True, default=False)
 def run(debug: bool):
+    from testgen.ui.scripts import patch_streamlit
     configure_logging(
         level=logging.INFO,
         log_format="%(message)s",
@@ -720,6 +685,8 @@ def run(debug: bool):
 
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
+    patch_streamlit.patch(force=True)
+
     try:
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
         status_code = subprocess.check_call(
@@ -727,7 +694,6 @@ def run(debug: bool):
                 "streamlit",
                 "run",
                 app_file,
-                "--ui.hideSidebarNav=true",
                 "--browser.gatherUsageStats=false",
                 f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
                 f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
@@ -754,16 +720,6 @@ def list_ui_plugins():
     click.echo(click.style(len(installed_plugins), fg="bright_magenta") + click.style(" plugins installed", bold=True))
     for plugin in installed_plugins:
         click.echo(click.style(" + ", fg="bright_green") + f"{plugin.package: <30}" + f"\tversion: {plugin.version}")
-
-
-@ui.command("patch-streamlit", help="Modifies Streamlit's internals with custom static files")
-@click.option("-f", "--force", is_flag=True, default=False)
-def patch_streamlit(force: bool) -> None:
-    from testgen.ui.scripts import patch_streamlit
-
-    patched_files = patch_streamlit.patch(force=force)
-    click.echo(click.style("Patched ", bold=True) + click.style(patch_streamlit.STREAMLIT_INDEX, fg="bright_magenta"))
-    click.echo(click.style(" + ", fg="bright_green") + click.style(f"patched {len(patched_files)} files", italic=True))
 
 
 if __name__ == "__main__":

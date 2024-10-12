@@ -8,5 +8,4 @@ with selects
 	INNER JOIN selects s ON (r.result_id = s.selected_id)
 	where r.id = test_results.id
 	and r.observability_status = 'Queued'
-	and r.project_code = '{PROJECT_CODE}'
-	and r.test_suite = '{TEST_SUITE}'
+	and r.test_suite_id = '{TEST_SUITE_ID}'
