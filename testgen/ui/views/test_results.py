@@ -12,7 +12,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets.download_dialog import download_dialog, zip_multi_file_data
+from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import authentication_service, project_service
@@ -734,14 +734,13 @@ def view_edit_test(button_container, test_definition_id):
             show_test_form_by_id(test_definition_id)
 
 
-def get_report_file_data(progress_gen, tr_data):
+def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     td_id = tr_data["test_definition_id_runtime"][:6]
     tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
     file_name = f"testgen_issue_report_{td_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:
-        progress_gen.send(None)
         create_report(buffer, tr_data)
-        progress_gen.send(1.0)
+        update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()
