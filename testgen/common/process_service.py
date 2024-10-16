@@ -49,7 +49,8 @@ def kill_process(process_id, keywords=None):
     except psutil.NoSuchProcess:
         message = f"No such process with PID {process_id}."
         LOG.exception(f"kill_process: {message}")
-        return False, message
+        # Return "True" anyway so that run status is set to "Canceled"
+        return True, message
     except psutil.AccessDenied:
         message = f"Access denied when trying to terminate process {process_id}."
         LOG.exception(f"kill_process: {message}")
