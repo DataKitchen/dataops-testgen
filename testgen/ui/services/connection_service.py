@@ -207,7 +207,7 @@ def form_overwritten_connection_url(connection):
         "dbname": connection["project_db"],
         "url": None,
         "connect_by_url": None,
-        "connect_by_key": connection["connect_by_key"],
+        "connect_by_key": connection.get("connect_by_key"),
         "private_key": None,
         "private_key_passphrase": "",
         "dbschema": "",

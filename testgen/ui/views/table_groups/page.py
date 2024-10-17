@@ -29,7 +29,7 @@ class TableGroupsPage(Page):
     def render(self, connection_id: str, **_kwargs) -> None:
         connection = connection_service.get_by_id(connection_id, hide_passwords=False)
         if not connection:
-            self.router.navigate_with_warning(
+            return self.router.navigate_with_warning(
                 f"Connection with ID '{connection_id}' does not exist. Redirecting to list of Connections ...",
                 "connections",
             )
@@ -40,7 +40,7 @@ class TableGroupsPage(Page):
         testgen.page_header(
             "Table Groups",
             "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-table-group",
-            breadcrumbs=[
+            breadcrumbs=[  # type: ignore
                 { "label": "Connections", "path": "connections", "params": { "project_code": project_code } },
                 { "label": connection["connection_name"] },
             ],

@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {(string)} type
+ * @property {(string|null)} color
  * @property {(string|null)} label
  * @property {(string|null)} icon
  * @property {(string|null)} tooltip
@@ -21,6 +22,11 @@ const BUTTON_TYPE = {
     ICON: 'icon',
     STROKED: 'stroked',
 };
+const BUTTON_COLOR = {
+    BASIC: 'basic',
+    PRIMARY: 'primary',
+};
+
 
 const Button = (/** @type Properties */ props) => {
     loadStylesheet('button', stylesheet);
@@ -32,6 +38,10 @@ const Button = (/** @type Properties */ props) => {
         if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
             enforceElementWidth(window.frameElement, 40);
         }
+
+        if (props.width?.val) {
+            enforceElementWidth(window.frameElement, props.width?.val);
+        }
     }
 
     if (props.tooltip) {
@@ -42,10 +52,10 @@ const Button = (/** @type Properties */ props) => {
     const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
     return button(
         {
-            class: `tg-button tg-${props.type.val}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
-            style: props.style?.val,
+            class: `tg-button tg-${props.type.val}-button tg-${props.color?.val ?? 'basic'}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+            style: () => `width: ${props.width?.val ?? '100%'}; ${props.style?.val}`,
             onclick: onClickHandler,
-            disabled: !!props.disabled?.val,
+            disabled: props.disabled,
         },
         span({class: 'tg-button-focus-state-indicator'}, ''),
         props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
@@ -56,7 +66,6 @@ const Button = (/** @type Properties */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 button.tg-button {
-    width: 100%;
     height: 40px;
 
     position: relative;
@@ -75,8 +84,6 @@ button.tg-button {
     cursor: pointer;
 
     font-size: 14px;
-    color: var(--button-text-color);
-    background: var(--button-basic-background);
 }
 
 button.tg-button .tg-button-focus-state-indicator::before {
@@ -89,21 +96,9 @@ button.tg-button .tg-button-focus-state-indicator::before {
     position: absolute;
     pointer-events: none;
     border-radius: inherit;
-    background: var(--button-hover-state-background);
-}
-
-button.tg-button.tg-basic-button {
-    color: var(--button-basic-text-color);
-}
-
-button.tg-button.tg-flat-button {
-    color: var(--button-flat-text-color);
-    background: var(--button-flat-background);
 }
 
 button.tg-button.tg-stroked-button {
-    color: var(--button-stroked-text-color);
-    background: var(--button-stroked-background);
     border: var(--button-stroked-border);
 }
 
@@ -135,6 +130,49 @@ button.tg-button > i:has(+ span) {
 button.tg-button:hover:not([disabled]) .tg-button-focus-state-indicator::before {
     opacity: var(--button-hover-state-opacity);
 }
+
+
+/* Basic button colors */
+button.tg-button.tg-basic-button {
+    color: var(--button-basic-text-color);
+    background: var(--button-basic-background);
+}
+
+button.tg-button.tg-basic-button .tg-button-focus-state-indicator::before {
+    background: var(--button-basic-hover-state-background);
+}
+
+button.tg-button.tg-basic-button.tg-flat-button {
+    color: var(--button-basic-flat-text-color);
+    background: var(--button-basic-flat-background);
+}
+
+button.tg-button.tg-basic-button.tg-stroked-button {
+    color: var(--button-basic-stroked-text-color);
+    background: var(--button-basic-stroked-background);
+}
+/* ... */
+
+/* Primary button colors */
+button.tg-button.tg-primary-button {
+    color: var(--button-primary-text-color);
+    background: var(--button-primary-background);
+}
+
+button.tg-button.tg-primary-button .tg-button-focus-state-indicator::before {
+    background: var(--button-primary-hover-state-background);
+}
+
+button.tg-button.tg-primary-button.tg-flat-button {
+    color: var(--button-primary-flat-text-color);
+    background: var(--button-primary-flat-background);
+}
+
+button.tg-button.tg-primary-button.tg-stroked-button {
+    color: var(--button-primary-stroked-text-color);
+    background: var(--button-primary-stroked-background);
+}
+/* ... */
 `);
 
 export { Button };
