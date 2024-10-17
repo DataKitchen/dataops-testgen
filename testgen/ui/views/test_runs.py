@@ -131,13 +131,13 @@ def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
             st.markdown("", help=log_message)
 
         if status == "Running" and pd.notnull(test_run["process_id"]):
-            testgen.button(
+            if testgen.button(
                 type_="stroked",
                 label="Cancel Run",
                 style="width: auto; height: 32px; color: var(--purple); margin-left: 16px;",
-                on_click=partial(on_cancel_run, test_run),
                 key=f"test_run:keys:cancel-run:{test_run_id}",
-            )
+            ):
+                on_cancel_run(test_run)
 
     with results_column:
         if to_int(test_run["test_ct"]):
@@ -157,7 +157,7 @@ def render_test_run_row(test_run: pd.Series, column_spec: list[int]) -> None:
 
 
 def on_cancel_run(test_run: pd.Series) -> None:
-    process_status, process_message = process_service.kill_test_run(test_run["process_id"])
+    process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
         test_run_service.update_status(test_run["test_run_id"], "Cancelled")
 

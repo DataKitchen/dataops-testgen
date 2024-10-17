@@ -112,13 +112,13 @@ def render_profiling_run_row(profiling_run: pd.Series, column_spec: list[int]) -
             st.markdown("", help=log_message)
 
         if status == "Running" and pd.notnull(profiling_run["process_id"]):
-            testgen.button(
+            if testgen.button(
                 type_="stroked",
                 label="Cancel Run",
                 style="width: auto; height: 32px; color: var(--purple); margin-left: 16px;",
-                on_click=partial(on_cancel_run, profiling_run),
                 key=f"profiling_run:keys:cancel-run:{profiling_run_id}",
-            )
+            ):
+                on_cancel_run(profiling_run)
 
     with schema_column:
         column_count = to_int(profiling_run["column_ct"])
@@ -165,9 +165,9 @@ def render_profiling_run_row(profiling_run: pd.Series, column_spec: list[int]) -
 
 
 def on_cancel_run(profiling_run: pd.Series) -> None:
-    process_status, process_message = process_service.kill_test_run(profiling_run["process_id"])
+    process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
-        update_profile_run_status(profiling_run["profile_run_id"], "Cancelled")
+        update_profile_run_status(profiling_run["profiling_run_id"], "Cancelled")
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
