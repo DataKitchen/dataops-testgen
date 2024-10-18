@@ -17,6 +17,7 @@ from testgen.ui.queries import project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
+from testgen.utils import to_int
 
 PAGE_SIZE = 50
 PAGE_ICON = "labs"
@@ -136,7 +137,7 @@ def render_empty_state(project_code: str) -> bool:
 
 
 def on_cancel_run(test_run: pd.Series) -> None:
-    process_status, process_message = process_service.kill_test_run(test_run["process_id"])
+    process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
         test_run_service.update_status(test_run["test_run_id"], "Cancelled")
 

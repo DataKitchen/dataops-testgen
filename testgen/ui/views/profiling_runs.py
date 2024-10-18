@@ -17,6 +17,7 @@ from testgen.ui.queries import project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
+from testgen.utils import to_int
 
 FORM_DATA_WIDTH = 400
 PAGE_SIZE = 50
@@ -79,7 +80,7 @@ class DataProfilingPage(Page):
                 props={ "items": paginated_df.to_json(orient="records") },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
-            
+
 
 def render_empty_state(project_code: str) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
@@ -118,9 +119,9 @@ def render_empty_state(project_code: str) -> bool:
 
 
 def on_cancel_run(profiling_run: pd.Series) -> None:
-    process_status, process_message = process_service.kill_test_run(profiling_run["process_id"])
+    process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
-        update_profile_run_status(profiling_run["profile_run_id"], "Cancelled")
+        update_profile_run_status(profiling_run["profiling_run_id"], "Cancelled")
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
