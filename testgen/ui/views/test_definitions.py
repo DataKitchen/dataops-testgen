@@ -530,12 +530,19 @@ def show_test_form(
         if dynamic_attribute in ["custom_query"]:
             show_custom_query = True
         else:
-            test_definition[dynamic_attribute] = current_column.text_input(
-                label=actual_dynamic_attributes_labels,
-                max_chars=4000 if dynamic_attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
-                value=value,
-                help=actual_dynamic_attributes_help,
-            )
+            if "threshold" in dynamic_attribute:
+                test_definition[dynamic_attribute] = current_column.number_input(
+                    label=actual_dynamic_attributes_labels,
+                    value=value,
+                    help=actual_dynamic_attributes_help,
+                )
+            else:
+                test_definition[dynamic_attribute] = current_column.text_input(
+                    label=actual_dynamic_attributes_labels,
+                    max_chars=4000 if dynamic_attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
+                    value=value,
+                    help=actual_dynamic_attributes_help,
+                )
 
     # Custom Query
     if show_custom_query:
