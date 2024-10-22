@@ -1,27 +1,26 @@
-from functools import partial
 import logging
 import os
 import time
 import typing
+from functools import partial
 
-from pydantic import ValidationError
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 import streamlit_pydantic as sp
+from pydantic import ValidationError
+from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.database_service as db
-from testgen.ui.services import table_group_service
-from testgen.commands.run_setup_profiling_tools import get_setup_profiling_tools_queries
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
+from testgen.commands.run_setup_profiling_tools import get_setup_profiling_tools_queries
 from testgen.common.database.database_service import empty_cache
 from testgen.ui.components import widgets as testgen
-from testgen.ui.views.connections.forms import BaseConnectionForm
-from testgen.ui.views.table_groups.forms import TableGroupForm
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import connection_service
+from testgen.ui.services import connection_service, table_group_service
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.connections.forms import BaseConnectionForm
 from testgen.ui.views.connections.models import ConnectionStatus
+from testgen.ui.views.table_groups import TableGroupForm
 
 LOG = logging.getLogger("testgen")
 
@@ -35,7 +34,7 @@ class ConnectionsPage(Page):
 
     def render(self, project_code: str, **_kwargs) -> None:
         dataframe = connection_service.get_connections(project_code)
-        connection = dataframe.iloc[1]
+        connection = dataframe.iloc[0]
         has_table_groups = (
             len(connection_service.get_table_group_names_by_connection([connection["connection_id"]]) or []) > 0
         )
@@ -71,7 +70,7 @@ class ConnectionsPage(Page):
                     on_click=lambda: self.setup_data_configuration(project_code, connection.to_dict()),
                 )
 
-    def show_connection_form(self, selected_connection: dict, mode, project_code) -> None:
+    def show_connection_form(self, selected_connection: dict, _mode: str, project_code) -> None:
         connection = selected_connection or {}
         connection_id = connection.get("connection_id", None)
         sql_flavor = connection.get("sql_flavor", "postgresql")
@@ -107,7 +106,7 @@ class ConnectionsPage(Page):
             except ValidationError as error:
                 form_errors_container.warning("\n".join([
                     f"- {field_label}: {err['msg']}" for err in error.errors()
-                    if (field_label := TableGroupForm.get_field_label(str(err['loc'][0])))
+                    if (field_label := TableGroupForm.get_field_label(str(err["loc"][0])))
                 ]))
         except Exception:
             LOG.exception("unexpected form validation error")
@@ -364,7 +363,7 @@ class ConnectionsPage(Page):
             except ValidationError as error:
                 form_errors_container.warning("\n".join([
                     f"- {field_label}: {err['msg']}" for err in error.errors()
-                    if (field_label := TableGroupForm.get_field_label(str(err['loc'][0])))
+                    if (field_label := TableGroupForm.get_field_label(str(err["loc"][0])))
                 ]))
                 is_valid = False
         except Exception:

@@ -58,12 +58,18 @@ def edit_connection(connection):
     connection_queries.edit_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
 
 
-def add_connection(connection):
+def add_connection(connection) -> int:
     empty_cache()
     schema = st.session_state["dbschema"]
     connection = pre_save_connection_process(connection)
     encrypted_password, encrypted_private_key, encrypted_private_key_passphrase = encrypt_credentials(connection)
-    connection_queries.add_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
+    return connection_queries.add_connection(
+        schema,
+        connection,
+        encrypted_password,
+        encrypted_private_key,
+        encrypted_private_key_passphrase,
+    )
 
 
 def pre_save_connection_process(connection):

@@ -3,7 +3,6 @@ import typing
 
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.ui.components import widgets as testgen
 from testgen.ui.forms import BaseForm, Field, ManualRender
 
 SQLFlavor = typing.Literal["redshift", "snowflake", "mssql", "postgresql"]
@@ -134,7 +133,7 @@ class TableGroupForm(BaseForm, ManualRender):
     def form_key(self):
         return f"table_group_form:{self.table_group_id or 'new'}"
 
-    def render_input_ui(self, container: DeltaGenerator, data: dict) -> typing.Self:
+    def render_input_ui(self, container: DeltaGenerator, _: dict) -> typing.Self:
         left_column, right_column = container.columns([.5, .5])
 
         self.render_field("table_groups_name", left_column)

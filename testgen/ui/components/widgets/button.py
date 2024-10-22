@@ -43,7 +43,7 @@ def button(
 
     if width:
         props.update({"width": width})
-        if isinstance(width, (int, float,)):
+        if isinstance(width, int | float):
             props.update({"width": f"{width}px"})
 
     if style:

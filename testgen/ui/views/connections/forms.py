@@ -2,8 +2,8 @@
 import base64
 import typing
 
-from pydantic import computed_field
 import streamlit as st
+from pydantic import computed_field
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.ui.components import widgets as testgen
@@ -158,10 +158,10 @@ class BaseConnectionForm(BaseForm, ManualRender):
 
     def render_extra(
         self,
-        container: DeltaGenerator,
-        left_fields_container: DeltaGenerator,
-        right_fields_container: DeltaGenerator,
-        data: dict,
+        _container: DeltaGenerator,
+        _left_fields_container: DeltaGenerator,
+        _right_fields_container: DeltaGenerator,
+        _data: dict,
     ) -> None:
         ...
 
@@ -187,10 +187,10 @@ class PasswordConnectionForm(BaseConnectionForm):
 
     def render_extra(
         self,
-        container: DeltaGenerator,
+        _container: DeltaGenerator,
         left_fields_container: DeltaGenerator,
-        right_fields_container: DeltaGenerator,
-        data: dict,
+        _right_fields_container: DeltaGenerator,
+        _data: dict,
     ) -> None:
         self.render_field("password", left_fields_container)
 
@@ -223,9 +223,9 @@ class KeyPairConnectionForm(PasswordConnectionForm):
     def render_extra(
         self,
         container: DeltaGenerator,
-        left_fields_container: DeltaGenerator,
-        right_fields_container: DeltaGenerator,
-        data: dict,
+        _left_fields_container: DeltaGenerator,
+        _right_fields_container: DeltaGenerator,
+        _data: dict,
     ) -> None:
         testgen.divider(margin_top=8, margin_bottom=8, container=container)
 

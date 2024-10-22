@@ -1,7 +1,7 @@
 import typing
 
 import streamlit as st
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_pydantic.ui_renderer import InputUI
@@ -19,7 +19,7 @@ class BaseForm(BaseModel):
         return non_validated_instance
 
     @property
-    def _disabled_fields(self) -> typing.Set[str]:
+    def _disabled_fields(self) -> set[str]:
         if not getattr(self, "_disabled_fields_set", None):
             self._disabled_fields_set = set()
         return self._disabled_fields_set
@@ -36,7 +36,7 @@ class BaseForm(BaseModel):
         by_alias: bool = True,
         ref_template: str = DEFAULT_REF_TEMPLATE,
         schema_generator: type[GenerateJsonSchema] = GenerateJsonSchema,
-        mode: JsonSchemaMode = 'validation',
+        mode: JsonSchemaMode = "validation",
     ) -> dict[str, typing.Any]:
         schema = super().model_json_schema(
             by_alias=by_alias,
@@ -76,10 +76,10 @@ class ManualRender:
         return self._input_ui
 
     def form_key(self):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def render_input_ui(self, container: DeltaGenerator, session_state: dict) -> typing.Self:
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def render_field(self, field_name: str, container: DeltaGenerator | None = None) -> typing.Any:
         streamlit_container = container or self.input_ui._streamlit_container

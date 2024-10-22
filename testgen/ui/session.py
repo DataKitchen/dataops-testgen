@@ -1,4 +1,5 @@
-from typing import Any, Callable, Literal, TypeVar
+from collections.abc import Callable
+from typing import Any, Literal, TypeVar
 
 import streamlit as st
 from streamlit.runtime.state import SessionStateProxy

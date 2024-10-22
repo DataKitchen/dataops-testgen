@@ -1,3 +1,5 @@
-from testgen.ui.views.connections.page import ConnectionsPage
+# ruff: noqa: F401
+
+from testgen.ui.views.connections.forms import BaseConnectionForm, KeyPairConnectionForm, PasswordConnectionForm
 from testgen.ui.views.connections.models import ConnectionStatus
-from testgen.ui.views.connections.forms import BaseConnectionForm, PasswordConnectionForm, KeyPairConnectionForm
+from testgen.ui.views.connections.page import ConnectionsPage

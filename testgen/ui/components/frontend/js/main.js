@@ -16,6 +16,7 @@ import { Select } from './components/select.js'
 import { SortingSelector } from './components/sorting_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
+import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -32,6 +33,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         sidebar: window.top.testgen.components.Sidebar,
         test_runs: TestRuns,
         profiling_runs: ProfilingRuns,
+        database_flavor_selector: DatabaseFlavorSelector,
     };
 
     if (Object.keys(componentById).includes(id)) {

@@ -1,6 +1,6 @@
 import dataclasses
-import logging
 import inspect
+import logging
 import typing
 
 import streamlit as st
@@ -205,7 +205,7 @@ class Wizard:
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
-class WizardStep[ResultsType]:
+class WizardStep(typing.Generic[ResultsType]):
     body: typing.Callable[..., StepResults]
     results: ResultsType = dataclasses.field(default=None)
     title: str = dataclasses.field(default="")
