@@ -29,6 +29,7 @@ class ProfilingAnomaliesPage(Page):
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
+            return
 
         run_date, _table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
@@ -130,7 +131,12 @@ class ProfilingAnomaliesPage(Page):
 
             # Show main grid and retrieve selections
             selected = fm.render_grid_select(
-                df_pa, lst_show_columns, int_height=400, do_multi_select=do_multi_select
+                df_pa,
+                lst_show_columns,
+                int_height=400,
+                do_multi_select=do_multi_select,
+                bind_to_query_name="selected",
+                bind_to_query_prop="id",
             )
 
             with export_button_column:

@@ -50,6 +50,7 @@ class TestResultsPage(Page):
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",
             )
+            return
 
         run_date, test_suite_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
@@ -478,7 +479,12 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     ]
 
     selected_rows = fm.render_grid_select(
-        df, lst_show_columns, do_multi_select=do_multi_select, show_column_headers=lst_show_headers
+        df,
+        lst_show_columns,
+        do_multi_select=do_multi_select,
+        show_column_headers=lst_show_headers,
+        bind_to_query_name="selected",
+        bind_to_query_prop="test_result_id",
     )
 
     with export_container:
@@ -523,7 +529,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
     if not selected_rows:
         st.markdown(":orange[Select a record to see more information.]")
     else:
-        selected_row = selected_rows[len(selected_rows) - 1]
+        selected_row = selected_rows[0]
         dfh = get_test_result_history(selected_row)
         show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
@@ -582,7 +588,7 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
             fm.show_subheader(selected_row["test_name_short"])
             st.markdown(f"###### {selected_row['test_description']}")
             st.caption(empty_if_null(selected_row["measure_uom_description"]))
-            fm.render_grid_select(dfh, show_hist_columns)
+            fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled")
         with pg_col2:
             ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
             with ut_tab1:
