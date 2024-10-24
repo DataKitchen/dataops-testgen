@@ -113,7 +113,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
     def form_key(self):
         return f"connection_form:{self.connection_id or 'new'}"
 
-    def render_input_ui(self, container: DeltaGenerator, data: dict) -> typing.Self:
+    def render_input_ui(self, container: DeltaGenerator, data: dict) -> "BaseConnectionForm":
         main_fields_container, optional_fields_container = container.columns([0.7, 0.3])
 
         if self.get_field_value("connect_by_url", latest=True):

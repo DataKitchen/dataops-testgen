@@ -133,7 +133,7 @@ class TableGroupForm(BaseForm, ManualRender):
     def form_key(self):
         return f"table_group_form:{self.table_group_id or 'new'}"
 
-    def render_input_ui(self, container: DeltaGenerator, _: dict) -> typing.Self:
+    def render_input_ui(self, container: DeltaGenerator, _: dict) -> "TableGroupForm":
         left_column, right_column = container.columns([.5, .5])
 
         self.render_field("table_groups_name", left_column)

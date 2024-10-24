@@ -1,7 +1,7 @@
 import typing
 
 import streamlit as st
-from pydantic import BaseModel
+from pydantic import BaseModel, Field  # noqa: F401
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema, JsonSchemaMode
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_pydantic.ui_renderer import InputUI
@@ -12,7 +12,7 @@ class BaseForm(BaseModel):
         super().__init__(**data)
 
     @classmethod
-    def empty(cls) -> typing.Self:
+    def empty(cls) -> "BaseForm":
         non_validated_instance = cls.model_construct()
         non_validated_instance.model_post_init(None)
 
@@ -78,7 +78,7 @@ class ManualRender:
     def form_key(self):
         raise NotImplementedError
 
-    def render_input_ui(self, container: DeltaGenerator, session_state: dict) -> typing.Self:
+    def render_input_ui(self, container: DeltaGenerator, session_state: dict) -> "BaseForm":
         raise NotImplementedError
 
     def render_field(self, field_name: str, container: DeltaGenerator | None = None) -> typing.Any:
