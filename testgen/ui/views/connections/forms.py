@@ -11,7 +11,7 @@ from testgen.ui.forms import BaseForm, Field, ManualRender
 from testgen.ui.services import connection_service
 
 SQL_FLAVORS = ["redshift", "snowflake", "mssql", "postgresql"]
-SQLFlavor = typing.Literal[*SQL_FLAVORS]
+SQLFlavor = typing.Literal["redshift", "snowflake", "mssql", "postgresql"]
 
 
 class BaseConnectionForm(BaseForm, ManualRender):
