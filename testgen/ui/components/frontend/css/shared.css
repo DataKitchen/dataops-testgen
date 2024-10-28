@@ -38,13 +38,13 @@ body {
     --button-hover-state-opacity: 0.12;
 
     --button-basic-background: transparent;
-    --button-basic-text-color: rgba(0, 0, 0, .54);
+    --button-basic-text-color: rgba(0, 0, 0, .87);
     --button-basic-hover-state-background: rgba(0, 0, 0, .54);
 
     --button-basic-flat-text-color: rgba(0, 0, 0);
-    --button-basic-flat-background: rgba(0, 0, 0, .54);
+    --button-basic-flat-background: rgba(0, 0, 0, .87);
 
-    --button-basic-stroked-text-color: rgba(0, 0, 0, .54);
+    --button-basic-stroked-text-color: rgba(0, 0, 0, .87);
     --button-basic-stroked-background: transparent;
 
     --button-primary-background: transparent;
@@ -81,7 +81,7 @@ body {
         --button-basic-flat-text-color: rgba(255, 255, 255);
         --button-basic-flat-background: rgba(255, 255, 255, .54);
     
-        --button-basic-stroked-text-color: rgba(255, 255, 255, .85);
+        --button-basic-stroked-text-color: rgba(255, 255, 255, .87);
         --button-basic-stroked-background: transparent;
 
         --button-stroked-border: 1px solid var(--border-color);

@@ -15,6 +15,7 @@
 
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { loadStylesheet } from '../utils.js';
 
 const headerHeight = 35;
 const rowGap = 16;
@@ -23,10 +24,12 @@ const columnSize = '200px';
 const { div, span, img, h3 } = van.tags;
 
 const DatabaseFlavorSelector = (/** @type Properties */props) => {
-    const flavors = van.val(props.flavors);
-    const numberOfColumns = van.val(props.columns) ?? 3;
+    loadStylesheet('databaseFlavorSelector', stylesheet);
+
+    const flavors = props.flavors?.val ?? props.flavors;
+    const numberOfColumns = props.columns?.val ?? props.columns ?? 3;
     const numberOfRows = Math.ceil(flavors.length / numberOfColumns);
-    const selectedFlavor = van.state(van.val(props.selected));
+    const selectedFlavor = van.state(props.selected?.val ?? props.selected);
 
     window.testgen.isPage = true;
     Streamlit.setFrameHeight(
@@ -35,16 +38,11 @@ const DatabaseFlavorSelector = (/** @type Properties */props) => {
         + rowGap * (numberOfRows / 2)
     );
 
-    if (!window.testgen.loadedStylesheets.databaseFlavorSelector) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.databaseFlavorSelector = true;
-    }
-
     return div(
         {class: 'tg-flavor-selector-page'},
         h3(
             {class: 'tg-flavor-selector-header'},
-            'Select a database flavor'
+            'Select your database type'
         ),
         () => {
             return div(
@@ -126,6 +124,10 @@ stylesheet.replace(`
         pointer-events: none;
         border-radius: inherit;
         background: var(--button-primary-hover-state-background);
+    }
+
+    .tg-flavor.selected {
+        border-color: var(--primary-color);
     }
 
     .tg-flavor:hover .tg-flavor-focus-state-indicator::before,

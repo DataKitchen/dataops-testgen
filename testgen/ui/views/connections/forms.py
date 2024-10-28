@@ -123,7 +123,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
 
         self.render_field("sql_flavor", container=main_fields_container)
         self.render_field("connection_name", container=main_fields_container)
-        host_field_container, port_field_container = main_fields_container.columns([0.6, 0.4])
+        host_field_container, port_field_container = main_fields_container.columns([0.8, 0.2])
         self.render_field("project_host", container=host_field_container)
         self.render_field("project_port", container=port_field_container)
 

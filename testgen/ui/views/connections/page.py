@@ -44,7 +44,9 @@ class ConnectionsPage(Page):
             "https://docs.datakitchen.io/article/dataops-testgen-help/connect-your-database",
         )
 
+        testgen.whitespace(0.3)
         _, actions_column = st.columns([.1, .9])
+        testgen.whitespace(0.3)
         testgen.flex_row_end(actions_column)
 
         with st.container(border=True):
@@ -53,17 +55,21 @@ class ConnectionsPage(Page):
         if has_table_groups:
             with actions_column:
                 testgen.link(
+                    label="Manage Table Groups",
                     href="connections:table-groups",
                     params={"connection_id": str(connection["connection_id"])},
-                    label="Table Groups",
                     right_icon="chevron_right",
-                    style="margin-left: auto;",
+                    underline=False,
+                    height=40,
+                    style="margin-left: auto; border-radius: 4px;"
+                        " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:
             with actions_column:
                 testgen.button(
                     type_="stroked",
-                    color="basic",
+                    color="primary",
+                    icon="table_view",
                     label="Setup Table Groups",
                     style="background: white;",
                     width=200,
@@ -77,10 +83,13 @@ class ConnectionsPage(Page):
         data = {}
 
         try:
-            form = BaseConnectionForm.for_flavor(sql_flavor).model_construct(sql_flavor=sql_flavor)
+            FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
             if connection:
                 connection["password"] = connection["password"] or ""
-                form = BaseConnectionForm.for_flavor(sql_flavor)(**connection)
+                FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
+
+            form_kwargs = connection or {"sql_flavor": sql_flavor}
+            form = FlavorForm(**form_kwargs)
 
             sql_flavor = form.get_field_value("sql_flavor", latest=True) or sql_flavor
             if form.sql_flavor != sql_flavor:
@@ -102,11 +111,11 @@ class ConnectionsPage(Page):
                 })
 
             try:
-                BaseConnectionForm.for_flavor(sql_flavor).model_validate(data)
+                FlavorForm.model_validate(data)
             except ValidationError as error:
                 form_errors_container.warning("\n".join([
                     f"- {field_label}: {err['msg']}" for err in error.errors()
-                    if (field_label := TableGroupForm.get_field_label(str(err["loc"][0])))
+                    if (field_label := FlavorForm.get_field_label(str(err["loc"][0])))
                 ]))
         except Exception:
             LOG.exception("unexpected form validation error")
