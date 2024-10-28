@@ -872,10 +872,10 @@ function(params) {
     pre_selected_rows: typing.Any = {}
     if bind_to_query_name and bind_to_query_prop:
         bound_value = st.query_params.get(bind_to_query_name)
-        bound_items_indexes = df[df[bind_to_query_prop] == bound_value].index
-        if len(bound_items_indexes) > 0:
+        bound_items = df[df[bind_to_query_prop] == bound_value]
+        if len(bound_items) > 0:
             # https://github.com/PablocFonseca/streamlit-aggrid/issues/207#issuecomment-1793039564
-            pre_selected_rows = {str(bound_items_indexes[0]): True}
+            pre_selected_rows = {str(bound_items.iloc[0][bind_to_query_prop]): True}
         else:
             if data_changed and st.query_params.get(bind_to_query_name):
                 rendering_counter += 1
