@@ -19,7 +19,7 @@ import { loadStylesheet } from '../utils.js';
 
 const headerHeight = 35;
 const rowGap = 16;
-const rowHeight = 64;
+const rowHeight = 67;
 const columnSize = '200px';
 const { div, span, img, h3 } = van.tags;
 
@@ -35,7 +35,7 @@ const DatabaseFlavorSelector = (/** @type Properties */props) => {
     Streamlit.setFrameHeight(
         headerHeight
         + rowHeight * numberOfRows
-        + rowGap * (numberOfRows / 2)
+        + rowGap * (numberOfRows - 1)
     );
 
     return div(
