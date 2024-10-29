@@ -61,7 +61,7 @@ class ConnectionsPage(Page):
                     right_icon="chevron_right",
                     underline=False,
                     height=40,
-                    style="margin-left: auto; border-radius: 4px;"
+                    style="margin-left: auto; border-radius: 4px; background: white;"
                         " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:
