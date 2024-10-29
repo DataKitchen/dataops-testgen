@@ -713,6 +713,8 @@ def show_test_defs_grid(
         do_multi_select=do_multi_select,
         show_column_headers=show_column_headers,
         render_highlights=False,
+        bind_to_query_name="selected",
+        bind_to_query_prop="id",
     )
 
     with export_container:

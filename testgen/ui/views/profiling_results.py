@@ -30,6 +30,7 @@ class ProfilingResultsPage(Page):
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
+            return
 
         run_date, table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
@@ -105,7 +106,12 @@ class ProfilingResultsPage(Page):
             with st.expander("📜 **Table CREATE script with suggested datatypes**"):
                 st.code(generate_create_script(df), "sql")
 
-        selected_row = fm.render_grid_select(df, show_columns)
+        selected_row = fm.render_grid_select(
+            df,
+            show_columns,
+            bind_to_query_name="selected",
+            bind_to_query_prop="id",
+        )
 
         with export_button_column:
             testgen.flex_row_end()
