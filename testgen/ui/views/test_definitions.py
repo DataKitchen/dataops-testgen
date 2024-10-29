@@ -808,10 +808,11 @@ def show_test_defs_grid(
 
         _, col_profile_button = right_column.columns([0.7, 0.3])
         if selected_row["test_scope"] == "column":
-            view_profiling_button(
-                col_profile_button, selected_row["table_name"], selected_row["column_name"],
-                str_table_groups_id=str_table_groups_id
-            )
+            with col_profile_button:
+                view_profiling_button(
+                    selected_row["table_name"], selected_row["column_name"],
+                    str_table_groups_id=str_table_groups_id
+                )
 
         with right_column:
             st.write(generate_test_defs_help(row_selected["test_type"]))
