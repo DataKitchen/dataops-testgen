@@ -1,6 +1,7 @@
 import typing
 
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
+from testgen.common.read_file import replace_templated_functions
 
 
 class CProfilingSQL:
@@ -98,6 +99,8 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{CONTINGENCY_COLUMNS}", self.contingency_columns)
         strInputString = strInputString.replace("{CONTINGENCY_MAX_VALUES}", self.contingency_max_values)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
+        if "{{DKFN_" in strInputString:
+            strInputString = replace_templated_functions(strInputString, self.flavor)
 
         return strInputString
 

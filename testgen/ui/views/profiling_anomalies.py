@@ -8,6 +8,7 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.common import date_service
+from testgen.common.read_file import replace_templated_functions
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
@@ -388,7 +389,7 @@ def get_bad_data(selected_row):
         return sql_query
 
     def replace_parms(str_query):
-        str_query = (
+        str_query: str = (
             get_lookup_query(selected_row["anomaly_id"], selected_row["detail"], selected_row["column_name"])
             if lst_query[0]["lookup_query"] == "created_in_ui"
             else lst_query[0]["lookup_query"]
@@ -399,6 +400,8 @@ def get_bad_data(selected_row):
         str_query = str_query.replace("{DATA_QC_SCHEMA}", lst_query[0]["project_qc_schema"])
         str_query = str_query.replace("{DETAIL_EXPRESSION}", selected_row["detail"])
         str_query = str_query.replace("{PROFILE_RUN_DATE}", selected_row["profiling_starttime"])
+        if "{{DKFN_" in str_query:
+            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Anomoly Type.")
         return str_query

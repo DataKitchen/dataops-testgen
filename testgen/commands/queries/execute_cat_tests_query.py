@@ -2,6 +2,7 @@ import typing
 
 from testgen.common import date_service, read_template_sql_file
 from testgen.common.database import database_service
+from testgen.common.read_file import replace_templated_functions
 
 
 class CCATExecutionSQL:
@@ -59,6 +60,9 @@ class CCATExecutionSQL:
             strInputString = strInputString.replace("{" + parm.upper() + "}", str(value))
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
+
+        if "{{DKFN_" in strInputString:
+            strInputString = replace_templated_functions(strInputString, self.flavor)
 
         # Adding escape character where ':' is referenced
         strInputString = strInputString.replace(":", "\\:")

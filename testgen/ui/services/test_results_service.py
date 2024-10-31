@@ -1,6 +1,7 @@
 import pandas as pd
 
 from testgen.common import ConcatColumnList
+from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services import database_service as db
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.services.test_definition_service import get_test_definition
@@ -103,7 +104,6 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
     def replace_parms(df_test, str_query):
         if df_test.empty:
             raise ValueError("This test definition is no longer present.")
-
         str_query = str_query.replace("{TARGET_SCHEMA}", empty_if_null(lst_query[0]["table_group_schema"]))
         str_query = str_query.replace("{TABLE_NAME}", empty_if_null(tr_data["table_name"]))
         str_query = str_query.replace("{COLUMN_NAME}", empty_if_null(tr_data["column_names"]))
@@ -142,6 +142,9 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
         str_query = str_query.replace("{CONCAT_COLUMNS}", str_substitute)
         str_substitute = ConcatColumnList(df_test.at[0, "match_groupby_names"], "<NULL>")
         str_query = str_query.replace("{CONCAT_MATCH_GROUPBY}", str_substitute)
+
+        if "{{DKFN_" in str_query:
+            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
 
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Test Type.")
