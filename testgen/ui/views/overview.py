@@ -12,7 +12,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
-from testgen.utils import to_int
+from testgen.utils import to_int, truncate
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
@@ -172,7 +172,7 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
             total_tests = to_int(table_group["latest_tests_ct"])
             if total_tests:
                 passed_tests = to_int(table_group["latest_tests_passed_ct"])
-                testgen.text(f"{round(passed_tests * 100 / total_tests)}% passed")
+                testgen.text(f"{truncate(passed_tests * 100 / total_tests)}% passed")
                 testgen.text(f"<b>{total_tests}</b> tests in <b>{to_int(table_group['latest_tests_suite_ct'])}</b> test suites", "margin: 12px 0 12px;")
 
                 testgen.summary_bar(
