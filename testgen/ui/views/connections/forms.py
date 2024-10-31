@@ -1,10 +1,10 @@
 # type: ignore
-import base64
 import typing
 
 import streamlit as st
 from pydantic import computed_field
 from streamlit.delta_generator import DeltaGenerator
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from testgen.ui.components import widgets as testgen
 from testgen.ui.forms import BaseForm, Field, ManualRender
@@ -207,18 +207,16 @@ class KeyPairConnectionForm(PasswordConnectionForm):
         ),
         st_kwargs_label="Private Key Passphrase",
     )
-    private_key_inner: str = Field(
-        default="",
-        format="base64",
-        st_kwargs_label="Upload private key (rsa_key.p8)",
-    )
+    _uploaded_file: UploadedFile | None = None
 
     @computed_field
     @property
     def private_key(self) -> str:
-        if not self.private_key_inner:
+        if self._uploaded_file is None:
             return ""
-        return base64.b64decode(self.private_key_inner).decode("utf-8")
+
+        file_contents: bytes = self._uploaded_file.getvalue()
+        return file_contents.decode("utf-8")
 
     def render_extra(
         self,
@@ -247,4 +245,34 @@ class KeyPairConnectionForm(PasswordConnectionForm):
             self.render_field("password", container)
         else:
             self.render_field("private_key_passphrase", container)
-            self.render_field("private_key_inner", container)
+
+            file_uploader_key = self.get_field_key("private_key_uploader")
+            cached_file_upload_key = self.get_field_key("previous_private_key_file")
+
+            self._uploaded_file = container.file_uploader(
+                key=file_uploader_key,
+                label="Upload private key (rsa_key.p8)",
+                accept_multiple_files=False,
+                on_change=lambda: st.session_state.pop(cached_file_upload_key, None),
+            )
+
+            if self._uploaded_file:
+                st.session_state[cached_file_upload_key] = self._uploaded_file
+            elif self._uploaded_file is None and (cached_file_upload := st.session_state.get(cached_file_upload_key)):
+                self._uploaded_file = cached_file_upload
+                file_size = f"{round(self._uploaded_file.size / 1024, 2)}KB"
+                container.markdown(
+                    f"""
+                    <div style="display: flex; align-items: center; justify-content: flex-start; padding: 0 16px; margin-bottom: 16px;">
+                        <span style="font-family: 'Material Symbols Rounded'; font-weight: normal; white-space: nowrap; overflow-wrap: normal; font-size: 28.8px; color: rgb(151, 166, 195);">draft</span>
+                        <span style="margin-left: 16px; margin-right: 8px;">{self._uploaded_file.name}</span>
+                        <small style='color: rgba(49, 51, 63, 0.6); font-size: 14px; line-height: 1.25;'>{file_size}</small>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    def reset_cache(self) -> None:
+        st.session_state.pop(self.get_field_key("private_key_uploader"), None)
+        st.session_state.pop(self.get_field_key("previous_private_key_file"), None)
+        return super().reset_cache()
