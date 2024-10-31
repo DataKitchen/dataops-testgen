@@ -3,6 +3,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from pandas.api.types import is_string_dtype
 
 import testgen.ui.services.database_service as db
 from testgen.common import date_service
@@ -38,7 +39,31 @@ class OverviewPage(Page):
         if render_empty_state(project_code):
             return
 
-        st.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
+        table_group_header_col, _, table_group_sort_col = st.columns([0.4, 0.4, 0.2])
+        table_group_header_col.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
+        with table_group_sort_col:
+            ascending_fields: list[str] = ["table_groups_name"]
+            sort_options  = pd.DataFrame({
+                "value": ["table_groups_name", "latest_profile_start,latest_tests_start"],
+                "label": ["Name", "Latest Activity"],
+            })
+
+            sort_by = testgen.select(
+                label="Sorted by",
+                options=sort_options,
+                required=True,
+                default_value="latest_profile_start,latest_tests_start",
+                display_column="label",
+                value_column="value",
+            )
+            ascending = sort_by in ascending_fields
+
+        table_groups_df.sort_values(
+            by=sort_by.split(","),
+            ascending=ascending,
+            inplace=True,
+            key=lambda column: column.str.lower() if is_string_dtype(column) else column,
+        )
         for index, table_group in table_groups_df.iterrows():
             render_table_group_card(table_group, project_code, index)
 
@@ -142,7 +167,7 @@ def render_table_group_card(table_group: pd.Series, project_code: str, key: int)
                     testgen.flex_row_start()
                     testgen.text(f"""
                                  <b>{to_int(table_group['latest_profile_table_ct'])}</b> tables &nbsp;|&nbsp;
-                                 <b>{to_int(table_group['latest_profile_column_ct'])}</b> tables &nbsp;|
+                                 <b>{to_int(table_group['latest_profile_column_ct'])}</b> columns &nbsp;|
                                  """)
                     testgen.link(
                         label=f"{anomaly_count} hygiene issues",
@@ -320,7 +345,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         GROUP BY test_suite_id
     ),
     latest_tests AS (
-        SELECT suites.table_groups_id,
+        SELECT suites.table_groups_id, latest_run.test_starttime,
             COUNT(DISTINCT latest_run.test_suite_id) as test_suite_ct,
             COUNT(*) as test_ct,
             SUM(
@@ -366,7 +391,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
                 latest_run.id = latest_results.test_run_id
             )
             LEFT JOIN {schema}.test_suites as suites ON (suites.id = lrd.test_suite_id)
-        GROUP BY suites.table_groups_id
+        GROUP BY suites.table_groups_id, latest_run.test_starttime
     )
     SELECT groups.id::VARCHAR(50),
         groups.table_groups_name,
@@ -379,6 +404,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         latest_profile.likely_ct as latest_anomalies_likely_ct,
         latest_profile.possible_ct as latest_anomalies_possible_ct,
         latest_profile.dismissed_ct as latest_anomalies_dismissed_ct,
+        latest_tests.test_starttime as latest_tests_start,
         latest_tests.test_suite_ct as latest_tests_suite_ct,
         latest_tests.test_ct as latest_tests_ct,
         latest_tests.passed_ct as latest_tests_passed_ct,
