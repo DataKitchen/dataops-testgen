@@ -39,17 +39,23 @@ class OverviewPage(Page):
         if render_empty_state(project_code):
             return
 
-        table_group_header_col, _, table_group_sort_col = st.columns([0.4, 0.4, 0.2])
+        table_group_header_col, table_group_filter_col, table_group_sort_col = st.columns([0.6, 0.2, 0.2])
         table_group_header_col.html(f'<h5 style="margin-top: 16px;">Table Groups ({len(table_groups_df.index)})</h5>')
+        with table_group_filter_col:
+            name_filter = st.text_input(label="Search by table group name")
+            table_groups_df = table_groups_df.loc[
+                table_groups_df["table_groups_name"].str.contains(name_filter, case=False)
+            ]
+
         with table_group_sort_col:
             ascending_fields: list[str] = ["table_groups_name"]
             sort_options  = pd.DataFrame({
                 "value": ["table_groups_name", "latest_profile_start,latest_tests_start"],
-                "label": ["Name", "Latest Activity"],
+                "label": ["Table group name", "Latest activity"],
             })
 
             sort_by = testgen.select(
-                label="Sorted by",
+                label="Sort by",
                 options=sort_options,
                 required=True,
                 default_value="latest_profile_start,latest_tests_start",
@@ -57,13 +63,13 @@ class OverviewPage(Page):
                 value_column="value",
             )
             ascending = sort_by in ascending_fields
+            table_groups_df.sort_values(
+                by=sort_by.split(","),
+                ascending=ascending,
+                inplace=True,
+                key=lambda column: column.str.lower() if is_string_dtype(column) else column,
+            )
 
-        table_groups_df.sort_values(
-            by=sort_by.split(","),
-            ascending=ascending,
-            inplace=True,
-            key=lambda column: column.str.lower() if is_string_dtype(column) else column,
-        )
         for index, table_group in table_groups_df.iterrows():
             render_table_group_card(table_group, project_code, index)
 
