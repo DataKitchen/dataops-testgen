@@ -9,7 +9,7 @@
  * @typedef Properties
  * @type {object}
  * @property {Array.<Flavor>} flavors
- * @property {string} selected
+ * @property {((number|null))} selected
  * @property {(number|null)} columns
  */
 
@@ -29,7 +29,7 @@ const DatabaseFlavorSelector = (/** @type Properties */props) => {
     const flavors = props.flavors?.val ?? props.flavors;
     const numberOfColumns = props.columns?.val ?? props.columns ?? 3;
     const numberOfRows = Math.ceil(flavors.length / numberOfColumns);
-    const selectedFlavor = van.state(props.selected?.val ?? props.selected);
+    const selectedIndex = van.state(props.selected?.val ?? props.selected);
 
     window.testgen.isPage = true;
     Streamlit.setFrameHeight(
@@ -50,17 +50,17 @@ const DatabaseFlavorSelector = (/** @type Properties */props) => {
                     class: 'tg-flavor-selector',
                     style: `grid-template-columns: ${Array(numberOfColumns).fill(columnSize).join(' ')}; row-gap: ${rowGap}px;`
                 },
-                flavors.map(flavor =>
+                flavors.map((flavor, idx) =>
                     DatabaseFlavor(
                         {
                             label: van.state(flavor.label),
                             value: van.state(flavor.value),
                             icon: van.state(flavor.icon),
-                            selected: van.derive(() => selectedFlavor.val === flavor.value),
+                            selected: van.derive(() => selectedIndex.val == idx),
                         },
                         () => {
-                            selectedFlavor.val = flavor.value;
-                            Streamlit.sendData(flavor.value);
+                            selectedIndex.val = idx;
+                            Streamlit.sendData({index: idx, value: flavor.value});
                         },
                     )
                 ),
