@@ -48,9 +48,12 @@ class OverviewPage(Page):
             ]
 
         with table_group_sort_col:
+            table_groups_df["latest_activity_date"] = table_groups_df[
+                ["latest_profile_start", "latest_tests_start"]
+            ].max(axis=1)
             ascending_fields: list[str] = ["table_groups_name"]
             sort_options  = pd.DataFrame({
-                "value": ["table_groups_name", "latest_profile_start,latest_tests_start"],
+                "value": ["table_groups_name", "latest_activity_date"],
                 "label": ["Table group name", "Latest activity"],
             })
 
@@ -58,14 +61,14 @@ class OverviewPage(Page):
                 label="Sort by",
                 options=sort_options,
                 required=True,
-                default_value="latest_profile_start,latest_tests_start",
+                default_value="latest_activity_date",
                 display_column="label",
                 value_column="value",
             )
-            ascending = sort_by in ascending_fields
+
             table_groups_df.sort_values(
-                by=sort_by.split(","),
-                ascending=ascending,
+                by=typing.cast(str, sort_by),
+                ascending=sort_by in ascending_fields,
                 inplace=True,
                 key=lambda column: column.str.lower() if is_string_dtype(column) else column,
             )
@@ -351,7 +354,8 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         GROUP BY test_suite_id
     ),
     latest_tests AS (
-        SELECT suites.table_groups_id, latest_run.test_starttime,
+        SELECT suites.table_groups_id,
+            MAX(latest_run.test_starttime) AS test_starttime,
             COUNT(DISTINCT latest_run.test_suite_id) as test_suite_ct,
             COUNT(*) as test_ct,
             SUM(
@@ -397,7 +401,7 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
                 latest_run.id = latest_results.test_run_id
             )
             LEFT JOIN {schema}.test_suites as suites ON (suites.id = lrd.test_suite_id)
-        GROUP BY suites.table_groups_id, latest_run.test_starttime
+        GROUP BY suites.table_groups_id
     )
     SELECT groups.id::VARCHAR(50),
         groups.table_groups_name,
