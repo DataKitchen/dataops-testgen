@@ -1,7 +1,24 @@
 /**
+ * @typedef TestRun
+ * @type {object}
+ * @property {string} test_run_id
+ * @property {number} test_starttime
+ * @property {string} table_groups_name
+ * @property {string} test_suite
+ * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
+ * @property {string} log_message
+ * @property {string} duration
+ * @property {string} process_id
+ * @property {number} test_ct
+ * @property {number} passed_ct
+ * @property {number} warning_ct
+ * @property {number} failed_ct
+ * @property {number} error_ct
+ * @property {number} dismissed_ct
+ * 
  * @typedef Properties
  * @type {object}
- * @property {array} items
+ * @property {TestRun[]} items
  */
 import van from '../van.min.js';
 import { Tooltip } from '../components/tooltip.js';
@@ -53,7 +70,7 @@ const TestRuns = (/** @type Properties */ props) => {
     );
 }
 
-const TestRunItem = (item, /** @type string[] */ columns) => {
+const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) => {
     return div(
         { class: 'table-row flex-row' },
         div(
@@ -102,7 +119,7 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
     );
 }
 
-function TestRunStatus(/** @type object */ item) {
+function TestRunStatus(/** @type TestRun */ item) {
     const attributeMap = {
         Running: { label: 'Running', color: 'blue' },
         Complete: { label: 'Completed', color: '' },

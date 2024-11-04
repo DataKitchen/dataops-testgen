@@ -1,7 +1,25 @@
 /**
+ * @typedef ProfilingRun
+ * @type {object}
+ * @property {string} profiling_run_id
+ * @property {number} start_time
+ * @property {string} table_groups_name
+ * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
+ * @property {string} log_message
+ * @property {string} duration
+ * @property {string} process_id
+ * @property {string} schema_name
+ * @property {number} column_ct
+ * @property {number} table_ct
+ * @property {number} anomaly_ct
+ * @property {number} anomalies_definite_ct
+ * @property {number} anomalies_likely_ct
+ * @property {number} anomalies_possible_ct
+ * @property {number} anomalies_dismissed_ct
+ * 
  * @typedef Properties
  * @type {object}
- * @property {array} items
+ * @property {ProfilingRun[]} items
  */
 import van from '../van.min.js';
 import { Tooltip } from '../components/tooltip.js';
@@ -57,7 +75,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     );
 }
 
-const ProfilingRunItem = (item, /** @type string[] */ columns) => {
+const ProfilingRunItem = (/** @type ProfilingRun */ item, /** @type string[] */ columns) => {
     return div(
         { class: 'table-row flex-row' },
         div(
@@ -92,7 +110,7 @@ const ProfilingRunItem = (item, /** @type string[] */ columns) => {
                     class: 'text-caption mt-1 mb-1',
                     style: item.status === 'Complete' && !item.column_ct ? 'color: var(--red);' : '',
                 },
-                `${item.table_ct || 0} tables, ${item.column_ct || 0} columns`,
+                item.status === 'Complete' ? `${item.table_ct || 0} tables, ${item.column_ct || 0} columns` : null,
             ),
             item.column_ct ? Link({
                 label: 'View results',
@@ -126,7 +144,7 @@ const ProfilingRunItem = (item, /** @type string[] */ columns) => {
     );
 }
 
-function ProfilingRunStatus(/** @type object */ item) {
+function ProfilingRunStatus(/** @type ProfilingRun */ item) {
     const attributeMap = {
         Running: { label: 'Running', color: 'blue' },
         Complete: { label: 'Completed', color: '' },

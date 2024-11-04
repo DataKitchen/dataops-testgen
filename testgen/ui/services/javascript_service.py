@@ -38,7 +38,6 @@ def get_browser_locale_timezone():
     return st_javascript(
         """await (async () => {
                 const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                console.log(userTimezone)
                 return userTimezone
     })().then(returnValue => returnValue)"""
     )
