@@ -1,13 +1,17 @@
-function formatTimestamp(/** @type number */ timestamp) {
-    if (!timestamp) {
-        return '--';
+function formatTimestamp(
+    /** @type number | string */ timestamp,
+    /** @type boolean */ show_year,
+) {
+    if (timestamp) {
+        const date = new Date(timestamp);
+        if (!isNaN(date)) {
+            const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
+            const hours = date.getHours();
+            const minutes = date.getMinutes();
+            return `${months[date.getMonth()]} ${date.getDate()}, ${show_year ? date.getFullYear() + ' at ': ''}${hours % 12}:${String(minutes).padStart(2, '0')} ${hours / 12 > 1 ? 'PM' : 'AM'}`;
+        }
     }
-    
-    const date = new Date(timestamp);
-    const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    return `${months[date.getMonth()]} ${date.getDate()}, ${hours % 12}:${String(minutes).padStart(2, '0')} ${hours / 12 > 1 ? 'PM' : 'AM'}`;
+    return '--';
 }
 
 function formatDuration(/** @type string */ duration) {
@@ -24,6 +28,13 @@ function formatDuration(/** @type string */ duration) {
     .join(' ');
 
     return formatted.trim() || '< 1s';
+}
+
+function roundDigits(/** @type number | string */ number, /** @type number */ precision = 3) {
+    if (!['number', 'string'].includes(typeof number) || isNaN(number)) {
+        return '--';
+    }
+    return parseFloat(Number(number).toPrecision(precision));
 }
 
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
@@ -47,4 +58,4 @@ const colorMap = {
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
 }
 
-export { formatTimestamp, formatDuration, colorMap };
+export { formatTimestamp, formatDuration, roundDigits, colorMap };
