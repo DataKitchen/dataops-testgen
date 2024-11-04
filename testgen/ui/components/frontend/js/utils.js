@@ -53,4 +53,20 @@ function getValue(/** @type object */ prop) { // van state or static value
     return prop;
 }
 
-export { emitEvent, enforceElementWidth, getValue, loadStylesheet, resizeFrameHeightToElement };
+function getRandomId() {
+    return Math.random().toString(36).substring(2);
+}
+
+// https://stackoverflow.com/a/75988895
+function debounce(
+    /** @type function */ callback,
+    /** @type number */ wait,
+) {
+    let timeoutId = null;
+    return (...args) => {
+        window.clearTimeout(timeoutId);
+        timeoutId = window.setTimeout(() => callback(...args), wait);
+    };
+}
+
+export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, loadStylesheet, resizeFrameHeightToElement };

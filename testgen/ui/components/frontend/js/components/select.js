@@ -13,7 +13,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { getValue, loadStylesheet } from '../utils.js';
+import { getRandomId, getValue, loadStylesheet } from '../utils.js';
 
 const { div, label, option, select } = van.tags;
 
@@ -21,7 +21,7 @@ const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
     Streamlit.setFrameHeight();
 
-    const domId = Math.random().toString(36).substring(2);
+    const domId = getRandomId();
     const changeHandler = props.onChange || post;
     return div(
         {class: 'tg-select'},
