@@ -4,6 +4,7 @@
  * @property {string} href
  * @property {object} params
  * @property {string} label
+ * @property {boolean} open_new
  * @property {boolean} underline
  * @property {string?} left_icon
  * @property {number?} left_icon_size
@@ -32,12 +33,15 @@ const Link = (/** @type Properties */ props) => {
 
     const href = getValue(props.href);
     const params = getValue(props.params) || {};
+    const open_new = !!getValue(props.open_new);
 
     return a(
         {
             class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: (event) => {
+            href: `/${href}${getQueryFromParams(params)}`,
+            target: open_new ? '_blank' : '',
+            onclick: open_new ? null : (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 emitEvent('LinkClicked', { href, params });
@@ -62,6 +66,16 @@ const LinkIcon = (
         icon,
     );
 };
+
+function getQueryFromParams(/** @type object */ params) {
+    const query = Object.entries(params).reduce((query, [ key, value ]) => {
+        if (key && value) {
+            return `${query}${query ? '&' : ''}${key}=${value}`;
+        }
+        return query;
+    }, '');
+    return query ? `?${query}` : '';
+}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
