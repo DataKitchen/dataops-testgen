@@ -149,6 +149,9 @@ body {
     font-size: 12px;
     color: var(--caption-text-color);
 }
+.text-capitalize {
+    text-transform: capitalize;
+}
 /*  */
 
 /* Flex utilities */
