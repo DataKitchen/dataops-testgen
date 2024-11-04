@@ -104,6 +104,10 @@ body {
     display: none !important;
 }
 
+.invisible {
+    visibility: hidden !important;
+}
+
 .dot {
     font-size: 10px;
     font-style: normal;
