@@ -51,6 +51,7 @@ footer {
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
+    width: 250px;
     z-index: 999;
     background-color: var(--sidebar-background-color);
 }
@@ -85,6 +86,14 @@ div[data-testid="stDialog"] div[role="dialog"] {
     width: calc(55rem);
 }
 /*  */
+
+div[data-testid="stSpinner"] {
+    background: transparent;
+}
+
+div[data-testid="stSpinner"] > div > i {
+    border-color: var(--primary-color) rgba(49, 51, 63, 0.2) rgba(49, 51, 63, 0.2);
+}
 
 /* Theming for buttons, tabs and form inputs */
 button[data-testid="stBaseButton-secondary"]:hover,
