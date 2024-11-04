@@ -14,18 +14,9 @@
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
+import { colorMap } from '../display_utils.js';
 
 const { div, span } = van.tags;
-const colorMap = {
-    red: '#EF5350',
-    orange: '#FF9800',
-    yellow: '#FDD835',
-    green: '#9CCC65',
-    purple: '#AB47BC',
-    blue: '#42A5F5',
-    brown: '#8D6E63',
-    grey: '#BDBDBD',
-}
 const defaultHeight = 24;
 
 const SummaryBar = (/** @type Properties */ props) => {

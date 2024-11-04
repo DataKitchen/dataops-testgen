@@ -20,6 +20,8 @@ body {
     --blue: #42A5F5;
     --brown: #8D6E63;
     --grey: #BDBDBD;
+    --empty: #EEEEEE;
+    --empty-light: #FAFAFA;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
@@ -62,6 +64,9 @@ body {
 
 @media (prefers-color-scheme: dark) {
     body {
+        --empty: #424242;
+        --empty-light: #212121;
+
         --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);
         --disabled-text-color: rgba(255, 255, 255, .5);
@@ -150,15 +155,12 @@ body {
 .flex-row {
     display: flex;
     flex-direction: row;
-    flex-grow: 1;
-    width: 100%;
     align-items: center;
 }
 
 .flex-column {
     display: flex;
     flex-direction: column;
-    flex-grow: 1;
 }
 
 .fx-flex {
@@ -207,6 +209,34 @@ body {
 
 .fx-flex-align-content {
     align-content: flex-start;
+}
+
+.fx-gap-1 {
+    gap: 4px;
+}
+
+.fx-gap-2 {
+    gap: 8px;
+}
+
+.fx-gap-3 {
+    gap: 12px;
+}
+
+.fx-gap-4 {
+    gap: 16px;
+}
+
+.fx-gap-5 {
+    gap: 24px;
+}
+
+.fx-gap-6 {
+    gap: 32px;
+}
+
+.fx-gap-7 {
+    gap: 40px;
 }
 
 /*  */
