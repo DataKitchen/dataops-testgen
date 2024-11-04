@@ -32,13 +32,6 @@ function loadStylesheet(
     }
 }
 
-function wrapProps(/** @type object */props) {
-    for (const [key, value] of Object.entries(props)) {
-        props[key] = van.state(value);
-    }
-    return props;
-}
-
 function emitEvent(
     /** @type string */event,
     /** @type object */data = {},
@@ -46,4 +39,18 @@ function emitEvent(
     Streamlit.sendData({ event, ...data, _id: Math.random() }) // Identify the event so its handler is called once
 }
 
-export { emitEvent, enforceElementWidth, loadStylesheet, resizeFrameHeightToElement, wrapProps };
+// Replacement for van.val()
+// https://github.com/vanjs-org/van/discussions/280
+const stateProto = Object.getPrototypeOf(van.state());
+function getValue(/** @type object */ prop) { // van state or static value
+    const proto = Object.getPrototypeOf(prop ?? 0);
+    if (proto === stateProto) {
+        return prop.val;
+    }
+    if (proto === Function.prototype) {
+        return prop();
+    }
+    return prop;
+}
+
+export { emitEvent, enforceElementWidth, getValue, loadStylesheet, resizeFrameHeightToElement };

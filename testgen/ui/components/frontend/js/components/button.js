@@ -11,7 +11,7 @@
  * @property {(bool)} disabled
  * @property {string?} style
  */
-import { emitEvent, enforceElementWidth, loadStylesheet } from '../utils.js';
+import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -31,7 +31,9 @@ const BUTTON_COLOR = {
 const Button = (/** @type Properties */ props) => {
     loadStylesheet('button', stylesheet);
 
-    const isIconOnly = props.type === BUTTON_TYPE.ICON || (props.icon?.val && !props.label?.val);
+    const buttonType = getValue(props.type);
+    const width = getValue(props.width);
+    const isIconOnly = buttonType === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
     
     if (!window.testgen.isPage) {
         Streamlit.setFrameHeight(40);
@@ -39,8 +41,8 @@ const Button = (/** @type Properties */ props) => {
             enforceElementWidth(window.frameElement, 40);
         }
 
-        if (props.width?.val) {
-            enforceElementWidth(window.frameElement, props.width?.val);
+        if (width) {
+            enforceElementWidth(window.frameElement, width);
         }
     }
 
@@ -52,8 +54,8 @@ const Button = (/** @type Properties */ props) => {
     const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
     return button(
         {
-            class: `tg-button tg-${props.type.val}-button tg-${props.color?.val ?? 'basic'}-button ${props.type.val !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
-            style: () => `width: ${props.width?.val ?? '100%'}; ${props.style?.val}`,
+            class: `tg-button tg-${buttonType}-button tg-${getValue(props.color) ?? 'basic'}-button ${buttonType !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+            style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,
             disabled: props.disabled,
         },

@@ -9,7 +9,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, resizeFrameHeightToElement, wrapProps } from '../utils.js';
+import { emitEvent, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -58,12 +58,12 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
         { class: 'table-row flex-row' },
         div(
             { style: `flex: ${columns[0]}` },
-            Link(wrapProps({
+            Link({
                 label: formatTimestamp(item.test_starttime),
                 href: 'test-runs:results',
                 params: { 'run_id': item.test_run_id },
                 underline: true,
-            })),
+            }),
             div(
                 { class: 'text-caption mt-1' },
                 `${item.table_groups_name} > ${item.test_suite}`,
@@ -78,16 +78,16 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
                     formatDuration(item.duration),
                 ),
             ),
-            item.status === 'Running' && item.process_id ? Button(wrapProps({
+            item.status === 'Running' && item.process_id ? Button({
                 type: 'stroked',
                 label: 'Cancel Run',
                 style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
                 onclick: () => emitEvent('RunCanceled', { payload: item }),
-            })) : null,
+            }) : null,
         ),
         div(
             { style: `flex: ${columns[2]}` },
-            item.test_ct ? SummaryBar(wrapProps({
+            item.test_ct ? SummaryBar({
                 items: [
                     { label: 'Passed', value: item.passed_ct, color: 'green' },
                     { label: 'Warning', value: item.warning_ct, color: 'yellow' },
@@ -96,8 +96,8 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
                     { label: 'Dismissed', value: item.dismissed_ct, color: 'grey' },
                 ],
                 height: 10,
-                width: 300,
-            })) : '--',
+                width: 400,
+            }) : '--',
         ),
     );
 }

@@ -13,7 +13,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, label, option, select } = van.tags;
 
@@ -25,9 +25,9 @@ const Select = (/** @type {Properties} */ props) => {
     const changeHandler = props.onChange || post;
     return div(
         {class: 'tg-select'},
-        label({for: domId, class: 'tg-select--label'}, van.val(props.label)),
+        label({for: domId, class: 'tg-select--label'}, props.label),
         () => {
-            const options = van.val(props.options);
+            const options = getValue(props.options) || [];
             return select(
                 {id: domId, class: 'tg-select--field', onchange: changeHandler},
                 options.map(op => option({class: 'tg-select--field--option', value: op.value, selected: op.selected}, op.label)),

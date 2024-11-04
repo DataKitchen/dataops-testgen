@@ -9,7 +9,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, resizeFrameHeightToElement, wrapProps } from '../utils.js';
+import { emitEvent, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -77,12 +77,12 @@ const ProfilingRunItem = (item, /** @type string[] */ columns) => {
                     formatDuration(item.duration),
                 ),
             ),
-            item.status === 'Running' && item.process_id ? Button(wrapProps({
+            item.status === 'Running' && item.process_id ? Button({
                 type: 'stroked',
                 label: 'Cancel Run',
                 style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
                 onclick: () => emitEvent('RunCanceled', { payload: item }),
-            })) : null,
+            }) : null,
         ),
         div(
             { style: `flex: ${columns[2]}` },
@@ -94,17 +94,17 @@ const ProfilingRunItem = (item, /** @type string[] */ columns) => {
                 },
                 `${item.table_ct || 0} tables, ${item.column_ct || 0} columns`,
             ),
-            item.column_ct ? Link(wrapProps({
+            item.column_ct ? Link({
                 label: 'View results',
                 href: 'profiling-runs:results',
                 params: { 'run_id': item.profiling_run_id },
                 underline: true,
                 right_icon: 'chevron_right',
-            })) : null,
+            }) : null,
         ),
         div(
             { style: `flex: ${columns[3]}` },
-            item.anomaly_ct ? SummaryBar(wrapProps({
+            item.anomaly_ct ? SummaryBar({
                 items: [
                     { label: 'Definite', value: item.anomalies_definite_ct, color: 'red' },
                     { label: 'Likely', value: item.anomalies_likely_ct, color: 'orange' },
@@ -112,16 +112,16 @@ const ProfilingRunItem = (item, /** @type string[] */ columns) => {
                     { label: 'Dismissed', value: item.anomalies_dismissed_ct, color: 'grey' },
                 ],
                 height: 10,
-                width: 300,
-            })) : '--',
-            item.anomaly_ct ? Link(wrapProps({
+                width: 350,
+            }) : '--',
+            item.anomaly_ct ? Link({
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
                 params: { 'run_id': item.profiling_run_id },
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 8px;',
-            })) : null,
+            }) : null,
         ),
     );
 }

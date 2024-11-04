@@ -13,7 +13,7 @@
  * @property {number?} width
  * @property {string?} style
  */
-import { emitEvent, enforceElementWidth, loadStylesheet } from '../utils.js';
+import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
@@ -23,17 +23,25 @@ const Link = (/** @type Properties */ props) => {
     loadStylesheet('link', stylesheet);
 
     if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(props.height?.val || 24);
-        if (props.width?.val) {
-            enforceElementWidth(window.frameElement, props.width.val);
+        Streamlit.setFrameHeight(getValue(props.height) || 24);
+        const width = getValue(props.width);
+        if (width) {
+            enforceElementWidth(window.frameElement, width);
         }
     }
 
+    const href = getValue(props.href);
+    const params = getValue(props.params) || {};
+
     return a(
         {
-            class: `tg-link ${props.underline?.val ? 'tg-link--underline' : ''}`,
+            class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: () => emitEvent('LinkClicked', { href: props.href.val, params: props.params.val }),
+            onclick: (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                emitEvent('LinkClicked', { href, params });
+            },
         },
         div(
             {class: 'tg-link--wrapper'},
@@ -50,7 +58,7 @@ const LinkIcon = (
     /** @type string */position,
 ) => {
     return i(
-        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${size?.val || 20}px;`},
+        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${getValue(size) || 20}px;`},
         icon,
     );
 };

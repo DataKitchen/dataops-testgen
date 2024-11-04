@@ -46,7 +46,7 @@ const Sidebar = (/** @type {Properties} */ props) => {
     return div(
         {class: 'menu'},
         () => {
-            const menuItems = van.val(props.menu).items;
+            const menuItems = props.menu?.val.items || [];
             return div(
                 {class: 'content'},
                 menuItems.map(item =>
@@ -56,12 +56,12 @@ const Sidebar = (/** @type {Properties} */ props) => {
             );
         },
         button(
-            { class: `tg-button logout`, onclick: () => navigate(van.val(props.logout_path)) },
+            { class: `tg-button logout`, onclick: (event) => navigate(event, props.logout_path?.val) },
             i({class: 'material-symbols-rounded'}, 'logout'),
             span('Logout'),
         ),
         span({class: 'menu--username'}, props.username),
-        () => Version(van.val(props.menu).version),
+        () => Version(props.menu?.val.version),
     );
 };
 
@@ -78,14 +78,14 @@ const MenuSection = (/** @type {MenuItem} */ item, /** @type {string} */ current
 
 const MenuItem = (/** @type {MenuItem} */ item, /** @type {string} */ currentPage) => {
     const classes = van.derive(() => {
-        if (isCurrentPage(item.page, van.val(currentPage))) {
+        if (isCurrentPage(item.page, currentPage?.val)) {
             return 'menu--item active';
         }
         return 'menu--item';
     });
 
     return a(
-        {class: classes, href: `/${item.page}`, onclick: () => navigate(item.page, van.val(currentPage))},
+        {class: classes, href: `/${item.page}`, onclick: (event) => navigate(event, item.page, currentPage?.val)},
         i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
         span({class: 'menu--item--label'}, item.label),
     );
@@ -121,11 +121,16 @@ const VersionRow = (/** @type string */ label, /** @type string */ version, icon
     );
 };
 
-function navigate(/** @type string */ path, /** @type string */ currentPage = null) {
+function navigate(/** @type object */ event, /** @type string */ path, /** @type string */ currentPage = null) {
+    // Needed to prevent page refresh
+    // Returning false does not work because VanJS does not use inline handlers -> https://github.com/vanjs-org/van/discussions/246
+    event.preventDefault();
+    // Prevent Streamlit from reacting to event
+    event.stopPropagation();
+
     if (Sidebar.StreamlitInstance && path !== currentPage) {
         Sidebar.StreamlitInstance.sendData(path);
     }
-    return false;
 }
 
 function isCurrentPage(/** @type string */ itemPath, /** @type string */ currentPage) {

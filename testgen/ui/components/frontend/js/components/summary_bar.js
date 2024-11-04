@@ -13,7 +13,7 @@
  * @property {number} width
  */
 import van from '../van.min.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span } = van.tags;
 const colorMap = {
@@ -26,32 +26,28 @@ const colorMap = {
     brown: '#8D6E63',
     grey: '#BDBDBD',
 }
+const defaultHeight = 24;
 
 const SummaryBar = (/** @type Properties */ props) => {
     loadStylesheet('summaryBar', stylesheet);
-
-    const height = props.height.val || 24;
-    const width = props.width.val;
-    const summaryItems = props.items.val;
-    const label = props.label?.val;
-    const total = summaryItems.reduce((sum, item) => sum + item.value, 0);
+    const total = van.derive(() => getValue(props.items).reduce((sum, item) => sum + item.value, 0));
 
     return div(
-        { class: 'tg-summary-bar-wrapper' },
-        () => {
-            return label ? div(
-                { class: 'tg-summary-bar--label' },
-                label,
-            ) : null;
-        },
-        div(
+        { style: () => `max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};` },
+        () => props.label ? div(
+            { class: 'tg-summary-bar--label' },
+            props.label,
+        ) : '',
+        () => div(
             {
                 class: 'tg-summary-bar',
-                style: `height: ${height}px; max-width: ${width ? width + 'px' : '100%'}`
+                style: () => `height: ${getValue(props.height) || defaultHeight}px;`
             },
-            summaryItems.map(item => span({
-                class: `tg-summary-bar--item`,
-                style: `width: ${item.value * 100 / total}%; background-color: ${colorMap[item.color] || item.color};`,
+            getValue(props.items).map(item => span({
+                class: 'tg-summary-bar--item',
+                style: () => `width: ${item.value * 100 / total.val}%;
+                    ${item.value ? 'min-width: 1px;' : ''}
+                    background-color: ${colorMap[item.color] || item.color};`,
             })),
         ),
         () => {
