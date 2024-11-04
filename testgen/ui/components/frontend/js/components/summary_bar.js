@@ -8,9 +8,9 @@
  * @typedef Properties
  * @type {object}
  * @property {Array.<SummaryItem>} items
- * @property {string} label
- * @property {number} height
- * @property {number} width
+ * @property {string?} label
+ * @property {number?} height
+ * @property {number?} width
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -50,12 +50,17 @@ const SummaryBar = (/** @type Properties */ props) => {
                     background-color: ${colorMap[item.color] || item.color};`,
             })),
         ),
-        () => {
-            return total ? div(
-                { class: `tg-summary-bar--caption` },
-                summaryItems.map(item => `${item.label}: ${item.value || 0}`).join(', '),
-            ) : null;
-        },
+        () => total.val ? div(
+            { class: 'tg-summary-bar--caption flex-row fx-flex-wrap text-caption mt-1' },
+            getValue(props.items).map(item => div(
+                { class: 'tg-summary-bar--legend flex-row' },
+                span({
+                    class: 'dot',
+                    style: `color: ${colorMap[item.color] || item.color};`,
+                }),
+                `${item.label}: ${item.value || 0}`,
+            )),
+        ) : '',
     );
 };
 
@@ -80,9 +85,20 @@ stylesheet.replace(`
 }
 
 .tg-summary-bar--caption {
-    margin-top: 4px;
-    color: var(--caption-text-color);
     font-style: italic;
+}
+
+.tg-summary-bar--legend {
+    width: auto;
+}
+
+.tg-summary-bar--legend:not(:last-child) {
+    margin-right: 8px;
+}
+
+.tg-summary-bar--legend span {
+    margin-right: 2px;
+    font-size: 4px;
 }
 `);
 

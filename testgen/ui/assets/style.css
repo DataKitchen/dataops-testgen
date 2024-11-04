@@ -262,8 +262,34 @@ Use as testgen.text("text", "extra_styles") */
 
 .tg-summary-bar--caption {
     margin-top: 4px;
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
     color: var(--caption-text-color);
+    font-size: 13px;
     font-style: italic;
+    line-height: 1;
+}
+
+.tg-summary-bar--legend {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    width: auto;
+}
+
+.tg-summary-bar--legend:not(:last-child) {
+    margin-right: 8px;
+}
+
+.tg-summary-bar--legend-dot {
+    margin-right: 2px;
+    font-size: 4px;
+    font-style: normal;
+}
+
+.tg-summary-bar--legend-dot::before {
+    content: '⬤';
 }
 /*  */
 

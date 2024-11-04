@@ -93,6 +93,14 @@ body {
     display: none !important;
 }
 
+.dot {
+    font-size: 10px;
+    font-style: normal;
+}
+
+.dot::before {
+    content: '⬤';
+}
 
 /* Table styles */
 .table {
