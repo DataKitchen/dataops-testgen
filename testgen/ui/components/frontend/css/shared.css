@@ -26,6 +26,7 @@ body {
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
     --border-color: rgba(0, 0, 0, .12);
+    --tooltip-color: #333d;
     --dk-card-background: #fff;
 
     --sidebar-background-color: white;
@@ -87,6 +88,11 @@ body {
         --button-stroked-border: 1px solid var(--border-color);
     }
 }
+
+.hidden {
+    display: none !important;
+}
+
 
 /* Table styles */
 .table {

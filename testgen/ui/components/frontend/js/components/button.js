@@ -14,6 +14,7 @@
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { Tooltip } from './tooltip.js';
 
 const { button, i, span } = van.tags;
 const BUTTON_TYPE = {
@@ -44,21 +45,29 @@ const Button = (/** @type Properties */ props) => {
         if (width) {
             enforceElementWidth(window.frameElement, width);
         }
-    }
-
-    if (props.tooltip) {
-        window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
-        window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
+        if (props.tooltip) {
+            window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
+            window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
+        }
     }
 
     const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
+    const showTooltip = van.state(false);
+
     return button(
         {
             class: `tg-button tg-${buttonType}-button tg-${getValue(props.color) ?? 'basic'}-button ${buttonType !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,
             disabled: props.disabled,
+            onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
+            onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
+        props.tooltip ? Tooltip({
+            text: props.tooltip,
+            show: showTooltip,
+            position: props.tooltipPosition,
+        }) : undefined,
         span({class: 'tg-button-focus-state-indicator'}, ''),
         props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
         !isIconOnly ? span(props.label) : undefined,
@@ -71,7 +80,6 @@ button.tg-button {
     height: 40px;
 
     position: relative;
-    overflow: hidden;
 
     display: flex;
     flex-direction: row;
@@ -86,6 +94,11 @@ button.tg-button {
     cursor: pointer;
 
     font-size: 14px;
+}
+
+button.tg-button .tg-button-focus-state-indicator {
+    border-radius: inherit;
+    overflow: hidden;
 }
 
 button.tg-button .tg-button-focus-state-indicator::before {
@@ -113,7 +126,7 @@ button.tg-button:has(span) {
 }
 
 button.tg-button:not(.tg-icon-button):has(span):has(i) {
-    padding-left: 8px;
+    padding-left: 12px;
 }
 
 button.tg-button[disabled] {
@@ -121,7 +134,7 @@ button.tg-button[disabled] {
     cursor: not-allowed;
 }
 
-button.tg-button.tg-icon-button > i {
+button.tg-button > i {
     font-size: 18px;
 }
 

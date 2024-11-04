@@ -4,7 +4,7 @@
  * @property {array} items
  */
 import van from '../van.min.js';
-import { Tooltip } from '../van-tooltip.js';
+import { Tooltip } from '../components/tooltip.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
