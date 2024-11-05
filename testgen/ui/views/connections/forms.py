@@ -1,4 +1,5 @@
 # type: ignore
+import time
 import typing
 
 import streamlit as st
@@ -114,6 +115,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
         return f"connection_form:{self.connection_id or 'new'}"
 
     def render_input_ui(self, container: DeltaGenerator, data: dict) -> "BaseConnectionForm":
+        time.sleep(0.1)
         main_fields_container, optional_fields_container = container.columns([0.7, 0.3])
 
         if self.get_field_value("connect_by_url", latest=True):
@@ -153,6 +155,8 @@ class BaseConnectionForm(BaseForm, ManualRender):
             url_override_left_column, url_override_right_column = st.columns([0.25, 0.75])
             self.render_field("url_prefix", container=url_override_left_column)
             self.render_field("url", container=url_override_right_column)
+
+            time.sleep(0.1)
 
         return self
 
