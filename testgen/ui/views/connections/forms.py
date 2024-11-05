@@ -92,13 +92,6 @@ class BaseConnectionForm(BaseForm, ManualRender):
             "unless test queries are failing."
         ),
     )
-    project_qc_schema: str = Field(
-        default="qc",
-        max_length=50,
-        st_kwargs_label="QC Utility Schema",
-        st_kwargs_max_chars=50,
-        st_kwargs_help="The name of the schema on your database that will contain TestGen's profiling functions.",
-    )
 
     connection_id: int | None = Field(default=None)
 
@@ -131,7 +124,6 @@ class BaseConnectionForm(BaseForm, ManualRender):
 
         self.render_field("project_db", container=main_fields_container)
         self.render_field("project_user", container=main_fields_container)
-        self.render_field("project_qc_schema", container=optional_fields_container)
         self.render_field("max_threads", container=optional_fields_container)
         self.render_field("max_query_chars", container=optional_fields_container)
 

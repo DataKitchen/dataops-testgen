@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 import typing
 from functools import partial
@@ -11,7 +10,6 @@ from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
-from testgen.commands.run_setup_profiling_tools import get_setup_profiling_tools_queries
 from testgen.common.database.database_service import empty_cache
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -102,6 +100,7 @@ class ConnectionsPage(Page):
             )
             data.update({
                 "project_code": project_code,
+                "project_qc_schema": "",
             })
             if "private_key" not in data:
                 data.update({
@@ -121,7 +120,7 @@ class ConnectionsPage(Page):
             LOG.exception("unexpected form validation error")
             st.error("Unexpected error displaying the form. Try again")
 
-        test_button_column, config_qc_column, _, save_button_column = st.columns([.2, .2, .4, .2])
+        test_button_column, _, save_button_column = st.columns([.2, .6, .2])
         is_submitted, set_submitted = temp_value(f"connection_form-{connection_id or 'new'}:submit")
         get_connection_status, set_connection_status = temp_value(
             f"connection_form-{connection_id or 'new'}:test_conn"
@@ -142,16 +141,6 @@ class ConnectionsPage(Page):
                 label="Test Connection",
                 key=f"connection_form:{connection_id or 'new'}:test",
                 on_click=lambda: set_connection_status(self.test_connection(data)),
-            )
-
-        with config_qc_column:
-            testgen.button(
-                type_="stroked",
-                color="basic",
-                label="Configure QC Utility Schema",
-                key=f"connection_form:{connection_id or 'new'}:config-qc-schema",
-                tooltip="Creates the required Utility schema and related functions in the target database",
-                on_click=lambda: self.create_qc_schema_dialog(connection)
             )
 
         if (connection_status := get_connection_status()):
@@ -234,106 +223,6 @@ class ConnectionsPage(Page):
                 return ConnectionStatus(message=qc_error_message, details=error.args[0], successful=False)
         except Exception as error:
             return ConnectionStatus(message="Error attempting the Connection.", details=error.args[0], successful=False)
-
-    @st.dialog(title="Configure QC Utility Schema")
-    def create_qc_schema_dialog(self, selected_connection):
-        connection_id = selected_connection["connection_id"]
-        project_qc_schema = selected_connection["project_qc_schema"]
-        sql_flavor = selected_connection["sql_flavor"]
-        user = selected_connection["project_user"]
-
-        create_qc_schema = st.toggle("Create QC Utility Schema", value=True)
-        grant_privileges = st.toggle("Grant access privileges to TestGen user", value=True)
-
-        user_role = None
-
-        # TODO ALEX: This textbox may be needed if we want to grant permissions to user role
-        # if sql_flavor == "snowflake":
-        #    user_role_textbox_label = f"Primary role for database user {user}"
-        #    user_role = st.text_input(label=user_role_textbox_label, max_chars=100)
-
-        admin_credentials_expander = st.expander("Admin credential options", expanded=True)
-        with admin_credentials_expander:
-            admin_connection_option_index = 0
-            admin_connection_options = ["Do not use admin credentials", "Use admin credentials with Password"]
-            if sql_flavor == "snowflake":
-                admin_connection_options.append("Use admin credentials with Key-Pair")
-
-            admin_connection_option = st.radio(
-                "Admin credential options",
-                label_visibility="hidden",
-                options=admin_connection_options,
-                index=admin_connection_option_index,
-                horizontal=True,
-            )
-
-            st.markdown("</p>&nbsp;</br>", unsafe_allow_html=True)
-
-            db_user = None
-            db_password = None
-            admin_private_key_passphrase = None
-            admin_private_key = None
-            if admin_connection_option == admin_connection_options[0]:
-                st.markdown(":orange[User created in the connection dialog will be used.]")
-            else:
-                db_user = st.text_input(label="Admin db user", max_chars=40)
-            if admin_connection_option == admin_connection_options[1]:
-                db_password = st.text_input(
-                    label="Admin db password", max_chars=40, type="password"
-                )
-                st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
-
-            if len(admin_connection_options) > 2 and admin_connection_option == admin_connection_options[2]:
-                admin_private_key_passphrase = st.text_input(
-                    label="Private Key Passphrase",
-                    key="create-qc-schema-private-key-password",
-                    type="password",
-                    max_chars=200,
-                    help="Passphrase used while creating the private Key (leave empty if not applicable)",
-                )
-
-                admin_uploaded_file = st.file_uploader("Upload private key (rsa_key.p8)", key="admin-uploaded-file")
-                if admin_uploaded_file:
-                    admin_private_key = admin_uploaded_file.getvalue().decode("utf-8")
-
-                st.markdown(":orange[Note: Admin credentials are not stored, are only used for this operation.]")
-
-        submit = st.button("Update Configuration")
-
-        if submit:
-            empty_cache()
-            script_expander = st.expander("Script Details")
-
-            operation_status = st.empty()
-            operation_status.info(f"Configuring QC Utility Schema '{project_qc_schema}'...")
-
-            try:
-                skip_granting_privileges = not grant_privileges
-                queries = get_setup_profiling_tools_queries(sql_flavor, create_qc_schema, skip_granting_privileges, project_qc_schema, user, user_role)
-                with script_expander:
-                    st.code(
-                        os.linesep.join(queries),
-                        language="sql",
-                        line_numbers=True)
-
-                connection_service.create_qc_schema(
-                    connection_id,
-                    create_qc_schema,
-                    db_user if db_user else None,
-                    db_password if db_password else None,
-                    skip_granting_privileges,
-                    admin_private_key_passphrase=admin_private_key_passphrase,
-                    admin_private_key=admin_private_key,
-                    user_role=user_role,
-                )
-                operation_status.empty()
-                operation_status.success("Operation has finished successfully.")
-
-            except Exception as e:
-                operation_status.empty()
-                operation_status.error("Error configuring QC Utility Schema.")
-                error_message = e.args[0]
-                st.text_area("Error Details", value=error_message)
 
     @st.dialog(title="Data Configuration Setup")
     def setup_data_configuration(self, project_code: str, connection: dict) -> None:
