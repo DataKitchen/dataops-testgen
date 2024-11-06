@@ -245,13 +245,13 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         WITH latest_profile_dates AS (
             SELECT column_name,
                 table_name,
-                profiling_runs.table_groups_id,
+                profile_results.table_groups_id,
                 MAX(profiling_starttime) AS profiling_starttime
             FROM {schema}.profile_results
                 LEFT JOIN {schema}.profiling_runs ON (
                     profile_results.profile_run_id = profiling_runs.id
                 )
-            GROUP BY profiling_runs.table_groups_id, table_name, column_name
+            GROUP BY profile_results.table_groups_id, table_name, column_name
         ),
         latest_test_run_dates AS (
             SELECT column_names,
@@ -366,7 +366,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                 AND column_chars.column_name = profile_results.column_name
             )
         WHERE column_id = '{item_id}'
-            AND column_chars.table_groups_id = '{table_group_id}';;
+            AND column_chars.table_groups_id = '{table_group_id}';
         """
 
     item_df = db.retrieve_data(sql)
