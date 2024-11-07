@@ -529,7 +529,7 @@ def show_test_form(
 
         if dynamic_attribute in ["custom_query"]:
             show_custom_query = True
-        elif dynamic_attribute in ["threshold"]:
+        elif dynamic_attribute in ["threshold_value"]:
             test_definition[dynamic_attribute] = current_column.number_input(
                 label=actual_dynamic_attributes_labels,
                 value=value,
