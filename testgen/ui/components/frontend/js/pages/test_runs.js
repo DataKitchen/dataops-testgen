@@ -1,15 +1,32 @@
 /**
+ * @typedef TestRun
+ * @type {object}
+ * @property {string} test_run_id
+ * @property {number} test_starttime
+ * @property {string} table_groups_name
+ * @property {string} test_suite
+ * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
+ * @property {string} log_message
+ * @property {string} duration
+ * @property {string} process_id
+ * @property {number} test_ct
+ * @property {number} passed_ct
+ * @property {number} warning_ct
+ * @property {number} failed_ct
+ * @property {number} error_ct
+ * @property {number} dismissed_ct
+ * 
  * @typedef Properties
  * @type {object}
- * @property {array} items
+ * @property {TestRun[]} items
  */
 import van from '../van.min.js';
-import { Tooltip } from '../van-tooltip.js';
+import { Tooltip } from '../components/tooltip.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, resizeFrameHeightToElement, wrapProps } from '../utils.js';
+import { emitEvent, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -53,17 +70,17 @@ const TestRuns = (/** @type Properties */ props) => {
     );
 }
 
-const TestRunItem = (item, /** @type string[] */ columns) => {
+const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) => {
     return div(
         { class: 'table-row flex-row' },
         div(
             { style: `flex: ${columns[0]}` },
-            Link(wrapProps({
+            Link({
                 label: formatTimestamp(item.test_starttime),
                 href: 'test-runs:results',
                 params: { 'run_id': item.test_run_id },
                 underline: true,
-            })),
+            }),
             div(
                 { class: 'text-caption mt-1' },
                 `${item.table_groups_name} > ${item.test_suite}`,
@@ -78,16 +95,16 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
                     formatDuration(item.duration),
                 ),
             ),
-            item.status === 'Running' && item.process_id ? Button(wrapProps({
+            item.status === 'Running' && item.process_id ? Button({
                 type: 'stroked',
                 label: 'Cancel Run',
                 style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
                 onclick: () => emitEvent('RunCanceled', { payload: item }),
-            })) : null,
+            }) : null,
         ),
         div(
             { style: `flex: ${columns[2]}` },
-            item.test_ct ? SummaryBar(wrapProps({
+            item.test_ct ? SummaryBar({
                 items: [
                     { label: 'Passed', value: item.passed_ct, color: 'green' },
                     { label: 'Warning', value: item.warning_ct, color: 'yellow' },
@@ -96,13 +113,13 @@ const TestRunItem = (item, /** @type string[] */ columns) => {
                     { label: 'Dismissed', value: item.dismissed_ct, color: 'grey' },
                 ],
                 height: 10,
-                width: 300,
-            })) : '--',
+                width: 400,
+            }) : '--',
         ),
     );
 }
 
-function TestRunStatus(/** @type object */ item) {
+function TestRunStatus(/** @type TestRun */ item) {
     const attributeMap = {
         Running: { label: 'Running', color: 'blue' },
         Complete: { label: 'Completed', color: '' },

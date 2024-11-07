@@ -37,6 +37,9 @@ class Router(Singleton):
         if not session.cookies_ready:
             session.cookies_ready = 1
             session.page_pending_cookies = current_page
+            # Set this anyway so that sidebar displays initial selection correctly
+            session.current_page = current_page.url_path
+            st.rerun()
 
         # Sometimes the cookie is ready on the second rerun and other times only on the third -_-
         # so we have to make sure the page renders correctly in both cases

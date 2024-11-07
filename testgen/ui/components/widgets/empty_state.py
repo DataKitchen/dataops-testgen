@@ -66,9 +66,10 @@ def empty_state(
             elif button_onclick:
                 button(
                     type_="flat",
+                    color="primary",
                     label=action_label,
                     icon=button_icon,
                     on_click=button_onclick,
-                    style="margin: auto; width: auto; background-color: var(--primary-color);",
+                    style="margin: auto; width: auto;",
                 )
         whitespace(5)

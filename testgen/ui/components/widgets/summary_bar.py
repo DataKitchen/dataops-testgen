@@ -44,7 +44,7 @@ def summary_bar(
     if total:
         item_spans = "".join([ f'<span class="tg-summary-bar--item" style="width: {item["value"] * 100 / total}%; background-color: {COLOR_MAP.get(item["color"], item["color"])};"></span>' for item in items ])
 
-        caption = ", ".join([ f"{item['label']}: {item['value']}" for item in items ])
+        caption = "".join([ f'<div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot" style="color: {COLOR_MAP.get(item["color"], item["color"])}"></span>{item["label"]}: {item["value"]}</div>' for item in items ])
         caption_div = f"""
         <div class="tg-summary-bar--caption">
             {caption}
