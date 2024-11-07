@@ -3,7 +3,6 @@ import streamlit as st
 import testgen.ui.queries.connection_queries as connection_queries
 import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
     AssignConnectParms,
     RetrieveDBResultsToList,
@@ -194,12 +193,6 @@ def test_qc_connection(project_code, connection, init_profiling=True):
     qc_results["isdate_false_result"] = isdate_false_result
 
     return qc_results
-
-
-def create_qc_schema(connection_id, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase=None, admin_private_key=None, user_role=None):
-    dry_run = False
-    empty_cache()
-    run_setup_profiling_tools(connection_id, dry_run, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase, admin_private_key, user_role)
 
 
 def form_overwritten_connection_url(connection):
