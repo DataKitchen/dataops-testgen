@@ -1,4 +1,3 @@
-import getpass
 import logging
 import os
 import subprocess
@@ -33,7 +32,6 @@ from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
 from testgen.commands.run_profiling_bridge import run_profiling_queries
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.common import (
     configure_logging,
@@ -448,84 +446,6 @@ def do_upgrade_system_version():
         click.echo("System and services were upgraded to match current TestGen version.")
     else:
         click.echo("System and services upgrade is not required.")
-
-
-@cli.command(
-    "setup-target-db-functions", help="Use to set up the utility functions in the target database for running profiles."
-)
-@click.option(
-    "-c",
-    "--connection-id",
-    help="The identifier for the connection. Use a connection_id shown in list-connections.",
-    required=True,
-    type=click.STRING,
-)
-@click.option(
-    "-dr",
-    "--dry-run",
-    default=False,
-    is_flag=True,
-    required=False,
-    help="Dry run to show which schema will be modified",
-)
-@click.option(
-    "-cs",
-    "--create-qc-schema",
-    default=False,
-    is_flag=True,
-    required=False,
-    help="Create the QC utility schema required in the target database",
-)
-@click.option("--yes", "-y", default=False, is_flag=True, required=False, help="Force yes")
-@click.option(
-    "--skip-asking-credentials",
-    "-s",
-    default=False,
-    is_flag=True,
-    required=False,
-    help="Skip request for special write credentials for target database, uses standard credentials instead",
-)
-@click.option(
-    "--skip-granting-privileges",
-    "-sgp",
-    default=False,
-    is_flag=True,
-    required=False,
-    help="Skip granting execute privileges to the user for the QC utility schema in the target database",
-)
-@pass_configuration
-def setup_profiling_tools(
-    configuration: Configuration,
-    connection_id: str,
-    dry_run: bool,
-    create_qc_schema: bool,
-    yes: bool,
-    skip_asking_credentials: bool,
-    skip_granting_privileges: bool,
-):
-    db_user = None
-    db_password = None
-    if not skip_asking_credentials:
-        db_user = input("Admin DB User?")
-        db_password = getpass.getpass("Admin DB Password?")
-
-    if not yes and not dry_run:
-        confirm = input(
-            f"Are you sure you want to setup the utility functions to be able to run the profile for connection {connection_id}? [yes/No]"
-        )
-        if confirm.lower() != "yes":
-            click.echo("Exiting without any operation performed.")
-            return
-    project_qc_schema = run_setup_profiling_tools(
-        connection_id, dry_run, create_qc_schema, db_user, db_password, skip_granting_privileges
-    )
-    if not dry_run:
-        message = f"Project DB has been set up. Modified schema: {project_qc_schema}"
-    else:
-        message = (
-            f"Project DB dry run completed, no changes applied. Modified schema would have been: {project_qc_schema}"
-        )
-    click.echo(message)
 
 
 @cli.command("get-test-results", help="Fetches results for a test run.")

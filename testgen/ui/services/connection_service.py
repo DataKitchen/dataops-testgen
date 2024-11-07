@@ -3,7 +3,6 @@ import streamlit as st
 import testgen.ui.queries.connection_queries as connection_queries
 import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
     AssignConnectParms,
     RetrieveDBResultsToList,
@@ -58,12 +57,18 @@ def edit_connection(connection):
     connection_queries.edit_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
 
 
-def add_connection(connection):
+def add_connection(connection) -> int:
     empty_cache()
     schema = st.session_state["dbschema"]
     connection = pre_save_connection_process(connection)
     encrypted_password, encrypted_private_key, encrypted_private_key_passphrase = encrypt_credentials(connection)
-    connection_queries.add_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
+    return connection_queries.add_connection(
+        schema,
+        connection,
+        encrypted_password,
+        encrypted_private_key,
+        encrypted_private_key_passphrase,
+    )
 
 
 def pre_save_connection_process(connection):
@@ -190,12 +195,6 @@ def test_qc_connection(project_code, connection, init_profiling=True):
     return qc_results
 
 
-def create_qc_schema(connection_id, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase=None, admin_private_key=None, user_role=None):
-    dry_run = False
-    empty_cache()
-    run_setup_profiling_tools(connection_id, dry_run, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase, admin_private_key, user_role)
-
-
 def form_overwritten_connection_url(connection):
     flavor = connection["sql_flavor"]
 
@@ -207,7 +206,7 @@ def form_overwritten_connection_url(connection):
         "dbname": connection["project_db"],
         "url": None,
         "connect_by_url": None,
-        "connect_by_key": connection["connect_by_key"],
+        "connect_by_key": connection.get("connect_by_key"),
         "private_key": None,
         "private_key_passphrase": "",
         "dbschema": "",

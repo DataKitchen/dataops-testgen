@@ -6,7 +6,7 @@ from testgen.ui.session import session
 
 
 def testgen_component(
-    component_id: typing.Literal["profiling_runs", "test_runs"],
+    component_id: typing.Literal["profiling_runs", "test_runs", "database_flavor_selector"],
     props: dict,
     event_handlers: dict | None,
 ) -> dict | None:

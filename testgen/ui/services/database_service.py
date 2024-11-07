@@ -2,6 +2,7 @@ from urllib.parse import quote_plus
 
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine.cursor import CursorResult
 
 from testgen.common.credentials import (
     get_tg_db,
@@ -74,10 +75,10 @@ def retrieve_single_result(str_sql):
             return lstResult[0]
 
 
-def execute_sql(str_sql):
+def execute_sql(str_sql) -> CursorResult | None:
     if str_sql > "":
         tg_engine = _start_engine()
-        tg_engine.execute(text(str_sql))
+        return tg_engine.execute(text(str_sql))
 
 
 def execute_sql_raw(str_sql):

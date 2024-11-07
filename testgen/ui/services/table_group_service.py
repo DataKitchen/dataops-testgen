@@ -21,9 +21,9 @@ def edit(table_group):
     table_group_queries.edit(schema, table_group)
 
 
-def add(table_group):
+def add(table_group: dict) -> str:
     schema = st.session_state["dbschema"]
-    table_group_queries.add(schema, table_group)
+    return table_group_queries.add(schema, table_group)
 
 
 def cascade_delete(table_group_names, dry_run=False):

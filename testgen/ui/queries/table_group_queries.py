@@ -1,3 +1,5 @@
+import uuid
+
 import streamlit as st
 
 import testgen.ui.services.database_service as db
@@ -108,7 +110,8 @@ def edit(schema, table_group):
     st.cache_data.clear()
 
 
-def add(schema, table_group):
+def add(schema, table_group) -> str:
+    new_table_group_id = str(uuid.uuid4())
     sql = f"""INSERT INTO {schema}.table_groups
         (id,
         project_code,
@@ -132,7 +135,7 @@ def add(schema, table_group):
         source_process,
         stakeholder_group)
     SELECT
-        gen_random_uuid(),
+        '{new_table_group_id}',
         '{table_group["project_code"]}',
         '{table_group["connection_id"]}',
         '{table_group["table_groups_name"]}',
@@ -155,6 +158,7 @@ def add(schema, table_group):
         ;"""
     db.execute_sql(sql)
     st.cache_data.clear()
+    return new_table_group_id
 
 
 def delete(schema, table_group_ids):

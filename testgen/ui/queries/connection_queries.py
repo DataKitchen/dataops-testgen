@@ -1,3 +1,5 @@
+from typing import cast
+
 import pandas as pd
 import streamlit as st
 
@@ -68,8 +70,13 @@ def edit_connection(schema, connection, encrypted_password, encrypted_private_ke
     st.cache_data.clear()
 
 
-def add_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase):
-
+def add_connection(
+    schema: str,
+    connection: dict,
+    encrypted_password: str | None,
+    encrypted_private_key: str | None,
+    encrypted_private_key_passphrase: str | None,
+) -> int:
     sql_header = f"""INSERT INTO {schema}.connections
         (project_code, sql_flavor, url, connect_by_url, connect_by_key,  
         project_host, project_port, project_user, project_db, project_qc_schema,
@@ -103,12 +110,16 @@ def add_connection(schema, connection, encrypted_password, encrypted_private_key
     sql_header += """max_threads, max_query_chars) """
 
     sql_footer += f""" '{connection["max_threads"]}' as max_threads,
-        '{connection["max_query_chars"]}' as max_query_chars;"""
+        '{connection["max_query_chars"]}' as max_query_chars"""
 
-    sql = sql_header + sql_footer
+    sql = sql_header + sql_footer + " RETURNING connection_id"
 
-    db.execute_sql(sql)
+    cursor = db.execute_sql(sql)
     st.cache_data.clear()
+    if cursor and (primary_key := cast(tuple, cursor.fetchone())):
+        return primary_key[0]
+
+    return 0
 
 
 def delete_connections(schema, connection_ids):

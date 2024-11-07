@@ -5,7 +5,6 @@ import click
 from testgen import settings
 from testgen.commands.run_get_entities import run_table_group_list
 from testgen.commands.run_launch_db_config import run_launch_db_config
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
     AssignConnectParms,
     CreateDatabaseIfNotExists,
@@ -139,16 +138,6 @@ def run_quick_start(delete_target_db: bool) -> None:
     project_key = params_mapping["PROJECT_KEY"]
     rows, _ = run_table_group_list(project_key)
     connection_id = str(rows[0][2])
-
-    # run qc
-    command = "testgen setup-target-db-functions --connection-id <CONNECTION_ID> --create-qc-schema --yes"
-    click.echo(f"Running CLI command: {command}")
-    create_qc_schema = True
-    db_user = params_mapping["TESTGEN_ADMIN_USER"]
-    db_password = params_mapping["TESTGEN_ADMIN_PASSWORD"]
-    dry_run = False
-    project_qc_schema = run_setup_profiling_tools(connection_id, dry_run, create_qc_schema, db_user, db_password)
-    click.echo(f"Schema {project_qc_schema} has been created in the target db")
 
 
 def run_quick_start_increment(iteration):

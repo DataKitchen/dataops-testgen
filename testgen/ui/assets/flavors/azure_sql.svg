@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   inkscape:version="1.0 (4035a4f, 2020-05-01)"
+   sodipodi:docname="10130-icon-service-SQL-Database.svg"
+   version="1.1"
+   viewBox="0 0 30 30"
+   height="30"
+   width="30"
+   id="a96792b7-ce28-4ca3-9767-4e065ef4820f">
+  <metadata
+     id="metadata69">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Icon-databases-130</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     inkscape:current-layer="a96792b7-ce28-4ca3-9767-4e065ef4820f"
+     inkscape:window-maximized="0"
+     inkscape:window-y="96"
+     inkscape:window-x="209"
+     inkscape:cy="9.774727"
+     inkscape:cx="12.031578"
+     inkscape:zoom="5.0120629"
+     showgrid="false"
+     id="namedview67"
+     inkscape:window-height="612"
+     inkscape:window-width="1195"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0"
+     guidetolerance="10"
+     gridtolerance="10"
+     objecttolerance="10"
+     borderopacity="1"
+     bordercolor="#666666"
+     pagecolor="#ffffff" />
+  <defs
+     id="defs52">
+    <linearGradient
+       gradientUnits="userSpaceOnUse"
+       y2="10.16"
+       x2="15.41"
+       y1="10.16"
+       x1="2.5899999"
+       id="ef16bf9d-a8b6-4181-b6cd-66fc5203f956">
+      <stop
+         id="stop30"
+         stop-color="#005ba1"
+         offset="0" />
+      <stop
+         id="stop32"
+         stop-color="#0060a9"
+         offset="0.07" />
+      <stop
+         id="stop34"
+         stop-color="#0071c8"
+         offset="0.36" />
+      <stop
+         id="stop36"
+         stop-color="#0078d4"
+         offset="0.52" />
+      <stop
+         id="stop38"
+         stop-color="#0074cd"
+         offset="0.64" />
+      <stop
+         id="stop40"
+         stop-color="#006abb"
+         offset="0.82" />
+      <stop
+         id="stop42"
+         stop-color="#005ba1"
+         offset="1" />
+    </linearGradient>
+    <radialGradient
+       gradientUnits="userSpaceOnUse"
+       r="7.0700002"
+       cy="10.57"
+       cx="9.3599997"
+       id="bf3846c3-4d74-4743-ab9a-f334c248bd92">
+      <stop
+         id="stop45"
+         stop-color="#f2f2f2"
+         offset="0" />
+      <stop
+         id="stop47"
+         stop-color="#eee"
+         offset="0.58" />
+      <stop
+         id="stop49"
+         stop-color="#e6e6e6"
+         offset="1" />
+    </radialGradient>
+  </defs>
+  <title
+     id="title54">Icon-databases-130</title>
+  <g
+     transform="matrix(1.7647059,0,0,1.7647059,-0.8823531,-0.8823531)"
+     id="g76">
+    <path
+       style="fill:url(#ef16bf9d-a8b6-4181-b6cd-66fc5203f956)"
+       d="m 9,5.14 c -3.54,0 -6.41,-1 -6.41,-2.32 v 12.36 c 0,1.27 2.82,2.3 6.32,2.32 H 9 c 3.54,0 6.41,-1 6.41,-2.32 V 2.82 c 0,1.29 -2.87,2.32 -6.41,2.32 z"
+       fill="url(#ef16bf9d-a8b6-4181-b6cd-66fc5203f956)"
+       id="path56" />
+    <path
+       d="M 15.41,2.82 C 15.41,4.11 12.54,5.14 9,5.14 5.46,5.14 2.59,4.14 2.59,2.82 2.59,1.5 5.46,0.5 9,0.5 c 3.54,0 6.41,1 6.41,2.32"
+       fill="#e8e8e8"
+       id="path58" />
+    <path
+       d="M 13.92,2.63 C 13.92,3.45 11.71,4.11 9,4.11 6.29,4.11 4.08,3.45 4.08,2.63 4.08,1.81 6.29,1.16 9,1.16 c 2.71,0 4.92,0.66 4.92,1.47"
+       fill="#50e6ff"
+       id="path60" />
+    <path
+       d="M 9,3 A 11.55,11.55 0 0 0 5.11,3.57 11.42,11.42 0 0 0 9,4.11 11.15,11.15 0 0 0 12.89,3.53 11.84,11.84 0 0 0 9,3 Z"
+       fill="#198ab3"
+       id="path62" />
+    <path
+       style="fill:url(#bf3846c3-4d74-4743-ab9a-f334c248bd92)"
+       d="M 12.9,11.4 V 8 H 12 v 4.13 h 2.46 V 11.4 Z M 5.76,9.73 A 1.83,1.83 0 0 1 5.25,9.42 0.44,0.44 0 0 1 5.13,9.1 0.34,0.34 0 0 1 5.28,8.8 0.68,0.68 0 0 1 5.7,8.68 1.62,1.62 0 0 1 6.7,8.97 V 8.11 A 2.58,2.58 0 0 0 5.7,7.95 1.64,1.64 0 0 0 4.61,8.29 1.08,1.08 0 0 0 4.19,9.18 c 0,0.51 0.32,0.91 1,1.21 A 2.88,2.88 0 0 1 5.81,10.75 0.42,0.42 0 0 1 5.96,11.07 0.38,0.38 0 0 1 5.8,11.38 0.81,0.81 0 0 1 5.35,11.49 1.66,1.66 0 0 1 4.26,11.07 V 12 A 2.17,2.17 0 0 0 5.33,12.24 1.88,1.88 0 0 0 6.51,11.91 1.08,1.08 0 0 0 6.84,11 1.05,1.05 0 0 0 6.59,10.3 2.42,2.42 0 0 0 5.76,9.73 Z M 11,11.32 A 2.34,2.34 0 0 0 11.33,10.06 2.32,2.32 0 0 0 11,9 1.81,1.81 0 0 0 10.3,8.25 2,2 0 0 0 9.3,7.99 2.11,2.11 0 0 0 8.22,8.26 1.86,1.86 0 0 0 7.49,9 a 2.46,2.46 0 0 0 -0.26,1.14 2.26,2.26 0 0 0 0.24,1 1.76,1.76 0 0 0 0.69,0.74 2.06,2.06 0 0 0 1,0.3 l 0.86,1 h 1.21 L 10,12.08 a 1.79,1.79 0 0 0 1,-0.76 z m -1,-0.25 a 0.94,0.94 0 0 1 -0.76,0.35 0.92,0.92 0 0 1 -0.76,-0.36 1.52,1.52 0 0 1 -0.29,-1 1.53,1.53 0 0 1 0.29,-1 1,1 0 0 1 0.78,-0.37 0.87,0.87 0 0 1 0.75,0.37 1.62,1.62 0 0 1 0.27,1 1.46,1.46 0 0 1 -0.28,1.01 z"
+       fill="url(#bf3846c3-4d74-4743-ab9a-f334c248bd92)"
+       id="path64" />
+  </g>
+</svg>
