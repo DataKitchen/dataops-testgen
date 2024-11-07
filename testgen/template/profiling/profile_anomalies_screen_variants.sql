@@ -22,7 +22,7 @@ WITH all_matches
                             AND p.column_name = i.column_name
                             AND '{ANOMALY_ID}' = i.anomaly_id)
          WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
-           AND {ANOMALY_CRITERIA}
+           AND ({ANOMALY_CRITERIA})
            AND p.top_freq_values > ''
            AND i.anomaly_id IS NULL
            AND fn_count_intersecting_items(LOWER(fn_extract_top_values(p.top_freq_values)), v.check_values, '|') > 1

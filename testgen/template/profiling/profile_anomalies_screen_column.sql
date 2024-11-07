@@ -19,4 +19,4 @@ LEFT JOIN v_inactive_anomalies i
  AND  '{ANOMALY_ID}' = i.anomaly_id)
  WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
    AND i.anomaly_id IS NULL
-   AND {ANOMALY_CRITERIA};
+   AND ({ANOMALY_CRITERIA});
