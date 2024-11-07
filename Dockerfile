@@ -2,7 +2,7 @@ FROM python:3.10-slim-bookworm AS build-image
 
 RUN mkdir -p /dk && \
     apt-get update && \
-    apt-get install -y gcc libpcre3 libpcre3-dev g++
+    apt-get install -y gcc libpcre3 libpcre3-dev g++ git
 
 COPY ./pyproject.toml /tmp/dk/
 RUN python3 -m pip install /tmp/dk --prefix=/dk
