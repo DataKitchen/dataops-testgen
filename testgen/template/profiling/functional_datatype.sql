@@ -232,6 +232,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 UPDATE profile_results
 SET functional_data_type =
         CASE WHEN (std_pattern_match = 'ZIP_USA' AND (column_name ILIKE '%zip%' OR column_name ILIKE '%postal%'))
+               OR (lower(column_name) IN ('ZIP_CODE', 'ZIP'))
                 THEN 'Zip'
             WHEN std_pattern_match = 'EMAIL'
                 THEN 'Email'

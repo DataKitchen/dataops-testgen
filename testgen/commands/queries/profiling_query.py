@@ -144,9 +144,14 @@ class CProfilingSQL:
         strQ = self.ReplaceParms(read_template_sql_file("pii_flag.sql", sub_directory="profiling"))
         return strQ
 
-    def GetAnomalyRefreshQuery(self):
+    def GetAnomalyStatsRefreshQuery(self):
         # Runs on DK Postgres Server
         strQ = self.ReplaceParms(read_template_sql_file("refresh_anomalies.sql", sub_directory="profiling"))
+        return strQ
+
+    def GetAnomalyScoringRollupQuery(self):
+        # Runs on DK Postgres Server
+        strQ = self.ReplaceParms(read_template_sql_file("profile_anomaly_scoring_rollup.sql", sub_directory="profiling"))
         return strQ
 
     def GetAnomalyTestTypesQuery(self):
@@ -176,6 +181,16 @@ class CProfilingSQL:
             strQ = strQ.replace("{ANOMALY_CRITERIA}", dct_test_type["anomaly_criteria"])
             strQ = self.ReplaceParms(strQ)
 
+        return strQ
+
+    def GetAnomalyScoringQuery(self, dct_test_type):
+        # Runs on DK Postgres Server
+        strQ = read_template_sql_file("profile_anomaly_scoring.sql", sub_directory="profiling")
+        if strQ:
+            strQ = strQ.replace("{PROFILE_RUN_ID}", self.profile_run_id)
+            strQ = strQ.replace("{ANOMALY_ID}", dct_test_type["id"])
+            strQ = strQ.replace("{PREV_FORMULA}", dct_test_type["dq_score_prevalence_formula"])
+            strQ = strQ.replace("{RISK}", dct_test_type["dq_score_risk_factor"])
         return strQ
 
     def GetDataCharsRefreshQuery(self):

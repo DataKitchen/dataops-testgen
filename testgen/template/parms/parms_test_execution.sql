@@ -1,6 +1,7 @@
 SELECT ts.project_code,
        ts.connection_id::VARCHAR,
        ts.id::VARCHAR as test_suite_id,
+       ts.table_groups_id::VARCHAR,
        tg.table_group_schema,
        cc.sql_flavor,
        cc.project_host,

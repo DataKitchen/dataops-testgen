@@ -51,6 +51,20 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
        END )   AS filled_value_ct,
   SUBSTRING(MIN(NULLIF("{COL_NAME}", '')), 1, 100)  AS min_text,
   SUBSTRING(MAX(NULLIF("{COL_NAME}", '')), 1, 100)  AS max_text,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
+        WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS upper_case_ct,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS lower_case_ct,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS non_alpha_ct,
   SUM(fndk_isnum(SUBSTRING("{COL_NAME}", 1, 31)))  AS numeric_ct,
   SUM(fndk_isdate(SUBSTRING("{COL_NAME}", 1, 26)))  AS date_ct,
   CASE
@@ -84,6 +98,9 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as filled_value_ct,
   NULL as min_text,
   NULL as max_text,
+  NULL as upper_case_ct,
+  NULL as lower_case_ct,
+  NULL as non_alpha_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
@@ -149,6 +166,10 @@ strTemplate11_D: CASE
                                                               ELSE 0
       END) AS before_20yr_date_ct,
   SUM(CASE
+        WHEN DATE_DIFF('MONTH', TIMESTAMP "{COL_NAME}", TIMESTAMP '{RUN_DATE}') > 1200 THEN 1
+                                                              ELSE 0
+      END) AS before_100yr_date_ct,
+  SUM(CASE
         WHEN DATE_DIFF('DAY', TIMESTAMP "{COL_NAME}", TIMESTAMP '{RUN_DATE}') BETWEEN 0 AND 365 THEN 1
                                                                          ELSE 0
       END) AS within_1yr_date_ct,
@@ -159,6 +180,10 @@ strTemplate11_D: CASE
   SUM(CASE
         WHEN "{COL_NAME}" > '{RUN_DATE}' THEN 1 ELSE 0
       END) AS future_date_ct,
+  SUM(CASE
+        WHEN DATE_DIFF('MONTH', TIMESTAMP '{RUN_DATE}', TIMESTAMP "{COL_NAME}") > 240 THEN 1
+                                                              ELSE 0
+      END) AS distant_future_date_ct,
   COUNT(DISTINCT DATE_DIFF('day', TIMESTAMP "{COL_NAME}", TIMESTAMP '{RUN_DATE}' ) ) as date_days_present,
   COUNT(DISTINCT DATE_DIFF('week', TIMESTAMP "{COL_NAME}", TIMESTAMP '{RUN_DATE}' ) ) as date_weeks_present,
   COUNT(DISTINCT DATE_DIFF('month', TIMESTAMP "{COL_NAME}", TIMESTAMP '{RUN_DATE}' ) ) as date_months_present,
@@ -168,9 +193,11 @@ strTemplate11_else:  NULL as min_date,
   NULL as before_1yr_date_ct,
   NULL as before_5yr_date_ct,
   NULL as before_20yr_date_ct,
+  NULL AS before_100yr_date_ct,
   NULL as within_1yr_date_ct,
   NULL as within_1mo_date_ct,
   NULL as future_date_ct,
+  NULL as distant_future_date_ct,
   NULL as date_days_present,
   NULL as date_weeks_present,
   NULL as date_months_present,

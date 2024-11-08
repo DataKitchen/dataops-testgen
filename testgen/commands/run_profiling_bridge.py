@@ -29,15 +29,25 @@ def InitializeProfilingSQL(strProject, strSQLFlavor):
     return CProfilingSQL(strProject, strSQLFlavor)
 
 
-def CompileAnomalyTestQueries(clsProfiling):
-    str_query = clsProfiling.GetAnomalyTestTypesQuery()
-    lst_tests = RetrieveDBResultsToDictList("DKTG", str_query)
-
+def CompileAnomalyTestQueries(clsProfiling, lst_tests):
+    # Get queries for each test
     lst_queries = []
     for dct_test_type in lst_tests:
         str_query = clsProfiling.GetAnomalyTestQuery(dct_test_type)
         if str_query:
             lst_queries.append(str_query)
+
+    return lst_queries
+
+
+def CompileAnomalyScoringQueries(clsProfiling, lst_tests):
+    # Get queries for each test
+    lst_queries = []
+    for dct_test_type in lst_tests:
+        if dct_test_type["dq_score_prevalence_formula"]:
+            str_query = clsProfiling.GetAnomalyScoringQuery(dct_test_type)
+            if str_query:
+                lst_queries.append(str_query)
 
     return lst_queries
 
@@ -434,6 +444,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             LOG.info("CurrentStep: Generating profiling update queries")
 
             lstQueries = []
+            lstAnomalyTypes = []
 
             if lstUpdates:
                 # Run single update query, then delete from staging
@@ -451,9 +462,14 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             lstQueries.append(strQuery)
             strQuery = clsProfiling.GetPIIFlagUpdateQuery()
             lstQueries.append(strQuery)
-            lstQueries.extend(CompileAnomalyTestQueries(clsProfiling))
-            strQuery = clsProfiling.GetAnomalyRefreshQuery()
+
+            strQuery = clsProfiling.GetAnomalyTestTypesQuery()
+            lstAnomalyTypes = RetrieveDBResultsToDictList("DKTG", strQuery)
+            lstQueries.extend(CompileAnomalyTestQueries(clsProfiling, lstAnomalyTypes))
+            lstQueries.extend(CompileAnomalyScoringQueries(clsProfiling, lstAnomalyTypes))
+            strQuery = clsProfiling.GetAnomalyStatsRefreshQuery()
             lstQueries.append(strQuery)
+
             # Always runs last
             strQuery = clsProfiling.GetDataCharsRefreshQuery()
             lstQueries.append(strQuery)
@@ -475,6 +491,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     finally:
         LOG.info("Updating the profiling run record")
         lstProfileRunQuery = [clsProfiling.GetProfileRunInfoRecordUpdateQuery()]
+        lstProfileRunQuery.append(clsProfiling.GetAnomalyScoringRollupQuery())
         RunActionQueryList("DKTG", lstProfileRunQuery)
         if booErrors:
             str_error_status = "with errors. Check log for details."
