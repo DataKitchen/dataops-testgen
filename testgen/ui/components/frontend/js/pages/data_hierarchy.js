@@ -463,7 +463,11 @@ const HygieneIssuesCard = (/** @type Table | Column */ item) => {
     const hygieneIssues = item.latest_anomalies.filter(({ issue_likelihood }) => issue_likelihood !== 'Potential PII');
     const linkProps = {
         href: 'profiling-runs:hygiene',
-        params: { run_id: item.latest_profile_id },
+        params: {
+            run_id: item.latest_profile_id,
+            table_name: item.table_name,
+            column_name: item.column_name,
+        },
     };
 
     return IssuesCard('Hygiene Issues', hygieneIssues, attributes, linkProps, 'No hygiene issues detected');
@@ -496,7 +500,11 @@ const TestIssuesCard = (/** @type Table | Column */ item) => {
                 ),
                 Link({
                     href: 'test-runs:results',
-                    params: { run_id: issue.test_run_id },
+                    params: {
+                        run_id: issue.test_run_id,
+                        table_name: item.table_name,
+                        column_name: item.column_name,
+                    },
                     open_new: true,
                     label: formatTimestamp(issue.test_run_date),
                     style: 'font-size: 12px; margin-top: 2px;',

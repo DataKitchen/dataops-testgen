@@ -20,14 +20,22 @@ from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 
-class ProfilingAnomaliesPage(Page):
+class HygieneIssuesPage(Page):
     path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 
-    def render(self, run_id: str, issue_class: str | None = None, issue_type: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        run_id: str,
+        issue_class: str | None = None,
+        issue_type: str | None = None,
+        table_name: str | None = None,
+        column_name: str | None = None,
+        **_kwargs,
+    ) -> None:
         run_parentage = profiling_queries.lookup_db_parentage_from_run(run_id)
         if not run_parentage:
             self.router.navigate_with_warning(
@@ -49,9 +57,9 @@ class ProfilingAnomaliesPage(Page):
             ],
         )
 
-        others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
-        (liklihood_filter_column, issue_type_filter_column, sort_column, actions_column, export_button_column) = (
-            st.columns([.16, .34, .08, .32, .1], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, actions_column = st.columns([.25, .25, .5], vertical_alignment="bottom")
+        (liklihood_filter_column, issue_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column) = (
+            st.columns([.15, .25, .2, .2, .1, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
@@ -78,6 +86,26 @@ class ProfilingAnomaliesPage(Page):
                 disabled=issue_class == "Potential PII",
             )
 
+        run_columns_df = get_profiling_run_columns(run_id)
+        with table_filter_column:
+            table_name = testgen.select(
+                options=list(run_columns_df["table_name"].unique()),
+                default_value=table_name,
+                bind_to_query="table_name",
+                label="Table Name",
+            )
+
+        with column_filter_column:
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"])
+            column_name = testgen.select(
+                options=column_options,
+                value_column="column_name",
+                default_value=column_name,
+                bind_to_query="column_name",
+                label="Column Name",
+                disabled=not table_name,
+            )
+
         with sort_column:
             sortable_columns = (
                 ("Table", "r.table_name"),
@@ -95,7 +123,7 @@ class ProfilingAnomaliesPage(Page):
 
 
         # Get hygiene issue list
-        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, sorting_columns)
+        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
 
         # Retrieve disposition action (cache refreshed)
         df_action = get_anomaly_disposition(run_id)
@@ -110,7 +138,7 @@ class ProfilingAnomaliesPage(Page):
                 testgen.summary_bar(
                     items=others_summary,
                     label="Hygiene Issues",
-                    height=40,
+                    height=20,
                     width=400,
                 )
 
@@ -120,7 +148,7 @@ class ProfilingAnomaliesPage(Page):
                     testgen.summary_bar(
                         items=anomalies_pii_summary,
                         label="Potential PII",
-                        height=40,
+                        height=20,
                         width=400,
                     )
             # write_frequency_graph(df_pa)
@@ -252,24 +280,48 @@ class ProfilingAnomaliesPage(Page):
 
 
 @st.cache_data(show_spinner=False)
-def get_db_table_group_choices(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(str_schema, str_project_code)
+def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    return dq.run_table_groups_lookup_query(schema, project_code)
+
+
+@st.cache_data(show_spinner="False")
+def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT table_name, column_name
+    FROM {schema}.profile_anomaly_results
+    WHERE profile_run_id = '{profiling_run_id}'
+    ORDER BY table_name, column_name;
+    """
+    return db.retrieve_data(sql)
 
 
 @st.cache_data(show_spinner="Retrieving Data")
-def get_profiling_anomalies(str_profile_run_id, str_likelihood, issue_type_id, sorting_columns):
-    str_schema = st.session_state["dbschema"]
-    if str_likelihood is None:
-        str_criteria = " AND t.issue_likelihood <> 'Potential PII'"
-    else:
-        str_criteria = f" AND t.issue_likelihood = '{str_likelihood}'"
-    if sorting_columns:
-        str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
-    else:
-        str_order_by = ""
+def get_profiling_anomalies(
+    profile_run_id: str,
+    likelihood: str | None,
+    issue_type_id: str | None,
+    table_name: str | None,
+    column_name: str | None,
+    sorting_columns: list[str] | None,
+):
+    schema: str = st.session_state["dbschema"]
+    criteria = ""
+    order_by = ""
+
+    if likelihood:
+        criteria += f" AND t.issue_likelihood = '{likelihood}'"
     if issue_type_id:
-        str_criteria += f" AND t.id = '{issue_type_id}'"
+        criteria += f" AND t.id = '{issue_type_id}'"
+    if table_name:
+        criteria += f" AND r.table_name = '{table_name}'"
+    if column_name:
+        criteria += f" AND r.column_name = '{column_name}'"
+
+    if sorting_columns:
+        order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
+
     # Define the query -- first visible column must be first, because will hold the multi-select box
     str_sql = f"""
             SELECT r.table_name, r.column_name, r.schema_name,
@@ -291,17 +343,16 @@ def get_profiling_anomalies(str_profile_run_id, str_likelihood, issue_type_id, s
                    t.anomaly_description, r.detail, t.suggested_action,
                    r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime,
                    tg.table_groups_name
-              FROM {str_schema}.profile_anomaly_results r
-            INNER JOIN {str_schema}.profile_anomaly_types t
+              FROM {schema}.profile_anomaly_results r
+            INNER JOIN {schema}.profile_anomaly_types t
                ON r.anomaly_id = t.id
-            INNER JOIN {str_schema}.profiling_runs p
+            INNER JOIN {schema}.profiling_runs p
                 ON r.profile_run_id = p.id
-            INNER JOIN {str_schema}.table_groups tg
+            INNER JOIN {schema}.table_groups tg
                 ON r.table_groups_id = tg.id
-
-             WHERE r.profile_run_id = '{str_profile_run_id}'
-               {str_criteria}
-            {str_order_by}
+             WHERE r.profile_run_id = '{profile_run_id}'
+               {criteria}
+            {order_by}
     """
     # Retrieve data as df
     df = db.retrieve_data(str_sql)

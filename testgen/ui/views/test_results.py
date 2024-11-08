@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
@@ -43,7 +44,15 @@ class TestResultsPage(Page):
         lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
-    def render(self, run_id: str, status: str | None = None, test_type: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        run_id: str,
+        status: str | None = None,
+        test_type: str | None = None,
+        table_name: str | None = None,
+        column_name: str | None = None,
+        **_kwargs,
+    ) -> None:
         run_parentage = get_drill_test_run(run_id)
         if not run_parentage:
             self.router.navigate_with_warning(
@@ -65,16 +74,17 @@ class TestResultsPage(Page):
             ],
         )
 
-        # Display summary bar
-        tests_summary = get_test_result_summary(run_id)
-        testgen.summary_bar(items=tests_summary, height=40, width=800)
-
-        # Setup Toolbar
-        status_filter_column, test_type_filter_column, sort_column, actions_column, export_button_column = st.columns(
-            [.2, .2, .08, .4, .12], vertical_alignment="bottom"
+        summary_column, actions_column = st.columns([.5, .5], vertical_alignment="bottom")
+        status_filter_column, test_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
+            [.2, .2, .2, .2, .1, .1], vertical_alignment="bottom"
         )
+
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
+
+        with summary_column:
+            tests_summary = get_test_result_summary(run_id)
+            testgen.summary_bar(items=tests_summary, height=20, width=800)
 
         with status_filter_column:
             status_options = [
@@ -100,6 +110,26 @@ class TestResultsPage(Page):
                 required=False,
                 bind_to_query="test_type",
                 label="Test Type",
+            )
+
+        run_columns_df = get_test_run_columns(run_id)
+        with table_filter_column:
+            table_name = testgen.select(
+                options=list(run_columns_df["table_name"].unique()),
+                default_value=table_name,
+                bind_to_query="table_name",
+                label="Table Name",
+            )
+
+        with column_filter_column:
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"])
+            column_name = testgen.select(
+                options=column_options,
+                value_column="column_name",
+                default_value=column_name,
+                bind_to_query="column_name",
+                label="Column Name",
+                disabled=not table_name,
             )
 
         with sort_column:
@@ -131,7 +161,7 @@ class TestResultsPage(Page):
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
-            run_id, status, test_type, sorting_columns, do_multi_select, export_button_column
+            run_id, export_button_column, status, test_type, table_name, column_name, sorting_columns, do_multi_select
         )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
@@ -190,25 +220,47 @@ def get_test_types():
     return df
 
 
+@st.cache_data(show_spinner="False")
+def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT table_name, column_names AS column_name
+    FROM {schema}.test_results
+    WHERE test_run_id = '{test_run_id}'
+    ORDER BY table_name, column_names;
+    """
+    return db.retrieve_data(sql)
+
+
 @st.cache_data(show_spinner="Retrieving Results")
-def get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns):
-    schema = st.session_state["dbschema"]
-    return get_test_results_uncached(schema, str_run_id, str_sel_test_status, test_type_id, sorting_columns)
-
-
-def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_type_id=None, sorting_columns=None):
+def get_test_results(
+    run_id: str,
+    test_status: str | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    sorting_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
     # First visible row first, so multi-select checkbox will render
-    str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
-    test_type_clause = f"AND r.test_type = '{test_type_id}'" if test_type_id else ""
-    status_clause = f" AND r.result_status IN ({str_sel_test_status})" if str_sel_test_status else ""
-    str_sql = f"""
+    order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
+    filters = ""
+    if test_status:
+        filters += f" AND r.result_status IN ({test_status})"
+    if test_type_id:
+        filters += f" AND r.test_type = '{test_type_id}'"
+    if table_name:
+        filters += f" AND r.table_name = '{table_name}'"
+    if column_name:
+        filters += f" AND r.column_names = '{column_name}'"
+
+    sql = f"""
             WITH run_results
                AS (SELECT *
-                     FROM {str_schema}.test_results r
+                     FROM {schema}.test_results r
                     WHERE
-                      r.test_run_id = '{str_run_id}'
-                      {status_clause}
-                      {test_type_clause}
+                      r.test_run_id = '{run_id}'
+                      {filters}
                     )
             SELECT r.table_name,
                    p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
@@ -249,31 +301,31 @@ def get_test_results_uncached(str_schema, str_run_id, str_sel_test_status, test_
                    tt.threshold_description, tt.usage_notes, r.test_time
 
               FROM run_results r
-            INNER JOIN {str_schema}.test_types tt
+            INNER JOIN {schema}.test_types tt
                ON (r.test_type = tt.test_type)
-            LEFT JOIN {str_schema}.test_definitions rd
+            LEFT JOIN {schema}.test_definitions rd
               ON (r.test_definition_id = rd.id)
-            LEFT JOIN {str_schema}.test_definitions d
+            LEFT JOIN {schema}.test_definitions d
                ON (r.test_suite_id = d.test_suite_id
               AND  r.table_name = d.table_name
               AND  r.column_names = COALESCE(d.column_name, 'N/A')
               AND  r.test_type = d.test_type
               AND  r.auto_gen = TRUE
               AND  d.last_auto_gen_date IS NOT NULL)
-            INNER JOIN {str_schema}.test_suites ts
+            INNER JOIN {schema}.test_suites ts
                ON r.test_suite_id = ts.id
-            INNER JOIN {str_schema}.projects p
+            INNER JOIN {schema}.projects p
                ON (ts.project_code = p.project_code)
-            INNER JOIN {str_schema}.table_groups tg
+            INNER JOIN {schema}.table_groups tg
                ON (ts.table_groups_id = tg.id)
-            INNER JOIN {str_schema}.connections cn
+            INNER JOIN {schema}.connections cn
                ON (tg.connection_id = cn.connection_id)
-            LEFT JOIN {str_schema}.cat_test_conditions c
+            LEFT JOIN {schema}.cat_test_conditions c
                ON (cn.sql_flavor = c.sql_flavor
               AND  r.test_type = c.test_type)
-            {str_order_by} ;
+            {order_by} ;
     """
-    df = db.retrieve_data(str_sql)
+    df = db.retrieve_data(sql)
 
     # Clean Up
     df["test_date"] = pd.to_datetime(df["test_date"])
@@ -449,11 +501,20 @@ def show_test_def_detail(str_test_def_id):
         )
 
 
-def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_columns, do_multi_select, export_container):
+def show_result_detail(
+    run_id: str,
+    export_container: DeltaGenerator,
+    test_status: str | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    sorting_columns: list[str] | None = None,
+    do_multi_select: bool = False,
+):
     # Retrieve test results (always cached, action as null)
-    df = get_test_results(str_run_id, str_sel_test_status, test_type_id, sorting_columns)
+    df = get_test_results(run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
     # Retrieve disposition action (cache refreshed)
-    df_action = get_test_disposition(str_run_id)
+    df_action = get_test_disposition(run_id)
     # Update action from disposition df
     action_map = df_action.set_index("id")["action"].to_dict()
     df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
