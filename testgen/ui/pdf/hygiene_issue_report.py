@@ -85,7 +85,7 @@ def build_summary_table(document, hi_data):
         (
             "Hygiene Issue",
             (
-                Paragraph(f"<b>{hi_data["anomaly_name"]}:</b>", style=PARA_STYLE_CELL),
+                Paragraph(f"<b>{hi_data['anomaly_name']}:</b>", style=PARA_STYLE_CELL),
                 Paragraph(hi_data["anomaly_description"], style=PARA_STYLE_CELL),
             ),
             None,
