@@ -9,10 +9,8 @@ ALTER TABLE test_suites
    ADD COLUMN dq_score_exclude BOOLEAN default FALSE;
 
 ALTER TABLE profile_anomaly_types
-   ADD COLUMN upper_case_ct BIGINT,
-   ADD COLUMN lower_case_ct BIGINT,
-   ADD COLUMN non_alpha_ct  BIGINT,
-   ADD COLUMN mixed_case_ct BIGINT GENERATED ALWAYS AS ( value_ct - upper_case_ct - lower_case_ct - non_alpha_ct ) STORED;
+   ADD COLUMN dq_score_prevalence_formula TEXT,
+   ADD COLUMN dq_score_risk_factor TEXT;
 
 ALTER TABLE profile_anomaly_results
    ADD COLUMN dq_prevalence FLOAT;
