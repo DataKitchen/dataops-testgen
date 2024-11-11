@@ -1,6 +1,19 @@
   SELECT schema_name || '.' || table_name || '.' || column_name AS columns,
          ARRAY_AGG(cat_test_id) as test_id_array
-   FROM (SELECT cat_test_id,
+   FROM (
+         -- FROM: column_name - column scope (single column)
+         SELECT cat_test_id,
+                schema_name              AS schema_name,
+                table_name               AS table_name,
+                column_name
+         FROM test_definitions d
+         INNER JOIN test_types t
+               ON d.test_type = t.test_type
+         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND t.test_scope = 'column'
+         UNION
+         -- FROM: column_name - referential scope (could be multiple columns)
+         SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
                 TRIM(UNNEST(STRING_TO_ARRAY(column_name, ','))) as column_name
@@ -8,8 +21,9 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
-         AND t.test_scope IN ('column', 'referential')
+         AND t.test_scope = 'referential'
          UNION
+         -- FROM: groupby_names (should be referential)
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
@@ -20,6 +34,7 @@
          WHERE test_suite_id = '{TEST_SUITE_ID}'
          AND t.test_scope IN ('column', 'referential')
          UNION
+         -- FROM: window_date_column (referential)
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
@@ -28,8 +43,9 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
-         AND t.test_scope IN ('column', 'referential')
+         AND t.test_scope = 'referential'
          UNION
+         -- FROM: match_column_names (referential)
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
@@ -40,6 +56,7 @@
          WHERE test_suite_id = '{TEST_SUITE_ID}'
          AND t.test_scope = 'referential'
          UNION
+         -- FROM: match_groupby_names (referential)
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
@@ -49,5 +66,5 @@
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
          AND t.test_scope = 'referential' ) cols
-   WHERE column_name SIMILAR TO '[A-Za-z0-9_]+'
+--    WHERE column_name SIMILAR TO '[A-Za-z0-9_]+'
 GROUP BY columns;

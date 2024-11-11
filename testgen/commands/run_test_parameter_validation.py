@@ -65,8 +65,8 @@ def run_parameter_validation_queries(
         strSchemas = ", ".join([f"'{value}'" for value in setSchemas])
         LOG.debug("Test column list successfully retrieved")
 
-        # Retrieve Project Column list
-        LOG.info("CurrentStep: Retrieve Test Columns for Validation")
+        # Retrieve Current Project Column list
+        LOG.info("CurrentStep: Retrieve Current Columns for Validation")
         clsExecute.test_schemas = strSchemas
         strProjectColumnList = clsExecute.GetProjectTestValidationColumns()
         if "where table_schema in ()" in strProjectColumnList:
@@ -74,9 +74,9 @@ def run_parameter_validation_queries(
         lstProjectTestColumns = RetrieveDBResultsToDictList("PROJECT", strProjectColumnList)
 
         if len(lstProjectTestColumns) == 0:
-            LOG.info("Project Test Column list is empty")
+            LOG.info("Current Test Column list is empty")
 
-        LOG.debug("Project column list successfully received")
+        LOG.debug("Current column list successfully received")
         LOG.info("CurrentStep: Compare column sets")
         # load results into sets
         result_set1 = {col.lower() for col, _ in test_columns}
@@ -86,7 +86,7 @@ def run_parameter_validation_queries(
         missing_columns = result_set1.difference(result_set2)
 
         if len(missing_columns) == 0:
-            LOG.info("No missing column in Project Column list.")
+            LOG.info("No missing column in Current Column list.")
 
     if missing_columns:
         LOG.debug("Test Columns are missing in target database: %s", ", ".join(missing_columns))
@@ -143,7 +143,7 @@ def run_parameter_validation_queries(
         # when run_parameter_validation_queries() is called from execute_tests_query.py:
         # we disable tests and write validation errors to test_results table.
         if booRunFromTestExec:
-            # Copy test results to DK DB, using temporary flagged -1 value to identify
+            # Copy test results to DK DB, using temporary flagged D value to identify
             LOG.info("CurrentStep: Saving error results for invalid tests")
             strReportValErrors = clsExecute.ReportTestValidationErrors()
             RunActionQueryList("DKTG", [strReportValErrors])

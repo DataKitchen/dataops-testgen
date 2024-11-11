@@ -30,13 +30,13 @@ CREATE TABLE stg_functional_table_updates (
 );
 
 CREATE TABLE projects (
-   id                  UUID DEFAULT gen_random_uuid(),
-   project_code        VARCHAR(30) NOT NULL
+   id                    UUID DEFAULT gen_random_uuid(),
+   project_code          VARCHAR(30) NOT NULL
       CONSTRAINT projects_project_code_pk
          PRIMARY KEY,
-   project_name        VARCHAR(50),
-   effective_from_date DATE,
-   effective_thru_date DATE,
+   project_name          VARCHAR(50),
+   effective_from_date   DATE,
+   effective_thru_date   DATE,
    observability_api_key TEXT,
    observability_api_url TEXT DEFAULT ''
 );
@@ -94,26 +94,32 @@ CREATE TABLE table_groups
     source_process           VARCHAR(40),
     business_domain          VARCHAR(40),
     stakeholder_group        VARCHAR(40),
-    transform_level          VARCHAR(40)
+    transform_level          VARCHAR(40),
+    last_complete_profile_run_id UUID,
+    dq_score_profiling       FLOAT,
+    dq_score_testing         FLOAT
 );
 
 CREATE TABLE profiling_runs (
-   id                  UUID
+   id                      UUID
       CONSTRAINT pk_prun_id
          PRIMARY KEY,
-   project_code        VARCHAR(30) NOT NULL,
-   connection_id       BIGINT      NOT NULL,
-   table_groups_id     UUID        NOT NULL,
-   profiling_starttime TIMESTAMP,
-   profiling_endtime   TIMESTAMP,
-   status              VARCHAR(100) DEFAULT 'Running',
-   log_message         VARCHAR,
-   table_ct            BIGINT,
-   column_ct           BIGINT,
-   anomaly_ct          BIGINT,
-   anomaly_table_ct    BIGINT,
-   anomaly_column_ct   BIGINT,
-   process_id          INTEGER
+   project_code            VARCHAR(30) NOT NULL,
+   connection_id           BIGINT      NOT NULL,
+   table_groups_id         UUID        NOT NULL,
+   profiling_starttime     TIMESTAMP,
+   profiling_endtime       TIMESTAMP,
+   status                  VARCHAR(100) DEFAULT 'Running',
+   log_message             VARCHAR,
+   table_ct                BIGINT,
+   column_ct               BIGINT,
+   anomaly_ct              BIGINT,
+   anomaly_table_ct        BIGINT,
+   anomaly_column_ct       BIGINT,
+   dq_affected_data_points BIGINT,
+   dq_total_data_points    BIGINT,
+   dq_score_profiling      FLOAT,
+   process_id              INTEGER
 );
 
 CREATE TABLE test_suites (
@@ -128,16 +134,12 @@ CREATE TABLE test_suites (
    test_action             VARCHAR(100),
    severity                VARCHAR(10),
    export_to_observability VARCHAR(5)  DEFAULT 'Y',
---    email_list             VARCHAR(200),
---    email_slack            VARCHAR(100),
---    wiki_link              VARCHAR(200),
---    variation_link         VARCHAR(200),
---    wiki_page_id           BIGINT,
---    confluence_space       VARCHAR(10),
    test_suite_schema       VARCHAR(100),
    component_key           VARCHAR(100),
    component_type          VARCHAR(100),
    component_name          VARCHAR(100),
+   last_complete_test_run_id UUID,
+   dq_score_exclude        BOOLEAN default FALSE,
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
 );
@@ -230,6 +232,10 @@ CREATE TABLE profile_results (
    filled_value_ct       BIGINT,
    min_text              VARCHAR(1000),
    max_text              VARCHAR(1000),
+   upper_case_ct         BIGINT,
+   lower_case_ct         BIGINT,
+   non_alpha_ct          BIGINT,
+   mixed_case_ct         BIGINT GENERATED ALWAYS AS ( value_ct - upper_case_ct - lower_case_ct - non_alpha_ct ) STORED,
    numeric_ct            BIGINT,
    date_ct               BIGINT,
    top_patterns          VARCHAR(1000),
@@ -249,9 +255,11 @@ CREATE TABLE profile_results (
    before_1yr_date_ct    BIGINT,
    before_5yr_date_ct    BIGINT,
    before_20yr_date_ct   BIGINT,
+   before_100yr_date_ct  BIGINT,
    within_1yr_date_ct    BIGINT,
    within_1mo_date_ct    BIGINT,
    future_date_ct        BIGINT,
+   distant_future_date_ct   BIGINT,
    date_days_present     BIGINT,
    date_weeks_present    BIGINT,
    date_months_present   BIGINT,
@@ -275,13 +283,15 @@ CREATE TABLE profile_anomaly_types (
         CONSTRAINT pk_anomaly_types_id
             PRIMARY KEY,
    anomaly_type        VARCHAR(200) NOT NULL,
-   data_object         VARCHAR(10),  -- Table, Dates, Column
+   data_object         VARCHAR(10),  -- Column, Multi-Col, Dates, Variant
    anomaly_name        VARCHAR(100),
    anomaly_description VARCHAR(500),
    anomaly_criteria    VARCHAR(2000),
    detail_expression   VARCHAR(2000),
    issue_likelihood    VARCHAR(50),  -- Potential, Likely, Certain
-   suggested_action    VARCHAR(1000) -- Consider, Investigate, Correct
+   suggested_action    VARCHAR(1000),
+   dq_score_prevalence_formula TEXT,
+   dq_score_risk_factor        TEXT
 );
 
 CREATE TABLE profile_anomaly_results (
@@ -298,7 +308,8 @@ CREATE TABLE profile_anomaly_results (
    column_type     VARCHAR(50),
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
-   disposition     VARCHAR(20) -- Confirmed, Dismissed, Inactive
+   disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
+   dq_prevalence   FLOAT
 );
 
 
@@ -350,7 +361,10 @@ CREATE TABLE data_table_chars (
    drop_date             TIMESTAMP,
    record_ct             BIGINT,
    column_ct             BIGINT,
-   data_point_ct         BIGINT
+   data_point_ct         BIGINT,
+   last_complete_profile_run_id UUID,
+   dq_score_profiling    FLOAT,
+   dq_score_testing      FLOAT
 );
 
 CREATE TABLE data_column_chars (
@@ -384,7 +398,10 @@ CREATE TABLE data_column_chars (
    fails_30_days_prior    INTEGER,
    warnings_last_run      INTEGER,
    warnings_7_days_prior  INTEGER,
-   warnings_30_days_prior INTEGER
+   warnings_30_days_prior INTEGER,
+   last_complete_profile_run_id UUID,
+   dq_score_profiling     FLOAT,
+   dq_score_testing       FLOAT
 );
 
 CREATE TABLE test_types (
@@ -399,6 +416,8 @@ CREATE TABLE test_types (
    measure_uom             VARCHAR(100),
    measure_uom_description VARCHAR(200),
    selection_criteria      TEXT,
+   dq_score_prevalence_formula TEXT,
+   dq_score_risk_factor       TEXT,
    column_name_prompt      TEXT,
    column_name_help        TEXT,
    default_parm_columns    TEXT,
@@ -434,25 +453,28 @@ CREATE TABLE generation_sets (
 );
 
 CREATE TABLE test_runs (
-   id                UUID NOT NULL
+   id                      UUID NOT NULL
       CONSTRAINT test_runs_id_pk
          PRIMARY KEY,
-   test_suite_id     UUID NOT NULL,
-   test_starttime    TIMESTAMP,
-   test_endtime      TIMESTAMP,
-   status            VARCHAR(100) DEFAULT 'Running',
-   log_message       TEXT,
-   duration          VARCHAR(50),
-   test_ct           INTEGER,
-   passed_ct         INTEGER,
-   failed_ct         INTEGER,
-   warning_ct        INTEGER,
-   error_ct          INTEGER,
-   table_ct          INTEGER,
-   column_ct         INTEGER,
-   column_failed_ct  INTEGER,
-   column_warning_ct INTEGER,
-   process_id        INTEGER,
+   test_suite_id           UUID NOT NULL,
+   test_starttime          TIMESTAMP,
+   test_endtime            TIMESTAMP,
+   status                  VARCHAR(100) DEFAULT 'Running',
+   log_message             TEXT,
+   duration                VARCHAR(50),
+   test_ct                 INTEGER,
+   passed_ct               INTEGER,
+   failed_ct               INTEGER,
+   warning_ct              INTEGER,
+   error_ct                INTEGER,
+   table_ct                INTEGER,
+   column_ct               INTEGER,
+   column_failed_ct        INTEGER,
+   column_warning_ct       INTEGER,
+   dq_affected_data_points BIGINT,
+   dq_total_data_points    BIGINT,
+   dq_score_test_run       FLOAT,
+   process_id              INTEGER,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -488,6 +510,8 @@ CREATE TABLE test_results (
    test_description       VARCHAR(1000),
    test_run_id            UUID NOT NULL,
    table_groups_id        UUID,
+   dq_prevalence          FLOAT,
+   dq_record_ct           BIGINT,
    observability_status   VARCHAR(10),
    CONSTRAINT test_results_test_suites_project_code_test_suite_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
