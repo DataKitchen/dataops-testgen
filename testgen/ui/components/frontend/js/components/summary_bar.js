@@ -8,58 +8,50 @@
  * @typedef Properties
  * @type {object}
  * @property {Array.<SummaryItem>} items
- * @property {string} label
- * @property {number} height
- * @property {number} width
+ * @property {string?} label
+ * @property {number?} height
+ * @property {number?} width
  */
 import van from '../van.min.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
+import { colorMap } from '../display_utils.js';
 
 const { div, span } = van.tags;
-const colorMap = {
-    red: '#EF5350',
-    orange: '#FF9800',
-    yellow: '#FDD835',
-    green: '#9CCC65',
-    purple: '#AB47BC',
-    blue: '#42A5F5',
-    brown: '#8D6E63',
-    grey: '#BDBDBD',
-}
+const defaultHeight = 24;
 
 const SummaryBar = (/** @type Properties */ props) => {
     loadStylesheet('summaryBar', stylesheet);
-
-    const height = props.height.val || 24;
-    const width = props.width.val;
-    const summaryItems = props.items.val;
-    const label = props.label?.val;
-    const total = summaryItems.reduce((sum, item) => sum + item.value, 0);
+    const total = van.derive(() => getValue(props.items).reduce((sum, item) => sum + item.value, 0));
 
     return div(
-        { class: 'tg-summary-bar-wrapper' },
-        () => {
-            return label ? div(
-                { class: 'tg-summary-bar--label' },
-                label,
-            ) : null;
-        },
-        div(
+        { style: () => `max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};` },
+        () => props.label ? div(
+            { class: 'tg-summary-bar--label' },
+            props.label,
+        ) : '',
+        () => div(
             {
                 class: 'tg-summary-bar',
-                style: `height: ${height}px; max-width: ${width ? width + 'px' : '100%'}`
+                style: () => `height: ${getValue(props.height) || defaultHeight}px;`
             },
-            summaryItems.map(item => span({
-                class: `tg-summary-bar--item`,
-                style: `width: ${item.value * 100 / total}%; background-color: ${colorMap[item.color] || item.color};`,
+            getValue(props.items).map(item => span({
+                class: 'tg-summary-bar--item',
+                style: () => `width: ${item.value * 100 / total.val}%;
+                    ${item.value ? 'min-width: 1px;' : ''}
+                    background-color: ${colorMap[item.color] || item.color};`,
             })),
         ),
-        () => {
-            return total ? div(
-                { class: `tg-summary-bar--caption` },
-                summaryItems.map(item => `${item.label}: ${item.value || 0}`).join(', '),
-            ) : null;
-        },
+        () => total.val ? div(
+            { class: 'tg-summary-bar--caption flex-row fx-flex-wrap text-caption mt-1' },
+            getValue(props.items).map(item => div(
+                { class: 'tg-summary-bar--legend flex-row' },
+                span({
+                    class: 'dot',
+                    style: `color: ${colorMap[item.color] || item.color};`,
+                }),
+                `${item.label}: ${item.value || 0}`,
+            )),
+        ) : '',
     );
 };
 
@@ -84,9 +76,20 @@ stylesheet.replace(`
 }
 
 .tg-summary-bar--caption {
-    margin-top: 4px;
-    color: var(--caption-text-color);
     font-style: italic;
+}
+
+.tg-summary-bar--legend {
+    width: auto;
+}
+
+.tg-summary-bar--legend:not(:last-child) {
+    margin-right: 8px;
+}
+
+.tg-summary-bar--legend span {
+    margin-right: 2px;
+    font-size: 4px;
 }
 `);
 

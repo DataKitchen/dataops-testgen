@@ -17,6 +17,7 @@ import { SortingSelector } from './components/sorting_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
+import { DataHierarchy } from './pages/data_hierarchy.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -34,6 +35,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         test_runs: TestRuns,
         profiling_runs: ProfilingRuns,
         database_flavor_selector: DatabaseFlavorSelector,
+        data_hierarchy: DataHierarchy,
     };
 
     if (Object.keys(componentById).includes(id)) {
