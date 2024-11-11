@@ -542,12 +542,21 @@ def show_result_detail(str_run_id, str_sel_test_status, test_type_id, sorting_co
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
         if authentication_service.current_user_has_edit_role():
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
+
         if selected_row["test_scope"] == "column":
-            view_profiling_button(
-                v_col2, selected_row["table_name"], selected_row["column_names"],
-                str_table_groups_id=selected_row["table_groups_id"]
-            )
-        view_bad_data(v_col3, selected_row)
+            with v_col2:
+                view_profiling_button(
+                    selected_row["table_name"],
+                    selected_row["column_names"],
+                    str_table_groups_id=selected_row["table_groups_id"]
+                )
+
+        with v_col3:
+            if st.button(
+                    "Source Data　→", help="Review current source data for highlighted result",
+                    use_container_width=True
+            ):
+                source_data_dialog(selected_row)
 
         with v_col4:
 
@@ -692,14 +701,6 @@ def do_disposition_update(selected, str_new_status):
             str_result = f":red[**The update {str_which} did not succeed.**]"
 
     return str_result
-
-
-def view_bad_data(button_container, selected_row):
-    with button_container:
-        if st.button(
-            "Source Data　→", help="Review current source data for highlighted result", use_container_width=True
-        ):
-            source_data_dialog(selected_row)
 
 
 @st.dialog(title="Source Data")
