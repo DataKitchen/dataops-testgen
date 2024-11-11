@@ -460,15 +460,6 @@ UPDATE profile_results
            AND p.distinct_value_ct BETWEEN 15 AND 40000 ) c
 WHERE profile_results.id = c.id;
 
--- 7. Assign 'ID-Unique' functional data type to the columns that are identity columns
-
-UPDATE profile_results
-SET functional_data_type = 'ID-Unique'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
-  AND functional_data_type IN ('ID', 'ID-Secondary')
-  AND record_ct = distinct_value_ct
-  AND record_ct > 50;
-
 -- Update alpha ID's to ID-Secondary and ID-Grouping
 
 UPDATE profile_results
@@ -482,7 +473,16 @@ SET functional_data_type = CASE
  WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type = 'ID';
 
--- 8. Assign 'ID-FK' functional data type to the columns that are foreign keys of the identity columns identified in the previous step
+-- Assign 'ID-Unique' functional data type to the columns that are identity columns
+
+UPDATE profile_results
+SET functional_data_type = 'ID-Unique'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type IN ('ID', 'ID-Secondary')
+  AND record_ct = distinct_value_ct
+  AND record_ct > 50;
+
+-- Assign 'ID-FK' functional data type to the columns that are foreign keys of the identity columns identified in the previous step
 
 UPDATE profile_results
 SET functional_data_type = 'ID-FK'
@@ -496,9 +496,7 @@ WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
   and profile_results.table_name <> ui.table_name
   and profile_results.functional_data_type <> 'ID-Unique';
 
--- Assign
-
--- 9. Functional Data Type: 'Measurement Pct'
+-- Functional Data Type: 'Measurement Pct'
 
 UPDATE profile_results
 SET functional_data_type = 'Measurement Pct'
