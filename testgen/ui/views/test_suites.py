@@ -35,7 +35,7 @@ class TestSuitesPage(Page):
 
         testgen.page_header(
             "Test Suites",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-test-suite",
+            "create-a-test-suite",
         )
 
         project_code = project_code or session.project

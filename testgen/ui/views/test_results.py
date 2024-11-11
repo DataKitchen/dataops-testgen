@@ -67,7 +67,7 @@ class TestResultsPage(Page):
 
         testgen.page_header(
             "Test Results",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
+            "view-testgen-test-results",
             breadcrumbs=[
                 { "label": "Test Runs", "path": "test-runs", "params": { "project_code": project_code } },
                 { "label": f"{test_suite_name} | {run_date}" },

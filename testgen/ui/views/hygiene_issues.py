@@ -50,7 +50,7 @@ class HygieneIssuesPage(Page):
 
         testgen.page_header(
             "Hygiene Issues",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies",
+            "view-hygiene-issues",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
                 { "label": f"{table_group_name} | {run_date}" },

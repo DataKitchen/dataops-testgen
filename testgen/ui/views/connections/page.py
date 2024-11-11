@@ -39,7 +39,7 @@ class ConnectionsPage(Page):
 
         testgen.page_header(
             "Connection",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/connect-your-database",
+            "connect-your-database",
         )
 
         testgen.whitespace(0.3)
@@ -59,7 +59,7 @@ class ConnectionsPage(Page):
                     right_icon="chevron_right",
                     underline=False,
                     height=40,
-                    style="margin-left: auto; border-radius: 4px; background: white;"
+                    style="margin-left: auto; border-radius: 4px; background: var(--dk-card-background);"
                         " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:

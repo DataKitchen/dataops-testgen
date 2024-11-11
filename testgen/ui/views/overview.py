@@ -29,7 +29,7 @@ class OverviewPage(Page):
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
             "Project Overview",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
+            "introduction-to-dataops-testgen",
         )
 
         project_code = project_code or session.project
@@ -107,6 +107,7 @@ def render_empty_state(project_code: str) -> bool:
 def render_project_summary(table_groups: pd.DataFrame) -> None:
     project_column, _ = st.columns([.5, .5])
     with project_column:
+        testgen.whitespace(0.3)
         with testgen.card():
             summary_column, _ = st.columns([.8, .2])
             # TODO: Uncomment and replace with below section when adding the score
