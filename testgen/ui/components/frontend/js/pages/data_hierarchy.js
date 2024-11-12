@@ -62,7 +62,7 @@
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
- * @property {number} latest_test_run_date
+ * @property {number} has_test_runs
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestIssue[]} latest_test_issues
@@ -92,7 +92,7 @@
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
- * @property {number} latest_test_run_date
+ * @property {number} has_test_runs
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestResult[]} latest_test_results
@@ -131,7 +131,7 @@ const columnIcons = {
 const DataHierarchy = (/** @type Properties */ props) => {
     loadStylesheet('data_hierarchy', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
-    window.frameElement.style.setProperty('height', 'calc(100vh - 200px)');
+    window.frameElement.style.setProperty('height', 'calc(100vh - 175px)');
     window.testgen.isPage = true;
 
     const treeNodes = van.derive(() => {
@@ -519,7 +519,7 @@ const TestIssuesCard = (/** @type Table | Column */ item) => {
     }
 
     let noneContent = 'No test issues detected';
-    if (!item.latest_test_run_date) {
+    if (!item.has_test_runs) {
         if (item.drop_date) {
             noneContent = span({ class: 'text-secondary' }, `No test results for ${item.type}`);
         } else {

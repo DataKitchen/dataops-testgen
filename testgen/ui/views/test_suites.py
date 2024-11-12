@@ -154,7 +154,7 @@ class TestSuitesPage(Page):
                             disabled=run_disabled,
                             key=f"test_suite:keys:runtests:{test_suite['id']}",
                         )
-                        generate_disabled = pd.isnull(test_suite["latest_profiling_date"])
+                        generate_disabled = pd.isnull(test_suite["last_complete_profile_run_id"])
                         testgen.button(
                             type_="stroked",
                             label="Generate Tests",
