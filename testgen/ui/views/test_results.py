@@ -242,6 +242,18 @@ def get_test_results(
     sorting_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
+    return get_test_results_uncached(schema, run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
+
+
+def get_test_results_uncached(
+    schema: str,
+    run_id: str,
+    test_status: str | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    sorting_columns: list[str] | None = None,
+) -> pd.DataFrame:
     # First visible row first, so multi-select checkbox will render
     order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
     filters = ""
