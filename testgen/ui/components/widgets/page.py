@@ -35,7 +35,7 @@ def page_header(
     st.session_state["last_page"] = title
 
 
-def page_links(help_topic: str):
+def page_links(help_topic: str | None = None):
     css_class("tg-header--links")
     flex_row_end()
     st.link_button(":material/question_mark:", f"{BASE_HELP_URL}{help_topic or DEFAULT_HELP_TOPIC}", help="Help Center")
