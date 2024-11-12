@@ -43,7 +43,7 @@ class TestDefinitionsPage(Page):
 
         testgen.page_header(
             "Test Definitions",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types",
+            "testgen-test-types",
             breadcrumbs=[
                 { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
                 { "label": test_suite["test_suite"] },

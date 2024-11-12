@@ -12,23 +12,14 @@ def run_table_groups_lookup_query(str_project_code):
 
 
 @st.cache_data(show_spinner=False)
-def get_latest_profile_run(str_table_group):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-            WITH last_profile_run
-               AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
-                     FROM {str_schema}.profiling_runs
-                   GROUP BY table_groups_id)
-            SELECT id as profile_run_id
-              FROM {str_schema}.profiling_runs r
-            INNER JOIN last_profile_run l
-               ON (r.table_groups_id = l.table_groups_id
-              AND  r.profiling_starttime = l.last_profile_run_date)
-             WHERE r.table_groups_id = '{str_table_group}';
-"""
-    str_profile_run_id = db.retrieve_single_result(str_sql)
-
-    return str_profile_run_id
+def get_latest_profile_run(table_group_id: str) -> str:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+        SELECT last_complete_profile_run_id
+        FROM {schema}.table_groups
+        WHERE id = '{table_group_id}';
+    """
+    return db.retrieve_single_result(sql)
 
 
 @st.cache_data(show_spinner=False)

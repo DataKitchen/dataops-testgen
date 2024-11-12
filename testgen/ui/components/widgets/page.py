@@ -4,31 +4,43 @@ from streamlit.delta_generator import DeltaGenerator
 from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
 
+BASE_HELP_URL = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/"
+DEFAULT_HELP_TOPIC = "dataops-testgen-help"
+SLACK_URL = "https://data-observability-slack.datakitchen.io/join"
+TRAINING_URL = "https://info.datakitchen.io/data-quality-training-and-certifications"
 
 def page_header(
     title: str,
-    help_link:str | None = None,
+    help_topic: str | None = None,
     breadcrumbs: list["Breadcrumb"] | None = None,
 ):
-    hcol1, hcol2 = st.columns([0.95, 0.05])
-    hcol1.subheader(title, anchor=False)
-    if help_link:
-        with hcol2:
-            whitespace(0.8)
-            st.page_link(help_link, label=" ", icon=":material/help:")
+    with st.container():
+        no_flex_gap()
+        title_column, links_column = st.columns([0.95, 0.05], vertical_alignment="bottom")
 
-    if breadcrumbs:
-        tg_breadcrumbs(breadcrumbs=breadcrumbs)
+        with title_column:
+            no_flex_gap()
+            st.html(f'<h3 class="tg-header">{title}</h3>')
+            if breadcrumbs:
+                tg_breadcrumbs(breadcrumbs=breadcrumbs)
 
-    st.write(
-        '<hr style="background-color: #21c354; margin-top: -8px;'
-        ' margin-bottom: 0; height: 3px; border: none; border-radius: 3px;">',
-        unsafe_allow_html=True,
-    )
+        with links_column:
+            page_links(help_topic)
+
+        st.html('<hr size="3" class="tg-header--line">')
+
     if "last_page" in st.session_state:
         if title != st.session_state["last_page"]:
             st.cache_data.clear()
     st.session_state["last_page"] = title
+
+
+def page_links(help_topic: str):
+    css_class("tg-header--links")
+    flex_row_end()
+    st.link_button(":material/question_mark:", f"{BASE_HELP_URL}{help_topic or DEFAULT_HELP_TOPIC}", help="Help Center")
+    st.link_button(":material/group:", SLACK_URL, help="Slack Community")
+    st.link_button(":material/school:", TRAINING_URL, help="Training Portal")
 
 
 def whitespace(size: float, container: DeltaGenerator | None = None):

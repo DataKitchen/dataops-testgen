@@ -39,7 +39,7 @@ class TableGroupsPage(Page):
 
         testgen.page_header(
             "Table Groups",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-table-group",
+            "create-a-table-group",
             breadcrumbs=[  # type: ignore
                 { "label": "Connections", "path": "connections", "params": { "project_code": project_code } },
                 { "label": connection["connection_name"] },
@@ -59,6 +59,7 @@ class TableGroupsPage(Page):
             )
             return
 
+        testgen.whitespace(0.3)
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 

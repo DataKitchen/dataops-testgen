@@ -102,7 +102,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 "*" = ["*.toml", "*.sql", "*.yaml"]
 "testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
-"testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "flavors/*.svg"]
+"testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "*.ico", "flavors/*.svg"]
 "testgen.ui.components.frontend" = ["*.html", "**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
 
 [tool.setuptools.packages.find]

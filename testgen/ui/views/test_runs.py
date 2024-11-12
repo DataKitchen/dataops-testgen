@@ -34,7 +34,7 @@ class TestRunsPage(Page):
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             "Test Runs",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/test-results",
+            "test-results",
         )
 
         project_code = project_code or session.project
