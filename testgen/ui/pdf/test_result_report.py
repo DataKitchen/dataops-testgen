@@ -18,10 +18,12 @@ from testgen.ui.pdf.style import (
     PARA_STYLE_FOOTNOTE,
     PARA_STYLE_H1,
     PARA_STYLE_INFO,
+    PARA_STYLE_LINK,
     PARA_STYLE_MONO,
     PARA_STYLE_TEXT,
     PARA_STYLE_TITLE,
     TABLE_STYLE_DEFAULT,
+    get_formatted_datetime,
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
 from testgen.ui.services.database_service import get_schema
@@ -30,6 +32,7 @@ from testgen.ui.services.test_results_service import (
     do_source_data_lookup_custom,
     get_test_result_history,
 )
+from testgen.utils import get_base_url
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
@@ -52,8 +55,8 @@ def build_summary_table(document, tr_data):
             *[
                 (cmd[0], *coords, *cmd[1:])
                 for coords in (
-                    ((3, 3), (3, -1)),
-                    ((0, 0), (0, -1))
+                    ((3, 3), (3, -2)),
+                    ((0, 0), (0, -2))
                 )
                 for cmd in (
                     ("FONT", "Helvetica-Bold"),
@@ -75,6 +78,10 @@ def build_summary_table(document, tr_data):
             ("SPAN", (4, 5), (5, 5)),
             ("SPAN", (1, 6), (2, 6)),
             ("SPAN", (4, 6), (5, 6)),
+            ("SPAN", (0, 7), (5, 7)),
+
+            # Link cell
+            ("BACKGROUND", (0, 7), (5, 7), colors.white),
 
             # Measure cell
             ("FONT", (1, 1), (1, 1), "Helvetica-Bold"),
@@ -94,7 +101,7 @@ def build_summary_table(document, tr_data):
         parent=TABLE_STYLE_DEFAULT,
     )
 
-    test_timestamp = pandas.to_datetime(tr_data["test_time"]).strftime("%Y-%m-%d %H:%M:%S")
+    test_timestamp = get_formatted_datetime(tr_data["test_time"])
     summary_table_data = [
         (
             "Test",
@@ -111,10 +118,18 @@ def build_summary_table(document, tr_data):
         ("Measured Value", tr_data["result_measure"], tr_data["measure_uom_description"]),
         ("Threshold Value", tr_data["threshold_value"], tr_data["threshold_description"]),
 
-        ("Date", test_timestamp, None, "Table Group", tr_data["table_groups_name"]),
+        ("Test Run Date", test_timestamp, None, "Table Group", tr_data["table_groups_name"]),
         ("Database/Schema", tr_data["schema_name"], None, "Test Suite", tr_data["test_suite"]),
         ("Table", tr_data["table_name"], None, "Data Quality Dimension", tr_data["dq_dimension"]),
         ("Column", tr_data["column_names"], None, "Disposition", tr_data["disposition"] or "No Decision"),
+        (
+            Paragraph(
+                f"""<a href="{get_base_url()}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}">
+                    View on TestGen >
+                </a>""",
+                style=PARA_STYLE_LINK,
+            ),
+        ),
     ]
 
     summary_table_col_widths = [n * document.width for n in (.2, .1, .2, .2, .15, .15)]
@@ -143,7 +158,7 @@ def build_history_table(document, tr_data):
 
     history_df = pandas.DataFrame()
     history_df = history_df.assign(
-        test_date=history_data["test_date"].copy(),
+        test_date=history_data["test_date"].map(get_formatted_datetime).copy(),
         threshold_value=history_data["threshold_value"].astype(float).copy(),
         result_measure=history_data["result_measure"].astype(float).copy(),
         result_status=history_data["result_status"].map(
@@ -176,7 +191,7 @@ def build_sample_data_content(document, sample_data_tuple):
         yield from df_table_builder.split_in_columns(table_flowables)
 
 
-def build_sql_query_conntent(sample_data_tuple):
+def build_sql_query_content(sample_data_tuple):
     lookup_query = sample_data_tuple[2]
     if lookup_query:
         return Paragraph(lookup_query, PARA_STYLE_MONO)
@@ -185,7 +200,7 @@ def build_sql_query_conntent(sample_data_tuple):
 
 
 def get_report_content(document, tr_data):
-    yield Paragraph("TestGen Issue Report", PARA_STYLE_TITLE)
+    yield Paragraph("TestGen Test Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, tr_data)
 
     yield KeepTogether([
@@ -208,7 +223,7 @@ def get_report_content(document, tr_data):
 
     yield KeepTogether([
         Paragraph("SQL Query", PARA_STYLE_H1),
-        build_sql_query_conntent(sample_data_tuple)
+        build_sql_query_content(sample_data_tuple)
     ])
 
 
