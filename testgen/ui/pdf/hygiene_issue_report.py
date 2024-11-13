@@ -1,4 +1,3 @@
-import pandas
 from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER
@@ -13,13 +12,16 @@ from testgen.ui.pdf.style import (
     PARA_STYLE_FOOTNOTE,
     PARA_STYLE_H1,
     PARA_STYLE_INFO,
+    PARA_STYLE_LINK,
     PARA_STYLE_MONO,
     PARA_STYLE_TEXT,
     PARA_STYLE_TITLE,
     TABLE_STYLE_DEFAULT,
+    get_formatted_datetime,
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
 from testgen.ui.services.hygiene_issues_service import get_source_data
+from testgen.utils import get_base_url
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
@@ -37,9 +39,6 @@ def build_summary_table(document, hi_data):
             # All-table styles
             ("GRID", (0, 0), (-1, -1), 2, colors.white),
             ("BACKGROUND", (0, 0), (-1, -1), COLOR_GRAY_BG),
-
-            # Empty cells
-            ("BACKGROUND", (2, 5), (-1, -1), colors.white),
 
             # Header cells
             *[
@@ -64,7 +63,10 @@ def build_summary_table(document, hi_data):
             ("SPAN", (3, 3), (4, 3)),
             ("SPAN", (3, 4), (4, 4)),
             ("SPAN", (3, 5), (4, 5)),
+            ("SPAN", (2, 5), (4, 5)),
 
+            # Link cell
+            ("BACKGROUND", (2, 5), (4, 5), colors.white),
 
             # Status cell
             *[
@@ -80,7 +82,7 @@ def build_summary_table(document, hi_data):
     )
 
 
-    profiling_timestamp = pandas.to_datetime(hi_data["profiling_starttime"]).strftime("%Y-%m-%d %H:%M:%S")
+    profiling_timestamp = get_formatted_datetime(hi_data["profiling_starttime"])
     summary_table_data = [
         (
             "Hygiene Issue",
@@ -106,7 +108,16 @@ def build_summary_table(document, hi_data):
         ("Database/Schema", hi_data["schema_name"], "Profiling Date", profiling_timestamp),
         ("Table", hi_data["table_name"], "Table Group", hi_data["table_groups_name"]),
         ("Column", hi_data["column_name"], "Disposition", hi_data["disposition"] or "No Decision"),
-        ("Column Type", hi_data["column_type"]),
+        (
+            "Column Type",
+            hi_data["column_type"],
+            Paragraph(
+                f"""<a href="{get_base_url()}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
+                    View on TestGen >
+                </a>""",
+                style=PARA_STYLE_LINK,
+            ),
+        ),
     ]
 
     summary_table_col_widths = [n * document.width for n in (.15, .35, .15, .15, .20)]
@@ -132,7 +143,7 @@ def build_sample_data_content(document, sample_data_tuple):
         yield from df_table_builder.split_in_columns(table_flowables)
 
 
-def build_sql_query_conntent(sample_data_tuple):
+def build_sql_query_content(sample_data_tuple):
     lookup_query = sample_data_tuple[2]
     if lookup_query:
         return Paragraph(lookup_query, PARA_STYLE_MONO)
@@ -141,7 +152,7 @@ def build_sql_query_conntent(sample_data_tuple):
 
 
 def get_report_content(document, hi_data):
-    yield Paragraph("TestGen Issue Report", PARA_STYLE_TITLE)
+    yield Paragraph("TestGen Hygiene Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, hi_data)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
@@ -156,7 +167,7 @@ def get_report_content(document, hi_data):
 
     yield KeepTogether([
         Paragraph("SQL Query", PARA_STYLE_H1),
-        build_sql_query_conntent(sample_data_tuple)
+        build_sql_query_content(sample_data_tuple)
     ])
 
 

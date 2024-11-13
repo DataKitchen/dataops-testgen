@@ -341,7 +341,7 @@ def get_profiling_anomalies(
                      WHEN t.issue_likelihood = 'Definite'  THEN 4
                    END AS likelihood_order,
                    t.anomaly_description, r.detail, t.suggested_action,
-                   r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime,
+                   r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
                    tg.table_groups_name
               FROM {schema}.profile_anomaly_results r
             INNER JOIN {schema}.profile_anomaly_types t
@@ -493,7 +493,7 @@ def do_disposition_update(selected, str_new_status):
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     hi_id = tr_data["anomaly_id"]
     profiling_time = pd.Timestamp(tr_data["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-    file_name = f"testgen_issue_report_{hi_id}_{profiling_time}.pdf"
+    file_name = f"testgen_hygiene_issue_report_{hi_id}_{profiling_time}.pdf"
 
     with BytesIO() as buffer:
         create_report(buffer, tr_data)

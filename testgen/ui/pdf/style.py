@@ -1,13 +1,18 @@
+import pandas
+import streamlit as st
 from reportlab.lib import enums
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import TableStyle
+
+from testgen.common import date_service
 
 COLOR_GRAY_BG = HexColor(0xF2F2F2)
 COLOR_GREEN_BG = HexColor(0xDCE4DA)
 COLOR_YELLOW_BG = HexColor(0xA0C84E40, hasAlpha=True)
 COLOR_GREEN_TEXT = HexColor(0x139549)
 COLOR_FADED_TEXT = HexColor(0x404040)
+COLOR_LINK_TEXT = HexColor(0x1976D2)
 
 PARA_STYLE_DEFAULT = ParagraphStyle(
     "default",
@@ -86,3 +91,19 @@ PARA_STYLE_CELL = ParagraphStyle(
     fontName="Helvetica",
     leading=10,
 )
+
+PARA_STYLE_LINK = ParagraphStyle(
+    "link",
+    PARA_STYLE_DEFAULT,
+    fontSize=9,
+    alignment=enums.TA_RIGHT,
+    textColor=COLOR_LINK_TEXT,
+)
+
+
+def get_formatted_datetime(value) -> str:
+    return date_service.get_timezoned_timestamp(
+        st.session_state,
+        pandas.to_datetime(value),
+        "%b %-d, %-I:%M %p %Z",
+    )
