@@ -13,7 +13,7 @@ class TableGroupForm(BaseForm, ManualRender):
         default="",
         min_length=1,
         max_length=40,
-        st_kwargs_label="Name",
+        st_kwargs_label="Table Group Name",
         st_kwargs_max_chars=40,
         st_kwargs_help="A unique name to describe the table group",
     )

@@ -96,7 +96,7 @@ class HygieneIssuesPage(Page):
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"])
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",

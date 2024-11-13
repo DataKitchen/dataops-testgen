@@ -98,6 +98,7 @@ class TestResultsPage(Page):
                 default_value=status or "Failed + Warning",
                 required=False,
                 bind_to_query="status",
+                bind_empty_value=True,
                 label="Result Status",
             )
 
@@ -122,7 +123,7 @@ class TestResultsPage(Page):
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"])
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -810,7 +811,7 @@ def source_data_dialog(selected_row):
 
 def view_edit_test(button_container, test_definition_id):
     with button_container:
-        if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
+        if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
             show_test_form_by_id(test_definition_id)
 
 
