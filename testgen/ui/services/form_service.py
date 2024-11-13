@@ -888,7 +888,7 @@ function(params) {
     )
 
     if bind_to_query_prop:
-        gb.configure_grid_options(getRowId=JsCode(f"""function(row) {{ return row.data.{bind_to_query_prop}; }}"""))
+        gb.configure_grid_options(getRowId=JsCode(f"""function(row) {{ return row.data['{bind_to_query_prop}'] }}"""))
 
     all_columns = list(df.columns)
 
