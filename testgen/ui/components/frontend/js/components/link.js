@@ -13,6 +13,7 @@
  * @property {number?} height
  * @property {number?} width
  * @property {string?} style
+ * @property {string?} class
  */
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -37,7 +38,7 @@ const Link = (/** @type Properties */ props) => {
 
     return a(
         {
-            class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''}`,
+            class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''} ${getValue(props.class) ?? ''}`,
             style: props.style,
             href: `/${href}${getQueryFromParams(params)}`,
             target: open_new ? '_blank' : '',

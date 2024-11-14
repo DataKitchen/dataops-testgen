@@ -8,6 +8,8 @@
  * @property {boolean?} clearable
  * @property {function?} onChange
  * @property {number?} width
+ * @property {number?} height
+ * @property {string?} style
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet } from '../utils.js';
@@ -26,7 +28,7 @@ const Input = (/** @type Properties */ props) => {
     return label(
         {
             class: 'flex-column fx-gap-1 text-caption text-capitalize tg-input--label',
-            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
         },
         props.label,
         () => getValue(props.icon) ? i(
@@ -42,6 +44,7 @@ const Input = (/** @type Properties */ props) => {
         ) : '',
         input({
             class: 'tg-input--field',
+            style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
             value,
             placeholder: () => getValue(props.placeholder) ?? '',
             oninput: debounce(event => value.val = event.target.value, 300),

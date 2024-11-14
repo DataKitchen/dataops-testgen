@@ -69,4 +69,26 @@ function debounce(
     };
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, loadStylesheet, resizeFrameHeightToElement };
+function getParents(/** @type HTMLElement*/ element) {
+    const parents = [];
+
+    let currentParent = element.parentElement; 
+    do {
+        if (currentParent !== null) {
+            parents.push(currentParent);
+            currentParent = currentParent.parentElement;
+        }
+    }
+    while (currentParent !== null && currentParent.tagName !== 'iframe');
+
+    return parents;
+}
+
+function truncateFloat(/** @type number */ value) {
+    if (value > 0 && value < 1) {
+        return 1;
+    }
+    return Math.trunc(value);
+}
+
+export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, truncateFloat };
