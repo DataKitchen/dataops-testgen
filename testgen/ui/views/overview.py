@@ -11,6 +11,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
+from testgen.utils import truncate
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
@@ -92,6 +93,9 @@ class OverviewPage(Page):
                             for _, test_suite in test_suite_service.get_by_project(project_code, table_group_id).iterrows()
                         ] if table_group_id in expanded_table_groups else None,
                         "expanded": table_group_id in expanded_table_groups,
+                        "dq_score": friendly_score(score(table_group["dq_score_profiling"], table_group["dq_score_testing"])),
+                        "dq_score_profiling": friendly_score(table_group["dq_score_profiling"]),
+                        "dq_score_testing": friendly_score(table_group["dq_score_testing"]),
                     }
                     for _, table_group in table_groups_df.iterrows()
                     if (table_group_id := str(table_group["id"]))
@@ -239,6 +243,8 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     )
     SELECT groups.id::VARCHAR(50),
         groups.table_groups_name,
+        groups.dq_score_profiling,
+        groups.dq_score_testing,
         latest_profile.id as latest_profile_id,
         latest_profile.profiling_starttime as latest_profile_start,
         latest_profile.table_ct as latest_profile_table_ct,
@@ -262,3 +268,27 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     WHERE groups.project_code = '{project_code}';
     """
     return db.retrieve_data(sql)
+
+
+def score(profiling_score: float, tests_score: float) -> float:
+    final_score = profiling_score or tests_score or 0
+    if profiling_score and tests_score:
+        final_score = (profiling_score * tests_score) / 100
+
+    return final_score
+
+
+def friendly_score(score: float) -> str:
+    if not score:
+        return "--"
+
+    prefix = ""
+    numbers = round(score, 1)
+    if numbers < 1:
+        prefix = "< "
+        numbers = 1.0
+    elif numbers == 100:
+        prefix = "> "
+        numbers = truncate(score, decimals=1)
+
+    return f"{prefix}{numbers}"

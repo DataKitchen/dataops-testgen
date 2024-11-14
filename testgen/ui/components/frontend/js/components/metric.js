@@ -2,7 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {number} value
- * @property {number} delta
+ * @property {number?} delta
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -16,19 +16,21 @@ const Metric = function(/** @type Properties */props) {
     const deltaColor = van.derive(() => getValue(props.delta) >= 0 ? 'rgb(9, 171, 59)' : 'rgb(255, 43, 43)');
 
     return div(
-        { class: 'flex-column' },
+        { class: 'flex-column fx-align-flex-center' },
         span(
             { style: 'font-size: 36px;' },
             props.value,
         ),
-        div(
-            { class: 'flex-row', style: () => `color: ${deltaColor.val};` },
-            i(
-                {class: 'material-symbols-rounded', style: 'font-size: 20px;'},
-                deltaIcon,
-            ),
-            span(props.delta),
-        ),
+        () => getValue(props.delta)
+            ? div(
+                { class: 'flex-row', style: () => `color: ${getValue(deltaColor)};` },
+                i(
+                    {class: 'material-symbols-rounded', style: 'font-size: 20px;'},
+                    deltaIcon,
+                ),
+                span(props.delta),
+            )
+            : undefined,
     );
 }
 
