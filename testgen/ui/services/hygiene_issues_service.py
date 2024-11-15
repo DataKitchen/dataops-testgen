@@ -7,7 +7,7 @@ def get_source_data(hi_data):
     str_schema = st.session_state["dbschema"]
     # Define the query
     str_sql = f"""
-            SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
+            SELECT t.lookup_query, tg.table_group_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
                    c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.target_data_lookups t
@@ -48,7 +48,6 @@ def get_source_data(hi_data):
         str_query = str_query.replace("{TARGET_SCHEMA}", lst_query[0]["table_group_schema"])
         str_query = str_query.replace("{TABLE_NAME}", hi_data["table_name"])
         str_query = str_query.replace("{COLUMN_NAME}", hi_data["column_name"])
-        str_query = str_query.replace("{DATA_QC_SCHEMA}", lst_query[0]["project_qc_schema"])
         str_query = str_query.replace("{DETAIL_EXPRESSION}", hi_data["detail"])
         str_query = str_query.replace("{PROFILE_RUN_DATE}", hi_data["profiling_starttime"])
         if str_query is None or str_query == "":
