@@ -239,7 +239,7 @@ class HygieneIssuesPage(Page):
                             )
                         else:
                             zip_func = zip_multi_file_data(
-                                "testgen_issue_reports.zip",
+                                "testgen_hygiene_issue_reports.zip",
                                 get_report_file_data,
                                 [(arg,) for arg in selected],
                             )
@@ -491,7 +491,7 @@ def do_disposition_update(selected, str_new_status):
     return str_result
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
-    hi_id = tr_data["anomaly_id"]
+    hi_id = tr_data["id"][:8]
     profiling_time = pd.Timestamp(tr_data["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
     file_name = f"testgen_hygiene_issue_report_{hi_id}_{profiling_time}.pdf"
 
