@@ -20,7 +20,6 @@ def RetrieveProfilingParms(strTableGroupsID):
         or lstParms[0]["profile_use_sampling"] == ""
         or lstParms[0]["profile_sample_percent"] == ""
         or lstParms[0]["profile_sample_min_count"] == ""
-        or lstParms[0]["project_qc_schema"] == ""
         or lstParms[0]["table_group_schema"] == ""
     ):
         raise ValueError("Project Connection parameters not correctly set")

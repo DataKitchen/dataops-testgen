@@ -288,7 +288,6 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     clsProfiling.parm_do_patterns = "Y"
     clsProfiling.parm_max_pattern_length = 25
     clsProfiling.profile_run_id = strProfileRunID
-    clsProfiling.data_qc_schema = dctParms["project_qc_schema"]
     clsProfiling.data_schema = dctParms["table_group_schema"]
     clsProfiling.parm_table_set = dctParms["profiling_table_set"]
     clsProfiling.parm_table_include_mask = dctParms["profiling_include_mask"]

@@ -98,6 +98,7 @@ class TestResultsPage(Page):
                 default_value=status or "Failed + Warning",
                 required=False,
                 bind_to_query="status",
+                bind_empty_value=True,
                 label="Result Status",
             )
 
@@ -122,7 +123,7 @@ class TestResultsPage(Page):
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"])
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -660,7 +661,7 @@ def show_result_detail(
                     )
                 else:
                     zip_func = zip_multi_file_data(
-                        "testgen_issue_reports.zip",
+                        "testgen_test_issue_reports.zip",
                         get_report_file_data,
                         [(arg,) for arg in selected_rows],
                     )
@@ -810,14 +811,14 @@ def source_data_dialog(selected_row):
 
 def view_edit_test(button_container, test_definition_id):
     with button_container:
-        if st.button("🖊️ Edit Test", help="Edit the Test Definition", use_container_width=True):
+        if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
             show_test_form_by_id(test_definition_id)
 
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
-    td_id = tr_data["test_definition_id_runtime"][:6]
+    tr_id = tr_data["test_result_id"][:8]
     tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
-    file_name = f"testgen_test_issue_report_{td_id}_{tr_time}.pdf"
+    file_name = f"testgen_test_issue_report_{tr_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:
         create_report(buffer, tr_data)

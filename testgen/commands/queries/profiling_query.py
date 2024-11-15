@@ -14,7 +14,6 @@ class CProfilingSQL:
     table_groups_id = ""
     flavor = ""
     run_date = ""
-    data_qc_schema = ""
     data_schema = ""
     data_table = ""
 
@@ -75,7 +74,6 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{TABLE_GROUPS_ID}", self.table_groups_id)
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
         strInputString = strInputString.replace("{DATA_SCHEMA}", self.data_schema)
-        strInputString = strInputString.replace("{DATA_QC_SCHEMA}", self.data_qc_schema)
         strInputString = strInputString.replace("{DATA_TABLE}", self.data_table)
         strInputString = strInputString.replace("{COL_NAME}", self.col_name)
         strInputString = strInputString.replace("{COL_NAME_SANITIZED}", self.col_name.replace("'", "''"))
@@ -244,16 +242,6 @@ class CProfilingSQL:
                 is_first = False
             sub_query += ")"
         return sub_query
-
-    def GetFunctionCreatorQuery(self):
-        # Runs on Project DB
-        strQ = self.ReplaceParms(
-            read_template_sql_file(
-                f"project_function_creator_{self.flavor}.sql",
-                sub_directory=f"flavors/{self.flavor}/setup_profiling_tools",
-            )
-        )
-        return strQ
 
     def GetProfilingQuery(self):
         # Runs on Project DB
