@@ -24,7 +24,7 @@ class ProjectSettingsPage(Page):
 
         testgen.page_header(
             "Settings",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/configuration",
+            "tg-project-settings",
         )
 
         testgen.whitespace(1)

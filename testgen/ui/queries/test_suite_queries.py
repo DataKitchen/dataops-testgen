@@ -13,12 +13,6 @@ def get_by_project(schema, project_code, table_group_id=None):
                 FROM {schema}.test_definitions
                 GROUP BY test_suite_id
             ),
-            last_run_date AS (
-                SELECT test_suite_id,
-                    MAX(test_starttime) as test_starttime
-                FROM {schema}.test_runs
-                GROUP BY test_suite_id
-            ),
             last_run AS (
                 SELECT test_runs.test_suite_id,
                     test_runs.id,
@@ -58,10 +52,9 @@ def get_by_project(schema, project_code, table_group_id=None):
                             ELSE 0
                         END
                     ) as dismissed_ct
-                FROM last_run_date lrd
+                FROM {schema}.test_suites
                     LEFT JOIN {schema}.test_runs ON (
-                        lrd.test_suite_id = test_runs.test_suite_id
-                        AND lrd.test_starttime = test_runs.test_starttime
+                        test_suites.last_complete_test_run_id = test_runs.id
                     )
                     LEFT JOIN {schema}.test_results ON (
                         test_runs.id = test_results.test_run_id
@@ -73,12 +66,6 @@ def get_by_project(schema, project_code, table_group_id=None):
                     COUNT(*) as count
                 FROM {schema}.test_definitions
                 GROUP BY test_suite_id
-            ),
-            last_profile_date AS (
-                SELECT table_groups_id,
-                    MAX(profiling_starttime) as profiling_starttime
-                FROM {schema}.profiling_runs
-                GROUP BY table_groups_id
             )
             SELECT
                 suites.id::VARCHAR(50),
@@ -98,7 +85,7 @@ def get_by_project(schema, project_code, table_group_id=None):
                 suites.component_name,
                 test_defs.count as test_ct,
                 last_gen_date.auto_gen_date as latest_auto_gen_date,
-                last_profile_date.profiling_starttime as latest_profiling_date,
+                last_complete_profile_run_id,
                 last_run.id as latest_run_id,
                 last_run.test_starttime as latest_run_start,
                 last_run.test_ct as last_run_test_ct,
@@ -118,8 +105,6 @@ def get_by_project(schema, project_code, table_group_id=None):
                 ON (connections.connection_id = suites.connection_id)
             LEFT JOIN {schema}.table_groups as groups
                 ON (groups.id = suites.table_groups_id)
-            LEFT JOIN last_profile_date
-                ON (groups.id = last_profile_date.table_groups_id)
             WHERE suites.project_code = '{project_code}'
             """
 

@@ -39,7 +39,7 @@ def get_test_result_history(db_schema, tr_data):
 def do_source_data_lookup_custom(db_schema, tr_data):
     # Define the query
     str_sql = f"""
-            SELECT d.custom_query as lookup_query, tg.table_group_schema, c.project_qc_schema,
+            SELECT d.custom_query as lookup_query, tg.table_group_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
                    c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {db_schema}.test_definitions d
@@ -86,7 +86,7 @@ def do_source_data_lookup_custom(db_schema, tr_data):
 def do_source_data_lookup(db_schema, tr_data, sql_only=False):
     # Define the query
     str_sql = f"""
-            SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
+            SELECT t.lookup_query, tg.table_group_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
                    c.url, c.connect_by_url,
                    c.connect_by_key, c.private_key, c.private_key_passphrase
@@ -107,7 +107,6 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
         str_query = str_query.replace("{TARGET_SCHEMA}", empty_if_null(lst_query[0]["table_group_schema"]))
         str_query = str_query.replace("{TABLE_NAME}", empty_if_null(tr_data["table_name"]))
         str_query = str_query.replace("{COLUMN_NAME}", empty_if_null(tr_data["column_names"]))
-        str_query = str_query.replace("{DATA_QC_SCHEMA}", empty_if_null(lst_query[0]["project_qc_schema"]))
         str_query = str_query.replace("{TEST_DATE}", str(empty_if_null(tr_data["test_date"])))
 
         str_query = str_query.replace("{CUSTOM_QUERY}", empty_if_null(df_test.at[0, "custom_query"]))

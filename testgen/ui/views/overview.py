@@ -29,7 +29,7 @@ class OverviewPage(Page):
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
             "Project Overview",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/introduction-to-dataops-testgen",
+            "introduction-to-dataops-testgen",
         )
 
         project_code = project_code or session.project
@@ -107,6 +107,7 @@ def render_empty_state(project_code: str) -> bool:
 def render_project_summary(table_groups: pd.DataFrame) -> None:
     project_column, _ = st.columns([.5, .5])
     with project_column:
+        testgen.whitespace(0.3)
         with testgen.card():
             summary_column, _ = st.columns([.8, .2])
             # TODO: Uncomment and replace with below section when adding the score
@@ -293,13 +294,7 @@ def render_test_suite_item(test_suite: pd.Series, column_spec: list[int]) -> Non
 def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     schema = st.session_state["dbschema"]
     sql = f"""
-    WITH latest_profile_dates AS (
-        SELECT table_groups_id,
-            MAX(profiling_starttime) as profiling_starttime
-        FROM {schema}.profiling_runs
-        GROUP BY table_groups_id
-    ),
-    latest_profile AS (
+    WITH latest_profile AS (
         SELECT latest_run.table_groups_id,
             latest_run.id,
             latest_run.profiling_starttime,
@@ -334,10 +329,9 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
                     ELSE 0
                 END
             ) as dismissed_ct
-        FROM latest_profile_dates lpd
+        FROM {schema}.table_groups groups
             LEFT JOIN {schema}.profiling_runs latest_run ON (
-                lpd.table_groups_id = latest_run.table_groups_id
-                AND lpd.profiling_starttime = latest_run.profiling_starttime
+                groups.last_complete_profile_run_id = latest_run.id
             )
             LEFT JOIN {schema}.profile_anomaly_results latest_anomalies ON (
                 latest_run.id = latest_anomalies.profile_run_id
@@ -347,17 +341,11 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
             )
         GROUP BY latest_run.id
     ),
-    latest_run_dates AS (
-        SELECT test_suite_id,
-            MAX(test_starttime) as test_starttime
-        FROM {schema}.test_runs
-        GROUP BY test_suite_id
-    ),
     latest_tests AS (
         SELECT suites.table_groups_id,
             MAX(latest_run.test_starttime) AS test_starttime,
             COUNT(DISTINCT latest_run.test_suite_id) as test_suite_ct,
-            COUNT(*) as test_ct,
+            COUNT(latest_results.id) as test_ct,
             SUM(
                 CASE
                     WHEN COALESCE(latest_results.disposition, 'Confirmed') = 'Confirmed'
@@ -392,15 +380,13 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
                     ELSE 0
                 END
             ) as dismissed_ct
-        FROM latest_run_dates lrd
+        FROM {schema}.test_suites suites
             LEFT JOIN {schema}.test_runs latest_run ON (
-                lrd.test_suite_id = latest_run.test_suite_id
-                AND lrd.test_starttime = latest_run.test_starttime
+                suites.last_complete_test_run_id = latest_run.id
             )
             LEFT JOIN {schema}.test_results latest_results ON (
                 latest_run.id = latest_results.test_run_id
             )
-            LEFT JOIN {schema}.test_suites as suites ON (suites.id = lrd.test_suite_id)
         GROUP BY suites.table_groups_id
     )
     SELECT groups.id::VARCHAR(50),

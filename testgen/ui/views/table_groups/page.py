@@ -39,7 +39,7 @@ class TableGroupsPage(Page):
 
         testgen.page_header(
             "Table Groups",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/create-a-table-group",
+            "create-a-table-group",
             breadcrumbs=[  # type: ignore
                 { "label": "Connections", "path": "connections", "params": { "project_code": project_code } },
                 { "label": connection["connection_name"] },
@@ -59,6 +59,7 @@ class TableGroupsPage(Page):
             )
             return
 
+        testgen.whitespace(0.3)
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 
@@ -408,8 +409,8 @@ def table_group_preview(entity, connection_id, project_code, status):
     status.empty()
     status.info("Connecting to the Table Group ...")
     try:
-        table_group_results, qc_results = table_group_service.test_table_group(entity, connection_id, project_code)
-        if len(table_group_results) > 0 and all(qc_results):
+        table_group_results = table_group_service.test_table_group(entity, connection_id, project_code)
+        if len(table_group_results) > 0:
             tables = set()
             columns = []
             schemas = set()
@@ -418,7 +419,7 @@ def table_group_preview(entity, connection_id, project_code, status):
                 tables.add(result["table_name"])
                 columns.append(result["column_name"])
 
-            show_test_results(schemas, tables, columns, qc_results)
+            show_test_results(schemas, tables, columns)
 
             status.empty()
             status.success("Operation has finished successfully.")
@@ -428,8 +429,6 @@ def table_group_preview(entity, connection_id, project_code, status):
             error_message = ""
             if len(table_group_results) == 0:
                 error_message = "Result is empty."
-            if not all(qc_results):
-                error_message = f"Error testing the connection to the Table Group. Details: {qc_results}"
             st.text_area("Table Group Error Details", value=error_message)
     except Exception as e:
         status.empty()
@@ -438,10 +437,7 @@ def table_group_preview(entity, connection_id, project_code, status):
         st.text_area("Table Group Error Details", value=error_message)
 
 
-def show_test_results(schemas, tables, columns, qc_results):
-    qc_test_results = all(qc_results)
-    st.markdown(f"**Utility QC Schema Validity Test**: {':white_check_mark:' if qc_test_results else ':x:'}")
-
+def show_test_results(schemas, tables, columns):
     st.markdown(f"**Schema**: {schemas.pop()}")
     st.markdown(f"**Column Count**: {len(columns)}")
 

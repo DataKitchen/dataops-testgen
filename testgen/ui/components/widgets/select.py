@@ -4,6 +4,7 @@ from streamlit_extras.no_default_selectbox import selectbox
 
 from testgen.ui.navigation.router import Router
 
+EMPTY_VALUE = "---"
 
 def select(
     label: str,
@@ -13,6 +14,7 @@ def select(
     default_value = None,
     required: bool = False,
     bind_to_query: str | None = None,
+    bind_empty_value: bool = False,
     **kwargs,
 ):
     kwargs = {**kwargs}
@@ -28,6 +30,8 @@ def select(
         kwargs["options"] = options
         if default_value in options:
             kwargs["index"] = options.index(default_value) + (0 if required else 1)
+        elif default_value == EMPTY_VALUE and not required: 
+            kwargs["index"] = 0
 
     if bind_to_query:
         kwargs["key"] = kwargs.get("key", f"testgen_select_{bind_to_query}")
@@ -36,7 +40,7 @@ def select(
 
         def update_query_params():
             query_value = st.session_state[kwargs["key"]]
-            if not required and query_value == "---":
+            if not required and query_value == EMPTY_VALUE and not bind_empty_value:
                 query_value = None
             elif isinstance(options, pd.DataFrame):
                 query_value = options.loc[options[display_column] == query_value, value_column].iloc[0]

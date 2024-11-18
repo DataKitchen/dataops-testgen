@@ -12,9 +12,8 @@ BUTTON_TEXT = "Profiling　→"   # Profiling　⚲
 BUTTON_HELP = "Review profiling for highlighted column"
 
 
-def view_profiling_button(button_container, str_table_name, str_column_name,
-                         str_profile_run_id=None, str_table_groups_id=None):
-    with button_container:
+def view_profiling_button(str_table_name, str_column_name, str_profile_run_id=None, str_table_groups_id=None):
+    if str_table_name != "(multi-table)":
         if st.button(
             BUTTON_TEXT, help=BUTTON_HELP, use_container_width=True
         ):

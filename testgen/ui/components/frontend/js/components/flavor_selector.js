@@ -75,7 +75,7 @@ const DatabaseFlavor = (
 ) => {
     return div(
         {
-            class: `tg-flavor ${props.selected.val ? 'selected' : ''}`,
+            class: () => `tg-flavor ${props.selected.val ? 'selected' : ''}`,
             onclick: onClick,
         },
         span({class: 'tg-flavor-focus-state-indicator'}, ''),

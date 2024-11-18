@@ -9,6 +9,7 @@ INSERT INTO test_results
             test_run_id,
             input_parameters,
             result_code,
+            result_status,
             result_message,
             result_measure )
      SELECT '{TEST_SUITE_ID}'::UUID,
@@ -20,7 +21,8 @@ INSERT INTO test_results
             '{RUN_DATE}'    as test_time,
             '{TEST_RUN_ID}' as test_run_id,
             NULL as input_parameters,
-            0 as result_code,
+            NULL as result_code,
+            'Error' as result_status,
             test_definition_status AS result_message,
             NULL as result_measure
        FROM test_definitions
