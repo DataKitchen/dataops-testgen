@@ -58,6 +58,7 @@ class Router(Singleton):
             current_page.run()
         else:
             session.cookies_ready += 1
+            time.sleep(0.3)
 
 
     def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006
