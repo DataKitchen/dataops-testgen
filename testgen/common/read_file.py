@@ -77,6 +77,8 @@ def read_template_yaml_function(function_name: str, db_flavour: str) -> str:
         sub_directory=f"flavors/{db_flavour}/profiling",
     )
     template = yaml_functions[function_name]
+    template = re.sub(r"/\*.*?\*/", "", template, flags=re.DOTALL)
+    template = re.sub(r"\s\s*", " ", template)
     return template
 
 
