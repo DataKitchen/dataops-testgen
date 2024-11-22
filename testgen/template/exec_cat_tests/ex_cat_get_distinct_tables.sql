@@ -1,6 +1,5 @@
 SELECT DISTINCT schema_name,
-                table_name,
-                project_qc_schema as replace_qc_schema
+                table_name
            FROM test_definitions td
      INNER JOIN test_types tt
              ON td.test_type = tt.test_type

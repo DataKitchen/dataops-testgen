@@ -29,10 +29,9 @@ WITH test_detail
               -- Standard Measure start
               'CAST(' ||
                 -- Nested parm replacements - part of query, not Python parms
-                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure,
                         '{COLUMN_NAME}', COALESCE(fn_PrepColumnName(t.column_name), '')),
-                        '{DATA_QC_SCHEMA}', '{REPLACE_QC_SCHEMA}'),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),
@@ -48,10 +47,9 @@ WITH test_detail
               -- Standard CASE for condition starts
               'CASE WHEN ' ||
                 -- Nested parm replacements - standard
-                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure || c.test_operator || c.test_condition,
                         '{COLUMN_NAME}', COALESCE(fn_PrepColumnName(t.column_name), '')),
-                        '{DATA_QC_SCHEMA}', '{REPLACE_QC_SCHEMA}'),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),

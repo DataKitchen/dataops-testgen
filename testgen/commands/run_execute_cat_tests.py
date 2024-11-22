@@ -123,7 +123,6 @@ def run_cat_test_queries(
             for dctTable in lstTables:
                 clsCATExecute.target_schema = dctTable["schema_name"]
                 clsCATExecute.target_table = dctTable["table_name"]
-                clsCATExecute.replace_qc_schema = dctTable["replace_qc_schema"]
                 AggregateTableTests(clsCATExecute)
 
             LOG.info("CurrentStep: Retrieving CAT Tests to Run")

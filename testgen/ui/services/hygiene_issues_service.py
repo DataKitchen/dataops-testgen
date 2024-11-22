@@ -1,5 +1,6 @@
 import streamlit as st
 
+from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services import database_service as db
 
 
@@ -7,7 +8,7 @@ def get_source_data(hi_data):
     str_schema = st.session_state["dbschema"]
     # Define the query
     str_sql = f"""
-            SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
+            SELECT t.lookup_query, tg.table_group_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
                    c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
               FROM {str_schema}.target_data_lookups t
@@ -48,9 +49,12 @@ def get_source_data(hi_data):
         str_query = str_query.replace("{TARGET_SCHEMA}", lst_query[0]["table_group_schema"])
         str_query = str_query.replace("{TABLE_NAME}", hi_data["table_name"])
         str_query = str_query.replace("{COLUMN_NAME}", hi_data["column_name"])
-        str_query = str_query.replace("{DATA_QC_SCHEMA}", lst_query[0]["project_qc_schema"])
         str_query = str_query.replace("{DETAIL_EXPRESSION}", hi_data["detail"])
         str_query = str_query.replace("{PROFILE_RUN_DATE}", hi_data["profiling_starttime"])
+
+        if "{{DKFN_" in str_query:
+            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
+
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Anomoly Type.")
         return str_query

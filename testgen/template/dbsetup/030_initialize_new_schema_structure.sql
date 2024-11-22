@@ -55,7 +55,6 @@ CREATE TABLE connections (
    project_user           VARCHAR(50),
    project_db             VARCHAR(100),
    connection_name        VARCHAR(40),
-   project_qc_schema      VARCHAR(200),
    project_pw_encrypted   BYTEA,
    max_threads            INTEGER DEFAULT 4,
    max_query_chars        INTEGER,

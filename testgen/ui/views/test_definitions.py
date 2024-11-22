@@ -532,7 +532,7 @@ def show_test_form(
         elif dynamic_attribute in ["threshold_value"]:
             test_definition[dynamic_attribute] = current_column.number_input(
                 label=actual_dynamic_attributes_labels,
-                value=value,
+                value=float(value),
                 help=actual_dynamic_attributes_help,
             )
         else:
