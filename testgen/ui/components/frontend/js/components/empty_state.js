@@ -45,6 +45,7 @@ const EmptyState = (/** @type Properties */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-empty-state {
+    margin-top: 80px;
     border: 1px solid var(--border-color);
     padding: 112px 0px !important;
 }

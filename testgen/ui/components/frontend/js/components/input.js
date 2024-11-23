@@ -15,6 +15,9 @@ import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet } from '../utils.js';
 
 const { input, label, i } = van.tags;
+const defaultHeight = 32;
+const iconSize = 22;
+const clearIconSize = 20;
 
 const Input = (/** @type Properties */ props) => {
     loadStylesheet('input', stylesheet);
@@ -27,24 +30,28 @@ const Input = (/** @type Properties */ props) => {
 
     return label(
         {
-            class: 'flex-column fx-gap-1 text-caption text-capitalize tg-input--label',
+            class: 'flex-column fx-gap-1 text-caption tg-input--label',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
         },
         props.label,
         () => getValue(props.icon) ? i(
-            { class: 'material-symbols-rounded tg-input--icon' },
+            {
+                class: 'material-symbols-rounded tg-input--icon',
+                style: `bottom: ${((getValue(props.height) || defaultHeight) - iconSize) / 2}px`,
+            },
             props.icon,
         ) : '',
         () => getValue(props.clearable) ? i(
             {
                 class: () => `material-symbols-rounded tg-input--clear clickable ${value.val ? '' : 'hidden'}`,
+                style: `bottom: ${((getValue(props.height) || defaultHeight) - clearIconSize) / 2}px`,
                 onclick: () => value.val = '',
             },
             'clear',
         ) : '',
         input({
             class: 'tg-input--field',
-            style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+            style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             value,
             placeholder: () => getValue(props.placeholder) ?? '',
             oninput: debounce(event => value.val = event.target.value, 300),
@@ -60,9 +67,8 @@ stylesheet.replace(`
 
 .tg-input--icon {
     position: absolute;
-    bottom: 5px;
     left: 4px;
-    font-size: 22px;
+    font-size: ${iconSize}px;
 }
 
 .tg-input--icon ~ .tg-input--field {
@@ -71,9 +77,8 @@ stylesheet.replace(`
 
 .tg-input--clear {
     position: absolute;
-    bottom: 6px;
     right: 4px;
-    font-size: 20px;
+    font-size: ${clearIconSize}px;
 }
 
 .tg-input--clear ~ .tg-input--field {
@@ -83,7 +88,6 @@ stylesheet.replace(`
 .tg-input--field {
     box-sizing: border-box;
     width: 100%;
-    height: 32px;
     border-radius: 8px;
     border: 1px solid transparent;
     transition: border-color 0.3s;

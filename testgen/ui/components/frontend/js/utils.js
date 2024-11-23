@@ -84,11 +84,15 @@ function getParents(/** @type HTMLElement*/ element) {
     return parents;
 }
 
-function truncateFloat(/** @type number */ value) {
-    if (value > 0 && value < 1) {
-        return 1;
+function friendlyPercent(/** @type number */ value) {
+    const rounded = Math.round(value);
+    if (rounded === 0 && value > 0) {
+        return '< 0';
     }
-    return Math.trunc(value);
+    if (rounded === 100 && value < 100) {
+        return '> 99';
+    }
+    return rounded;
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, truncateFloat };
+export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, friendlyPercent };

@@ -11,7 +11,6 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
-from testgen.utils import truncate
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
@@ -80,8 +79,8 @@ class OverviewPage(Page):
                     "table_groups_count": len(table_groups_df.index),
                     "test_suites_count": int(table_groups_df["latest_tests_suite_ct"].sum()),
                     "test_definitions_count": int(table_groups_df["latest_tests_ct"].sum()),
-                    "test_runs_count": int(project_summary_df["profiling_runs_ct"]),
-                    "profiling_runs_count": int(project_summary_df["test_runs_ct"]),
+                    "test_runs_count": int(project_summary_df["test_runs_ct"]),
+                    "profiling_runs_count": int(project_summary_df["profiling_runs_ct"]),
                     "connections_count": int(project_summary_df["connections_ct"]),
                     "default_connection_id": str(project_summary_df["default_connection_id"]),
                 },
@@ -284,11 +283,11 @@ def friendly_score(score: float) -> str:
 
     prefix = ""
     numbers = round(score, 1)
-    if numbers < 1:
+    if numbers == 0:
         prefix = "< "
-        numbers = 1.0
+        numbers = 0.1
     elif numbers == 100:
         prefix = "> "
-        numbers = truncate(score, decimals=1)
+        numbers = 99.9
 
     return f"{prefix}{numbers}"

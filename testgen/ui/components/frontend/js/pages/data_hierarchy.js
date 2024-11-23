@@ -378,6 +378,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
                 label, width,
                 value: state.rawVal,
                 placeholder: inherited ? `Inherited: ${inherited}` : null,
+                style: 'text-transform: capitalize;',
                 onChange: (value) => state.val = value || null,
             });
         }),

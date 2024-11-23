@@ -66,7 +66,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, truncateFloat } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, friendlyPercent } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Caption } from '../components/caption.js';
@@ -95,7 +95,7 @@ const Overview = (/** @type Properties */ props) => {
     const tableGroupsSearchTerm = van.state('');
     const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)[0]?.value);
     const sortFunctions = {
-        table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.toLowerCase()),
+        table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.table_groups_name.toLowerCase()),
         latest_activity_date: (a, b) => Math.max(b.latest_profile_start, b.latest_tests_start) - Math.max(a.latest_profile_start, a.latest_tests_start),
     };
 
@@ -114,7 +114,7 @@ const Overview = (/** @type Properties */ props) => {
         { class: 'flex-column tg-overview' },
         () => !getValue(isEmpty)
             ? div(
-                { class: 'flex-row fx-align-stretch', style: 'gap: 1rem;' },
+                { class: 'flex-row fx-align-stretch fx-gap-4' },
                 Card({
                     id: 'overview-project-summary',
                     class: 'tg-overview--project',
@@ -128,20 +128,17 @@ const Overview = (/** @type Properties */ props) => {
                             // ),
                             () => {
                                 return div(
-                                    { class: 'flex-column tg-overview--project--summary' },
-                                    Caption({content: 'Project Summary', style: 'margin-bottom: 16px;' }),
+                                    { class: 'flex-column fx-gap-2 tg-overview--project--summary' },
+                                    Caption({content: 'Project Summary', style: 'margin-bottom: 8px;' }),
                                     div(
-                                        { style: 'margin-bottom: 8px;' },
                                         strong({ style: 'margin-right: 4px;' }, props.project.val.table_groups_count),
                                         span('table groups'),
                                     ),
                                     div(
-                                        { style: 'margin-bottom: 8px;' },
                                         strong({ style: 'margin-right: 4px;' }, props.project.val.test_suites_count),
                                         span('test suites'),
                                     ),
                                     div(
-                                        { style: 'margin-bottom: 8px;' },
                                         strong({ style: 'margin-right: 4px;' }, props.project.val.test_definitions_count),
                                         span('test definitions'),
                                     ),
@@ -154,14 +151,16 @@ const Overview = (/** @type Properties */ props) => {
             : ConditionalEmptyState(getValue(props.project)),
         () => !getValue(isEmpty)
             ? div(
-                { class: 'flex-row' },
+                { class: 'flex-row fx-align-flex-end' },
                 h3(() => `Table Groups (${tableGroups?.val?.length ?? 0})`),
                 span({ style: 'margin-right: auto;' }),
                 Input({
-                    label: 'Search by table group name',
                     width: 230,
                     height: 38,
                     style: 'font-size: 14px;',
+                    icon: 'search',
+                    clearable: true,
+                    placeholder: 'Search table group names',
                     onChange: (value) => tableGroupsSearchTerm.val = value,
                 }),
                 span({ style: 'margin-right: 1rem;' }),
@@ -185,25 +184,22 @@ const Overview = (/** @type Properties */ props) => {
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     return Card({
-        title: () => div(
-            { class: 'flex-row' },
-            span({ style: 'display: block; margin-right: auto;' }, tableGroup.table_groups_name),
-            ExpanderToggle({
-                default: tableGroup.expanded,
-                style: 'font-size: 14px !important; font-weight: 400;',
-                onExpand: () => {
-                    emitEvent('TableGroupExpanded', {payload: tableGroup.id});
-                },
-                onCollapse: () => {
-                    emitEvent('TableGroupCollapsed', {payload: tableGroup.id});
-                },
-            }),
-        ),
         class: 'tg-overview--table-group-card',
+        title: tableGroup.table_groups_name,
+        actionContent: () => ExpanderToggle({
+            default: tableGroup.expanded,
+            style: 'font-size: 14px !important; font-weight: 400;',
+            onExpand: () => {
+                emitEvent('TableGroupExpanded', {payload: tableGroup.id});
+            },
+            onCollapse: () => {
+                emitEvent('TableGroupCollapsed', {payload: tableGroup.id});
+            },
+        }),
         content: () => div(
             { class: 'flex-column' },
             div(
-                { class: 'flex-row flex-align-flex-start' },
+                { class: 'flex-row fx-align-flex-start' },
                 div(
                     { class: 'flex-column fx-flex' },
                     TableGroupLatestProfile(tableGroup),
@@ -213,7 +209,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     TableGroupLatestTestResults(tableGroup),
                 ),
                 div(
-                    { class: 'flex-column fx-align-flex-center', style: 'flex: 0 1 10%;' },
+                    { class: 'flex-column fx-align-flex-center', style: 'flex: 0 1 100px; align-self: center' },
                     Metric({ value: tableGroup.dq_score ?? '--' }),
                     Caption({ content: 'Score' }),
                 ),
@@ -231,45 +227,48 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
 const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
     return [
         Caption({ content: 'Latest profile' }),
-        div(
-            { class: 'flex-row mb-3' },
-            Link({
-                label: formatTimestamp(tableGroup.latest_profile_start),
-                href: 'profiling-runs:results',
-                params: { run_id: tableGroup.latest_profile_id },
-            }),
-            span({ class: 'mr-1 ml-1' }, '|'),
-            span(`Profiling score: ${tableGroup.dq_score_profiling}`),
-        ),
-        div(
-            { class: 'flex-row mb-3' },
-            strong({ class: 'mr-1' }, tableGroup.latest_profile_table_ct),
-            span('tables'),
-            span({ class: 'mr-1 ml-1' }, '|'),
-            strong({ class: 'mr-1' }, tableGroup.latest_profile_column_ct),
-            span('columns'),
-            span({ class: 'mr-1 ml-1' }, '|'),
-            Link({
-                label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
-                href: 'profiling-runs:hygiene',
-                params: {
-                    run_id: tableGroup.latest_profile_id,
-                },
-                width: 150,
-            })
-        ),
-        () => tableGroup.latest_anomalies_ct
-            ? SummaryBar({
-                items: [
-                    { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
-                    { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
-                    { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
-                    { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
-                ],
-                height: 12,
-                width: 280,
-            })
-            : '',
+        () => tableGroup.latest_profile_start ? div(
+            div(
+                { class: 'flex-row mb-3' },
+                Link({
+                    label: formatTimestamp(tableGroup.latest_profile_start),
+                    href: 'profiling-runs:results',
+                    params: { run_id: tableGroup.latest_profile_id },
+                }),
+                span({ class: 'mr-1 ml-1' }, '|'),
+                span(`Profiling score: ${tableGroup.dq_score_profiling}`),
+            ),
+            div(
+                { class: 'flex-row mb-3' },
+                strong({ class: 'mr-1' }, tableGroup.latest_profile_table_ct),
+                span('tables'),
+                span({ class: 'mr-1 ml-1' }, '|'),
+                strong({ class: 'mr-1' }, tableGroup.latest_profile_column_ct),
+                span('columns'),
+                span({ class: 'mr-1 ml-1' }, '|'),
+                Link({
+                    label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
+                    href: 'profiling-runs:hygiene',
+                    params: {
+                        run_id: tableGroup.latest_profile_id,
+                    },
+                    width: 150,
+                })
+            ),
+            () => tableGroup.latest_anomalies_ct
+                ? SummaryBar({
+                    items: [
+                        { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
+                        { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
+                        { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
+                        { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
+                    ],
+                    height: 12,
+                    width: 280,
+                })
+                : '',
+        )
+        : span('--'),
     ];
 };
 
@@ -281,7 +280,7 @@ const TableGroupLatestTestResults = (/** @type TableGroupSummary */ tableGroup) 
                 { class: 'flex-column' },
                 span(
                     { class: 'mb-3' },
-                    `${truncateFloat(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Test score: ${tableGroup.dq_score_testing}`,
+                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Test score: ${tableGroup.dq_score_testing}`,
                 ),
                 div(
                     { class: 'flex-row mb-3' },
@@ -317,7 +316,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
             Caption({ content: 'Latest Results', style: 'flex: 1 1 50%;' }),
         ),
         testSuites.map(suite => div(
-            { class: 'flex-row' },
+            { class: 'flex-row mb-2' },
             div(
                 { class: 'flex-column', style: 'flex: 1 1 20%;' },
                 Link({
@@ -325,14 +324,12 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                     href: 'test-suites:definitions',
                     params: { test_suite_id: suite.id },
                 }),
-                Caption({ content: `${suite.test_ct} tests`}),
+                Caption({ content: `${suite.test_ct ?? 0} tests`}),
             ),
-            suite.latest_auto_gen_date
-                ? span(
-                    { style: 'flex: 1 1 15%;' },
-                    formatTimestamp(suite.latest_auto_gen_date),
-                )
-                : '--',
+            span(
+                { style: 'flex: 1 1 15%;' },
+                suite.latest_auto_gen_date ? formatTimestamp(suite.latest_auto_gen_date) : '--',
+            ),
             suite.latest_run_id
                 ? Link({
                     label: formatTimestamp(suite.latest_auto_gen_date),
@@ -340,23 +337,21 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                     params: { run_id: suite.latest_run_id },
                     style: 'flex: 1 1 15%;',
                 })
-                : '--',
-            suite.last_run_test_ct
-                ? div(
-                    { style: 'flex: 1 1 50%;' },
-                    SummaryBar({
-                        items: [
-                            { label: 'Passed', 'value': parseInt(suite.last_run_passed_ct), color: 'green' },
-                            { label: 'Warning', 'value': parseInt(suite.last_run_warning_ct), color: 'yellow' },
-                            { label: 'Failed', 'value': parseInt(suite.last_run_failed_ct), color: 'red' },
-                            { label: 'Error', 'value': parseInt(suite.last_run_error_ct), color: 'brown' },
-                            { label: 'Dismissed', 'value': parseInt(suite.last_run_dismissed_ct), color: 'grey' },
-                        ],
-                        width: 200,
-                        height: 8,
-                    })
-                )
-                : '--',
+                : span({ style: 'flex: 1 1 15%;' }, '--'),
+            div(
+                { style: 'flex: 1 1 50%;' },
+                suite.last_run_test_ct ? SummaryBar({
+                    items: [
+                        { label: 'Passed', 'value': parseInt(suite.last_run_passed_ct), color: 'green' },
+                        { label: 'Warning', 'value': parseInt(suite.last_run_warning_ct), color: 'yellow' },
+                        { label: 'Failed', 'value': parseInt(suite.last_run_failed_ct), color: 'red' },
+                        { label: 'Error', 'value': parseInt(suite.last_run_error_ct), color: 'brown' },
+                        { label: 'Dismissed', 'value': parseInt(suite.last_run_dismissed_ct), color: 'grey' },
+                    ],
+                    width: 200,
+                    height: 8,
+                }) : '--',
+            ),
         ))
     );
 };
@@ -400,6 +395,7 @@ stylesheet.replace(`
 }
 
 .tg-overview--project {
+    margin: 8px 0;
     border: 1px solid var(--border-color);
     width: 50%;
 }

@@ -1,4 +1,3 @@
-import math
 import urllib.parse
 from uuid import UUID
 
@@ -10,19 +9,6 @@ def to_int(value: float | int) -> int:
     if pd.notnull(value):
         return int(value)
     return 0
-
-
-def truncate(value: float, decimals: int = 0) -> int | float:
-    if not isinstance(value, float | int):
-        return value
-
-    if decimals > 0:
-        integer, decimal = str(value).split(".")
-        return float(f"{integer}.{decimal[:decimals]}")
-
-    if 0 < value < 1:
-        return 1
-    return math.trunc(value)
 
 
 def is_uuid4(value: str) -> bool:

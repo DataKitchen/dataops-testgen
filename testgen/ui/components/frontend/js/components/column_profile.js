@@ -122,7 +122,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             ),
             div(
                 {
-                    class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-grow-content',
+                    class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-basis-content',
                 },
                 div(
                     { class: 'flex-column fx-gap-3' },
@@ -197,14 +197,14 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
         div(
             DistinctsBar(item),
             div(
-                { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mt-5 tg-profile--fx-grow-content' },
+                { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mt-5 tg-profile--fx-basis-content' },
                 Attribute({ label: 'Minimum Date', value: formatTimestamp(item.min_date, true) }),
                 Attribute({ label: 'Maximum Date', value: formatTimestamp(item.max_date, true) }),
             ),
         ),
         div(
             {
-                class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-grow-content',
+                class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-basis-content',
             },
             div(
                 { class: 'flex-column fx-gap-3' },
@@ -225,7 +225,7 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
 function NumericColumn(/** @type ColumnProfile */ item) {
     return [
         div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 mb-5 tg-profile--fx-basis-content tg-profile--fx-grow-content' },
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 mb-5 tg-profile--fx-basis-content' },
             div(
                 DistinctsBar(item),
             ),
@@ -245,7 +245,7 @@ function NumericColumn(/** @type ColumnProfile */ item) {
             Attribute({ label: '75th Percentile', value: roundDigits(item.percentile_75), width: attributeWidth }),
         ),
         div(
-            { class: 'flex-row fx-justify-center mt-5 tg-profile--fx-grow-content' },
+            { class: 'flex-row fx-justify-center mt-5 tg-profile--fx-basis-content' },
             BoxPlot({
                 minimum: item.min_value,
                 maximum: item.max_value,
@@ -275,12 +275,8 @@ const DistinctsBar = (/** @type ColumnProfile */ item) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-profile--fx-grow-content > * {
-    flex-grow: 1;
-}
-
 .tg-profile--fx-basis-content > * {
-    flex: 300px;
+    flex: 250px;
 }
 `);
 
