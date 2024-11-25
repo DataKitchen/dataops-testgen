@@ -81,7 +81,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
         ),
     )
     max_query_chars: int = Field(
-        default=10000,
+        default=9000,
         ge=500,
         le=14000,
         st_kwargs_label="Max Expression Length (Advanced Tuning)",
