@@ -15,3 +15,5 @@ node_modules/
 scripts/
 venv/
 .ruff_cache/
+deploy
+!deploy/install_*.sh
