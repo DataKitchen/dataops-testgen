@@ -47,7 +47,6 @@ def _get_params_mapping() -> dict:
         "PROFILING_SAMPLE_MIN_COUNT": "",
         "PROFILING_DELAY_DAYS": "",
         "CONNECTION_NAME": settings.PROJECT_CONNECTION_NAME,
-        "PROJECT_QC_SCHEMA": settings.PROJECT_QC_SCHEMA,
         "TABLE_GROUPS_NAME": settings.DEFAULT_TABLE_GROUPS_NAME,
         "TEST_SUITE": settings.DEFAULT_TEST_SUITE_KEY,
         "TEST_SUITE_DESCRIPTION": settings.DEFAULT_TEST_SUITE_DESCRIPTION,

@@ -182,26 +182,6 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
 
     if item_type == "table":
         sql = f"""
-        WITH latest_profile_dates AS (
-            SELECT table_name,
-                profiling_runs.table_groups_id,
-                MAX(profiling_starttime) AS profiling_starttime
-            FROM {schema}.profile_results
-                LEFT JOIN {schema}.profiling_runs ON (
-                    profile_results.profile_run_id = profiling_runs.id
-                )
-            GROUP BY profiling_runs.table_groups_id, table_name
-        ),
-        latest_test_run_dates AS (
-            SELECT table_name,
-                test_results.table_groups_id,
-                MAX(test_starttime) AS test_starttime
-            FROM {schema}.test_results
-                LEFT JOIN {schema}.test_runs ON (
-                    test_results.test_run_id = test_runs.id
-                )
-            GROUP BY test_results.table_groups_id, table_name
-        )
         SELECT table_chars.table_name,
             table_chars.table_groups_id::VARCHAR(50) AS table_group_id,
             -- Characteristics
@@ -221,49 +201,23 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             transform_level,
             aggregation_level,
             -- Latest Profile & Test Runs
-            profiling_runs.id::VARCHAR(50) AS latest_profile_id,
-            lpd.profiling_starttime AS latest_profile_date,
-            lrd.test_starttime AS latest_test_run_date
+            last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
+            profiling_starttime AS latest_profile_date,
+            EXISTS(
+                SELECT 1
+                FROM {schema}.test_results
+                WHERE table_groups_id = '{table_group_id}'
+                    AND table_name = table_chars.table_name
+            ) AS has_test_runs
         FROM {schema}.data_table_chars table_chars
-            LEFT JOIN latest_profile_dates lpd ON (
-                table_chars.table_groups_id = lpd.table_groups_id
-                AND table_chars.table_name = lpd.table_name
-            )
-            LEFT JOIN latest_test_run_dates lrd ON (
-                table_chars.table_groups_id = lrd.table_groups_id
-                AND table_chars.table_name = lrd.table_name
-            )
             LEFT JOIN {schema}.profiling_runs ON (
-                lpd.table_groups_id = profiling_runs.table_groups_id
-                AND lpd.profiling_starttime = profiling_runs.profiling_starttime
+                table_chars.last_complete_profile_run_id = profiling_runs.id
             )
         WHERE table_id = '{item_id}'
             AND table_chars.table_groups_id = '{table_group_id}';
         """
     else:
         sql = f"""
-        WITH latest_profile_dates AS (
-            SELECT column_name,
-                table_name,
-                profile_results.table_groups_id,
-                MAX(profiling_starttime) AS profiling_starttime
-            FROM {schema}.profile_results
-                LEFT JOIN {schema}.profiling_runs ON (
-                    profile_results.profile_run_id = profiling_runs.id
-                )
-            GROUP BY profile_results.table_groups_id, table_name, column_name
-        ),
-        latest_test_run_dates AS (
-            SELECT column_names,
-                table_name,
-                test_results.table_groups_id,
-                MAX(test_starttime) AS test_starttime
-            FROM {schema}.test_results
-                LEFT JOIN {schema}.test_runs ON (
-                    test_results.test_run_id = test_runs.id
-                )
-            GROUP BY test_results.table_groups_id, table_name, column_names
-        )
         SELECT column_chars.column_name,
             column_chars.table_name,
             column_chars.table_groups_id::VARCHAR(50) AS table_group_id,
@@ -294,9 +248,15 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             table_chars.transform_level AS table_transform_level,
             table_chars.aggregation_level AS table_aggregation_level,
             -- Latest Profile & Test Runs
-            profiling_runs.id::VARCHAR(50) AS latest_profile_id,
-            lpd.profiling_starttime AS latest_profile_date,
-            lrd.test_starttime AS latest_test_run_date,
+            column_chars.last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
+            run_date AS latest_profile_date,
+            EXISTS(
+                SELECT 1
+                FROM {schema}.test_results
+                WHERE table_groups_id = '{table_group_id}'
+                    AND table_name = column_chars.table_name
+                    AND column_names = column_chars.column_name
+            ) AS has_test_runs,
             -- Value Counts
             profile_results.record_ct,
             value_ct,
@@ -347,22 +307,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             LEFT JOIN {schema}.data_table_chars table_chars ON (
                 column_chars.table_id = table_chars.table_id
             )
-            LEFT JOIN latest_profile_dates lpd ON (
-                column_chars.table_groups_id = lpd.table_groups_id
-                AND column_chars.table_name = lpd.table_name
-                AND column_chars.column_name = lpd.column_name
-            )
-            LEFT JOIN latest_test_run_dates lrd ON (
-                column_chars.table_groups_id = lrd.table_groups_id
-                AND column_chars.table_name = lrd.table_name
-                AND column_chars.column_name = lrd.column_names
-            )
-            LEFT JOIN {schema}.profiling_runs ON (
-                lpd.table_groups_id = profiling_runs.table_groups_id
-                AND lpd.profiling_starttime = profiling_runs.profiling_starttime
-            )
             LEFT JOIN {schema}.profile_results ON (
-                profiling_runs.id = profile_results.profile_run_id
+                column_chars.last_complete_profile_run_id = profile_results.profile_run_id
                 AND column_chars.column_name = profile_results.column_name
             )
         WHERE column_id = '{item_id}'
@@ -442,32 +388,23 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         column_condition = f"AND column_names = '{column_name}'"
     
     sql = f"""
-    WITH latest_run_dates AS (
-        SELECT test_suite_id,
-            MAX(test_starttime) AS test_starttime
-        FROM {schema}.test_runs
-        GROUP BY test_suite_id
-    )
-    SELECT column_names AS column_name,
+    SELECT test_results.id::VARCHAR(50),
+        column_names AS column_name,
         test_name_short AS test_name,
         result_status,
         result_message,
         test_suite,
         test_results.test_run_id::VARCHAR(50),
-        lrd.test_starttime AS test_run_date
-    FROM latest_run_dates lrd
+        test_starttime AS test_run_date
+    FROM {schema}.test_suites
         LEFT JOIN {schema}.test_runs ON (
-            lrd.test_suite_id = test_runs.test_suite_id
-            AND lrd.test_starttime = test_runs.test_starttime
+            test_suites.last_complete_test_run_id = test_runs.id
         )
         LEFT JOIN {schema}.test_results ON (
             test_runs.id = test_results.test_run_id
         )
         LEFT JOIN {schema}.test_types ON (
             test_results.test_type = test_types.test_type
-        )
-        LEFT JOIN {schema}.test_suites ON (
-            lrd.test_suite_id = test_suites.id
         )
     WHERE test_suites.table_groups_id = '{table_group_id}'
         AND table_name = '{table_name}'

@@ -1,5 +1,7 @@
 import typing
+from io import BytesIO
 
+import pandas as pd
 import plotly.express as px
 import streamlit as st
 
@@ -8,22 +10,32 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.common import date_service
-from testgen.common.read_file import replace_templated_functions
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
+from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.services import project_service
+from testgen.ui.services.hygiene_issues_service import get_source_data as get_source_data_uncached
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 
-class ProfilingAnomaliesPage(Page):
+class HygieneIssuesPage(Page):
     path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 
-    def render(self, run_id: str, issue_class: str | None = None, issue_type: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        run_id: str,
+        issue_class: str | None = None,
+        issue_type: str | None = None,
+        table_name: str | None = None,
+        column_name: str | None = None,
+        **_kwargs,
+    ) -> None:
         run_parentage = profiling_queries.lookup_db_parentage_from_run(run_id)
         if not run_parentage:
             self.router.navigate_with_warning(
@@ -38,16 +50,16 @@ class ProfilingAnomaliesPage(Page):
 
         testgen.page_header(
             "Hygiene Issues",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies",
+            "view-hygiene-issues",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
                 { "label": f"{table_group_name} | {run_date}" },
             ],
         )
 
-        others_summary_column, pii_summary_column, _ = st.columns([.3, .3, .4])
-        (liklihood_filter_column, issue_type_filter_column, sort_column, actions_column, export_button_column) = (
-            st.columns([.16, .34, .08, .32, .1], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, actions_column = st.columns([.25, .25, .5], vertical_alignment="bottom")
+        (liklihood_filter_column, issue_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column) = (
+            st.columns([.15, .25, .2, .2, .1, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
@@ -74,6 +86,26 @@ class ProfilingAnomaliesPage(Page):
                 disabled=issue_class == "Potential PII",
             )
 
+        run_columns_df = get_profiling_run_columns(run_id)
+        with table_filter_column:
+            table_name = testgen.select(
+                options=list(run_columns_df["table_name"].unique()),
+                default_value=table_name,
+                bind_to_query="table_name",
+                label="Table Name",
+            )
+
+        with column_filter_column:
+            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
+            column_name = testgen.select(
+                options=column_options,
+                value_column="column_name",
+                default_value=column_name,
+                bind_to_query="column_name",
+                label="Column Name",
+                disabled=not table_name,
+            )
+
         with sort_column:
             sortable_columns = (
                 ("Table", "r.table_name"),
@@ -91,7 +123,7 @@ class ProfilingAnomaliesPage(Page):
 
 
         # Get hygiene issue list
-        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, sorting_columns)
+        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
 
         # Retrieve disposition action (cache refreshed)
         df_action = get_anomaly_disposition(run_id)
@@ -106,7 +138,7 @@ class ProfilingAnomaliesPage(Page):
                 testgen.summary_bar(
                     items=others_summary,
                     label="Hygiene Issues",
-                    height=40,
+                    height=20,
                     width=400,
                 )
 
@@ -116,7 +148,7 @@ class ProfilingAnomaliesPage(Page):
                     testgen.summary_bar(
                         items=anomalies_pii_summary,
                         label="Potential PII",
-                        height=40,
+                        height=20,
                         width=400,
                     )
             # write_frequency_graph(df_pa)
@@ -167,7 +199,7 @@ class ProfilingAnomaliesPage(Page):
             if not selected_row:
                 st.markdown(":orange[Select a record to see more information.]")
             else:
-                col1, col2 = st.columns([0.7, 0.3])
+                col1, col2 = st.columns([0.8, 0.2])
                 with col1:
                     fm.render_html_list(
                         selected_row,
@@ -185,17 +217,33 @@ class ProfilingAnomaliesPage(Page):
                         int_data_width=700,
                     )
                 with col2:
-                    # _, v_col2 = st.columns([0.3, 0.7])
-                    v_col1, v_col2 = st.columns([0.5, 0.5])
-                view_profiling_button(
-                    v_col1, selected_row["table_name"], selected_row["column_name"],
-                    str_profile_run_id=run_id
-                )
-                with v_col2:
+                    view_profiling_button(
+                        selected_row["table_name"], selected_row["column_name"], str_profile_run_id=run_id
+                    )
+
                     if st.button(
                         "Source Data →", help="Review current source data for highlighted issue", use_container_width=True
                     ):
                         source_data_dialog(selected_row)
+                    if st.button(
+                            ":material/file_save: Issue Report",
+                            use_container_width=True,
+                            help="Generate a PDF report for each selected issue",
+                    ):
+                        dialog_title = "Download Issue Report"
+                        if len(selected) == 1:
+                            download_dialog(
+                                dialog_title=dialog_title,
+                                file_content_func=get_report_file_data,
+                                args=(selected[0],),
+                            )
+                        else:
+                            zip_func = zip_multi_file_data(
+                                "testgen_hygiene_issue_reports.zip",
+                                get_report_file_data,
+                                [(arg,) for arg in selected],
+                            )
+                            download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
             cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary]
             # Clear the list cache if the list is sorted by disposition/action
@@ -232,24 +280,48 @@ class ProfilingAnomaliesPage(Page):
 
 
 @st.cache_data(show_spinner=False)
-def get_db_table_group_choices(str_project_code):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(str_schema, str_project_code)
+def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    return dq.run_table_groups_lookup_query(schema, project_code)
+
+
+@st.cache_data(show_spinner="False")
+def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT table_name, column_name
+    FROM {schema}.profile_anomaly_results
+    WHERE profile_run_id = '{profiling_run_id}'
+    ORDER BY table_name, column_name;
+    """
+    return db.retrieve_data(sql)
 
 
 @st.cache_data(show_spinner="Retrieving Data")
-def get_profiling_anomalies(str_profile_run_id, str_likelihood, issue_type_id, sorting_columns):
-    str_schema = st.session_state["dbschema"]
-    if str_likelihood is None:
-        str_criteria = " AND t.issue_likelihood <> 'Potential PII'"
-    else:
-        str_criteria = f" AND t.issue_likelihood = '{str_likelihood}'"
-    if sorting_columns:
-        str_order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
-    else:
-        str_order_by = ""
+def get_profiling_anomalies(
+    profile_run_id: str,
+    likelihood: str | None,
+    issue_type_id: str | None,
+    table_name: str | None,
+    column_name: str | None,
+    sorting_columns: list[str] | None,
+):
+    schema: str = st.session_state["dbschema"]
+    criteria = ""
+    order_by = ""
+
+    if likelihood:
+        criteria += f" AND t.issue_likelihood = '{likelihood}'"
     if issue_type_id:
-        str_criteria += f" AND t.id = '{issue_type_id}'"
+        criteria += f" AND t.id = '{issue_type_id}'"
+    if table_name:
+        criteria += f" AND r.table_name = '{table_name}'"
+    if column_name:
+        criteria += f" AND r.column_name = '{column_name}'"
+
+    if sorting_columns:
+        order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
+
     # Define the query -- first visible column must be first, because will hold the multi-select box
     str_sql = f"""
             SELECT r.table_name, r.column_name, r.schema_name,
@@ -269,15 +341,18 @@ def get_profiling_anomalies(str_profile_run_id, str_likelihood, issue_type_id, s
                      WHEN t.issue_likelihood = 'Definite'  THEN 4
                    END AS likelihood_order,
                    t.anomaly_description, r.detail, t.suggested_action,
-                   r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime
-              FROM {str_schema}.profile_anomaly_results r
-            INNER JOIN {str_schema}.profile_anomaly_types t
+                   r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
+                   tg.table_groups_name
+              FROM {schema}.profile_anomaly_results r
+            INNER JOIN {schema}.profile_anomaly_types t
                ON r.anomaly_id = t.id
-            INNER JOIN {str_schema}.profiling_runs p
+            INNER JOIN {schema}.profiling_runs p
                 ON r.profile_run_id = p.id
-             WHERE r.profile_run_id = '{str_profile_run_id}'
-               {str_criteria}
-            {str_order_by}
+            INNER JOIN {schema}.table_groups tg
+                ON r.table_groups_id = tg.id
+             WHERE r.profile_run_id = '{profile_run_id}'
+               {criteria}
+            {order_by}
     """
     # Retrieve data as df
     df = db.retrieve_data(str_sql)
@@ -352,90 +427,8 @@ def get_profiling_anomaly_summary(str_profile_run_id):
 
 
 @st.cache_data(show_spinner=False)
-def get_bad_data(selected_row):
-    str_schema = st.session_state["dbschema"]
-    # Define the query
-    str_sql = f"""
-            SELECT t.lookup_query, tg.table_group_schema, c.project_qc_schema,
-                   c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
-              FROM {str_schema}.target_data_lookups t
-            INNER JOIN {str_schema}.table_groups tg
-               ON ('{selected_row["table_groups_id"]}'::UUID = tg.id)
-            INNER JOIN {str_schema}.connections c
-               ON (tg.connection_id = c.connection_id)
-                AND (t.sql_flavor = c.sql_flavor)
-             WHERE t.error_type = 'Profile Anomaly'
-               AND t.test_id = '{selected_row["anomaly_id"]}'
-               AND t.lookup_query > '';
-    """
-
-    def get_lookup_query(test_id, detail_exp, column_names):
-        if test_id in {"1019", "1020"}:
-            start_index = detail_exp.find("Columns: ")
-            if start_index == -1:
-                columns = [col.strip() for col in column_names.split(",")]
-            else:
-                start_index += len("Columns: ")
-                column_names_str = detail_exp[start_index:]
-                columns = [col.strip() for col in column_names_str.split(",")]
-            queries = [
-                f"SELECT '{column}' AS column_name, MAX({column}) AS max_date_available FROM {{TARGET_SCHEMA}}.{{TABLE_NAME}}"
-                for column in columns
-            ]
-            sql_query = " UNION ALL ".join(queries) + " ORDER BY max_date_available DESC;"
-        else:
-            sql_query = ""
-        return sql_query
-
-    def replace_parms(str_query):
-        str_query: str = (
-            get_lookup_query(selected_row["anomaly_id"], selected_row["detail"], selected_row["column_name"])
-            if lst_query[0]["lookup_query"] == "created_in_ui"
-            else lst_query[0]["lookup_query"]
-        )
-        str_query = str_query.replace("{TARGET_SCHEMA}", lst_query[0]["table_group_schema"])
-        str_query = str_query.replace("{TABLE_NAME}", selected_row["table_name"])
-        str_query = str_query.replace("{COLUMN_NAME}", selected_row["column_name"])
-        str_query = str_query.replace("{DATA_QC_SCHEMA}", lst_query[0]["project_qc_schema"])
-        str_query = str_query.replace("{DETAIL_EXPRESSION}", selected_row["detail"])
-        str_query = str_query.replace("{PROFILE_RUN_DATE}", selected_row["profiling_starttime"])
-        if "{{DKFN_" in str_query:
-            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
-        if str_query is None or str_query == "":
-            raise ValueError("Lookup query is not defined for this Anomoly Type.")
-        return str_query
-
-    try:
-        # Retrieve SQL for customer lookup
-        lst_query = db.retrieve_data_list(str_sql)
-
-        # Retrieve and return data as df
-        if lst_query:
-            str_sql = replace_parms(str_sql)
-            df = db.retrieve_target_db_df(
-                lst_query[0]["sql_flavor"],
-                lst_query[0]["project_host"],
-                lst_query[0]["project_port"],
-                lst_query[0]["project_db"],
-                lst_query[0]["project_user"],
-                lst_query[0]["project_pw_encrypted"],
-                str_sql,
-                lst_query[0]["url"],
-                lst_query[0]["connect_by_url"],
-                lst_query[0]["connect_by_key"],
-                lst_query[0]["private_key"],
-                lst_query[0]["private_key_passphrase"],
-            )
-            if df.empty:
-                return "ND", "Data that violates Hygiene Issue criteria is not present in the current dataset.", None
-            else:
-                return "OK", None, df
-        else:
-            return "NA", "A source data lookup for this Issue is not available.", None
-
-    except Exception as e:
-        return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}", None
+def get_source_data(hi_data):
+    return get_source_data_uncached(hi_data)
 
 
 def write_frequency_graph(df_tests):
@@ -466,7 +459,7 @@ def source_data_dialog(selected_row):
     fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
 
     with st.spinner("Retrieving source data..."):
-        bad_data_status, bad_data_msg, df_bad = get_bad_data(selected_row)
+        bad_data_status, bad_data_msg, _, df_bad = get_source_data(selected_row)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
@@ -496,3 +489,14 @@ def do_disposition_update(selected, str_new_status):
             str_result = f":red[**The update {str_which} did not succeed.**]"
 
     return str_result
+
+def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
+    hi_id = tr_data["id"][:8]
+    profiling_time = pd.Timestamp(tr_data["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
+    file_name = f"testgen_hygiene_issue_report_{hi_id}_{profiling_time}.pdf"
+
+    with BytesIO() as buffer:
+        create_report(buffer, tr_data)
+        update_progress(1.0)
+        buffer.seek(0)
+        return file_name, "application/pdf", buffer.read()

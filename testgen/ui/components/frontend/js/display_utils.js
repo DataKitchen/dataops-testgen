@@ -19,7 +19,7 @@ function formatDuration(/** @type string */ duration) {
         return '--';
     }
         
-    const { hour, minute, second } = duration.split(':');
+    const [ hour, minute, second ] = duration.split(':');
     let formatted = [
         { value: Number(hour), unit: 'h' },
         { value: Number(minute), unit: 'm' },

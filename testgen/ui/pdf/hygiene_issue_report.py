@@ -1,0 +1,176 @@
+from reportlab.lib import colors
+from reportlab.lib.colors import HexColor
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
+
+from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
+from testgen.ui.pdf.style import (
+    COLOR_GRAY_BG,
+    COLOR_GREEN_BG,
+    PARA_STYLE_CELL,
+    PARA_STYLE_FOOTNOTE,
+    PARA_STYLE_H1,
+    PARA_STYLE_INFO,
+    PARA_STYLE_LINK,
+    PARA_STYLE_MONO,
+    PARA_STYLE_TEXT,
+    PARA_STYLE_TITLE,
+    TABLE_STYLE_DEFAULT,
+    get_formatted_datetime,
+)
+from testgen.ui.pdf.templates import DatakitchenTemplate
+from testgen.ui.services.hygiene_issues_service import get_source_data
+from testgen.utils import get_base_url
+
+SECTION_MIN_AVAILABLE_HEIGHT = 120
+
+CLASS_COLORS =  {
+    "Definite": HexColor(0xE94D4A),
+    "Likely": HexColor(0xFC8F2A),
+    "Possible": HexColor(0xFCD349),
+    "Potential PII": HexColor(0xFC8F2A),
+}
+
+def build_summary_table(document, hi_data):
+
+    summary_table_style = TableStyle(
+        (
+            # All-table styles
+            ("GRID", (0, 0), (-1, -1), 2, colors.white),
+            ("BACKGROUND", (0, 0), (-1, -1), COLOR_GRAY_BG),
+
+            # Header cells
+            *[
+                (cmd[0], *coords, *cmd[1:])
+                for coords in (
+                    ((2, 2), (2, 4)),
+                    ((0, 0), (0, -1))
+                )
+                for cmd in (
+                    ("FONT", "Helvetica-Bold"),
+                    ("ALIGN", "RIGHT"),
+                    ("BACKGROUND", COLOR_GREEN_BG),
+                )
+            ],
+
+            # Layout
+            ("SPAN", (1, 0), (3, 0)),
+
+            ("SPAN", (1, 1), (4, 1)),
+
+            ("SPAN", (3, 2), (4, 2)),
+            ("SPAN", (3, 3), (4, 3)),
+            ("SPAN", (3, 4), (4, 4)),
+            ("SPAN", (3, 5), (4, 5)),
+            ("SPAN", (2, 5), (4, 5)),
+
+            # Link cell
+            ("BACKGROUND", (2, 5), (4, 5), colors.white),
+
+            # Status cell
+            *[
+                (cmd[0], (4, 0), (4, 0), *cmd[1:])
+                for cmd in (
+                    ("BACKGROUND", CLASS_COLORS.get(hi_data["issue_likelihood"], COLOR_GRAY_BG)),
+                    ("ALIGNMENT", "CENTER"),
+                    ("VALIGN", "MIDDLE"),
+                )
+            ],
+        ),
+        parent=TABLE_STYLE_DEFAULT,
+    )
+
+
+    profiling_timestamp = get_formatted_datetime(hi_data["profiling_starttime"])
+    summary_table_data = [
+        (
+            "Hygiene Issue",
+            (
+                Paragraph(f"<b>{hi_data['anomaly_name']}:</b>", style=PARA_STYLE_CELL),
+                Paragraph(hi_data["anomaly_description"], style=PARA_STYLE_CELL),
+            ),
+            None,
+            None,
+            Paragraph(
+                hi_data["issue_likelihood"],
+                style=ParagraphStyle("likelihood", textColor=colors.white, fontSize=10, parent=PARA_STYLE_CELL, alignment=TA_CENTER),
+            ),
+        ),
+        (
+            "Detail",
+            Paragraph(
+                hi_data["detail"],
+                style=ParagraphStyle("detail", fontName="Helvetica-Bold", parent=PARA_STYLE_CELL),
+            ),
+        ),
+
+        ("Database/Schema", hi_data["schema_name"], "Profiling Date", profiling_timestamp),
+        ("Table", hi_data["table_name"], "Table Group", hi_data["table_groups_name"]),
+        ("Column", hi_data["column_name"], "Disposition", hi_data["disposition"] or "No Decision"),
+        (
+            "Column Type",
+            hi_data["column_type"],
+            Paragraph(
+                f"""<a href="{get_base_url()}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
+                    View on TestGen >
+                </a>""",
+                style=PARA_STYLE_LINK,
+            ),
+        ),
+    ]
+
+    summary_table_col_widths = [n * document.width for n in (.15, .35, .15, .15, .20)]
+    return Table(summary_table_data, style=summary_table_style, hAlign="LEFT", colWidths=summary_table_col_widths)
+
+
+def build_sample_data_content(document, sample_data_tuple):
+    sample_data_status, sample_data_msg, lookup_query, sample_data = sample_data_tuple
+    if sample_data_status in ("ND", "NA"):
+        yield Paragraph(sample_data_msg, style=PARA_STYLE_INFO)
+    elif sample_data_status == "ERR" or sample_data is None:
+        yield Paragraph("It was not possible to fetch the sample data this time.", style=PARA_STYLE_INFO)
+    else:
+        sample_data.columns = [col.replace("_", " ").title() for col in sample_data.columns]
+        df_table_builder = DataFrameTableBuilder(sample_data, document.width)
+        table_flowables = [df_table_builder.build_table(hAlign="LEFT")]
+        if df_table_builder.omitted_columns:
+            omitted_columns = ", ".join(df_table_builder.omitted_columns)
+            sample_data_msg = f"Note: The following columns were omitted from this table: {omitted_columns}"
+        if sample_data_msg:
+            table_flowables.append(Paragraph(sample_data_msg, style=PARA_STYLE_FOOTNOTE))
+
+        yield from df_table_builder.split_in_columns(table_flowables)
+
+
+def build_sql_query_content(sample_data_tuple):
+    lookup_query = sample_data_tuple[2]
+    if lookup_query:
+        return Paragraph(lookup_query, PARA_STYLE_MONO)
+    else:
+        return Paragraph("No sample data lookup query registered for this issue.")
+
+
+def get_report_content(document, hi_data):
+    yield Paragraph("TestGen Hygiene Issue Report", PARA_STYLE_TITLE)
+    yield build_summary_table(document, hi_data)
+
+    yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
+    yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
+    yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
+
+    sample_data_tuple = get_source_data(hi_data)
+
+    yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
+    yield Paragraph("Sample Data", PARA_STYLE_H1)
+    yield from build_sample_data_content(document, sample_data_tuple)
+
+    yield KeepTogether([
+        Paragraph("SQL Query", PARA_STYLE_H1),
+        build_sql_query_content(sample_data_tuple)
+    ])
+
+
+def create_report(filename, hi_data):
+    doc = DatakitchenTemplate(filename)
+    doc.build(flowables=list(get_report_content(doc, hi_data)))

@@ -159,12 +159,6 @@ Determine how many tests are grouped together in a single query. Increase for be
 
 default: `5000`
 
-#### `PROJECT_QC_SCHEMA`
-
-Name of the schema to be created in the project database.
-
-default: `qc`
-
 #### `PROJECT_DATABASE_NAME`
 
 Name of the database the auto generated project will run test against.

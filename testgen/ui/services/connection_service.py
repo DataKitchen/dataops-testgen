@@ -5,7 +5,6 @@ import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
 from testgen.common.database.database_service import (
     AssignConnectParms,
-    RetrieveDBResultsToList,
     empty_cache,
     get_db_type,
     get_flavor_service,
@@ -138,7 +137,6 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     project_port = connection["project_port"]
     project_db = connection["project_db"]
     project_user = connection["project_user"]
-    project_qc_schema = connection["project_qc_schema"]
     password = connection["password"]
 
     # prepare the profiling query
@@ -150,7 +148,7 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
         project_host,
         project_port,
         project_db,
-        table_group_schema if table_group_schema else project_qc_schema,
+        table_group_schema,
         project_user,
         sql_flavor,
         url,
@@ -163,36 +161,6 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     )
 
     return clsProfiling
-
-
-def test_qc_connection(project_code, connection, init_profiling=True):
-    qc_results = {}
-
-    if init_profiling:
-        init_profiling_sql(project_code, connection)
-
-    project_qc_schema = connection["project_qc_schema"]
-    query_isnum_true = f"select {project_qc_schema}.fndk_isnum('32')"
-    query_isnum_true_result_raw = RetrieveDBResultsToList("PROJECT", query_isnum_true)
-    isnum_true_result = query_isnum_true_result_raw[0][0][0] == 1
-    qc_results["isnum_true_result"] = isnum_true_result
-
-    query_isnum_false = f"select {project_qc_schema}.fndk_isnum('HELLO')"
-    query_isnum_false_result_raw = RetrieveDBResultsToList("PROJECT", query_isnum_false)
-    isnum_false_result = query_isnum_false_result_raw[0][0][0] == 0
-    qc_results["isnum_false_result"] = isnum_false_result
-
-    query_isdate_true = f"select {project_qc_schema}.fndk_isdate('2013-05-18')"
-    query_isdate_true_result_raw = RetrieveDBResultsToList("PROJECT", query_isdate_true)
-    isdate_true_result = query_isdate_true_result_raw[0][0][0] == 1
-    qc_results["isdate_true_result"] = isdate_true_result
-
-    query_isdate_false = f"select {project_qc_schema}.fndk_isdate('HELLO')"
-    query_isdate_false_result_raw = RetrieveDBResultsToList("PROJECT", query_isdate_false)
-    isdate_false_result = query_isdate_false_result_raw[0][0][0] == 0
-    qc_results["isdate_false_result"] = isdate_false_result
-
-    return qc_results
 
 
 def form_overwritten_connection_url(connection):

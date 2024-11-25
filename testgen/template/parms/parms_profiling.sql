@@ -23,7 +23,6 @@ SELECT cc.project_code,
        tg.profile_use_sampling,
        tg.profile_sample_percent,
        tg.profile_sample_min_count,
-       cc.project_qc_schema,
        tg.profile_do_pair_rules,
        tg.profile_pair_rule_pct,
        cc.max_threads

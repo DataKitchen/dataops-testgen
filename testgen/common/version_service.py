@@ -54,7 +54,7 @@ def _get_last_docker_release() -> str:
     )
 
     if response.status_code != 200:
-        LOG.warning(f"version_service: Failed to fetch docker tags. Status code: {response.status_code}")
+        LOG.debug(f"version_service: Failed to fetch docker tags. Status code: {response.status_code}")
         return "unknown"
 
     tags_to_return = []

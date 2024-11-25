@@ -11,7 +11,6 @@ SELECT
     project_pw_encrypted,
 	max_threads,
 	max_query_chars,
-    project_qc_schema,
     url,
     connect_by_url,
     connect_by_key,

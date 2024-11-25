@@ -39,7 +39,7 @@ class ConnectionsPage(Page):
 
         testgen.page_header(
             "Connection",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/connect-your-database",
+            "connect-your-database",
         )
 
         testgen.whitespace(0.3)
@@ -59,7 +59,7 @@ class ConnectionsPage(Page):
                     right_icon="chevron_right",
                     underline=False,
                     height=40,
-                    style="margin-left: auto; border-radius: 4px; background: white;"
+                    style="margin-left: auto; border-radius: 4px; background: var(--dk-card-background);"
                         " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:
@@ -100,7 +100,6 @@ class ConnectionsPage(Page):
             )
             data.update({
                 "project_code": project_code,
-                "project_qc_schema": "",
             })
             if "private_key" not in data:
                 data.update({
@@ -208,19 +207,7 @@ class ConnectionsPage(Page):
 
             if not connection_successful:
                 return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
-
-            qc_error_message = "The connection was successful, but there is an issue with the QC Utility Schema"
-            try:
-                qc_results = connection_service.test_qc_connection(connection["project_code"], connection)
-                if not all(qc_results):
-                    return ConnectionStatus(
-                        message=qc_error_message,
-                        details=f"QC Utility Schema confirmation failed. details: {qc_results}",
-                        successful=False,
-                    )
-                return ConnectionStatus(message="The connection was successful.", successful=True)
-            except Exception as error:
-                return ConnectionStatus(message=qc_error_message, details=error.args[0], successful=False)
+            return ConnectionStatus(message="The connection was successful.", successful=True)
         except Exception as error:
             return ConnectionStatus(message="Error attempting the Connection.", details=error.args[0], successful=False)
 

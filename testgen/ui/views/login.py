@@ -4,6 +4,7 @@ import typing
 import streamlit as st
 import streamlit_authenticator as stauth
 
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
@@ -28,12 +29,16 @@ class LoginPage(Page):
             auth_data["preauthorized"],
         )
 
-        _column_1, column_2, _column_3 = st.columns([0.25, 0.5, 0.25])
-        with column_2:
-            st.markdown("""
+        _, login_column, links_column = st.columns([0.25, 0.5, 0.25])
+
+        with links_column:
+            testgen.page_links()
+
+        with login_column:
+            st.html("""
                         <br><br><br>
                         <h3 style="text-align: center;">Welcome to DataKitchen DataOps TestGen</h3>
-                        """, unsafe_allow_html=True)
+                        """)
             name, authentication_status, username = authenticator.login("Login")
                 
             if authentication_status is False:
