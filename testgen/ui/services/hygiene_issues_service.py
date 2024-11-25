@@ -51,9 +51,7 @@ def get_source_data(hi_data):
         str_query = str_query.replace("{COLUMN_NAME}", hi_data["column_name"])
         str_query = str_query.replace("{DETAIL_EXPRESSION}", hi_data["detail"])
         str_query = str_query.replace("{PROFILE_RUN_DATE}", hi_data["profiling_starttime"])
-
-        if "{{DKFN_" in str_query:
-            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
+        str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
 
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Anomoly Type.")

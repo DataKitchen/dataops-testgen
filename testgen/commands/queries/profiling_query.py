@@ -97,8 +97,7 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{CONTINGENCY_COLUMNS}", self.contingency_columns)
         strInputString = strInputString.replace("{CONTINGENCY_MAX_VALUES}", self.contingency_max_values)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
-        if "{{DKFN_" in strInputString:
-            strInputString = replace_templated_functions(strInputString, self.flavor)
+        strInputString = replace_templated_functions(strInputString, self.flavor)
 
         return strInputString
 
