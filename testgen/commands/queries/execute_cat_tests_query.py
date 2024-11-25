@@ -60,8 +60,7 @@ class CCATExecutionSQL:
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
 
-        if "{{DKFN_" in strInputString:
-            strInputString = replace_templated_functions(strInputString, self.flavor)
+        strInputString = replace_templated_functions(strInputString, self.flavor)
 
         # Adding escape character where ':' is referenced
         strInputString = strInputString.replace(":", "\\:")

@@ -388,7 +388,8 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         column_condition = f"AND column_names = '{column_name}'"
     
     sql = f"""
-    SELECT column_names AS column_name,
+    SELECT test_results.id::VARCHAR(50),
+        column_names AS column_name,
         test_name_short AS test_name,
         result_status,
         result_message,

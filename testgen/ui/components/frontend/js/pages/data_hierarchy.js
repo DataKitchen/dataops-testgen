@@ -19,6 +19,7 @@
  *
  * @typedef TestIssue
  * @type {object}
+ * @property {string} id
  * @property {string} column_name
  * @property {string} test_name
  * @property {'Failed' | 'Warning' | 'Error' } result_status
@@ -504,6 +505,7 @@ const TestIssuesCard = (/** @type Table | Column */ item) => {
                         run_id: issue.test_run_id,
                         table_name: item.table_name,
                         column_name: item.column_name,
+                        selected: issue.id,
                     },
                     open_new: true,
                     label: formatTimestamp(issue.test_run_date),

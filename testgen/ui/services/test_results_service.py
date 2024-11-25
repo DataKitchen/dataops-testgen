@@ -104,6 +104,7 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
     def replace_parms(df_test, str_query):
         if df_test.empty:
             raise ValueError("This test definition is no longer present.")
+
         str_query = str_query.replace("{TARGET_SCHEMA}", empty_if_null(lst_query[0]["table_group_schema"]))
         str_query = str_query.replace("{TABLE_NAME}", empty_if_null(tr_data["table_name"]))
         str_query = str_query.replace("{COLUMN_NAME}", empty_if_null(tr_data["column_names"]))
@@ -142,8 +143,7 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
         str_substitute = ConcatColumnList(df_test.at[0, "match_groupby_names"], "<NULL>")
         str_query = str_query.replace("{CONCAT_MATCH_GROUPBY}", str_substitute)
 
-        if "{{DKFN_" in str_query:
-            str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
+        str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
 
         if str_query is None or str_query == "":
             raise ValueError("Lookup query is not defined for this Test Type.")
