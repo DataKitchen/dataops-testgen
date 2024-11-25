@@ -102,6 +102,7 @@ def run_cat_test_queries(
         dctParms["connect_by_key"],
         dctParms["private_key"],
         dctParms["private_key_passphrase"],
+        dctParms["http_path"],
         "PROJECT",
     )
 

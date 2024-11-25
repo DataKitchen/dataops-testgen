@@ -266,6 +266,14 @@ from env variable: `PROJECT_DATABASE_PORT`
 defaults to: `environ[DATABASE_PORT]`
 """
 
+PROJECT_DATABASE_HTTP_PATH: str = os.getenv("PROJECT_DATABASE_HTTP_PATH", None)
+"""
+When connecting to a Databricks database, the HTTP endpoint path is required.
+
+from env variable: `PROJECT_DATABASE_HTTP_PATH`
+defaults to: `None`
+"""
+
 SKIP_DATABASE_CERTIFICATE_VERIFICATION: bool = os.getenv("TG_TARGET_DB_TRUST_SERVER_CERTIFICATE", "no").lower() == "yes"
 """
 When True for supported SQL flavors, set up the SQLAlchemy connection to

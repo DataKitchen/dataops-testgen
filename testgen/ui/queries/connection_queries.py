@@ -12,7 +12,8 @@ def get_by_id(connection_id):
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
                   sql_flavor, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
-                  max_threads, max_query_chars, url, connect_by_url, connect_by_key, private_key, private_key_passphrase
+                  max_threads, max_query_chars, url, connect_by_url, connect_by_key, private_key,
+                  private_key_passphrase, http_path
              FROM {str_schema}.connections
              WHERE connection_id = '{connection_id}'
     """
@@ -26,7 +27,7 @@ def get_connections(project_code):
                   sql_flavor, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, connect_by_url, url, connect_by_key, private_key,
-                  private_key_passphrase
+                  private_key_passphrase, http_path
              FROM {str_schema}.connections
              WHERE project_code = '{project_code}'
            ORDER BY connection_id
@@ -53,7 +54,8 @@ def edit_connection(schema, connection, encrypted_password, encrypted_private_ke
         max_query_chars = '{connection["max_query_chars"]}',
         url = '{connection["url"]}',
         connect_by_key = '{connection["connect_by_key"]}',
-        connect_by_url = '{connection["connect_by_url"]}'"""
+        connect_by_url = '{connection["connect_by_url"]}',
+        http_path = '{connection["http_path"]}'"""
 
     if encrypted_password:
         sql += f""", project_pw_encrypted = '{encrypted_password}' """
@@ -77,9 +79,9 @@ def add_connection(
     encrypted_private_key_passphrase: str | None,
 ) -> int:
     sql_header = f"""INSERT INTO {schema}.connections
-        (project_code, sql_flavor, url, connect_by_url, connect_by_key,  
+        (project_code, sql_flavor, url, connect_by_url, connect_by_key,
         project_host, project_port, project_user, project_db,
-        connection_name,"""
+        connection_name, http_path, """
 
     sql_footer = f""" SELECT
         '{connection["project_code"]}' as project_code,
@@ -91,7 +93,8 @@ def add_connection(
         '{connection["project_port"]}' as project_port,
         '{connection["project_user"]}' as project_user,
         '{connection["project_db"]}' as project_db,
-        '{connection["connection_name"]}' as connection_name, """
+        '{connection["connection_name"]}' as connection_name,
+        '{connection["http_path"]}' as http_path, """
 
     if encrypted_password:
         sql_header += "project_pw_encrypted, "

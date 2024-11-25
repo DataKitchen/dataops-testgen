@@ -274,6 +274,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         dctParms["connect_by_key"],
         dctParms["private_key"],
         dctParms["private_key_passphrase"],
+        dctParms["http_path"],
         "PROJECT",
     )
 

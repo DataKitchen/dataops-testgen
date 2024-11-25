@@ -10,7 +10,7 @@ def get_source_data(hi_data):
     str_sql = f"""
             SELECT t.lookup_query, tg.table_group_schema,
                    c.sql_flavor, c.project_host, c.project_port, c.project_db, c.project_user, c.project_pw_encrypted,
-                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase
+                   c.url, c.connect_by_url, c.connect_by_key, c.private_key, c.private_key_passphrase, c.http_path
               FROM {str_schema}.target_data_lookups t
             INNER JOIN {str_schema}.table_groups tg
                ON ('{hi_data["table_groups_id"]}'::UUID = tg.id)
@@ -54,7 +54,7 @@ def get_source_data(hi_data):
         str_query = replace_templated_functions(str_query, lst_query[0]["sql_flavor"])
 
         if str_query is None or str_query == "":
-            raise ValueError("Lookup query is not defined for this Anomoly Type.")
+            raise ValueError("Lookup query is not defined for this Anomaly Type.")
         return str_query
 
     try:
@@ -77,6 +77,7 @@ def get_source_data(hi_data):
                 lst_query[0]["connect_by_key"],
                 lst_query[0]["private_key"],
                 lst_query[0]["private_key_passphrase"],
+                lst_query[0]["http_path"],
             )
             if df.empty:
                 return "ND", "Data that violates Hygiene Issue criteria is not present in the current dataset.", str_sql, None

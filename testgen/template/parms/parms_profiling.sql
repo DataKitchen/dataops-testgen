@@ -10,6 +10,7 @@ SELECT cc.project_code,
        cc.project_port,
        cc.project_user,
        cc.project_db,
+       cc.http_path,
        tg.id::VARCHAR(50) as table_groups_id,
        tg.table_group_schema,
        CASE

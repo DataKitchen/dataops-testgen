@@ -47,6 +47,7 @@ def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, mi
         dctParms["connect_by_key"],
         dctParms["private_key"],
         dctParms["private_key_passphrase"],
+        dctParms["http_path"],
         "PROJECT",
     )
 

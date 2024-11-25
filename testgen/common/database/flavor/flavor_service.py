@@ -17,6 +17,7 @@ class FlavorService:
     connect_by_key = None
     private_key = None
     private_key_passphrase = None
+    http_path = None
     catalog = None
 
     def init(self, connection_params: dict):
@@ -29,6 +30,7 @@ class FlavorService:
         self.flavor = connection_params.get("flavor")
         self.dbschema = connection_params.get("dbschema", None)
         self.connect_by_key = connection_params.get("connect_by_key", False)
+        self.http_path = connection_params.get("http_path", None)
         self.catalog = connection_params.get("catalog", None)
 
         private_key = connection_params.get("private_key", None)

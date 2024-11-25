@@ -201,6 +201,7 @@ class ConnectionsPage(Page):
                 connection["connect_by_key"],
                 connection["private_key"],
                 connection["private_key_passphrase"],
+                connection["http_path"],
                 sql_query,
             )
             connection_successful = len(results) == 1 and results[0][0] == 1

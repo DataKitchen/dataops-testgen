@@ -11,7 +11,7 @@ SELECT '{PROJECT_CODE}' as project_code,
 INSERT INTO connections
 (project_code, sql_flavor,
  project_host, project_port, project_user, project_db,
- connection_name, project_pw_encrypted, max_threads, max_query_chars)
+ connection_name, project_pw_encrypted, http_path, max_threads, max_query_chars)
 SELECT '{PROJECT_CODE}'                       as project_code,
        '{SQL_FLAVOR}'                         as sql_flavor,
        '{PROJECT_HOST}'                       as project_host,
@@ -20,6 +20,7 @@ SELECT '{PROJECT_CODE}'                       as project_code,
        '{PROJECT_DB}'                         as project_db,
        '{CONNECTION_NAME}'                    as connection_name,
        '{PROJECT_PW_ENCRYPTED}'               as project_pw_encrypted,
+       '{PROJECT_HTTP_PATH}'                  as http_path,
        '{MAX_THREADS}'::INTEGER               as max_threads,
        '{MAX_QUERY_CHARS}'::INTEGER           as max_query_chars;
 
