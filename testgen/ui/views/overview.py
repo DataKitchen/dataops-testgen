@@ -50,7 +50,7 @@ class OverviewPage(Page):
         with table_group_sort_col:
             table_groups_df["latest_activity_date"] = table_groups_df[
                 ["latest_profile_start", "latest_tests_start"]
-            ].max(axis=1)
+            ].apply(pd.to_datetime).max(axis=1) # apply is needed to handle missing values
             ascending_fields: list[str] = ["table_groups_name"]
             sort_options  = pd.DataFrame({
                 "value": ["table_groups_name", "latest_activity_date"],
