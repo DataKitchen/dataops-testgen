@@ -7,11 +7,12 @@ from functools import cache
 from importlib.abc import Traversable
 from importlib.resources import as_file, files
 
-import regex
 import yaml
 
 LOG = logging.getLogger("testgen")
 
+DK_FUNCTIONS_PATTERN = re.compile(r"<%(\w+)(?:;(.+?))?%>")
+DK_FUNCTIONS_ARG_REPL_PATTERN = re.compile(r"\{\$(\d+)\}")
 
 def _get_template_package_resource(
     template_file_name: str | None = None,
@@ -83,23 +84,35 @@ def read_template_yaml_function(function_name: str, db_flavour: str) -> str:
 
 
 def replace_templated_functions(query: str, db_flavour: str) -> str:
-    # see regexr.com/872jv for regex explanation
-    # Regex package is needed due to variable number of capture groups ('re' package only returns last)
-    # Use double curly braces for the function call in sql {{ }}
-    # Separate function arguments with double semi colon ;;
+
     # Arguments in the template yaml take the form {$<index>} like {$1}
-    # Space is required after the closing braces
-    # e.g. "{{DKFN_ISNUM;;{COLUM_NAME}}} "
     # Function template replacement is the last step of templating, therefore cannot use other templated parameters inside.
-    # If needed, those must be arguments to the templated function. 
-    # I.E OK TO DO sql: "{{DKFN_FOO;;{COLUM_NAME}}}" and yaml: "FOO: foo({$1})" 
-    # NOT OK TO DO sql: "{{DKFN_FOO}}" and yaml: "FOO: foo({"COLUM_NAME"})"  
-    while match := regex.search(r"{{DKFN_([\w\d]+)(?:;;(.+?))*}}(\s)", query):
-        function_name = match.captures(1)[0]
-        function_arguments = match.captures(2)
+    # If needed, those must be arguments to the templated function.
+    # I.E OK TO DO sql: "<%FOO;{COLUM_NAME}%>" and yaml: "FOO: foo({$1})"
+    # NOT OK TO DO sql: "<%FOO%>" and yaml: "FOO: foo({"COLUM_NAME"})"
+
+    query_parts = []
+    end_pos = 0
+    for func_match in DK_FUNCTIONS_PATTERN.finditer(query):
+
+        query_parts.append(query[end_pos:func_match.span(0)[0]])
+        end_pos = func_match.span(0)[1]
+
+        function_name, args_str = func_match.groups()
         function_template = read_template_yaml_function(function_name, db_flavour)
-        function_template = function_template + match.captures(3)[0]
-        for index, function_arg in enumerate(function_arguments, start=1):
-            function_template = function_template.replace(f"{{${index}}}", function_arg)
-        query = query.replace(match.captures(0)[0], function_template)
-    return query
+        args = args_str.split(";")
+
+        tpl_end_pos = 0
+        for arg_match in DK_FUNCTIONS_ARG_REPL_PATTERN.finditer(function_template):
+            query_parts.append(function_template[tpl_end_pos:arg_match.span(0)[0]])
+            tpl_end_pos = arg_match.span(0)[1]
+            try:
+                query_parts.append(args[int(arg_match.group(1)) - 1])
+            except IndexError:
+                raise ValueError(
+                    f"Templated function call missing required arguments: {query[slice(*func_match.span(0))]}"
+                ) from None
+        query_parts.append(function_template[tpl_end_pos:])
+
+    query_parts.append(query[end_pos:])
+    return "".join(query_parts)
