@@ -66,7 +66,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, friendlyPercent } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Caption } from '../components/caption.js';
@@ -83,7 +83,6 @@ const { div, h3, hr, span, strong } = van.tags;
 const Overview = (/** @type Properties */ props) => {
     loadStylesheet('overview', stylesheet);
     Streamlit.setFrameHeight(1);
-    window.frameElement.style.setProperty('height', 'calc(100vh - 200px)');
     window.testgen.isPage = true;
 
     const isEmpty = van.derive(() => {
@@ -106,12 +105,15 @@ const Overview = (/** @type Properties */ props) => {
 
     van.derive(() => {
         const sortByField = getValue(tableGroupsSortOption);
-        const sortFn = sortFunctions[sortByField] ?? sortFunctions.latest_activity_date
-        filteredTableGroups.val = getValue(filteredTableGroups).sort(sortFn);
+        const sortFn = sortFunctions[sortByField] ?? sortFunctions.latest_activity_date;
+        filteredTableGroups.val = Array.from(getValue(filteredTableGroups).sort(sortFn));
     });
 
+    const wrapperId = 'overview-wrapper';
+    resizeFrameHeightToElement(wrapperId);
+
     return div(
-        { class: 'flex-column tg-overview' },
+        { id: wrapperId, class: 'flex-column tg-overview' },
         () => !getValue(isEmpty)
             ? div(
                 { class: 'flex-row fx-align-stretch fx-gap-4' },

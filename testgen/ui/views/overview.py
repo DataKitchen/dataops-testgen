@@ -14,6 +14,7 @@ from testgen.ui.session import session
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
+T = typing.TypeVar("T")
 
 
 class OverviewPage(Page):
@@ -30,7 +31,7 @@ class OverviewPage(Page):
         )
 
         project_code = project_code or session.project
-        table_groups_df: pd.DataFrame = get_table_groups_summary(project_code)
+        table_groups = get_table_groups_summary(project_code)
         project_summary_df = project_queries.get_summary_by_code(project_code)
 
         table_groups_fields: list[str] = [
@@ -76,9 +77,9 @@ class OverviewPage(Page):
             "overview",
             props={
                 "project": {
-                    "table_groups_count": len(table_groups_df.index),
-                    "test_suites_count": int(table_groups_df["latest_tests_suite_ct"].sum()),
-                    "test_definitions_count": int(table_groups_df["latest_tests_ct"].sum()),
+                    "table_groups_count": len(table_groups.index),
+                    "test_suites_count": int(table_groups["latest_tests_suite_ct"].sum()),
+                    "test_definitions_count": int(table_groups["latest_tests_ct"].sum()),
                     "test_runs_count": int(project_summary_df["test_runs_ct"]),
                     "profiling_runs_count": int(project_summary_df["profiling_runs_ct"]),
                     "connections_count": int(project_summary_df["connections_ct"]),
@@ -96,7 +97,7 @@ class OverviewPage(Page):
                         "dq_score_profiling": friendly_score(table_group["dq_score_profiling"]),
                         "dq_score_testing": friendly_score(table_group["dq_score_testing"]),
                     }
-                    for _, table_group in table_groups_df.iterrows()
+                    for _, table_group in table_groups.iterrows()
                     if (table_group_id := str(table_group["id"]))
                 ],
                 "table_groups_sort_options": [
@@ -125,6 +126,8 @@ def format_field(field: typing.Any) -> typing.Any:
         return str(field)
     elif isinstance(field, pd.Timestamp):
         return field.value / 1_000_000
+    elif pd.isnull(field):
+        return None
     return field
 
 
@@ -266,19 +269,25 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         LEFT JOIN latest_tests ON (groups.id = latest_tests.table_groups_id)
     WHERE groups.project_code = '{project_code}';
     """
+
     return db.retrieve_data(sql)
 
 
 def score(profiling_score: float, tests_score: float) -> float:
-    final_score = profiling_score or tests_score or 0
+    final_score = _pandas_default(profiling_score, 0.0) or _pandas_default(tests_score, 0.0) or 0.0
     if profiling_score and tests_score:
         final_score = (profiling_score * tests_score) / 100
-
     return final_score
 
 
+def _pandas_default(value: typing.Any, default: T) -> T:
+    if pd.isnull(value):
+        return default
+    return value
+
+
 def friendly_score(score: float) -> str:
-    if not score:
+    if not score or pd.isnull(score):
         return "--"
 
     prefix = ""
