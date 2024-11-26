@@ -90,24 +90,25 @@ const Overview = (/** @type Properties */ props) => {
         return projectSummary.test_runs_count <= 0 && projectSummary.profiling_runs_count <= 0;
     });
     const tableGroups = van.derive(() => getValue(props.table_groups));
-    const filteredTableGroups = van.state(getValue(tableGroups));
     const tableGroupsSearchTerm = van.state('');
     const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)[0]?.value);
+    const filteredTableGroups = van.state(getValue(tableGroups));
+
     const sortFunctions = {
         table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.table_groups_name.toLowerCase()),
         latest_activity_date: (a, b) => Math.max(b.latest_profile_start, b.latest_tests_start) - Math.max(a.latest_profile_start, a.latest_tests_start),
     };
-
-    van.derive(() => {
+    const onFiltersChange = function() {
         const searchTerm = getValue(tableGroupsSearchTerm);
-        filteredTableGroups.val = getValue(tableGroups).filter(group => group.table_groups_name.toLowerCase().includes(searchTerm.toLowerCase() ?? ''));
-    });
-
-    van.derive(() => {
         const sortByField = getValue(tableGroupsSortOption);
         const sortFn = sortFunctions[sortByField] ?? sortFunctions.latest_activity_date;
-        filteredTableGroups.val = Array.from(getValue(filteredTableGroups).sort(sortFn));
-    });
+
+        filteredTableGroups.val = getValue(tableGroups).filter(group => group.table_groups_name.toLowerCase().includes(searchTerm.toLowerCase() ?? '')).sort(sortFn);
+    }
+
+    onFiltersChange();
+
+    van.derive(onFiltersChange);
 
     const wrapperId = 'overview-wrapper';
     resizeFrameHeightToElement(wrapperId);

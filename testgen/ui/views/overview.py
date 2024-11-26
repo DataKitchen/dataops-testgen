@@ -122,12 +122,16 @@ class OverviewPage(Page):
 
 
 def format_field(field: typing.Any) -> typing.Any:
+    defaults = {
+        float: 0.0,
+        int: 0,
+    }
     if isinstance(field, uuid.UUID):
         return str(field)
     elif isinstance(field, pd.Timestamp):
         return field.value / 1_000_000
     elif pd.isnull(field):
-        return None
+        return defaults.get(type(field), None)
     return field
 
 
@@ -273,8 +277,10 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     return db.retrieve_data(sql)
 
 
-def score(profiling_score: float, tests_score: float) -> float:
-    final_score = _pandas_default(profiling_score, 0.0) or _pandas_default(tests_score, 0.0) or 0.0
+def score(profiling_score_: float, tests_score_: float) -> float:
+    tests_score = _pandas_default(tests_score_, 0.0)
+    profiling_score = _pandas_default(profiling_score_, 0.0)
+    final_score = profiling_score or tests_score or 0.0
     if profiling_score and tests_score:
         final_score = (profiling_score * tests_score) / 100
     return final_score
