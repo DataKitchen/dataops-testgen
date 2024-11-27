@@ -16,6 +16,7 @@ body {
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
+    --border-color: rgba(0, 0, 0, .12); 
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
@@ -51,6 +52,7 @@ footer {
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
+    width: 250px;
     z-index: 999;
     background-color: var(--sidebar-background-color);
 }
@@ -67,15 +69,18 @@ section[data-testid="stSidebar"] {
 }
 
 section.main > :nth-child(1 of div).block-container {
-    padding: 24px;
+    padding: 12px 24px 24px;
 }
 
 div[data-testid="stVerticalBlock"] {
     gap: 0.5rem;
 }
 
-div[data-testid="collapsedControl"] {
+.appview-container:has(section[data-testid="stSidebar"]) div[data-testid="stSidebarCollapsedControl"] {
     top: 0.5rem;
+    border-radius: 4px;
+    background-color: var(--border-color);
+    padding: 3px 0 0 8px;
 }
 /*  */
 
@@ -85,6 +90,14 @@ div[data-testid="stDialog"] div[role="dialog"] {
     width: calc(55rem);
 }
 /*  */
+
+div[data-testid="stSpinner"] {
+    background: transparent;
+}
+
+div[data-testid="stSpinner"] > div > i {
+    border-color: var(--primary-color) rgba(49, 51, 63, 0.2) rgba(49, 51, 63, 0.2);
+}
 
 /* Theming for buttons, tabs and form inputs */
 button[data-testid="stBaseButton-secondary"]:hover,
@@ -166,22 +179,22 @@ button[title="Show password text"] {
     background-color: var(--dk-card-background);
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
     width: 100%;
     flex-direction: row;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
     width: auto !important;
     max-height: 40px;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
     justify-content: flex-start;
 }
 
-[data-testid="column"]:has(> div[data-testid="stVerticalBlockBorderWrapper"] > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
     justify-content: flex-end;
 }
 
@@ -241,6 +254,40 @@ Use as testgen.text("text", "extra_styles") */
 }
 /*  */
 
+/* Page header */
+.tg-header {
+    margin: 0;
+    padding: 0;
+    font-weight: 500;
+    transition: padding 0.3s;
+}
+
+[data-testid="stSidebarCollapsedControl"] ~ section.main .tg-header {
+    padding-left: 80px;
+}
+
+.tg-header--line {
+    margin: 0;
+    border: none;
+    border-radius: 2px;
+    height: 2px;
+    background-color: var(--disabled-text-color);
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.tg-header--links) [data-testid="stLinkButton"] a {
+    border: none;
+    background: none;
+    padding: 6px;
+    min-height: 24px;
+    color: var(--primary-text-color);
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.tg-header--links) [data-testid="stLinkButton"] a p {
+    font-size: 20px;
+    line-height: 1;
+}
+/*  */
+
 /* Summary bar component */
 .tg-summary-bar--label {
     margin-bottom: 4px;
@@ -262,8 +309,34 @@ Use as testgen.text("text", "extra_styles") */
 
 .tg-summary-bar--caption {
     margin-top: 4px;
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
     color: var(--caption-text-color);
+    font-size: 13px;
     font-style: italic;
+    line-height: 1;
+}
+
+.tg-summary-bar--legend {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    width: auto;
+}
+
+.tg-summary-bar--legend:not(:last-child) {
+    margin-right: 8px;
+}
+
+.tg-summary-bar--legend-dot {
+    margin-right: 2px;
+    font-size: 4px;
+    font-style: normal;
+}
+
+.tg-summary-bar--legend-dot::before {
+    content: '⬤';
 }
 /*  */
 
@@ -274,6 +347,7 @@ Use as testgen.text("text", "extra_styles") */
         --secondary-text-color: rgba(255, 255, 255, .7);
         --disabled-text-color: rgba(255, 255, 255, .5);
         --caption-text-color: rgba(250, 250, 250, .6); /* Match Streamlit's caption color */
+        --border-color: rgba(255, 255, 255, .25);
 
         --sidebar-background-color: #14181f;
         --sidebar-item-hover-color: #10141b;

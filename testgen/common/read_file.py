@@ -7,6 +7,7 @@ from functools import cache
 from importlib.abc import Traversable
 from importlib.resources import as_file, files
 
+import regex
 import yaml
 
 LOG = logging.getLogger("testgen")
@@ -67,3 +68,38 @@ def read_template_yaml_file(template_file_name: str, sub_directory: str | None =
         raise ValueError(f"{template_file_name}: File is empty")
 
     return template
+
+
+@cache
+def read_template_yaml_function(function_name: str, db_flavour: str) -> str:
+    yaml_functions = read_template_yaml_file(
+        "templated_functions.yaml",
+        sub_directory=f"flavors/{db_flavour}/profiling",
+    )
+    template = yaml_functions[function_name]
+    template = re.sub(r"/\*.*?\*/", "", template, flags=re.DOTALL)
+    template = re.sub(r"\s\s*", " ", template)
+    return template
+
+
+def replace_templated_functions(query: str, db_flavour: str) -> str:
+    # see regexr.com/872jv for regex explanation
+    # Regex package is needed due to variable number of capture groups ('re' package only returns last)
+    # Use double curly braces for the function call in sql {{ }}
+    # Separate function arguments with double semi colon ;;
+    # Arguments in the template yaml take the form {$<index>} like {$1}
+    # Space is required after the closing braces
+    # e.g. "{{DKFN_ISNUM;;{COLUM_NAME}}} "
+    # Function template replacement is the last step of templating, therefore cannot use other templated parameters inside.
+    # If needed, those must be arguments to the templated function. 
+    # I.E OK TO DO sql: "{{DKFN_FOO;;{COLUM_NAME}}}" and yaml: "FOO: foo({$1})" 
+    # NOT OK TO DO sql: "{{DKFN_FOO}}" and yaml: "FOO: foo({"COLUM_NAME"})"  
+    while match := regex.search(r"{{DKFN_([\w\d]+)(?:;;(.+?))*}}(\s)", query):
+        function_name = match.captures(1)[0]
+        function_arguments = match.captures(2)
+        function_template = read_template_yaml_function(function_name, db_flavour)
+        function_template = function_template + match.captures(3)[0]
+        for index, function_arg in enumerate(function_arguments, start=1):
+            function_template = function_template.replace(f"{{${index}}}", function_arg)
+        query = query.replace(match.captures(0)[0], function_template)
+    return query

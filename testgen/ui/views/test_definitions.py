@@ -16,7 +16,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import authentication_service, project_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
-from testgen.ui.views.profiling_modal import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 LOG = logging.getLogger("testgen")
 
@@ -43,7 +43,7 @@ class TestDefinitionsPage(Page):
 
         testgen.page_header(
             "Test Definitions",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types",
+            "testgen-test-types",
             breadcrumbs=[
                 { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
                 { "label": test_suite["test_suite"] },
@@ -59,7 +59,7 @@ class TestDefinitionsPage(Page):
 
         with table_filter_column:
             table_options = run_table_lookup_query(table_group["id"])
-            table_name = testgen.toolbar_select(
+            table_name = testgen.select(
                 options=table_options,
                 value_column="table_name",
                 default_value=table_name,
@@ -69,7 +69,7 @@ class TestDefinitionsPage(Page):
             )
         with column_filter_column:
             column_options = get_column_names(table_group["id"], table_name)
-            column_name = testgen.toolbar_select(
+            column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
@@ -127,7 +127,7 @@ class TestDefinitionsPage(Page):
             help="Delete the selected Test Definition",
             disabled=not selected,
         ):
-            delete_test_dialog(selected_test_def)          
+            delete_test_dialog(selected_test_def)
 
 
 @st.dialog("Delete Test")
@@ -156,9 +156,16 @@ def delete_test_dialog(selected_test_definition):
         int_data_width=700,
     )
 
-    with st.form("Delete Test Definition", clear_on_submit=True):
+    with st.form("Delete Test Definition", clear_on_submit=True, border=False):
         disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
-        delete = st.form_submit_button("Delete", disabled=disable_delete_button, type="primary")
+        _, button_column = st.columns([.85, .15])
+        with button_column:
+            delete = st.form_submit_button(
+                "Delete",
+                disabled=disable_delete_button,
+                type="primary",
+                use_container_width=True,
+            )
 
         if delete:
             test_definition_service.delete([test_definition_id])
@@ -522,6 +529,12 @@ def show_test_form(
 
         if dynamic_attribute in ["custom_query"]:
             show_custom_query = True
+        elif dynamic_attribute in ["threshold_value"]:
+            test_definition[dynamic_attribute] = current_column.number_input(
+                label=actual_dynamic_attributes_labels,
+                value=float(value),
+                help=actual_dynamic_attributes_help,
+            )
         else:
             test_definition[dynamic_attribute] = current_column.text_input(
                 label=actual_dynamic_attributes_labels,
@@ -706,6 +719,8 @@ def show_test_defs_grid(
         do_multi_select=do_multi_select,
         show_column_headers=show_column_headers,
         render_highlights=False,
+        bind_to_query_name="selected",
+        bind_to_query_prop="id",
     )
 
     with export_container:
@@ -799,10 +814,11 @@ def show_test_defs_grid(
 
         _, col_profile_button = right_column.columns([0.7, 0.3])
         if selected_row["test_scope"] == "column":
-            view_profiling_button(
-                col_profile_button, selected_row["table_name"], selected_row["column_name"],
-                str_table_groups_id=str_table_groups_id
-            )
+            with col_profile_button:
+                view_profiling_button(
+                    selected_row["table_name"], selected_row["column_name"],
+                    str_table_groups_id=str_table_groups_id
+                )
 
         with right_column:
             st.write(generate_test_defs_help(row_selected["test_type"]))

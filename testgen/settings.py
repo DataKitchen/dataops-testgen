@@ -214,14 +214,6 @@ from env variable: `PROJECT_CONNECTION_MAX_QUERY_CHAR`
 defaults to: `5000`
 """
 
-PROJECT_QC_SCHEMA: str = os.getenv("PROJECT_QC_SCHEMA", "qc")
-"""
-Name of the schema to be created in the project database.
-
-from env variable: `PROJECT_QC_SCHEMA`
-defaults to: `qc`
-"""
-
 PROJECT_DATABASE_NAME: str = os.getenv("PROJECT_DATABASE_NAME", "demo_db")
 """
 Name of the database the auto generated project will run test

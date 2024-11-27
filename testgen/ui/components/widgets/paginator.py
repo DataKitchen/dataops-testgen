@@ -17,9 +17,10 @@ def paginator(
     :param key: unique key to give the component a persisting state
     """
 
-    return component(
+    event_data = component(
         id_="paginator",
         key=key,
-        default=page_index,
+        default={ page_index: page_index },
         props={"count": count, "pageSize": page_size, "pageIndex": page_index},
     )
+    return event_data.get("page_index", 0)

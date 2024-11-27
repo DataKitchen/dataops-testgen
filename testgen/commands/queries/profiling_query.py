@@ -1,6 +1,7 @@
 import typing
 
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
+from testgen.common.read_file import replace_templated_functions
 
 
 class CProfilingSQL:
@@ -13,7 +14,6 @@ class CProfilingSQL:
     table_groups_id = ""
     flavor = ""
     run_date = ""
-    data_qc_schema = ""
     data_schema = ""
     data_table = ""
 
@@ -74,7 +74,6 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{TABLE_GROUPS_ID}", self.table_groups_id)
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
         strInputString = strInputString.replace("{DATA_SCHEMA}", self.data_schema)
-        strInputString = strInputString.replace("{DATA_QC_SCHEMA}", self.data_qc_schema)
         strInputString = strInputString.replace("{DATA_TABLE}", self.data_table)
         strInputString = strInputString.replace("{COL_NAME}", self.col_name)
         strInputString = strInputString.replace("{COL_NAME_SANITIZED}", self.col_name.replace("'", "''"))
@@ -98,6 +97,8 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{CONTINGENCY_COLUMNS}", self.contingency_columns)
         strInputString = strInputString.replace("{CONTINGENCY_MAX_VALUES}", self.contingency_max_values)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
+        if "{{DKFN_" in strInputString:
+            strInputString = replace_templated_functions(strInputString, self.flavor)
 
         return strInputString
 
@@ -141,9 +142,14 @@ class CProfilingSQL:
         strQ = self.ReplaceParms(read_template_sql_file("pii_flag.sql", sub_directory="profiling"))
         return strQ
 
-    def GetAnomalyRefreshQuery(self):
+    def GetAnomalyStatsRefreshQuery(self):
         # Runs on DK Postgres Server
         strQ = self.ReplaceParms(read_template_sql_file("refresh_anomalies.sql", sub_directory="profiling"))
+        return strQ
+
+    def GetAnomalyScoringRollupQuery(self):
+        # Runs on DK Postgres Server
+        strQ = self.ReplaceParms(read_template_sql_file("profile_anomaly_scoring_rollup.sql", sub_directory="profiling"))
         return strQ
 
     def GetAnomalyTestTypesQuery(self):
@@ -173,6 +179,16 @@ class CProfilingSQL:
             strQ = strQ.replace("{ANOMALY_CRITERIA}", dct_test_type["anomaly_criteria"])
             strQ = self.ReplaceParms(strQ)
 
+        return strQ
+
+    def GetAnomalyScoringQuery(self, dct_test_type):
+        # Runs on DK Postgres Server
+        strQ = read_template_sql_file("profile_anomaly_scoring.sql", sub_directory="profiling")
+        if strQ:
+            strQ = strQ.replace("{PROFILE_RUN_ID}", self.profile_run_id)
+            strQ = strQ.replace("{ANOMALY_ID}", dct_test_type["id"])
+            strQ = strQ.replace("{PREV_FORMULA}", dct_test_type["dq_score_prevalence_formula"])
+            strQ = strQ.replace("{RISK}", dct_test_type["dq_score_risk_factor"])
         return strQ
 
     def GetDataCharsRefreshQuery(self):
@@ -226,16 +242,6 @@ class CProfilingSQL:
                 is_first = False
             sub_query += ")"
         return sub_query
-
-    def GetFunctionCreatorQuery(self):
-        # Runs on Project DB
-        strQ = self.ReplaceParms(
-            read_template_sql_file(
-                f"project_function_creator_{self.flavor}.sql",
-                sub_directory=f"flavors/{self.flavor}/setup_profiling_tools",
-            )
-        )
-        return strQ
 
     def GetProfilingQuery(self):
         # Runs on Project DB

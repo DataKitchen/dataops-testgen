@@ -61,7 +61,10 @@ def ParseCATResults(clsCATExecute):
 
 
 def FinalizeTestRun(clsCATExecute):
-    lstQueries = [clsCATExecute.FinalizeTestResultsSQL(), clsCATExecute.PushTestRunStatusUpdateSQL()]
+    lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
+                  clsCATExecute.PushTestRunStatusUpdateSQL(),
+                  clsCATExecute.FinalizeTestSuiteUpdateSQL(),
+                  clsCATExecute.TestScoringRollupSQL()]
     RunActionQueryList(("DKTG"), lstQueries)
 
 
@@ -80,6 +83,7 @@ def run_cat_test_queries(
     )
     clsCATExecute.test_run_id = strTestRunID
     clsCATExecute.run_date = strTestTime
+    clsCATExecute.table_groups_id = dctParms["table_groups_id"]
     clsCATExecute.exception_message += error_msg
 
     # Set Project Connection Params in common.db_bridgers from retrieved params
@@ -119,7 +123,6 @@ def run_cat_test_queries(
             for dctTable in lstTables:
                 clsCATExecute.target_schema = dctTable["schema_name"]
                 clsCATExecute.target_table = dctTable["table_name"]
-                clsCATExecute.replace_qc_schema = dctTable["replace_qc_schema"]
                 AggregateTableTests(clsCATExecute)
 
             LOG.info("CurrentStep: Retrieving CAT Tests to Run")

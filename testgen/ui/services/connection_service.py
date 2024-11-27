@@ -3,10 +3,8 @@ import streamlit as st
 import testgen.ui.queries.connection_queries as connection_queries
 import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import InitializeProfilingSQL
-from testgen.commands.run_setup_profiling_tools import run_setup_profiling_tools
 from testgen.common.database.database_service import (
     AssignConnectParms,
-    RetrieveDBResultsToList,
     empty_cache,
     get_db_type,
     get_flavor_service,
@@ -58,12 +56,18 @@ def edit_connection(connection):
     connection_queries.edit_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
 
 
-def add_connection(connection):
+def add_connection(connection) -> int:
     empty_cache()
     schema = st.session_state["dbschema"]
     connection = pre_save_connection_process(connection)
     encrypted_password, encrypted_private_key, encrypted_private_key_passphrase = encrypt_credentials(connection)
-    connection_queries.add_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase)
+    return connection_queries.add_connection(
+        schema,
+        connection,
+        encrypted_password,
+        encrypted_private_key,
+        encrypted_private_key_passphrase,
+    )
 
 
 def pre_save_connection_process(connection):
@@ -133,7 +137,6 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     project_port = connection["project_port"]
     project_db = connection["project_db"]
     project_user = connection["project_user"]
-    project_qc_schema = connection["project_qc_schema"]
     password = connection["password"]
 
     # prepare the profiling query
@@ -145,7 +148,7 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
         project_host,
         project_port,
         project_db,
-        table_group_schema if table_group_schema else project_qc_schema,
+        table_group_schema,
         project_user,
         sql_flavor,
         url,
@@ -160,42 +163,6 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     return clsProfiling
 
 
-def test_qc_connection(project_code, connection, init_profiling=True):
-    qc_results = {}
-
-    if init_profiling:
-        init_profiling_sql(project_code, connection)
-
-    project_qc_schema = connection["project_qc_schema"]
-    query_isnum_true = f"select {project_qc_schema}.fndk_isnum('32')"
-    query_isnum_true_result_raw = RetrieveDBResultsToList("PROJECT", query_isnum_true)
-    isnum_true_result = query_isnum_true_result_raw[0][0][0] == 1
-    qc_results["isnum_true_result"] = isnum_true_result
-
-    query_isnum_false = f"select {project_qc_schema}.fndk_isnum('HELLO')"
-    query_isnum_false_result_raw = RetrieveDBResultsToList("PROJECT", query_isnum_false)
-    isnum_false_result = query_isnum_false_result_raw[0][0][0] == 0
-    qc_results["isnum_false_result"] = isnum_false_result
-
-    query_isdate_true = f"select {project_qc_schema}.fndk_isdate('2013-05-18')"
-    query_isdate_true_result_raw = RetrieveDBResultsToList("PROJECT", query_isdate_true)
-    isdate_true_result = query_isdate_true_result_raw[0][0][0] == 1
-    qc_results["isdate_true_result"] = isdate_true_result
-
-    query_isdate_false = f"select {project_qc_schema}.fndk_isdate('HELLO')"
-    query_isdate_false_result_raw = RetrieveDBResultsToList("PROJECT", query_isdate_false)
-    isdate_false_result = query_isdate_false_result_raw[0][0][0] == 0
-    qc_results["isdate_false_result"] = isdate_false_result
-
-    return qc_results
-
-
-def create_qc_schema(connection_id, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase=None, admin_private_key=None, user_role=None):
-    dry_run = False
-    empty_cache()
-    run_setup_profiling_tools(connection_id, dry_run, create_qc_schema, db_user, db_password, skip_granting_privileges, admin_private_key_passphrase, admin_private_key, user_role)
-
-
 def form_overwritten_connection_url(connection):
     flavor = connection["sql_flavor"]
 
@@ -207,7 +174,7 @@ def form_overwritten_connection_url(connection):
         "dbname": connection["project_db"],
         "url": None,
         "connect_by_url": None,
-        "connect_by_key": connection["connect_by_key"],
+        "connect_by_key": connection.get("connect_by_key"),
         "private_key": None,
         "private_key_passphrase": "",
         "dbschema": "",

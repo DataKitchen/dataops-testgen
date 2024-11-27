@@ -10,7 +10,7 @@ SELECT '{PROJECT_CODE}' as project_code,
 
 INSERT INTO connections
 (project_code, sql_flavor,
- project_host, project_port, project_user, project_db, project_qc_schema,
+ project_host, project_port, project_user, project_db,
  connection_name, project_pw_encrypted, max_threads, max_query_chars)
 SELECT '{PROJECT_CODE}'                       as project_code,
        '{SQL_FLAVOR}'                         as sql_flavor,
@@ -18,7 +18,6 @@ SELECT '{PROJECT_CODE}'                       as project_code,
        '{PROJECT_PORT}'                       as project_port,
        '{PROJECT_USER}'                       as project_user,
        '{PROJECT_DB}'                         as project_db,
-       '{PROJECT_QC_SCHEMA}'                  as project_qc_schema,
        '{CONNECTION_NAME}'                    as connection_name,
        '{PROJECT_PW_ENCRYPTED}'               as project_pw_encrypted,
        '{MAX_THREADS}'::INTEGER               as max_threads,

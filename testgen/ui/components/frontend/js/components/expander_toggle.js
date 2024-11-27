@@ -7,15 +7,15 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
+import { loadStylesheet } from '../utils.js';
 
 const { div, span, i } = van.tags;
 
 const ExpanderToggle = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight(24);
+    loadStylesheet('expanderToggle', stylesheet);
 
-    if (!window.testgen.loadedStylesheets.expanderToggle) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.expanderToggle = true;
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(24);
     }
 
     const expandedState = van.state(!!props.default.val);

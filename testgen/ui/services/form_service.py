@@ -11,7 +11,7 @@ from time import sleep
 
 import pandas as pd
 import streamlit as st
-import validators
+from attrs import validators
 from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox
@@ -19,6 +19,7 @@ from streamlit_extras.no_default_selectbox import selectbox
 import testgen.common.date_service as date_service
 import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
+from testgen.ui.navigation.router import Router
 
 """
 Shared rendering of UI elements
@@ -762,14 +763,31 @@ def render_insert_form(
 
 
 def render_grid_select(
-    df,
+    df: pd.DataFrame,
     show_columns,
     str_prompt=None,
     int_height=400,
-    do_multi_select=False,
+    do_multi_select: bool | None = None,
+    selection_mode: typing.Literal["single", "multiple", "disabled"] = "single",
     show_column_headers=None,
     render_highlights=True,
+    bind_to_query_name: str | None = None,
+    bind_to_query_prop: str | None = None,
+    key: str = "aggrid",
 ):
+    """
+    :param do_multi_select: DEPRECATED. boolean to choose between single
+        or multiple selection.
+    :param selection_mode: one of single, multiple or disabled. defaults
+        to single.
+    :param bind_to_query_name: name of the query param where to bind the
+        selected row.
+    :param bind_to_query_prop: name of the property of the selected row
+        which value will be set in the query param.
+    :param key: Streamlit cache key for the grid. required when binding
+        selection to query.
+    """
+
     show_prompt(str_prompt)
 
     # Set grid formatting
@@ -837,12 +855,40 @@ function(params) {
 }
 """
     )
+    data_changed: bool = True
+    rendering_counter = st.session_state.get(f"{key}_counter") or 0
+    previous_dataframe = st.session_state.get(f"{key}_dataframe")
+
+    if previous_dataframe is not None:
+        data_changed = not df.equals(previous_dataframe)
 
     dct_col_to_header = dict(zip(show_columns, show_column_headers, strict=True)) if show_column_headers else None
 
     gb = GridOptionsBuilder.from_dataframe(df)
-    selection_mode = "multiple" if do_multi_select else "single"
-    gb.configure_selection(selection_mode=selection_mode, use_checkbox=do_multi_select)
+    selection_mode_ = selection_mode
+    if do_multi_select is not None:
+        selection_mode_ = "multiple" if do_multi_select else "single"
+
+    pre_selected_rows: typing.Any = {}
+    if bind_to_query_name and bind_to_query_prop:
+        bound_value = st.query_params.get(bind_to_query_name)
+        bound_items = df[df[bind_to_query_prop] == bound_value]
+        if len(bound_items) > 0:
+            # https://github.com/PablocFonseca/streamlit-aggrid/issues/207#issuecomment-1793039564
+            pre_selected_rows = {str(bound_items.iloc[0][bind_to_query_prop]): True}
+        else:
+            if data_changed and st.query_params.get(bind_to_query_name):
+                rendering_counter += 1
+            Router().set_query_params({bind_to_query_name: None})
+
+    gb.configure_selection(
+        selection_mode=selection_mode_,
+        use_checkbox=selection_mode_ == "multiple",
+        pre_selected_rows=pre_selected_rows,
+    )
+
+    if bind_to_query_prop:
+        gb.configure_grid_options(getRowId=JsCode(f"""function(row) {{ return row.data['{bind_to_query_prop}'] }}"""))
 
     all_columns = list(df.columns)
 
@@ -853,8 +899,8 @@ function(params) {
             "field": column,
             "header_name": str_header if str_header else ut_prettify_header(column),
             "hide": column not in show_columns,
-            "headerCheckboxSelection": do_multi_select and column == show_columns[0],
-            "headerCheckboxSelectionFilteredOnly": do_multi_select and column == show_columns[0],
+            "headerCheckboxSelection": selection_mode_ == "multiple" and column == show_columns[0],
+            "headerCheckboxSelectionFilteredOnly": selection_mode_ == "multiple" and column == show_columns[0],
         }
         highlight_kwargs = {"cellStyle": cellstyle_jscode}
 
@@ -888,7 +934,8 @@ function(params) {
         theme="balham",
         enable_enterprise_modules=False,
         allow_unsafe_jscode=True,
-        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        update_mode=GridUpdateMode.NO_UPDATE,
+        update_on=["selectionChanged"],
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         height=int_height,
@@ -897,10 +944,18 @@ function(params) {
                 "padding-bottom": "0px !important",
             }
         },
+        key=f"{key}_{selection_mode_}_{rendering_counter}",
+        reload_data=data_changed,
     )
 
-    if len(grid_data["selected_rows"]):
-        return grid_data["selected_rows"]
+    st.session_state[f"{key}_counter"] = rendering_counter
+    st.session_state[f"{key}_dataframe"] = df
+
+    selected_rows = grid_data["selected_rows"]
+    if len(selected_rows) > 0:
+        if bind_to_query_name and bind_to_query_prop:
+            Router().set_query_params({bind_to_query_name: selected_rows[0][bind_to_query_prop]})
+        return selected_rows
 
 
 def render_logo(logo_path: str = logo_file):

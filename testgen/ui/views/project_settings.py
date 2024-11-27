@@ -8,7 +8,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import form_service, project_service
 from testgen.ui.session import session
-from testgen.ui.views.app_log_modal import view_log_file
+from testgen.ui.views.dialogs.application_logs_dialog import view_log_file
 
 
 class ProjectSettingsPage(Page):
@@ -24,7 +24,7 @@ class ProjectSettingsPage(Page):
 
         testgen.page_header(
             "Settings",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/configuration",
+            "tg-project-settings",
         )
 
         testgen.whitespace(1)

@@ -30,6 +30,7 @@ class ProfilingResultsPage(Page):
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
+            return
 
         run_date, table_group_id, table_group_name, project_code = run_parentage
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
@@ -37,7 +38,7 @@ class ProfilingResultsPage(Page):
 
         testgen.page_header(
             "Data Profiling Results",
-            "https://docs.datakitchen.io/article/dataops-testgen-help/investigate-profiling",
+            "view-data-profiling-results",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
                 { "label": f"{table_group_name} | {run_date}" },
@@ -51,7 +52,7 @@ class ProfilingResultsPage(Page):
         with table_filter_column:
             # Table Name filter
             df = profiling_queries.run_table_lookup_query(table_group_id)
-            table_name = testgen.toolbar_select(
+            table_name = testgen.select(
                 options=df,
                 value_column="table_name",
                 default_value=table_name,
@@ -62,7 +63,7 @@ class ProfilingResultsPage(Page):
         with column_filter_column:
             # Column Name filter
             df = profiling_queries.run_column_lookup_query(table_group_id, table_name)
-            column_name = testgen.toolbar_select(
+            column_name = testgen.select(
                 options=df,
                 value_column="column_name",
                 default_value=column_name,
@@ -105,7 +106,12 @@ class ProfilingResultsPage(Page):
             with st.expander("📜 **Table CREATE script with suggested datatypes**"):
                 st.code(generate_create_script(df), "sql")
 
-        selected_row = fm.render_grid_select(df, show_columns)
+        selected_row = fm.render_grid_select(
+            df,
+            show_columns,
+            bind_to_query_name="selected",
+            bind_to_query_prop="id",
+        )
 
         with export_button_column:
             testgen.flex_row_end()

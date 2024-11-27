@@ -44,7 +44,7 @@ WITH mults AS (   SELECT p.project_code,
              AND  '{ANOMALY_ID}' = i.anomaly_id)
              WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
                AND i.anomaly_id IS NULL
-               AND {ANOMALY_CRITERIA}
+               AND ({ANOMALY_CRITERIA})
     )
 INSERT INTO profile_anomaly_results
    (project_code, table_groups_id, profile_run_id, anomaly_id,

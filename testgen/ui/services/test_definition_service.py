@@ -22,6 +22,27 @@ def get_test_definitions(
     )
 
 
+def get_test_definition(db_schema, test_def_id):
+    str_sql = f"""
+           SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
+                  tt.test_description as description, tt.usage_notes,
+                  d.column_name,
+                  d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
+                  d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
+                  d.match_table_name, d.match_column_names, d.match_subset_condition,
+                  d.match_groupby_names, d.match_having_condition,
+                  d.window_date_column, d.window_days::VARCHAR as window_days,
+                  d.custom_query,
+                  d.severity, tt.default_severity,
+                  d.test_active, d.lock_refresh, d.last_manual_update
+             FROM {db_schema}.test_definitions d
+           INNER JOIN {db_schema}.test_types tt
+              ON (d.test_type = tt.test_type)
+            WHERE d.id = '{test_def_id}';
+    """
+    return database_service.retrieve_data(str_sql)
+
+
 def delete(test_definition_ids, dry_run=False):
     schema = st.session_state["dbschema"]
     usage_result = test_definition_queries.get_test_definition_usage(schema, test_definition_ids)

@@ -7,12 +7,14 @@ def link(
     label: str,
     *,
     params: dict = {},  # noqa: B006
+    open_new: bool = False,
     underline: bool = True,
     left_icon: str | None = None,
     left_icon_size: float = 20.0,
     right_icon: str | None = None,
     right_icon_size: float = 20.0,
     height: float | None = 21.0,
+    width: float | None = None,
     style: str | None = None,
     key: str = "testgen:link",
 ) -> None:
@@ -21,6 +23,7 @@ def link(
         "params": params,
         "label": label,
         "height": height,
+        "open_new": open_new,
         "underline": underline,
     }
     if left_icon:
@@ -31,6 +34,9 @@ def link(
 
     if style:
         props.update({"style": style})
+
+    if width:
+        props.update({"width": width})
 
     clicked = component(id_="link", key=key, props=props)
     if clicked:

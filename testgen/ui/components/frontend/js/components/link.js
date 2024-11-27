@@ -4,32 +4,48 @@
  * @property {string} href
  * @property {object} params
  * @property {string} label
+ * @property {boolean} open_new
  * @property {boolean} underline
  * @property {string?} left_icon
  * @property {number?} left_icon_size
  * @property {string?} right_icon
  * @property {number?} right_icon_size
  * @property {number?} height
+ * @property {number?} width
  * @property {string?} style
  */
+import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 
 const { a, div, i, span } = van.tags;
 
 const Link = (/** @type Properties */ props) => {
-    Streamlit.setFrameHeight(props.height?.val || 24);
+    loadStylesheet('link', stylesheet);
 
-    if (!window.testgen.loadedStylesheets.link) {
-        document.adoptedStyleSheets.push(stylesheet);
-        window.testgen.loadedStylesheets.link = true;
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight(getValue(props.height) || 24);
+        const width = getValue(props.width);
+        if (width) {
+            enforceElementWidth(window.frameElement, width);
+        }
     }
+
+    const href = getValue(props.href);
+    const params = getValue(props.params) || {};
+    const open_new = !!getValue(props.open_new);
 
     return a(
         {
-            class: `tg-link ${props.underline.val ? 'tg-link--underline' : ''}`,
+            class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''}`,
             style: props.style,
-            onclick: () => navigate(props.href.val, props.params.val),
+            href: `/${href}${getQueryFromParams(params)}`,
+            target: open_new ? '_blank' : '',
+            onclick: open_new ? null : (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                emitEvent('LinkClicked', { href, params });
+            },
         },
         div(
             {class: 'tg-link--wrapper'},
@@ -46,13 +62,19 @@ const LinkIcon = (
     /** @type string */position,
 ) => {
     return i(
-        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${size.val}px;`},
+        {class: `material-symbols-rounded tg-link--icon tg-link--icon-${position}`, style: `font-size: ${getValue(size) || 20}px;`},
         icon,
     );
 };
 
-function navigate(href, params) {
-    Streamlit.sendData({ href, params });
+function getQueryFromParams(/** @type object */ params) {
+    const query = Object.entries(params).reduce((query, [ key, value ]) => {
+        if (key && value) {
+            return `${query}${query ? '&' : ''}${key}=${value}`;
+        }
+        return query;
+    }, '');
+    return query ? `?${query}` : '';
 }
 
 const stylesheet = new CSSStyleSheet();

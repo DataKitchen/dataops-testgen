@@ -21,9 +21,9 @@ def edit(table_group):
     table_group_queries.edit(schema, table_group)
 
 
-def add(table_group):
+def add(table_group: dict) -> str:
     schema = st.session_state["dbschema"]
-    table_group_queries.add(schema, table_group)
+    return table_group_queries.add(schema, table_group)
 
 
 def cascade_delete(table_group_names, dry_run=False):
@@ -81,7 +81,6 @@ def test_table_group(table_group, connection_id, project_code):
     # get table group data
     table_group_schema = table_group["table_group_schema"]
     table_group_id = table_group["id"]
-    project_qc_schema = connection["project_qc_schema"]
     profiling_table_set = table_group["profiling_table_set"]
     profiling_include_mask = table_group["profiling_include_mask"]
     profiling_exclude_mask = table_group["profiling_exclude_mask"]
@@ -104,7 +103,6 @@ def test_table_group(table_group, connection_id, project_code):
     clsProfiling.parm_do_patterns = "Y"
     clsProfiling.parm_max_pattern_length = 25
     clsProfiling.profile_run_id = ""
-    clsProfiling.data_qc_schema = project_qc_schema
     clsProfiling.data_schema = table_group_schema
     clsProfiling.parm_table_set = get_profiling_table_set_with_quotes(profiling_table_set)
     clsProfiling.parm_table_include_mask = profiling_include_mask
@@ -118,9 +116,7 @@ def test_table_group(table_group, connection_id, project_code):
     query = clsProfiling.GetDDFQuery()
     table_group_results = RetrieveDBResultsToDictList("PROJECT", query)
 
-    qc_results = connection_service.test_qc_connection(project_code, connection, init_profiling=False)
-
-    return table_group_results, qc_results
+    return table_group_results
 
 
 def get_profiling_table_set_with_quotes(profiling_table_set):

@@ -1,0 +1,46 @@
+IS_NUM: CASE
+            WHEN TRY_CAST(NULLIF({$1}, '') AS float) IS NOT NULL THEN 1
+            ELSE 0
+        END
+
+IS_DATE:    CASE WHEN TRY_CAST(NULLIF({$1}, '') AS float) IS NOT NULL
+                    AND LEFT(NULLIF({$1}, ''),4) BETWEEN 1800 AND 2200 THEN
+                 CASE
+                        WHEN LEN((NULLIF({$1}, ''))) > 11 THEN 0
+                        /* YYYYMMDD */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 112) IS NOT NULL THEN 1
+
+                        /* YYYY-MM-DD */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 23) IS NOT NULL THEN 1
+
+                        /* MM/DD/YYYY */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 101) IS NOT NULL THEN 1
+
+                        /* MM/DD/YY */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 1) IS NOT NULL THEN 1
+
+                        /*MM-DD-YYYY */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 110) IS NOT NULL THEN 1
+
+                        /*MM-DD-YY */
+                        WHEN TRY_CONVERT(DATE, NULLIF({$1}, ''), 10) IS NOT NULL THEN 1
+
+
+                   ELSE 0 END
+              /*DD MMM YYYY */
+               WHEN (TRY_CONVERT(DATE, NULLIF({$1}, ''), 106) IS NOT NULL
+                   AND LEFT(NULLIF({$1}, ''), 4)  BETWEEN 1800 AND 2200)
+                   THEN 1
+
+              /* YYYY-MM-DD HH:MM:SS SSSSSS */
+               WHEN (TRY_CONVERT(DATETIME2, NULLIF({$1}, ''), 121) IS NOT NULL
+                   AND LEFT(NULLIF({$1}, ''), 4)  BETWEEN 1800 AND 2200)
+                   THEN 1
+
+              /* YYYY-MM-DD HH:MM:SS */
+               WHEN (TRY_CONVERT(DATETIME2, NULLIF({$1}, ''), 120) IS NOT NULL
+                   AND LEFT(NULLIF({$1}, ''), 4)  BETWEEN 1800 AND 2200)
+                   THEN 1
+              ELSE 0
+              END
+

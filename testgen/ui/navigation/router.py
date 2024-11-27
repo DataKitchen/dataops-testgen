@@ -10,6 +10,7 @@ from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
 LOG = logging.getLogger("testgen")
+COOKIES_READY_RERUNS = 2
 
 
 class Router(Singleton):
@@ -32,12 +33,19 @@ class Router(Singleton):
         session.current_page_args = st.query_params
 
         # This hack is needed because the auth cookie is not retrieved on the first run
-        # We have to store the page and wait for the second run
-
+        # We have to store the page and wait for the second or third run
         if not session.cookies_ready:
-            session.cookies_ready = True
+            session.cookies_ready = 1
             session.page_pending_cookies = current_page
-        else:
+            # Set this anyway so that sidebar displays initial selection correctly
+            session.current_page = current_page.url_path
+            st.rerun()
+
+        # Sometimes the cookie is ready on the second rerun and other times only on the third -_-
+        # so we have to make sure the page renders correctly in both cases
+        # and also handle the login page!
+        elif session.cookies_ready == COOKIES_READY_RERUNS or session.authentication_status or (session.page_pending_cookies and not session.page_pending_cookies.url_path):
+            session.cookies_ready = COOKIES_READY_RERUNS
             current_page = session.page_pending_cookies or current_page
             session.page_pending_cookies = None
 
@@ -48,6 +56,9 @@ class Router(Singleton):
 
             session.current_page = current_page.url_path
             current_page.run()
+        else:
+            session.cookies_ready += 1
+            time.sleep(0.3)
 
 
     def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006

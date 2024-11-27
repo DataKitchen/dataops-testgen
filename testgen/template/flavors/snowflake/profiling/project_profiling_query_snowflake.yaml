@@ -52,8 +52,22 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
        END )   AS filled_value_ct,
   LEFT(MIN(NULLIF("{COL_NAME}", '')), 100)  AS min_text,
   LEFT(MAX(NULLIF("{COL_NAME}", '')), 100)  AS max_text,
-  SUM({DATA_QC_SCHEMA}.fndk_isnum(LEFT("{COL_NAME}", 31)))  AS numeric_ct,
-  SUM({DATA_QC_SCHEMA}.fndk_isdate(LEFT("{COL_NAME}", 26)))  AS date_ct,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
+        WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS upper_case_ct,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS lower_case_ct,
+  SUM(CASE
+        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
+        ELSE 0
+      END) AS non_alpha_ct,
+  SUM({{DKFN_IS_NUM;;LEFT("{COL_NAME}", 31)}} )  AS numeric_ct,
+  SUM({{DKFN_IS_DATE;;LEFT("{COL_NAME}", 26)}} )  AS date_ct,
   CASE
     WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'STREET_ADDR'
@@ -85,6 +99,9 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as filled_value_ct,
   NULL as min_text,
   NULL as max_text,
+  NULL as upper_case_ct,
+  NULL as lower_case_ct,
+  NULL as non_alpha_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
@@ -150,6 +167,10 @@ strTemplate11_D:  GREATEST(MIN("{COL_NAME}"), '0001-01-01') as min_date,
                                                               ELSE 0
       END) AS before_20yr_date_ct,
   SUM(CASE
+        WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 1200 THEN 1
+                                                                ELSE 0
+      END) AS before_100yr_date_ct,
+  SUM(CASE
         WHEN DATEDIFF('DAY', "{COL_NAME}", '{RUN_DATE}') BETWEEN 0 AND 365 THEN 1
                                                                          ELSE 0
       END) AS within_1yr_date_ct,
@@ -160,6 +181,10 @@ strTemplate11_D:  GREATEST(MIN("{COL_NAME}"), '0001-01-01') as min_date,
   SUM(CASE
         WHEN "{COL_NAME}" > '{RUN_DATE}' THEN 1 ELSE 0
       END) AS future_date_ct,
+  SUM(CASE
+        WHEN DATEDIFF('MON', '{RUN_DATE}', "{COL_NAME}") > 240 THEN 1
+                                                               ELSE 0
+      END) AS distant_future_date_ct,
   COUNT(DISTINCT DATEDIFF(day, "{COL_NAME}", '{RUN_DATE}' ) ) as date_days_present,
   COUNT(DISTINCT DATEDIFF(week, "{COL_NAME}", '{RUN_DATE}' ) ) as date_weeks_present,
   COUNT(DISTINCT DATEDIFF(month, "{COL_NAME}", '{RUN_DATE}' ) ) as date_months_present,
@@ -169,9 +194,11 @@ strTemplate11_else:  NULL as min_date,
   NULL as before_1yr_date_ct,
   NULL as before_5yr_date_ct,
   NULL as before_20yr_date_ct,
+  NULL AS before_100yr_date_ct,
   NULL as within_1yr_date_ct,
   NULL as within_1mo_date_ct,
   NULL as future_date_ct,
+  NULL as distant_future_date_ct,
   NULL as date_days_present,
   NULL as date_weeks_present,
   NULL as date_months_present,

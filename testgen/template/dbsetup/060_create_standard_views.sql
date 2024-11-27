@@ -133,7 +133,7 @@ SELECT p.project_name,
             ELSE 'Passed'
        END as disposition,
        r.result_code as passed_ct,
-       (1 - r.result_code)::INTEGER as exception_ct,
+       (1 - COALESCE(r.result_code, 0))::INTEGER as exception_ct,
        CASE
          WHEN result_status = 'Warning'
           AND result_message NOT ILIKE 'Inactivated%' THEN 1
