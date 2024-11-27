@@ -4,25 +4,23 @@ SELECT '{PROJECT_CODE}' AS project_code,
        c.table_name,
        c.column_name,
        CASE
-           WHEN c.data_type = 'datetime' THEN 'datetime'
-           WHEN c.data_type = 'datetime2' THEN 'datetime'
-           WHEN c.data_type = 'varchar'
+           WHEN c.data_type = 'date' THEN 'datetime'
+           WHEN c.data_type = 'timestamp' THEN 'datetime'
+           WHEN c.data_type = 'string'
                THEN CONCAT('varchar(', CAST(c.character_maximum_length AS STRING), ')')
-           WHEN c.data_type = 'char'
-               THEN CONCAT('char(', CAST(c.character_maximum_length AS STRING), ')')
-           WHEN c.data_type = 'numeric'
+           WHEN c.data_type IN ('byte', 'short', 'int', 'integer', 'long', 'bigint', 'float', 'double')
                THEN CONCAT('numeric(', CAST(c.numeric_precision AS STRING), ',', CAST(c.numeric_scale AS STRING), ')')
            ELSE c.data_type
        END AS data_type,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
-           WHEN LOWER(c.data_type) LIKE '%char%' THEN 'A'
-           WHEN c.data_type = 'bit' THEN 'B'
-           WHEN c.data_type = 'date' OR c.data_type LIKE 'datetime%' THEN 'D'
-           WHEN c.data_type LIKE 'time%' THEN 'T'
-           WHEN c.data_type IN ('bigint', 'double precision', 'integer', 'smallint', 'real')
-                OR c.data_type LIKE 'numeric%' THEN 'N'
+           WHEN lower(c.data_type) RLIKE '(string|char|varchar|text)' THEN 'A'
+           WHEN lower(c.data_type) RLIKE 'binary' THEN 'B'
+           WHEN lower(c.data_type) IN ('date', 'timestamp') THEN 'D'
+           WHEN lower(c.data_type) IN ('time', 'interval') THEN 'T'
+           WHEN lower(c.data_type) IN ('byte', 'short', 'int', 'integer', 'long', 'bigint', 'float', 'double') THEN 'N'
+           WHEN lower(c.data_type) LIKE 'decimal%' THEN 'N'
            ELSE 'X'
        END AS general_type,
        CASE
