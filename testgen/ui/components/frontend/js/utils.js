@@ -69,4 +69,30 @@ function debounce(
     };
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, loadStylesheet, resizeFrameHeightToElement };
+function getParents(/** @type HTMLElement*/ element) {
+    const parents = [];
+
+    let currentParent = element.parentElement; 
+    do {
+        if (currentParent !== null) {
+            parents.push(currentParent);
+            currentParent = currentParent.parentElement;
+        }
+    }
+    while (currentParent !== null && currentParent.tagName !== 'iframe');
+
+    return parents;
+}
+
+function friendlyPercent(/** @type number */ value) {
+    const rounded = Math.round(value);
+    if (rounded === 0 && value > 0) {
+        return '< 0';
+    }
+    if (rounded === 100 && value < 100) {
+        return '> 99';
+    }
+    return rounded;
+}
+
+export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, friendlyPercent };

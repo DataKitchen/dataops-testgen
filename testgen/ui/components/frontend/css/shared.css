@@ -61,6 +61,9 @@ body {
     --button-primary-stroked-text-color: var(--primary-color);
     --button-primary-stroked-background: transparent;
     --button-stroked-border: 1px solid var(--border-color);
+
+    --select-portal-background: white;
+    --select-hover-background: rgb(240, 242, 246);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -93,6 +96,9 @@ body {
         --button-basic-stroked-background: transparent;
 
         --button-stroked-border: 1px solid var(--border-color);
+
+        --select-portal-background: rgb(38, 39, 48);
+        --select-hover-background: rgba(255, 255, 255, .32);
     }
 }
 
@@ -211,6 +217,10 @@ body {
 
 .fx-align-baseline {
     align-items: baseline;
+}
+
+.fx-align-stretch {
+    align-items: stretch;
 }
 
 .fx-justify-flex-end {
