@@ -127,7 +127,7 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
-strTemplate06_A_patterns: (SELECT CONCAT_WS(' |  ', collect_list(ct_pattern)) as top_patterns
+strTemplate06_A_patterns: (SELECT CONCAT_WS(' |  ', collect_list(ct_pattern))
         FROM (
                 SELECT
                     TRANSLATE(
@@ -145,7 +145,7 @@ strTemplate06_A_patterns: (SELECT CONCAT_WS(' |  ', collect_list(ct_pattern)) as
                 HAVING len(pattern) > 0
                 ORDER BY ct DESC
                 LIMIT 5
-        )),
+        )) AS top_patterns,
 strTemplate06_else: NULL as top_patterns,
 strTemplate07_A_freq:  (  SELECT LEFT(CONCAT_WS(' | ', collect_list(val)), 1000) as concat_vals
   FROM (
@@ -164,7 +164,7 @@ strTemplate08_N: MIN(`{COL_NAME}`) AS min_value,
   MIN(CASE WHEN `{COL_NAME}` > 0 THEN `{COL_NAME}` ELSE NULL END)  AS min_value_over_0,
   MAX(`{COL_NAME}`)  AS max_value,
   AVG(CAST(`{COL_NAME}` AS FLOAT)) AS avg_value,
-  STDEV(CAST(`{COL_NAME}` AS FLOAT)) AS stdev_value,
+  STDDEV_SAMP(CAST(`{COL_NAME}` AS FLOAT)) AS stdev_value,
   MIN(pct_25) as percentile_25,
   MIN(pct_50) as percentile_50,
   MIN(pct_75) as percentile_75,

@@ -16,7 +16,7 @@ SELECT '{PROJECT_CODE}' AS project_code,
        c.ordinal_position,
        CASE
            WHEN lower(c.data_type) RLIKE '(string|char|varchar|text)' THEN 'A'
-           WHEN lower(c.data_type) RLIKE 'binary' THEN 'B'
+           WHEN lower(c.data_type) RLIKE 'boolean' THEN 'B'
            WHEN lower(c.data_type) IN ('date', 'timestamp') THEN 'D'
            WHEN lower(c.data_type) IN ('time', 'interval') THEN 'T'
            WHEN lower(c.data_type) IN ('byte', 'short', 'int', 'integer', 'long', 'bigint', 'float', 'double') THEN 'N'
