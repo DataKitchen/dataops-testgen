@@ -76,7 +76,8 @@ class ConnectionsPage(Page):
 
     def show_connection_form(self, selected_connection: dict, _mode: str, project_code) -> None:
         connection = selected_connection or {}
-        connection_id = connection.get("connection_id", None)
+        connection_id = connection.get("connection_id", 1)
+        connection_name = connection.get("connection_name", "default")
         sql_flavor = connection.get("sql_flavor", "postgresql")
         data = {}
 
@@ -84,18 +85,19 @@ class ConnectionsPage(Page):
             FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
             if connection:
                 connection["password"] = connection["password"] or ""
-                FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
-
-            form_kwargs = connection or {"sql_flavor": sql_flavor}
+                
+            form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
             form = FlavorForm(**form_kwargs)
 
             sql_flavor = form.get_field_value("sql_flavor", latest=True) or sql_flavor
             if form.sql_flavor != sql_flavor:
-                form = BaseConnectionForm.for_flavor(sql_flavor)(sql_flavor=sql_flavor)
+                form = BaseConnectionForm.for_flavor(sql_flavor)(sql_flavor=sql_flavor, connection_id=connection_id)
+
+            form.disable("connection_name")
 
             form_errors_container = st.empty()
             data = sp.pydantic_input(
-                key=f"connection_form:{connection_id or 'new'}",
+                key=f"connection_form:{connection_id}",
                 model=form,  # type: ignore
             )
             data.update({
@@ -120,16 +122,16 @@ class ConnectionsPage(Page):
             st.error("Unexpected error displaying the form. Try again")
 
         test_button_column, _, save_button_column = st.columns([.2, .6, .2])
-        is_submitted, set_submitted = temp_value(f"connection_form-{connection_id or 'new'}:submit")
-        get_connection_status, set_connection_status = temp_value(
-            f"connection_form-{connection_id or 'new'}:test_conn"
+        is_submitted, set_submitted = temp_value(f"connection_form-{connection_id}:submit")
+        is_connecting, set_connecting = temp_value(
+            f"connection_form-{connection_id}:test_conn"
         )
 
         with save_button_column:
             testgen.button(
                 type_="flat",
                 label="Save",
-                key=f"connection_form:{connection_id or 'new'}:submit",
+                key=f"connection_form:{connection_id}:submit",
                 on_click=lambda: set_submitted(True),
             )
 
@@ -138,13 +140,14 @@ class ConnectionsPage(Page):
                 type_="stroked",
                 color="basic",
                 label="Test Connection",
-                key=f"connection_form:{connection_id or 'new'}:test",
-                on_click=lambda: set_connection_status(self.test_connection(data)),
+                key=f"connection_form:{connection_id}:test",
+                on_click=lambda: set_connecting(True),
             )
 
-        if (connection_status := get_connection_status()):
+        if is_connecting():
             single_element_container = st.empty()
             single_element_container.info("Connecting ...")
+            connection_status = self.test_connection(data)
 
             with single_element_container.container():
                 renderer = {
