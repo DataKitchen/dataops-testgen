@@ -17,17 +17,19 @@ from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import is_uuid4
 
 PAGE_ICON = "dataset"
+PAGE_TITLE = "Data Catalog"
+
 
 class DataCatalogPage(Page):
     path = "data-catalog"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Data Hierarchy", order=1)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
-            "Data Catalog",
+            PAGE_TITLE,
         )
 
         project_code = project_code or session.project

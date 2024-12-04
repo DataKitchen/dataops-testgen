@@ -39,7 +39,7 @@ def sidebar(
         id_="sidebar",
         props={
             "username": username,
-            "menu": menu.filter_for_current_user().sort_items().asdict(),
+            "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
             "logout_path": LOGOUT_PATH,
         },

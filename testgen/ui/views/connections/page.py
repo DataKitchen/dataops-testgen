@@ -21,6 +21,7 @@ from testgen.ui.views.connections.models import ConnectionStatus
 from testgen.ui.views.table_groups import TableGroupForm
 
 LOG = logging.getLogger("testgen")
+PAGE_TITLE = "Connection"
 
 
 class ConnectionsPage(Page):
@@ -28,7 +29,7 @@ class ConnectionsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="database", label="Data Configuration", order=4)
+    menu_item = MenuItem(icon="database", label=PAGE_TITLE, section="Data Configuration", order=0)
 
     def render(self, project_code: str, **_kwargs) -> None:
         dataframe = connection_service.get_connections(project_code)
@@ -38,7 +39,7 @@ class ConnectionsPage(Page):
         )
 
         testgen.page_header(
-            "Connection",
+            PAGE_TITLE,
             "connect-your-database",
         )
 
