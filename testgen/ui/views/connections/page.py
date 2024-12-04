@@ -112,7 +112,7 @@ class ConnectionsPage(Page):
                 })
 
             try:
-                FlavorForm.model_validate(data)
+                FlavorForm(**data)
             except ValidationError as error:
                 form_errors_container.warning("\n".join([
                     f"- {field_label}: {err['msg']}" for err in error.errors()
@@ -241,12 +241,12 @@ class ConnectionsPage(Page):
         data: dict = {}
 
         try:
-            form = TableGroupForm.model_construct()
+            form = TableGroupForm.construct()
             form_errors_container = st.empty()
             data = sp.pydantic_input(key="table_form:new", model=form)  # type: ignore
 
             try:
-                TableGroupForm.model_validate(data)
+                TableGroupForm(**data)
                 form_errors_container.empty()
                 data.update({"project_code": project_code, "connection_id": connection["connection_id"]})
             except ValidationError as error:
@@ -301,7 +301,7 @@ class ConnectionsPage(Page):
             try:
                 status_container.info(f"Creating table group **{table_group_name.strip()}**.")
                 table_group_id = table_group_service.add(table_group)
-                TableGroupForm.model_construct().reset_cache()
+                TableGroupForm.construct().reset_cache()
             except Exception as err:
                 status_container.error(f"Error creating table group: {err!s}.")
 

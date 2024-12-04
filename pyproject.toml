@@ -59,7 +59,8 @@ dependencies = [
     "cryptography==43.0.1",
     "validators==0.33.0",
     "reportlab==4.2.2",
-    "streamlit-pydantic @ git+https://github.com/LukasMasuch/streamlit-pydantic.git@9f84145b6b6e74cdff3a7815ab75b0464c4d4f24",
+    "pydantic==1.10.11",
+    "streamlit-pydantic==0.6.0",
 
     # Pinned to match the manually compiled libs
     "pyarrow==18.0.0",
