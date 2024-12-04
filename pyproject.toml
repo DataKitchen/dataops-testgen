@@ -62,11 +62,10 @@ dependencies = [
     "pydantic==1.10.11",
     "streamlit-pydantic==0.6.0",
 
-    # Pinned to match the manually compiled libs
+    # Pinned to match the manually compiled libs or for security
     "pyarrow==18.0.0",
-
-    # These are not direct dependencies. Pinning version for security
     "snowflake-connector-python==3.12.3",
+    "matplotlib==3.9.2",
 ]
 
 [project.optional-dependencies]
