@@ -22,6 +22,7 @@ from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import to_int
 
 PAGE_ICON = "rule"
+PAGE_TITLE = "Test Suites"
 
 
 class TestSuitesPage(Page):
@@ -29,12 +30,12 @@ class TestSuitesPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Test Suites", order=3)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
 
         testgen.page_header(
-            "Test Suites",
+            PAGE_TITLE,
             "create-a-test-suite",
         )
 

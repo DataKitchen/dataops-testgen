@@ -129,8 +129,8 @@ const columnIcons = {
     X: { icon: 'question_mark', iconSize: 18 },
 };
 
-const DataHierarchy = (/** @type Properties */ props) => {
-    loadStylesheet('data_hierarchy', stylesheet);
+const DataCatalog = (/** @type Properties */ props) => {
+    loadStylesheet('data_catalog', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
     window.frameElement.style.setProperty('height', 'calc(100vh - 175px)');
     window.testgen.isPage = true;
@@ -671,4 +671,4 @@ stylesheet.replace(`
 }
 `);
 
-export { DataHierarchy };
+export { DataCatalog };
