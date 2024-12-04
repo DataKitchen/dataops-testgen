@@ -62,7 +62,7 @@ dependencies = [
     "cryptography==42.0.8",
     "validators==0.33.0",
     "reportlab==4.2.2",
-    "streamlit-pydantic @ git+https://github.com/LukasMasuch/streamlit-pydantic.git@9f84145b6b6e74cdff3a7815ab75b0464c4d4f24",
+    "streamlit-pydantic==0.6.0",
 ]
 
 [project.optional-dependencies]

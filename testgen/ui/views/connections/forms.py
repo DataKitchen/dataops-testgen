@@ -3,12 +3,11 @@ import time
 import typing
 
 import streamlit as st
-from pydantic import computed_field
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from testgen.ui.components import widgets as testgen
-from testgen.ui.forms import BaseForm, Field, ManualRender
+from testgen.ui.forms import BaseForm, Field, ManualRender, computed_field
 from testgen.ui.services import connection_service
 
 SQL_FLAVORS = ["redshift", "snowflake", "mssql", "postgresql"]
@@ -205,8 +204,7 @@ class KeyPairConnectionForm(PasswordConnectionForm):
     )
     _uploaded_file: UploadedFile | None = None
 
-    @computed_field
-    @property
+    @computed_field(default="")
     def private_key(self) -> str:
         if self._uploaded_file is None:
             return ""
