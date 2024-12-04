@@ -18,8 +18,8 @@ from testgen.utils import is_uuid4
 
 PAGE_ICON = "dataset"
 
-class DataHierarchyPage(Page):
-    path = "data-hierarchy"
+class DataCatalogPage(Page):
+    path = "data-catalog"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
@@ -27,7 +27,7 @@ class DataHierarchyPage(Page):
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
-            "Data Hierarchy",
+            "Data Catalog",
         )
 
         project_code = project_code or session.project
@@ -70,7 +70,7 @@ class DataHierarchyPage(Page):
                 self.router.set_query_params({ "selected": node_id })
 
             testgen_component(
-                "data_hierarchy",
+                "data_catalog",
                 props={ "columns": columns_df.to_json(orient="records"), "selected": json.dumps(selected_item) },
                 on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
                 event_handlers={ "MetadataChanged": on_metadata_changed },

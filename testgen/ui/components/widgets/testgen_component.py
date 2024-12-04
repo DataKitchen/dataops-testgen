@@ -6,7 +6,7 @@ from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 
-AvailablePages = typing.Literal["profiling_runs", "test_runs", "database_flavor_selector", "data_hierarchy", "overview"]
+AvailablePages = typing.Literal["profiling_runs", "test_runs", "database_flavor_selector", "data_catalog", "overview"]
 
 
 def testgen_component(
