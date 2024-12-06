@@ -1,5 +1,4 @@
 import typing
-import uuid
 
 import pandas as pd
 import streamlit as st
@@ -11,6 +10,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
+from testgen.utils import format_field
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
@@ -119,20 +119,6 @@ class OverviewPage(Page):
             },
             event_handlers={},
         )
-
-
-def format_field(field: typing.Any) -> typing.Any:
-    defaults = {
-        float: 0.0,
-        int: 0,
-    }
-    if isinstance(field, uuid.UUID):
-        return str(field)
-    elif isinstance(field, pd.Timestamp):
-        return field.value / 1_000_000
-    elif pd.isnull(field):
-        return defaults.get(type(field), None)
-    return field
 
 
 def on_table_group_expanded(table_group_id: str) -> None:

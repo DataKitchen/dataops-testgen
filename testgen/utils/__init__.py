@@ -1,6 +1,8 @@
 import urllib.parse
+from typing import Any
 from uuid import UUID
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -24,3 +26,21 @@ def is_uuid4(value: str) -> bool:
 def get_base_url() -> str:
     session = st.runtime.get_instance()._session_mgr.list_active_sessions()[0]
     return urllib.parse.urlunparse([session.client.request.protocol, session.client.request.host, "", "", "", ""])
+
+
+def format_field(field: Any) -> Any:
+    defaults = {
+        float: 0.0,
+        int: 0,
+    }
+    if isinstance(field, UUID):
+        return str(field)
+    elif isinstance(field, pd.Timestamp):
+        return field.value / 1_000_000
+    elif pd.isnull(field):
+        return defaults.get(type(field), None)
+    elif isinstance(field, np.integer):
+        return int(field)
+    elif isinstance(field, np.floating):
+        return float(field)
+    return field

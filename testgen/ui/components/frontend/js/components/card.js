@@ -20,7 +20,7 @@ const Card = (/** @type Properties */ props) => {
         () =>
             props.title || props.actionContent ?
             div(
-                { class: 'flex-row fx-justify-space-between fx-align-flex-start' },
+                { class: 'flex-row fx-justify-space-between fx-align-flex-start mb-4' },
                 () => 
                     props.title ?
                     h3(
@@ -44,7 +44,7 @@ stylesheet.replace(`
 }
 
 .tg-card--title {
-    margin: 0 0 16px;
+    margin: 0;
     color: var(--secondary-text-color);
     font-size: 16px;
     font-weight: 500;

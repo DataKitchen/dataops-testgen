@@ -10,6 +10,7 @@
  * @property {string?} id
  * @property {string} label
  * @property {Array.<Option>} options
+ * @property {boolean} allowNull
  * @property {Function|null} onChange
  * @property {number?} width
  * @property {number?} height
@@ -30,7 +31,18 @@ const Select = (/** @type {Properties} */ props) => {
 
     const domId = van.derive(() => props.id?.val ?? getRandomId());
     const opened = van.state(false);
-    const selected = van.state(Array.from(getValue(props.options) ?? []).filter(option => option.selected)[0]);
+    const options = van.derive(() => {
+        const allowNull = getValue(props.allowNull);
+        const options = getValue(props.options) ?? [];
+        const isOptionSelected = options.filter(option => option.selected).length > 0;
+
+        if (allowNull) {
+            return [{label: "---", value: null, selected: !isOptionSelected}, ...options];
+        }
+
+        return options;
+    });
+    const selected = van.state(getValue(options).find(option => option.selected) ?? null);
     const changeHandler = props.onChange || post;
 
     const closeHandler = (/** @type MouseEvent*/ event) => {
@@ -79,7 +91,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
         ),
         () => opened.val
-            ? SelectOptionsPortal(domId.val, props.options, changeSelection)
+            ? SelectOptionsPortal(domId.val, getValue(options), changeSelection)
             : '',
     );
 };
