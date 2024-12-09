@@ -43,7 +43,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Select } from '../components/select.js';
 import { Button } from '../components/button.js';
@@ -64,7 +64,9 @@ const TestSuites = (/** @type Properties */ props) => {
     const userCanEdit = getValue(props.permissions).can_edit;
     const testSuites = van.derive(() => getValue(props.test_suites));
     const wrapperId = 'test-suites-list-wrapper';
+
     resizeFrameHeightToElement(wrapperId);
+    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId },

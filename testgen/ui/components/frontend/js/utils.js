@@ -22,6 +22,16 @@ function resizeFrameHeightToElement(/** @type string */elementId) {
     observer.observe(window.frameElement);
 }
 
+function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
+    const observer = new MutationObserver(() => {
+        const height = document.getElementById(elementId).offsetHeight;
+        if (height) {
+            Streamlit.setFrameHeight(height);
+        }
+    });
+    observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});
+}
+
 function loadStylesheet(
     /** @type string */key,
     /** @type CSSStyleSheet */stylesheet,
@@ -95,4 +105,4 @@ function friendlyPercent(/** @type number */ value) {
     return rounded;
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, friendlyPercent };
+export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent };
