@@ -156,6 +156,7 @@ stylesheet.replace(`
     justify-content: flex-start;
     height: 100%;
     flex: 1;
+    font-weight: 500;
 }
 
 .tg-select--field--icon {

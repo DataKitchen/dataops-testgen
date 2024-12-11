@@ -13,6 +13,8 @@ AvailablePages = typing.Literal[
     "profiling_runs",
     "test_runs",
     "test_suites",
+    "score_dashboard",
+    "score_details",
 ]
 
 
