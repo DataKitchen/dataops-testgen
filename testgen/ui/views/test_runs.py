@@ -21,6 +21,7 @@ from testgen.utils import to_int
 
 PAGE_SIZE = 50
 PAGE_ICON = "labs"
+PAGE_TITLE = "Test Runs"
 
 
 class TestRunsPage(Page):
@@ -29,11 +30,11 @@ class TestRunsPage(Page):
         lambda: session.authentication_status,
         lambda: session.project != None or "overview",
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Data Quality Testing", order=2)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=0)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
-            "Test Runs",
+            PAGE_TITLE,
             "test-results",
         )
 

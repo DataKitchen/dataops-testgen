@@ -1,23 +1,32 @@
+variable "TESTGEN_LABELS" {}
+variable "TESTGEN_BASE_LABEL" {}
 variable "TESTGEN_VERSION" {}
-variable "PUBLIC_RELEASE" {
-  default = false
-}
 
-function "docker_repo" {
-  params = []
-  result = PUBLIC_RELEASE ? "datakitchen/dataops-testgen" : "datakitchen/dataops-testgen-qa"
-}
-
-target "testgen" {
+target "testgen-release" {
   args = {
     TESTGEN_VERSION = "${TESTGEN_VERSION}"
+    TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
   }
   context = "."
-  dockerfile = "Dockerfile"
+  dockerfile = "deploy/testgen.dockerfile"
   platforms = ["linux/amd64", "linux/arm64"]
-  tags = [
-    "${docker_repo()}:v${TESTGEN_VERSION}",
-    PUBLIC_RELEASE ? "${docker_repo()}:v${index(regex("([0-9]+.[0-9]+).[0-9]+", TESTGEN_VERSION), 0)}": "",
-    PUBLIC_RELEASE ? "${docker_repo()}:v${index(regex("([0-9]+).[0-9]+.[0-9]+", TESTGEN_VERSION), 0)}": ""
-  ]
+  tags = formatlist("datakitchen/dataops-testgen:%s", split(" ", TESTGEN_LABELS))
+}
+
+target "testgen-qa" {
+  args = {
+    TESTGEN_VERSION = "${TESTGEN_VERSION}"
+    TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
+  }
+  context = "."
+  dockerfile = "deploy/testgen.dockerfile"
+  platforms = ["linux/amd64", "linux/arm64"]
+  tags = [format("datakitchen/dataops-testgen-qa:%s", index(split(" ", TESTGEN_LABELS), 0))]
+}
+
+target "testgen-base" {
+  context = "."
+  dockerfile = "deploy/testgen-base.dockerfile"
+  platforms = ["linux/amd64", "linux/arm64"]
+  tags = formatlist("datakitchen/dataops-testgen-base:%s", split(" ", TESTGEN_LABELS))
 }

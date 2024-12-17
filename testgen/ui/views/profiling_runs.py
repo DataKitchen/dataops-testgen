@@ -22,6 +22,7 @@ from testgen.utils import to_int
 FORM_DATA_WIDTH = 400
 PAGE_SIZE = 50
 PAGE_ICON = "data_thresholding"
+PAGE_TITLE = "Profiling Runs"
 
 
 class DataProfilingPage(Page):
@@ -29,11 +30,11 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Data Profiling", order=1)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
-            "Profiling Runs",
+            PAGE_TITLE,
             "investigate-profiling",
         )
 

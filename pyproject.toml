@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "2.15.3"
+version = "2.24.8"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -21,23 +21,21 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Development Status :: 5 - Production/Stable",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: System :: Monitoring",
 ]
 keywords = [ "dataops", "data", "quality", "testing", "database", "profiling" ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 dependencies = [
     "PyYAML==6.0.1",
     "click==8.1.3",
     "sqlalchemy==1.4.46",
-    "snowflake-sqlalchemy==1.4.7",
     "databricks-sql-connector==2.9.3",
+    "snowflake-sqlalchemy==1.6.1",
     "pyodbc==5.0.0",
     "psycopg2-binary==2.9.9",
-    "pycryptodome==3.17",
+    "pycryptodome==3.21",
     "prettytable==3.7.0",
     "requests_extensions==1.1.3",
     "bz2file==0.98",
@@ -59,10 +57,16 @@ dependencies = [
     "xlsxwriter==3.2.0",
     "psutil==5.9.8",
     "concurrent_log_handler==0.9.25",
-    "cryptography==42.0.8",
+    "cryptography==43.0.1",
     "validators==0.33.0",
     "reportlab==4.2.2",
-    "streamlit-pydantic @ git+https://github.com/LukasMasuch/streamlit-pydantic.git@9f84145b6b6e74cdff3a7815ab75b0464c4d4f24",
+    "pydantic==1.10.11",
+    "streamlit-pydantic==0.6.0",
+
+    # Pinned to match the manually compiled libs or for security
+    "pyarrow==18.0.0",
+    "snowflake-connector-python==3.12.3",
+    "matplotlib==3.9.2",
 ]
 
 [project.optional-dependencies]
@@ -142,7 +146,7 @@ filterwarnings = [
 # for an explanation of their functionality.
 # WARNING: When changing mypy configurations, be sure to test them after removing your .mypy_cache
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 check_untyped_defs = true
 disallow_untyped_decorators = true
 disallow_untyped_defs = true

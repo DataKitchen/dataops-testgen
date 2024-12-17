@@ -7,32 +7,110 @@
  * 
  * @typedef Properties
  * @type {object}
+ * @property {string?} id
  * @property {string} label
  * @property {Array.<Option>} options
  * @property {Function|null} onChange
+ * @property {number?} width
+ * @property {number?} height
+ * @property {string?} style
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { getRandomId, getValue, loadStylesheet } from '../utils.js';
+import { getRandomId, getValue, getParents, loadStylesheet } from '../utils.js';
 
-const { div, label, option, select } = van.tags;
+const { div, i, label, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
-    Streamlit.setFrameHeight();
 
-    const domId = getRandomId();
+    if (!window.testgen.isPage) {
+        Streamlit.setFrameHeight();
+    }
+
+    const domId = van.derive(() => props.id?.val ?? getRandomId());
+    const opened = van.state(false);
+    const selected = van.state(Array.from(getValue(props.options) ?? []).filter(option => option.selected)[0]);
     const changeHandler = props.onChange || post;
-    return div(
-        {class: 'tg-select'},
-        label({for: domId, class: 'tg-select--label'}, props.label),
-        () => {
-            const options = getValue(props.options) || [];
-            return select(
-                {id: domId, class: 'tg-select--field', onchange: changeHandler},
-                options.map(op => option({class: 'tg-select--field--option', value: op.value, selected: op.selected}, op.label)),
-            );
+
+    const closeHandler = (/** @type MouseEvent*/ event) => {
+        const selectElement = document.getElementById(domId.val);
+        if (event?.target?.id !== domId.val && event?.target?.id !== `${domId.val}-portal` && !getParents(event.target).includes(selectElement)) {
+            opened.val = false;
+        }
+    };
+    van.derive(() => {
+        const isOpened = opened.val;
+        document.removeEventListener('click', closeHandler);
+        if (isOpened) {
+            document.addEventListener('click', closeHandler);
+        }
+    });
+
+    const changeSelection = (/** @type Option */ option) => {
+        opened.val = false;
+        selected.val = option;
+        changeHandler(option.value);
+    };
+
+    return label(
+        {
+            id: domId,
+            class: 'flex-column fx-gap-1 text-caption tg-select--label',
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
+            onclick: () => opened.val = true,
         },
+        props.label,
+        div(
+            {
+                class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
+                style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+            },
+            div(
+                { class: 'tg-select--field--content' },
+                () => selected?.val?.label,
+            ),
+            div(
+                { class: 'tg-select--field--icon' },
+                i(
+                    { class: 'material-symbols-rounded' },
+                    'expand_more',
+                ),
+            ),
+        ),
+        () => opened.val
+            ? SelectOptionsPortal(domId.val, props.options, changeSelection)
+            : '',
+    );
+};
+
+const SelectOptionsPortal = (
+    /** @type string */ selectId,
+    /** @type Array.<Option> */ options,
+    /** @type Function */ onChange,
+) => {
+    const domId = `${selectId}-portal`;
+    const select = document.getElementById(selectId);
+    const selectRect = select.getBoundingClientRect();
+
+    const width = `${selectRect.width}px`;
+    const height = `${((options.length ?? 0) * 40)}px`;
+    const top = `${selectRect.top + selectRect.height}px`;
+    const left = `${selectRect.left}px`;
+
+    return div(
+        {
+            id: domId,
+            class: 'tg-select--portal',
+            style: `width: ${width}; height: ${height}; top: ${top}; left: ${left}`,
+        },
+        options.map(option => div(
+            { class: 'tg-select--option', onclick: (/** @type Event */ event) => {
+                onChange(option);
+                event.stopPropagation();
+            } },
+            span(option.label)
+        )),
     );
 };
 
@@ -42,30 +120,72 @@ function post(/** @type string */ value) {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-div.tg-select {
-    display: flex;
-    flex-direction: column;
-}
-
-div.tg-select > .tg-select--label {
-    color: var(--secondary-text-color);
-    margin-bottom: 4px;
-}
-
-div.tg-select > .tg-select--field {
-    border: unset;
-    border-bottom: 1px solid var(--field-underline-color);
-
-    font-size: inherit;
-    font-family: inherit;
+.tg-select--field {
+    box-sizing: border-box;
+    width: 100%;
+    height: 32px;
+    min-width: 200px;
+    border: 1px solid transparent;
+    transition: border-color 0.3s;
+    background-color: var(--form-field-color);
+    padding: 4px 8px;
     color: var(--primary-text-color);
-
-    background-color: inherit;
+    border-radius: 8px;
 }
 
-div.tg-select > .tg-select--field:focus-visible {
-    outline: unset;
-    border-bottom-color: var(--primary-color);
+.tg-select--field.opened {
+    border-color: var(--primary-color);
+}
+
+.tg-select--field--content {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100%;
+    flex: 1;
+}
+
+.tg-select--field--icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 100%;
+}
+
+.tg-select--field--icon i {
+    font-size: 20px;
+}
+
+.tg-select--portal {
+    position: absolute;
+    border-radius: 8px;
+    background: var(--select-portal-background);
+    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    min-height: 40px;
+}
+
+.tg-select--portal > .tg-select--option:first-child {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.tg-select--portal > .tg-select--option:last-child {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.tg-select--option {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--primary-text-color);
+}
+.tg-select--option:hover {
+    background: var(--select-hover-background);
 }
 `);
 

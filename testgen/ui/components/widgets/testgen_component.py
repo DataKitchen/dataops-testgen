@@ -6,9 +6,11 @@ from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 
+AvailablePages = typing.Literal["profiling_runs", "test_runs", "database_flavor_selector", "data_catalog", "overview"]
+
 
 def testgen_component(
-    component_id: typing.Literal["profiling_runs", "test_runs", "database_flavor_selector", "data_hierarchy"],
+    component_id: AvailablePages,
     props: dict,
     on_change_handlers: dict[str, typing.Callable] | None = None,
     event_handlers: dict[str, typing.Callable] | None = None,

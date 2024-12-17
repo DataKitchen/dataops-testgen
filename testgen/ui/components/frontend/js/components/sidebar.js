@@ -177,9 +177,9 @@ stylesheet.replace(`
 }
 
 .menu > .content > .menu--section > .menu--section--label {
-    padding: 16px;
-    font-weight: 500;
-    color: var(--secondary-text-color);
+    padding: 8px 16px;
+    font-size: 15px;
+    color: var(--disabled-text-color);
 }
 
 .menu .menu--item {

@@ -10,7 +10,7 @@ This document describes how to set up your local environment for TestGen develop
 
 ### Clone repository
 
-Login to your GitHub account. 
+Login to your GitHub account.
 
 Fork the [dataops-testgen](https://github.com/DataKitchen/dataops-testgen) repository, following [GitHub's guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo).
 
@@ -23,17 +23,17 @@ git clone https://github.com/YOUR-USERNAME/dataops-testgen
 
 We recommend using a Python virtual environment to avoid any dependency conflicts with other applications installed on your machine. The [venv](https://docs.python.org/3/library/venv.html#creating-virtual-environments) module, which is part of the Python standard library, or other third-party tools, like [virtualenv](https://virtualenv.pypa.io/en/latest/) or [conda](https://docs.conda.io/en/latest/), can be used.
 
-From the root of your local repository, create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.10`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
+From the root of your local repository, create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.12`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
 
 _On Linux/Mac_
 ```shell
-python3.10 -m venv venv
+python3.12 -m venv venv
 source venv/bin/activate
 ```
 
 _On Windows_
 ```powershell
-py -3.10 -m venv venv
+py -3.12 -m venv venv
 venv\Scripts\activate
 ```
 
@@ -84,7 +84,7 @@ Run a PostgreSQL instance as a Docker container.
 docker compose -f docker-compose.local.yml up -d
 ```
 
-Initialize the application database for TestGen. 
+Initialize the application database for TestGen.
 ```shell
 testgen setup-system-db --yes
 ```
