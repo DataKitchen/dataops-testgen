@@ -198,7 +198,17 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2306', 'Aggregate_Balance', 'postgresql', 'ex_aggregate_match_same_generic.sql'),
         ('2307', 'Timeframe_Combo_Gain', 'postgresql', 'ex_window_match_no_drops_postgresql.sql'),
         ('2308', 'Timeframe_Combo_Match', 'postgresql', 'ex_window_match_same_postgresql.sql'),
-        ('2309', 'Aggregate_Increase', 'postgresql', 'ex_aggregate_match_num_incr_generic.sql');
+        ('2309', 'Aggregate_Increase', 'postgresql', 'ex_aggregate_match_num_incr_generic.sql'),
+
+        ('2301', 'Combo_Match', 'databricks', 'ex_data_match_generic.sql'),
+        ('2302', 'Aggregate_Minimum', 'databricks', 'ex_aggregate_match_no_drops_generic.sql'),
+        ('2303', 'Distribution_Shift', 'databricks', 'ex_relative_entropy_generic.sql'),
+        ('2304', 'CUSTOM', 'databricks', 'ex_custom_query_generic.sql'),
+        ('2306', 'Aggregate_Balance', 'databricks', 'ex_aggregate_match_same_generic.sql'),
+        ('2307', 'Timeframe_Combo_Gain', 'databricks', 'ex_window_match_no_drops_generic.sql'),
+        ('2308', 'Timeframe_Combo_Match', 'databricks', 'ex_window_match_same_generic.sql'),
+        ('2309', 'Aggregate_Increase', 'databricks', 'ex_aggregate_match_num_incr_generic.sql');
+
 
 TRUNCATE TABLE cat_test_conditions;
 
@@ -323,6 +333,7 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('4028', 'Unique', 'postgresql', 'COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})', '>', '{THRESHOLD_VALUE}'),
         ('4029', 'Unique_Pct', 'postgresql', 'ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )', '>=', '{THRESHOLD_VALUE}'),
         ('4030', 'Weekly_Rec_Ct', 'postgresql', 'MAX(<%DATEDIFF_WEEK;''1800-01-01''::DATE;{COLUMN_NAME}%>) - MIN(<%DATEDIFF_WEEK;''1800-01-01''::DATE;{COLUMN_NAME}%>)+1 - COUNT(DISTINCT <%DATEDIFF_WEEK;''1800-01-01''::DATE;{COLUMN_NAME}%>)', '>', '{THRESHOLD_VALUE}'),
+
         ('1031', 'Variability_Increase', 'redshift', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),
         ('1032', 'Variability_Decrease', 'redshift', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
         ('2031', 'Variability_Increase', 'snowflake', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),

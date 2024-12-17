@@ -127,7 +127,7 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
-strTemplate06_A_patterns: (SELECT CONCAT_WS(' |  ', collect_list(ct_pattern))
+strTemplate06_A_patterns: (SELECT CONCAT_WS(' | ', collect_list(ct_pattern))
         FROM (
                 SELECT
                     TRANSLATE(

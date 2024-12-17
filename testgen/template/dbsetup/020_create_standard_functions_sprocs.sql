@@ -102,11 +102,11 @@ DECLARE
 BEGIN
     lower_case_sql_flavor := LOWER(sql_flavor);
 
-    IF lower_case_sql_flavor = 'postgres'  OR lower_case_sql_flavor = 'postgresql' THEN
+    IF lower_case_sql_flavor IN ('postgres', 'postgresql') THEN
         escaped_value := QUOTE_LITERAL(var_value);
-    ELSIF lower_case_sql_flavor = 'redshift' OR lower_case_sql_flavor = 'snowflake' THEN
+    ELSIF lower_case_sql_flavor IN ('redshift', 'snowflake') THEN
         escaped_value := TRIM(LEADING 'E' FROM QUOTE_LITERAL(var_value));
-    ELSIF lower_case_sql_flavor = 'mssql' THEN
+    ELSIF lower_case_sql_flavor IN ('mssql', 'databricks') THEN
         escaped_value := '''' || REPLACE(var_value, '''', '''''') || '''';
     ELSE
         RAISE EXCEPTION 'Invalid sql_flavor name: %', sql_flavor;
@@ -191,7 +191,7 @@ $$
 
     The approximation formula uses a series expansion to estimate the
     CDF, which is accurate for most practical purposes.
-    
+
     To estimate the count of observations that fall outside a certain Z-score
     (both above and below), you can use the `normal_cdf()` function. For a
     total number of observations N, the proportion of values outside the Z-score
