@@ -8,17 +8,18 @@
 * @type {object}
 * @property {string} href
 * @property {string} label
-*
+* 
 * @typedef Properties
 * @type {object}
 * @property {string} icon
 * @property {string} label
 * @property {Message} message
-* @property {Link} link
+* @property {Link?} link
+* @property {any?} button
 */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { Link } from './link.js';
 
 const { i, span, strong } = van.tags;
@@ -33,11 +34,14 @@ const EmptyState = (/** @type Properties */ props) => {
             i({class: 'material-symbols-rounded mb-5'}, props.icon),
             strong({ class: 'mb-2' }, props.message.line1),
             span({ class: 'mb-5' }, props.message.line2),
-            Link({
-                class: 'tg-empty-state--link',
-                right_icon: 'chevron_right',
-                ...props.link,
-            }),
+            (
+                getValue(props.button) ??
+                Link({
+                    class: 'tg-empty-state--link',
+                    right_icon: 'chevron_right',
+                    ...(getValue(props.link)),
+                })
+            ),
         ],
     });
 }

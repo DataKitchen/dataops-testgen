@@ -117,7 +117,7 @@ const SelectOptionsPortal = (
             style: `width: ${width}; height: ${height}; top: ${top}; left: ${left}`,
         },
         options.map(option => div(
-            { class: 'tg-select--option', onclick: (/** @type Event */ event) => {
+            { class: `tg-select--option ${option.selected ? 'selected' : ''}`, onclick: (/** @type Event */ event) => {
                 onChange(option);
                 event.stopPropagation();
             } },
@@ -198,6 +198,11 @@ stylesheet.replace(`
 }
 .tg-select--option:hover {
     background: var(--select-hover-background);
+}
+
+.tg-select--option.selected {
+    background: var(--select-hover-background);
+    color: var(--primary-color);
 }
 `);
 

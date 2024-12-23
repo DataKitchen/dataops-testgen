@@ -69,7 +69,7 @@ const TestSuites = (/** @type Properties */ props) => {
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId },
+        { id: wrapperId, style: 'overflow-y: auto;' },
         () => 
             projectSummary.test_suites_ct > 0
             ? div(
@@ -77,7 +77,7 @@ const TestSuites = (/** @type Properties */ props) => {
                 () => div(
                     { class: 'tg-test-suites--toolbar flex-row fx-align-flex-end mb-4' },
                     Select({
-                        label: 'Sort by',
+                        label: 'Table Group',
                         options: getValue(props.table_group_filter_options) ?? [],
                         allowNull: true,
                         height: 38,
@@ -121,7 +121,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 Link({
                                     href: 'test-suites:definitions',
                                     params: { test_suite_id: testSuite.id },
-                                    label: `${testSuite.test_ct} test definitions`,
+                                    label: `${testSuite.test_ct ?? 0} test definitions`,
                                     right_icon: 'chevron_right',
                                     right_icon_size: 20,
                                     class: 'mb-4',
@@ -131,9 +131,9 @@ const TestSuites = (/** @type Properties */ props) => {
                             ),
                             div(
                                 { class: 'flex-column' },
+                                Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
                                 testSuite.latest_run_start
                                 ? [
-                                    Caption({ content: 'Latest Run' }),
                                     Link({
                                         href: 'test-runs:results',
                                         params: { run_id: testSuite.latest_run_id },
@@ -152,7 +152,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         width: 350,
                                     })
                                 ]
-                                : '--',
+                                : span('--'),
                             ),
                             div(
                                 { class: 'flex-column' },
@@ -190,10 +190,19 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         message: {
             line1: 'Run data validation tests',
             line2: 'Automatically generate tests from data profiling results or write custom tests for your business rules.',
-        }
+        },
+        button: Button({
+            icon: 'add',
+            type: 'stroked',
+            color: 'primary',
+            label: 'Add Test Suite',
+            width: 'fit-content',
+            style: 'margin: auto; background: white;',
+            onclick: () => emitEvent('AddTestSuiteClicked', {}),
+        }),
     };
 
-    if (project.connections_ct <= 0) {
+    if (projectSummary.connections_ct <= 0) {
         args = {
             message: {
                 line1: 'Begin by connecting your database.',
@@ -204,7 +213,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
                 href: 'connections',
             },
         };
-    } else if (project.table_groups_ct <= 0) {
+    } else if (projectSummary.table_groups_ct <= 0) {
         args = {
             message: {
                 line1: 'Profile your tables to detect hygiene issues',
@@ -213,7 +222,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
             link: {
                 label: 'Go to Table Groups',
                 href: 'connections:table-groups',
-                params: { connection_id: project.default_connection_id },
+                params: { connection_id: projectSummary.default_connection_id },
             },
         };
     }

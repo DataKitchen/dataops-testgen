@@ -91,13 +91,10 @@ class TestSuitesPage(Page):
                 "ExportActionClicked": observability_export_dialog,
                 "EditActionClicked": partial(edit_test_suite_dialog, project_code, table_groups),
                 "DeleteActionClicked": delete_test_suite_dialog,
-                "RunTestsClicked": lambda test_suite_id: partial(run_tests_dialog, project_code, test_suite_service.get_by_id(test_suite_id)),
+                "RunTestsClicked": lambda test_suite_id: run_tests_dialog(project_code, test_suite_service.get_by_id(test_suite_id)),
                 "GenerateTestsClicked": lambda test_suite_id: generate_tests_dialog(test_suite_service.get_by_id(test_suite_id)),
             },
         )
-
-        # if render_empty_state(project_code, add_button_onclick):
-        #     return
 
 
 def on_test_suites_filtered(table_group_id: str | None = None) -> None:
