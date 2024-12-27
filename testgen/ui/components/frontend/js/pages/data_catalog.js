@@ -35,6 +35,7 @@
  * @property {string} column_name
  * @property {string} table_name
  * @property {string} table_group_id
+ * @property {string} connection_id
  * * Characteristics
  * @property {string} column_type
  * @property {string} functional_data_type
@@ -74,6 +75,7 @@
  * @property {'table'} type
  * @property {string} table_name
  * @property {string} table_group_id
+ * @property {string} connection_id
  * * Characteristics
  * @property {string} functional_table_type
  * @property {number} record_ct
@@ -194,24 +196,15 @@ const DataCatalog = (/** @type Properties */ props) => {
                             item.column_name,
                         ] : item.table_name,
                     ),
-                    span(
-                        { class: 'flex-row fx-gap-1 fx-justify-content-flex-end mb-2 text-secondary' },
-                        '* as of latest profiling run on ',
-                        Link({
-                            href: 'profiling-runs:results',
-                            params: {
-                                run_id: item.latest_profile_id,
-                                table_name: item.table_name,
-                                column_name: item.column_name,
-                            },
-                            open_new: true,
-                            label: formatTimestamp(item.latest_profile_date),
-                        }),
-                    ),
+                    LatestProfilingLink(item),
                     CharacteristicsCard(item),
                     item.type === 'column' ? Card({
                         title: 'Value Distribution *',
-                        content: ColumnProfile(item),
+                        content: item.latest_profile_id ? ColumnProfile(item) : null,
+                        actionContent: item.latest_profile_id ? null : span(
+                            { class: 'text-secondary' },
+                            'No profiling data available',
+                        ),
                     }) : null,
                     MetadataCard(item),
                     PotentialPIICard(item),
@@ -240,8 +233,8 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     if (item.type === 'column') {
         attributes.push(
             { key: 'column_type', label: 'Data Type' },
-            { key: 'datatype_suggestion', label: 'Suggested Data Type' },
-            { key: 'functional_data_type', label: 'Semantic Data Type' },
+            { key: 'datatype_suggestion', label: 'Suggested Data Type *' },
+            { key: 'functional_data_type', label: 'Semantic Data Type *' },
             { key: 'add_date', label: 'First Detected' },
         );
         if (item.last_mod_date !== item.add_date) {
@@ -249,7 +242,7 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
         }
     } else {
         attributes.push(
-            { key: 'functional_table_type', label: 'Semantic Table Type' },
+            { key: 'functional_table_type', label: 'Semantic Table Type *' },
             { key: 'record_ct', label: 'Row Count' },
             { key: 'column_ct', label: 'Column Count' },
             { key: 'data_point_ct', label: 'Data Point Count' },
@@ -261,7 +254,7 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     }
 
     return Card({
-        title: `${item.type} Characteristics *`,
+        title: `${item.type} Characteristics`,
         content: div(
             { class: 'flex-row fx-flex-wrap fx-gap-4' },
             attributes.map(({ key, label }) => {
@@ -433,8 +426,9 @@ const PotentialPIICard = (/** @type Table | Column */ item) => {
         href: 'profiling-runs:hygiene',
         params: { run_id: item.latest_profile_id, issue_class: 'Potential PII' },
     };
+    const noneContent = item.latest_profile_id ? 'No potential PII detected' : null;
 
-    return IssuesCard('Potential PII', potentialPII, attributes, linkProps, 'No potential PII detected');
+    return IssuesCard('Potential PII *', potentialPII, attributes, linkProps, noneContent);
 };
 
 const HygieneIssuesCard = (/** @type Table | Column */ item) => {
@@ -471,8 +465,9 @@ const HygieneIssuesCard = (/** @type Table | Column */ item) => {
             column_name: item.column_name,
         },
     };
+    const noneContent = item.latest_profile_id ? 'No hygiene issues detected' : null;
 
-    return IssuesCard('Hygiene Issues', hygieneIssues, attributes, linkProps, 'No hygiene issues detected');
+    return IssuesCard('Hygiene Issues *', hygieneIssues, attributes, linkProps, noneContent);
 };
 
 const TestIssuesCard = (/** @type Table | Column */ item) => {
@@ -531,6 +526,7 @@ const TestIssuesCard = (/** @type Table | Column */ item) => {
                 `No test results yet for ${item.type}.`,
                 Link({
                     href: 'test-suites',
+                    params: { table_group_id: item.table_group_id },
                     open_new: true,
                     label: 'Go to Test Suites',
                     right_icon: 'chevron_right',
@@ -611,10 +607,44 @@ const IssuesCard = (
     }
 
     return Card({
-        title: `${title} (${items.length})`,
+        title: title.replace(/([^*]+)( \*)?$/, `$1 (${items.length})$2`),
         content,
         actionContent,
     });
+}
+
+const LatestProfilingLink = (/** @type Table | Column */ item) => {
+    let text = 'as of latest profiling run on ';
+    let link = Link({
+        href: 'profiling-runs:results',
+        params: {
+            run_id: item.latest_profile_id,
+            table_name: item.table_name,
+            column_name: item.column_name,
+        },
+        open_new: true,
+        label: formatTimestamp(item.latest_profile_date),
+    });
+    if (!item.latest_profile_id) {
+        if (item.drop_date) {
+            text = 'No profiling results for table group';
+            link = null;
+        } else {
+            text = 'No profiling results yet for table group.';
+            link = Link({
+                href: 'connections:table-groups',
+                params: { connection_id: item.connection_id },
+                open_new: true,
+                label: 'Go to Table Groups',
+                right_icon: 'chevron_right',
+            });
+        }
+    }
+    return span(
+        { class: 'flex-row fx-gap-1 fx-justify-content-flex-end mb-2 text-secondary' },
+        `* ${text}`,
+        link,
+    );
 }
 
 const stylesheet = new CSSStyleSheet();
