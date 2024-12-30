@@ -91,7 +91,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
         ),
         () => opened.val
-            ? SelectOptionsPortal(domId.val, getValue(options), changeSelection)
+            ? SelectOptionsPortal(domId.val, getValue(options), changeSelection, getValue(selected))
             : '',
     );
 };
@@ -100,6 +100,7 @@ const SelectOptionsPortal = (
     /** @type string */ selectId,
     /** @type Array.<Option> */ options,
     /** @type Function */ onChange,
+    /** @type Option? */ selectedOption,
 ) => {
     const domId = `${selectId}-portal`;
     const select = document.getElementById(selectId);
@@ -117,7 +118,7 @@ const SelectOptionsPortal = (
             style: `width: ${width}; height: ${height}; top: ${top}; left: ${left}`,
         },
         options.map(option => div(
-            { class: `tg-select--option ${option.selected ? 'selected' : ''}`, onclick: (/** @type Event */ event) => {
+            { class: `tg-select--option ${selectedOption.value === option.value ? 'selected' : ''}`, onclick: (/** @type Event */ event) => {
                 onChange(option);
                 event.stopPropagation();
             } },
