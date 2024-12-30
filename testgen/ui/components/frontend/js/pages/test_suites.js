@@ -60,7 +60,6 @@ const TestSuites = (/** @type Properties */ props) => {
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const projectSummary = getValue(props.project_summary);
     const userCanEdit = getValue(props.permissions).can_edit;
     const testSuites = van.derive(() => getValue(props.test_suites));
     const wrapperId = 'test-suites-list-wrapper';
@@ -71,7 +70,7 @@ const TestSuites = (/** @type Properties */ props) => {
     return div(
         { id: wrapperId, style: 'overflow-y: auto;' },
         () => 
-            projectSummary.test_suites_ct > 0
+            getValue(props.project_summary).test_suites_ct > 0
             ? div(
                 { class: 'tg-test-suites'},
                 () => div(
@@ -181,7 +180,7 @@ const TestSuites = (/** @type Properties */ props) => {
                     })),
                 ),
             )
-            : ConditionalEmptyState(projectSummary),
+            : ConditionalEmptyState(getValue(props.project_summary)),
     );
 };
 
