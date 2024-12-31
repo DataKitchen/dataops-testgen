@@ -10,6 +10,7 @@
  * @property {string?} id
  * @property {string} label
  * @property {Array.<Option>} options
+ * @property {boolean} allowNull
  * @property {Function|null} onChange
  * @property {number?} width
  * @property {number?} height
@@ -30,7 +31,18 @@ const Select = (/** @type {Properties} */ props) => {
 
     const domId = van.derive(() => props.id?.val ?? getRandomId());
     const opened = van.state(false);
-    const selected = van.state(Array.from(getValue(props.options) ?? []).filter(option => option.selected)[0]);
+    const options = van.derive(() => {
+        const allowNull = getValue(props.allowNull);
+        const options = getValue(props.options) ?? [];
+        const isOptionSelected = options.filter(option => option.selected).length > 0;
+
+        if (allowNull) {
+            return [{label: "---", value: null, selected: !isOptionSelected}, ...options];
+        }
+
+        return options;
+    });
+    const selected = van.state(getValue(options).find(option => option.selected) ?? null);
     const changeHandler = props.onChange || post;
 
     const closeHandler = (/** @type MouseEvent*/ event) => {
@@ -79,7 +91,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
         ),
         () => opened.val
-            ? SelectOptionsPortal(domId.val, props.options, changeSelection)
+            ? SelectOptionsPortal(domId.val, getValue(options), changeSelection, getValue(selected))
             : '',
     );
 };
@@ -88,6 +100,7 @@ const SelectOptionsPortal = (
     /** @type string */ selectId,
     /** @type Array.<Option> */ options,
     /** @type Function */ onChange,
+    /** @type Option? */ selectedOption,
 ) => {
     const domId = `${selectId}-portal`;
     const select = document.getElementById(selectId);
@@ -105,7 +118,7 @@ const SelectOptionsPortal = (
             style: `width: ${width}; height: ${height}; top: ${top}; left: ${left}`,
         },
         options.map(option => div(
-            { class: 'tg-select--option', onclick: (/** @type Event */ event) => {
+            { class: `tg-select--option ${selectedOption.value === option.value ? 'selected' : ''}`, onclick: (/** @type Event */ event) => {
                 onChange(option);
                 event.stopPropagation();
             } },
@@ -186,6 +199,11 @@ stylesheet.replace(`
 }
 .tg-select--option:hover {
     background: var(--select-hover-background);
+}
+
+.tg-select--option.selected {
+    background: var(--select-hover-background);
+    color: var(--primary-color);
 }
 `);
 

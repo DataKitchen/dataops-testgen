@@ -19,6 +19,7 @@ import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 import { DataCatalog } from './pages/data_catalog.js';
 import { Overview } from './pages/overview.js';
+import { TestSuites } from './pages/test_suites.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -38,6 +39,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
         overview: Overview,
+        test_suites: TestSuites,
     };
 
     if (Object.keys(componentById).includes(id)) {

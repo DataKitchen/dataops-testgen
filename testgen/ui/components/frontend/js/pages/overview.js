@@ -91,7 +91,7 @@ const Overview = (/** @type Properties */ props) => {
     });
     const tableGroups = van.derive(() => getValue(props.table_groups));
     const tableGroupsSearchTerm = van.state('');
-    const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)[0]?.value);
+    const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)?.value);
     const filteredTableGroups = van.state(getValue(tableGroups));
 
     const sortFunctions = {
