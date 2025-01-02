@@ -90,10 +90,11 @@ WITH result_calc
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
            AND result_code = 0
+           AND r.result_measure IS NOT NULL
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
 UPDATE test_results
    SET dq_record_ct = c.dq_record_ct,
-       dq_prevalence = risk_calc * fn_eval(c.built_score_prevalance_formula)
+       dq_prevalence = LEAST(1.0, risk_calc * fn_eval(c.built_score_prevalance_formula))
   FROM result_calc c
  WHERE test_results.id = c.id;
 

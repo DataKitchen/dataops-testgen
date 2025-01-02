@@ -305,7 +305,8 @@ CREATE TABLE profile_anomaly_types (
    issue_likelihood    VARCHAR(50),  -- Potential, Likely, Certain
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
-   dq_score_risk_factor        TEXT
+   dq_score_risk_factor        TEXT,
+   dq_dimension        VARCHAR(50)
 );
 
 CREATE TABLE profile_anomaly_results (
