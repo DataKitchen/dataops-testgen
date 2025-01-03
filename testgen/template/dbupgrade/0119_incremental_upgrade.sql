@@ -106,7 +106,7 @@ WITH score_detail
 score_calc
   AS ( SELECT test_run_id,
               SUM(affected_data_points) as sum_affected_data_points,
-              SUM(row_ct) as sum_data_points
+              SUM(dq_record_ct) as sum_data_points
          FROM score_detail
        GROUP BY test_run_id )
 UPDATE test_runs
@@ -128,8 +128,8 @@ WITH score_calc
              SUM(run.dq_total_data_points) as sum_data_points
         FROM test_runs run
       INNER JOIN test_suites ts
-         ON (r.test_suite_id = ts.id
-        AND  r.test_run_id = ts.last_complete_test_run_id)
+         ON (run.test_suite_id = ts.id
+        AND  run.id = ts.last_complete_test_run_id)
       WHERE ts.dq_score_exclude = FALSE
       GROUP BY ts.table_groups_id)
 UPDATE table_groups
