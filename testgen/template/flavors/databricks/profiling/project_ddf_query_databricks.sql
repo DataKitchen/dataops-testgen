@@ -4,19 +4,18 @@ SELECT '{PROJECT_CODE}' AS project_code,
        c.table_name,
        c.column_name,
        CASE
-           WHEN lower(c.data_type) IN ('date', 'timestamp', 'timestamp_ntz') THEN 'datetime'
-           WHEN lower(c.data_type) = 'string' THEN 'varchar'
-           WHEN lower(c.data_type) = 'decimal' THEN concat('numeric(', c.numeric_precision, ',', c.numeric_scale, ')')
-           WHEN lower(c.data_type) IN ('bigint', 'double', 'float', 'int', 'smallint', 'tinyint') THEN 'numeric'
-           ELSE lower(c.data_type)
+           WHEN lower(c.full_data_type) = 'timestamp' THEN 'timestamp_ntz'
+           WHEN lower(c.full_data_type) = 'string' THEN 'varchar'
+           WHEN lower(c.full_data_type) IN ('double', 'float') THEN 'numeric'
+           WHEN lower(c.full_data_type) LIKE 'decimal%' THEN 'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
+           ELSE lower(c.full_data_type)
        END AS data_type,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
            WHEN lower(c.data_type) RLIKE '(string|char|varchar|text)' THEN 'A'
-           WHEN lower(c.data_type) RLIKE 'boolean' THEN 'B'
+           WHEN lower(c.data_type) = 'boolean' THEN 'B'
            WHEN lower(c.data_type) IN ('date', 'timestamp') THEN 'D'
-           WHEN lower(c.data_type) IN ('time', 'interval') THEN 'T'
            WHEN lower(c.data_type) IN ('byte', 'short', 'int', 'integer', 'long', 'bigint', 'float', 'double') THEN 'N'
            WHEN lower(c.data_type) LIKE 'decimal%' THEN 'N'
            ELSE 'X'

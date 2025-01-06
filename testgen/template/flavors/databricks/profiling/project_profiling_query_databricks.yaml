@@ -36,7 +36,7 @@ strTemplate05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE(`{COL_NAME}`,' '''',.-',
          WHEN `{COL_NAME}` BETWEEN ' !' AND '!' THEN 1
                                               ELSE 0
        END )  AS lead_space_ct,
-  SUM( CASE WHEN `{COL_NAME}` LIKE '"%"' OR `{COL_NAME}` LIKE '''%''' THEN 1 ELSE 0 END ) as quoted_value_ct,
+  SUM( CASE WHEN `{COL_NAME}` LIKE '"%"' OR `{COL_NAME}` LIKE '\'%\'' THEN 1 ELSE 0 END ) as quoted_value_ct,
   SUM( CASE WHEN `{COL_NAME}` RLIKE '[0-9]' THEN 1 ELSE 0 END ) as includes_digit_ct,
   SUM( CASE
          WHEN `{COL_NAME}` IN ('.', '?') OR `{COL_NAME}` RLIKE ' ' THEN 1
@@ -74,15 +74,13 @@ strTemplate05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE(`{COL_NAME}`,' '''',.-',
   SUM(<%IS_NUM;LEFT(`{COL_NAME}`, 31)%>)  AS numeric_ct,
   SUM(<%IS_DATE;LEFT(`{COL_NAME}`, 26)%>)  AS date_ct,
   CASE
-    WHEN CAST(SUM( CASE WHEN UPPER(`{COL_NAME}`) RLIKE '[1-9]% [A-Z]% %'
-                           AND CHARINDEX(' ', `{COL_NAME}`) BETWEEN 2 and 6  THEN 1
-                     END ) as FLOAT) /CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8  THEN 'STREET_ADDR'
+    WHEN CAST(SUM( CASE WHEN UPPER(`{COL_NAME}`) RLIKE '[1-9]{1,5} [A-Z]+ .*'
+         THEN 1 END ) as FLOAT) /CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8  THEN 'STREET_ADDR'
     WHEN CAST(SUM(CASE WHEN `{COL_NAME}` IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'STATE_USA'
-    WHEN CAST(SUM( CASE WHEN (`{COL_NAME}` RLIKE '[+]1%[0-9][0-9][0-9]%[-. ][0-9][0-9][0-9]%[0-9][0-9][0-9][0-9,0-9,0-9,0-9,0-9,0-9]' AND `{COL_NAME}` NOT RLIKE '%[^0-9+()-]%')
-                     OR (`{COL_NAME}` RLIKE '[+]1%[0-9][0-9][0-9][- ][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]' AND `{COL_NAME}` NOT RLIKE '%[^0-9+-]%')
+    WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '\\+1\\s*\\(?\\d{3}\\)?[-. ]*\\d{3}[-. ]*\\d{4}'
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'PHONE_USA'
-    WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%'
+    WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '[_a-zA-Z0-9.-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]+'
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'EMAIL'
     WHEN CAST(SUM( CASE WHEN TRANSLATE(`{COL_NAME}`,'012345678','999999999') IN ('99999', '999999999', '99999-9999')
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'ZIP_USA'
