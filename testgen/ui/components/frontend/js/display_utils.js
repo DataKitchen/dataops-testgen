@@ -8,7 +8,7 @@ function formatTimestamp(
             const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
             const hours = date.getHours();
             const minutes = date.getMinutes();
-            return `${months[date.getMonth()]} ${date.getDate()}, ${show_year ? date.getFullYear() + ' at ': ''}${hours % 12}:${String(minutes).padStart(2, '0')} ${hours / 12 > 1 ? 'PM' : 'AM'}`;
+            return `${months[date.getMonth()]} ${date.getDate()}, ${show_year ? date.getFullYear() + ' at ': ''}${(hours % 12) || 12}:${String(minutes).padStart(2, '0')} ${hours / 12 >= 1 ? 'PM' : 'AM'}`;
         }
     }
     return '--';

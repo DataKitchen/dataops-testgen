@@ -29,6 +29,21 @@ CREATE TABLE stg_functional_table_updates (
    table_type    VARCHAR(11)
 );
 
+CREATE TABLE stg_data_chars_updates (
+   project_code          VARCHAR(30),
+   table_groups_id       UUID,
+   run_date              TIMESTAMP,
+   schema_name           VARCHAR(120),
+   table_name            VARCHAR(120),
+   functional_table_type VARCHAR(50),
+   column_name           VARCHAR(120),
+   position              INTEGER,
+   general_type          VARCHAR(1),
+   column_type           VARCHAR(50),
+   functional_data_type  VARCHAR(50),
+   record_ct             BIGINT
+);
+
 CREATE TABLE projects (
    id                    UUID DEFAULT gen_random_uuid(),
    project_code          VARCHAR(30) NOT NULL
@@ -358,9 +373,10 @@ CREATE TABLE data_table_chars (
    aggregation_level     VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
+   last_refresh_date     TIMESTAMP,
    record_ct             BIGINT,
    column_ct             BIGINT,
-   data_point_ct         BIGINT,
+   data_point_ct         BIGINT GENERATED ALWAYS AS (record_ct * column_ct) STORED,
    last_complete_profile_run_id UUID,
    dq_score_profiling    FLOAT,
    dq_score_testing      FLOAT
@@ -373,6 +389,7 @@ CREATE TABLE data_column_chars (
    schema_name            VARCHAR(50),
    table_name             VARCHAR(120),
    column_name            VARCHAR(120),
+   ordinal_position       INTEGER,
    general_type           VARCHAR(1),
    column_type            VARCHAR(50),
    functional_data_type   VARCHAR(50),

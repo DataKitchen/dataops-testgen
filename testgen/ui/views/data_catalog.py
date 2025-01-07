@@ -54,7 +54,9 @@ class DataCatalogPage(Page):
         with loading_column:
             columns_df = get_table_group_columns(table_group_id)
             selected_item = get_selected_item(selected, table_group_id)
-            if not selected_item:
+            if selected_item:
+                selected_item["connection_id"] = str(table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
+            else:
                 self.router.set_query_params({ "selected": None })
 
         if columns_df.empty:
@@ -166,7 +168,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
             column_chars.table_id = table_chars.table_id
         )
     WHERE column_chars.table_groups_id = '{table_group_id}'
-    ORDER BY table_name, column_name;
+    ORDER BY table_name, ordinal_position;
     """
     return db.retrieve_data(sql)
 
@@ -191,8 +193,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             record_ct,
             table_chars.column_ct,
             data_point_ct,
-            add_date AS add_date,
-            drop_date AS drop_date,
+            add_date,
+            drop_date,
             -- Metadata
             critical_data_element,
             data_source,
@@ -228,9 +230,9 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             column_chars.column_type,
             column_chars.functional_data_type,
             datatype_suggestion,
-            column_chars.add_date AS add_date,
-            column_chars.last_mod_date AS last_mod_date,
-            column_chars.drop_date AS drop_date,
+            column_chars.add_date,
+            column_chars.last_mod_date,
+            column_chars.drop_date,
             -- Column Metadata
             column_chars.critical_data_element,
             column_chars.data_source,
@@ -329,7 +331,10 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
 
 
 @st.cache_data(show_spinner=False)
-def get_profile_anomalies(profile_run_id: str, table_name: str, column_name: str | None = None) -> dict | None:
+def get_profile_anomalies(profile_run_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
+    if not profile_run_id:
+        return []
+
     schema = st.session_state["dbschema"]
 
     column_condition = ""

@@ -3,6 +3,8 @@ import subprocess
 import threading
 import uuid
 
+from progress.spinner import Spinner
+
 import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.execute_tests_query import CTestExecutionSQL
@@ -18,37 +20,15 @@ from testgen.common import (
 from testgen.common.database.database_service import empty_cache
 
 from .run_execute_cat_tests import run_cat_test_queries
+from .run_refresh_data_chars import run_refresh_data_chars_queries
 from .run_test_parameter_validation import run_parameter_validation_queries
 
 LOG = logging.getLogger("testgen")
 
 
-def run_test_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
+def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
     booErrors = False
     error_msg = ""
-
-    LOG.info("CurrentStep: Retrieving TestExec Parameters")
-    dctParms = RetrieveTestExecParms(strProjectCode, strTestSuite)
-
-    # Set Project Connection Parms in common.db_bridgers from retrieved parms
-    LOG.info("CurrentStep: Assigning Connection Parms")
-
-    AssignConnectParms(
-        dctParms["project_code"],
-        dctParms["connection_id"],
-        dctParms["project_host"],
-        dctParms["project_port"],
-        dctParms["project_db"],
-        dctParms["table_group_schema"],
-        dctParms["project_user"],
-        dctParms["sql_flavor"],
-        dctParms["url"],
-        dctParms["connect_by_url"],
-        dctParms["connect_by_key"],
-        dctParms["private_key"],
-        dctParms["private_key_passphrase"],
-        "PROJECT",
-    )
 
     LOG.info("CurrentStep: Initializing Query Generator")
 
@@ -135,34 +115,62 @@ def run_execution_steps_in_background(project_code, test_suite):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_execution_steps(strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
-    # Initialize required parms for all three steps
-    booErrors = False
+def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=0, spinner: Spinner=None) -> str:
+    # Initialize required parms for all steps
+    has_errors = False
     error_msg = ""
 
-    strTestRunID = str(uuid.uuid4())
-    strTestTime = date_service.get_now_as_string_with_offset(minutes_offset)
+    test_run_id = str(uuid.uuid4())
+    test_time = date_service.get_now_as_string_with_offset(minutes_offset)
 
     if spinner:
         spinner.next()
 
+    LOG.info("CurrentStep: Retrieving TestExec Parameters")
+    test_exec_params = RetrieveTestExecParms(project_code, test_suite)
+
+    LOG.info("CurrentStep: Assigning Connection Parms")
+    AssignConnectParms(
+        test_exec_params["project_code"],
+        test_exec_params["connection_id"],
+        test_exec_params["project_host"],
+        test_exec_params["project_port"],
+        test_exec_params["project_db"],
+        test_exec_params["table_group_schema"],
+        test_exec_params["project_user"],
+        test_exec_params["sql_flavor"],
+        test_exec_params["url"],
+        test_exec_params["connect_by_url"],
+        test_exec_params["connect_by_key"],
+        test_exec_params["private_key"],
+        test_exec_params["private_key_passphrase"],
+        "PROJECT",
+    )
+
+    try:
+        LOG.info("CurrentStep: Execute Step - Data Characteristics Refresh")
+        run_refresh_data_chars_queries(test_exec_params, test_time, spinner)
+    except Exception:
+        LOG.warning("Data Characteristics Refresh failed", exc_info=True, stack_info=True)
+        pass
+
     LOG.info("CurrentStep: Execute Step - Test Validation")
-    run_parameter_validation_queries(strTestRunID, strTestTime, strProjectCode, strTestSuite, True)
+    run_parameter_validation_queries(test_exec_params, test_run_id, test_time, test_suite, True)
 
     LOG.info("CurrentStep: Execute Step - Test Execution")
-    booErrors, error_msg = run_test_queries(
-        strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset, spinner
+    has_errors, error_msg = run_test_queries(
+        test_exec_params, test_run_id, test_time, project_code, test_suite, minutes_offset, spinner
     )
 
     LOG.info("CurrentStep: Execute Step - CAT Test Execution")
     if run_cat_test_queries(
-        strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset, spinner
+        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner
     ):
-        booErrors = True
+        has_errors = True
 
-    if booErrors:
-        str_error_status = "with errors. Check log for details."
+    if has_errors:
+        error_status = "with errors. Check log for details."
     else:
-        str_error_status = "successfully."
-    message = f"Test Execution completed {str_error_status}"
+        error_status = "successfully."
+    message = f"Test Execution completed {error_status}"
     return message
