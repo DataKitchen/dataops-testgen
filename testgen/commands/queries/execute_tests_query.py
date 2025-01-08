@@ -53,6 +53,7 @@ class CTestExecutionSQL:
         strInputString = strInputString.replace("{EXCEPTION_MESSAGE}", self.exception_message)
         strInputString = strInputString.replace("{START_TIME}", self.today)
         strInputString = strInputString.replace("{PROCESS_ID}", str(self.process_id))
+        strInputString = strInputString.replace("{VARCHAR_TYPE}", "STRING" if self.flavor == "databricks" else "VARCHAR")
         strInputString = strInputString.replace(
             "{NOW}", date_service.get_now_as_string_with_offset(self.minutes_offset)
         )

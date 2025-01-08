@@ -15,3 +15,9 @@ IS_DATE: CASE
       WHEN to_date({$1}, 'yyyy-MM-dd HH:mm:ss') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
       ELSE 0
   END
+
+DATEDIFF_MONTH: (YEAR({$2}) * 12 + MONTH({$2}) - YEAR({$1}) * 12 - MONTH({$1}))
+
+DATEDIFF_WEEK: (YEAR({$2}) * 53 + WEEKOFYEAR({$2}) - YEAR({$1}) * 53 - WEEKOFYEAR({$1}))
+
+DATEDIFF_DAY: (DATE({$2}) - DATE({$1}))

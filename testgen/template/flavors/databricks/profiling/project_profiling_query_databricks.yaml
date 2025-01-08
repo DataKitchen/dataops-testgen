@@ -184,19 +184,19 @@ strTemplate11_D:  CASE
        END as min_date,
   MAX(`{COL_NAME}`) as max_date,
   SUM(CASE
-        WHEN DATEDIFF(month, `{COL_NAME}`, '{RUN_DATE}') > 12 THEN 1
+        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 12 THEN 1
                                                             ELSE 0
       END) AS before_1yr_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(month, `{COL_NAME}`, '{RUN_DATE}') > 60 THEN 1
+        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 60 THEN 1
                                                             ELSE 0
       END) AS before_5yr_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(month, `{COL_NAME}`, '{RUN_DATE}') > 240 THEN 1
+        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 240 THEN 1
                                                               ELSE 0
       END) AS before_20yr_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(month, `{COL_NAME}`, '{RUN_DATE}') > 1200 THEN 1
+        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 1200 THEN 1
                                                                 ELSE 0
       END) AS before_100yr_date_ct,
   SUM(CASE
@@ -211,12 +211,12 @@ strTemplate11_D:  CASE
         WHEN `{COL_NAME}` > '{RUN_DATE}' THEN 1 ELSE 0
       END) AS future_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(month, '{RUN_DATE}', `{COL_NAME}`) > 240 THEN 1
+        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 240 THEN 1
                                                                ELSE 0
       END) AS distant_future_date_ct,
-  COUNT(DISTINCT DATEDIFF(day, `{COL_NAME}`, '{RUN_DATE}' ) ) as date_days_present,
-  COUNT(DISTINCT DATEDIFF(week, `{COL_NAME}`, '{RUN_DATE}' ) ) as date_weeks_present,
-  COUNT(DISTINCT DATEDIFF(month, `{COL_NAME}`, '{RUN_DATE}' ) ) as date_months_present,
+  COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_days_present,
+  COUNT(DISTINCT <%DATEDIFF_WEEK; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_weeks_present,
+  COUNT(DISTINCT <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_months_present,
 
 strTemplate11_else:  NULL as min_date,
   NULL as max_date,

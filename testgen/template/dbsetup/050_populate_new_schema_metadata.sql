@@ -205,8 +205,8 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2303', 'Distribution_Shift', 'databricks', 'ex_relative_entropy_generic.sql'),
         ('2304', 'CUSTOM', 'databricks', 'ex_custom_query_generic.sql'),
         ('2306', 'Aggregate_Balance', 'databricks', 'ex_aggregate_match_same_generic.sql'),
-        ('2307', 'Timeframe_Combo_Gain', 'databricks', 'ex_window_match_no_drops_generic.sql'),
-        ('2308', 'Timeframe_Combo_Match', 'databricks', 'ex_window_match_same_generic.sql'),
+        ('2307', 'Timeframe_Combo_Gain', 'databricks', 'ex_window_match_no_drops_databricks.sql'),
+        ('2308', 'Timeframe_Combo_Match', 'databricks', 'ex_window_match_same_databricks.sql'),
         ('2309', 'Aggregate_Increase', 'databricks', 'ex_aggregate_match_num_incr_generic.sql');
 
 

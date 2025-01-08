@@ -15,7 +15,7 @@ SELECT '{TEST_TYPE}' as test_type,
        CASE
         WHEN COUNT(*) > 0 THEN
                CONCAT(
-                      CONCAT( CAST(COUNT(*) AS VARCHAR), ' error(s) identified, ' ),
+                      CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
        CONCAT(
                              CASE
                                WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
