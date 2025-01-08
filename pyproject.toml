@@ -66,6 +66,7 @@ dependencies = [
     "pyarrow==18.0.0",
     "snowflake-connector-python==3.12.3",
     "matplotlib==3.9.2",
+    "scipy==1.14.1",
 ]
 
 [project.optional-dependencies]
