@@ -17,7 +17,7 @@ from testgen.ui.queries import project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.utils import to_int
+from testgen.utils import friendly_score, to_int
 
 PAGE_SIZE = 50
 PAGE_ICON = "labs"
@@ -84,6 +84,7 @@ class TestRunsPage(Page):
         test_runs_df = get_db_test_runs(project_code, table_group_id, test_suite_id)
         page_index = testgen.paginator(count=len(test_runs_df), page_size=PAGE_SIZE)
         paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
+        paginated_df["dq_score_testing"] = paginated_df["dq_score_testing"].map(lambda score: friendly_score(score))
 
         with list_container:
             testgen_component(
@@ -230,7 +231,8 @@ def get_db_test_runs(project_code: str, table_groups_id: str | None = None, test
         run_results.warning_ct,
         run_results.failed_ct,
         run_results.error_ct,
-        run_results.dismissed_ct
+        run_results.dismissed_ct,
+        test_runs.dq_score_test_run AS dq_score_testing
     FROM {schema}.test_runs
         LEFT JOIN run_results ON (test_runs.id = run_results.test_run_id)
         INNER JOIN {schema}.test_suites ON (test_runs.test_suite_id = test_suites.id)

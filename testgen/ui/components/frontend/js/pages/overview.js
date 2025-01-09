@@ -283,7 +283,7 @@ const TableGroupLatestTestResults = (/** @type TableGroupSummary */ tableGroup) 
                 { class: 'flex-column' },
                 span(
                     { class: 'mb-3' },
-                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Test score: ${tableGroup.dq_score_testing}`,
+                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Testing score: ${tableGroup.dq_score_testing}`,
                 ),
                 div(
                     { class: 'flex-row mb-3' },

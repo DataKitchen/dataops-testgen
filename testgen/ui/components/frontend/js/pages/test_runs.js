@@ -15,6 +15,7 @@
  * @property {number} failed_ct
  * @property {number} error_ct
  * @property {number} dismissed_ct
+ * @property {string} dq_score_testing
  * 
  * @typedef Properties
  * @type {object}
@@ -42,7 +43,7 @@ const TestRuns = (/** @type Properties */ props) => {
         Streamlit.setFrameHeight(100 * items.length);
         return items;
     });
-    const columns = ['30%', '20%', '50%'];
+    const columns = ['30%', '20%', '40%', '10%'];
 
     const tableId = 'test-runs-table';
     resizeFrameHeightToElement(tableId);
@@ -62,6 +63,10 @@ const TestRuns = (/** @type Properties */ props) => {
             span(
                 { style: `flex: ${columns[2]}` },
                 'Results Summary',
+            ),
+            span(
+                { style: `flex: ${columns[3]}` },
+                'Testing Score',
             ),
         ),
         () => div(
@@ -103,7 +108,7 @@ const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) =
             }) : null,
         ),
         div(
-            { style: `flex: ${columns[2]}` },
+            { class: 'pr-3', style: `flex: ${columns[2]}` },
             item.test_ct ? SummaryBar({
                 items: [
                     { label: 'Passed', value: item.passed_ct, color: 'green' },
@@ -116,6 +121,10 @@ const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) =
                 width: 400,
             }) : '--',
         ),
+        div(
+            { style: `flex: ${columns[3]}; font-size: 16px;` },
+            item.dq_score_testing,
+        )
     );
 }
 

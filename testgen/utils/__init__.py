@@ -1,10 +1,12 @@
 import urllib.parse
-from typing import Any
+from typing import Any, TypeVar
 from uuid import UUID
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+T = TypeVar("T")
 
 
 def to_int(value: float | int) -> int:
@@ -64,6 +66,21 @@ def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -
     chunked_queries.append(current_chunk)
 
     return chunked_queries
+    
+
+def score(profiling_score_: float, tests_score_: float) -> float:
+    tests_score = _pandas_default(tests_score_, 0.0)
+    profiling_score = _pandas_default(profiling_score_, 0.0)
+    final_score = profiling_score or tests_score or 0.0
+    if profiling_score and tests_score:
+        final_score = profiling_score * tests_score
+    return final_score
+
+
+def _pandas_default(value: Any, default: T) -> T:
+    if pd.isnull(value):
+        return default
+    return value
 
 
 def friendly_score(score: float) -> str:

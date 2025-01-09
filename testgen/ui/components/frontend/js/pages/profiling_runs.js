@@ -16,6 +16,7 @@
  * @property {number} anomalies_likely_ct
  * @property {number} anomalies_possible_ct
  * @property {number} anomalies_dismissed_ct
+ * @property {string} dq_score_profiling
  * 
  * @typedef Properties
  * @type {object}
@@ -43,7 +44,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         Streamlit.setFrameHeight(100 * items.length);
         return items;
     });
-    const columns = ['20%', '20%', '20%', '40%'];
+    const columns = ['20%', '20%', '20%', '30%', '10%'];
 
     const tableId = 'profiling-runs-table';
     resizeFrameHeightToElement(tableId);
@@ -67,6 +68,10 @@ const ProfilingRuns = (/** @type Properties */ props) => {
             span(
                 { style: `flex: ${columns[3]}` },
                 'Hygiene Issues',
+            ),
+            span(
+                { style: `flex: ${columns[4]}` },
+                'Profiling Score',
             ),
         ),
         () => div(
@@ -121,7 +126,7 @@ const ProfilingRunItem = (/** @type ProfilingRun */ item, /** @type string[] */ 
             }) : null,
         ),
         div(
-            { style: `flex: ${columns[3]}` },
+            { class: 'pr-3', style: `flex: ${columns[3]}` },
             item.anomaly_ct ? SummaryBar({
                 items: [
                     { label: 'Definite', value: item.anomalies_definite_ct, color: 'red' },
@@ -140,6 +145,10 @@ const ProfilingRunItem = (/** @type ProfilingRun */ item, /** @type string[] */ 
                 right_icon: 'chevron_right',
                 style: 'margin-top: 8px;',
             }) : null,
+        ),
+        div(
+            { style: `flex: ${columns[4]}; font-size: 16px;` },
+            item.dq_score_profiling,
         ),
     );
 }

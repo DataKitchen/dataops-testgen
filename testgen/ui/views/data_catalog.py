@@ -14,7 +14,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import is_uuid4
+from testgen.utils import friendly_score, is_uuid4, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
@@ -212,7 +212,10 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                 FROM {schema}.test_results
                 WHERE table_groups_id = '{table_group_id}'
                     AND table_name = table_chars.table_name
-            ) AS has_test_runs
+            ) AS has_test_runs,
+            -- Scores
+            table_chars.dq_score_profiling,
+            table_chars.dq_score_testing
         FROM {schema}.data_table_chars table_chars
             LEFT JOIN {schema}.profiling_runs ON (
                 table_chars.last_complete_profile_run_id = profiling_runs.id
@@ -261,6 +264,9 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                     AND table_name = column_chars.table_name
                     AND column_names = column_chars.column_name
             ) AS has_test_runs,
+            -- Scores
+            column_chars.dq_score_profiling,
+            column_chars.dq_score_testing,
             -- Value Counts
             profile_results.record_ct,
             value_ct,
@@ -325,6 +331,9 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item = json.loads(item_df.to_json(orient="records"))[0]
         item["id"] = selected
         item["type"] = item_type
+        item["dq_score"] = friendly_score(score(item["dq_score_profiling"], item["dq_score_testing"]))
+        item["dq_score_profiling"] = friendly_score(item["dq_score_profiling"])
+        item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["latest_anomalies"] = get_profile_anomalies(item["latest_profile_id"], item["table_name"], item.get("column_name"))
         item["latest_test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
         return item

@@ -10,11 +10,10 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
-from testgen.utils import format_field, friendly_score
+from testgen.utils import format_field, friendly_score, score
 
 STALE_PROFILE_DAYS = 30
 PAGE_ICON = "home"
-T = typing.TypeVar("T")
 
 
 class OverviewPage(Page):
@@ -261,34 +260,3 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     """
 
     return db.retrieve_data(sql)
-
-
-def score(profiling_score_: float, tests_score_: float) -> float:
-    tests_score = _pandas_default(tests_score_, 0.0)
-    profiling_score = _pandas_default(profiling_score_, 0.0)
-    final_score = profiling_score or tests_score or 0.0
-    if profiling_score and tests_score:
-        final_score = profiling_score * tests_score
-    return final_score
-
-
-def _pandas_default(value: typing.Any, default: T) -> T:
-    if pd.isnull(value):
-        return default
-    return value
-
-
-# def friendly_score(score: float) -> str:
-#     if not score or pd.isnull(score):
-#         return "--"
-
-#     prefix = ""
-#     numbers = round(score * 100, 1)
-#     if numbers == 0:
-#         prefix = "< "
-#         numbers = 0.1
-#     elif numbers == 100:
-#         prefix = "> "
-#         numbers = 99.9
-
-#     return f"{prefix}{numbers}"
