@@ -4,6 +4,14 @@ SET SEARCH_PATH TO {SCHEMA_NAME};
 ALTER TABLE profile_anomaly_types
    ADD COLUMN dq_dimension VARCHAR(50);
 
+ALTER TABLE profile_results
+   ADD COLUMN column_id UUID;
+
+ALTER TABLE data_column_chars
+   ADD COLUMN valid_profile_issue_ct BIGINT DEFAULT 0,
+   ADD COLUMN valid_test_issue_ct    BIGINT DEFAULT 0;
+
+
 -- ==============================================================================
 -- |   Set up scoring aggregate functions
 -- ==============================================================================

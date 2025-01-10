@@ -217,6 +217,7 @@ CREATE TABLE profile_results (
    dk_id                 BIGINT GENERATED ALWAYS AS IDENTITY,
 --       CONSTRAINT profile_results_dk_id_pk
 --          PRIMARY KEY,
+   column_id             UUID,
    project_code          VARCHAR(30),
    connection_id         BIGINT
       CONSTRAINT profile_results_connections_connection_id_fk
@@ -417,6 +418,8 @@ CREATE TABLE data_column_chars (
    warnings_7_days_prior  INTEGER,
    warnings_30_days_prior INTEGER,
    last_complete_profile_run_id UUID,
+   valid_profile_issue_ct BIGINT DEFAULT 0,
+   valid_test_issue_ct    BIGINT DEFAULT 0,
    dq_score_profiling     FLOAT,
    dq_score_testing       FLOAT
 );

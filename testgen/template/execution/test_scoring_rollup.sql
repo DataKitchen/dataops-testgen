@@ -54,54 +54,50 @@ UPDATE table_groups
   FROM score_calc s
  WHERE table_groups.id = s.table_groups_id;
 
--- Roll up latest scores to data_column_chars
+-- Roll up latest scores to data_column_chars -- excludes multi-column tests
 WITH score_calc
   AS (SELECT dcc.column_id,
+             SUM(1 - r.result_code) as issue_ct,
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
              (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
-        FROM test_results r
-      INNER JOIN test_suites ts
-         ON (r.test_suite_id = ts.id
-        AND  r.test_run_id = ts.last_complete_test_run_id)
-      INNER JOIN data_column_chars dcc
-         ON (ts.table_groups_id = dcc.table_groups_id
-        AND  r.table_name = dcc.table_name
-        AND  r.column_names = dcc.column_name)
-       WHERE ts.table_groups_id = '{TABLE_GROUPS_ID}'
-         AND ts.dq_score_exclude = FALSE
+        FROM data_column_chars dcc
+      LEFT JOIN (test_results r
+                  INNER JOIN test_suites ts
+                     ON (r.test_suite_id = ts.id
+                    AND  r.test_run_id = ts.last_complete_test_run_id))
+         ON (dcc.table_groups_id = ts.table_groups_id
+        AND  dcc.table_name = r.table_name
+        AND  dcc.column_name = r.column_names)
+       WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'
+         AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dcc.column_id )
 UPDATE data_column_chars
-   SET dq_score_testing =
---           CASE
---             WHEN affected_data_points >= row_ct THEN 0
---             ELSE
-               (1.0 - affected_data_points::FLOAT / NULLIF(row_ct::FLOAT, 0))
---           END
+   SET valid_test_issue_ct = COALESCE(issue_ct, 0),
+       dq_score_testing = (1.0 - affected_data_points::FLOAT / NULLIF(row_ct::FLOAT, 0))
   FROM score_calc s
  WHERE data_column_chars.column_id = s.column_id;
 
--- Roll up latest scores to data_table_chars
+-- Roll up latest scores to data_table_chars -- includes multi-column tests
 WITH score_detail
-  AS (SELECT dcc.table_id, dcc.column_id,
+  AS (SELECT dtc.table_id, r.column_names,
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
              (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
-        FROM test_results r
-      INNER JOIN test_suites ts
-         ON (r.test_suite_id = ts.id
-        AND  r.test_run_id = ts.last_complete_test_run_id)
-      INNER JOIN data_column_chars dcc
-         ON (ts.table_groups_id = dcc.table_groups_id
-        AND  r.table_name = dcc.table_name
-        AND  r.column_names = dcc.column_name)
-       WHERE ts.table_groups_id = '{TABLE_GROUPS_ID}'
-         AND ts.dq_score_exclude = FALSE
+        FROM data_table_chars dtc
+      LEFT JOIN (test_results r
+                  INNER JOIN test_suites ts
+                     ON (r.test_suite_id = ts.id
+                    AND  r.test_run_id = ts.last_complete_test_run_id))
+         ON (dtc.table_groups_id = ts.table_groups_id
+        AND  dtc.table_name = r.table_name)
+       WHERE dtc.table_groups_id = '{TABLE_GROUPS_ID}'
+         AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
-      GROUP BY dcc.table_id, dcc.column_id ),
+      GROUP BY dtc.table_id, r.column_names),
 score_calc
   AS (SELECT table_id,
              SUM(affected_data_points) as sum_affected_data_points,

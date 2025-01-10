@@ -125,6 +125,7 @@ BEGIN
       -- Roll up latest scores to data_column_chars
       WITH score_detail
         AS (SELECT dcc.column_id, tg.last_complete_profile_run_id,
+                   COUNT(p.id) as valid_issue_ct,
                    MAX(pr.record_ct) as row_ct,
                    COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct), 0) as affected_data_points
               FROM table_groups tg
@@ -149,6 +150,7 @@ BEGIN
                  WHEN s.affected_data_points >= s.row_ct THEN 0
                  ELSE 100.0 - (1.0 - s.affected_data_points::FLOAT / NULLIF(s.row_ct::FLOAT, 0))
                END,
+             valid_profile_issue_ct = s.valid_issue_ct,
              last_complete_profile_run_id = s.last_complete_profile_run_id
         FROM score_detail s
        WHERE data_column_chars.column_id = s.column_id;

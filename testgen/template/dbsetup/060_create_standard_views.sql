@@ -272,8 +272,9 @@ SELECT
        dcc.functional_data_type as semantic_data_type,
        dtc.table_name, dcc.column_name,
        pr.profiling_starttime as profiling_run_date,
+       dcc.valid_profile_issue_ct,
        dtc.record_ct,
-       dcc.dq_score_profiling
+       dcc.dq_score_profiling as good_data_pct
   FROM data_column_chars dcc
 INNER JOIN table_groups tg
    ON (dcc.table_groups_id = tg.id)
@@ -304,6 +305,7 @@ SELECT pr.table_groups_id,
        dcc.column_name,
        pr.run_date,
        dtc.record_ct,
+       COUNT(p.anomaly_id) as issue_ct,
        MAX(pr.record_ct) as row_ct,
        SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct) as good_data_pct
   FROM table_groups tg
@@ -360,6 +362,7 @@ SELECT
        r.test_time, r.table_name, r.column_names,
        COUNT(*) as test_ct,
        SUM(r.result_code) as passed_ct,
+       SUM(1 - r.result_code) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct) as good_data_pct
   FROM test_results r
@@ -398,6 +401,7 @@ WITH dimension_rollup
               r.table_name, r.column_names, tt.dq_dimension,
               COUNT(*) as test_ct,
               SUM(r.result_code) as passed_ct,
+              SUM(1 - r.result_code) as issue_ct,
               MAX(r.dq_record_ct) as dq_record_ct,
               SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0), r.dq_record_ct) as good_data_pct
          FROM test_results r
@@ -429,6 +433,7 @@ SELECT
        r.test_time, r.table_name,
        SUM(r.test_ct) as test_ct,
        SUM(r.passed_ct) as passed_ct,
+       SUM(r.issue_ct) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(1.0-r.good_data_pct, 0), r.dq_record_ct) as good_data_pct
   FROM dimension_rollup r
