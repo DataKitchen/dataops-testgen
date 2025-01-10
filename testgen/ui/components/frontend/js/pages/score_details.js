@@ -7,9 +7,9 @@
  * @typedef Score
  * @type {object}
  * @property {string} project_code
- * @property {string} table_group
+ * @property {string} name
  * @property {number} score
- * @property {number} cde_score
+ * @property {number?} cde_score
  * @property {Array<Dimension>} dimensions
  * 
  * @typedef ResultSet
@@ -88,20 +88,22 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
             () => ScoreCard(getValue(props.score)),
         ),
         () => {
+            const drilldown = getValue(props.drilldown);
             const score = getValue(props.score);
             const issues = getValue(props.issues);
             const category = getValue(props.category);
             const scoreType = getValue(props.score_type);
 
             return (
-                issues
-                ? IssuesTable(score, issues, category, scoreType, getValue(props.drilldown))
+                (issues && drilldown)
+                ? IssuesTable(score, issues, category, scoreType, drilldown)
                 : BreakdownTable(score, getValue(props.breakdown), category, scoreType)
             );
         },
         div(
             { class: 'flex-row fx-gap-2 mt-4' },
             span({ class: 'fx-flex' }),
+            LegendItem('N/A', NaN),
             LegendItem('0-85', 0),
             LegendItem('86-90', 86),
             LegendItem('91-95', 91),
@@ -121,12 +123,12 @@ const BreakdownTable = (score, breakdown, category, scoreType) => {
                 options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c, selected: c === category })),
                 onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
             }),
-            span('on'),
-            () => Select({
-                label: '',
-                options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
-                onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
-            }),
+            // span('on'),
+            // () => Select({
+            //     label: '',
+            //     options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
+            //     onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+            // }),
         ),
         () => div(
             { class: 'table-header table-header--columns flex-row' },
@@ -172,12 +174,12 @@ const IssuesTable = (score, issues, category, scoreType, drilldown) => {
                 label: 'Back to score breakdown',
                 left_icon: 'chevron_left',
                 href: 'score-dashboard:details',
-                params: { project_code: score.project_code, table_group: score.table_group, score_type: scoreType, category },
+                params: { project_code: score.project_code, name: score.name, score_type: scoreType, category },
             }),
         ),
-        div(
+        () => div(
             { class: 'tg-score-details--issues-header table-header flex-row fx-align-flex-center fx-gap-1' },
-            span('Hygiene / Test Issues (6) for'),
+            span(`Hygiene / Test Issues (${issues.items.length}) for`),
             span({ class: 'text-primary' }, `${BREAKDOWN_COLUMN_LABEL[category]}: ${drilldown.replace('.', ' > ')}`),
         ),
         () => div(
@@ -257,7 +259,7 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
             label: 'View',
             right_icon: 'chevron_right',
             href: 'score-dashboard:details',
-            params: { project_code: score.project_code, table_group: score.table_group, score_type: scoreType, category, drilldown },
+            params: { project_code: score.project_code, name: score.name, score_type: scoreType, category, drilldown },
         }),
     );
 };
@@ -265,7 +267,7 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
 const IssueCell = (value, row) => {
     return div(
         { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.type}` },
-        Caption({ content: 'Hygiene Issue', style: 'font-size: 12px;' }),
+        Caption({ content: row.category, style: 'font-size: 12px;' }),
         span(value),
     );
 };
@@ -298,11 +300,13 @@ const DetailCell = (value, row) => {
 const TimeCell = (value, row) => {
     return div(
         { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.time}` },
-        Caption({ content: 'a-test-suite-name', style: 'font-size: 12px;' }),
+        row.issue_type === 'test'
+            ? Caption({ content: row.name, style: 'font-size: 12px;' })
+            : '',
         Link({
             label: formatTimestamp(value),
-            href: '',
-            params: {},
+            href: row.issue_type === 'test' ? 'test-runs:results' : 'profiling-runs:hygiene',
+            params: { run_id: row.run_id },
         }),
     );
 };

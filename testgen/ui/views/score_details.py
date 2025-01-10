@@ -1,11 +1,17 @@
 from typing import ClassVar, TypedDict
 
-import streamlit as st 
-
+from testgen.testgen.ui.queries import table_group_queries
+from testgen.testgen.ui.queries.scoring_queries import (
+    get_score_card_breakdown,
+    get_score_card_issues,
+    get_table_group_score_card,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
+from testgen.ui.views.score_dashboard import format_all_scores
+from testgen.utils import friendly_score
 
 
 class ScoreDetailsPage(Page):
@@ -17,11 +23,11 @@ class ScoreDetailsPage(Page):
     def render(
         self,
         *,
-        table_group: str,
+        name: str,
         category: str = "column_name",
         score_type: str = "score",
         drilldown: str | None = None,
-        **kwargs
+        **_kwargs
     ):
         project_code: str = session.project
 
@@ -29,17 +35,19 @@ class ScoreDetailsPage(Page):
             "Score Details",
             breadcrumbs=[
                 {"path": "score-dashboard", "label": "Score Dashboard", "params": {"project_code": project_code}},
-                {"label": table_group},
+                {"label": name},
             ],
         )
+
+        table_group_dict = table_group_queries.get_by_name(project_code, name)
 
         breakdown: ResultSet | None = None
         issues: ResultSet | None = None
 
         if drilldown:
-            issues = get_issues(project_code, table_group, score_type, category, drilldown)
+            issues = get_issues(project_code, table_group_dict["id"], score_type, category, drilldown)
         else:
-            breakdown = get_score_breakdown(project_code, table_group, score_type, category)
+            breakdown = get_score_breakdown(project_code, table_group_dict["id"], score_type, category)
 
         testgen.testgen_component(
             "score_details",
@@ -47,7 +55,7 @@ class ScoreDetailsPage(Page):
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
-                "score": get_score(project_code, table_group),
+                "score": format_all_scores(get_table_group_score_card(project_code, table_group_dict["id"])),
                 "breakdown": breakdown,
                 "issues": issues,
             },
@@ -58,44 +66,20 @@ class ScoreDetailsPage(Page):
         )
 
 
-def get_score(project_code: str, table_group_name: str) -> dict:
+def get_score_breakdown(project_code: str, table_group_id: str, score_type: str, category: str) -> "ResultSet":
+    columns = {"column_name": ["table_name", "column_name"]}.get(category, [category])
+    results = get_score_card_breakdown(project_code, table_group_id, score_type, category)
     return {
-        "project_code": project_code,
-        "table_group": table_group_name,
-        "score": 94,
-        "cde_score": 98,
-        "dimensions": [
-            {"label": "Accuracy", "score": 93},
-            {"label": "Completeness", "score": 99},
-            {"label": "Consistency", "score": 98},
-            {"label": "Timeliness", "score": 87},
-            {"label": "Uniqueness", "score": 97},
-            {"label": "Validity", "score": 94},
-        ],
+        "columns": [*columns, "impact", "score", "issue_ct"],
+        "items": [{**row, "score": friendly_score(row["score"])} for row in results],
     }
 
 
-def get_score_breakdown(project_code: str, table_group_name: str, score_type: str, category: str) -> "ResultSet":
-    example = {category: "value", "impact": 1.1, "score": 91, "issue_ct": 10}
-    if category == "column_name":
-        example = {"table_name": "my_table", **example}
-
+def get_issues(project_code: str, table_group_id: str, score_type: str, category: str, value: str) -> "ResultSet":
+    issues = get_score_card_issues(project_code, table_group_id, score_type, category, value)
     return {
-        "columns": list(example.keys()),
-        "items": [example] * 10
-    }
-
-
-def get_issues(project_code: str, table_group_name: str, score_type: str, category: str, value: str) -> "ResultSet":
-    example1 = {"type": "Non-Standard Blank", "status": "Definite", "detail": "Risk: MODERATE, PII Type: CONTACT/Address", "time": 9872110000}
-    example2 = {"type": "Percent Missing", "status": "Potential PII", "detail": "Pct records over limit: 0.6, Threashold: 0.5", "time": 9872110000}
-
-
-    # select anomaly_name, issue_likelihood, detail, profiling_starttime from profile_anomaly_results as results inner join profile_anomaly_types as types on (types.id = results.anomaly_id) inner join profiling_runs as runs on (runs.id = results.profile_run_id);
-
-    return {
-        "columns": list(example1.keys()),
-        "items": [example1, example2] * 2,
+        "columns": ["type", "status", "detail", "time"],
+        "items": issues,
     }
 
 

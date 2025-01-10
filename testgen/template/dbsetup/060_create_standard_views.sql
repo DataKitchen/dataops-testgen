@@ -274,7 +274,7 @@ SELECT
        pr.profiling_starttime as profiling_run_date,
        dcc.valid_profile_issue_ct as issue_ct,
        dtc.record_ct,
-       dcc.dq_score_profiling as good_data_pct
+       dcc.dq_score_profiling AS good_data_pct
   FROM data_column_chars dcc
 INNER JOIN table_groups tg
    ON (dcc.table_groups_id = tg.id)

@@ -114,6 +114,10 @@ function isEqual(value, other) {
         return true;
     }
 
+    if ((value === null || other === null) && (value !== null || other !== null)) {
+        return false;
+    }
+
     if (typeof value !== typeof other) {
         return false;
     }

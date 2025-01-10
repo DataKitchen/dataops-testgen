@@ -64,3 +64,10 @@ def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -
     chunked_queries.append(current_chunk)
 
     return chunked_queries
+
+
+def friendly_score(score: float) -> str:
+    if not score or pd.isnull(score):
+        return "-"
+
+    return str(int(score * 100))

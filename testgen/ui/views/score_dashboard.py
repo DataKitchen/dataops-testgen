@@ -1,12 +1,13 @@
 from typing import ClassVar
 
-import streamlit as st 
+import streamlit as st
 
-from testgen.testgen.ui.services import table_group_service
+from testgen.testgen.ui.queries.scoring_queries import ScoreCard, get_table_groups_score_cards
 from testgen.ui.components import widgets as testgen
-from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.menu import MenuItem
+from testgen.ui.navigation.page import Page
 from testgen.ui.session import session
+from testgen.utils import friendly_score
 
 SORTED_BY_SESSION_KEY: str = "score-dashboard:sorted_by"
 FILTER_TERM_SESSION_KEY: str = "score-dashboard:name_filter"
@@ -19,15 +20,21 @@ class ScoreDashboardPage(Page):
     ]
     menu_item = MenuItem(icon="readiness_score", label="Score Dashboard", order=1)
 
-    def render(self, *, project_code: str, **kwargs) -> None:
-        sorted_by: str = st.session_state.get(SORTED_BY_SESSION_KEY, "table_group")
+    def render(self, *, project_code: str, **_kwargs) -> None:
+        sorted_by: str = st.session_state.get(SORTED_BY_SESSION_KEY, "name")
         filter_term: str = st.session_state.get(FILTER_TERM_SESSION_KEY, None)
 
         testgen.page_header("Score Dashboard")
         testgen.testgen_component(
             "score_dashboard",
             props={
-                "scores": get_table_groups_scores(project_code, sorted_by=sorted_by, filter_term=filter_term),
+                "scores": [
+                    format_all_scores(score) for score in get_table_groups_score_cards(
+                        project_code,
+                        sorted_by=sorted_by,
+                        filter_term=filter_term,
+                    )
+                ],
                 "sorted_by": sorted_by,
                 "filter_term": filter_term,
             },
@@ -38,145 +45,17 @@ class ScoreDashboardPage(Page):
         )
 
 
-def get_table_groups_scores(project_code: str, sorted_by: str, filter_term: str | None = None) -> list[dict]:
-    results = [
-        {
-            "project_code": project_code,
-            "table_group": "Another Table Group",
-            "score": 94,
-            "cde_score": 98,
-            "dimensions": [
-                {"label": "Accuracy", "score": 93},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 87},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 94},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "Default Table Group",
-            "score": 83,
-            "cde_score": 90,
-            "dimensions": [
-                {"label": "Accuracy", "score": 96},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 96},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 96},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "My Table Group",
-            "score": 97,
-            "cde_score": 100,
-            "dimensions": [
-                {"label": "Accuracy", "score": 80},
-                {"label": "Completeness", "score": 80},
-                {"label": "Consistency", "score": 80},
-                {"label": "Timeliness", "score": 80},
-                {"label": "Uniqueness", "score": 80},
-                {"label": "Validity", "score": 91},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "Another Table Group",
-            "score": 94,
-            "cde_score": 98,
-            "dimensions": [
-                {"label": "Accuracy", "score": 93},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 87},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 94},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "Default Table Group",
-            "score": 83,
-            "cde_score": 90,
-            "dimensions": [
-                {"label": "Accuracy", "score": 96},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 96},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 96},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "My Table Group",
-            "score": 97,
-            "cde_score": 100,
-            "dimensions": [
-                {"label": "Accuracy", "score": 80},
-                {"label": "Completeness", "score": 80},
-                {"label": "Consistency", "score": 80},
-                {"label": "Timeliness", "score": 80},
-                {"label": "Uniqueness", "score": 80},
-                {"label": "Validity", "score": 91},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "Another Table Group",
-            "score": 94,
-            "cde_score": 98,
-            "dimensions": [
-                {"label": "Accuracy", "score": 93},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 87},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 94},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "Default Table Group",
-            "score": 83,
-            "cde_score": 90,
-            "dimensions": [
-                {"label": "Accuracy", "score": 96},
-                {"label": "Completeness", "score": 99},
-                {"label": "Consistency", "score": 98},
-                {"label": "Timeliness", "score": 96},
-                {"label": "Uniqueness", "score": 97},
-                {"label": "Validity", "score": 96},
-            ],
-        },
-        {
-            "project_code": project_code,
-            "table_group": "My Table Group",
-            "score": 97,
-            "cde_score": 100,
-            "dimensions": [
-                {"label": "Accuracy", "score": 80},
-                {"label": "Completeness", "score": 80},
-                {"label": "Consistency", "score": 80},
-                {"label": "Timeliness", "score": 80},
-                {"label": "Uniqueness", "score": 80},
-                {"label": "Validity", "score": 91},
-            ],
-        },
-    ]
-
-    if filter_term:
-        results = [item for item in results if not filter_term or filter_term in item["table_group"]]
-
-    try:
-        results = sorted(results, key=lambda item: item[sorted_by])
-    except:
-        pass
-
-    return list(results)
+def format_all_scores(table_group_score_card: ScoreCard) -> ScoreCard:
+    return {
+        **table_group_score_card,
+        "score": friendly_score(table_group_score_card["score"]),
+        "cde_score": friendly_score(table_group_score_card["cde_score"])
+            if table_group_score_card["cde_score"] else None,
+        "dimensions": [
+            {**dimension, "score": friendly_score(dimension["score"])}
+            for dimension in table_group_score_card["dimensions"]
+        ],
+    }
 
 
 def apply_sort(sorted_by: str) -> None:

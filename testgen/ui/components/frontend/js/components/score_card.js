@@ -16,14 +16,14 @@ const ScoreCard = (
     const dimensions = score.dimensions ?? [];
 
     return Card({
-        title: score.table_group,
+        title: score.name,
         actionContent: actions,
         class: 'tg-score-card',
         content: () => div(
             { class: 'flex-row' },
             ScoreChart("Total Score", score.score),
             i({ class: 'mr-4 ml-4' }),
-            ScoreChart("CDE Score", score.cde_score),
+            // ScoreChart("CDE Score", score.cde_score),
             div(
                 { class: 'flex-column ml-4 tg-score-card--qualities-wrapper' },
                 span({ class: 'mb-2 text-secondary' }, 'Quality Dimension'),
@@ -44,17 +44,17 @@ const ScoreCard = (
  * Circle chart for displaying score.
  * 
  * @param {string} label
- * @param {number} value 
+ * @param {number} score
  */
-const ScoreChart = (label, value) => {
+const ScoreChart = (label, score) => {
     const variables = {
         size: '100px',
         'stroke-width': '4px',
-        color: getScoreColor(value),
+        color: getScoreColor(score),
         'half-size': 'calc(var(--size) / 2)',
         radius: 'calc((var(--size) - var(--stroke-width)) / 2)',
         circumference: 'calc(var(--radius) * pi * 2)',
-        dash: `calc((${value} * var(--circumference)) / 100)`,
+        dash: `calc((${score ?? 100} * var(--circumference)) / 100)`,
     };
     const style = Object.entries(variables).map(([key, value]) => `--${key}: ${value}`).join(';');
 
@@ -62,7 +62,7 @@ const ScoreChart = (label, value) => {
         { class: 'tg-score-chart', width: "100", height: "100", viewBox: "0 0 100 100", style },
         circle({ class: 'tg-score-chart--bg' }),
         circle({ class: 'tg-score-chart--fg' }),
-        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: '#000000DE', 'font-size': '18px', 'font-weight': 500 }, value),
+        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: '#000000DE', 'font-size': '18px', 'font-weight': 500 }, score ?? '-'),
         text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: '#0000008A', 'font-size': '14px', class: 'tg-score-chart--label' }, label),
     );
 };
@@ -70,7 +70,7 @@ const ScoreChart = (label, value) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-card {
-    width: 500px;
+    width: 400px;
     box-sizing: border-box;
     border: 1px solid var(--border-color);
     border-radius: 8px;

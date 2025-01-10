@@ -7,7 +7,7 @@
  * @typedef Score
  * @type {object}
  * @property {string} project_code
- * @property {string} table_group
+ * @property {string} name
  * @property {number} score
  * @property {number} cde_score
  * @property {Array<Dimension>} dimensions
@@ -51,13 +51,14 @@ const ScoreDashboard = (/** @type {Properties} */ props) => {
                     label: 'View details',
                     right_icon: 'chevron_right',
                     href: 'score-dashboard:details',
-                    params: { project_code: score.project_code, table_group: score.table_group },
+                    params: { project_code: score.project_code, name: score.name },
                 })
             ))
         ),
         div(
             { class: 'flex-row fx-gap-2 mt-4' },
             span({ class: 'fx-flex' }),
+            LegendItem('N/A', NaN),
             LegendItem('0-85', 0),
             LegendItem('86-90', 86),
             LegendItem('91-95', 91),
@@ -68,7 +69,7 @@ const ScoreDashboard = (/** @type {Properties} */ props) => {
 
 const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy) => {
     const sortOptions = [
-        { label: "Score Name", value: "table_group" },
+        { label: "Score Name", value: "name" },
         { label: "Lowest Score", value: "score" },
     ];
 

@@ -5,6 +5,10 @@
  * @returns {string}
  */
 function getScoreColor(score) {
+    if (Number.isNaN(parseFloat(score))) {
+        return '#c4c4c4';
+    }
+
     if (score >= 96) {
         return '#9CCC65';
     } else if (score >= 91) {
