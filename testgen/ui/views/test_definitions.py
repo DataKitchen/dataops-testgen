@@ -123,6 +123,13 @@ class TestDefinitionsPage(Page):
             edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
         if user_can_edit and actions_column.button(
+            ":material/file_copy: Copy or Move",
+            help="Copy or Move the Test Definition",
+            disabled=not selected,
+        ):
+            copy_move_test_dialog(project_code, table_group, test_suite, selected)
+
+        if user_can_edit and actions_column.button(
             ":material/delete: Delete",
             help="Delete the selected Test Definition",
             disabled=not selected,
@@ -609,6 +616,74 @@ def add_test_dialog(project_code, table_group, test_suite, str_table_name, str_c
 @st.dialog(title="Edit Test")
 def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def):
     show_test_form("edit", project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def)
+
+
+@st.dialog(title="Copy/Move Test")
+def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
+    # TODO confirm if the condition below is correct -> can only move tests that aren't active (locked?)
+    can_be_moved = [td for td in selected_test_definitions if td["test_active"] == False]
+
+    fm.render_html_list(
+        selected_test_definitions,
+        [
+            "id",
+            "project_code",
+            "schema_name",
+            "table_name",
+            "column_name",
+            "test_name_short",
+            "table_groups_id",
+            "test_suite",
+            "test_active_display",
+            "test_description",
+            "last_manual_update",
+        ],
+        "Test Definition Information",
+        int_data_width=700,
+    )
+
+    with st.form("Copy or Move Test Definition", clear_on_submit=True, border=False):
+        user_can_edit = authentication_service.current_user_has_edit_role()
+        disable_move_button = (
+            user_can_edit or len(can_be_moved) == 0
+        )
+        disable_copy_button = user_can_edit
+
+        # TODO THESE TWO INPUTS (select fields?)
+        target_table_group = st.form_select()
+        target_test_suite = st.form_select()
+        _, button_column = st.columns([0.85, 0.15])
+        with button_column:
+            move = st.form_submit_button(
+                "Move",
+                disabled=disable_move_button,
+                use_container_width=True,
+            )
+            copy = st.form_submit_button(
+                "Copy",
+                use_container_width=True,
+                disabled=disable_copy_button,
+            )
+
+        if move:
+            # TODO: get wich test definitions cant be moved to target (colision names?)
+            test_definition_service.move(can_be_moved, target_table_group, target_test_suite)
+            success_message = f"Test Definitions have been moved. "
+            st.success(success_message)
+            time.sleep(1)
+            st.rerun()
+        elif copy:
+            # TODO: get wich test definitions cant be copied to target (colision names?)
+            test_definition_service.copy(selected_test_definitions, target_table_group, target_test_suite)
+            success_message = f"Test Definitions have been copied. "
+            st.success(success_message)
+            time.sleep(1)
+            st.rerun()
+
+    if not can_be_moved:
+        st.markdown(
+            ":orange[These Test Definitions cannot be moved because it is being used in existing tests.]"
+        )
 
 
 def validate_form(test_scope, test_type, test_definition, column_name_label):
