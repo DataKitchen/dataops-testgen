@@ -1,14 +1,19 @@
 from typing import Literal, TypedDict
 
+import streamlit as st
+
 import testgen.ui.services.database_service as db
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_table_groups_score_cards(
     project_code: str,
     sorted_by: Literal["name", "score"] = "name",
     filter_term: str | None = None
 ) -> list["ScoreCard"]:
+    schema: str = st.session_state["dbschema"]
     query = f"""
+    SET SEARCH_PATH TO {schema};
     {_TABLE_GROUP_SCORES_QUERY}
     {f"WHERE name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
     ORDER BY {sorted_by} ASC;
@@ -34,7 +39,9 @@ def get_table_groups_score_cards(
 
 
 def get_table_group_score_card(project_code: str, table_group_id: str) -> "ScoreCard":
+    schema: str = st.session_state["dbschema"]
     query = f"""
+    SET SEARCH_PATH TO {schema};
     {_TABLE_GROUP_SCORES_QUERY}
     WHERE profiling_records.table_groups_id = '{table_group_id}';
     """
@@ -57,12 +64,14 @@ def get_table_group_score_card(project_code: str, table_group_id: str) -> "Score
     }
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_score_card_breakdown(
     _project_code: str,
     table_group_id: str,
     score_type: Literal["score", "cde_score"],
     group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
 ) -> list[dict]:
+    schema: str = st.session_state["dbschema"]
     columns = {
         "column_name": ["table_name", "column_name"],
     }.get(group_by, [group_by])
@@ -78,6 +87,7 @@ def get_score_card_breakdown(
     join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
 
     query = f"""
+        SET SEARCH_PATH TO {schema};
         WITH
         profiling_records AS (
             SELECT
@@ -111,24 +121,24 @@ def get_score_card_breakdown(
         ),
         table_group AS (
             SELECT
-                profiling.table_groups_id,
-                SUM(profiling.record_ct) + SUM(test.dq_record_ct) AS all_records
-            FROM {profiling_score_view} AS profiling
-            INNER JOIN {test_score_view} AS test
-                ON (test.table_groups_id = profiling.table_groups_id)
-            WHERE profiling.table_groups_id = '{table_group_id}'
-            GROUP BY profiling.table_groups_id
+                profiling_records.table_groups_id,
+                SUM(COALESCE(profiling_records.record_ct, test_records.record_ct, 0)) AS all_records
+            FROM profiling_records
+            FULL OUTER JOIN test_records 
+                ON (test_records.table_groups_id = profiling_records.table_groups_id AND {join_condition})
+            WHERE profiling_records.table_groups_id = '{table_group_id}'
+            GROUP BY profiling_records.table_groups_id
         )
         SELECT
             {', '.join([ 'profiling_records.' + column for column in columns    ])},
-            ROUND(100 * (profiling_records.record_ct + test_records.record_ct) / table_group.all_records, 2) AS impact,
-            (profiling_records.score * test_records.score) AS score,
-            (profiling_records.issue_ct + test_records.issue_ct) AS issue_ct
+            100 * COALESCE(profiling_records.record_ct, test_records.record_ct, 0) * (1 - COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) / table_group.all_records AS impact,
+            (COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) AS score,
+            (COALESCE(profiling_records.issue_ct, 0) + COALESCE(test_records.issue_ct, 0)) AS issue_ct
         FROM profiling_records
-        INNER JOIN test_records
+        FULL OUTER JOIN test_records
             ON (test_records.table_groups_id = profiling_records.table_groups_id AND {join_condition})
         INNER JOIN table_group
-            ON (table_group.table_groups_id = test_records.table_groups_id)
+            ON (table_group.table_groups_id = profiling_records.table_groups_id)
         ORDER BY impact DESC;
     """
     results = db.retrieve_data(query)
@@ -136,6 +146,7 @@ def get_score_card_breakdown(
     return [row.to_dict() for _, row in results.iterrows()]
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_score_card_issues(
     _project_code: str,
     table_group_id: str,
@@ -143,6 +154,7 @@ def get_score_card_issues(
     group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
     value: str,
 ):
+    schema: str = st.session_state["dbschema"]
     value_ = value.split(".")[1] if group_by == "column_name" else value
     profiling_score_view = {
         "dq_dimension": "v_dq_profile_scoring_latest_by_dimension",
@@ -156,10 +168,13 @@ def get_score_card_issues(
     ]
 
     query = f"""
+    SET SEARCH_PATH TO {schema};
     WITH
     score_profiling_runs AS (
         SELECT
-            profile_run_id
+            profile_run_id,
+            table_name,
+            column_name
         FROM {profiling_score_view}
         WHERE table_groups_id = '{table_group_id}'
             {' '.join(filters)}
@@ -167,6 +182,8 @@ def get_score_card_issues(
     ),
     anomalies AS (
         SELECT
+            results.table_name AS table,
+            results.column_name AS column,
             types.anomaly_name AS type,
             types.issue_likelihood AS status,
             results.detail,
@@ -181,11 +198,16 @@ def get_score_card_issues(
         INNER JOIN profiling_runs AS runs
             ON (runs.id = results.profile_run_id)
         INNER JOIN score_profiling_runs
-            ON (score_profiling_runs.profile_run_id = runs.id)
+            ON (score_profiling_runs.profile_run_id = runs.id
+            AND score_profiling_runs.table_name = results.table_name
+            AND score_profiling_runs.column_name = results.column_name)
+        {f"WHERE {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     ),
     score_test_runs AS (
         SELECT
-            test_run_id
+            test_run_id,
+            table_name,
+            column_names
         FROM {test_score_view}
         WHERE table_groups_id = '{table_group_id}'
             {' '.join(filters)}
@@ -193,7 +215,9 @@ def get_score_card_issues(
     ),
     tests AS (
         SELECT
-            test_results.test_type AS type,
+            test_results.table_name AS table,
+            test_results.column_names AS column,
+            test_types.test_name_short AS type,
             result_status AS status,
             result_message AS detail,
             EXTRACT(EPOCH FROM test_time) AS time,
@@ -203,16 +227,30 @@ def get_score_card_issues(
             'test' AS issue_type
         FROM test_results
         INNER JOIN score_test_runs
-            ON (score_test_runs.test_run_id = test_results.test_run_id)
+            ON (score_test_runs.test_run_id = test_results.test_run_id
+            AND score_test_runs.table_name = test_results.table_name
+            AND score_test_runs.column_names = test_results.column_names)
         INNER JOIN test_suites
             ON (test_suites.id = test_results.test_suite_id)
         INNER JOIN test_types
             ON (test_types.test_type = test_results.test_type)
         WHERE result_status IN ('Failed', 'Warning')
+        {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     )
-    SELECT * FROM anomalies
-    UNION ALL
-    SELECT * FROM tests;
+    SELECT * FROM (
+        SELECT * FROM anomalies
+        UNION ALL
+        SELECT * FROM tests
+    ) issues
+    ORDER BY
+        CASE status
+            WHEN 'Definite' THEN 1
+            WHEN 'Failed' THEN 2
+            WHEN 'Likely' THEN 3
+            WHEN 'Possible' THEN 4
+            WHEN 'Warning' THEN 5
+            ELSE 6
+        END;
     """
     results = db.retrieve_data(query)
     return [row.to_dict() for _, row in results.iterrows()]
@@ -280,15 +318,15 @@ _TABLE_GROUP_SCORES_QUERY = """
     SELECT
         profiling_records.table_groups_id AS id,
         profiling_records.table_groups_name AS name,
-        (profiling_records.score * test_records.score) AS score,
-        (profiling_records.cde_score * test_records.cde_score) AS cde_score,
-        (profiling_records.accuracy_score * test_records.accuracy_score) AS accuracy_score,
-        (profiling_records.completeness_score * test_records.completeness_score) AS completeness_score,
-        (profiling_records.consistency_score * test_records.consistency_score) AS consistency_score,
-        (profiling_records.timeliness_score * test_records.timeliness_score) AS timeliness_score,
-        (profiling_records.uniqueness_score * test_records.uniqueness_score) AS uniqueness_score,
-        (profiling_records.validity_score * test_records.validity_score) AS validity_score
+        (COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) AS score,
+        (COALESCE(profiling_records.cde_score, 1) * COALESCE(test_records.cde_score, 1)) AS cde_score,
+        (COALESCE(profiling_records.accuracy_score, 1) * COALESCE(test_records.accuracy_score, 1)) AS accuracy_score,
+        (COALESCE(profiling_records.completeness_score, 1) * COALESCE(test_records.completeness_score, 1)) AS completeness_score,
+        (COALESCE(profiling_records.consistency_score, 1) * COALESCE(test_records.consistency_score, 1)) AS consistency_score,
+        (COALESCE(profiling_records.timeliness_score, 1) * COALESCE(test_records.timeliness_score, 1)) AS timeliness_score,
+        (COALESCE(profiling_records.uniqueness_score, 1) * COALESCE(test_records.uniqueness_score, 1)) AS uniqueness_score,
+        (COALESCE(profiling_records.validity_score, 1) * COALESCE(test_records.validity_score, 1)) AS validity_score
     FROM profiling_records
-    INNER JOIN test_records
+    FULL OUTER JOIN test_records
         ON (test_records.table_groups_id = profiling_records.table_groups_id)
 """

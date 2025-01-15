@@ -29,13 +29,14 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatTimestamp } from '../display_utils.js';
+import { colorMap, formatTimestamp } from '../display_utils.js';
 import { Select } from '../components/select.js';
 import { ScoreCard } from '../components/score_card.js';
 import { getScoreColor } from '../score_utils.js';
 import { dot } from '../components/dot.js';
 import { Link } from '../components/link.js';
 import { Caption } from '../components/caption.js';
+import { ScoreLegend } from '../components/score_legend.js';
 
 const { div, i, span } = van.tags;
 const CATEGORY_LABEL = {
@@ -58,15 +59,17 @@ const BREAKDOWN_COLUMN_LABEL = {
     issue_ct: 'Issue Count',
 };
 const ISSUES_COLUMN_LABEL = {
-    type: 'Issue',
+    column: 'Table | Column',
+    type: 'Issue Type | Name',
     status: 'Likelihood / Status',
     detail: 'Detail',
     time: 'Test Suite | Start Time',
 };
 const ISSUES_COLUMNS_SIZES = {
-    type: '30%',
+    column: '20%',
+    type: '20%',
     status: '15%',
-    detail: '40%',
+    detail: '30%',
     time: '15%',
 };
 
@@ -83,6 +86,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
 
     return div(
         { id: domId, class: 'tg-score-details flex-column' },
+        ScoreLegend(),
         div(
             { class: 'flex-row mb-4'},
             () => ScoreCard(getValue(props.score)),
@@ -100,15 +104,6 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 : BreakdownTable(score, getValue(props.breakdown), category, scoreType)
             );
         },
-        div(
-            { class: 'flex-row fx-gap-2 mt-4' },
-            span({ class: 'fx-flex' }),
-            LegendItem('N/A', NaN),
-            LegendItem('0-85', 0),
-            LegendItem('86-90', 86),
-            LegendItem('91-95', 91),
-            LegendItem('96-100', 96),
-        ),
     );
 };
 
@@ -209,6 +204,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
         impact: ImpactCell,
         score: ScoreCell,
         issue_ct: IssueCountCell,
+        column: ColumnCell,
         type: IssueCell,
         status: StatusCell,
         detail: DetailCell,
@@ -228,7 +224,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 const ImpactCell = (value) => {
     return div(
         { class: 'flex-row', style: 'flex: 1' },
-        Number(value) > 0
+        value && !String(value).startsWith('-')
         ? i(
             {class: 'material-symbols-rounded', style: 'font-size: 20px; color: #E57373;'},
             'arrow_downward_alt',
@@ -254,15 +250,24 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
 
     return div(
         { class: 'flex-row', style: 'flex: 1' },
-        span({ class: 'mr-4' }, value ?? '-'),
-        Link({
+        span({ class: 'mr-4' }, value || '-'),
+        value ? Link({
             label: 'View',
             right_icon: 'chevron_right',
             href: 'score-dashboard:details',
             params: { project_code: score.project_code, name: score.name, score_type: scoreType, category, drilldown },
-        }),
+        }) : '',
     );
 };
+
+const ColumnCell = (value, row) => {
+    return div(
+        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.type}` },
+        Caption({ content: row.table, style: 'font-size: 12px;' }),
+        span(value),
+    );
+};
+
 
 const IssueCell = (value, row) => {
     return div(
@@ -273,19 +278,19 @@ const IssueCell = (value, row) => {
 };
 
 const StatusCell = (value, row) => {
-    const colorMap = {
-        'Potential PII': '#EF5350',
-        Likely: '#FF9800',
-        Possible: '#FDD835',
-        Definite: '#EF5350',
-        Warning: '#FDD835',
-        Failed: '#EF5350',
-        Passed: '#9CCC65',
+    const statusColors = {
+        'Potential PII': colorMap.grey,
+        Likely: colorMap.orange,
+        Possible: colorMap.yellow,
+        Definite: colorMap.red,
+        Warning: colorMap.yellow,
+        Failed: colorMap.red,
+        Passed: colorMap.green,
     };
 
     return div(
         { class: 'flex-row fx-align-flex-center', style: `flex: ${ISSUES_COLUMNS_SIZES.status}` },
-        dot({ class: 'mr-2' }, colorMap[value]),
+        dot({ class: 'mr-2' }, statusColors[value]),
         span({}, value),
     );
 };
@@ -305,17 +310,14 @@ const TimeCell = (value, row) => {
             : '',
         Link({
             label: formatTimestamp(value),
+            open_new: true,
             href: row.issue_type === 'test' ? 'test-runs:results' : 'profiling-runs:hygiene',
-            params: { run_id: row.run_id },
+            params: {
+                run_id: row.run_id,
+                table_name: row.table,
+                column_name: row.column,
+            },
         }),
-    );
-};
-
-const LegendItem = (label, value) => {
-    return div(
-        { class: 'flex-row fx-align-flex-center' },
-        dot({ class: 'mr-2' }, getScoreColor(value)),
-        span({}, label),
     );
 };
 

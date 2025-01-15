@@ -430,7 +430,7 @@ SELECT
        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
        dcc.functional_data_type as semantic_data_type,
        r.dq_dimension,
-       r.test_time, r.table_name,
+       r.test_time, r.table_name, r.column_names,
        SUM(r.test_ct) as test_ct,
        SUM(r.passed_ct) as passed_ct,
        SUM(r.issue_ct) as issue_ct,
@@ -454,4 +454,4 @@ GROUP BY r.table_groups_id, r.test_suite_id, r.test_run_id,
          dtc.business_domain, tg.business_domain, dcc.stakeholder_group, dtc.stakeholder_group,
          tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
          dcc.critical_data_element, dtc.critical_data_element, dcc.functional_data_type, r.dq_dimension,
-         r.test_time, r.table_name;
+         r.test_time, r.table_name, r.column_names;
