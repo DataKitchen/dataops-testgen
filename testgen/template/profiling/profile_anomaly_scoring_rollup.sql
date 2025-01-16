@@ -2,7 +2,7 @@
 WITH score_detail
   AS (SELECT pr.profile_run_id, pr.table_name, pr.column_name,
              MAX(pr.record_ct) as row_ct,
-             SUM(COALESCE(p.dq_prevalence * pr.record_ct, 0)) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct) as affected_data_points
         FROM profile_results pr
       INNER JOIN profiling_runs r
          ON (pr.profile_run_id = r.id)
@@ -22,7 +22,7 @@ score_calc
 UPDATE profiling_runs
    SET dq_affected_data_points = sum_affected_data_points,
        dq_total_data_points = sum_data_points,
-       dq_score_profiling = 100.0 - sum_affected_data_points / sum_data_points
+       dq_score_profiling = (1.0 - sum_affected_data_points::FLOAT / NULLIF(sum_data_points::FLOAT, 0))
   FROM score_calc
  WHERE profiling_runs.id = score_calc.profile_run_id;
 
@@ -43,7 +43,7 @@ score_calc
         AND  run.profiling_starttime = lp.last_profile_run_date)
       WHERE run.table_groups_id = '{TABLE_GROUPS_ID}' )
 UPDATE table_groups
-   SET dq_score_profiling = 100.0 - s.sum_affected_data_points::FLOAT / s.sum_data_points::FLOAT,
+   SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
        last_complete_profile_run_id = s.profile_run_id
   FROM score_calc s
  WHERE table_groups.id = s.table_groups_id;
@@ -51,8 +51,9 @@ UPDATE table_groups
 -- Roll up latest scores to data_column_chars
 WITH score_detail
   AS (SELECT dcc.column_id, tg.last_complete_profile_run_id,
+             COUNT(p.id) as valid_issue_ct,
              MAX(pr.record_ct) as row_ct,
-             SUM(COALESCE(p.dq_prevalence * pr.record_ct, 0)) as affected_data_points
+             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct), 0) as affected_data_points
         FROM table_groups tg
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
@@ -70,7 +71,8 @@ WITH score_detail
         AND COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dcc.column_id, tg.last_complete_profile_run_id )
 UPDATE data_column_chars
-   SET dq_score_profiling = 100.0 - s.affected_data_points / s.row_ct,
+   SET valid_profile_issue_ct = COALESCE(s.valid_issue_ct, 0),
+       dq_score_profiling = (1.0 - s.affected_data_points::FLOAT / NULLIF(s.row_ct::FLOAT, 0)),
        last_complete_profile_run_id = s.last_complete_profile_run_id
   FROM score_detail s
  WHERE data_column_chars.column_id = s.column_id;
@@ -79,7 +81,7 @@ UPDATE data_column_chars
 WITH score_detail
   AS (SELECT dcc.column_id, dcc.table_id, tg.last_complete_profile_run_id,
              MAX(pr.record_ct) as row_ct,
-             SUM(COALESCE(p.dq_prevalence * pr.record_ct, 0)) as affected_data_points
+             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct), 0) as affected_data_points
         FROM table_groups tg
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
@@ -103,7 +105,7 @@ score_calc
          FROM score_detail
        GROUP BY table_id, last_complete_profile_run_id )
 UPDATE data_table_chars
-   SET dq_score_profiling = 100.0 - s.sum_affected_data_points / s.sum_data_points,
+   SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
        last_complete_profile_run_id = s.last_complete_profile_run_id
   FROM score_calc s
  WHERE data_table_chars.table_id = s.table_id;

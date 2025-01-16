@@ -64,3 +64,37 @@ def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -
     chunked_queries.append(current_chunk)
 
     return chunked_queries
+
+
+def friendly_score(score: float) -> str:
+    if not score or pd.isnull(score):
+        return "--"
+
+    score = 100 * score
+    if score == 100:
+        return "100"
+    
+    rounded = round(score, 1)
+    if rounded == 0:
+        return "< 0.1"
+    elif rounded == 100:
+        return "> 99.9"
+
+    return str(rounded)
+
+
+def friendly_score_impact(impact: float) -> str:
+    if not impact or pd.isnull(impact):
+        return "-"
+
+    if impact == 100:
+        return "100"
+    
+    rounded = round(impact, 2)
+    if rounded == 0:
+        return "< 0.01"
+    elif rounded == 100:
+        return "> 99.99"
+
+    return str(rounded)
+    

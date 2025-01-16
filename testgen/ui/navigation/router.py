@@ -63,7 +63,12 @@ class Router(Singleton):
 
     def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006
         try:
-            if to != session.current_page:
+            is_different_page = to != session.current_page
+            query_params_changed = (
+                len(st.query_params.keys()) != len(with_args.keys())
+                or any(st.query_params.get(name) != value for name, value in with_args.items())
+            )
+            if is_different_page or query_params_changed:
                 route = self._routes[to]
                 session.page_args_pending_router = with_args
                 st.switch_page(route.streamlit_page)

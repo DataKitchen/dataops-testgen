@@ -29,6 +29,17 @@ def get_by_id(schema, table_group_id):
     return db.retrieve_data(sql)
 
 
+@st.cache_data(show_spinner=False)
+def get_by_name(project_code: str, table_group_name: str) -> dict | None:
+    schema: str = st.session_state["dbschema"]
+    sql = _get_select_statement(schema)
+    sql += f"""WHERE project_code = '{project_code}' AND table_groups_name = '{table_group_name}';"""
+    results = db.retrieve_data(sql)
+    if results.empty:
+        return None
+    return results.iloc[0].to_dict()
+
+
 def get_test_suite_ids_by_table_group_names(schema, table_group_names):
     names_str = ", ".join([f"'{item}'" for item in table_group_names])
     sql = f"""

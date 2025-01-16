@@ -33,7 +33,7 @@ const Link = (/** @type Properties */ props) => {
     }
 
     const href = getValue(props.href);
-    const params = getValue(props.params) || {};
+    const params = getValue(props.params) ?? {};
     const open_new = !!getValue(props.open_new);
 
     return a(

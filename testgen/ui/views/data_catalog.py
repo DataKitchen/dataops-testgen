@@ -315,7 +315,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                 column_chars.last_complete_profile_run_id = profile_results.profile_run_id
                 AND column_chars.column_name = profile_results.column_name
             )
-        WHERE column_id = '{item_id}'
+        WHERE column_chars.column_id = '{item_id}'
             AND column_chars.table_groups_id = '{table_group_id}';
         """
 

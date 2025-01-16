@@ -7,6 +7,7 @@
  */
 import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
+import { isEqual } from './utils.js';
 import { Button } from './components/button.js'
 import { Breadcrumbs } from './components/breadcrumbs.js'
 import { ExpanderToggle } from './components/expander_toggle.js';
@@ -20,6 +21,8 @@ import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 import { DataCatalog } from './pages/data_catalog.js';
 import { Overview } from './pages/overview.js';
 import { TestSuites } from './pages/test_suites.js';
+import { ScoreDashboard } from './pages/score_dashboard.js';
+import { ScoreDetails } from './pages/score_details.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -40,6 +43,8 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         data_catalog: DataCatalog,
         overview: Overview,
         test_suites: TestSuites,
+        score_dashboard: ScoreDashboard,
+        score_details: ScoreDetails,
     };
 
     if (Object.keys(componentById).includes(id)) {
@@ -91,7 +96,7 @@ window.addEventListener('message', (event) => {
         }
 
         for (const [ key, value ] of Object.entries(event.data.args.props)) {
-            if (componentState[key].val !== value) {
+            if (!isEqual(componentState[key].val, value)) {
                 componentState[key].val = value;
             }
         }
