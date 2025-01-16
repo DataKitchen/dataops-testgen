@@ -2,10 +2,10 @@ from typing import ClassVar
 
 import streamlit as st
 
-from testgen.testgen.ui.queries.scoring_queries import ScoreCard, get_table_groups_score_cards
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries.scoring_queries import ScoreCard, get_table_groups_score_cards
 from testgen.ui.session import session
 from testgen.utils import friendly_score
 

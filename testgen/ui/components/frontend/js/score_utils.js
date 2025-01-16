@@ -1,3 +1,5 @@
+import { colorMap } from './display_utils.js';
+
 /**
  * Get a color based on a numeric score.
  * 
@@ -6,17 +8,23 @@
  */
 function getScoreColor(score) {
     if (Number.isNaN(parseFloat(score))) {
-        return '#c4c4c4';
+        const stringScore = String(score);
+        if (stringScore.startsWith('>')) {
+            return colorMap.green;
+        } else if (stringScore.startsWith('<')) {
+            return colorMap.red;
+        }
+        return colorMap.grey;
     }
 
     if (score >= 96) {
-        return '#9CCC65';
+        return colorMap.green;
     } else if (score >= 91) {
-        return '#FDD835';
+        return colorMap.yellow;
     } else if (score >= 86) {
-        return '#FF9800';
+        return colorMap.orange;
     } else {
-        return '#EF5350';
+        return colorMap.red;
     }
 }
 

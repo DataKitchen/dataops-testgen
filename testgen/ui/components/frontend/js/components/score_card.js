@@ -25,13 +25,14 @@ const ScoreCard = (
             i({ class: 'mr-4 ml-4' }),
             // ScoreChart("CDE Score", score.cde_score),
             div(
-                { class: 'flex-column ml-4 tg-score-card--qualities-wrapper' },
-                span({ class: 'mb-2 text-secondary' }, 'Quality Dimension'),
+                { class: 'flex-column ml-4' },
+                span({ class: 'mb-2 text-caption' }, 'Quality Dimension'),
                 div(
-                    { class: 'flex-row fx-flex-wrap fx-gap-2 tg-score-card--qualities' },
+                    { class: 'tg-score-card--qualities' },
                     dimensions.map(dimension => div(
-                        { class: 'flex-row fx-align-flex-center' },
-                        dot({ class: 'mr-2' }, getScoreColor(dimension.score)),
+                        { class: 'flex-row fx-align-flex-center fx-gap-2' },
+                        dot({}, getScoreColor(dimension.score)),
+                        span({ class: 'tg-score-card--quality-score' }, dimension.score),
                         span({}, dimension.label),
                     )),
                 ),
@@ -70,21 +71,22 @@ const ScoreChart = (label, score) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-card {
-    width: 400px;
+    width: 500px;
     box-sizing: border-box;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     margin-bottom: unset !important;
 }
 
-.tg-score-card--qualities-wrapper {
-    width: calc(50% - 16px);
-}
-
 .tg-score-card--qualities {
     display: grid;
     grid-gap: 8px;
-    grid-template-columns: 100px 100px;
+    grid-template-columns: 150px 150px;
+}
+
+.tg-score-card--quality-score {
+    min-width: 30px;
+    font-weight: 500; 
 }
 
 svg.tg-score-chart circle {

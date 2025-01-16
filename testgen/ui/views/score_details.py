@@ -1,17 +1,17 @@
 from typing import ClassVar, TypedDict
 
-from testgen.testgen.ui.queries import table_group_queries
-from testgen.testgen.ui.queries.scoring_queries import (
+from testgen.ui.components import widgets as testgen
+from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
+from testgen.ui.queries import table_group_queries
+from testgen.ui.queries.scoring_queries import (
     get_score_card_breakdown,
     get_score_card_issues,
     get_table_group_score_card,
 )
-from testgen.ui.components import widgets as testgen
-from testgen.ui.navigation.page import Page
-from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 from testgen.ui.views.score_dashboard import format_all_scores
-from testgen.utils import friendly_score
+from testgen.utils import friendly_score, friendly_score_impact
 
 
 class ScoreDetailsPage(Page):
@@ -24,7 +24,7 @@ class ScoreDetailsPage(Page):
         self,
         *,
         name: str,
-        category: str = "column_name",
+        category: str = "table_name",
         score_type: str = "score",
         drilldown: str | None = None,
         **_kwargs
@@ -67,18 +67,24 @@ class ScoreDetailsPage(Page):
 
 
 def get_score_breakdown(project_code: str, table_group_id: str, score_type: str, category: str) -> "ResultSet":
-    columns = {"column_name": ["table_name", "column_name"]}.get(category, [category])
     results = get_score_card_breakdown(project_code, table_group_id, score_type, category)
     return {
-        "columns": [*columns, "impact", "score", "issue_ct"],
-        "items": [{**row, "score": friendly_score(row["score"])} for row in results],
+        "columns": [category, "impact", "score", "issue_ct"],
+        "items": [{
+            **row,
+            "score": friendly_score(row["score"]),
+            "impact": friendly_score_impact(row["impact"]),
+        } for row in results],
     }
 
 
 def get_issues(project_code: str, table_group_id: str, score_type: str, category: str, value: str) -> "ResultSet":
     issues = get_score_card_issues(project_code, table_group_id, score_type, category, value)
+    columns = ["type", "status", "detail", "time"]
+    if category != "column_name":
+        columns.insert(0, "column")
     return {
-        "columns": ["type", "status", "detail", "time"],
+        "columns": columns,
         "items": issues,
     }
 
