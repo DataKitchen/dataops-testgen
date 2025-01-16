@@ -9,7 +9,7 @@ from testgen.ui.session import session
 AvailablePages = typing.Literal[
     "database_flavor_selector",
     "data_catalog",
-    "project-dashboard",
+    "project_dashboard",
     "profiling_runs",
     "test_runs",
     "test_suites",
