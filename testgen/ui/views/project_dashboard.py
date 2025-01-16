@@ -13,19 +13,20 @@ from testgen.ui.session import session
 from testgen.utils import format_field, friendly_score, score
 
 STALE_PROFILE_DAYS = 30
+PAGE_TITLE = "Project Dashboard"
 PAGE_ICON = "home"
 
 
-class OverviewPage(Page):
-    path = "overview"
+class ProjectDashboardPage(Page):
+    path = "project-dashboard"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Overview", order=0)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, order=0)
 
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
-            "Project Overview",
+            PAGE_TITLE,
             "introduction-to-dataops-testgen",
         )
 
@@ -73,7 +74,7 @@ class OverviewPage(Page):
         expanded_table_groups = st.session_state.get("overview_table_groups_expanded", [])
 
         testgen.testgen_component(
-            "overview",
+            "project_dashboard",
             props={
                 "project": {
                     "table_groups_count": len(table_groups.index),

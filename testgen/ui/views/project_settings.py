@@ -17,7 +17,7 @@ class ProjectSettingsPage(Page):
     path = "settings"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project is not None or "overview",
+        lambda: session.project is not None or "project-dashboard",
     ]
     menu_item = MenuItem(icon="settings", label=PAGE_TITLE, section="Settings", order=0)
 

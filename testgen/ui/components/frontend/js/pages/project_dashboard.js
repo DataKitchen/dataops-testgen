@@ -80,8 +80,8 @@ import { Metric } from '../components/metric.js';
 
 const { div, h3, hr, span, strong } = van.tags;
 
-const Overview = (/** @type Properties */ props) => {
-    loadStylesheet('overview', stylesheet);
+const ProjectDashboard = (/** @type Properties */ props) => {
+    loadStylesheet('project-dashboard', stylesheet);
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
@@ -429,4 +429,4 @@ hr.tg-overview--table-group-divider {
 }
 `);
 
-export { Overview };
+export { ProjectDashboard };

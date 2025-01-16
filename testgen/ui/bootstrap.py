@@ -17,11 +17,11 @@ from testgen.ui.views.connections import ConnectionsPage
 from testgen.ui.views.data_catalog import DataCatalogPage
 from testgen.ui.views.hygiene_issues import HygieneIssuesPage
 from testgen.ui.views.login import LoginPage
-from testgen.ui.views.overview import OverviewPage
 from testgen.ui.views.profiling_results import ProfilingResultsPage
 from testgen.ui.views.profiling_runs import DataProfilingPage
+from testgen.ui.views.project_dashboard import ProjectDashboardPage
 from testgen.ui.views.project_settings import ProjectSettingsPage
-from testgen.ui.views.score_dashboard import ScoreDashboardPage
+from testgen.ui.views.quality_dashboard import QualityDashboardPage
 from testgen.ui.views.score_details import ScoreDetailsPage
 from testgen.ui.views.table_groups import TableGroupsPage
 from testgen.ui.views.test_definitions import TestDefinitionsPage
@@ -32,8 +32,8 @@ from testgen.utils import plugins, singleton
 
 BUILTIN_PAGES: list[type[Page]] = [
     LoginPage,
-    OverviewPage,
-    ScoreDashboardPage,
+    ProjectDashboardPage,
+    QualityDashboardPage,
     ScoreDetailsPage,
     DataCatalogPage,
     DataProfilingPage,

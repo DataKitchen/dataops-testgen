@@ -28,7 +28,7 @@ class TestRunsPage(Page):
     path = "test-runs"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project != None or "overview",
+        lambda: session.project != None or "project-dashboard",
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=0)
 

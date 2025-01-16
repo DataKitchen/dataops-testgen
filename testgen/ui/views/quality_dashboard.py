@@ -11,22 +11,23 @@ from testgen.utils import friendly_score
 
 SORTED_BY_SESSION_KEY: str = "score-dashboard:sorted_by"
 FILTER_TERM_SESSION_KEY: str = "score-dashboard:name_filter"
+PAGE_TITLE = "Quality Dashboard"
 
 
-class ScoreDashboardPage(Page):
-    path = "score-dashboard"
+class QualityDashboardPage(Page):
+    path = "quality-dashboard"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon="readiness_score", label="Score Dashboard", order=1)
+    menu_item = MenuItem(icon="readiness_score", label=PAGE_TITLE, order=1)
 
     def render(self, *, project_code: str, **_kwargs) -> None:
         sorted_by: str = st.session_state.get(SORTED_BY_SESSION_KEY, "name")
         filter_term: str = st.session_state.get(FILTER_TERM_SESSION_KEY, None)
 
-        testgen.page_header("Score Dashboard")
+        testgen.page_header(PAGE_TITLE)
         testgen.testgen_component(
-            "score_dashboard",
+            "quality_dashboard",
             props={
                 "scores": [
                     format_all_scores(score) for score in get_table_groups_score_cards(

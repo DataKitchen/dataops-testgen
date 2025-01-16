@@ -184,7 +184,7 @@ const IssuesTable = (score, issues, category, scoreType, drilldown) => {
             Link({
                 label: 'Back to score breakdown',
                 left_icon: 'chevron_left',
-                href: 'score-dashboard:details',
+                href: 'quality-dashboard:score-details',
                 params: { project_code: score.project_code, name: score.name, score_type: scoreType, category },
             }),
         ),
@@ -281,7 +281,7 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
         value ? Link({
             label: 'View',
             right_icon: 'chevron_right',
-            href: 'score-dashboard:details',
+            href: 'quality-dashboard:score-details',
             params: { project_code: score.project_code, name: score.name, score_type: scoreType, category, drilldown },
         }) : '',
     );
