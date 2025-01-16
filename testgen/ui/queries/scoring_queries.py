@@ -105,29 +105,23 @@ def get_score_card_breakdown(
         test_records AS (
             SELECT
                 table_groups_id,
-                {
-                    ",".join([
-                        'column_names AS column_name' if column == 'column_name' else column for column in columns
-                    ])
-                },
+                {",".join(columns)},
                 SUM(issue_ct) AS issue_ct,
                 SUM(dq_record_ct) AS record_ct,
                 SUM(dq_record_ct * good_data_pct) / NULLIF(SUM(dq_record_ct), 0) AS score
             FROM {test_score_view}
             WHERE table_groups_id = '{table_group_id}'
-                AND NULLIF({'column_names' if group_by == 'column_name' else group_by}, '') IS NOT NULL
+                AND NULLIF({group_by}, '') IS NOT NULL
                 {" ".join(filters)}
             GROUP BY table_groups_id, {', '.join(columns)}
         ),
         table_group AS (
-            SELECT
-                profiling_records.table_groups_id,
-                SUM(COALESCE(profiling_records.record_ct, test_records.record_ct, 0)) AS all_records
-            FROM profiling_records
-            FULL OUTER JOIN test_records 
-                ON (test_records.table_groups_id = profiling_records.table_groups_id AND {join_condition})
-            WHERE profiling_records.table_groups_id = '{table_group_id}'
-            GROUP BY profiling_records.table_groups_id
+            SELECT 
+                table_groups_id,
+                SUM(data_point_ct) AS all_records
+            FROM data_table_chars
+            WHERE table_groups_id = '{table_group_id}'
+            GROUP BY table_groups_id
         )
         SELECT
             {', '.join([ 'profiling_records.' + column for column in columns    ])},
@@ -138,8 +132,10 @@ def get_score_card_breakdown(
         FULL OUTER JOIN test_records
             ON (test_records.table_groups_id = profiling_records.table_groups_id AND {join_condition})
         INNER JOIN table_group
-            ON (table_group.table_groups_id = profiling_records.table_groups_id)
-        ORDER BY impact DESC;
+            ON (table_group.table_groups_id = profiling_records.table_groups_id
+            OR table_group.table_groups_id = test_records.table_groups_id)
+        ORDER BY impact DESC
+        LIMIT 100;
     """
     results = db.retrieve_data(query)
 
@@ -207,11 +203,11 @@ def get_score_card_issues(
         SELECT
             test_run_id,
             table_name,
-            column_names
+            column_name
         FROM {test_score_view}
         WHERE table_groups_id = '{table_group_id}'
             {' '.join(filters)}
-            AND {'column_names' if group_by == 'column_name' else group_by} = '{value_}'
+            AND {group_by} = '{value_}'
     ),
     tests AS (
         SELECT
@@ -229,7 +225,7 @@ def get_score_card_issues(
         INNER JOIN score_test_runs
             ON (score_test_runs.test_run_id = test_results.test_run_id
             AND score_test_runs.table_name = test_results.table_name
-            AND score_test_runs.column_names = test_results.column_names)
+            AND score_test_runs.column_name = test_results.column_names)
         INNER JOIN test_suites
             ON (test_suites.id = test_results.test_suite_id)
         INNER JOIN test_types

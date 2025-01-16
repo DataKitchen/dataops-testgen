@@ -51,12 +51,21 @@ const SCORE_TYPE_LABEL = {
 };
 const BREAKDOWN_COLUMN_LABEL = {
     table_name: 'Table',
-    column_name: 'Column',
+    column_name: 'Table | Column',
     semantic_data_type: 'Semantic Data Type',
     dq_dimension: 'Quality Dimension',
     impact: '',
     score: 'Individual Score',
     issue_ct: 'Issue Count',
+};
+const BREAKDOWN_COLUMNS_SIZES = {
+    table_name: '40%',
+    column_name: '40%',
+    semantic_data_type: '40%',
+    dq_dimension: '40%',
+    impact: '20%',
+    score: '20%',
+    issue_ct: '20%',
 };
 const ISSUES_COLUMN_LABEL = {
     column: 'Table | Column',
@@ -66,11 +75,11 @@ const ISSUES_COLUMN_LABEL = {
     time: 'Test Suite | Start Time',
 };
 const ISSUES_COLUMNS_SIZES = {
-    column: '20%',
+    column: '30%',
     type: '20%',
-    status: '15%',
+    status: '10%',
     detail: '30%',
-    time: '15%',
+    time: '10%',
 };
 
 const ScoreDetails = (/** @type {Properties} */ props) => {
@@ -111,25 +120,29 @@ const BreakdownTable = (score, breakdown, category, scoreType) => {
     return div(
         { class: 'table' },
         div(
-            { class: 'tg-score-details--controls table-header flex-row fx-align-flex-center fx-gap-2' },
-            span('Score breakdown by'),
-            () => Select({
-                label: '',
-                options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c, selected: c === category })),
-                onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
-            }),
-            // span('on'),
-            // () => Select({
-            //     label: '',
-            //     options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
-            //     onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
-            // }),
+            { class: 'flex-row fx-justify-space-between fx-align-flex-start text-caption' },
+            div(
+                { class: 'tg-score-details--controls table-header flex-row fx-align-flex-center fx-gap-2' },
+                span('Score breakdown by'),
+                () => Select({
+                    label: '',
+                    options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c, selected: c === category })),
+                    onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
+                }),
+                // span('on'),
+                // () => Select({
+                //     label: '',
+                //     options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
+                //     onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+                // }),
+            ),
+            ['table_name', 'column_name'].includes(category) ? span('* Top 100 values by impact') : '',
         ),
         () => div(
             { class: 'table-header table-header--columns flex-row' },
-            getReadableColumns(breakdown.columns, scoreType).map((columnName) => span(
-                { style: 'flex: 1;' },
-                columnName,
+            breakdown.columns.map(column => span({ 
+                style: `flex: ${BREAKDOWN_COLUMNS_SIZES[column]};` },
+                getReadableColumn(column),
             )),
         ),
         () => {
@@ -152,12 +165,15 @@ const BreakdownTable = (score, breakdown, category, scoreType) => {
  * @param {('score' | 'cde_score')} scoreType
  * @returns {<string>}
  */
-function getReadableColumns(columns, scoreType) {
-    const translatedColumns = [];
-    for (const column of columns) {
-        translatedColumns.push(column === 'impact' ? `Impact on ${SCORE_TYPE_LABEL[scoreType]}` : BREAKDOWN_COLUMN_LABEL[column]);
+function getReadableColumn(column, scoreType) {
+    if (column === 'impact') {
+        return `Impact on ${SCORE_TYPE_LABEL[scoreType]}`;
     }
-    return translatedColumns;
+    const label = BREAKDOWN_COLUMN_LABEL[column];
+    if (['table_name', 'column_name'].includes(column)) {
+        return `${label} *`;
+    }
+    return label;
 }
 
 const IssuesTable = (score, issues, category, scoreType, drilldown) => {
@@ -201,10 +217,11 @@ const IssuesTable = (score, issues, category, scoreType, drilldown) => {
  */
 const TableCell = (row, column, score=undefined, category=undefined, scoreType=undefined) => {
     const componentByColumn = {
+        column_name: BreakdownColumnCell,
         impact: ImpactCell,
         score: ScoreCell,
         issue_ct: IssueCountCell,
-        column: ColumnCell,
+        column: IssueColumnCell,
         type: IssueCell,
         status: StatusCell,
         detail: DetailCell,
@@ -215,15 +232,25 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
         return componentByColumn[column](row[column], row, score, category, scoreType);
     }
 
+    const size = { ...BREAKDOWN_COLUMNS_SIZES, ...ISSUES_COLUMNS_SIZES}[column];
     return div(
-        { style: 'flex: 1' },
+        { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
         span(row[column]),
+    );
+};
+
+const BreakdownColumnCell = (value, row) => {
+    const size = BREAKDOWN_COLUMNS_SIZES.column_name;
+    return div(
+        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        Caption({ content: row.table_name, style: 'font-size: 12px;' }),
+        span(value),
     );
 };
 
 const ImpactCell = (value) => {
     return div(
-        { class: 'flex-row', style: 'flex: 1' },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.impact}` },
         value && !String(value).startsWith('-')
         ? i(
             {class: 'material-symbols-rounded', style: 'font-size: 20px; color: #E57373;'},
@@ -236,7 +263,7 @@ const ImpactCell = (value) => {
 
 const ScoreCell = (value) => {
     return div(
-        { class: 'flex-row', style: 'flex: 1' },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.score}` },
         dot({ class: 'mr-2' }, getScoreColor(value)),
         span(value),
     );
@@ -249,7 +276,7 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
     }
 
     return div(
-        { class: 'flex-row', style: 'flex: 1' },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}` },
         span({ class: 'mr-4' }, value || '-'),
         value ? Link({
             label: 'View',
@@ -260,9 +287,10 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
     );
 };
 
-const ColumnCell = (value, row) => {
+const IssueColumnCell = (value, row) => {
+    const size = ISSUES_COLUMNS_SIZES.column;
     return div(
-        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.type}` },
+        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
         Caption({ content: row.table, style: 'font-size: 12px;' }),
         span(value),
     );

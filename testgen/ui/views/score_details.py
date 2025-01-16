@@ -24,7 +24,7 @@ class ScoreDetailsPage(Page):
         self,
         *,
         name: str,
-        category: str = "column_name",
+        category: str = "table_name",
         score_type: str = "score",
         drilldown: str | None = None,
         **_kwargs
@@ -67,10 +67,9 @@ class ScoreDetailsPage(Page):
 
 
 def get_score_breakdown(project_code: str, table_group_id: str, score_type: str, category: str) -> "ResultSet":
-    columns = {"column_name": ["table_name", "column_name"]}.get(category, [category])
     results = get_score_card_breakdown(project_code, table_group_id, score_type, category)
     return {
-        "columns": [*columns, "impact", "score", "issue_ct"],
+        "columns": [category, "impact", "score", "issue_ct"],
         "items": [{
             **row,
             "score": friendly_score(row["score"]),
