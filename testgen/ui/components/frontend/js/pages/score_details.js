@@ -123,13 +123,13 @@ const BreakdownTable = (score, breakdown, category, scoreType) => {
             { class: 'flex-row fx-justify-space-between fx-align-flex-start text-caption' },
             div(
                 { class: 'tg-score-details--controls table-header flex-row fx-align-flex-center fx-gap-2' },
-                span('Score breakdown by'),
+                span('Score grouped by'),
                 () => Select({
                     label: '',
                     options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c, selected: c === category })),
                     onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
                 }),
-                // span('on'),
+                // span('for'),
                 // () => Select({
                 //     label: '',
                 //     options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
@@ -182,9 +182,9 @@ const IssuesTable = (score, issues, category, scoreType, drilldown) => {
         div(
             { class: 'tg-score-details--issues-nav table-header' },
             Link({
-                label: 'Back to score breakdown',
+                label: 'Back',
                 left_icon: 'chevron_left',
-                href: 'score-dashboard:details',
+                href: 'quality-dashboard:score-details',
                 params: { project_code: score.project_code, name: score.name, score_type: scoreType, category },
             }),
         ),
@@ -281,7 +281,7 @@ const IssueCountCell = (value, row, score, category, scoreType) => {
         value ? Link({
             label: 'View',
             right_icon: 'chevron_right',
-            href: 'score-dashboard:details',
+            href: 'quality-dashboard:score-details',
             params: { project_code: score.project_code, name: score.name, score_type: scoreType, category, drilldown },
         }) : '',
     );

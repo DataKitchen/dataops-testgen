@@ -69,7 +69,8 @@ SELECT r.id as profiling_run_id,
        r.log_message,
        r.table_ct,
        r.column_ct,
-       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct, process_id
+       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct,
+       process_id, r.dq_score_profiling
   FROM profiling_runs r
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id

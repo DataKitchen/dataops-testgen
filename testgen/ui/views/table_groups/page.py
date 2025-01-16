@@ -216,7 +216,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
             table_group_id = selected_table_group["id"]
             table_groups_name = selected_table_group["table_groups_name"]
             table_group_schema = selected_table_group["table_group_schema"]
-            profiling_table_set = selected_table_group["profiling_table_set"]
+            profiling_table_set = selected_table_group["profiling_table_set"] or ""
             profiling_include_mask = selected_table_group["profiling_include_mask"]
             profiling_exclude_mask = selected_table_group["profiling_exclude_mask"]
             profile_id_column_mask = selected_table_group["profile_id_column_mask"]

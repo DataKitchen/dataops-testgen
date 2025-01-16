@@ -29,10 +29,10 @@ import { ScoreLegend } from '../components/score_legend.js';
 
 const { div } = van.tags;
 
-const ScoreDashboard = (/** @type {Properties} */ props) => {
+const QualityDashboard = (/** @type {Properties} */ props) => {
     window.testgen.isPage = true;
 
-    loadStylesheet('score-dashboard', stylesheet);
+    loadStylesheet('quality-dashboard', stylesheet);
     Streamlit.setFrameHeight(1);
 
     const domId = 'score-dashboard-page';
@@ -50,7 +50,7 @@ const ScoreDashboard = (/** @type {Properties} */ props) => {
                 Link({
                     label: 'View details',
                     right_icon: 'chevron_right',
-                    href: 'score-dashboard:details',
+                    href: 'quality-dashboard:score-details',
                     params: { project_code: score.project_code, name: score.name },
                 })
             ))
@@ -90,4 +90,4 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace('');
 
-export { ScoreDashboard };
+export { QualityDashboard };

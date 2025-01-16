@@ -10,12 +10,12 @@ from testgen.ui.queries.scoring_queries import (
     get_table_group_score_card,
 )
 from testgen.ui.session import session
-from testgen.ui.views.score_dashboard import format_all_scores
+from testgen.ui.views.quality_dashboard import format_all_scores
 from testgen.utils import friendly_score, friendly_score_impact
 
 
 class ScoreDetailsPage(Page):
-    path = "score-dashboard:details"
+    path = "quality-dashboard:score-details"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
     ]
@@ -34,7 +34,7 @@ class ScoreDetailsPage(Page):
         testgen.page_header(
             "Score Details",
             breadcrumbs=[
-                {"path": "score-dashboard", "label": "Score Dashboard", "params": {"project_code": project_code}},
+                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
                 {"label": name},
             ],
         )

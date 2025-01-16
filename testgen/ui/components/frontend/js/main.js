@@ -19,9 +19,9 @@ import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 import { DataCatalog } from './pages/data_catalog.js';
-import { Overview } from './pages/overview.js';
+import { ProjectDashboard } from './pages/project_dashboard.js';
 import { TestSuites } from './pages/test_suites.js';
-import { ScoreDashboard } from './pages/score_dashboard.js';
+import { QualityDashboard } from './pages/quality_dashboard.js';
 import { ScoreDetails } from './pages/score_details.js';
 
 let currentWindowVan = van;
@@ -41,9 +41,9 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         profiling_runs: ProfilingRuns,
         database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
-        overview: Overview,
+        project_dashboard: ProjectDashboard,
         test_suites: TestSuites,
-        score_dashboard: ScoreDashboard,
+        quality_dashboard: QualityDashboard,
         score_details: ScoreDetails,
     };
 

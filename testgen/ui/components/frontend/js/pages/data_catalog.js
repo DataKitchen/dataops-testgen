@@ -65,6 +65,10 @@
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
  * @property {number} has_test_runs
+ * * Scores
+ * @property {string} dq_score
+ * @property {string} dq_score_profiling
+ * @property {string} dq_score_testing
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestIssue[]} latest_test_issues
@@ -96,6 +100,10 @@
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
  * @property {number} has_test_runs
+ * * Scores
+ * @property {string} dq_score
+ * @property {string} dq_score_profiling
+ * @property {string} dq_score_testing
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestResult[]} latest_test_results
@@ -118,6 +126,8 @@ import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { ColumnProfile } from '../components/column_profile.js';
 import { RadioGroup } from '../components/radio_group.js';
+import { Metric } from '../components/metric.js';
+import { Caption } from '../components/caption.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -256,37 +266,50 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     return Card({
         title: `${item.type} Characteristics`,
         content: div(
-            { class: 'flex-row fx-flex-wrap fx-gap-4' },
-            attributes.map(({ key, label }) => {
-                let value = item[key];
-                if (key === 'column_type') {
-                    const { icon, iconSize } = columnIcons[item.general_type || 'X'];
-                    value = div(
-                        { class: 'flex-row' },
-                        i(
-                            {
-                                class: 'material-symbols-rounded tg-dh--column-icon',
-                                style: `font-size: ${iconSize || 24}px;`,
-                            },
-                            icon,
-                        ),
-                        (value || 'unknown').toLowerCase(),
-                    );
-                } else if (key === 'datatype_suggestion') {
-                    value = (value || '').toLowerCase();
-                } else if (key === 'functional_table_type') {
-                    value = (value || '').split('-')
-                        .map(word => word ? (word[0].toUpperCase() + word.substring(1)) : '')
-                        .join(' ');
-                } else if (['add_date', 'last_mod_date', 'drop_date'].includes(key)) {
-                    value = formatTimestamp(value, true);
-                    if (key === 'drop_date') {
-                        label = span({ class: 'text-error' }, label);
+            { class: 'flex-row fx-gap-4' },
+            div(
+                { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                attributes.map(({ key, label }) => {
+                    let value = item[key];
+                    if (key === 'column_type') {
+                        const { icon, iconSize } = columnIcons[item.general_type || 'X'];
+                        value = div(
+                            { class: 'flex-row' },
+                            i(
+                                {
+                                    class: 'material-symbols-rounded tg-dh--column-icon',
+                                    style: `font-size: ${iconSize || 24}px;`,
+                                },
+                                icon,
+                            ),
+                            (value || 'unknown').toLowerCase(),
+                        );
+                    } else if (key === 'datatype_suggestion') {
+                        value = (value || '').toLowerCase();
+                    } else if (key === 'functional_table_type') {
+                        value = (value || '').split('-')
+                            .map(word => word ? (word[0].toUpperCase() + word.substring(1)) : '')
+                            .join(' ');
+                    } else if (['add_date', 'last_mod_date', 'drop_date'].includes(key)) {
+                        value = formatTimestamp(value, true);
+                        if (key === 'drop_date') {
+                            label = span({ class: 'text-error' }, label);
+                        }
                     }
-                }
 
-                return Attribute({ label, value, width: 300 });
-            }),
+                    return Attribute({ label, value, width: 250 });
+                }),
+            ),
+            div(
+                { class: 'flex-column fx-align-flex-center', style: 'min-width: 120px; margin-top: -40px;' },
+                Caption({ content: 'Score' }),
+                Metric({ value: item.dq_score ?? '--' }),
+                div(
+                    { class: 'flex-row fx-gap-2 mt-1' },
+                    Attribute({ label: 'Profiling', value: item.dq_score_profiling }),
+                    Attribute({ label: 'Testing', value: item.dq_score_testing }),
+                ),
+            ),
         ),
     });
 };
