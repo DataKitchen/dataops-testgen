@@ -169,6 +169,7 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
     test_action = empty_if_null(selected_test_suite["test_action"]) if mode == "edit" else ""
     severity_index = severity_options.index(selected_test_suite["severity"]) if mode == "edit" else 0
     export_to_observability = selected_test_suite["export_to_observability"] == "Y" if mode == "edit" else False
+    dq_score_exclude = selected_test_suite["dq_score_exclude"] if mode == "edit" else False
     test_suite_schema = empty_if_null(selected_test_suite["test_suite_schema"]) if mode == "edit" else ""
     component_key = empty_if_null(selected_test_suite["component_key"]) if mode == "edit" else ""
     component_type = empty_if_null(selected_test_suite["component_type"]) if mode == "edit" else "dataset"
@@ -209,6 +210,10 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
                 "Export to Observability",
                 value=export_to_observability,
                 help="Fields below are only required when overriding the Table Group defaults.",
+            ),
+            "dq_score_exclude": right_column.checkbox(
+                "Exclude from quality scoring",
+                value=dq_score_exclude,
             ),
             "component_key": expander_left_column.text_input(
                 label="Component Key",
