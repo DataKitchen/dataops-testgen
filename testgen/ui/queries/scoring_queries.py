@@ -43,7 +43,8 @@ def get_table_group_score_card(project_code: str, table_group_id: str) -> "Score
     query = f"""
     SET SEARCH_PATH TO {schema};
     {_TABLE_GROUP_SCORES_QUERY}
-    WHERE profiling_records.table_groups_id = '{table_group_id}';
+    WHERE profiling_cols.table_groups_id = '{table_group_id}'
+        OR test_cols.table_groups_id = '{table_group_id}';
     """
     results = db.retrieve_data(query)
     row = results.iloc[0]
