@@ -267,13 +267,19 @@ class DimensionScore(TypedDict):
 
 _TABLE_GROUP_SCORES_QUERY = """
     WITH
-    profiling_records AS (
+    profiling_cols AS (
         SELECT
             table_groups_id,
             table_groups_name,
             SUM(record_ct * good_data_pct) / NULLIF(SUM(record_ct), 0) AS score,
             SUM(CASE critical_data_element WHEN true THEN (good_data_pct * record_ct) ELSE 0 END)
-                / NULLIF(SUM(CASE critical_data_element WHEN true THEN record_ct ELSE 0 END), 0) AS cde_score,
+                / NULLIF(SUM(CASE critical_data_element WHEN true THEN record_ct ELSE 0 END), 0) AS cde_score
+        FROM v_dq_profile_scoring_latest_by_column
+        GROUP BY table_groups_id, table_groups_name
+    ),
+    profiling_dims AS (
+        SELECT
+            table_groups_id,
             SUM(CASE dq_dimension WHEN 'Accuracy' THEN (good_data_pct * record_ct) ELSE 0 END)
                 / NULLIF(SUM(CASE dq_dimension WHEN 'Accuracy' THEN record_ct ELSE 0 END), 0) AS accuracy_score,
             SUM(CASE dq_dimension WHEN 'Completeness' THEN (good_data_pct * record_ct) ELSE 0 END)
@@ -287,15 +293,21 @@ _TABLE_GROUP_SCORES_QUERY = """
             SUM(CASE dq_dimension WHEN 'Validity' THEN (good_data_pct * record_ct) ELSE 0 END)
                 / NULLIF(SUM(CASE dq_dimension WHEN 'Validity' THEN record_ct ELSE 0 END), 0) AS validity_score
         FROM v_dq_profile_scoring_latest_by_dimension
-        GROUP BY table_groups_id, table_groups_name
+        GROUP BY table_groups_id
     ),
-    test_records AS (
+    test_cols AS (
         SELECT
             table_groups_id,
             table_groups_name,
             SUM(dq_record_ct * good_data_pct) / NULLIF(SUM(dq_record_ct), 0) AS score,
             SUM(CASE critical_data_element WHEN true THEN (good_data_pct * dq_record_ct) ELSE 0 END)
-                / NULLIF(SUM(CASE critical_data_element WHEN true THEN dq_record_ct ELSE 0 END), 0) AS cde_score,
+                / NULLIF(SUM(CASE critical_data_element WHEN true THEN dq_record_ct ELSE 0 END), 0) AS cde_score
+        FROM v_dq_test_scoring_latest_by_column
+        GROUP BY table_groups_id, table_groups_name
+    ),
+    test_dims AS (
+        SELECT
+            table_groups_id,
             SUM(CASE dq_dimension WHEN 'Accuracy' THEN (good_data_pct * dq_record_ct) ELSE 0 END)
                 / NULLIF(SUM(CASE dq_dimension WHEN 'Accuracy' THEN dq_record_ct ELSE 0 END), 0) AS accuracy_score,
             SUM(CASE dq_dimension WHEN 'Completeness' THEN (good_data_pct * dq_record_ct) ELSE 0 END)
@@ -309,20 +321,24 @@ _TABLE_GROUP_SCORES_QUERY = """
             SUM(CASE dq_dimension WHEN 'Validity' THEN (good_data_pct * dq_record_ct) ELSE 0 END)
                 / NULLIF(SUM(CASE dq_dimension WHEN 'Validity' THEN dq_record_ct ELSE 0 END), 0) AS validity_score
         FROM v_dq_test_scoring_latest_by_dimension
-        GROUP BY table_groups_id, table_groups_name
+        GROUP BY table_groups_id
     )
     SELECT
-        profiling_records.table_groups_id AS id,
-        profiling_records.table_groups_name AS name,
-        (COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) AS score,
-        (COALESCE(profiling_records.cde_score, 1) * COALESCE(test_records.cde_score, 1)) AS cde_score,
-        (COALESCE(profiling_records.accuracy_score, 1) * COALESCE(test_records.accuracy_score, 1)) AS accuracy_score,
-        (COALESCE(profiling_records.completeness_score, 1) * COALESCE(test_records.completeness_score, 1)) AS completeness_score,
-        (COALESCE(profiling_records.consistency_score, 1) * COALESCE(test_records.consistency_score, 1)) AS consistency_score,
-        (COALESCE(profiling_records.timeliness_score, 1) * COALESCE(test_records.timeliness_score, 1)) AS timeliness_score,
-        (COALESCE(profiling_records.uniqueness_score, 1) * COALESCE(test_records.uniqueness_score, 1)) AS uniqueness_score,
-        (COALESCE(profiling_records.validity_score, 1) * COALESCE(test_records.validity_score, 1)) AS validity_score
-    FROM profiling_records
-    FULL OUTER JOIN test_records
-        ON (test_records.table_groups_id = profiling_records.table_groups_id)
+        COALESCE(profiling_cols.table_groups_id, test_cols.table_groups_id) AS id,
+        COALESCE(profiling_cols.table_groups_name, test_cols.table_groups_name) AS name,
+        (COALESCE(profiling_cols.score, 1) * COALESCE(test_cols.score, 1)) AS score,
+        (COALESCE(profiling_cols.cde_score, 1) * COALESCE(test_cols.cde_score, 1)) AS cde_score,
+        (COALESCE(profiling_dims.accuracy_score, 1) * COALESCE(test_dims.accuracy_score, 1)) AS accuracy_score,
+        (COALESCE(profiling_dims.completeness_score, 1) * COALESCE(test_dims.completeness_score, 1)) AS completeness_score,
+        (COALESCE(profiling_dims.consistency_score, 1) * COALESCE(test_dims.consistency_score, 1)) AS consistency_score,
+        (COALESCE(profiling_dims.timeliness_score, 1) * COALESCE(test_dims.timeliness_score, 1)) AS timeliness_score,
+        (COALESCE(profiling_dims.uniqueness_score, 1) * COALESCE(test_dims.uniqueness_score, 1)) AS uniqueness_score,
+        (COALESCE(profiling_dims.validity_score, 1) * COALESCE(test_dims.validity_score, 1)) AS validity_score
+    FROM profiling_cols
+    INNER JOIN profiling_dims
+        ON (profiling_dims.table_groups_id = profiling_cols.table_groups_id)
+    FULL OUTER JOIN test_cols
+        ON (test_cols.table_groups_id = profiling_cols.table_groups_id)
+    FULL OUTER JOIN test_dims
+        ON (test_dims.table_groups_id = test_cols.table_groups_id)
 """
