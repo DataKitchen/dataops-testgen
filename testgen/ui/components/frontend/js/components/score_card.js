@@ -63,8 +63,8 @@ const ScoreChart = (label, score) => {
         { class: 'tg-score-chart', width: "100", height: "100", viewBox: "0 0 100 100", style },
         circle({ class: 'tg-score-chart--bg' }),
         circle({ class: 'tg-score-chart--fg' }),
-        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: '#000000DE', 'font-size': '18px', 'font-weight': 500 }, score ?? '-'),
-        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: '#0000008A', 'font-size': '14px', class: 'tg-score-chart--label' }, label),
+        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--primary-text-color)', 'font-size': '18px', 'font-weight': 500 }, score ?? '-'),
+        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--secondary-text-color)', 'font-size': '14px', class: 'tg-score-chart--label' }, label),
     );
 };
 
@@ -99,7 +99,7 @@ svg.tg-score-chart circle {
 }
 
 svg.tg-score-chart circle.tg-score-chart--bg {
-    stroke: #f5f5f5;
+    stroke: var(--empty);
 }
 
 svg.tg-score-chart circle.tg-score-chart--fg {
