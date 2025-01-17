@@ -106,6 +106,7 @@ score_calc
        GROUP BY table_id, last_complete_profile_run_id )
 UPDATE data_table_chars
    SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
+       last_profile_record_ct = NULLIF(s.sum_data_points::FLOAT, 0),
        last_complete_profile_run_id = s.last_complete_profile_run_id
   FROM score_calc s
  WHERE data_table_chars.table_id = s.table_id;

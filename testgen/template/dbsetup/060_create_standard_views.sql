@@ -274,7 +274,7 @@ SELECT
        dtc.table_name, dcc.column_name,
        pr.profiling_starttime as profiling_run_date,
        dcc.valid_profile_issue_ct as issue_ct,
-       dtc.record_ct,
+       dtc.last_profile_record_ct as record_ct,
        dcc.dq_score_profiling AS good_data_pct
   FROM data_column_chars dcc
 INNER JOIN table_groups tg
@@ -305,9 +305,8 @@ SELECT pr.table_groups_id,
        dcc.table_name,
        dcc.column_name,
        pr.run_date,
-       dtc.record_ct,
+       MAX(pr.record_ct) as record_ct,
        COUNT(p.anomaly_id) as issue_ct,
-       MAX(pr.record_ct) as row_ct,
        SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct) as good_data_pct
   FROM table_groups tg
 INNER JOIN profile_results pr
@@ -335,7 +334,7 @@ GROUP BY pr.table_groups_id, tg.last_complete_profile_run_id, tg.table_groups_na
          COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level),
          COALESCE(dcc.critical_data_element, dtc.critical_data_element),
          dcc.functional_data_type, dcc.table_name, dcc.column_name, t.dq_dimension,
-         pr.run_date, dtc.record_ct;
+         pr.run_date;
 
 
 -- ==============================================================================

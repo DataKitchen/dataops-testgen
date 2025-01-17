@@ -380,6 +380,7 @@ CREATE TABLE data_table_chars (
    column_ct             BIGINT,
    data_point_ct         BIGINT GENERATED ALWAYS AS (record_ct * column_ct) STORED,
    last_complete_profile_run_id UUID,
+   last_profile_record_ct       BIGINT,
    dq_score_profiling    FLOAT,
    dq_score_testing      FLOAT
 );
