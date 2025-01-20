@@ -148,7 +148,7 @@ BEGIN
          SET dq_score_profiling =
                CASE
                  WHEN s.affected_data_points >= s.row_ct THEN 0
-                 ELSE 100.0 - (1.0 - s.affected_data_points::FLOAT / NULLIF(s.row_ct::FLOAT, 0))
+                 ELSE (1.0 - s.affected_data_points::FLOAT / NULLIF(s.row_ct::FLOAT, 0))
                END,
              valid_profile_issue_ct = s.valid_issue_ct,
              last_complete_profile_run_id = s.last_complete_profile_run_id
