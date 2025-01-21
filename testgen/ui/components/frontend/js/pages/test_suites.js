@@ -89,7 +89,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             type: 'stroked',
                             label: 'Add Test Suite',
                             width: 'fit-content',
-                            style: 'margin-left: auto; background: white;',
+                            style: 'margin-left: auto; background: var(--dk-card-background);',
                             onclick: () => emitEvent('AddTestSuiteClicked', {}),
                         })
                         : '',

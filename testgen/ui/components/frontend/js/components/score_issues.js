@@ -58,7 +58,7 @@ const IssuesTable = (score, issues, category, scoreType, drilldown, onBack) => {
  * @param {string} column
  * @returns {<string>}
  */
-const TableCell = (row, column, score=undefined, category=undefined, scoreType=undefined) => {
+const TableCell = (row, column) => {
     const componentByColumn = {
         column: IssueColumnCell,
         type: IssueCell,
@@ -68,12 +68,12 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
     };
 
     if (componentByColumn[column]) {
-        return componentByColumn[column](row[column], row, score, category, scoreType);
+        return componentByColumn[column](row[column], row);
     }
 
     const size = { ...BREAKDOWN_COLUMNS_SIZES, ...ISSUES_COLUMNS_SIZES}[column];
     return div(
-        { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { style: `flex: 0 0 ${size}; max-width: ${size}; word-wrap: break-word;` },
         span(row[column]),
     );
 };
@@ -81,7 +81,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 const IssueColumnCell = (value, row) => {
     const size = ISSUES_COLUMNS_SIZES.column;
     return div(
-        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { class: 'flex-column', style: `flex: 0 0 ${size}; max-width: ${size}; word-wrap: break-word;` },
         Caption({ content: row.table, style: 'font-size: 12px;' }),
         span(value),
     );
@@ -90,7 +90,7 @@ const IssueColumnCell = (value, row) => {
 
 const IssueCell = (value, row) => {
     return div(
-        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.type}` },
+        { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.type}` },
         Caption({ content: row.category, style: 'font-size: 12px;' }),
         span(value),
     );
@@ -108,7 +108,7 @@ const StatusCell = (value, row) => {
     };
 
     return div(
-        { class: 'flex-row fx-align-flex-center', style: `flex: ${ISSUES_COLUMNS_SIZES.status}` },
+        { class: 'flex-row fx-align-flex-center', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.status}` },
         dot({ class: 'mr-2' }, statusColors[value]),
         span({}, value),
     );
@@ -116,14 +116,14 @@ const StatusCell = (value, row) => {
 
 const DetailCell = (value, row) => {
     return div(
-        { style: `flex: ${ISSUES_COLUMNS_SIZES.detail}` },
+        { style: `flex: 1 1 ${ISSUES_COLUMNS_SIZES.detail}` },
         span(value),
     );
 };
 
 const TimeCell = (value, row) => {
     return div(
-        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.time}` },
+        { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.time}` },
         row.issue_type === 'test'
             ? Caption({ content: row.name, style: 'font-size: 12px;' })
             : '',

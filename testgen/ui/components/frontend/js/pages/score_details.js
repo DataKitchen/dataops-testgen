@@ -83,7 +83,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-details {
-    min-height: 400px;
+    min-height: 420px;
 }
 `);
 

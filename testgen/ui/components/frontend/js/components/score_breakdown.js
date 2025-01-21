@@ -38,7 +38,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
             { class: 'table-header breakdown-columns flex-row' },
             getValue(breakdown)?.columns?.map(column => span({ 
                 style: `flex: ${BREAKDOWN_COLUMNS_SIZES[column]};` },
-                getReadableColumn(column),
+                getReadableColumn(column, getValue(scoreType)),
             )),
         ),
         () => {

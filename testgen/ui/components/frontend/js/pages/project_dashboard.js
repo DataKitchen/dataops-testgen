@@ -66,7 +66,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Caption } from '../components/caption.js';
@@ -112,6 +112,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
     const wrapperId = 'overview-wrapper';
     resizeFrameHeightToElement(wrapperId);
+    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId, class: 'flex-column tg-overview' },

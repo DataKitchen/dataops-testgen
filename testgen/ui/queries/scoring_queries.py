@@ -125,7 +125,7 @@ def get_score_card_breakdown(
             GROUP BY table_groups_id
         )
         SELECT
-            {', '.join([ 'profiling_records.' + column for column in columns    ])},
+            {', '.join([ f"COALESCE(profiling_records.{column}, test_records.{column}) AS {column}" for column in columns ])},
             100 * COALESCE(profiling_records.record_ct, test_records.record_ct, 0) * (1 - COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) / table_group.all_records AS impact,
             (COALESCE(profiling_records.score, 1) * COALESCE(test_records.score, 1)) AS score,
             (COALESCE(profiling_records.issue_ct, 0) + COALESCE(test_records.issue_ct, 0)) AS issue_ct
