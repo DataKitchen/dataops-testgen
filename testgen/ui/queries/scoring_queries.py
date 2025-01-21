@@ -15,7 +15,11 @@ def get_table_groups_score_cards(
     query = f"""
     SET SEARCH_PATH TO {schema};
     {_TABLE_GROUP_SCORES_QUERY}
-    {f"WHERE name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
+    INNER JOIN table_groups
+        ON (table_groups.id = profiling_cols.table_groups_id
+        OR table_groups.id = test_cols.table_groups_id)
+    WHERE table_groups.project_code = '{project_code}'
+    {f"AND name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
     ORDER BY {sorted_by} ASC;
     """
     results = db.retrieve_data(query)
