@@ -1,54 +1,137 @@
+/**
+ * @typedef Issue
+ * @type {object}
+ * @property {string} id
+ * @property {('profile' | 'test')} issue_type
+ * @property {string} table
+ * @property {string} column
+ * @property {string} category
+ * @property {string} type
+ * @property {string} status
+ * @property {string} detail
+ * @property {number} time
+ * @property {string} name
+ * @property {string} run_id
+ * 
+ * @typedef Score
+ * @type {object}
+ * @property {string} project_code
+ * @property {string} name
+ */
 import van from '../van.min.js';
 import { Link } from '../components/link.js';
 import { Caption } from '../components/caption.js';
 import { dot } from '../components/dot.js';
-import { getValue, loadStylesheet } from '../utils.js';
+import { Button } from '../components/button.js';
+import { Checkbox } from '../components/checkbox.js';
+import { Paginator } from '../components/paginator.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
 
 const { div, i, span } = van.tags;
+const PAGE_SIZE = 100;
+const SCROLL_CONTAINER = window.top.document.querySelector('.stAppViewMain');
 
-const IssuesTable = (score, issues, category, scoreType, drilldown, onBack) => {
+const IssuesTable = (
+    /** @type Issue[] */ issues,
+    /** @type string[] */ columns,
+    /** @type Score */ score,
+    /** @type string */ scoreType,
+    /** @type string */ category,
+    /** @type string */ drilldown,
+    /** @type function */ onBack,
+) => {
     loadStylesheet('score-issues-table', stylesheet);
+
+    const pageIndex = van.state(0);
+    const pageIssues = van.derive(() => issues.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1)));
+    const selectedIssues = van.state([]);
 
     return div(
         { class: 'table' },
         div(
-            { class: 'issues-nav table-header' },
-            () => {
-                const scoreValue = getValue(score);
-                const scoreTypeValue = getValue(scoreType);
-                const categoryValue = getValue(category);
-
-                return div(
+            { class: 'flex-row fx-justify-space-between fx-align-flex-start'},
+            div(
+                div(
                     {
-                        class: 'flex-row clickable',
+                        class: 'issues-nav flex-row clickable',
                         style: 'color: var(--link-color);',
-                        onclick: () => onBack(scoreValue.project_code, scoreValue.name, scoreTypeValue, categoryValue),
+                        onclick: () => onBack(score.project_code, score.name, scoreType, category),
                     },
                     i({class: 'material-symbols-rounded', style: 'font-size: 20px;'}, 'chevron_left'),
                     span('Back'),
-                );
-            }
+                ),
+                div(
+                    { class: 'issues-header table-header flex-row fx-align-flex-center fx-gap-1' },
+                    span(`Hygiene / Test Issues (${issues.length ?? 0}) for`),
+                    span({ class: 'text-primary' }, `${COLUMN_LABEL[category] ?? '-'}: ${drilldown.replace('.', ' > ')}`),
+                ),
+            ),
+            div(
+                { class: 'flex-row' },
+                () => {
+                    const count = selectedIssues.val.length;
+                    return count 
+                        ? span(
+                            { class: 'text-secondary mr-4' },
+                            span({ style: 'font-weight: 500' }, count),
+                            ` issue${count > 1 ? 's' : ''} selected`
+                        ) 
+                        : '';
+                },
+                Button({
+                    icon: 'download',
+                    type: 'stroked',
+                    label: 'Issue Reports',
+                    width: 'fit-content',
+                    style: 'margin-left: auto; background-color: var(--dk-card-background)',
+                    onclick: () => emitEvent('IssueReportsExported', { payload: selectedIssues.val }),
+                    disabled: () => !selectedIssues.val.length,
+                    tooltip: () => selectedIssues.val.length ? '' : 'No issues selected',
+                }),
+            ),
         ),
-        () => div(
-            { class: 'issues-header table-header flex-row fx-align-flex-center fx-gap-1' },
-            span(`Hygiene / Test Issues (${getValue(issues)?.items?.length ?? 0}) for`),
-            span({ class: 'text-primary' }, `${COLUMN_LABEL[getValue(category)] ?? '-'}: ${getValue(drilldown)?.replace('.', ' > ')}`),
-        ),
-        () => div(
+        div(
             { class: 'table-header issues-columns flex-row' },
-            getValue(issues)?.columns.map(c => span({ style: `flex: ${ISSUES_COLUMNS_SIZES[c]};` }, ISSUES_COLUMN_LABEL[c]))
+            Checkbox({
+                width: 30,
+                checked: () => selectedIssues.val.length === PAGE_SIZE,
+                indeterminate: () => !!selectedIssues.val.length,
+                onChange: (checked) => {
+                    if (checked) {
+                        selectedIssues.val = pageIssues.val.map(({ id, issue_type }) => ({ id, issue_type }));
+                    } else {
+                        selectedIssues.val = [];
+                    }  
+                },
+            }),
+            columns.map(c => span({ style: `flex: ${c === 'detail' ? '1 1' : '0 0'} ${ISSUES_COLUMNS_SIZES[c]};` }, ISSUES_COLUMN_LABEL[c]))
         ),
-        () => {
-            const issuesValue = getValue(issues);
-            const columns = issuesValue?.columns;
-            return div(
-                issuesValue?.items.map((row) => div(
-                    { class: 'table-row flex-row' },
-                    columns.map((columnName) => TableCell(row, columnName)),
-                )),
-            );
-        },
+        () => div(
+            pageIssues.val.map((row) => div(
+                { class: 'table-row flex-row issues-row' },
+                Checkbox({
+                    width: 30,
+                    checked: () => selectedIssues.val.map(({ id }) => id).includes(row.id),
+                    onChange: (checked) => {
+                        if (checked) {
+                            selectedIssues.val = [ ...selectedIssues.val, { id: row.id, issue_type: row.issue_type } ];
+                        } else {
+                            selectedIssues.val = selectedIssues.val.filter(({ id }) => id !== row.id);
+                        }
+                    },
+                }),
+                columns.map((columnName) => TableCell(row, columnName)),
+            )),
+        ),
+        Paginator({
+            count: issues.length,
+            pageSize: PAGE_SIZE,
+            onChange: (newIndex) => {
+                pageIndex.val = newIndex;
+                SCROLL_CONTAINER.scrollTop = 0;
+            },
+        }),
     );
 };
 
@@ -58,7 +141,7 @@ const IssuesTable = (score, issues, category, scoreType, drilldown, onBack) => {
  * @param {string} column
  * @returns {<string>}
  */
-const TableCell = (row, column, score=undefined, category=undefined, scoreType=undefined) => {
+const TableCell = (row, column) => {
     const componentByColumn = {
         column: IssueColumnCell,
         type: IssueCell,
@@ -68,12 +151,12 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
     };
 
     if (componentByColumn[column]) {
-        return componentByColumn[column](row[column], row, score, category, scoreType);
+        return componentByColumn[column](row[column], row);
     }
 
     const size = { ...BREAKDOWN_COLUMNS_SIZES, ...ISSUES_COLUMNS_SIZES}[column];
     return div(
-        { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { style: `flex: 0 0 ${size}; max-width: ${size}; word-wrap: break-word;` },
         span(row[column]),
     );
 };
@@ -81,7 +164,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 const IssueColumnCell = (value, row) => {
     const size = ISSUES_COLUMNS_SIZES.column;
     return div(
-        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { class: 'flex-column', style: `flex: 0 0 ${size}; max-width: ${size}; word-wrap: break-word;` },
         Caption({ content: row.table, style: 'font-size: 12px;' }),
         span(value),
     );
@@ -90,7 +173,7 @@ const IssueColumnCell = (value, row) => {
 
 const IssueCell = (value, row) => {
     return div(
-        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.type}` },
+        { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.type}` },
         Caption({ content: row.category, style: 'font-size: 12px;' }),
         span(value),
     );
@@ -108,7 +191,7 @@ const StatusCell = (value, row) => {
     };
 
     return div(
-        { class: 'flex-row fx-align-flex-center', style: `flex: ${ISSUES_COLUMNS_SIZES.status}` },
+        { class: 'flex-row fx-align-flex-center', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.status}` },
         dot({ class: 'mr-2' }, statusColors[value]),
         span({}, value),
     );
@@ -116,14 +199,14 @@ const StatusCell = (value, row) => {
 
 const DetailCell = (value, row) => {
     return div(
-        { style: `flex: ${ISSUES_COLUMNS_SIZES.detail}` },
+        { style: `flex: 1 1 ${ISSUES_COLUMNS_SIZES.detail}` },
         span(value),
     );
 };
 
 const TimeCell = (value, row) => {
     return div(
-        { class: 'flex-column', style: `flex: ${ISSUES_COLUMNS_SIZES.time}` },
+        { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.time}` },
         row.issue_type === 'test'
             ? Caption({ content: row.name, style: 'font-size: 12px;' })
             : '',
@@ -167,10 +250,6 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 
 .issues-nav {
-    border-bottom: unset;
-    text-transform: unset;
-    font-size: 14px;
-    padding: unset;
     margin-left: -4px;
     margin-bottom: 8px;
 }
@@ -186,6 +265,11 @@ stylesheet.replace(`
 
 .issues-columns {
     text-transform: capitalize;
+}
+
+.issues-columns > span,
+.issues-row > div {
+    padding: 0 4px;
 }
 `);
 

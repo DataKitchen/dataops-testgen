@@ -24,6 +24,33 @@ import { Link } from './link.js';
 
 const { i, span, strong } = van.tags;
 
+const EMPTY_STATE_MESSAGE = {
+    connection: {
+        line1: 'Begin by connecting your database.',
+        line2: 'TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.',
+    },
+    tableGroup: {
+        line1: 'Profile your tables to detect hygiene issues',
+        line2: 'Create table groups for your connected databases to run data profiling and hygiene review.',
+    },
+    profiling: {
+        line1: 'Profile your tables to detect hygiene issues',
+        line2: 'Run data profiling on your table groups to understand data types, column contents, and data patterns.',
+    },
+    testSuite: {
+        line1: 'Run data validation tests',
+        line2: 'Automatically generate tests from data profiling results or write custom tests for your business rules.',
+    },
+    testExecution: {
+        line1: 'Run data validation tests',
+        line2: 'Execute tests to assess data quality of your tables.'
+    },
+    score: {
+        line1: 'Track data quality scores',
+        line2: 'Create custom scorecards to assess quality of your data assets across different categories.',
+    },
+};
+
 const EmptyState = (/** @type Properties */ props) => {
     loadStylesheet('empty-state', stylesheet);
 
@@ -73,4 +100,4 @@ stylesheet.replace(`
 }
 `);
 
-export { EmptyState };
+export { EMPTY_STATE_MESSAGE, EmptyState };

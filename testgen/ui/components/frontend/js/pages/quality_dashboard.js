@@ -1,4 +1,11 @@
 /**
+ * @typedef ProjectSummary
+ * @type {object}
+ * @property {number} connections_count
+ * @property {string} default_connection_id
+ * @property {number} table_groups_count
+ * @property {number} profiling_runs_count
+ * 
  * @typedef Dimension
  * @type {object}
  * @property {string} label
@@ -14,6 +21,7 @@
  * 
  * @typedef Properties
  * @type {object}
+ * @property {ProjectSummary} project_summary
  * @property {Array<Score>} scores
  * @property {string} filter_term
  * @property {string} sorted_by
@@ -26,6 +34,7 @@ import { Select } from '../components/select.js';
 import { Link } from '../components/link.js';
 import { ScoreCard } from '../components/score_card.js';
 import { ScoreLegend } from '../components/score_legend.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 
 const { div } = van.tags;
 
@@ -40,21 +49,24 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     resizeFrameHeightOnDOMChange(domId);
 
     return div(
-        { id: domId },
-        ScoreLegend('margin-bottom: -16px;'),
-        () => Toolbar(getValue(props.filter_term), getValue(props.sorted_by)),
-        () =>  div(
-            { class: 'flex-row fx-flex-wrap fx-gap-4' },
-            getValue(props.scores).map(score => ScoreCard(
-                score,
-                Link({
-                    label: 'View details',
-                    right_icon: 'chevron_right',
-                    href: 'quality-dashboard:score-details',
-                    params: { project_code: score.project_code, name: score.name },
-                })
-            ))
-        ),
+        { id: domId, style: 'overflow-y: auto;' },
+        () => getValue(props.scores).length 
+            ? div(
+                ScoreLegend('margin-bottom: -16px;'),
+                () => Toolbar(getValue(props.filter_term), getValue(props.sorted_by)),
+                () =>  div(
+                    { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                    getValue(props.scores).map(score => ScoreCard(
+                        score,
+                        Link({
+                            label: 'View details',
+                            right_icon: 'chevron_right',
+                            href: 'quality-dashboard:score-details',
+                            params: { project_code: score.project_code, name: score.name },
+                        })
+                    ))
+                ),
+            ) : ConditionalEmptyState(getValue(props.project_summary)),
     );
 };
 
@@ -85,6 +97,41 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
             onChange: (value) => emitEvent('ScoresSorted', { payload: value }),
         })
     );
+};
+
+const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
+    let args = {
+        message: EMPTY_STATE_MESSAGE.score,
+        // link: {
+        //     label: 'Score Explorer',
+        //     href: '',
+        // },
+    };
+
+    if (projectSummary.connections_count <= 0) {
+        args = {
+            message: EMPTY_STATE_MESSAGE.connection,
+            link: {
+                label: 'Go to Connections',
+                href: 'connections',
+            },
+        };
+    } else if (projectSummary.profiling_runs_count <= 0) {
+        args = {
+            message: projectSummary.table_groups_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
+            link: {
+                label: 'Go to Table Groups',
+                href: 'connections:table-groups',
+                params: { connection_id: projectSummary.default_connection_id },
+            },
+        };
+    }
+
+    return EmptyState({
+        icon: 'readiness_score',
+        label: 'No scores yet',
+        ...args,
+    });
 };
 
 const stylesheet = new CSSStyleSheet();

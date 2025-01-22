@@ -5,6 +5,7 @@ import streamlit as st
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import project_queries
 from testgen.ui.queries.scoring_queries import ScoreCard, get_table_groups_score_cards
 from testgen.ui.session import session
 from testgen.utils import friendly_score
@@ -24,11 +25,18 @@ class QualityDashboardPage(Page):
     def render(self, *, project_code: str, **_kwargs) -> None:
         sorted_by: str = st.session_state.get(SORTED_BY_SESSION_KEY, "name")
         filter_term: str = st.session_state.get(FILTER_TERM_SESSION_KEY, None)
+        project_summary = project_queries.get_summary_by_code(project_code)
 
         testgen.page_header(PAGE_TITLE)
         testgen.testgen_component(
             "quality_dashboard",
             props={
+                "project_summary": {
+                    "connections_count": int(project_summary["connections_ct"]),
+                    "default_connection_id": str(project_summary["default_connection_id"]),
+                    "table_groups_count": int(project_summary["table_groups_ct"]),
+                    "profiling_runs_count": int(project_summary["profiling_runs_ct"]),
+                },
                 "scores": [
                     format_all_scores(score) for score in get_table_groups_score_cards(
                         project_code,

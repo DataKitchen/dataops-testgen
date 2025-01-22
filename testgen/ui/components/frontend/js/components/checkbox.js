@@ -3,6 +3,7 @@
  * @type {object}
  * @property {string} label
  * @property {boolean?} checked
+ * @property {boolean?} indeterminate
  * @property {function?} onChange
  * @property {number?} width
  */
@@ -23,6 +24,7 @@ const Checkbox = (/** @type Properties */ props) => {
             type: 'checkbox',
             class: 'tg-checkbox--input clickable',
             checked: props.checked,
+            indeterminate: props.indeterminate,
             onchange: van.derive(() => {
                 const onChange = props.onChange?.val ?? props.onChange;
                 return onChange ? (event) => onChange(event.target.checked) : null;
@@ -64,19 +66,28 @@ stylesheet.replace(`
     border-radius: 7px;
 }
 
-.tg-checkbox--input:checked {
+.tg-checkbox--input:checked,
+.tg-checkbox--input:indeterminate {
     border-color: transparent;
     background-color: var(--primary-color);
 }
 
-.tg-checkbox--input:checked::after {
+.tg-checkbox--input:checked::after,
+.tg-checkbox--input:indeterminate::after {
     position: absolute;
     top: -4px;
     left: -3px;
-    content: 'check';
     font-family: 'Material Symbols Rounded';
     font-size: 22px;
     color: white;
+}
+
+.tg-checkbox--input:checked::after {
+    content: 'check';
+}
+
+.tg-checkbox--input:indeterminate::after {
+    content: 'check_indeterminate_small';
 }
 `);
 

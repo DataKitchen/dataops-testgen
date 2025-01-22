@@ -66,7 +66,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Caption } from '../components/caption.js';
@@ -75,7 +75,7 @@ import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
 import { Link } from '../components/link.js';
 import { SummaryBar } from '../components/summary_bar.js';
-import { EmptyState } from '../components/empty_state.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { Metric } from '../components/metric.js';
 
 const { div, h3, hr, span, strong } = van.tags;
@@ -112,6 +112,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
     const wrapperId = 'overview-wrapper';
     resizeFrameHeightToElement(wrapperId);
+    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId, class: 'flex-column tg-overview' },
@@ -361,20 +362,14 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
 
 const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
     const forConnections = {
-        message: {
-            line1: 'Begin by connecting your database.',
-            line2: 'TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.',
-        },
+        message: EMPTY_STATE_MESSAGE.connection,
         link: {
             label: 'Go to Connections',
             href: 'connections',
         },
     };
     const forTablegroups = {
-        message: {
-            line1: 'Profile your tables to detect hygiene issues',
-            line2: 'Create table groups for your connected databases to run data profiling and hygiene review.',
-        },
+        message: EMPTY_STATE_MESSAGE.tableGroup,
         link: {
             label: 'Go to Table Groups',
             href: 'connections:table-groups',

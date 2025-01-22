@@ -51,7 +51,7 @@ import { Card } from '../components/card.js';
 import { Link } from '../components/link.js';
 import { Caption } from '../components/caption.js';
 import { SummaryBar } from '../components/summary_bar.js';
-import { EmptyState } from '../components/empty_state.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 
 const { div, h4, small, span, i } = van.tags;
 
@@ -89,7 +89,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             type: 'stroked',
                             label: 'Add Test Suite',
                             width: 'fit-content',
-                            style: 'margin-left: auto; background: white;',
+                            style: 'margin-left: auto; background: var(--dk-card-background);',
                             onclick: () => emitEvent('AddTestSuiteClicked', {}),
                         })
                         : '',
@@ -186,10 +186,7 @@ const TestSuites = (/** @type Properties */ props) => {
 
 const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
     let args = {
-        message: {
-            line1: 'Run data validation tests',
-            line2: 'Automatically generate tests from data profiling results or write custom tests for your business rules.',
-        },
+        message: EMPTY_STATE_MESSAGE.testSuite,
         button: Button({
             icon: 'add',
             type: 'stroked',
@@ -203,10 +200,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
 
     if (projectSummary.connections_ct <= 0) {
         args = {
-            message: {
-                line1: 'Begin by connecting your database.',
-                line2: 'TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.',
-            },
+            message: EMPTY_STATE_MESSAGE.connection,
             link: {
                 label: 'Go to Connections',
                 href: 'connections',
@@ -214,10 +208,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         };
     } else if (projectSummary.table_groups_ct <= 0) {
         args = {
-            message: {
-                line1: 'Profile your tables to detect hygiene issues',
-                line2: 'Create table groups for your connected databases to run data profiling and hygiene review.',
-            },
+            message: EMPTY_STATE_MESSAGE.tableGroup,
             link: {
                 label: 'Go to Table Groups',
                 href: 'connections:table-groups',

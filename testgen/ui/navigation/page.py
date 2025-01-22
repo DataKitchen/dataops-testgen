@@ -45,10 +45,14 @@ class Page(abc.ABC):
 
     def _validate_project_query_param(self) -> None:
         if self.path != "" and ":" not in self.path:
+            project_param = session.current_page_args.get("project_code")
             valid_project_codes = [ project["code"] for project in project_service.get_projects() ]
-            if session.current_page_args.get("project_code") not in valid_project_codes: # Ensure top-level pages have valid project_code
+
+            if project_param not in valid_project_codes: # Ensure top-level pages have valid project_code
                 session.current_page_args.update({ "project_code": session.project})
                 self.router.set_query_params({ "project_code": session.project})
+            elif project_param != session.project: # Sync session state with query param
+                project_service.set_current_project(project_param)
         else:
             session.current_page_args.pop("project_code", None)
 

@@ -63,11 +63,11 @@ const Button = (/** @type Properties */ props) => {
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
-        props.tooltip ? Tooltip({
+        () => getValue(props.tooltip) ? Tooltip({
             text: props.tooltip,
             show: showTooltip,
             position: props.tooltipPosition,
-        }) : undefined,
+        }) : '',
         span({class: 'tg-button-focus-state-indicator'}, ''),
         props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
         !isIconOnly ? span(props.label) : undefined,

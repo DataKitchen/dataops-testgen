@@ -55,14 +55,16 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
             () => ScoreCard(getValue(props.score)),
         ),
         () => {
+            const issuesValue = getValue(props.issues);
             return (
-                (getValue(props.issues) && getValue(props.drilldown))
+                (issuesValue && getValue(props.drilldown))
                 ? IssuesTable(
-                    props.score,
-                    props.issues,
-                    props.category,
-                    props.score_type,
-                    props.drilldown,
+                    issuesValue?.items,
+                    issuesValue?.columns,
+                    getValue(props.score),
+                    getValue(props.score_type),
+                    getValue(props.category),
+                    getValue(props.drilldown),
                     (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { project_code, name, score_type, category } }),
                 )
                 : ScoreBreakdown(
@@ -83,7 +85,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-details {
-    min-height: 400px;
+    min-height: 420px;
 }
 `);
 

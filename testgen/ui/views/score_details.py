@@ -1,11 +1,18 @@
+from io import BytesIO
 from typing import ClassVar, TypedDict
 
+import pandas as pd
+
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries import table_group_queries
 from testgen.ui.queries.scoring_queries import (
+    SelectedIssue,
     get_score_card_breakdown,
+    get_score_card_issue_reports,
     get_score_card_issues,
     get_table_group_score_card,
 )
@@ -62,6 +69,7 @@ class ScoreDetailsPage(Page):
             on_change_handlers={
                 "CategoryChanged": select_category,
                 "ScoreTypeChanged": select_score_type,
+                "IssueReportsExported": export_issue_reports,
             },
         )
 
@@ -95,6 +103,42 @@ def select_category(category: str) -> None:
 
 def select_score_type(score_type: str) -> None:
     Router().set_query_params({"score_type": score_type})
+
+
+def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
+    issues_data = get_score_card_issue_reports(selected_issues)
+    dialog_title = "Download Issue Reports"
+    if len(issues_data) == 1:
+        download_dialog(
+            dialog_title=dialog_title,
+            file_content_func=get_report_file_data,
+            args=(issues_data[0],),
+        )
+    else:
+        zip_func = zip_multi_file_data(
+            "testgen_issue_reports.zip",
+            get_report_file_data,
+            [(arg,) for arg in issues_data],
+        )
+        download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+
+
+def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
+    with BytesIO() as buffer:
+        if issue["report_type"] == "hygiene":
+            issue_id = issue["id"][:8]
+            timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
+            hygiene_issue_report.create_report(buffer, issue)
+        else:
+            issue_id = issue["test_result_id"][:8]
+            timestamp = pd.Timestamp(issue["test_time"]).strftime("%Y%m%d_%H%M%S")
+            test_result_report.create_report(buffer, issue)
+
+        update_progress(1.0)
+        buffer.seek(0)
+
+        file_name = f"testgen_{issue["report_type"]}_issue_report_{issue_id}_{timestamp}.pdf"
+        return file_name, "application/pdf", buffer.read()
 
 
 class ResultSet(TypedDict):
