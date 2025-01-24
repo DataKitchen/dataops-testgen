@@ -489,8 +489,11 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         raise
     finally:
         LOG.info("Updating the profiling run record")
-        lstProfileRunQuery = [clsProfiling.GetProfileRunInfoRecordUpdateQuery()]
-        lstProfileRunQuery.append(clsProfiling.GetAnomalyScoringRollupQuery())
+        lstProfileRunQuery = [
+            clsProfiling.GetProfileRunInfoRecordUpdateQuery(),
+            clsProfiling.GetAnomalyScoringRollupRunQuery(),
+            clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
+        ]
         RunActionQueryList("DKTG", lstProfileRunQuery)
         if booErrors:
             str_error_status = "with errors. Check log for details."
