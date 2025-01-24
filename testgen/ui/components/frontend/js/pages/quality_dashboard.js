@@ -16,6 +16,8 @@
  * @property {string} project_code
  * @property {string} name
  * @property {number} score
+ * @property {number} profiling_score
+ * @property {number} testing_score
  * @property {number} cde_score
  * @property {Array<Dimension>} dimensions
  * 

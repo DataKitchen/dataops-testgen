@@ -29,6 +29,8 @@ def get_table_groups_score_cards(
             "project_code": project_code,
             "name": row["name"],
             "score": row["score"],
+            "profiling_score": row["profiling_score"],
+            "testing_score": row["testing_score"],
             "cde_score": row["cde_score"],
             "dimensions": [
                 {"label": "Accuracy", "score": row["accuracy_score"]},
@@ -57,6 +59,8 @@ def get_table_group_score_card(project_code: str, table_group_id: str) -> "Score
         "project_code": project_code,
         "name": row["name"],
         "score": row["score"],
+        "profiling_score": row["profiling_score"],
+        "testing_score": row["testing_score"],
         "cde_score": row["cde_score"],
         "dimensions": [
             {"label": "Accuracy", "score": row["accuracy_score"]},
@@ -427,6 +431,8 @@ _TABLE_GROUP_SCORES_QUERY = """
         COALESCE(profiling_cols.table_groups_id, test_cols.table_groups_id) AS id,
         COALESCE(profiling_cols.table_groups_name, test_cols.table_groups_name) AS name,
         (COALESCE(profiling_cols.score, 1) * COALESCE(test_cols.score, 1)) AS score,
+        profiling_cols.score AS profiling_score,
+        test_cols.score AS testing_score,
         (COALESCE(profiling_cols.cde_score, 1) * COALESCE(test_cols.cde_score, 1)) AS cde_score,
         (COALESCE(profiling_dims.accuracy_score, 1) * COALESCE(test_dims.accuracy_score, 1)) AS accuracy_score,
         (COALESCE(profiling_dims.completeness_score, 1) * COALESCE(test_dims.completeness_score, 1)) AS completeness_score,
