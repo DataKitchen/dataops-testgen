@@ -73,8 +73,8 @@ class DataProfilingPage(Page):
 
         run_count = len(profiling_runs_df)
         page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+        profiling_runs_df["dq_score_profiling"] = profiling_runs_df["dq_score_profiling"].map(lambda score: friendly_score(score))
         paginated_df = profiling_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-        paginated_df["dq_score_profiling"] = paginated_df["dq_score_profiling"].map(lambda score: friendly_score(score))
 
         with list_container:
             testgen_component(

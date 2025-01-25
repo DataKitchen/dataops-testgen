@@ -2,10 +2,9 @@
  * @typedef Issue
  * @type {object}
  * @property {string} id
- * @property {('profile' | 'test')} issue_type
+ * @property {('hygiene' | 'test')} issue_type
  * @property {string} table
  * @property {string} column
- * @property {string} category
  * @property {string} type
  * @property {string} status
  * @property {string} detail
@@ -174,7 +173,7 @@ const IssueColumnCell = (value, row) => {
 const IssueCell = (value, row) => {
     return div(
         { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.type}` },
-        Caption({ content: row.category, style: 'font-size: 12px;' }),
+        Caption({ content: `${row.issue_type} issue`, style: 'font-size: 12px; text-transform: capitalize;' }),
         span(value),
     );
 };

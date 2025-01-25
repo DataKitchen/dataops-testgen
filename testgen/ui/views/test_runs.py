@@ -83,8 +83,8 @@ class TestRunsPage(Page):
 
         test_runs_df = get_db_test_runs(project_code, table_group_id, test_suite_id)
         page_index = testgen.paginator(count=len(test_runs_df), page_size=PAGE_SIZE)
+        test_runs_df["dq_score_testing"] = test_runs_df["dq_score_testing"].map(lambda score: friendly_score(score))
         paginated_df = test_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-        paginated_df["dq_score_testing"] = paginated_df["dq_score_testing"].map(lambda score: friendly_score(score))
 
         with list_container:
             testgen_component(

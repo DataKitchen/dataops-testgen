@@ -139,7 +139,7 @@ const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) =
 
     return div(
         { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}` },
-        span({ class: 'mr-4' }, value || '-'),
+        span({ class: 'mr-2', style: 'min-width: 40px;' }, value || '-'),
         (value && onViewDetails)
         ? div(
             { class: 'flex-row clickable', style: 'color: var(--link-color);', onclick: () => onViewDetails(score.project_code, score.name, scoreType, category, drilldown) },

@@ -125,7 +125,7 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
     with BytesIO() as buffer:
-        if issue["report_type"] == "hygiene":
+        if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
             hygiene_issue_report.create_report(buffer, issue)
@@ -137,7 +137,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         update_progress(1.0)
         buffer.seek(0)
 
-        file_name = f"testgen_{issue["report_type"]}_issue_report_{issue_id}_{timestamp}.pdf"
+        file_name = f"testgen_{issue["issue_type"]}_issue_report_{issue_id}_{timestamp}.pdf"
         return file_name, "application/pdf", buffer.read()
 
 

@@ -195,9 +195,8 @@ def get_score_card_issues(
             results.detail,
             EXTRACT(EPOCH FROM runs.profiling_starttime) AS time,
             '' AS name,
-            'Hygiene Issue' AS category,
             runs.id::text AS run_id,
-            'profile' AS issue_type
+            'hygiene' AS issue_type
         FROM profile_anomaly_results AS results
         INNER JOIN profile_anomaly_types AS types
             ON (types.id = results.anomaly_id)
@@ -230,7 +229,6 @@ def get_score_card_issues(
             result_message AS detail,
             EXTRACT(EPOCH FROM test_time) AS time,
             test_suites.test_suite AS name,
-            test_types.dq_dimension AS category,
             test_results.test_run_id::text AS run_id,
             'test' AS issue_type
         FROM test_results
@@ -269,7 +267,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
     profile_ids = []
     test_ids = []
     for issue in selected_issues:
-        id_list = profile_ids if issue["issue_type"] == "profile" else test_ids
+        id_list = profile_ids if issue["issue_type"] == "hygiene" else test_ids
         id_list.append(issue["id"])
 
     schema: str = st.session_state["dbschema"]
@@ -278,7 +276,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
         profile_query = f"""
         SELECT
             results.id::VARCHAR,
-            'hygiene' AS report_type,
+            'hygiene' AS issue_type,
             types.issue_likelihood,
             runs.profiling_starttime,
             types.anomaly_name,
@@ -310,7 +308,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
         test_query = f"""
         SELECT
             results.id::VARCHAR AS test_result_id,
-            'test' AS report_type,
+            'test' AS issue_type,
             results.result_status,
             results.test_time,
             types.test_name_short,
@@ -368,7 +366,7 @@ class DimensionScore(TypedDict):
 
 class SelectedIssue(TypedDict):
     id: str
-    issue_type: Literal["profile", "test"]
+    issue_type: Literal["hygiene", "test"]
 
 
 _TABLE_GROUP_SCORES_QUERY = """
