@@ -76,7 +76,7 @@ import { Input } from '../components/input.js';
 import { Link } from '../components/link.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { Metric } from '../components/metric.js';
+import { ScoreMetric } from '../components/score_metric.js';
 
 const { div, h3, hr, span, strong } = van.tags;
 
@@ -125,11 +125,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     content: [
                         () => div(
                             { class: 'flex-row fx-align-flex-start' },
-                            // div(
-                            //     { class: 'flex-column tg-overview--project--score' },
-                            //     Caption({ content: 'Project HIT score', style: 'margin-bottom: 16px;' }),
-                            //     Metric({value: 100, delta: 10}),
-                            // ),
                             () => {
                                 return div(
                                     { class: 'flex-column fx-gap-2 tg-overview--project--summary' },
@@ -212,11 +207,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     { class: 'flex-column fx-flex' },
                     TableGroupLatestTestResults(tableGroup),
                 ),
-                div(
-                    { class: 'flex-column fx-align-flex-center', style: 'flex: 0 1 100px; align-self: center' },
-                    Metric({ value: tableGroup.dq_score ?? '--' }),
-                    Caption({ content: 'Score' }),
-                ),
+                ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
             tableGroup.expanded
                 ? hr({ class: 'tg-overview--table-group-divider' })
@@ -239,8 +230,6 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
                     href: 'profiling-runs:results',
                     params: { run_id: tableGroup.latest_profile_id },
                 }),
-                span({ class: 'mr-1 ml-1' }, '|'),
-                span(`Profiling score: ${tableGroup.dq_score_profiling}`),
             ),
             div(
                 { class: 'flex-row mb-3' },
@@ -284,7 +273,7 @@ const TableGroupLatestTestResults = (/** @type TableGroupSummary */ tableGroup) 
                 { class: 'flex-column' },
                 span(
                     { class: 'mb-3' },
-                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Testing score: ${tableGroup.dq_score_testing}`,
+                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed`,
                 ),
                 div(
                     { class: 'flex-row mb-3' },

@@ -289,7 +289,10 @@ def render_score(run_id: str):
     testgen.flex_row_center()
     with st.container():
         testgen.caption("Score", "text-align: center;")
-        testgen.text(friendly_score(run_df["dq_score_profiling"]), "font-size: 28px;")
+        testgen.text(
+            friendly_score(run_df["dq_score_profiling"]) or "--",
+            "font-size: 28px;",
+        )
 
     with st.container():
         testgen.whitespace(0.6)

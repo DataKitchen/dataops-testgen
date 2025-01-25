@@ -148,7 +148,7 @@ const ProfilingRunItem = (/** @type ProfilingRun */ item, /** @type string[] */ 
         ),
         div(
             { style: `flex: ${columns[4]}; font-size: 16px;` },
-            item.dq_score_profiling,
+            item.dq_score_profiling ?? '--',
         ),
     );
 }

@@ -51,7 +51,7 @@ const ScoreCard = (
                     dimensions.map(dimension => div(
                         { class: 'flex-row fx-align-flex-center fx-gap-2' },
                         dot({}, getScoreColor(dimension.score)),
-                        span({ class: 'tg-score-card--quality-score' }, dimension.score),
+                        span({ class: 'tg-score-card--quality-score' }, dimension.score ?? '--'),
                         span({}, dimension.label),
                     )),
                 ),

@@ -126,7 +126,7 @@ import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { ColumnProfile } from '../components/column_profile.js';
 import { RadioGroup } from '../components/radio_group.js';
-import { Metric } from '../components/metric.js';
+import { ScoreMetric } from '../components/score_metric.js';
 import { Caption } from '../components/caption.js';
 
 const { div, h2, span, i } = van.tags;
@@ -301,14 +301,8 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
                 }),
             ),
             div(
-                { class: 'flex-column fx-align-flex-center', style: 'min-width: 120px; margin-top: -40px;' },
-                Caption({ content: 'Score' }),
-                Metric({ value: item.dq_score ?? '--' }),
-                div(
-                    { class: 'flex-row fx-gap-2 mt-1' },
-                    Attribute({ label: 'Profiling', value: item.dq_score_profiling }),
-                    Attribute({ label: 'Testing', value: item.dq_score_testing }),
-                ),
+                { style: 'margin-top: -40px;' },
+                ScoreMetric(item.dq_score, item.dq_score_profiling, item.dq_score_testing),
             ),
         ),
     });

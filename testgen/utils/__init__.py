@@ -85,7 +85,7 @@ def _pandas_default(value: Any, default: T) -> T:
 
 def friendly_score(score: float) -> str:
     if not score or pd.isnull(score):
-        return "--"
+        return None
 
     score = 100 * score
     if score == 100:

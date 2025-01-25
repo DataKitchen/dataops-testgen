@@ -127,7 +127,7 @@ const ScoreCell = (value) => {
     return div(
         { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.score}` },
         dot({ class: 'mr-2' }, getScoreColor(value)),
-        span(value),
+        span(value ?? '--'),
     );
 };
 
