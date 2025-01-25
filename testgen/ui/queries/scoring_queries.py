@@ -207,7 +207,8 @@ def get_score_card_issues(
             ON (score_profiling_runs.profile_run_id = runs.id
             AND score_profiling_runs.table_name = results.table_name
             AND score_profiling_runs.column_name = results.column_name)
-        {f"WHERE {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
+        WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed'
+            {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     ),
     score_test_runs AS (
         SELECT
@@ -242,7 +243,8 @@ def get_score_card_issues(
         INNER JOIN test_types
             ON (test_types.test_type = test_results.test_type)
         WHERE result_status IN ('Failed', 'Warning')
-        {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
+            AND COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+            {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     )
     SELECT * FROM (
         SELECT * FROM anomalies

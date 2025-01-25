@@ -5,6 +5,7 @@
  * @property {(string|null)} color
  * @property {(string|null)} label
  * @property {(string|null)} icon
+ * @property {(int|null)} iconSize
  * @property {(string|null)} tooltip
  * @property {(string|null)} tooltipPosition
  * @property {(Function|null)} onclick
@@ -27,6 +28,7 @@ const BUTTON_COLOR = {
     BASIC: 'basic',
     PRIMARY: 'primary',
 };
+const DEFAULT_ICON_SIZE = 18;
 
 
 const Button = (/** @type Properties */ props) => {
@@ -69,7 +71,10 @@ const Button = (/** @type Properties */ props) => {
             position: props.tooltipPosition,
         }) : '',
         span({class: 'tg-button-focus-state-indicator'}, ''),
-        props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
+        props.icon ? i({
+            class: 'material-symbols-rounded',
+            style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
+        }, props.icon) : undefined,
         !isIconOnly ? span(props.label) : undefined,
     );
 };
@@ -132,10 +137,6 @@ button.tg-button:not(.tg-icon-button):has(span):has(i) {
 button.tg-button[disabled] {
     color: var(--disabled-text-color);
     cursor: not-allowed;
-}
-
-button.tg-button > i {
-    font-size: 18px;
 }
 
 button.tg-button > i:has(+ span) {
