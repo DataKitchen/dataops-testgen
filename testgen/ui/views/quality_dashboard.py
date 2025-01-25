@@ -74,4 +74,4 @@ def apply_sort(sorted_by: str) -> None:
 
 
 def apply_filter(term: str) -> None:
-    st.session_state[FILTER_TERM_SESSION_KEY] = term
+    st.session_state[FILTER_TERM_SESSION_KEY] = term or None

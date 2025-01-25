@@ -19,7 +19,7 @@ def get_table_groups_score_cards(
         ON (table_groups.id = profiling_cols.table_groups_id
         OR table_groups.id = test_cols.table_groups_id)
     WHERE table_groups.project_code = '{project_code}'
-    {f"AND name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
+    {f"AND table_groups.table_groups_name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
     ORDER BY {sorted_by} ASC;
     """
     results = db.retrieve_data(query)
@@ -44,6 +44,7 @@ def get_table_groups_score_cards(
     ]
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_table_group_score_card(project_code: str, table_group_id: str) -> "ScoreCard":
     schema: str = st.session_state["dbschema"]
     query = f"""
