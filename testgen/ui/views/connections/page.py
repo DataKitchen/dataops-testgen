@@ -90,6 +90,8 @@ class ConnectionsPage(Page):
             form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
             form = FlavorForm(**form_kwargs)
 
+            BaseConnectionForm.set_default_port(sql_flavor, form)
+
             sql_flavor = form.get_field_value("sql_flavor", latest=True) or sql_flavor
             if form.sql_flavor != sql_flavor:
                 form = BaseConnectionForm.for_flavor(sql_flavor)(sql_flavor=sql_flavor, connection_id=connection_id)

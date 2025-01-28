@@ -161,6 +161,17 @@ class BaseConnectionForm(BaseForm, ManualRender):
         ...
 
     @staticmethod
+    def set_default_port(sql_flavor: SQLFlavor, form: type["BaseConnectionForm"]) -> None:
+        if sql_flavor == "mssql":
+            form.project_port = 1433
+        elif sql_flavor == "redshift":
+            form.project_port = 5439
+        elif sql_flavor == "postgresql":
+            form.project_port = 5432
+        elif sql_flavor == "snowflake":
+            form.project_port = 443
+
+    @staticmethod
     def for_flavor(flavor: SQLFlavor) -> type["BaseConnectionForm"]:
         return {
             "redshift": PasswordConnectionForm,
