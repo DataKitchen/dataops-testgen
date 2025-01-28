@@ -6,9 +6,9 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
-from testgen.ui.queries.scoring_queries import ScoreCard, get_table_groups_score_cards
+from testgen.ui.queries.scoring_queries import ScoreCard, get_all_score_cards
 from testgen.ui.session import session
-from testgen.utils import friendly_score
+from testgen.utils import format_score_card
 
 SORTED_BY_SESSION_KEY: str = "score-dashboard:sorted_by"
 FILTER_TERM_SESSION_KEY: str = "score-dashboard:name_filter"
@@ -38,7 +38,7 @@ class QualityDashboardPage(Page):
                     "profiling_runs_count": int(project_summary["profiling_runs_ct"]),
                 },
                 "scores": [
-                    format_all_scores(score) for score in get_table_groups_score_cards(
+                    format_score_card(score) for score in get_all_score_cards(
                         project_code,
                         sorted_by=sorted_by,
                         filter_term=filter_term,
@@ -52,21 +52,6 @@ class QualityDashboardPage(Page):
                 "ScoresFiltered": apply_filter,
             },
         )
-
-
-def format_all_scores(table_group_score_card: ScoreCard) -> ScoreCard:
-    return {
-        **table_group_score_card,
-        "score": friendly_score(table_group_score_card["score"]),
-        "profiling_score": friendly_score(table_group_score_card["profiling_score"]),
-        "testing_score": friendly_score(table_group_score_card["testing_score"]),
-        "cde_score": friendly_score(table_group_score_card["cde_score"])
-            if table_group_score_card["cde_score"] else None,
-        "dimensions": [
-            {**dimension, "score": friendly_score(dimension["score"])}
-            for dimension in table_group_score_card["dimensions"]
-        ],
-    }
 
 
 def apply_sort(sorted_by: str) -> None:

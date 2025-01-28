@@ -40,6 +40,7 @@ body {
     --field-underline-color: #9e9e9e;
 
     --button-hover-state-opacity: 0.12;
+    --button-generic-background-color: #ffffff; 
 
     --button-basic-background: transparent;
     --button-basic-text-color: rgba(0, 0, 0, .87);
@@ -84,6 +85,8 @@ body {
         --sidebar-active-item-color: #10141b;
         --sidebar-active-item-border-color: #b4e3c9;
         --dk-text-value-background: unset;
+
+        --button-generic-background-color: rgb(38, 39, 48);
 
         --button-basic-background: transparent;
         --button-basic-text-color: rgba(255, 255, 255);

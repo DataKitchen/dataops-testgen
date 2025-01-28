@@ -1,8 +1,10 @@
 from io import BytesIO
-from typing import ClassVar, TypedDict
+from typing import ClassVar
 
 import pandas as pd
+import streamlit as st
 
+from testgen.common.models.scores import ScoreDefinition
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -14,11 +16,11 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_breakdown,
     get_score_card_issue_reports,
     get_score_card_issues,
-    get_table_group_score_card,
+    get_score_card,
 )
-from testgen.ui.session import session
-from testgen.ui.views.quality_dashboard import format_all_scores
-from testgen.utils import friendly_score, friendly_score_impact
+from testgen.ui.services import authentication_service
+from testgen.ui.session import session, temp_value
+from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, friendly_score, friendly_score_impact
 
 
 class ScoreDetailsPage(Page):
@@ -30,31 +32,23 @@ class ScoreDetailsPage(Page):
     def render(
         self,
         *,
-        name: str,
+        definition_id: str,
         category: str = "table_name",
         score_type: str = "score",
         drilldown: str | None = None,
         **_kwargs
     ):
         project_code: str = session.project
+        user_can_edit = authentication_service.current_user_has_edit_role()
+        score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
 
         testgen.page_header(
             "Score Details",
             breadcrumbs=[
                 {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
-                {"label": name},
+                {"label": score_definition.name},
             ],
         )
-
-        table_group_dict = table_group_queries.get_by_name(project_code, name)
-
-        breakdown: ResultSet | None = None
-        issues: ResultSet | None = None
-
-        if drilldown:
-            issues = get_issues(project_code, table_group_dict["id"], score_type, category, drilldown)
-        else:
-            breakdown = get_score_breakdown(project_code, table_group_dict["id"], score_type, category)
 
         testgen.testgen_component(
             "score_details",
@@ -62,9 +56,21 @@ class ScoreDetailsPage(Page):
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
-                "score": format_all_scores(get_table_group_score_card(project_code, table_group_dict["id"])),
-                "breakdown": breakdown,
-                "issues": issues,
+                "score": format_score_card(get_score_card(score_definition)),
+                "breakdown": format_score_card_breakdown(
+                    get_score_card_breakdown(score_definition, score_type, category),
+                    category,
+                ) if not drilldown else None,
+                "issues": format_score_card_issues(
+                    get_score_card_issues(score_definition, score_type, category, drilldown),
+                    category,
+                ) if drilldown else None,
+                "permissions": {
+                    "can_edit": user_can_edit,
+                }
+            },
+            event_handlers={
+                "DeleteScoreRequested": delete_score_card,
             },
             on_change_handlers={
                 "CategoryChanged": select_category,
@@ -72,29 +78,6 @@ class ScoreDetailsPage(Page):
                 "IssueReportsExported": export_issue_reports,
             },
         )
-
-
-def get_score_breakdown(project_code: str, table_group_id: str, score_type: str, category: str) -> "ResultSet":
-    results = get_score_card_breakdown(project_code, table_group_id, score_type, category)
-    return {
-        "columns": [category, "impact", "score", "issue_ct"],
-        "items": [{
-            **row,
-            "score": friendly_score(row["score"]),
-            "impact": friendly_score_impact(row["impact"]),
-        } for row in results],
-    }
-
-
-def get_issues(project_code: str, table_group_id: str, score_type: str, category: str, value: str) -> "ResultSet":
-    issues = get_score_card_issues(project_code, table_group_id, score_type, category, value)
-    columns = ["type", "status", "detail", "time"]
-    if category != "column_name":
-        columns.insert(0, "column")
-    return {
-        "columns": columns,
-        "items": issues,
-    }
 
 
 def select_category(category: str) -> None:
@@ -141,6 +124,28 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         return file_name, "application/pdf", buffer.read()
 
 
-class ResultSet(TypedDict):
-    columns: list[str]
-    items: list[dict]
+@st.dialog(title="Delete Score Card")
+def delete_score_card(definition_id: str) -> None:
+    score_definition = ScoreDefinition.get(definition_id)
+
+    delete_clicked, set_delelte_clicked = temp_value(
+        f"score-details:confirm-delete-score-val"
+    )
+    st.markdown(
+        f"Are you sure you want to delete the score card <b>{score_definition.name}</b>?",
+        unsafe_allow_html=True,
+    )
+
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Delete",
+            type_="basic",
+            color="basic",
+            key="score-details:confirm-delete-score-btn",
+            on_click=lambda: set_delelte_clicked(True),
+        )
+
+    if delete_clicked():
+        score_definition.delete()
+        Router().navigate("quality-dashboard")

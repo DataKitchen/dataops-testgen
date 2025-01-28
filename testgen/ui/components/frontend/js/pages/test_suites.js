@@ -77,6 +77,7 @@ const TestSuites = (/** @type Properties */ props) => {
                     { class: 'tg-test-suites--toolbar flex-row fx-align-flex-end mb-4' },
                     Select({
                         label: 'Table Group',
+                        value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
                         options: getValue(props.table_group_filter_options) ?? [],
                         allowNull: true,
                         height: 38,

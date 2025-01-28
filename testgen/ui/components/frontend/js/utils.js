@@ -52,7 +52,13 @@ function emitEvent(
 // Replacement for van.val()
 // https://github.com/vanjs-org/van/discussions/280
 const stateProto = Object.getPrototypeOf(van.state());
-function getValue(/** @type object */ prop) { // van state or static value
+/**
+ * Get value from van.state
+ * @template T
+ * @param {T} prop
+ * @returns {T}
+ */
+function getValue(prop) { // van state or static value
     const proto = Object.getPrototypeOf(prop ?? 0);
     if (proto === stateProto) {
         return prop.val;
@@ -61,6 +67,10 @@ function getValue(/** @type object */ prop) { // van state or static value
         return prop();
     }
     return prop;
+}
+
+function isState(/** @type object */ value) {
+    return Object.getPrototypeOf(value ?? 0) == stateProto;
 }
 
 function getRandomId() {
@@ -161,4 +171,10 @@ function isEqual(value, other) {
     return true;
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent };
+function afterMount(/** @ype Function */ callback) {
+    const trigger = van.state(false);
+    van.derive(() => trigger.val && callback());
+    trigger.val = true;
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent };

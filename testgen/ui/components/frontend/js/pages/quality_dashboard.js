@@ -6,20 +6,21 @@
  * @property {number} table_groups_count
  * @property {number} profiling_runs_count
  * 
- * @typedef Dimension
+ * @typedef Category
  * @type {object}
  * @property {string} label
  * @property {number} score
  * 
  * @typedef Score
  * @type {object}
+ * @property {string} id
  * @property {string} project_code
  * @property {string} name
  * @property {number} score
  * @property {number} profiling_score
  * @property {number} testing_score
  * @property {number} cde_score
- * @property {Array<Dimension>} dimensions
+ * @property {Array<Category>} categories
  * 
  * @typedef Properties
  * @type {object}
@@ -34,11 +35,12 @@ import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resi
 import { Input } from '../components/input.js';
 import { Select } from '../components/select.js';
 import { Link } from '../components/link.js';
+import { Button } from '../components/button.js';
 import { ScoreCard } from '../components/score_card.js';
 import { ScoreLegend } from '../components/score_legend.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 
-const { div } = van.tags;
+const { div, span } = van.tags;
 
 const QualityDashboard = (/** @type {Properties} */ props) => {
     window.testgen.isPage = true;
@@ -64,7 +66,8 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                             label: 'View details',
                             right_icon: 'chevron_right',
                             href: 'quality-dashboard:score-details',
-                            params: { project_code: score.project_code, name: score.name },
+                            class: 'ml-4',
+                            params: { definition_id: score.id },
                         })
                     ))
                 ),
@@ -95,19 +98,29 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
             label: 'Sort by',
             height: 38,
             style: 'font-size: 14px;',
-            options: sortOptions.map(option => ({...option, selected: option.value === sortedBy})),
+            value: sortedBy,
+            options: sortOptions,
             onChange: (value) => emitEvent('ScoresSorted', { payload: value }),
-        })
+        }),
+        span({ style: 'margin: 0 auto;' }),
+        Button({
+            type: 'stroked',
+            icon: 'data_exploration',
+            label: 'Score Explorer',
+            color: 'primary',
+            style: 'background: var(--button-generic-background-color); width: unset;',
+            onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer' }),
+        }),
     );
 };
 
 const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.score,
-        // link: {
-        //     label: 'Score Explorer',
-        //     href: '',
-        // },
+        link: {
+            label: 'Score Explorer',
+            href: 'quality-dashboard:explorer',
+        },
     };
 
     if (projectSummary.connections_count <= 0) {

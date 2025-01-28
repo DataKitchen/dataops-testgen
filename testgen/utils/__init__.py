@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from testgen.common.models.scores import ScoreCard, ScoreDefinition
+
 T = TypeVar("T")
 
 
@@ -83,6 +85,60 @@ def _pandas_default(value: Any, default: T) -> T:
     return value
 
 
+def format_score_card(score_card: ScoreCard) -> ScoreCard:
+    definition = score_card.get("definition")
+    if not score_card:
+        return {
+            "id": None,
+            "project_code": "",
+            "name": "",
+            "score": "--" if not definition or definition.total_score else None,
+            "cde_score": "--" if not definition or definition.cde_score else None,
+            "profiling_score": "--" if not definition or definition.total_score else None,
+            "testing_score": "--" if not definition or definition.total_score else None,
+            "categories": [],
+        }
+
+    return {
+        "id": str(score_card["id"]) if score_card else None,
+        "project_code": score_card["project_code"],
+        "name": score_card["name"],
+        "score": (friendly_score(score_card.get("score")) or "--")
+            if not definition or definition.total_score else None,
+        "profiling_score": friendly_score(score_card.get("profiling_score"))
+            if not definition or definition.total_score else None,
+        "testing_score": friendly_score(score_card.get("testing_score"))
+            if not definition or definition.total_score else None,
+        "cde_score": (friendly_score(score_card.get("cde_score")) or "--")
+            if not definition or definition.cde_score else None,
+        "categories": [
+            {**category, "score": friendly_score(category["score"])}
+            for category in score_card.get("categories", [])
+        ],
+    }
+
+
+def format_score_card_breakdown(breakdown: list[dict], category: str) -> dict:
+    return {
+        "columns": [category, "impact", "score", "issue_ct"],
+        "items": [{
+            **row,
+            "score": friendly_score(row["score"]),
+            "impact": friendly_score_impact(row["impact"]),
+        } for row in breakdown],
+    }
+
+
+def format_score_card_issues(issues: list[dict], category: str) -> dict:
+    columns = ["type", "status", "detail", "time"]
+    if category != "column_name":
+        columns.insert(0, "column")
+    return {
+        "columns": columns,
+        "items": issues,
+    }
+
+
 def friendly_score(score: float) -> str:
     if not score or pd.isnull(score):
         return None
@@ -114,4 +170,3 @@ def friendly_score_impact(impact: float) -> str:
         return "> 99.99"
 
     return str(rounded)
-    

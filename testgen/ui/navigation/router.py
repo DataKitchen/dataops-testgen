@@ -65,7 +65,7 @@ class Router(Singleton):
         try:
             is_different_page = to != session.current_page
             query_params_changed = (
-                len(st.query_params.keys()) != len(with_args.keys())
+                len((st.query_params or {}).keys()) != len((with_args or {}).keys())
                 or any(st.query_params.get(name) != value for name, value in with_args.items())
             )
             if is_different_page or query_params_changed:
@@ -93,5 +93,8 @@ class Router(Singleton):
     def set_query_params(self, with_args: dict) -> None:
         params = st.query_params
         params.update(with_args)
-        params = {k: v for k, v in params.items() if v not in [None, "None", ""]}
+        params = {
+            k: values_list if len(values_list) > 1 else v for k, v in params.items()
+            if (values_list := params.get_all(k)) and v not in [None, "None", ""]
+        }
         st.query_params.from_dict(params)

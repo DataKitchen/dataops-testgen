@@ -6,9 +6,12 @@
  * 
  * @typedef Score
  * @type {object}
+ * @property {string} id
  * @property {string} project_code
  * @property {string} name
  * @property {number} score
+ * @property {number?} profiling_score
+ * @property {number?} testing_score
  * @property {number?} cde_score
  * @property {Array<Dimension>} dimensions
  * 
@@ -16,6 +19,10 @@
  * @type {object}
  * @property {Array<string>} columns
  * @property {Array<object>} items
+ * 
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
  * 
  * @typedef Properties
  * @type {object}
@@ -25,6 +32,7 @@
  * @property {Score} score
  * @property {ResultSet?} breakdown
  * @property {ResultSet?} issues
+ * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
@@ -33,6 +41,7 @@ import { ScoreCard } from '../components/score_card.js';
 import { ScoreLegend } from '../components/score_legend.js';
 import { ScoreBreakdown } from '../components/score_breakdown.js';
 import { IssuesTable } from '../components/score_issues.js';
+import { Button } from '../components/button.js';
 
 const { div } = van.tags;
 
@@ -43,6 +52,8 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
     Streamlit.setFrameHeight(1);
 
     const domId = 'score-details-page';
+    const scoreId = getValue(props.score).id;
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
 
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
@@ -52,7 +63,17 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
         ScoreLegend(),
         div(
             { class: 'flex-row mb-4'},
-            () => ScoreCard(getValue(props.score)),
+            ScoreCard(
+                props.score,
+                () => {
+                    const score = getValue(props.score);
+                    return userCanEdit ? div(
+                        { class: 'flex-row tg-test-suites--card-actions' },
+                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id } }) }),
+                        Button({ type: 'icon', icon: 'delete', tooltip: 'Delete', onclick: () => emitEvent('DeleteScoreRequested', { payload: score.id }) }),
+                    ) : '';
+                },
+            ),
         ),
         () => {
             const issuesValue = getValue(props.issues);
@@ -65,7 +86,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     getValue(props.score_type),
                     getValue(props.category),
                     getValue(props.drilldown),
-                    (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { project_code, name, score_type, category } }),
+                    (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, score_type, category } }),
                 )
                 : ScoreBreakdown(
                     props.score,
@@ -74,7 +95,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     props.score_type,
                     (project_code, name, score_type, category, drilldown) => emitEvent(
                         'LinkClicked',
-                        { href: 'quality-dashboard:score-details', params: { project_code, name, score_type, category, drilldown }
+                        { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, score_type, category, drilldown }
                     }),
                 )
             );

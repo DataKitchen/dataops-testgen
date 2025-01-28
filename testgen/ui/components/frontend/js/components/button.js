@@ -8,6 +8,7 @@
  * @property {(int|null)} iconSize
  * @property {(string|null)} tooltip
  * @property {(string|null)} tooltipPosition
+ * @property {(string|null)} id
  * @property {(Function|null)} onclick
  * @property {(bool)} disabled
  * @property {string?} style
@@ -58,6 +59,7 @@ const Button = (/** @type Properties */ props) => {
 
     return button(
         {
+            id: getValue(props.id) ?? undefined,
             class: `tg-button tg-${buttonType}-button tg-${getValue(props.color) ?? 'basic'}-button ${buttonType !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,

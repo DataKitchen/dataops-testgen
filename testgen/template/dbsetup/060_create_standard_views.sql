@@ -259,6 +259,7 @@ DROP VIEW IF EXISTS v_dq_profile_scoring_latest_by_column;
 CREATE VIEW v_dq_profile_scoring_latest_by_column
 AS
 SELECT
+       tg.project_code,
        dcc.table_groups_id,
        tg.last_complete_profile_run_id as profile_run_id,
        tg.table_groups_name,
@@ -289,7 +290,8 @@ DROP VIEW IF EXISTS v_dq_profile_scoring_latest_by_dimension;
 
 CREATE VIEW v_dq_profile_scoring_latest_by_dimension
 AS
-SELECT pr.table_groups_id,
+SELECT tg.project_code,
+       pr.table_groups_id,
        tg.last_complete_profile_run_id as profile_run_id,
        tg.table_groups_name,
        tg.data_location,
@@ -325,7 +327,7 @@ LEFT JOIN (profile_anomaly_results p
  AND  pr.column_name = p.column_name
  AND  pr.table_name = p.table_name)
 WHERE COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
-GROUP BY pr.table_groups_id, tg.last_complete_profile_run_id, tg.table_groups_name,
+GROUP BY tg.project_code, pr.table_groups_id, tg.last_complete_profile_run_id, tg.table_groups_name,
          tg.data_location, COALESCE(dcc.data_source, dtc.data_source, tg.data_source),
          COALESCE(dcc.source_system, dtc.source_system, tg.source_system),
          COALESCE(dcc.source_process, dtc.source_process, tg.source_process),
@@ -346,6 +348,7 @@ DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_column;
 CREATE VIEW v_dq_test_scoring_latest_by_column
 AS
 SELECT
+       tg.project_code,
        r.table_groups_id,
        r.test_suite_id,
        r.test_run_id,
@@ -381,7 +384,7 @@ LEFT JOIN data_column_chars dcc
  WHERE r.dq_prevalence IS NOT NULL
    AND s.dq_score_exclude = FALSE
    AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
-GROUP BY r.table_groups_id, r.test_suite_id, r.test_run_id,
+GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
          tg.table_groups_name, dcc.data_source, dtc.data_source,
          tg.data_source, tg.data_location, dcc.data_source, dtc.data_source,
          tg.data_source, dcc.source_system, dtc.source_system, tg.source_system,
@@ -416,6 +419,7 @@ WITH dimension_rollup
          GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
               r.table_name, r.column_names, tt.dq_dimension )
 SELECT
+       tg.project_code,
        r.table_groups_id,
        r.test_suite_id,
        r.test_run_id,
@@ -446,7 +450,7 @@ LEFT JOIN data_column_chars dcc
   ON (r.table_groups_id = dcc.table_groups_id
  AND  r.table_name = dcc.table_name
  AND  r.column_names = dcc.column_name)
-GROUP BY r.table_groups_id, r.test_suite_id, r.test_run_id,
+GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
          tg.table_groups_name, dcc.data_source, dtc.data_source,
          tg.data_source, tg.data_location, dcc.data_source, dtc.data_source,
          tg.data_source, dcc.source_system, dtc.source_system, tg.source_system,

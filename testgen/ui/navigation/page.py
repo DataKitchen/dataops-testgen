@@ -5,6 +5,7 @@ import logging
 import typing
 
 import streamlit as st
+from streamlit.runtime.state.query_params_proxy import QueryParamsProxy
 
 import testgen.ui.navigation.router
 from testgen.ui.navigation.menu import MenuItem
@@ -41,7 +42,17 @@ class Page(abc.ABC):
         session.current_page_args = session.current_page_args or {}
         self._validate_project_query_param()
 
-        self.render(**session.current_page_args)
+        self.render(**self._query_params_to_kwargs(session.current_page_args))
+
+    def _query_params_to_kwargs(self, query_params: dict | QueryParamsProxy) -> dict:
+        if not isinstance(query_params, QueryParamsProxy):
+            return query_params
+
+        kwargs = {}
+        for key in query_params.keys():
+            values_list = query_params.get_all(key)
+            kwargs[key] = values_list if len(values_list) > 1 else query_params.get(key)
+        return kwargs
 
     def _validate_project_query_param(self) -> None:
         if self.path != "" and ":" not in self.path:

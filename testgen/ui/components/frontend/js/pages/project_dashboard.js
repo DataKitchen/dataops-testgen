@@ -165,10 +165,10 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 span({ style: 'margin-right: 1rem;' }),
                 Select({
                     label: 'Sort by',
+                    value: tableGroupsSortOption,
                     options: props.table_groups_sort_options?.val ?? [],
                     height: 38,
                     style: 'font-size: 14px;',
-                    onChange: (value) => tableGroupsSortOption.val = value,
                 }),
             )
             : undefined,
