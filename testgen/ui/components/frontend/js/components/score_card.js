@@ -1,6 +1,18 @@
+/**
+ * @typedef Score
+ * @type {object}
+ * @property {string} project_code
+ * @property {string} name
+ * @property {number} score
+ * @property {number} profiling_score
+ * @property {number} testing_score
+ * @property {number} cde_score
+ * @property {Array<Dimension>} dimensions
+ */
 import van from '../van.min.js';
 import { Card } from './card.js';
 import { dot } from './dot.js';
+import { Attribute } from './attribute.js';
 import { getScoreColor } from '../score_utils.js';
 import { loadStylesheet } from '../utils.js';
 
@@ -21,7 +33,14 @@ const ScoreCard = (
         class: 'tg-score-card',
         content: () => div(
             { class: 'flex-row' },
-            ScoreChart("Total Score", score.score),
+            div(
+                ScoreChart("Total Score", score.score),
+                div(
+                    { class: 'flex-row fx-justify-center fx-gap-2 mt-1' },
+                    Attribute({ label: 'Profiling', value: score.profiling_score }),
+                    Attribute({ label: 'Testing', value: score.testing_score }),
+                ),
+            ),
             i({ class: 'mr-4 ml-4' }),
             // ScoreChart("CDE Score", score.cde_score),
             div(
@@ -32,7 +51,7 @@ const ScoreCard = (
                     dimensions.map(dimension => div(
                         { class: 'flex-row fx-align-flex-center fx-gap-2' },
                         dot({}, getScoreColor(dimension.score)),
-                        span({ class: 'tg-score-card--quality-score' }, dimension.score),
+                        span({ class: 'tg-score-card--quality-score' }, dimension.score ?? '--'),
                         span({}, dimension.label),
                     )),
                 ),
@@ -81,7 +100,7 @@ stylesheet.replace(`
 .tg-score-card--qualities {
     display: grid;
     grid-gap: 8px;
-    grid-template-columns: 150px 150px;
+    grid-template-columns: 160px 160px;
 }
 
 .tg-score-card--quality-score {

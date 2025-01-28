@@ -58,6 +58,8 @@ def format_all_scores(table_group_score_card: ScoreCard) -> ScoreCard:
     return {
         **table_group_score_card,
         "score": friendly_score(table_group_score_card["score"]),
+        "profiling_score": friendly_score(table_group_score_card["profiling_score"]),
+        "testing_score": friendly_score(table_group_score_card["testing_score"]),
         "cde_score": friendly_score(table_group_score_card["cde_score"])
             if table_group_score_card["cde_score"] else None,
         "dimensions": [
@@ -72,4 +74,4 @@ def apply_sort(sorted_by: str) -> None:
 
 
 def apply_filter(term: str) -> None:
-    st.session_state[FILTER_TERM_SESSION_KEY] = term
+    st.session_state[FILTER_TERM_SESSION_KEY] = term or None

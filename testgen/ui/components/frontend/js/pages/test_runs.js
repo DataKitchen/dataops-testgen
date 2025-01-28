@@ -123,7 +123,7 @@ const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) =
         ),
         div(
             { style: `flex: ${columns[3]}; font-size: 16px;` },
-            item.dq_score_testing,
+            item.dq_score_testing ?? '--',
         )
     );
 }

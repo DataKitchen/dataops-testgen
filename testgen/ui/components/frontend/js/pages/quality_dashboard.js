@@ -16,6 +16,8 @@
  * @property {string} project_code
  * @property {string} name
  * @property {number} score
+ * @property {number} profiling_score
+ * @property {number} testing_score
  * @property {number} cde_score
  * @property {Array<Dimension>} dimensions
  * 
@@ -50,7 +52,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
 
     return div(
         { id: domId, style: 'overflow-y: auto;' },
-        () => getValue(props.scores).length 
+        () => (getValue(props.scores).length || getValue(props.filter_term))
             ? div(
                 ScoreLegend('margin-bottom: -16px;'),
                 () => Toolbar(getValue(props.filter_term), getValue(props.sorted_by)),

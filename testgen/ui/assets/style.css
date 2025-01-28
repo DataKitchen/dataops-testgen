@@ -179,7 +179,7 @@ button[title="Show password text"] {
     background-color: var(--dk-card-background);
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] {
+div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) > div > [data-testid="stVerticalBlock"] {
     width: 100%;
     flex-direction: row;
 }
@@ -196,6 +196,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="st
 
 div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
     justify-content: flex-end;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-center) [data-testid="stVerticalBlock"] {
+    justify-content: center;
 }
 
 [data-testid="stVerticalBlock"]:has(> div.element-container > div.stHtml > i.no-flex-gap) {

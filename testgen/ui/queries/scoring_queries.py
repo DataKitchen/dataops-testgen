@@ -19,7 +19,7 @@ def get_table_groups_score_cards(
         ON (table_groups.id = profiling_cols.table_groups_id
         OR table_groups.id = test_cols.table_groups_id)
     WHERE table_groups.project_code = '{project_code}'
-    {f"AND name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
+    {f"AND table_groups.table_groups_name ILIKE '%%{filter_term}%%'  " if filter_term else ''}
     ORDER BY {sorted_by} ASC;
     """
     results = db.retrieve_data(query)
@@ -29,6 +29,8 @@ def get_table_groups_score_cards(
             "project_code": project_code,
             "name": row["name"],
             "score": row["score"],
+            "profiling_score": row["profiling_score"],
+            "testing_score": row["testing_score"],
             "cde_score": row["cde_score"],
             "dimensions": [
                 {"label": "Accuracy", "score": row["accuracy_score"]},
@@ -42,6 +44,7 @@ def get_table_groups_score_cards(
     ]
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_table_group_score_card(project_code: str, table_group_id: str) -> "ScoreCard":
     schema: str = st.session_state["dbschema"]
     query = f"""
@@ -57,6 +60,8 @@ def get_table_group_score_card(project_code: str, table_group_id: str) -> "Score
         "project_code": project_code,
         "name": row["name"],
         "score": row["score"],
+        "profiling_score": row["profiling_score"],
+        "testing_score": row["testing_score"],
         "cde_score": row["cde_score"],
         "dimensions": [
             {"label": "Accuracy", "score": row["accuracy_score"]},
@@ -191,9 +196,8 @@ def get_score_card_issues(
             results.detail,
             EXTRACT(EPOCH FROM runs.profiling_starttime) AS time,
             '' AS name,
-            'Hygiene Issue' AS category,
             runs.id::text AS run_id,
-            'profile' AS issue_type
+            'hygiene' AS issue_type
         FROM profile_anomaly_results AS results
         INNER JOIN profile_anomaly_types AS types
             ON (types.id = results.anomaly_id)
@@ -203,7 +207,8 @@ def get_score_card_issues(
             ON (score_profiling_runs.profile_run_id = runs.id
             AND score_profiling_runs.table_name = results.table_name
             AND score_profiling_runs.column_name = results.column_name)
-        {f"WHERE {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
+        WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed'
+            {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     ),
     score_test_runs AS (
         SELECT
@@ -225,7 +230,6 @@ def get_score_card_issues(
             result_message AS detail,
             EXTRACT(EPOCH FROM test_time) AS time,
             test_suites.test_suite AS name,
-            test_types.dq_dimension AS category,
             test_results.test_run_id::text AS run_id,
             'test' AS issue_type
         FROM test_results
@@ -238,7 +242,8 @@ def get_score_card_issues(
         INNER JOIN test_types
             ON (test_types.test_type = test_results.test_type)
         WHERE result_status IN ('Failed', 'Warning')
-        {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
+            AND COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+            {f"AND {group_by} = '{value_}'" if group_by == "dq_dimension" else ""}
     )
     SELECT * FROM (
         SELECT * FROM anomalies
@@ -263,7 +268,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
     profile_ids = []
     test_ids = []
     for issue in selected_issues:
-        id_list = profile_ids if issue["issue_type"] == "profile" else test_ids
+        id_list = profile_ids if issue["issue_type"] == "hygiene" else test_ids
         id_list.append(issue["id"])
 
     schema: str = st.session_state["dbschema"]
@@ -272,7 +277,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
         profile_query = f"""
         SELECT
             results.id::VARCHAR,
-            'hygiene' AS report_type,
+            'hygiene' AS issue_type,
             types.issue_likelihood,
             runs.profiling_starttime,
             types.anomaly_name,
@@ -304,7 +309,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
         test_query = f"""
         SELECT
             results.id::VARCHAR AS test_result_id,
-            'test' AS report_type,
+            'test' AS issue_type,
             results.result_status,
             results.test_time,
             types.test_name_short,
@@ -362,7 +367,7 @@ class DimensionScore(TypedDict):
 
 class SelectedIssue(TypedDict):
     id: str
-    issue_type: Literal["profile", "test"]
+    issue_type: Literal["hygiene", "test"]
 
 
 _TABLE_GROUP_SCORES_QUERY = """
@@ -427,6 +432,8 @@ _TABLE_GROUP_SCORES_QUERY = """
         COALESCE(profiling_cols.table_groups_id, test_cols.table_groups_id) AS id,
         COALESCE(profiling_cols.table_groups_name, test_cols.table_groups_name) AS name,
         (COALESCE(profiling_cols.score, 1) * COALESCE(test_cols.score, 1)) AS score,
+        profiling_cols.score AS profiling_score,
+        test_cols.score AS testing_score,
         (COALESCE(profiling_cols.cde_score, 1) * COALESCE(test_cols.cde_score, 1)) AS cde_score,
         (COALESCE(profiling_dims.accuracy_score, 1) * COALESCE(test_dims.accuracy_score, 1)) AS accuracy_score,
         (COALESCE(profiling_dims.completeness_score, 1) * COALESCE(test_dims.completeness_score, 1)) AS completeness_score,

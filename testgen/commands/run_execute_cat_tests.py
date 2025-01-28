@@ -62,7 +62,8 @@ def FinalizeTestRun(clsCATExecute):
     lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
                   clsCATExecute.PushTestRunStatusUpdateSQL(),
                   clsCATExecute.FinalizeTestSuiteUpdateSQL(),
-                  clsCATExecute.TestScoringRollupSQL()]
+                  clsCATExecute.TestScoringRollupRunSQL(),
+                  clsCATExecute.TestScoringRollupTableGroupSQL()]
     RunActionQueryList(("DKTG"), lstQueries)
 
 

@@ -1,6 +1,7 @@
 import typing
 
 from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
+from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
 from testgen.common.read_file import replace_templated_functions
 
@@ -55,6 +56,7 @@ class CProfilingSQL:
     exception_message = ""
 
     _data_chars_sql: CRefreshDataCharsSQL = None
+    _rollup_scores_sql: CRollupScoresSQL = None
 
     def __init__(self, strProjectCode, flavor):
         self.flavor = flavor
@@ -86,6 +88,12 @@ class CProfilingSQL:
             self._data_chars_sql = CRefreshDataCharsSQL(params, self.run_date, "v_latest_profile_results")
     
         return self._data_chars_sql
+    
+    def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
+        if not self._rollup_scores_sql:
+            self._rollup_scores_sql = CRollupScoresSQL(self.profile_run_id, self.table_groups_id)
+    
+        return self._rollup_scores_sql
 
     def ReplaceParms(self, strInputString):
         strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
@@ -165,10 +173,13 @@ class CProfilingSQL:
         strQ = self.ReplaceParms(read_template_sql_file("refresh_anomalies.sql", sub_directory="profiling"))
         return strQ
 
-    def GetAnomalyScoringRollupQuery(self):
+    def GetAnomalyScoringRollupRunQuery(self):
         # Runs on DK Postgres Server
-        strQ = self.ReplaceParms(read_template_sql_file("profile_anomaly_scoring_rollup.sql", sub_directory="profiling"))
-        return strQ
+        return self._get_rollup_scores_sql().GetRollupScoresProfileRunQuery()
+    
+    def GetAnomalyScoringRollupTableGroupQuery(self):
+        # Runs on DK Postgres Server
+        return self._get_rollup_scores_sql().GetRollupScoresProfileTableGroupQuery()
 
     def GetAnomalyTestTypesQuery(self):
         # Runs on DK Postgres Server
