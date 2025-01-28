@@ -89,9 +89,9 @@ class CTestExecutionSQL:
             if parm == "subset_condition":
                 strInputString = strInputString.replace("{SUBSET_DISPLAY}", value.replace("'", "''") if value else "")
 
-
-        # Adding escape character where ':' is referenced
-        strInputString = strInputString.replace(":", "\\:")
+        if self.flavor != "databricks":
+            # Adding escape character where ':' is referenced
+            strInputString = strInputString.replace(":", "\\:")
 
         return strInputString
 

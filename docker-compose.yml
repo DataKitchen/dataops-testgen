@@ -47,6 +47,8 @@ services:
 volumes:
   postgres_data:
   testgen_data:
+    driver_opts:
+      username: testgen
 
 networks:
   datakitchen:

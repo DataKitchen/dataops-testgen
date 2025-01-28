@@ -342,6 +342,8 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('3032', 'Variability_Decrease', 'mssql', '100.0*STDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
         ('4031', 'Variability_Increase', 'postgresql', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),
         ('4032', 'Variability_Decrease', 'postgresql', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
+        ('6031', 'Variability_Increase', 'databricks', '100.0*STDDEV_SAMP(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),
+        ('6032', 'Variability_Decrease', 'databricks', '100.0*STDDEV_SAMP(CAST("{COLUMN_NAME}" AS FLOAT))/{BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
 
         ('5001', 'Alpha_Trunc', 'trino', 'MAX(LENGTH({COLUMN_NAME}))', '<', '{THRESHOLD_VALUE}'),
         ('5002', 'Avg_Shift', 'trino', 'ABS( (CAST(AVG({COLUMN_NAME} AS REAL)) - {BASELINE_AVG}) / SQRT(((CAST(COUNT({COLUMN_NAME}) AS REAL)-1)*STDDEV({COLUMN_NAME})^2 + (CAST({BASELINE_VALUE_CT} AS REAL)-1) * CAST({BASELINE_SD} AS REAL)^2) /NULLIF(CAST(COUNT({COLUMN_NAME}) AS REAL) + CAST({BASELINE_VALUE_CT} AS REAL), 0) ))', '>=', '{THRESHOLD_VALUE}'),
@@ -376,30 +378,64 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('5031', 'Variability_Increase', 'trino', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS REAL))/{BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),
         ('5032', 'Variability_Decrease', 'trino', '100.0*STDDEV(CAST("{COLUMN_NAME}" AS REAL))/{BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
 
+        ('6001', 'Alpha_Trunc', 'databricks', 'MAX(LENGTH({COLUMN_NAME}))', '<', '{THRESHOLD_VALUE}'),
+        ('6002', 'Avg_Shift', 'databricks', 'ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV_SAMP({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))', '>=', '{THRESHOLD_VALUE}'),
+        ('6003', 'Condition_Flag', 'databricks', 'SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6004', 'Constant', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6005', 'Daily_Record_Ct', 'databricks', '<%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})', '<', '{THRESHOLD_VALUE}'),
+        ('6006', 'Dec_Trunc', 'databricks', 'ROUND(SUM(ABS({COLUMN_NAME})::DECIMAL(18,4) % 1), 0)', '<', '{THRESHOLD_VALUE}'),
+        ('6007', 'Distinct_Date_Ct', 'databricks', 'COUNT(DISTINCT {COLUMN_NAME})', '<', '{THRESHOLD_VALUE}'),
+        ('6008', 'Distinct_Value_Ct', 'databricks', 'COUNT(DISTINCT {COLUMN_NAME})', '<>', '{THRESHOLD_VALUE}'),
+        ('6009', 'Email_Format', 'databricks', 'SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::STRING, ''^[A-Za-z0-9._''''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6010', 'Future_Date', 'databricks', 'SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - ''{RUN_DATE}''::DATE)))', '>', '{THRESHOLD_VALUE}'),
+        ('6011', 'Future_Date_1Y', 'databricks', 'SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - (''{RUN_DATE}''::DATE+365))))', '>', '{THRESHOLD_VALUE}'),
+        ('6012', 'Incr_Avg_Shift', 'databricks', 'COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)', '>=', '{THRESHOLD_VALUE}'),
+        ('6013', 'LOV_All', 'databricks', 'STRING_AGG(DISTINCT {COLUMN_NAME}, ''|'') WITHIN GROUP (ORDER BY {COLUMN_NAME})', '<>', '{THRESHOLD_VALUE}'),
+        ('6014', 'LOV_Match', 'databricks', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6015', 'Min_Date', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} < ''{BASELINE_VALUE}'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6016', 'Min_Val', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6017', 'Missing_Pct', 'databricks', 'ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )', '>=', '{THRESHOLD_VALUE}'),
+        ('6018', 'Monthly_Rec_Ct', 'databricks', '(MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>)', '>', '{THRESHOLD_VALUE}'),
+        ('6019', 'Outlier_Pct_Above', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT', '>', '{THRESHOLD_VALUE}'),
+        ('6020', 'Outlier_Pct_Below', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME}::FLOAT < {BASELINE_AVG}-(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT', '>', '{THRESHOLD_VALUE}'),
+        ('6021', 'Pattern_Match', 'databricks', 'COUNT(NULLIF({COLUMN_NAME}, '''')) - SUM(REGEXP_LIKE(NULLIF({COLUMN_NAME}::STRING, ''''), ''{BASELINE_VALUE}'')::BIGINT)', '>', '{THRESHOLD_VALUE}'),
+        ('6022', 'Recency', 'databricks', '<%DATEDIFF_DAY;MAX({COLUMN_NAME});''{RUN_DATE}''::DATE%>', '>', '{THRESHOLD_VALUE}'),
+        ('6023', 'Required', 'databricks', 'COUNT(*) - COUNT( {COLUMN_NAME} )', '>', '{THRESHOLD_VALUE}'),
+        ('6024', 'Row_Ct', 'databricks', 'COUNT(*)', '<', '{THRESHOLD_VALUE}'),
+        ('6025', 'Row_Ct_Pct', 'databricks', 'ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))', '>', '{THRESHOLD_VALUE}'),
+        ('6026', 'Street_Addr_Pattern', 'databricks', '100.0*SUM((regexp_like({COLUMN_NAME}::STRING, ''^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$''))::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT', '<', '{THRESHOLD_VALUE}'),
+        ('6027', 'US_State', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} NOT IN ('''',''AL'',''AK'',''AS'',''AZ'',''AR'',''CA'',''CO'',''CT'',''DE'',''DC'',''FM'',''FL'',''GA'',''GU'',''HI'',''ID'',''IL'',''IN'',''IA'',''KS'',''KY'',''LA'',''ME'',''MH'',''MD'',''MA'',''MI'',''MN'',''MS'',''MO'',''MT'',''NE'',''NV'',''NH'',''NJ'',''NM'',''NY'',''NC'',''ND'',''MP'',''OH'',''OK'',''OR'',''PW'',''PA'',''PR'',''RI'',''SC'',''SD'',''TN'',''TX'',''UT'',''VT'',''VI'',''VA'',''WA'',''WV'',''WI'',''WY'',''AE'',''AP'',''AA'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6028', 'Unique', 'databricks', 'COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})', '>', '{THRESHOLD_VALUE}'),
+        ('6029', 'Unique_Pct', 'databricks', 'ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )', '>=', '{THRESHOLD_VALUE}'),
+        ('6030', 'Weekly_Rec_Ct', 'databricks', 'CAST(<%DATEDIFF_WEEK;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%> + 1 - COALESCE(NULLIF(COUNT(DISTINCT <%DATEDIFF_WEEK;''{RUN_DATE}''::DATE;{COLUMN_NAME}%>), 0), 1) AS INT)', '>', '{THRESHOLD_VALUE}'),
+
         ('1033', 'Valid_Month', 'redshift', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('2033', 'Valid_Month', 'snowflake', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('3033', 'Valid_Month', 'mssql', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('4033', 'Valid_Month', 'postgresql', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('5033', 'Valid_Month', 'trino', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6033', 'Valid_Month', 'databricks', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
 
         ('1034', 'Valid_US_Zip', 'redshift', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('4034', 'Valid_US_Zip', 'postgresql', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('2034', 'Valid_US_Zip', 'snowflake', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('5034', 'Valid_US_Zip', 'trino', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('3034', 'Valid_US_Zip', 'mssql', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6034', 'Valid_US_Zip', 'databricks', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
 
         ('1035', 'Valid_US_Zip3', 'redshift', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('4035', 'Valid_US_Zip3', 'postgresql', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('2035', 'Valid_US_Zip3', 'snowflake', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('5035', 'Valid_US_Zip3', 'trino', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('3035', 'Valid_US_Zip3', 'mssql', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6035', 'Valid_US_Zip3', 'databricks', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME},''012345678'',''999999999'') <> ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
 
         ('1036', 'Valid_Characters', 'redshift', 'SUM(CASE WHEN {COLUMN_NAME} ~ ''[[:cntrl:]]'' OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('4036', 'Valid_Characters', 'postgresql', 'SUM(CASE WHEN {COLUMN_NAME} ~ ''[[:cntrl:]]'' OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME}::VARCHAR LIKE ''''''%'''''' OR column_name::VARCHAR LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('2036', 'Valid_Characters', 'snowflake', 'SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME}::VARCHAR, ''.*[[:cntrl:]].*'') OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('5036', 'Valid_Characters', 'trino', 'SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME}, ''[\x00-\x1F\x7F]'') OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR column_name LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
-        ('3036', 'Valid_Characters', 'mssql', 'SUM(CASE WHEN PATINDEX(''%['' + CHAR(1) + ''-'' + CHAR(8) + CHAR(11) + CHAR(12) + CHAR(14) + ''-'' + CHAR(31) + '']%'', {COLUMN_NAME}) > 0 OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR column_name LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}');
-
+        ('3036', 'Valid_Characters', 'mssql', 'SUM(CASE WHEN PATINDEX(''%['' + CHAR(1) + ''-'' + CHAR(8) + CHAR(11) + CHAR(12) + CHAR(14) + ''-'' + CHAR(31) + '']%'', {COLUMN_NAME}) > 0 OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR column_name LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('6036', 'Valid_Characters', 'databricks', 'SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME}::STRING, ''.*[[:cntrl:]].*'') OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}');
 
 TRUNCATE TABLE target_data_lookups;
 
@@ -1202,7 +1238,173 @@ WHERE {SUBSET_CONDITION}
         ('1269', '1100', 'Profile Anomaly', 'Potential_PII', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
         ('1270', '1100', 'Profile Anomaly', 'Potential_PII', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
         ('1271', '1100', 'Profile Anomaly', 'Potential_PII', 'mssql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
-        ('1272', '1100', 'Profile Anomaly', 'Potential_PII', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;')
+        ('1272', '1100', 'Profile Anomaly', 'Potential_PII', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;'),
+
+    ('1273', '1001', 'Profile Anomaly' , 'Suggested_Type', 'databricks', NULL, 'SELECT TOP 20 `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC;'),
+    ('1274', '1002', 'Profile Anomaly' , 'Non_Standard_Blanks', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN `{COLUMN_NAME}` IN (''.'', ''?'', '' '') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''-{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''0{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''9{2,}''         OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''x{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''z{2,}'' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''blank'',''error'',''missing'',''tbd'', ''n/a'',''#na'',''none'',''null'',''unknown'')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''(blank)'',''(error)'',''(missing)'',''(tbd)'', ''(n/a)'',''(#na)'',''(none)'',''(null)'',''(unknown)'') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''[blank]'',''[error]'',''[missing]'',''[tbd]'', ''[n/a]'',''[#na]'',''[none]'',''[null]'',''[unknown]'') THEN 1 WHEN `{COLUMN_NAME}` = '''' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;'),
+    ('1275', '1003', 'Profile Anomaly' , 'Invalid_Zip_USA', 'databricks', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;'),
+    ('1276', '1004', 'Profile Anomaly' , 'Multiple_Types_Minor', 'databricks', NULL, 'SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE ''timestamp%'' THEN lower(data_type) WHEN data_type ILIKE ''date'' THEN lower(data_type) WHEN data_type ILIKE ''boolean'' THEN ''boolean'' WHEN data_type = ''TEXT'' THEN ''varchar('' || CAST(character_maximum_length AS STRING) || '')'' WHEN data_type ILIKE ''char%'' THEN ''char('' || CAST(character_maximum_length AS STRING) || '')'' WHEN data_type = ''NUMBER'' AND numeric_precision = 38 AND numeric_scale = 0 THEN ''bigint'' WHEN data_type ILIKE ''num%'' THEN ''numeric('' || CAST(numeric_precision AS STRING) || '','' || CAST(numeric_scale AS STRING) || '')'' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = ''{TARGET_SCHEMA}'' AND columns.column_name = ''{COLUMN_NAME}'' AND tables.table_type = ''BASE TABLE'' ORDER BY data_type, table_name;'),
+    ('1277', '1005', 'Profile Anomaly' , 'Multiple_Types_Major', 'databricks', NULL, 'SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE ''timestamp%'' THEN lower(data_type) WHEN data_type ILIKE ''date'' THEN lower(data_type) WHEN data_type ILIKE ''boolean'' THEN ''boolean'' WHEN data_type = ''TEXT'' THEN ''varchar('' || CAST(character_maximum_length AS STRING) || '')'' WHEN data_type ILIKE ''char%'' THEN ''char('' || CAST(character_maximum_length AS STRING) || '')'' WHEN data_type = ''NUMBER'' AND numeric_precision = 38 AND numeric_scale = 0 THEN ''bigint'' WHEN data_type ILIKE ''num%'' THEN ''numeric('' || CAST(numeric_precision AS STRING) || '','' || CAST(numeric_scale AS STRING) || '')'' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = ''{TARGET_SCHEMA}'' AND columns.column_name = ''{COLUMN_NAME}'' AND tables.table_type = ''BASE TABLE'' ORDER BY data_type, table_name;'),
+    ('1278', '1006', 'Profile Anomaly' , 'No_Values', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;' ),
+    ('1279', '1007', 'Profile Anomaly' , 'Column_Pattern_Mismatch', 'databricks', NULL, 'SELECT A.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT trim(split_part(''{DETAIL_EXPRESSION}'', ''|'', 4)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, ''[a-z]'', ''a''), ''[A-Z]'', ''A''), ''[0-9]'', ''N'') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC) A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT trim(split_part(''{DETAIL_EXPRESSION}'', ''|'', 6)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, ''[a-z]'', ''a''), ''[A-Z]'', ''A''), ''[0-9]'', ''N'') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC) B UNION ALL SELECT C.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT trim(split_part(''{DETAIL_EXPRESSION}'', ''|'', 8)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, ''[a-z]'', ''a''), ''[A-Z]'', ''A''), ''[0-9]'', ''N'') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC) C UNION ALL SELECT D.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT trim(split_part(''{DETAIL_EXPRESSION}'', ''|'', 10)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, ''[a-z]'', ''a''), ''[A-Z]'', ''A''), ''[0-9]'', ''N'') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC) D ORDER BY top_pattern DESC, count DESC;' ),
+    ('1280', '1008', 'Profile Anomaly' , 'Table_Pattern_Mismatch', 'databricks', NULL, 'SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = ''{TARGET_SCHEMA}'' AND columns.column_name = ''{COLUMN_NAME}'' AND UPPER(tables.table_type) = ''BASE TABLE'' ORDER BY table_name; ' ),
+    ('1281', '1009', 'Profile Anomaly' , 'Leading_Spaces', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` BETWEEN '' !'' AND ''!'' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;' ),
+    ('1282', '1010', 'Profile Anomaly' , 'Quoted_Values', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE ''"%"'' OR `{COLUMN_NAME}` ILIKE ''''''%'''''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;' ),
+    ('1283', '1011', 'Profile Anomaly' , 'Char_Column_Number_Values', 'databricks', NULL, 'SELECT A.* FROM (SELECT DISTINCT TOP 10  ''Numeric'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 ''Non-Numeric'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC;' ),
+    ('1284', '1012', 'Profile Anomaly' , 'Char_Column_Date_Values', 'databricks', NULL, 'SELECT A.* FROM (SELECT DISTINCT TOP 10 ''Date'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_DATE;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 ''Non-Date'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_DATE;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC;' ),
+    ('1285', '1013', 'Profile Anomaly' , 'Small Missing Value Ct', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` IN (''.'', ''?'', '' '') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''-{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''0{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''9{2,}''     OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''x{2,}'' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP ''z{2,}'' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''blank'',''error'',''missing'',''tbd'', ''n/a'',''#na'',''none'',''null'',''unknown'')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''(blank)'',''(error)'',''(missing)'',''(tbd)'', ''(n/a)'',''(#na)'',''(none)'',''(null)'',''(unknown)'') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN (''[blank]'',''[error]'',''[missing]'',''[tbd]'', ''[n/a]'',''[#na]'',''[none]'',''[null]'',''[unknown]'') THEN 1 WHEN `{COLUMN_NAME}` = '''' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;' ),
+    ('1286', '1014', 'Profile Anomaly' , 'Small Divergent Value Ct', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY COUNT(*) DESC;' ),
+    ('1287', '1015', 'Profile Anomaly' , 'Boolean_Value_Mismatch', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY COUNT(*) DESC;' ),
+    ('1288', '1016', 'Profile Anomaly' , 'Potential_Duplicates', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;' ),
+    ('1289', '1017', 'Profile Anomaly' , 'Standardized_Value_Matches', 'databricks', NULL, 'WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE(`{COLUMN_NAME}`, '' '''',.-'', '''')) as possible_standard_value, COUNT(DISTINCT `{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY UPPER(TRANSLATE(`{COLUMN_NAME}`, '' '''',.-'', '''')) HAVING COUNT(DISTINCT `{COLUMN_NAME}`) > 1 ) SELECT DISTINCT a.`{COLUMN_NAME}`, possible_standard_value, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} a, cte b WHERE UPPER(TRANSLATE(a.`{COLUMN_NAME}`, '' '''',.-'', '''')) = b.possible_standard_value GROUP BY a.`{COLUMN_NAME}`, possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;' ),
+    ('1290', '1018', 'Profile Anomaly' , 'Unlikely_Date_Values', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, ''{PROFILE_RUN_DATE}'' :: DATE AS profile_run_date, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} a WHERE (`{COLUMN_NAME}` < ''1900-01-01''::DATE) OR (`{COLUMN_NAME}` > ''{PROFILE_RUN_DATE}'' :: DATE + INTERVAL ''30 year'' ) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;' ),
+    ('1291', '1019', 'Profile Anomaly' , 'Recency_One_Year', 'databricks', NULL, 'created_in_ui' ),
+    ('1292', '1020', 'Profile Anomaly' , 'Recency_Six_Months', 'databricks', NULL, 'created_in_ui' ),
+    ('1293', '1021', 'Profile Anomaly' , 'Unexpected US States', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;' ),
+    ('1294', '1022', 'Profile Anomaly' , 'Unexpected Emails', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;' ),
+    ('1295', '1023', 'Profile Anomaly' , 'Small_Numeric_Value_Ct', 'databricks', NULL, 'SELECT A.* FROM (SELECT DISTINCT TOP 10  ''Numeric'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 ''Non-Numeric'' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC;' ),
+    ('1296', '1024', 'Profile Anomaly' , 'Invalid_Zip3_USA', 'databricks', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,''012345678'',''999999999'') <> ''999'' GROUP BY `{COLUMN_NAME}` ORDER BY count DESC, `{COLUMN_NAME}` LIMIT 500;'),
+    ('1297', '1025', 'Profile Anomaly' , 'Delimited_Data_Embedded', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, ''^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$'') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, ''.*\\s(and|but|or|yet)\\s.*'') GROUP BY `{COLUMN_NAME}` ORDER BY COUNT(*) DESC LIMIT 500;' ),
+
+     ('1298', '1004', 'Test Results', 'Alpha_Trunc', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}` , LEN(`{COLUMN_NAME}`) as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN(`{COLUMN_NAME}`)) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN(`{COLUMN_NAME}`) = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;'),
+     ('1299', '1005', 'Test Results', 'Avg_Shift', 'databricks', NULL, 'SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+     ('1300', '1006', 'Test Results', 'Condition_Flag', 'databricks', NULL, 'SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;'),
+     ('1301', '1007', 'Test Results', 'Constant', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1302', '1009', 'Test Results', 'Daily_Record_Ct', 'databricks', NULL, 'WITH RECURSIVE daterange(all_dates) AS (SELECT MIN(`{COLUMN_NAME}`) :: DATE AS all_dates  FROM {TARGET_SCHEMA}.{TABLE_NAME}  UNION ALL  SELECT DATEADD(DAY, 1, d.all_dates) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT MAX(`{COLUMN_NAME}`) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS ( SELECT DISTINCT `{COLUMN_NAME}` :: DATE AS period, COUNT(1) AS period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` :: DATE ) SELECT p.missing_period, p.prior_available_date, e.period_count as prior_available_date_count, p.next_available_date, f.period_count as next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL  AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period LIMIT 500;'),
+     ('1303', '1011', 'Test Results', 'Dec_Trunc', 'databricks', NULL, 'SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}` :: TEXT, ''.'', 2)) AS decimal_scale, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY decimal_scale LIMIT 500;'),
+     ('1304', '1012', 'Test Results', 'Distinct_Date_Ct', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;'),
+     ('1305', '1013', 'Test Results', 'Distinct_Value_Ct', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;'),
+     ('1306', '1014', 'Test Results', 'Email_Format', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, ''^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'') != 1 GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1307', '1015', 'Test Results', 'Future_Date', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - ''{TEST_DATE}''::DATE)) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1308', '1016', 'Test Results', 'Future_Date_1Y', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - (''{TEST_DATE}''::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1309', '1017', 'Test Results', 'Incr_Avg_Shift', 'databricks', NULL, 'SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+     ('1310', '1018', 'Test Results', 'LOV_All', 'databricks', NULL, 'SELECT LISTAGG(DISTINCT `{COLUMN_NAME}`, ''|'') WITHIN GROUP (ORDER BY `{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME} HAVING LISTAGG(DISTINCT `{COLUMN_NAME}`, ''|'') WITHIN GROUP (ORDER BY `{COLUMN_NAME}`) <> ''{THRESHOLD_VALUE}'' LIMIT 500;'),
+     ('1311', '1019', 'Test Results', 'LOV_Match', 'databricks', NULL, 'SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '''') AS `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF(`{COLUMN_NAME}`, '''') NOT IN {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1312', '1020', 'Test Results', 'Min_Date', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`,  COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: DATE < ''{BASELINE_VALUE}'' :: DATE GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1313', '1021', 'Test Results', 'Min_Val', 'databricks', NULL, 'SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT 500;'),
+     ('1314', '1022', 'Test Results', 'Missing_Pct', 'databricks', NULL, 'SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` :: VARCHAR(255) = '''' ;'),
+     ('1315', '1023', 'Test Results', 'Monthly_Rec_Ct', 'databricks', NULL, 'WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC(''month'', MIN(`{COLUMN_NAME}`)) :: DATE AS all_dates  FROM {TARGET_SCHEMA}.{TABLE_NAME}  UNION ALL  SELECT DATEADD(MONTH, 1, d.all_dates) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC(''month'', MAX(`{COLUMN_NAME}`)) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS (SELECT DISTINCT DATE_TRUNC(''month'',`{COLUMN_NAME}`) :: DATE AS period, COUNT(1) AS period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC(''month'',`{COLUMN_NAME}`) :: DATE ) SELECT p.missing_period, p.prior_available_month, e.period_count as prior_available_month_count, p.next_available_month, f.period_count as next_available_month_count FROM (SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_month = e.period) LEFT JOIN existing_periods f ON (p.next_available_month = f.period) ORDER BY p.missing_period;'),
+     ('1316', '1024', 'Test Results', 'Outlier_Pct_Above', 'databricks', NULL, 'SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;'),
+     ('1317', '1025', 'Test Results', 'Outlier_Pct_Below', 'databricks', NULL, 'SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;'),
+     ('1318', '1026', 'Test Results', 'Pattern_Match', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''''),''{BASELINE_VALUE}'') != 1 GROUP BY `{COLUMN_NAME}`;'),
+     ('1319', '1028', 'Test Results', 'Recency', 'databricks', NULL, 'SELECT DISTINCT col AS latest_date_available, ''{TEST_DATE}'' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE ABS(DATEDIFF(day, col, ''{TEST_DATE}''::DATE)) > {THRESHOLD_VALUE};'),
+     ('1320', '1030', 'Test Results', 'Required', 'databricks', NULL, 'SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NULL LIMIT 500;'),
+     ('1321', '1031', 'Test Results', 'Row_Ct', 'databricks', NULL, 'WITH CTE AS (SELECT COUNT(*) AS current_count  FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};'),
+     ('1322', '1032', 'Test Results', 'Row_Ct_Pct', 'databricks', NULL, 'WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;'),
+     ('1323', '1033', 'Test Results', 'Street_Addr_Pattern', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, ''^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$'') != 1 GROUP BY `{COLUMN_NAME}` ORDER BY COUNT(*) DESC LIMIT 500;'),
+     ('1324', '1036', 'Test Results', 'US_State', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE  NULLIF(`{COLUMN_NAME}`, '''') NOT IN (''AL'',''AK'',''AS'',''AZ'',''AR'',''CA'',''CO'',''CT'',''DE'',''DC'',''FM'',''FL'',''GA'',''GU'',''HI'',''ID'',''IL'',''IN'',''IA'',''KS'',''KY'',''LA'',''ME'',''MH'',''MD'',''MA'',''MI'',''MN'',''MS'',''MO'',''MT'',''NE'',''NV'',''NH'',''NJ'',''NM'',''NY'',''NC'',''ND'',''MP'',''OH'',''OK'',''OR'',''PW'',''PA'',''PR'',''RI'',''SC'',''SD'',''TN'',''TX'',''UT'',''VT'',''VI'',''VA'',''WA'',''WV'',''WI'',''WY'',''AE'',''AP'',''AA'') GROUP BY `{COLUMN_NAME}` LIMIT 500;'),
+     ('1325', '1034', 'Test Results', 'Unique', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;'),
+     ('1326', '1035', 'Test Results', 'Unique_Pct', 'databricks', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY COUNT(*) DESC LIMIT 500;'),
+     ('1327', '1037', 'Test Results', 'Weekly_Rec_Ct', 'databricks', NULL, 'WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC(''week'',MIN(`{COLUMN_NAME}`)) :: DATE AS all_dates  FROM {TARGET_SCHEMA}.{TABLE_NAME}  UNION ALL  SELECT (d.all_dates + INTERVAL ''1 week'' ) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC(''week'', MAX(`{COLUMN_NAME}`)) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS ( SELECT DISTINCT DATE_TRUNC(''week'',`{COLUMN_NAME}`) :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC(''week'',`{COLUMN_NAME}`) :: DATE ) SELECT p.missing_period, p.prior_available_week, e.period_count as prior_available_week_count, p.next_available_week, f.period_count as next_available_week_count FROM( SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ) p LEFT JOIN existing_periods e ON (p.prior_available_week = e.period) LEFT JOIN existing_periods f ON (p.next_available_week = f.period) ORDER BY p.missing_period;'),
+     ('1328', '1040', 'Test Results', 'Variability_Increase', 'databricks', NULL, 'SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+     ('1329', '1041', 'Test Results', 'Variability_Decrease', 'databricks', NULL, 'SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+
+     ('1230', '1027', 'Profile Anomaly' , 'Variant_Coded_Values',   'databricks', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE lower(`{COLUMN_NAME}`) IN (SELECT trim(value) FROM TABLE (FLATTEN(INPUT => SPLIT(SUBSTRING(''{DETAIL_EXPRESSION}'', POSITION('':'', ''{DETAIL_EXPRESSION}'') + 2), ''|''))) ) GROUP BY `{COLUMN_NAME}`;'),
+     ('1330', '1043', 'Test Results', 'Valid_Characters', 'databricks', NULL, 'SELECT TOP 20 `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`, ''.*[[:cntrl:]].*'') OR `{COLUMN_NAME}`::STRING LIKE '' %'' OR `{COLUMN_NAME}`::STRING LIKE ''''''%'''''' OR `{COLUMN_NAME}`::STRING LIKE ''"%"'' GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC;'),
+     ('1331', '1044', 'Test Results', 'Valid_US_Zip', 'databricks', NULL, 'SELECT TOP 20 `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC;'),
+     ('1332', '1045', 'Test Results', 'Valid_US_Zip3', 'databricks', NULL, 'SELECT TOP 20 `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,''012345678'',''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC;'),
+        ('1246', '1500', 'Test Results', 'Aggregate_Balance', 'databricks', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+           FROM
+               ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+                   FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                  WHERE {SUBSET_CONDITION}
+                 GROUP BY {GROUPBY_NAMES}
+                 {HAVING_CONDITION}
+                   UNION ALL
+                 SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+                   FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                  WHERE {MATCH_SUBSET_CONDITION}
+                 GROUP BY {MATCH_GROUPBY_NAMES}
+                 {MATCH_HAVING_CONDITION} ) a
+        GROUP BY {GROUPBY_NAMES} ) s
+ WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
+ORDER BY {GROUPBY_NAMES};'),
+        ('1333', '1501', 'Test Results', 'Aggregate_Minimum', 'databricks', NULL, 'SELECT *
+FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+         FROM
+              ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+                  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 WHERE {SUBSET_CONDITION}
+                GROUP BY {GROUPBY_NAMES}
+                {HAVING_CONDITION}
+               UNION ALL
+                SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+                  FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 WHERE {MATCH_SUBSET_CONDITION}
+                GROUP BY {MATCH_GROUPBY_NAMES}
+                {MATCH_HAVING_CONDITION} ) a
+         GROUP BY {GROUPBY_NAMES} ) s
+ WHERE total < match_total OR (total IS NULL AND match_total IS NOT NULL)
+ORDER BY {GROUPBY_NAMES};'),
+        ('1334', '1502', 'Test Results', 'Combo_Match', 'databricks', NULL, 'SELECT *
+  FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+           FROM {TARGET_SCHEMA}.{TABLE_NAME}
+           WHERE {SUBSET_CONDITION}
+         GROUP BY {COLUMN_NAME_NO_QUOTES}
+         {HAVING_CONDITION}
+          EXCEPT
+         SELECT {MATCH_GROUPBY_NAMES}
+           FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+          WHERE {MATCH_SUBSET_CONDITION}
+         GROUP BY {MATCH_GROUPBY_NAMES}
+         {MATCH_HAVING_CONDITION}
+       ) test
+ORDER BY {COLUMN_NAME_NO_QUOTES};'),
+        ('1335', '1502', 'Test Results', 'Combo_Match', 'mssql', NULL, 'SELECT *
+  FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+           FROM {TARGET_SCHEMA}.{TABLE_NAME}
+           WHERE {SUBSET_CONDITION}
+         GROUP BY {COLUMN_NAME_NO_QUOTES}
+         {HAVING_CONDITION}
+          EXCEPT
+         SELECT {MATCH_GROUPBY_NAMES}
+           FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+          WHERE {MATCH_SUBSET_CONDITION}
+         GROUP BY {MATCH_GROUPBY_NAMES}
+         {MATCH_HAVING_CONDITION}
+       ) test
+ORDER BY {COLUMN_NAME_NO_QUOTES};'),
+            ('1336', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'databricks', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+ WHERE {SUBSET_CONDITION}
+   AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+   AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+GROUP BY {COLUMN_NAME_NO_QUOTES}
+ EXCEPT
+SELECT {COLUMN_NAME_NO_QUOTES}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+ WHERE {SUBSET_CONDITION}
+   AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+GROUP BY {COLUMN_NAME_NO_QUOTES}'),
+        ('1337', '1509', 'Test Results', 'Timeframe_Combo_Match', 'databricks', NULL, '        (
+SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+EXCEPT
+SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+)
+UNION ALL
+(
+SELECT ''Latest Timeframe'' as missing_from, {COLUMN_NAME}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+  AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+    EXCEPT
+SELECT ''Latest Timeframe'' as missing_from, {COLUMN_NAME}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+)'),
+    ('1338', '1100', 'Profile Anomaly', 'Potential_PII', 'databricks', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;')
+
+
 ;
 
 

@@ -62,8 +62,9 @@ class CCATExecutionSQL:
 
         strInputString = replace_templated_functions(strInputString, self.flavor)
 
-        # Adding escape character where ':' is referenced
-        strInputString = strInputString.replace(":", "\\:")
+        if self.flavor != "databricks":
+            # Adding escape character where ':' is referenced
+            strInputString = strInputString.replace(":", "\\:")
 
         return strInputString
 

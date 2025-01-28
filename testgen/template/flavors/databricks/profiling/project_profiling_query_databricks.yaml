@@ -200,11 +200,11 @@ strTemplate11_D:  CASE
                                                                 ELSE 0
       END) AS before_100yr_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(day, `{COL_NAME}`, '{RUN_DATE}') BETWEEN 0 AND 365 THEN 1
+        WHEN <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> BETWEEN 0 AND 365 THEN 1
                                                                          ELSE 0
       END) AS within_1yr_date_ct,
   SUM(CASE
-        WHEN DATEDIFF(day, `{COL_NAME}`, '{RUN_DATE}') BETWEEN 0 AND 30 THEN 1
+        WHEN <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> BETWEEN 0 AND 30 THEN 1
                                                                         ELSE 0
       END) AS within_1mo_date_ct,
   SUM(CASE
@@ -214,9 +214,9 @@ strTemplate11_D:  CASE
         WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 240 THEN 1
                                                                ELSE 0
       END) AS distant_future_date_ct,
-  COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_days_present,
-  COUNT(DISTINCT <%DATEDIFF_WEEK; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_weeks_present,
-  COUNT(DISTINCT <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%>) as date_months_present,
+  COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_days_present,
+  COUNT(DISTINCT <%DATEDIFF_WEEK; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_weeks_present,
+  COUNT(DISTINCT <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_months_present,
 
 strTemplate11_else:  NULL as min_date,
   NULL as max_date,
