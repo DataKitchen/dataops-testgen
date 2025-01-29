@@ -82,51 +82,59 @@ class TableGroupForm(BaseForm, ManualRender):
         st_kwargs_max_value=1000000,
         st_kwargs_help="The minimum number of records to be included in any sample (if available)",
     )
+    description: str = Field(
+        default="",
+        st_kwargs_label="Description",
+        st_kwargs_max_chars=1000,
+        st_kwargs_help="",
+    )
     data_source: str = Field(
         default="",
         st_kwargs_label="Data Source",
         st_kwargs_max_chars=40,
-        st_kwargs_help="Original source of all tables in this dataset. This can be overridden at the table level. (Optional)",
+        st_kwargs_help="Original source of the dataset",
     )
     source_system: str = Field(
         default="",
-        st_kwargs_label="System of Origin",
+        st_kwargs_label="Source System",
         st_kwargs_max_chars=40,
-        st_kwargs_help="Enterprise system source for all tables in this dataset. "
-            "This can be overridden at the table level. (Optional)",
-    )
-    business_domain: str = Field(
-        default="",
-        st_kwargs_label="Business Domain",
-        st_kwargs_max_chars=40,
-        st_kwargs_help="Business division responsible for all tables in this dataset. "
-                "e.g. Finance, Sales, Manufacturing. (Optional)",
-    )
-    data_location: str = Field(
-        default="",
-        st_kwargs_label="Location",
-        st_kwargs_max_chars=40,
-        st_kwargs_help="Physical or virtual location of all tables in this dataset. "
-            "e.g. Headquarters, Cloud, etc. (Optional)",
-    )
-    transform_level: str = Field(
-        default="",
-        st_kwargs_label="Transform Level",
-        st_kwargs_max_chars=40,
-        st_kwargs_help="Data warehouse processing layer. "
-            "Indicates the processing stage: e.g. Raw, Conformed, Processed, Reporting. (Optional)",
+        st_kwargs_help="Enterprise system source for the dataset",
     )
     source_process: str = Field(
         default="",
         st_kwargs_label="Source Process",
         st_kwargs_max_chars=40,
-        st_kwargs_help="The process, program or data flow that produced this data. (Optional)",
+        st_kwargs_help="Process, program, or data flow that produced the dataset",
+    )
+    data_location: str = Field(
+        default="",
+        st_kwargs_label="Location",
+        st_kwargs_max_chars=40,
+        st_kwargs_help="Physical or virtual location of the dataset, e.g., Headquarters, Cloud",
+    )
+    business_domain: str = Field(
+        default="",
+        st_kwargs_label="Business Domain",
+        st_kwargs_max_chars=40,
+        st_kwargs_help="Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing",
     )
     stakeholder_group: str = Field(
         default="",
         st_kwargs_label="Stakeholder Group",
         st_kwargs_max_chars=40,
-        st_kwargs_help="Designator for data owners or stakeholders who are responsible for this data. (Optional)",
+        st_kwargs_help="Data owners or stakeholders responsible for the dataset",
+    )
+    transform_level: str = Field(
+        default="",
+        st_kwargs_label="Transform Level",
+        st_kwargs_max_chars=40,
+        st_kwargs_help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting",
+    )
+    data_product: str = Field(
+        default="",
+        st_kwargs_label="Data Product",
+        st_kwargs_max_chars=40,
+        st_kwargs_help="Data domain that comprises the dataset",
     )
     table_group_id: int | None = Field(default=None)
 
@@ -153,17 +161,18 @@ class TableGroupForm(BaseForm, ManualRender):
         self.render_field("profile_sample_percent", expander_left_column)
         self.render_field("profile_sample_min_count", expander_right_column)
 
-        provenance_expander = container.expander("Data Provenance (Optional)", expanded=False)
-        with provenance_expander:
-            provenance_left_column, provenance_right_column = provenance_expander.columns([0.50, 0.50])
+        tags_expander = container.expander("Table Group Tags", expanded=False)
+        with tags_expander:
+            self.render_field("description", tags_expander)
+            tags_left_column, tags_right_column = tags_expander.columns([0.50, 0.50])
 
-        self.render_field("data_source", provenance_left_column)
-        self.render_field("source_system", provenance_left_column)
-        self.render_field("business_domain", provenance_left_column)
-        self.render_field("data_location", provenance_left_column)
-
-        self.render_field("transform_level", provenance_right_column)
-        self.render_field("source_process", provenance_right_column)
-        self.render_field("stakeholder_group", provenance_right_column)
+        self.render_field("data_source", tags_left_column)
+        self.render_field("source_system", tags_right_column)
+        self.render_field("source_process", tags_left_column)
+        self.render_field("data_location", tags_right_column)
+        self.render_field("business_domain", tags_left_column)
+        self.render_field("stakeholder_group", tags_right_column)
+        self.render_field("transform_level", tags_left_column)
+        self.render_field("data_product", tags_right_column)
 
         return self

@@ -20,7 +20,7 @@ def is_uuid4(value: str) -> bool:
         uuid = UUID(value, version=4)
     except Exception:
         return False
-    
+
     return str(uuid) == value
 
 
@@ -52,7 +52,7 @@ def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -
     full_query = join_string.join(queries)
     if len(full_query) <= max_query_length:
         return [full_query]
-    
+
     queries = iter(queries)
     chunked_queries = []
     current_chunk = next(queries)
