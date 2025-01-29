@@ -43,7 +43,8 @@
  * @property {number} add_date
  * @property {number} last_mod_date
  * @property {number} drop_date
- * * Column Metadata
+ * * Column Tags
+ * @property {string} description 
  * @property {boolean} critical_data_element
  * @property {string} data_source
  * @property {string} source_system
@@ -52,15 +53,17 @@
  * @property {string} stakeholder_group
  * @property {string} transform_level
  * @property {string} aggregation_level
- * * Table Metadata
+ * @property {string} data_product
+ * * Table Tags
  * @property {boolean} table_critical_data_element
- * @property {string} table_cdata_source
- * @property {string} table_csource_system
- * @property {string} table_csource_process
- * @property {string} table_cbusiness_domain
- * @property {string} table_cstakeholder_group
- * @property {string} table_ctransform_level
- * @property {string} table_caggregation_level
+ * @property {string} table_data_source
+ * @property {string} table_source_system
+ * @property {string} table_source_process
+ * @property {string} table_business_domain
+ * @property {string} table_stakeholder_group
+ * @property {string} table_transform_level
+ * @property {string} table_aggregation_level
+ * @property {string} table_data_product
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
@@ -87,7 +90,8 @@
  * @property {number} data_point_ct
  * @property {number} add_date
  * @property {number} drop_date
- * * Metadata
+ * * Tags
+ * @property {string} description 
  * @property {boolean} critical_data_element
  * @property {string} data_source
  * @property {string} source_system
@@ -96,6 +100,7 @@
  * @property {string} stakeholder_group
  * @property {string} transform_level
  * @property {string} aggregation_level
+ * @property {string} data_product
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
@@ -127,7 +132,6 @@ import { formatTimestamp } from '../display_utils.js';
 import { ColumnProfile } from '../components/column_profile.js';
 import { RadioGroup } from '../components/radio_group.js';
 import { ScoreMetric } from '../components/score_metric.js';
-import { Caption } from '../components/caption.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -216,7 +220,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             'No profiling data available',
                         ),
                     }) : null,
-                    MetadataCard(item),
+                    TagsCard(item),
                     PotentialPIICard(item),
                     HygieneIssuesCard(item),
                     TestIssuesCard(item),
@@ -308,8 +312,9 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     });
 };
 
-const MetadataCard = (/** @type Table | Column */ item) => {
+const TagsCard = (/** @type Table | Column */ item) => {
     const attributes = [
+        'description',
         'critical_data_element',
         'data_source',
         'source_system',
@@ -318,6 +323,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
         'stakeholder_group',
         'transform_level',
         'aggregation_level',
+        'data_product',
     ].map(key => ({
         key,
         label: key.replaceAll('_', ' '),
@@ -329,10 +335,11 @@ const MetadataCard = (/** @type Table | Column */ item) => {
         icon: 'layers',
         iconSize: 18,
         classes: 'text-disabled',
-        tooltip: 'Inherited from table metadata',
+        tooltip: 'Inherited from table tags',
         tooltipPosition: 'top-right',
     });
     const width = 300;
+    const descriptionWidth = 932;
 
     const content = div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
@@ -362,7 +369,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
                     value,
                 );
             }
-            return Attribute({ label, value, width });
+            return Attribute({ label, value, width: key === 'description' ? descriptionWidth : width });
         }),
     );
 
@@ -385,7 +392,8 @@ const MetadataCard = (/** @type Table | Column */ item) => {
             };
 
             return Input({
-                label, width,
+                label,
+                width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
                 placeholder: inherited ? `Inherited: ${inherited}` : null,
                 style: 'text-transform: capitalize;',
@@ -395,7 +403,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
     );
 
     return EditableCard({
-        title: `${item.type} Metadata`,
+        title: `${item.type} Tags `,
         content,
         // Pass as function so the block is re-rendered with reset values when re-editing after a cancel
         editingContent: () => editingContent,
@@ -404,7 +412,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
                 object[key] = state.rawVal;
                 return object;
             }, { id: item.id });
-            emitEvent('MetadataChanged', { payload })
+            emitEvent('TagsChanged', { payload })
         },
         // Reset states to original values on cancel
         onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),

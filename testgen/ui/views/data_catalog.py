@@ -55,7 +55,8 @@ class DataCatalogPage(Page):
             columns_df = get_table_group_columns(table_group_id)
             selected_item = get_selected_item(selected, table_group_id)
             if selected_item:
-                selected_item["connection_id"] = str(table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
+                selected_item["connection_id"] = str(
+                    table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
             else:
                 self.router.set_query_params({ "selected": None })
 
@@ -77,13 +78,13 @@ class DataCatalogPage(Page):
                 "data_catalog",
                 props={ "columns": columns_df.to_json(orient="records"), "selected": json.dumps(selected_item) },
                 on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
-                event_handlers={ "MetadataChanged": on_metadata_changed },
+                event_handlers={ "TagsChanged": on_tags_changed },
             )
 
 
-def on_metadata_changed(metadata: dict) -> None:
+def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
-    item_type, item_id = metadata["id"].split("_", 2)
+    item_type, item_id = tags["id"].split("_", 2)
 
     if item_type == "table":
         update_table = "data_table_chars"
@@ -93,21 +94,23 @@ def on_metadata_changed(metadata: dict) -> None:
         id_column = "column_id"
 
     attributes = [
+        "description",
         "data_source",
         "source_system",
         "source_process",
         "business_domain",
         "stakeholder_group",
         "transform_level",
-        "aggregation_level"
+        "aggregation_level",
+        "data_product"
     ]
     cde_value_map = {
         True: "TRUE",
         False: "FALSE",
         None: "NULL",
     }
-    set_attributes = [ f"{key} = NULLIF('{metadata.get(key) or ''}', '')" for key in attributes ]
-    set_attributes.append(f"critical_data_element = {cde_value_map[metadata.get('critical_data_element')]}")
+    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes ]
+    set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
 
     sql = f"""
         UPDATE {schema}.{update_table}
@@ -195,7 +198,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             data_point_ct,
             add_date,
             drop_date,
-            -- Metadata
+            -- Tags
+            description,
             critical_data_element,
             data_source,
             source_system,
@@ -204,6 +208,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             stakeholder_group,
             transform_level,
             aggregation_level,
+            data_product,
             -- Latest Profile & Test Runs
             last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
             profiling_starttime AS latest_profile_date,
@@ -236,7 +241,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             column_chars.add_date,
             column_chars.last_mod_date,
             column_chars.drop_date,
-            -- Column Metadata
+            -- Column Tags
+            column_chars.description,
             column_chars.critical_data_element,
             column_chars.data_source,
             column_chars.source_system,
@@ -245,7 +251,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             column_chars.stakeholder_group,
             column_chars.transform_level,
             column_chars.aggregation_level,
-            -- Table Metadata
+            column_chars.data_product,
+            -- Table Tags
             table_chars.critical_data_element AS table_critical_data_element,
             table_chars.data_source AS table_data_source,
             table_chars.source_system AS table_source_system,
@@ -254,6 +261,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             table_chars.stakeholder_group AS table_stakeholder_group,
             table_chars.transform_level AS table_transform_level,
             table_chars.aggregation_level AS table_aggregation_level,
+            table_chars.data_product AS table_data_product,
             -- Latest Profile & Test Runs
             column_chars.last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
             run_date AS latest_profile_date,
