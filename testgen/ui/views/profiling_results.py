@@ -3,6 +3,7 @@ import typing
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
+import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
@@ -22,26 +23,23 @@ class ProfilingResultsPage(Page):
     ]
 
     def render(self, run_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
-        run_parentage = profiling_queries.lookup_db_parentage_from_run(
-            run_id
-        )
-        if not run_parentage:
+        run_df = profiling_queries.get_run_by_id(run_id)
+        if run_df.empty:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
             return
 
-        run_date, table_group_id, table_group_name, project_code = run_parentage
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
-        project_service.set_current_project(project_code)
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
+        project_service.set_current_project(run_df["project_code"])
 
         testgen.page_header(
             "Data Profiling Results",
             "view-data-profiling-results",
             breadcrumbs=[
-                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
-                { "label": f"{table_group_name} | {run_date}" },
+                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run_df["project_code"] } },
+                { "label": f"{run_df['table_groups_name']} | {run_date}" },
             ],
         )
 
@@ -51,7 +49,7 @@ class ProfilingResultsPage(Page):
 
         with table_filter_column:
             # Table Name filter
-            df = profiling_queries.run_table_lookup_query(table_group_id)
+            df = get_profiling_run_tables(run_id)
             table_name = testgen.select(
                 options=df,
                 value_column="table_name",
@@ -62,7 +60,7 @@ class ProfilingResultsPage(Page):
 
         with column_filter_column:
             # Column Name filter
-            df = profiling_queries.run_column_lookup_query(table_group_id, table_name)
+            df = get_profiling_run_columns(run_id, table_name)
             column_name = testgen.select(
                 options=df,
                 value_column="column_name",
@@ -207,3 +205,28 @@ def generate_create_script(df):
     col_defs[-1] = col_defs[-1].replace(",    --", "    --")
 
     return "\n".join([str_header, *list(col_defs), str_footer])
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_run_tables(profiling_run_id: str):
+    schema: str = st.session_state["dbschema"]
+    query = f"""
+    SELECT DISTINCT table_name
+        FROM {schema}.profile_results
+    WHERE profile_run_id = '{profiling_run_id}'
+    ORDER BY table_name
+    """
+    return db.retrieve_data(query)
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_run_columns(profiling_run_id: str, table_name: str):
+    schema: str = st.session_state["dbschema"]
+    query = f"""
+    SELECT DISTINCT column_name
+        FROM {schema}.profile_results
+    WHERE profile_run_id = '{profiling_run_id}'
+        AND table_name = '{table_name}'
+    ORDER BY column_name
+    """
+    return db.retrieve_data(query)
