@@ -36,25 +36,9 @@ def get_db_profile_run_choices(str_table_groups_id):
     return db.retrieve_data(str_sql)
 
 
-@st.cache_data(show_spinner=False)
-def run_table_lookup_query(str_table_groups_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-           SELECT DISTINCT table_name
-             FROM {str_schema}.profile_results
-            WHERE table_groups_id = '{str_table_groups_id}'::UUID
-           ORDER BY table_name
-    """
-    return db.retrieve_data(str_sql)
 
 
-@st.cache_data(show_spinner=False)
-def run_column_lookup_query(str_table_groups_id, str_table_name):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_column_lookup_query(str_schema, str_table_groups_id, str_table_name)
-
-
-@st.cache_data(show_spinner="Loading data")
+@st.cache_data(show_spinner="Loading data ...")
 def get_run_by_id(profile_run_id: str) -> pd.Series:
     schema: str = st.session_state["dbschema"]
     sql = f"""
