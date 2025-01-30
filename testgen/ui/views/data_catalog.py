@@ -15,7 +15,7 @@ from testgen.ui.queries import project_queries
 from testgen.ui.queries.profiling_queries import get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import friendly_score, is_uuid4, score
+from testgen.utils import friendly_score, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"

@@ -277,11 +277,6 @@ class HygieneIssuesPage(Page):
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
 
-        # Help Links
-        st.markdown(
-            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
-        )
-
 
 @st.fragment
 def render_score(project_code: str, run_id: str):
@@ -314,12 +309,6 @@ def render_score(project_code: str, run_id: str):
 def refresh_score(project_code: str, run_id: str, table_group_id: str | None) -> None:
     run_profile_rollup_scoring_queries(project_code, run_id, table_group_id)
     st.cache_data.clear()
-
-
-@st.cache_data(show_spinner=False)
-def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(schema, project_code)
 
 
 @st.cache_data(show_spinner="False")
