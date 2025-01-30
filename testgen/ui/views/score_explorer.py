@@ -4,6 +4,7 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common.models.scores import SelectedIssue, ScoreCategory, ScoreDefinition, ScoreDefinitionFilter
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -187,6 +188,7 @@ def save_score_definition(_) -> None:
         for f in filters if (field_value := f.split("="))
     ]
     score_definition.save()
+    run_refresh_score_cards_results(definition_id=score_definition.id)
 
     Router().set_query_params({
         "name": None,

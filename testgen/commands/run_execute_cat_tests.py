@@ -1,5 +1,6 @@
 import logging
 
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
 from testgen.common import (
     RetrieveDBResultsToDictList,
@@ -58,13 +59,14 @@ def ParseCATResults(clsCATExecute):
     RunActionQueryList("DKTG", [strQuery])
 
 
-def FinalizeTestRun(clsCATExecute):
+def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
     lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
                   clsCATExecute.PushTestRunStatusUpdateSQL(),
                   clsCATExecute.FinalizeTestSuiteUpdateSQL(),
                   clsCATExecute.TestScoringRollupRunSQL(),
                   clsCATExecute.TestScoringRollupTableGroupSQL()]
     RunActionQueryList(("DKTG"), lstQueries)
+    run_refresh_score_cards_results(project_code=clsCATExecute.project_code)
 
 
 def run_cat_test_queries(
