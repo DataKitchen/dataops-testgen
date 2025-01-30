@@ -23,6 +23,7 @@ import { TestSuites } from './pages/test_suites.js';
 import { QualityDashboard } from './pages/quality_dashboard.js';
 import { ScoreDetails } from './pages/score_details.js';
 import { ScoreExplorer } from './pages/score_explorer.js';
+import { ColumnProfilingResults } from './data_profiling/column_profiling_results.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -40,6 +41,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         profiling_runs: ProfilingRuns,
         database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
+        column_profiling_results: ColumnProfilingResults,
         project_dashboard: ProjectDashboard,
         test_suites: TestSuites,
         quality_dashboard: QualityDashboard,
