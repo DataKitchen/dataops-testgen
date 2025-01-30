@@ -72,12 +72,12 @@ class ProfilingResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Schema Name", "p.schema_name"),
-                ("Table Name", "p.table_name"),
-                ("Column Name", "p.column_name"),
-                ("Column Type", "p.column_type"),
+                ("Schema Name", "schema_name"),
+                ("Table Name", "table_name"),
+                ("Column Name", "column_name"),
+                ("Column Type", "column_type"),
                 ("Semantic Data Type", "semantic_data_type"),
-                ("Anomalies", "anomalies"),
+                ("Hygiene Issues", "hygiene_issues"),
             )
             default_sorting = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default_sorting)
@@ -89,14 +89,14 @@ class ProfilingResultsPage(Page):
             column_name = "%%"
 
         # Display main results grid
-        df = profiling_queries.get_profiling_detail(run_id, table_name, column_name, sorting_columns)
+        df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
         show_columns = [
             "schema_name",
             "table_name",
             "column_name",
             "column_type",
             "semantic_data_type",
-            "anomalies",
+            "hygiene_issues",
         ]
 
         # Show CREATE script button
@@ -128,36 +128,40 @@ def render_export_button(df):
         "table_name",
         "column_name",
         "position",
-        "column_type",
+        "hygiene_issues",
+        # Characteristics
         "general_type",
+        "column_type",
         "semantic_table_type",
         "semantic_data_type",
         "datatype_suggestion",
-        "anomalies",
+        # Value Counts
         "record_ct",
         "value_ct",
         "distinct_value_ct",
-        "top_freq_values",
         "null_value_ct",
+        "zero_value_ct",
+        # Alpha
+        "zero_length_ct",
+        "filled_value_ct",
+        "includes_digit_ct",
+        "numeric_ct",
+        "date_ct",
+        "quoted_value_ct",
+        "lead_space_ct",
+        "embedded_space_ct",
+        "avg_embedded_spaces",
         "min_length",
         "max_length",
         "avg_length",
-        "distinct_std_value_ct",
-        "numeric_ct",
-        "date_ct",
-        "dummy_value_ct",
-        "zero_length_ct",
-        "lead_space_ct",
-        "quoted_value_ct",
-        "includes_digit_ct",
-        "embedded_space_ct",
-        "avg_embedded_spaces",
         "min_text",
         "max_text",
-        "std_pattern_match",
+        "distinct_std_value_ct",
         "distinct_pattern_ct",
+        "std_pattern_match",
+        "top_freq_values",
         "top_patterns",
-        "distinct_value_hash",
+        # Numeric
         "min_value",
         "min_value_over_0",
         "max_value",
@@ -166,19 +170,23 @@ def render_export_button(df):
         "percentile_25",
         "percentile_50",
         "percentile_75",
-        "zero_value_ct",
-        "fractional_sum",
+        # Date
         "min_date",
         "max_date",
         "before_1yr_date_ct",
         "before_5yr_date_ct",
+        "before_20yr_date_ct",
         "within_1yr_date_ct",
         "within_1mo_date_ct",
         "future_date_ct",
+        # Boolean
+        "boolean_true_ct",
+        # Extra
+        "distinct_value_hash",
+        "fractional_sum",
         "date_days_present",
         "date_weeks_present",
-        "date_months_present",
-        "boolean_true_ct",
+        "date_months_present",   
     ]
     wrap_columns = ["top_freq_values", "top_patterns"]
     caption = "{TIMESTAMP}"
