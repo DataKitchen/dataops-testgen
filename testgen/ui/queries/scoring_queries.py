@@ -6,8 +6,6 @@ import streamlit as st
 
 from testgen.common.models import engine
 from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefinition, SelectedIssue
-from testgen.common import read_template_sql_file
-import testgen.ui.services.database_service as db
 
 
 def get_all_score_cards(
@@ -34,127 +32,6 @@ def get_all_score_cards(
             score_card["categories"].append({"label": result.category, "score": result.score})
         score_cards.append(score_card)
     return score_cards
-
-
-def get_score_card(definition: ScoreDefinition) -> "ScoreCard":
-    overall_score_query_template_file = "get_overall_scores_by_column.sql"
-    categories_query_template_file = "get_category_scores_by_column.sql"
-    if definition.should_use_dimension_scores():
-        overall_score_query_template_file = "get_overall_scores_by_dimension.sql"
-        categories_query_template_file = "get_category_scores_by_dimension.sql"
-
-    filters = _get_score_definition_filters(definition)
-    overall_scores = db.retrieve_data(read_template_sql_file(
-        overall_score_query_template_file,
-        sub_directory="score_cards",
-    ).replace("{filters}", filters))
-    overall_scores = overall_scores.iloc[0].to_dict() if not overall_scores.empty else {}
-
-    categories_scores = []
-    if (category := definition.category):
-        categories_scores = db.retrieve_data(read_template_sql_file(
-            categories_query_template_file,
-            sub_directory="score_cards",
-        ).replace("{category}", category.value).replace("{filters}", filters))
-        categories_scores = [category.to_dict() for _, category in categories_scores.iterrows()]
-
-    return {
-        "id": definition.id,
-        "project_code": definition.project_code,
-        "name": definition.name,
-        "score": overall_scores.get("score") if definition.total_score else None,
-        "cde_score": overall_scores.get("cde_score") if definition.cde_score else None,
-        "profiling_score": overall_scores.get("profiling_score") if definition.total_score else None,
-        "testing_score": overall_scores.get("testing_score") if definition.total_score else None,
-        "categories": categories_scores,
-        "definition": definition,
-    }
-
-
-def get_score_card_breakdown(
-    definition: ScoreDefinition,
-    score_type: Literal["score", "cde_score"],
-    group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
-) -> list[dict]:
-    query_template_file = "get_score_card_breakdown_by_column.sql"
-    if definition.should_use_dimension_scores() or group_by == "dq_dimension":
-        query_template_file = "get_score_card_breakdown_by_dimension.sql"
-
-    columns = {
-        "column_name": ["table_name", "column_name"],
-    }.get(group_by, [group_by])
-    filters = _get_score_definition_filters(definition, cde_only=score_type == "cde_score")
-    join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
-    records_count_filters = _get_score_definition_filters(
-        definition,
-        cde_only=score_type == "cde_score",
-        prefix="profiling_records.",
-    )
-    non_null_columns = [f"COALESCE(profiling_records.{col}, test_records.{col}) AS {col}" for col in columns]
-
-    query = (
-        read_template_sql_file(query_template_file, sub_directory="score_cards")
-        .replace("{columns}", ", ".join(columns))
-        .replace("{group_by}", group_by)
-        .replace("{filters}", filters)
-        .replace("{join_condition}", join_condition)
-        .replace("{records_count_filters}", records_count_filters)
-        .replace("{non_null_columns}", ", ".join(non_null_columns))
-    )
-    results = pd.read_sql_query(query, engine)
-
-    return [row.to_dict() for _, row in results.iterrows()]
-
-
-def get_score_card_issues(
-    definition: ScoreDefinition,
-    score_type: Literal["score", "cde_score"],
-    group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
-    value: str,
-):
-    query_template_file = "get_score_card_issues_by_column.sql"
-    if definition.should_use_dimension_scores() or group_by == "dq_dimension":
-        query_template_file = "get_score_card_issues_by_dimension.sql"
-
-    value_ = value
-    filters = _get_score_definition_filters(definition, cde_only=score_type == "cde_score")
-    if group_by == "column_name":
-        table_name, value_ = value.split(".")
-        filters = filters + f" AND table_name = '{table_name}'"
-
-    dq_dimension_filter = ""
-    if group_by == "dq_dimension":
-        dq_dimension_filter = f" AND dq_dimension = '{value_}'"
-
-    query = (
-        read_template_sql_file(query_template_file, sub_directory="score_cards")
-        .replace("{filters}", filters)
-        .replace("{group_by}", group_by)
-        .replace("{value}", value_)
-        .replace("{dq_dimension_filter}", dq_dimension_filter)
-    )
-    results = pd.read_sql_query(query, engine)
-    return [row.to_dict() for _, row in results.iterrows()]
-
-
-def _get_score_definition_filters(
-    definition: ScoreDefinition,
-    cde_only: bool = False,
-    prefix: str | None = None,
-) -> str:
-    values_by_field = defaultdict(list)
-    for filter_ in definition.filters:
-        values_by_field[filter_.field].append(f"'{filter_.value}'")
-    values_by_field["project_code"].append(f"'{definition.project_code}'")
-    if cde_only:
-        values_by_field["critical_data_element"].append("true")
-
-    return " AND ".join([
-        f"{prefix or ''}{field} = {values[0]}"
-        if len(values) == 1 else
-        f"{prefix or ''}{field} IN ({', '.join(values)})"
-        for field, values in values_by_field.items()
-    ])
 
 
 def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
@@ -195,7 +72,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             ON results.table_groups_id = groups.id
         WHERE results.id IN ({",".join([f"'{issue_id}'" for issue_id in profile_ids])});
         """
-        profile_results = db.retrieve_data(profile_query)
+        profile_results = pd.read_sql_query(profile_query, engine)
         results.extend([row.to_dict() for _, row in profile_results.iterrows()])
 
     if test_ids:
@@ -239,7 +116,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             ON (results.table_groups_id = groups.id)
         WHERE results.id IN ({",".join([f"'{issue_id}'" for issue_id in test_ids])});
         """
-        test_results = db.retrieve_data(test_query)
+        test_results = pd.read_sql_query(test_query, engine)
         results.extend([row.to_dict() for _, row in test_results.iterrows()])
 
     return results
@@ -289,7 +166,7 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         WHERE project_code = '{project_code}'
         """,
     ])
-    results = db.retrieve_data(query)
+    results = pd.read_sql_query(query, engine)
     for _, row in results.iterrows():
         if row["category"] and row["value"]:
             values[row["category"]].append(row["value"])

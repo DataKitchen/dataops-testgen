@@ -4,22 +4,14 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionFilter
+from testgen.common.models.scores import SelectedIssue, ScoreCategory, ScoreDefinition, ScoreDefinitionFilter
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.session import session
-from testgen.ui.queries.scoring_queries import (
-    ScoreCard,
-    SelectedIssue,
-    get_score_category_values,
-    get_score_card,
-    get_score_card_breakdown,
-    get_score_card_issues,
-    get_score_card_issue_reports,
-)
+from testgen.ui.queries.scoring_queries import get_score_category_values, get_score_card_issue_reports
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 
@@ -74,7 +66,7 @@ class ScoreExplorerPage(Page):
 
         score_card = None
         if score_definition and len(score_definition.filters) > 0:
-            score_card = get_score_card(score_definition)
+            score_card = score_definition.as_score_card()
 
         testgen.testgen_component(
             "score_explorer",
@@ -85,8 +77,7 @@ class ScoreExplorerPage(Page):
                 "breakdown_category": breakdown_category,
                 "breakdown_score_type": breakdown_score_type,
                 "breakdown": format_score_card_breakdown(
-                    get_score_card_breakdown(
-                        score_definition,
+                    score_definition.get_score_card_breakdown(
                         score_type=breakdown_score_type,
                         group_by=breakdown_category,
                     ),
@@ -94,7 +85,7 @@ class ScoreExplorerPage(Page):
                 ) if score_card else None,
                 "drilldown": drilldown,
                 "issues": format_score_card_issues(
-                    get_score_card_issues(score_definition, breakdown_score_type, breakdown_category, drilldown),
+                    score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
                     breakdown_category,
                 ) if score_card and drilldown else None,
             },

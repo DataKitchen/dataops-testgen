@@ -4,23 +4,16 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.common.models.scores import ScoreDefinition
+from testgen.common.models.scores import ScoreDefinition, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries import table_group_queries
-from testgen.ui.queries.scoring_queries import (
-    SelectedIssue,
-    get_score_card_breakdown,
-    get_score_card_issue_reports,
-    get_score_card_issues,
-    get_score_card,
-)
+from testgen.ui.queries.scoring_queries import get_score_card_issue_reports
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session, temp_value
-from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, friendly_score, friendly_score_impact
+from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 
 class ScoreDetailsPage(Page):
@@ -56,13 +49,13 @@ class ScoreDetailsPage(Page):
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
-                "score": format_score_card(get_score_card(score_definition)),
+                "score": format_score_card(score_definition.as_score_card()),
                 "breakdown": format_score_card_breakdown(
-                    get_score_card_breakdown(score_definition, score_type, category),
+                    score_definition.get_score_card_breakdown(score_type, category),
                     category,
                 ) if not drilldown else None,
                 "issues": format_score_card_issues(
-                    get_score_card_issues(score_definition, score_type, category, drilldown),
+                    score_definition.get_score_card_issues(score_type, category, drilldown),
                     category,
                 ) if drilldown else None,
                 "permissions": {

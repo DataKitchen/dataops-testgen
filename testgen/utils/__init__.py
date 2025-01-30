@@ -86,7 +86,10 @@ def _pandas_default(value: Any, default: T) -> T:
 
 
 def format_score_card(score_card: ScoreCard) -> ScoreCard:
-    definition = score_card.get("definition")
+    definition = None
+    if score_card:
+        definition = score_card.get("definition")
+
     if not score_card:
         return {
             "id": None,

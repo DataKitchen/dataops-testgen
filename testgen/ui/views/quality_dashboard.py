@@ -6,7 +6,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
-from testgen.ui.queries.scoring_queries import ScoreCard, get_all_score_cards
+from testgen.ui.queries.scoring_queries import get_all_score_cards
 from testgen.ui.session import session
 from testgen.utils import format_score_card
 
