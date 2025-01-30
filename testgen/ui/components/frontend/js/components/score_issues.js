@@ -3,6 +3,7 @@
  * @type {object}
  * @property {string} id
  * @property {('hygiene' | 'test')} issue_type
+ * @property {string} table_group_id
  * @property {string} table
  * @property {string} column
  * @property {string} type
@@ -35,8 +36,8 @@ const IssuesTable = (
     /** @type Issue[] */ issues,
     /** @type string[] */ columns,
     /** @type Score */ score,
-    /** @type string */ scoreType,
-    /** @type string */ category,
+    /** @type ('score' | 'cde_score') */ scoreType,
+    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension') */ category,
     /** @type string */ drilldown,
     /** @type function */ onBack,
 ) => {
@@ -64,6 +65,9 @@ const IssuesTable = (
                     { class: 'issues-header table-header flex-row fx-align-flex-center fx-gap-1' },
                     span(`Hygiene / Test Issues (${issues.length ?? 0}) for`),
                     span({ class: 'text-primary' }, `${COLUMN_LABEL[category] ?? '-'}: ${drilldown.replace('.', ' > ')}`),
+                    category === 'column_name'
+                        ? ColumnProfilingButton(drilldown.split('.')[2], drilldown.split('.')[1], drilldown.split('.')[0])
+                        : null,
                 ),
             ),
             div(
@@ -93,7 +97,6 @@ const IssuesTable = (
         div(
             { class: 'table-header issues-columns flex-row' },
             Checkbox({
-                width: 30,
                 checked: () => selectedIssues.val.length === PAGE_SIZE,
                 indeterminate: () => !!selectedIssues.val.length,
                 onChange: (checked) => {
@@ -104,13 +107,13 @@ const IssuesTable = (
                     }  
                 },
             }),
+            span({ class: category === 'column_name' ? null : 'ml-6' }),
             columns.map(c => span({ style: `flex: ${c === 'detail' ? '1 1' : '0 0'} ${ISSUES_COLUMNS_SIZES[c]};` }, ISSUES_COLUMN_LABEL[c]))
         ),
         () => div(
             pageIssues.val.map((row) => div(
                 { class: 'table-row flex-row issues-row' },
                 Checkbox({
-                    width: 30,
                     checked: () => selectedIssues.val.map(({ id }) => id).includes(row.id),
                     onChange: (checked) => {
                         if (checked) {
@@ -120,6 +123,9 @@ const IssuesTable = (
                         }
                     },
                 }),
+                category === 'column_name' 
+                    ? span({ class: 'ml-2' }) 
+                    : ColumnProfilingButton(row.column, row.table, row.table_group_id),
                 columns.map((columnName) => TableCell(row, columnName)),
             )),
         ),
@@ -132,6 +138,22 @@ const IssuesTable = (
             },
         }),
     );
+};
+
+const ColumnProfilingButton = (
+    /** @type {string} */ column_name,
+    /** @type {string} */ table_name,
+    /** @type {string} */ table_group_id,
+) => {
+    return Button({
+        type: 'icon',
+        icon: 'insert_chart',
+        iconSize: 22,
+        style: 'color: var(--secondary-text-color);',
+        tooltip: 'View profiling for column',
+        tooltipPosition: 'top-right',
+        onclick: () => emitEvent('ColumnProflingClicked', { payload: { column_name, table_name, table_group_id } }),
+    });
 };
 
 /**

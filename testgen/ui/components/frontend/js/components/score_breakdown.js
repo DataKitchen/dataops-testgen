@@ -134,8 +134,10 @@ const ScoreCell = (value) => {
 
 const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) => {
     let drilldown = row[category];
-    if (category === 'column_name') {
-        drilldown = `${row.table_name}.${row.column_name}`;
+    if (category === 'table_name') {
+        drilldown = `${row.table_groups_id}.${row.table_name}`;
+    } else if (category === 'column_name') {
+        drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name}`;
     }
 
     return div(

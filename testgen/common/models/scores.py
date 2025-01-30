@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload, relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, Session, engine
+from testgen.utils import is_uuid4
 
 
 class ScoreCategory(enum.Enum):
@@ -58,6 +59,9 @@ class ScoreDefinition(Base):
 
     @classmethod
     def get(cls, id_: str) -> "Self | None":
+        if not is_uuid4(id_):
+            return None
+    
         definition = None
         with Session() as db_session:
             query = select(ScoreDefinition).options(
@@ -171,7 +175,8 @@ class ScoreDefinition(Base):
             query_template_file = "get_score_card_breakdown_by_dimension.sql"
 
         columns = {
-            "column_name": ["table_name", "column_name"],
+            "table_name": ["table_groups_id", "table_name"],
+            "column_name": ["table_groups_id", "table_name", "column_name"],
         }.get(group_by, [group_by])
         filters = " AND ".join(self._get_raw_query_filters(cde_only=score_type == "cde_score"))
         join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
@@ -222,8 +227,12 @@ class ScoreDefinition(Base):
 
         value_ = value
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
-        if group_by == "column_name":
-            table_name, value_ = value.split(".")
+        if group_by == "table_name":
+            table_group_id, value_ = value.split(".")
+            filters.append(f"table_groups_id = '{table_group_id}'")
+        elif group_by == "column_name":
+            table_group_id, table_name, value_ = value.split(".")
+            filters.append(f"table_groups_id = '{table_group_id}'")
             filters.append(f"table_name = '{table_name}'")
         filters = " AND ".join(filters)
 
