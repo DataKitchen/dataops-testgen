@@ -122,6 +122,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 Card({
                     id: 'overview-project-summary',
                     class: 'tg-overview--project',
+                    border: true,
                     content: [
                         () => div(
                             { class: 'flex-row fx-align-flex-start' },
@@ -183,7 +184,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     return Card({
-        class: 'tg-overview--table-group-card',
+        border: true,
         title: tableGroup.table_groups_name,
         actionContent: () => ExpanderToggle({
             default: tableGroup.expanded,
@@ -383,7 +384,6 @@ stylesheet.replace(`
 
 .tg-overview--project {
     margin: 8px 0;
-    border: 1px solid var(--border-color);
     width: 50%;
 }
 
@@ -393,10 +393,6 @@ stylesheet.replace(`
 
 .tg-overview--project--summary {
     margin-right: auto;
-}
-
-.tg-overview--table-group-card {
-    border: 1px solid var(--border-color);
 }
 
 hr.tg-overview--table-group-divider {
