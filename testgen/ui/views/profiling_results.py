@@ -1,3 +1,4 @@
+import json
 import typing
 
 import streamlit as st
@@ -7,10 +8,10 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service
 from testgen.ui.session import session
-from testgen.ui.views.profiling_details import show_profiling_detail
 
 FORM_DATA_WIDTH = 400
 
@@ -119,7 +120,12 @@ class ProfilingResultsPage(Page):
         if not selected_row:
             st.markdown(":orange[Select a row to see profiling details.]")
         else:
-            show_profiling_detail(selected_row[0], FORM_DATA_WIDTH)
+            item = selected_row[0]
+            item["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, item["table_name"], item.get("column_name"))
+            testgen_component(
+                "column_profiling_results",
+                props={ "column": json.dumps(item) },
+            )
 
 
 def render_export_button(df):

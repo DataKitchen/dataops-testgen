@@ -222,15 +222,15 @@ class HygieneIssuesPage(Page):
                     )
                 with col2:
                     view_profiling_button(
-                        selected_row["table_name"], selected_row["column_name"], str_profile_run_id=run_id
+                        selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
                     )
 
                     if st.button(
-                        "Source Data →", help="Review current source data for highlighted issue", use_container_width=True
+                        ":material/visibility: Source Data", help="View current source data for highlighted issue", use_container_width=True
                     ):
                         source_data_dialog(selected_row)
                     if st.button(
-                            ":material/file_save: Issue Report",
+                            ":material/download: Issue Report",
                             use_container_width=True,
                             help="Generate a PDF report for each selected issue",
                     ):
