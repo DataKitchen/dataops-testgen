@@ -636,12 +636,12 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
     target_test_suite = st.form_select()
     _, button_column = st.columns([0.85, 0.15])
     with button_column:
-        move = st.form_submit_button(
+        move = st.button(
             "Move",
             disabled=disable_move_button,
             use_container_width=True,
         )
-        copy = st.form_submit_button(
+        copy = st.button(
             "Copy",
             use_container_width=True,
             disabled=disable_copy_button,
