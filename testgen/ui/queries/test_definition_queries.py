@@ -275,7 +275,7 @@ def move(schema, test_definitions, target_table_group, target_test_suite):
             table_groups_id = '{target_table_group}'::UUID,
             test_suite_id = '{target_test_suite}'::UUID
         WHERE 
-            td.id in ({",".join(test_definition_ids)})
+            id in ({",".join(test_definition_ids)})
         ;
     """
     db.execute_sql(sql)
