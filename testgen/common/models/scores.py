@@ -1,13 +1,13 @@
-import uuid
 import enum
+import uuid
 from collections import defaultdict
-from typing import Iterable, Literal, Self, TypedDict
+from collections.abc import Iterable
+from typing import Literal, Self, TypedDict
 
 import pandas as pd
-from sqlalchemy import select, text
-from sqlalchemy import Boolean, Column, Float, Enum, ForeignKey, String
-from sqlalchemy.orm import relationship, joinedload
+from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import joinedload, relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, Session, engine
@@ -45,17 +45,17 @@ class ScoreDefinition(Base):
     def should_use_dimension_scores(self) -> bool:
         return (
             self.category == ScoreCategory.dq_dimension
-            or any([f.field == "dq_dimension" for f in self.filters])
+            or any(f.field == "dq_dimension" for f in self.filters)
         )
 
     @classmethod
-    def get(cls, id: str) -> "Self | None":
+    def get(cls, id_: str) -> "Self | None":
         definition = None
         with Session() as db_session:
             query = select(ScoreDefinition).options(
                 joinedload(ScoreDefinition.filters),
                 joinedload(ScoreDefinition.results),
-            ).where(ScoreDefinition.id == id)
+            ).where(ScoreDefinition.id == id_)
             definition = db_session.scalars(query).first()
         return definition
 
@@ -175,6 +175,7 @@ class ScoreDefinition(Base):
         )
         non_null_columns = [f"COALESCE(profiling_records.{col}, test_records.{col}) AS {col}" for col in columns]
 
+        # ruff: noqa: RUF027
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
             .replace("{columns}", ", ".join(columns))

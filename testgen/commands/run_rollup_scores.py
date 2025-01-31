@@ -1,7 +1,7 @@
 import logging
 
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common.database.database_service import RunActionQueryList
 
 LOG = logging.getLogger("testgen")

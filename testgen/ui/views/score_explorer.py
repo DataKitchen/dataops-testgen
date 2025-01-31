@@ -5,14 +5,14 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
-from testgen.common.models.scores import SelectedIssue, ScoreCategory, ScoreDefinition, ScoreDefinitionFilter
+from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionFilter, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
+from testgen.ui.queries.scoring_queries import get_score_card_issue_reports, get_score_category_values
 from testgen.ui.session import session
-from testgen.ui.queries.scoring_queries import get_score_category_values, get_score_card_issue_reports
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 
@@ -169,10 +169,10 @@ def save_score_definition(_) -> None:
     filters = st.query_params.get_all("filters")
 
     if not name:
-        raise Exception("A name is required to save the score card")
+        raise ValueError("A name is required to save the score card")
 
     if not filters:
-        raise Exception("At least one filter is required to save the score card")
+        raise ValueError("At least one filter is required to save the score card")
 
     score_definition = ScoreDefinition()
     if definition_id:

@@ -1,7 +1,7 @@
 import logging
 
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
     RetrieveDBResultsToDictList,
     RunActionQueryList,

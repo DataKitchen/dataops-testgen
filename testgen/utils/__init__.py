@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from testgen.common.models.scores import ScoreCard, ScoreDefinition
+from testgen.common.models.scores import ScoreCard
 
 T = TypeVar("T")
 

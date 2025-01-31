@@ -122,7 +122,7 @@ def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
 
     delete_clicked, set_delelte_clicked = temp_value(
-        f"score-details:confirm-delete-score-val"
+        "score-details:confirm-delete-score-val"
     )
     st.markdown(
         f"Are you sure you want to delete the score card <b>{score_definition.name}</b>?",

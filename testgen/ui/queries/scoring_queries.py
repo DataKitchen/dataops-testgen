@@ -135,7 +135,7 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         "transform_level",
     ]
 
-    quote = lambda v: "'{}'".format(v)
+    quote = lambda v: f"'{v}'"
     query = " UNION ".join([
         f"""
         SELECT DISTINCT

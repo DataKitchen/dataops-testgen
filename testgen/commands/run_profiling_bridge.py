@@ -7,8 +7,8 @@ import pandas as pd
 
 import testgen.common.process_service as process_service
 from testgen import settings
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.queries.profiling_query import CProfilingSQL
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
     AssignConnectParms,
     QuoteCSVItems,
