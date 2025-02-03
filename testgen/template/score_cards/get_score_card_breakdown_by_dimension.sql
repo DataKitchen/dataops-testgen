@@ -27,11 +27,10 @@ parent AS (
     SELECT
         profiling_records.project_code,
         SUM(COALESCE(profiling_records.record_ct, test_records.dq_record_ct, 0)) AS all_records
-    FROM v_dq_profile_scoring_latest_by_dimension AS profiling_records
-    FULL OUTER JOIN v_dq_test_scoring_latest_by_dimension AS test_records
-        ON ({join_condition})
-    WHERE NULLIF(profiling_records.{group_by}, '') IS NOT NULL
-        AND {records_count_filters}
+    FROM v_dq_profile_scoring_latest_by_column AS profiling_records
+    FULL OUTER JOIN v_dq_test_scoring_latest_by_column AS test_records
+        ON (test_records.project_code = profiling_records.project_code)
+    WHERE {records_count_filters}
     GROUP BY profiling_records.project_code
 )
 SELECT

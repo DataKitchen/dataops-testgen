@@ -42,12 +42,6 @@ class ScoreDefinition(Base):
     )
     filters: Iterable["ScoreDefinitionFilter"] = relationship("ScoreDefinitionFilter", cascade="all, delete-orphan")
 
-    def should_use_dimension_scores(self) -> bool:
-        return (
-            self.category == ScoreCategory.dq_dimension
-            or any(f.field == "dq_dimension" for f in self.filters)
-        )
-
     @classmethod
     def get(cls, id_: str) -> "Self | None":
         definition = None
@@ -104,13 +98,11 @@ class ScoreDefinition(Base):
         Query templates:
         score_cards/get_overall_scores_by_column.sql
         score_cards/get_category_scores_by_column.sql
-        score_cards/get_overall_scores_by_dimension.sql
         score_cards/get_category_scores_by_dimension.sql
         """
         overall_score_query_template_file = "get_overall_scores_by_column.sql"
         categories_query_template_file = "get_category_scores_by_column.sql"
-        if self.should_use_dimension_scores():
-            overall_score_query_template_file = "get_overall_scores_by_dimension.sql"
+        if self.category == ScoreCategory.dq_dimension:
             categories_query_template_file = "get_category_scores_by_dimension.sql"
 
         filters = self._get_raw_query_filters()
@@ -161,7 +153,7 @@ class ScoreDefinition(Base):
         """
 
         query_template_file = "get_score_card_breakdown_by_column.sql"
-        if self.should_use_dimension_scores() or group_by == "dq_dimension":
+        if group_by == "dq_dimension":
             query_template_file = "get_score_card_breakdown_by_dimension.sql"
 
         columns = {
@@ -204,7 +196,7 @@ class ScoreDefinition(Base):
         get_score_card_issues_by_dimension.sql
         """
         query_template_file = "get_score_card_issues_by_column.sql"
-        if self.should_use_dimension_scores() or group_by == "dq_dimension":
+        if group_by == "dq_dimension":
             query_template_file = "get_score_card_issues_by_dimension.sql"
 
         value_ = value

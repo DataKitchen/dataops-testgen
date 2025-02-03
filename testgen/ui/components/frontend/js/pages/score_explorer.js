@@ -132,6 +132,7 @@ const Toolbar = (
         'transform_level',
         'dq_dimension',
     ];
+    const filterableFields = categories.filter((c) => c !== 'dq_dimension');
     const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value) })));
     const filterSelectorOpened = van.state(false);
     const displayTotalScore = van.state(definition.total_score ?? true);
@@ -210,7 +211,7 @@ const Toolbar = (
                 }),
                 Portal(
                     { target: addFilterButtonId, style: '',  opened: filterSelectorOpened},
-                    FilterFieldSelector(categories, undefined, addEmptyFilter),
+                    FilterFieldSelector(filterableFields, undefined, addEmptyFilter),
                 ),
             )
         ),

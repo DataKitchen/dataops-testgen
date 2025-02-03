@@ -8,6 +8,7 @@ from testgen.common.models import engine
 from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefinition, SelectedIssue
 
 
+@st.cache_data(show_spinner="Loading data ...")
 def get_all_score_cards(
     project_code: str,
     sorted_by: Literal["name", "score"] = "name",
@@ -123,7 +124,16 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
 
 
 def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str]]:
-    values = defaultdict(list)
+    values = defaultdict(list, {
+        "dq_dimension": [
+            "Accuracy",
+            "Completeness",
+            "Consistency",
+            "Timeliness",
+            "Uniqueness",
+            "Validity",
+        ],
+    })
     categories = [
         "table_groups_name",
         "data_location",
@@ -149,20 +159,6 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
             UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
             UNNEST(array[{', '.join(categories)}]) AS value
         FROM v_dq_profile_scoring_latest_by_column
-        WHERE project_code = '{project_code}'
-        """,
-        f"""
-        SELECT DISTINCT 
-            UNNEST(array['dq_dimension']) as category,
-            UNNEST(array[dq_dimension]) AS value
-        FROM v_dq_test_scoring_latest_by_dimension
-        WHERE project_code = '{project_code}'
-        """,
-        f"""
-        SELECT DISTINCT
-            UNNEST(array['dq_dimension']) as category,
-            UNNEST(array[dq_dimension]) AS value
-        FROM v_dq_profile_scoring_latest_by_dimension
         WHERE project_code = '{project_code}'
         """,
     ])
