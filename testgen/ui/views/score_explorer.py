@@ -35,13 +35,16 @@ class ScoreExplorerPage(Page):
         **_kwargs
     ):
         project_code: str = session.project
-        testgen.page_header(
-            "Score Explorer",
-            breadcrumbs=[
-                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
-                {"label": "Score Explorer"},
-            ],
-        )
+        page_title: str = "Score Explorer"
+        last_breadcrumb: str = page_title
+        if definition_id:
+            original_score_definition = ScoreDefinition.get(definition_id)
+            page_title = "Edit Scorecard"
+            last_breadcrumb = original_score_definition.name
+        testgen.page_header(page_title, breadcrumbs=[
+            {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
+            {"label": last_breadcrumb},
+        ])
 
         score_definition: ScoreDefinition = ScoreDefinition()
         if definition_id and not (name or total_score or category or filters):
@@ -89,6 +92,7 @@ class ScoreExplorerPage(Page):
                     score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
                     breakdown_category,
                 ) if score_card and drilldown else None,
+                "is_new": not definition_id,
             },
             event_handlers={},
             on_change_handlers={

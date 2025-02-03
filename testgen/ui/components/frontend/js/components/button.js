@@ -28,6 +28,7 @@ const BUTTON_TYPE = {
 const BUTTON_COLOR = {
     BASIC: 'basic',
     PRIMARY: 'primary',
+    WARN: 'warn',
 };
 const DEFAULT_ICON_SIZE = 18;
 
@@ -189,6 +190,27 @@ button.tg-button.tg-primary-button.tg-flat-button {
 button.tg-button.tg-primary-button.tg-stroked-button {
     color: var(--button-primary-stroked-text-color);
     background: var(--button-primary-stroked-background);
+}
+/* ... */
+
+/* Warn button colors */
+button.tg-button.tg-warn-button {
+    color: var(--button-warn-text-color);
+    background: var(--button-warn-background);
+}
+
+button.tg-button.tg-warn-button .tg-button-focus-state-indicator::before {
+    background: var(--button-warn-hover-state-background);
+}
+
+button.tg-button.tg-warn-button.tg-flat-button {
+    color: var(--button-warn-flat-text-color);
+    background: var(--button-warn-flat-background);
+}
+
+button.tg-button.tg-warn-button.tg-stroked-button {
+    color: var(--button-warn-stroked-text-color);
+    background: var(--button-warn-stroked-background);
 }
 /* ... */
 `);

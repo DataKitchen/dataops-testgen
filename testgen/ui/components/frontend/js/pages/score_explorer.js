@@ -40,6 +40,7 @@
  * @property {ResultSet?} breakdown
  * @property {string} breakdown_category
  * @property {string} breakdown_score_type
+ * @property {boolean} is_new
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
@@ -78,13 +79,9 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
 
-    const isNew = van.derive(() => {
-        return !getValue(props.definition).id;
-    });
-
     return div(
         { id: domId, class: 'score-explorer' },
-        Toolbar(props.filter_values, getValue(props.definition), isNew),
+        Toolbar(props.filter_values, getValue(props.definition), props.is_new),
         span({ class: 'mb-4', style: 'display: block;' }),
         ScoreCard(props.score_card),
         span({ class: 'mb-4', style: 'display: block;' }),
@@ -266,6 +263,23 @@ const Toolbar = (
                         style: 'width: auto;',
                         disabled: disableSave,
                         onclick: () => emitEvent('ScoreDefinitionSaved', {}),
+                    });
+                },
+                () => {
+                    const isNew_ = getValue(isNew);
+                    let href = 'quality-dashboard';
+                    let params = {};
+                    if (!isNew_) {
+                        href = 'quality-dashboard:score-details';
+                        params = {definition_id: definition.id};
+                    }
+
+                    return Button({
+                        label: 'Cancel',
+                        type: 'flat',
+                        color: 'warn',
+                        style: 'width: auto; margin-left: 16px;',
+                        onclick: () => emitEvent('LinkClicked', { href, params }),
                     });
                 },
             ),

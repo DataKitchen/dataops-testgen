@@ -63,6 +63,16 @@ body {
     --button-primary-stroked-background: transparent;
     --button-stroked-border: 1px solid var(--border-color);
 
+    --button-warn-background: transparent;
+    --button-warn-text-color: var(--red);
+    --button-warn-hover-state-background: var(--red);
+
+    --button-warn-flat-text-color: rgba(255, 255, 255);
+    --button-warn-flat-background: var(--red);
+
+    --button-warn-stroked-text-color: var(--red);
+    --button-warn-stroked-background: transparent;
+
     --select-portal-background: white;
     --select-hover-background: rgb(240, 242, 246);
 }
