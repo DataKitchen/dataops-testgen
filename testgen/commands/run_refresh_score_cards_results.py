@@ -6,7 +6,7 @@ LOG = logging.getLogger("testgen")
 
 
 def run_refresh_score_cards_results(project_code: str | None = None, definition_id: str | None = None):
-    LOG.info("CurrentStep: Initializing score cards results refresh")
+    LOG.info("CurrentStep: Initializing scorecards results refresh")
 
     try:
         definitions = []
@@ -15,12 +15,12 @@ def run_refresh_score_cards_results(project_code: str | None = None, definition_
         else:
             definitions.append(ScoreDefinition.get(definition_id))
     except Exception:
-        LOG.exception("CurrentStep: Stopping score cards results refresh after unexpected error")
+        LOG.exception("CurrentStep: Stopping scorecards results refresh after unexpected error")
         return
 
     for definition in definitions:
         LOG.info(
-            "CurrentStep: Refreshing results for score card %s in project %s",
+            "CurrentStep: Refreshing results for scorecard %s in project %s",
             definition.name,
             definition.project_code,
         )
@@ -30,22 +30,22 @@ def run_refresh_score_cards_results(project_code: str | None = None, definition_
             definition.results = _score_card_to_results(fresh_score_card)
             definition.save()
             LOG.info(
-                "CurrentStep: Done rereshing score card %s in project %s",
+                "CurrentStep: Done rereshing scorecard %s in project %s",
                 definition.name,
                 definition.project_code,
             )
         except Exception:
             LOG.exception(
-                "CurrentStep: Unexpected error refreshing score card %sin project %s",
+                "CurrentStep: Unexpected error refreshing scorecard %sin project %s",
                 definition.name,
                 definition.project_code,
             )
 
-    scope = "all score cards"
+    scope = "all scorecards"
     if project_code:
-        scope = f"all score cards in project {project_code}"
+        scope = f"all scorecards in project {project_code}"
     if definition:
-        scope = f"score card {definition_id}"
+        scope = f"scorecard {definition_id}"
     LOG.info("CurrentStep: Refreshing results for %s is over", scope)
 
 

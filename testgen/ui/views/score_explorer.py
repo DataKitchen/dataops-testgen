@@ -175,10 +175,10 @@ def save_score_definition(_) -> None:
     filters = st.query_params.get_all("filters")
 
     if not name:
-        raise ValueError("A name is required to save the score card")
+        raise ValueError("A name is required to save the scorecard")
 
     if not filters:
-        raise ValueError("At least one filter is required to save the score card")
+        raise ValueError("At least one filter is required to save the scorecard")
 
     score_definition = ScoreDefinition()
     if definition_id:

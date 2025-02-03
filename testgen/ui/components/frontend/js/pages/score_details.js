@@ -69,8 +69,8 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     const score = getValue(props.score);
                     return userCanEdit ? div(
                         { class: 'flex-row tg-test-suites--card-actions' },
-                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id } }) }),
-                        Button({ type: 'icon', icon: 'delete', tooltip: 'Delete', onclick: () => emitEvent('DeleteScoreRequested', { payload: score.id }) }),
+                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id } }) }),
+                        Button({ type: 'icon', icon: 'delete', tooltip: 'Delete Scorecard', onclick: () => emitEvent('DeleteScoreRequested', { payload: score.id }) }),
                     ) : '';
                 },
             ),

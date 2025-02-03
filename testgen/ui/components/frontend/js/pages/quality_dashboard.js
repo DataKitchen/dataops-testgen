@@ -56,7 +56,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
         { id: domId, style: 'overflow-y: auto;' },
         () => (getValue(props.scores).length || getValue(props.filter_term))
             ? div(
-                ScoreLegend('margin-bottom: -16px;'),
+                ScoreLegend(),
                 () => Toolbar(getValue(props.filter_term), getValue(props.sorted_by)),
                 () =>  div(
                     { class: 'flex-row fx-flex-wrap fx-gap-4' },
