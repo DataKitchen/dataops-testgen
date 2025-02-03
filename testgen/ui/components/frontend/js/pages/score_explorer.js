@@ -78,11 +78,6 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
 
-    const scoreCard = van.derive(() => {
-        const definition = getValue(props.definition);
-        const original = getValue(props.score_card);
-        return {...original, categories_label: definition.category ? TRANSLATIONS[definition.category] : undefined};
-    });
     const isNew = van.derive(() => {
         return !getValue(props.definition).id;
     });
@@ -91,7 +86,7 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
         { id: domId, class: 'score-explorer' },
         Toolbar(props.filter_values, getValue(props.definition), isNew),
         span({ class: 'mb-4', style: 'display: block;' }),
-        ScoreCard(scoreCard),
+        ScoreCard(props.score_card),
         span({ class: 'mb-4', style: 'display: block;' }),
         () => {
             const drilldown = getValue(props.drilldown);

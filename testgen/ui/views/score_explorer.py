@@ -38,7 +38,7 @@ class ScoreExplorerPage(Page):
         testgen.page_header(
             "Score Explorer",
             breadcrumbs=[
-                {"path": "quality-dashboard", "label": "Score Dashboard", "params": {"project_code": project_code}},
+                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
                 {"label": "Score Explorer"},
             ],
         )

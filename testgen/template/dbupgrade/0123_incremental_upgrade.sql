@@ -6,7 +6,7 @@ SELECT
     table_group.project_code AS project_code,
     table_group.table_groups_name AS name,
     true AS total_score,
-    false AS cde_score,
+    true AS cde_score,
     'dq_dimension' AS category
 FROM table_groups AS table_group;
 
@@ -108,4 +108,4 @@ FROM (
         ON (table_group.id = profiling_cols.table_groups_id OR table_group.id = test_cols.table_groups_id)
     INNER JOIN score_definitions AS score_definition
         ON (score_definition.project_code = table_group.project_code AND score_definition.name = table_group.table_groups_name)
-);
+) AS results;

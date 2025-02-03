@@ -236,10 +236,7 @@ class ScoreDefinition(Base):
             values_by_field["critical_data_element"].append("true")
 
         return " AND ".join([
-            f"{prefix or ''}{field} = {values[0]}"
-            if len(values) == 1 else
-            f"{prefix or ''}{field} IN ({', '.join(values)})"
-            for field, values in values_by_field.items()
+            f"{prefix or ''}{field} IN ({', '.join(values)})" for field, values in values_by_field.items()
         ])
 
     def to_dict(self) -> dict:

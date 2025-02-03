@@ -36,7 +36,7 @@ const ScoreCard = (
             const categoriesLabel = score_.categories_label ?? 'Quality Dimension';
 
             return div(
-                { class: 'flex-row' },
+                { class: 'flex-row fx-justify-center' },
                 score_.score ? div(
                     ScoreChart("Total Score", score_.score),
                     div(

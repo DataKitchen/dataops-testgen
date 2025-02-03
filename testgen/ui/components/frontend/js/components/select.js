@@ -19,7 +19,6 @@
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { getRandomId, getValue, getParents, loadStylesheet, isState } from '../utils.js';
 import { Portal } from './portal.js';
 
@@ -167,7 +166,6 @@ stylesheet.replace(`
 }
 
 .tg-select--options-wrapper {
-    position: absolute;
     border-radius: 8px;
     background: var(--select-portal-background);
     box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;

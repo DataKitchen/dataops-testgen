@@ -90,6 +90,18 @@ def format_score_card(score_card: ScoreCard) -> ScoreCard:
     if score_card:
         definition = score_card.get("definition")
 
+    categories_label = {
+        "table_groups_name": "Table Group",
+        "data_location": "Data Location",
+        "data_source": "Data Source",
+        "source_system": "Source System",
+        "source_process": "Source Process",
+        "business_domain": "Business Domain",
+        "stakeholder_group": "Stakeholder Group",
+        "transform_level": "Transform Level",
+        "aggregation_level": "Aggregation Level",
+        "dq_dimension": "Quality Dimension",
+    }
     if not score_card:
         return {
             "id": None,
@@ -100,6 +112,7 @@ def format_score_card(score_card: ScoreCard) -> ScoreCard:
             "profiling_score": "--" if not definition or definition.total_score else None,
             "testing_score": "--" if not definition or definition.total_score else None,
             "categories": [],
+            "categories_label": None,
         }
 
     return {
@@ -114,6 +127,7 @@ def format_score_card(score_card: ScoreCard) -> ScoreCard:
             if not definition or definition.total_score else None,
         "cde_score": (friendly_score(score_card.get("cde_score")) or "--")
             if not definition or definition.cde_score else None,
+        "categories_label": categories_label[definition.category.value] if definition and definition.category else None,
         "categories": [
             {**category, "score": friendly_score(category["score"])}
             for category in score_card.get("categories", [])
