@@ -31,8 +31,8 @@ class ScoreDefinition(Base):
     id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_code: str = Column(String)
     name: str = Column(String, nullable=False)
-    total_score: float = Column(Boolean, default=True, nullable=False)
-    cde_score: float = Column(Boolean, default=False, nullable=False)
+    total_score: bool = Column(Boolean, default=True, nullable=False)
+    cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
     results: Iterable["ScoreDefinitionResult"] = relationship(

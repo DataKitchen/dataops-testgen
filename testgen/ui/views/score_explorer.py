@@ -26,6 +26,7 @@ class ScoreExplorerPage(Page):
         self,
         name: str | None = None,
         total_score: str | None = None,
+        cde_score: str | None = None,
         category: str | None = None,
         filters: list[str] | None = None,
         breakdown_category: str | None = "table_name",
@@ -55,7 +56,7 @@ class ScoreExplorerPage(Page):
             score_definition.project_code = project_code
             score_definition.name = name
             score_definition.total_score = total_score and total_score.lower() == "true"
-            score_definition.cde_score = False
+            score_definition.cde_score = cde_score and cde_score.lower() == "true"
             score_definition.category = ScoreCategory(category) if category else None
 
             if filters:
@@ -111,6 +112,7 @@ def set_score_definition(definition: dict | None) -> None:
         Router().set_query_params({
             "name": definition["name"],
             "total_score": definition["total_score"],
+            "cde_score": definition["cde_score"],
             "category": definition["category"],
             "filters": [
                 f"{f["field"]}={filter_value}"
@@ -197,6 +199,7 @@ def save_score_definition(_) -> None:
     Router().set_query_params({
         "name": None,
         "total_score": None,
+        "cde_score": None,
         "category": None,
         "filters": None,
         "definition_id": str(score_definition.id),

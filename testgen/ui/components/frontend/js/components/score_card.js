@@ -36,8 +36,9 @@ const ScoreCard = (
             const categoriesLabel = score_.categories_label ?? 'Quality Dimension';
 
             return div(
-                { class: 'flex-row fx-justify-center' },
+                { class: 'flex-row fx-justify-center fx-align-flex-start' },
                 score_.score ? div(
+                    { class: 'mr-4' },
                     ScoreChart("Total Score", score_.score),
                     div(
                         { class: 'flex-row fx-justify-center fx-gap-2 mt-1' },
@@ -45,10 +46,10 @@ const ScoreCard = (
                         Attribute({ label: 'Testing', value: score_.testing_score }),
                     ),
                 ) : '',
-                (score_.score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
-                // ScoreChart("CDE Score", score.cde_score),
+                score_.cde_score ? ScoreChart("CDE Score", score.cde_score) : '',
+                (score_.cde_score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
                 categories.length > 0 ? div(
-                    { class: 'flex-column ml-4' },
+                    { class: 'flex-column' },
                     span({ class: 'mb-2 text-caption' }, categoriesLabel),
                     div(
                         { class: 'tg-score-card--categories' },

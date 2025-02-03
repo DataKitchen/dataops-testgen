@@ -133,6 +133,7 @@ const Toolbar = (
     const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value) })));
     const filterSelectorOpened = van.state(false);
     const displayTotalScore = van.state(definition.total_score ?? true);
+    const displayCDEScore = van.state(definition.cde_score ?? true);
     const displayCategory = van.state(!!definition.category);
     const selectedCategory = van.state(definition.category ?? undefined);
     const scoreName = van.state(definition.name ?? '');
@@ -162,6 +163,7 @@ const Toolbar = (
                 .filter((f) => f.field && f.value),
             category: getValue(displayCategory) ? getValue(selectedCategory) : null,
             total_score: getValue(displayTotalScore),
+            cde_score: getValue(displayCDEScore),
         });
     });
 
@@ -213,23 +215,22 @@ const Toolbar = (
             )
         ),
         div(
-            { class: 'flex-row' },
+            { class: 'flex-row fx-align-flex-end' },
             div(
                 { class: 'flex-column fx-flex' },
                 span({ class: 'text-caption mb-1 mt-1' }, 'Display on scorecard'),
                 div(
-                    { class: 'flex-row' },
+                    { class: 'flex-row fx-gap-2' },
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
-                        width: 150,
                         onChange: (checked) => displayTotalScore.val = checked,
                     }),
-                    // Checkbox({
-                    //     label: 'CDE Score',
-                    //     checked: false,
-                    //     width: 150,
-                    // }),
+                    Checkbox({
+                        label: 'CDE Score',
+                        checked: displayCDEScore,
+                        onChange: (checked) => displayCDEScore.val = checked,
+                    }),
                     Checkbox({
                         label: 'Category:',
                         checked: displayCategory,
