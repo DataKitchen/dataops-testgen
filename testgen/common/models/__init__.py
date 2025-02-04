@@ -9,7 +9,7 @@ from testgen import settings
 
 engine = create_engine(
     url=(
-        f"postgresql://{settings.DATABASE_USER}:{urllib.parse.quote_plus(settings.DATABASE_PASSWORD)}"
+        f"postgresql://{settings.DATABASE_USER}:{urllib.parse.quote_plus(str(settings.DATABASE_PASSWORD))}"
         f"@{settings.DATABASE_HOST}:{settings.DATABASE_PORT}/{settings.DATABASE_NAME}"
     ),
     echo=False,
