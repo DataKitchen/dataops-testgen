@@ -46,7 +46,7 @@ const ScoreCard = (
                         Attribute({ label: 'Testing', value: score_.testing_score }),
                     ),
                 ) : '',
-                score_.cde_score ? ScoreChart("CDE Score", score.cde_score) : '',
+                score_.cde_score ? ScoreChart("CDE Score", score_.cde_score) : '',
                 (score_.cde_score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
                 categories.length > 0 ? div(
                     { class: 'flex-column' },

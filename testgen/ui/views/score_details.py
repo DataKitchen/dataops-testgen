@@ -117,7 +117,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         return file_name, "application/pdf", buffer.read()
 
 
-@st.dialog(title="Delete Score Card")
+@st.dialog(title="Delete Scorecard")
 def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
 
@@ -125,7 +125,7 @@ def delete_score_card(definition_id: str) -> None:
         "score-details:confirm-delete-score-val"
     )
     st.markdown(
-        f"Are you sure you want to delete the score card <b>{score_definition.name}</b>?",
+        f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?",
         unsafe_allow_html=True,
     )
 

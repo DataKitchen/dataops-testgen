@@ -181,7 +181,7 @@ const Toolbar = (
         { class: 'flex-column score-explorer--toolbar' },
         div(
             { class: 'flex-column' },
-            span({ class: 'text-caption mb-1' }, 'Filter By'),
+            span({ class: 'text-caption mb-1' }, 'Filter by'),
             div(
                 { class: 'flex-row fx-flex-wrap fx-gap-4' },
                 () => {
@@ -218,9 +218,9 @@ const Toolbar = (
             { class: 'flex-row fx-align-flex-end' },
             div(
                 { class: 'flex-column fx-flex' },
-                span({ class: 'text-caption mb-1 mt-1' }, 'Display on scorecard'),
+                span({ class: 'text-caption mt-3' }, 'Display on scorecard'),
                 div(
-                    { class: 'flex-row fx-gap-2' },
+                    { class: 'flex-row fx-gap-4' },
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
@@ -237,7 +237,7 @@ const Toolbar = (
                         onChange: (checked) => displayCategory.val = checked,
                     }),
                     Select({
-                        style: 'margin-left: 4px;',
+                        style: 'margin-left: -8px;',
                         height: 40,
                         value: selectedCategory,
                         options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
@@ -248,7 +248,7 @@ const Toolbar = (
             div(
                 { class: 'flex-row fx-align-flex-end' },
                 Input({
-                    label: 'Score Name',
+                    label: 'Scorecard Name',
                     height: 40,
                     style: 'margin-right: 16px;',
                     value: scoreName,
