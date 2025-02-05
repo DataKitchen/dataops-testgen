@@ -25,13 +25,26 @@ test_records AS (
 ),
 parent AS (
     SELECT
-        profiling_records.project_code,
-        SUM(COALESCE(profiling_records.record_ct, test_records.dq_record_ct, 0)) AS all_records
-    FROM v_dq_profile_scoring_latest_by_column AS profiling_records
-    FULL OUTER JOIN v_dq_test_scoring_latest_by_column AS test_records
-        ON (test_records.project_code = profiling_records.project_code)
-    WHERE {records_count_filters}
-    GROUP BY profiling_records.project_code
+        project_code,
+        SUM(record_count) AS all_records
+    FROM (
+        SELECT 
+            COALESCE(profiling_records.project_code, test_records.project_code) AS project_code,
+            COALESCE(profiling_records.table_name, test_records.table_name) AS table_name,
+            MAX(COALESCE(profiling_records.record_ct, test_records.dq_record_ct, 0)) AS record_count
+        FROM v_dq_profile_scoring_latest_by_column AS profiling_records
+        FULL OUTER JOIN v_dq_test_scoring_latest_by_column AS test_records ON (
+            test_records.project_code = profiling_records.project_code
+            AND test_records.table_groups_id = profiling_records.table_groups_id
+            AND test_records.table_name = profiling_records.table_name
+            AND test_records.column_name = profiling_records.column_name
+        )
+        WHERE {records_count_filters}
+        GROUP BY
+            COALESCE(profiling_records.project_code, test_records.project_code),
+            COALESCE(profiling_records.table_name, test_records.table_name)
+    ) AS table_counts
+    GROUP BY project_code
 )
 SELECT
     {non_null_columns},

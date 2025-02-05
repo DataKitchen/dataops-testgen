@@ -105,7 +105,7 @@ class ScoreDefinition(Base):
         if self.category == ScoreCategory.dq_dimension:
             categories_query_template_file = "get_category_scores_by_dimension.sql"
 
-        filters = self._get_raw_query_filters()
+        filters = " AND ".join(self._get_raw_query_filters())
         overall_scores = pd.read_sql_query(
             read_template_sql_file(
                 overall_score_query_template_file,
@@ -159,12 +159,19 @@ class ScoreDefinition(Base):
         columns = {
             "column_name": ["table_name", "column_name"],
         }.get(group_by, [group_by])
-        filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
+        filters = " AND ".join(self._get_raw_query_filters(cde_only=score_type == "cde_score"))
         join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
-        records_count_filters = self._get_raw_query_filters(
+
+        profile_records_filters = self._get_raw_query_filters(
             cde_only=score_type == "cde_score",
             prefix="profiling_records.",
         )
+        test_records_filters = self._get_raw_query_filters(cde_only=score_type == "cde_score", prefix="test_records.")
+        records_count_filters = " AND ".join([
+            f"({profile_filter} OR {test_filter})"
+            for profile_filter, test_filter in zip(profile_records_filters, test_records_filters)
+        ])
+
         non_null_columns = [f"COALESCE(profiling_records.{col}, test_records.{col}) AS {col}" for col in columns]
 
         # ruff: noqa: RUF027
@@ -203,7 +210,8 @@ class ScoreDefinition(Base):
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
         if group_by == "column_name":
             table_name, value_ = value.split(".")
-            filters = filters + f" AND table_name = '{table_name}'"
+            filters.append(f"table_name = '{table_name}'")
+        filters = " AND ".join(filters)
 
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
@@ -219,7 +227,7 @@ class ScoreDefinition(Base):
         results = pd.read_sql_query(query, engine)
         return [row.to_dict() for _, row in results.iterrows()]
 
-    def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> str:
+    def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         values_by_field = defaultdict(list)
         for filter_ in self.filters:
             values_by_field[filter_.field].append(f"'{filter_.value}'")
@@ -227,9 +235,9 @@ class ScoreDefinition(Base):
         if cde_only:
             values_by_field["critical_data_element"].append("true")
 
-        return " AND ".join([
+        return [
             f"{prefix or ''}{field} IN ({', '.join(values)})" for field, values in values_by_field.items()
-        ])
+        ]
 
     def to_dict(self) -> dict:
         return {
