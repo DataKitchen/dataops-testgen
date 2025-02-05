@@ -271,6 +271,7 @@ SELECT
        COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
        COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        dcc.functional_data_type as semantic_data_type,
        dtc.table_name, dcc.column_name,
        pr.profiling_starttime as profiling_run_date,
@@ -302,6 +303,7 @@ SELECT tg.project_code,
        COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
        COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        dcc.functional_data_type as semantic_data_type,
        t.dq_dimension,
        dcc.table_name,
@@ -335,6 +337,7 @@ GROUP BY tg.project_code, pr.table_groups_id, tg.last_complete_profile_run_id, t
          COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group),
          COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level),
          COALESCE(dcc.critical_data_element, dtc.critical_data_element),
+         COALESCE(dcc.data_product, dtc.data_product, tg.data_product),
          dcc.functional_data_type, dcc.table_name, dcc.column_name, t.dq_dimension,
          pr.run_date;
 
@@ -361,6 +364,7 @@ SELECT
        COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
        COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        dcc.functional_data_type as semantic_data_type,
        r.test_time, r.table_name, dcc.column_name,
        COUNT(*) as test_ct,
@@ -391,8 +395,9 @@ GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
          dcc.source_process, dtc.source_process, tg.source_process, dcc.business_domain,
          dtc.business_domain, tg.business_domain, dcc.stakeholder_group, dtc.stakeholder_group,
          tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
-         dcc.critical_data_element, dtc.critical_data_element, dcc.functional_data_type,
-         r.test_time, r.table_name, dcc.column_name;
+         dcc.critical_data_element, dtc.critical_data_element,
+         dcc.data_product, dtc.data_product, tg.data_product,
+         dcc.functional_data_type, r.test_time, r.table_name, dcc.column_name;
 
 
 DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_dimension;
@@ -432,6 +437,7 @@ SELECT
        COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
        COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        dcc.functional_data_type as semantic_data_type,
        r.dq_dimension,
        r.test_time, r.table_name, dcc.column_name,
@@ -457,5 +463,6 @@ GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
          dcc.source_process, dtc.source_process, tg.source_process, dcc.business_domain,
          dtc.business_domain, tg.business_domain, dcc.stakeholder_group, dtc.stakeholder_group,
          tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
-         dcc.critical_data_element, dtc.critical_data_element, dcc.functional_data_type, r.dq_dimension,
-         r.test_time, r.table_name, dcc.column_name;
+         dcc.critical_data_element, dtc.critical_data_element,
+         dcc.data_product, dtc.data_product, tg.data_product,
+         dcc.functional_data_type, r.dq_dimension, r.test_time, r.table_name, dcc.column_name;

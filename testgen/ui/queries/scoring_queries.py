@@ -143,6 +143,7 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         "business_domain",
         "stakeholder_group",
         "transform_level",
+        "data_product",
     ]
 
     quote = lambda v: f"'{v}'"

@@ -23,6 +23,7 @@ class ScoreCategory(enum.Enum):
     stakeholder_group = "stakeholder_group"
     transform_level = "transform_level"
     dq_dimension = "dq_dimension"
+    data_product = "data_product"
 
 
 class ScoreDefinition(Base):

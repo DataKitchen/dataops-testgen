@@ -67,6 +67,7 @@ const TRANSLATIONS = {
     transform_level: 'Transform Level',
     aggregation_level: 'Aggregation Level',
     dq_dimension: 'Quality Dimension',
+    data_product: 'Data Product',
 };
 
 const ScoreExplorer = (/** @type {Properties} */ props) => {
@@ -128,6 +129,7 @@ const Toolbar = (
         'stakeholder_group',
         'transform_level',
         'dq_dimension',
+        'data_product',
     ];
     const filterableFields = categories.filter((c) => c !== 'dq_dimension');
     const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value) })));
