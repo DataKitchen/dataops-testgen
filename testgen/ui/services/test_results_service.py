@@ -176,6 +176,7 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
                 lst_query[0]["connect_by_key"],
                 lst_query[0]["private_key"],
                 lst_query[0]["private_key_passphrase"],
+                lst_query[0]["http_path"],
             )
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
