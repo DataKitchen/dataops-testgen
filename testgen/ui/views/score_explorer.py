@@ -52,6 +52,7 @@ class ScoreExplorerPage(Page):
             score_definition = ScoreDefinition.get(definition_id)
             set_score_definition(score_definition.to_dict())
 
+        score_definition.id = score_definition.id or definition_id
         if name or total_score or category or filters:
             score_definition.project_code = project_code
             score_definition.name = name
@@ -108,7 +109,7 @@ class ScoreExplorerPage(Page):
 
 def set_score_definition(definition: dict | None) -> None:
     if definition:
-        definition_id = st.query_params.get("definition_id")
+        definition_id = st.query_params.get("definition_id") or definition.get("id")
         Router().set_query_params({
             "name": definition["name"],
             "total_score": definition["total_score"],
@@ -119,7 +120,7 @@ def set_score_definition(definition: dict | None) -> None:
                 for f in definition["filters"]
                 if (filter_value := f.get("value"))
             ],
-            "definition_id": definition_id or definition.get("id"),
+            "definition_id": str(definition_id) if definition_id else None,
         })
 
 
@@ -171,6 +172,7 @@ def save_score_definition(_) -> None:
     definition_id = st.query_params.get("definition_id")
     name = st.query_params.get("name")
     total_score = st.query_params.get("total_score")
+    cde_score = st.query_params.get("cde_score")
     category = st.query_params.get("category")
     filters = st.query_params.get_all("filters")
 
@@ -187,7 +189,7 @@ def save_score_definition(_) -> None:
     score_definition.project_code = session.project
     score_definition.name = name
     score_definition.total_score = total_score and total_score.lower() == "true"
-    score_definition.cde_score = False
+    score_definition.cde_score = cde_score and cde_score.lower() == "true"
     score_definition.category = ScoreCategory(category) if category else None
     score_definition.filters = [
         ScoreDefinitionFilter(field=field_value[0], value=field_value[1])
@@ -202,5 +204,5 @@ def save_score_definition(_) -> None:
         "cde_score": None,
         "category": None,
         "filters": None,
-        "definition_id": str(score_definition.id),
+        "definition_id": str(score_definition.id) if score_definition.id else None,
     })

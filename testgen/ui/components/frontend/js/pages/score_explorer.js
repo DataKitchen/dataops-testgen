@@ -277,7 +277,7 @@ const Toolbar = (
 
                     return Button({
                         label: 'Cancel',
-                        type: 'flat',
+                        type: 'stroked',
                         color: 'warn',
                         style: 'width: auto; margin-left: 16px;',
                         onclick: () => emitEvent('LinkClicked', { href, params }),

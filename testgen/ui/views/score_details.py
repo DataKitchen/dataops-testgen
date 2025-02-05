@@ -133,8 +133,8 @@ def delete_score_card(definition_id: str) -> None:
     with button_column:
         testgen.button(
             label="Delete",
-            type_="basic",
-            color="basic",
+            type_="flat",
+            color="warn",
             key="score-details:confirm-delete-score-btn",
             on_click=lambda: set_delelte_clicked(True),
         )

@@ -44,7 +44,7 @@ def run_refresh_score_cards_results(project_code: str | None = None, definition_
     scope = "all scorecards"
     if project_code:
         scope = f"all scorecards in project {project_code}"
-    if definition:
+    if definition_id:
         scope = f"scorecard {definition_id}"
     LOG.info("CurrentStep: Refreshing results for %s is over", scope)
 
