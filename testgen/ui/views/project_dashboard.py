@@ -111,6 +111,11 @@ class ProjectDashboardPage(Page):
                         "value": "latest_activity_date",
                         "selected": table_groups_sort == "latest_activity_date",
                     },
+                    {
+                        "label": "Lowest score",
+                        "value": "lowest_score",
+                        "selected": table_groups_sort == "lowest_score",
+                    },
                 ],
             },
             on_change_handlers={

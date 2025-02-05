@@ -97,6 +97,11 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     const sortFunctions = {
         table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.table_groups_name.toLowerCase()),
         latest_activity_date: (a, b) => Math.max(b.latest_profile_start, b.latest_tests_start) - Math.max(a.latest_profile_start, a.latest_tests_start),
+        lowest_score: (a, b) => {
+            const scoreA = a.dq_score ? (a.dq_score.startsWith('>') ? 99.99 : Number(a.dq_score)) : 101;
+            const scoreB = b.dq_score ? (b.dq_score.startsWith('>') ? 99.99 : Number(b.dq_score)) : 101;
+            return scoreA - scoreB;
+        },
     };
     const onFiltersChange = function() {
         const searchTerm = getValue(tableGroupsSearchTerm);
