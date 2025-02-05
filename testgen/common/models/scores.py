@@ -44,6 +44,19 @@ class ScoreDefinition(Base):
     filters: Iterable["ScoreDefinitionFilter"] = relationship("ScoreDefinitionFilter", cascade="all, delete-orphan")
 
     @classmethod
+    def from_table_group(cls, table_group: dict) -> Self:
+        definition = cls()
+        definition.project_code = table_group["project_code"]
+        definition.name = table_group["table_groups_name"]
+        definition.total_score = True
+        definition.cde_score = True
+        definition.category = ScoreCategory.dq_dimension
+        definition.filters = [
+            ScoreDefinitionFilter(field="table_groups_name", value=table_group["table_groups_name"]),
+        ]
+        return definition
+
+    @classmethod
     def get(cls, id_: str) -> "Self | None":
         definition = None
         with Session() as db_session:
@@ -170,7 +183,7 @@ class ScoreDefinition(Base):
         test_records_filters = self._get_raw_query_filters(cde_only=score_type == "cde_score", prefix="test_records.")
         records_count_filters = " AND ".join([
             f"({profile_filter} OR {test_filter})"
-            for profile_filter, test_filter in zip(profile_records_filters, test_records_filters)
+            for profile_filter, test_filter in zip(profile_records_filters, test_records_filters, strict=False)
         ])
 
         non_null_columns = [f"COALESCE(profiling_records.{col}, test_records.{col}) AS {col}" for col in columns]

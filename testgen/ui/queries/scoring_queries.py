@@ -1,5 +1,4 @@
 from collections import defaultdict
-from typing import Literal
 
 import pandas as pd
 import streamlit as st
@@ -9,12 +8,8 @@ from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefiniti
 
 
 @st.cache_data(show_spinner="Loading data ...")
-def get_all_score_cards(
-    project_code: str,
-    sorted_by: Literal["name", "score"] = "name",
-    filter_term: str | None = None
-) -> list["ScoreCard"]:
-    definitions = ScoreDefinition.all(project_code=project_code, name_filter=filter_term, sorted_by=sorted_by)
+def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
+    definitions = ScoreDefinition.all(project_code=project_code)
     score_cards: list[ScoreCard] = []
     root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
 

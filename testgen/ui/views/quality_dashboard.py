@@ -1,7 +1,5 @@
 from typing import ClassVar
 
-import streamlit as st
-
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -10,8 +8,6 @@ from testgen.ui.queries.scoring_queries import get_all_score_cards
 from testgen.ui.session import session
 from testgen.utils import format_score_card
 
-SORTED_BY_SESSION_KEY: str = "score-dashboard:sorted_by"
-FILTER_TERM_SESSION_KEY: str = "score-dashboard:name_filter"
 PAGE_TITLE = "Quality Dashboard"
 
 
@@ -23,8 +19,6 @@ class QualityDashboardPage(Page):
     menu_item = MenuItem(icon="readiness_score", label=PAGE_TITLE, order=1)
 
     def render(self, *, project_code: str, **_kwargs) -> None:
-        sorted_by: str = st.session_state.get(SORTED_BY_SESSION_KEY, "name")
-        filter_term: str = st.session_state.get(FILTER_TERM_SESSION_KEY, None)
         project_summary = project_queries.get_summary_by_code(project_code)
 
         testgen.page_header(PAGE_TITLE)
@@ -37,26 +31,13 @@ class QualityDashboardPage(Page):
                     "table_groups_count": int(project_summary["table_groups_ct"]),
                     "profiling_runs_count": int(project_summary["profiling_runs_ct"]),
                 },
-                "scores": [
-                    format_score_card(score) for score in get_all_score_cards(
-                        project_code,
-                        sorted_by=sorted_by,
-                        filter_term=filter_term,
-                    )
-                ],
-                "sorted_by": sorted_by,
-                "filter_term": filter_term,
+                "scores": [format_score_card(score) for score in get_all_score_cards(project_code)],
             },
             on_change_handlers={
-                "ScoresSorted": apply_sort,
-                "ScoresFiltered": apply_filter,
+                "RefreshData": refresh_data,
             },
         )
 
 
-def apply_sort(sorted_by: str) -> None:
-    st.session_state[SORTED_BY_SESSION_KEY] = sorted_by
-
-
-def apply_filter(term: str) -> None:
-    st.session_state[FILTER_TERM_SESSION_KEY] = term or None
+def refresh_data(*_, **__):
+    get_all_score_cards.clear()

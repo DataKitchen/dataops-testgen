@@ -26,8 +26,6 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {Array<Score>} scores
- * @property {string} filter_term
- * @property {string} sorted_by
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
@@ -52,15 +50,32 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
 
+    const sortedBy = van.state('name');
+    const filterTerm = van.state('');
+    const scores = van.derive(() => {
+        const sort = getValue(sortedBy) ?? 'name';
+        const filter = getValue(filterTerm) ?? '';
+        return getValue(props.scores)
+            .filter(score => score.name.toLowerCase().includes(filter.toLowerCase()))
+            .sort((a, b) => a[sort] > b[sort] ? 1 : (b[sort] > a[sort] ? -1 : 0));
+    });
+
     return div(
         { id: domId, style: 'overflow-y: auto;' },
-        () => (getValue(props.scores).length || getValue(props.filter_term))
+        () => getValue(props.scores).length > 0
             ? div(
                 ScoreLegend(),
-                () => Toolbar(getValue(props.filter_term), getValue(props.sorted_by)),
+                Toolbar(
+                    {
+                        onsearch: v => filterTerm.val = v,
+                        onsort: v => sortedBy.val = v,
+                    },
+                    filterTerm,
+                    sortedBy,
+                ),
                 () =>  div(
                     { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                    getValue(props.scores).map(score => ScoreCard(
+                    getValue(scores).map(score => ScoreCard(
                         score,
                         Link({
                             label: 'View details',
@@ -75,7 +90,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     );
 };
 
-const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy) => {
+const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ sortedBy) => {
     const sortOptions = [
         { label: "Score Name", value: "name" },
         { label: "Lowest Score", value: "score" },
@@ -91,7 +106,7 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
             clearable: true,
             placeholder: 'Search scores',
             value: filterBy,
-            onChange: (value) => emitEvent('ScoresFiltered', { payload: value }),
+            onChange: options?.onsearch,
         }),
         Select({
             id: 'score-dashboard-sort',
@@ -100,7 +115,7 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
             style: 'font-size: 14px;',
             value: sortedBy,
             options: sortOptions,
-            onChange: (value) => emitEvent('ScoresSorted', { payload: value }),
+            onChange: options?.onsort,
         }),
         span({ style: 'margin: 0 auto;' }),
         Button({
@@ -108,8 +123,16 @@ const Toolbar = (/** @type {string} */ filterBy, /** @type {string} */ sortedBy)
             icon: 'data_exploration',
             label: 'Score Explorer',
             color: 'primary',
-            style: 'background: var(--button-generic-background-color); width: unset;',
+            style: 'background: var(--button-generic-background-color); width: unset; margin-right: 16px;',
             onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer' }),
+        }),
+        Button({
+            type: 'icon',
+            icon: 'refresh',
+            tooltip: 'Refresh page data',
+            tooltipPosition: 'left',
+            style: 'border: var(--button-stroked-border); border-radius: 4px;',
+            onclick: () => emitEvent('RefreshData', {}),
         }),
     );
 };
