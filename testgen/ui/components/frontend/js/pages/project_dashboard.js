@@ -331,7 +331,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
             ),
             suite.latest_run_id
                 ? Link({
-                    label: formatTimestamp(suite.latest_auto_gen_date),
+                    label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
                     params: { run_id: suite.latest_run_id },
                     style: 'flex: 1 1 15%;',

@@ -277,6 +277,10 @@ class HygieneIssuesPage(Page):
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
 
+        # Help Links
+        st.markdown(
+            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
+        )
 
 @st.fragment
 def render_score(project_code: str, run_id: str):

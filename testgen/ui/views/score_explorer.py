@@ -206,3 +206,5 @@ def save_score_definition(_) -> None:
         "filters": None,
         "definition_id": str(score_definition.id) if score_definition.id else None,
     })
+
+    st.toast("Scorecard saved", icon=":material/task_alt:")
