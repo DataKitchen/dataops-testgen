@@ -89,11 +89,12 @@ WITH score_detail
 score_calc
   AS ( SELECT table_id,
               SUM(affected_data_points) as sum_affected_data_points,
-              SUM(row_ct) as sum_data_points
+              SUM(row_ct) as sum_data_points,
+              MAX(row_ct) as record_ct
          FROM score_detail
        GROUP BY table_id )
 UPDATE data_table_chars
    SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
-       last_profile_record_ct = NULLIF(s.sum_data_points::FLOAT, 0)
+       last_profile_record_ct = NULLIF(s.record_ct::FLOAT, 0)
   FROM score_calc s
  WHERE data_table_chars.table_id = s.table_id;
