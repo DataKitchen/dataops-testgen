@@ -71,38 +71,33 @@ SET functional_data_type =
             WHEN before_20yr_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 >= 75 THEN 'Historical Date'
             WHEN future_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 >= 95 THEN 'Future Date'
             WHEN future_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 >= 50 THEN 'Schedule Date'
-            WHEN before_1yr_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 BETWEEN 10 AND 90
-                AND within_1yr_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 BETWEEN 10 AND 90
-                AND future_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 BETWEEN 0 AND 10
+            WHEN before_5yr_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 BETWEEN 0 AND 20 -- mostly within 5 yrs
+             AND future_date_ct / NULLIF(value_ct::FLOAT, 0) * 100 BETWEEN 0 AND 10  -- up to 10% in future
                 THEN
                 CASE
-                    WHEN date_days_present = DATEDIFF('DAY', min_date, max_date) + 1 -- everyday
-                        OR date_days_present >=
-                           2 * (DATEDIFF('WEEK', min_date, max_date) + 1) -- 2 days a week based on overall data
-                        OR ROUND(within_1yr_date_ct::FLOAT / value_ct * distinct_value_ct) /
-                           LEAST(365, NULLIF(DATEDIFF('DAY', (run_date::DATE - 365):: TIMESTAMP, max_date), 0))::FLOAT * 100 >=
-                                   28 -- current year
-                                OR ROUND(distinct_value_ct * (1 - before_5yr_date_ct / NULLIF(value_ct::FLOAT, 0))) /
-                                   LEAST(NULLIF(DATEDIFF('DAY', (run_date::DATE - 365 * 5)::TIMESTAMP, max_date) + 1, 0), 365 * 5) * 100 >=
-                                   28 -- last 5 years
+                       WHEN value_ct > 100 AND distinct_value_ct > 20 -- at least one biz month
+                        -- Date appears at least 2 days per week
+                        AND date_days_present >= 2 * (datediff('WEEK', min_date, max_date) + 1)
                         THEN 'Transactional Date'
-                    WHEN date_weeks_present =
+                    WHEN value_ct > 20 AND distinct_value_ct > 8 -- at least one biz month
+                        AND (date_weeks_present =
                                  NULLIF(DATEDIFF('WEEK', min_date, max_date), 0)::FLOAT + 1 -- 1 day a week
                         OR
                          date_weeks_present >= 2 * (DATEDIFF('MONTH', min_date, max_date) + 1) -- 2 weeks a month
                         OR ROUND(distinct_value_ct * (1 - before_5yr_date_ct / NULLIF(value_ct::FLOAT, 0))) >=
                            2 *
-                           (DATEDIFF('MONTH', (run_date::DATE - 365)::TIMESTAMP, max_date) + 1) -- 2 weeks a month from the last 5 years to current
+                           (DATEDIFF('MONTH', (run_date::DATE - 365)::TIMESTAMP, max_date) + 1) ) -- 2 weeks a month from the last 5 years to current
                         THEN 'Transactional Date (Wk)'
-                    WHEN date_months_present =
+                    WHEN value_ct > 20 AND distinct_value_ct > 3 -- at least 4 biz months
+                       AND (date_months_present =
                          NULLIF(DATEDIFF('MONTH', min_date, max_date), 0)::FLOAT + 1 -- every month
                         OR
                          date_months_present >= 5 * (DATEDIFF('YEAR', min_date, max_date) + 1) -- 5 months a year
                         OR ROUND(distinct_value_ct * (1 - before_5yr_date_ct / NULLIF(value_ct::FLOAT, 0))) >=
-                           5 *
-                           (DATEDIFF('YEAR', (run_date::DATE - 365*5)::TIMESTAMP, max_date) + 1) -- 5 months a year from the last 5 years to current
+                           5 * (DATEDIFF('YEAR', (run_date::DATE - 365*5)::TIMESTAMP, max_date) + 1) ) -- 5 months a year from the last 5 years to current
                         THEN 'Transactional Date (Mo)'
-                    WHEN distinct_value_ct = DATEDIFF('QUARTER', min_date, max_date) + 1 -- every quarter
+                    WHEN value_ct > 10 AND distinct_value_ct > 1 -- at least 2 biz quarters
+                       AND distinct_value_ct = DATEDIFF('QUARTER', min_date, max_date) + 1 -- every quarter
                         THEN 'Transactional Date (Qtr)'
                     ELSE 'Date (TBD)'
                 END
@@ -138,8 +133,8 @@ UPDATE profile_results
 SET functional_data_type = 'Process ' || functional_data_type
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND general_type IN ('A', 'D')
-  AND ( column_name ~ '^(last_?|system_?|)(add|create|update|updt|mod|modif|modf|del|delete|refresh)(.{0,3}d?_?(time|tm|date|day|dt|stamp|timestamp|datestamp))$'
-   OR   column_name ~ '^(last_?|)(change|chg|update|updt|mod|modify|modf|modified|refresh)$' );
+  AND ( column_name ~ '^(last_?|system_?|)(add|create|insert|inrt|update|updt|mod|modif|modf|del|delete|refresh)(.{0,3}d?_?(time|tm|date|day|dt|stamp|timestamp|datestamp))$'
+   OR   column_name ~ '^(last_?|)(change|chg|update|updt|mod|modify|modf|modified|refresh|refreshed)$' );
 
 
 -- Assign PERIODS:  Period Year, Period Qtr, Period Month, Period Week, Period DOW
@@ -225,6 +220,41 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
         OR ( min_text ILIKE 'FRIDAY' AND max_text ILIKE 'WEDNESDAY' AND max_length = 9)
         OR ( min_text ILIKE 'FRI' AND max_text ILIKE 'WED' AND max_length = 3) );
 
+-- Period Overrides -- regardless of prior functional_data_type
+
+UPDATE profile_results
+SET functional_data_type = 'Period Month'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND (min_date = DATE_TRUNC('month', min_date)::DATE
+         AND max_date = DATE_TRUNC('month', max_date)::DATE
+        OR
+        min_date = (DATE_TRUNC('month', min_date) + INTERVAL '1 month' - INTERVAL '1 day')::DATE
+         AND max_date = (DATE_TRUNC('month', max_date) + INTERVAL '1 month' - INTERVAL '1 day')::DATE
+       )
+   AND date_months_present = date_days_present
+   AND date_months_present >= 12;
+
+UPDATE profile_results
+SET functional_data_type = 'Period Week'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND ( EXTRACT(DOW FROM min_date) IN (0, 1, 5, 6)
+          AND EXTRACT(DOW FROM min_date) = EXTRACT(DOW FROM max_date)
+       )
+   AND date_months_present < date_days_present
+   AND date_weeks_present = date_days_present
+   AND date_weeks_present > 25;
+
+UPDATE profile_results
+SET functional_data_type =
+      CASE
+         WHEN LOWER(column_name) = 'month'  THEN 'Period Month'
+         WHEN LOWER(column_name) = 'week'   THEN 'Period Week'
+         WHEN LOWER(column_name) = 'period'
+          AND NOT functional_data_type ILIKE 'Period%' THEN 'Period'
+         ELSE functional_data_type
+      END
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND LOWER(column_name) IN ('period', 'month', 'week');
 
 -- 3. Assign ADDRESS RELATED FIELDS, PHONE AND EMAIL
 /*
@@ -504,19 +534,26 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND record_ct = distinct_value_ct
   AND record_ct > 50;
 
+UPDATE profile_results
+SET functional_data_type = 'ID-Unique-SK'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND functional_data_type = 'ID-SK'
+  AND record_ct = distinct_value_ct
+  AND record_ct > 50;
+
 -- Assign 'ID-FK' functional data type to the columns that are foreign keys of the identity columns identified in the previous step
 
 UPDATE profile_results
 SET functional_data_type = 'ID-FK'
 FROM (Select table_groups_id, table_name, column_name
       from profile_results
-      where functional_data_type = 'ID-Unique'
+      where functional_data_type IN ('ID-Unique', 'ID-Unique-SK')
         and profile_run_id = '{PROFILE_RUN_ID}') ui
 WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
   and profile_results.column_name = ui.column_name
   and profile_results.table_groups_id = ui.table_groups_id
   and profile_results.table_name <> ui.table_name
-  and profile_results.functional_data_type <> 'ID-Unique';
+  and profile_results.functional_data_type NOT IN ('ID-Unique', 'ID-Unique-SK');
 
 -- Functional Data Type: 'Measurement Pct'
 
