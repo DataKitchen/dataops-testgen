@@ -636,7 +636,6 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
 
     with group_filter_column:
         table_groups_df = run_table_groups_lookup_query(project_code)
-        table_groups_df.drop(origin_table_group, inplace=True)
         target_table_group_id = testgen.select(
             options=table_groups_df,
             value_column="id",
