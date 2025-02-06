@@ -2,6 +2,7 @@ import logging
 import time
 import typing
 
+import pandas as pd
 import streamlit as st
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -621,7 +622,7 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
 @st.dialog(title="Copy/Move Test")
 def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
     # TODO confirm if the condition below is correct -> can only move tests that aren't active (locked?)
-    can_be_moved = [td for td in selected_test_definitions if td["test_active"] == False]
+    can_be_moved = [td for td in selected_test_definitions if td["lock_refresh"] == "Y"]
 
     st.text(f"Selected tests: {len(selected_test_definitions)}")
 
@@ -631,11 +632,36 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
     )
     disable_copy_button = user_can_edit
 
-    # TODO THESE TWO INPUTS (select fields?)
-    target_table_group = st.form_select()
-    target_test_suite = st.form_select()
-    _, button_column = st.columns([0.85, 0.15])
-    with button_column:
+    group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+
+    with group_filter_column:
+        table_groups_df = run_table_groups_lookup_query(project_code)
+        table_groups_df.drop(origin_table_group, inplace=True)
+        target_table_group_id = testgen.select(
+            options=table_groups_df,
+            value_column="id",
+            display_column="table_groups_name",
+            default_value=None,
+            bind_to_query="table_group_id",
+            label="Table Group",
+        )
+
+    with suite_filter_column:
+        test_suites_df = run_test_suite_lookup_query(target_table_group_id)
+        try:
+            test_suites_df.drop(origin_test_suite, inplace=True)
+        except KeyError:
+            pass
+        target_test_suite_id = testgen.select(
+            options=test_suites_df,
+            value_column="id",
+            display_column="test_suite",
+            default_value=None,
+            bind_to_query="test_suite_id",
+            label="Test Suite",
+        )
+
+    with actions_column:
         move = st.button(
             "Move",
             disabled=disable_move_button,
@@ -649,14 +675,14 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
 
     if move:
         # TODO: get wich test definitions cant be moved to target (colision names?)
-        test_definition_service.move(can_be_moved, target_table_group, target_test_suite)
+        test_definition_service.move(can_be_moved, target_table_group_id, target_test_suite_id)
         success_message = f"Test Definitions have been moved. "
         st.success(success_message)
         time.sleep(1)
         st.rerun()
     elif copy:
         # TODO: get wich test definitions cant be copied to target (colision names?)
-        test_definition_service.copy(selected_test_definitions, target_table_group, target_test_suite)
+        test_definition_service.copy(selected_test_definitions, target_table_group_id, target_test_suite_id)
         success_message = f"Test Definitions have been copied. "
         st.success(success_message)
         time.sleep(1)
