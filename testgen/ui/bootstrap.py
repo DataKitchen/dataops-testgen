@@ -23,6 +23,7 @@ from testgen.ui.views.project_dashboard import ProjectDashboardPage
 from testgen.ui.views.project_settings import ProjectSettingsPage
 from testgen.ui.views.quality_dashboard import QualityDashboardPage
 from testgen.ui.views.score_details import ScoreDetailsPage
+from testgen.ui.views.score_explorer import ScoreExplorerPage
 from testgen.ui.views.table_groups import TableGroupsPage
 from testgen.ui.views.test_definitions import TestDefinitionsPage
 from testgen.ui.views.test_results import TestResultsPage
@@ -35,6 +36,7 @@ BUILTIN_PAGES: list[type[Page]] = [
     ProjectDashboardPage,
     QualityDashboardPage,
     ScoreDetailsPage,
+    ScoreExplorerPage,
     DataCatalogPage,
     DataProfilingPage,
     ProfilingResultsPage,

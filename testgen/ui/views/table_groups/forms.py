@@ -63,6 +63,11 @@ class TableGroupForm(BaseForm, ManualRender):
         st_kwargs_max_value=999,
         st_kwargs_help="The number of days to wait before new profiling will be available to generate tests",
     )
+    add_scorecard_definition: bool = Field(
+        default=True,
+        st_kwargs_label="Add Scorecard",
+        st_kwargs_help="Add a new scorecard to the Quality Dashboard upon creation of this table group",
+    )
     profile_use_sampling: bool = Field(
         default=True,
         st_kwargs_label="Use profile sampling",
@@ -154,6 +159,8 @@ class TableGroupForm(BaseForm, ManualRender):
         self.render_field("profile_sk_column_mask", right_column)
         self.render_field("profiling_delay_days", right_column)
 
+        if not self.table_group_id:
+            self.render_field("add_scorecard_definition", container)
         self.render_field("profile_use_sampling", container)
         profile_sampling_expander = container.expander("Sampling Parameters", expanded=False)
         with profile_sampling_expander:

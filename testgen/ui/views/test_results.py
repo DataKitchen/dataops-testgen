@@ -89,7 +89,7 @@ class TestResultsPage(Page):
             testgen.summary_bar(items=tests_summary, height=20, width=800)
 
         with score_column:
-            render_score(run_id)
+            render_score(run_df["project_code"], run_id)
 
         with status_filter_column:
             status_options = [
@@ -204,7 +204,7 @@ class TestResultsPage(Page):
 
 
 @st.fragment
-def render_score(run_id: str):
+def render_score(project_code: str, run_id: str):
     run_df = get_run_by_id(run_id)
     testgen.flex_row_center()
     with st.container():
@@ -224,14 +224,15 @@ def render_score(run_id: str):
             tooltip=f"Recalculate scores for run {'and table group' if run_df["is_latest_run"] else ''}",
             on_click=partial(
                 refresh_score,
+                project_code,
                 run_id,
                 run_df["table_groups_id"] if run_df["is_latest_run"] else None,
             ),
         )
 
 
-def refresh_score(run_id: str, table_group_id: str | None) -> None:
-    run_test_rollup_scoring_queries(run_id, table_group_id)
+def refresh_score(project_code: str, run_id: str, table_group_id: str | None) -> None:
+    run_test_rollup_scoring_queries(project_code, run_id, table_group_id)
     st.cache_data.clear()
 
 

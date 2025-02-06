@@ -7,14 +7,14 @@
  * @property {number} profiling_score
  * @property {number} testing_score
  * @property {number} cde_score
- * @property {Array<Dimension>} dimensions
+ * @property {Array<Dimension>} categories
  */
 import van from '../van.min.js';
 import { Card } from './card.js';
 import { dot } from './dot.js';
 import { Attribute } from './attribute.js';
 import { getScoreColor } from '../score_utils.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, i, span } = van.tags;
 const { circle, svg, text } = van.tags("http://www.w3.org/2000/svg");
@@ -25,38 +25,47 @@ const ScoreCard = (
 ) => {
     loadStylesheet('score-card', stylesheet);
 
-    const dimensions = score.dimensions ?? [];
 
     return Card({
-        title: score.name,
+        title: van.derive(() => getValue(score).name),
         actionContent: actions,
         class: 'tg-score-card',
-        content: () => div(
-            { class: 'flex-row' },
-            div(
-                ScoreChart("Total Score", score.score),
-                div(
-                    { class: 'flex-row fx-justify-center fx-gap-2 mt-1' },
-                    Attribute({ label: 'Profiling', value: score.profiling_score }),
-                    Attribute({ label: 'Testing', value: score.testing_score }),
-                ),
-            ),
-            i({ class: 'mr-4 ml-4' }),
-            // ScoreChart("CDE Score", score.cde_score),
-            div(
-                { class: 'flex-column ml-4' },
-                span({ class: 'mb-2 text-caption' }, 'Quality Dimension'),
-                div(
-                    { class: 'tg-score-card--qualities' },
-                    dimensions.map(dimension => div(
-                        { class: 'flex-row fx-align-flex-center fx-gap-2' },
-                        dot({}, getScoreColor(dimension.score)),
-                        span({ class: 'tg-score-card--quality-score' }, dimension.score ?? '--'),
-                        span({}, dimension.label),
-                    )),
-                ),
-            ),
-        ),
+        content: () => {
+            const score_ = getValue(score);
+            const categories = score_.dimensions ?? score_.categories ?? [];
+            const categoriesLabel = score_.categories_label ?? 'Quality Dimension';
+
+            return div(
+                { class: 'flex-row fx-justify-center fx-align-flex-start' },
+                score_.score ? div(
+                    { class: 'mr-4' },
+                    ScoreChart("Total Score", score_.score),
+                    div(
+                        { class: 'flex-row fx-justify-center fx-gap-2 mt-1' },
+                        Attribute({ label: 'Profiling', value: score_.profiling_score }),
+                        Attribute({ label: 'Testing', value: score_.testing_score }),
+                    ),
+                ) : '',
+                score_.cde_score ? ScoreChart("CDE Score", score_.cde_score) : '',
+                (score_.cde_score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
+                categories.length > 0 ? div(
+                    { class: 'flex-column' },
+                    span({ class: 'mb-2 text-caption' }, categoriesLabel),
+                    div(
+                        { class: 'tg-score-card--categories' },
+                        categories.map(category => div(
+                            { class: 'flex-row fx-align-flex-center fx-gap-2' },
+                            dot({}, getScoreColor(category.score)),
+                            span({ class: 'tg-score-card--category-score' }, category.score ?? '--'),
+                            span(
+                                { class: 'tg-score-card--category-label', title: category.label, style: 'position: relative;' },
+                                category.label,
+                            ),
+                        )),
+                    ),
+                ) : '',
+            );
+        },
     });
 };
 
@@ -90,22 +99,31 @@ const ScoreChart = (label, score) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-card {
-    width: 500px;
+    width: fit-content;
     box-sizing: border-box;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     margin-bottom: unset !important;
 }
 
-.tg-score-card--qualities {
+.tg-score-card--categories {
+    max-height: 100px;
+    overflow-y: auto;
     display: grid;
     grid-gap: 8px;
     grid-template-columns: 160px 160px;
 }
 
-.tg-score-card--quality-score {
+.tg-score-card--category-score {
     min-width: 30px;
     font-weight: 500; 
+}
+
+.tg-score-card--category-label {
+    display: block;
+    overflow-x: hidden;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
 }
 
 svg.tg-score-chart circle {

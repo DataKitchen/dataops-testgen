@@ -291,6 +291,11 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     value=profiling_delay_days,
                     help="The number of days to wait before new profiling will be available to generate tests",
                 ),
+                "add_scorecard_definition": left_column.toggle(
+                    "Add Scorecard",
+                    value=True,
+                    help="Add a new scorecard to the Quality Dashboard upon creation of this table group",
+                ) if mode != "edit" else None,
                 "profile_use_sampling": left_column.toggle(
                     "Use profile sampling",
                     value=profile_use_sampling,

@@ -3,7 +3,7 @@ import typing
 from testgen.ui.components.utils.component import component
 
 ButtonType = typing.Literal["basic", "flat", "icon", "stroked"]
-ButtonColor = typing.Literal["basic", "primary"]
+ButtonColor = typing.Literal["basic", "primary", "warn"]
 TooltipPosition = typing.Literal["left", "right"]
 
 

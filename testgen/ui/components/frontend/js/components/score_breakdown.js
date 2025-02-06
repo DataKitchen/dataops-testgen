@@ -21,7 +21,8 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                     const selectedCategory = getValue(category);
                     return Select({
                         label: '',
-                        options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c, selected: c === selectedCategory })),
+                        value: selectedCategory,
+                        options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c })),
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
                     });
                 },
