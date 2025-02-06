@@ -1,5 +1,7 @@
 import typing
 
+from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
+from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
 from testgen.common.read_file import replace_templated_functions
 
@@ -53,6 +55,9 @@ class CProfilingSQL:
 
     exception_message = ""
 
+    _data_chars_sql: CRefreshDataCharsSQL = None
+    _rollup_scores_sql: CRollupScoresSQL = None
+
     def __init__(self, strProjectCode, flavor):
         self.flavor = flavor
         self.project_code = strProjectCode
@@ -67,6 +72,28 @@ class CProfilingSQL:
         self.parm_vldb_flag = "N"
         self.parm_do_sample = "N"
         self.today = date_service.get_now_as_string()
+
+    def _get_data_chars_sql(self) -> CRefreshDataCharsSQL:
+        if not self._data_chars_sql:
+            params = {
+                "project_code": self.project_code,
+                "sql_flavor": self.flavor,
+                "table_group_schema": self.data_schema,
+                "table_groups_id": self.table_groups_id,
+                "max_query_chars": None,
+                "profiling_table_set": self.parm_table_set,
+                "profiling_include_mask": self.parm_table_include_mask,
+                "profiling_exclude_mask": self.parm_table_exclude_mask,
+            } 
+            self._data_chars_sql = CRefreshDataCharsSQL(params, self.run_date, "v_latest_profile_results")
+    
+        return self._data_chars_sql
+    
+    def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
+        if not self._rollup_scores_sql:
+            self._rollup_scores_sql = CRollupScoresSQL(self.profile_run_id, self.table_groups_id)
+    
+        return self._rollup_scores_sql
 
     def ReplaceParms(self, strInputString):
         strInputString = strInputString.replace("{PROJECT_CODE}", self.project_code)
@@ -146,10 +173,13 @@ class CProfilingSQL:
         strQ = self.ReplaceParms(read_template_sql_file("refresh_anomalies.sql", sub_directory="profiling"))
         return strQ
 
-    def GetAnomalyScoringRollupQuery(self):
+    def GetAnomalyScoringRollupRunQuery(self):
         # Runs on DK Postgres Server
-        strQ = self.ReplaceParms(read_template_sql_file("profile_anomaly_scoring_rollup.sql", sub_directory="profiling"))
-        return strQ
+        return self._get_rollup_scores_sql().GetRollupScoresProfileRunQuery()
+    
+    def GetAnomalyScoringRollupTableGroupQuery(self):
+        # Runs on DK Postgres Server
+        return self._get_rollup_scores_sql().GetRollupScoresProfileTableGroupQuery()
 
     def GetAnomalyTestTypesQuery(self):
         # Runs on DK Postgres Server
@@ -192,10 +222,7 @@ class CProfilingSQL:
 
     def GetDataCharsRefreshQuery(self):
         # Runs on DK Postgres Server
-        strQ = self.ReplaceParms(
-            read_template_sql_file("refresh_data_chars_from_profiling.sql", sub_directory="profiling")
-        )
-        return strQ
+        return self._get_data_chars_sql().GetDataCharsUpdateQuery()
 
     def GetProfileRunInfoRecordsQuery(self):
         # Runs on DK Postgres Server
@@ -213,34 +240,7 @@ class CProfilingSQL:
 
     def GetDDFQuery(self):
         # Runs on Project DB
-
-        strQ = self.ReplaceParms(
-            read_template_sql_file(
-                f"project_ddf_query_{self.flavor}.sql", sub_directory=f"flavors/{self.flavor}/profiling"
-            )
-        )
-
-        strTableCriteria = ""
-        if self.parm_table_set:
-            strTableCriteria += " AND c.table_name IN (" + self.parm_table_set + ")"
-        strTableCriteria += self._get_mask_query(self.parm_table_include_mask, is_include=True)
-        strTableCriteria += self._get_mask_query(self.parm_table_exclude_mask, is_include=False)
-        strQ = strQ.replace("{TABLE_CRITERIA}", strTableCriteria)
-
-        return strQ
-
-    def _get_mask_query(self, mask, is_include):
-        sub_query = ""
-        if mask:
-            sub_query += " AND (" if is_include else " AND NOT ("
-            is_first = True
-            for item in mask.split(","):
-                if not is_first:
-                    sub_query += " OR "
-                sub_query += "(c.table_name LIKE '" + item.strip() + "')"
-                is_first = False
-            sub_query += ")"
-        return sub_query
+        return self._get_data_chars_sql().GetDDFQuery()
 
     def GetProfilingQuery(self):
         # Runs on Project DB

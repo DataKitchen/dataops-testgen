@@ -66,7 +66,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Caption } from '../components/caption.js';
@@ -75,13 +75,13 @@ import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
 import { Link } from '../components/link.js';
 import { SummaryBar } from '../components/summary_bar.js';
-import { EmptyState } from '../components/empty_state.js';
-import { Metric } from '../components/metric.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
+import { ScoreMetric } from '../components/score_metric.js';
 
 const { div, h3, hr, span, strong } = van.tags;
 
-const Overview = (/** @type Properties */ props) => {
-    loadStylesheet('overview', stylesheet);
+const ProjectDashboard = (/** @type Properties */ props) => {
+    loadStylesheet('project-dashboard', stylesheet);
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
@@ -91,7 +91,7 @@ const Overview = (/** @type Properties */ props) => {
     });
     const tableGroups = van.derive(() => getValue(props.table_groups));
     const tableGroupsSearchTerm = van.state('');
-    const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)[0]?.value);
+    const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)?.value);
     const filteredTableGroups = van.state(getValue(tableGroups));
 
     const sortFunctions = {
@@ -112,6 +112,7 @@ const Overview = (/** @type Properties */ props) => {
 
     const wrapperId = 'overview-wrapper';
     resizeFrameHeightToElement(wrapperId);
+    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId, class: 'flex-column tg-overview' },
@@ -124,11 +125,6 @@ const Overview = (/** @type Properties */ props) => {
                     content: [
                         () => div(
                             { class: 'flex-row fx-align-flex-start' },
-                            // div(
-                            //     { class: 'flex-column tg-overview--project--score' },
-                            //     Caption({ content: 'Project HIT score', style: 'margin-bottom: 16px;' }),
-                            //     Metric({value: 100, delta: 10}),
-                            // ),
                             () => {
                                 return div(
                                     { class: 'flex-column fx-gap-2 tg-overview--project--summary' },
@@ -169,10 +165,10 @@ const Overview = (/** @type Properties */ props) => {
                 span({ style: 'margin-right: 1rem;' }),
                 Select({
                     label: 'Sort by',
+                    value: tableGroupsSortOption,
                     options: props.table_groups_sort_options?.val ?? [],
                     height: 38,
                     style: 'font-size: 14px;',
-                    onChange: (value) => tableGroupsSortOption.val = value,
                 }),
             )
             : undefined,
@@ -211,11 +207,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     { class: 'flex-column fx-flex' },
                     TableGroupLatestTestResults(tableGroup),
                 ),
-                div(
-                    { class: 'flex-column fx-align-flex-center', style: 'flex: 0 1 100px; align-self: center' },
-                    Metric({ value: tableGroup.dq_score ?? '--' }),
-                    Caption({ content: 'Score' }),
-                ),
+                ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
             tableGroup.expanded
                 ? hr({ class: 'tg-overview--table-group-divider' })
@@ -238,8 +230,6 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
                     href: 'profiling-runs:results',
                     params: { run_id: tableGroup.latest_profile_id },
                 }),
-                span({ class: 'mr-1 ml-1' }, '|'),
-                span(`Profiling score: ${tableGroup.dq_score_profiling}`),
             ),
             div(
                 { class: 'flex-row mb-3' },
@@ -283,7 +273,7 @@ const TableGroupLatestTestResults = (/** @type TableGroupSummary */ tableGroup) 
                 { class: 'flex-column' },
                 span(
                     { class: 'mb-3' },
-                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed | Test score: ${tableGroup.dq_score_testing}`,
+                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed`,
                 ),
                 div(
                     { class: 'flex-row mb-3' },
@@ -361,20 +351,14 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
 
 const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
     const forConnections = {
-        message: {
-            line1: 'Begin by connecting your database.',
-            line2: 'TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.',
-        },
+        message: EMPTY_STATE_MESSAGE.connection,
         link: {
             label: 'Go to Connections',
             href: 'connections',
         },
     };
     const forTablegroups = {
-        message: {
-            line1: 'Profile your tables to detect hygiene issues',
-            line2: 'Create table groups for your connected databases to run data profiling and hygiene review.',
-        },
+        message: EMPTY_STATE_MESSAGE.tableGroup,
         link: {
             label: 'Go to Table Groups',
             href: 'connections:table-groups',
@@ -429,4 +413,4 @@ hr.tg-overview--table-group-divider {
 }
 `);
 
-export { Overview };
+export { ProjectDashboard };

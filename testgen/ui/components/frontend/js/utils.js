@@ -22,6 +22,16 @@ function resizeFrameHeightToElement(/** @type string */elementId) {
     observer.observe(window.frameElement);
 }
 
+function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
+    const observer = new MutationObserver(() => {
+        const height = document.getElementById(elementId).offsetHeight;
+        if (height) {
+            Streamlit.setFrameHeight(height);
+        }
+    });
+    observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});
+}
+
 function loadStylesheet(
     /** @type string */key,
     /** @type CSSStyleSheet */stylesheet,
@@ -42,7 +52,13 @@ function emitEvent(
 // Replacement for van.val()
 // https://github.com/vanjs-org/van/discussions/280
 const stateProto = Object.getPrototypeOf(van.state());
-function getValue(/** @type object */ prop) { // van state or static value
+/**
+ * Get value from van.state
+ * @template T
+ * @param {T} prop
+ * @returns {T}
+ */
+function getValue(prop) { // van state or static value
     const proto = Object.getPrototypeOf(prop ?? 0);
     if (proto === stateProto) {
         return prop.val;
@@ -51,6 +67,10 @@ function getValue(/** @type object */ prop) { // van state or static value
         return prop();
     }
     return prop;
+}
+
+function isState(/** @type object */ value) {
+    return Object.getPrototypeOf(value ?? 0) == stateProto;
 }
 
 function getRandomId() {
@@ -95,4 +115,66 @@ function friendlyPercent(/** @type number */ value) {
     return rounded;
 }
 
-export { debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, loadStylesheet, resizeFrameHeightToElement, friendlyPercent };
+function isEqual(value, other) {
+    if (typeof value !== 'object' && typeof other !== 'object') {
+        return Object.is(value, other);
+    }
+    
+    if (value === null && other === null) {
+        return true;
+    }
+
+    if ((value === null || other === null) && (value !== null || other !== null)) {
+        return false;
+    }
+
+    if (typeof value !== typeof other) {
+        return false;
+    }
+
+    if (value === other) {
+        return true;
+    }
+
+    if (Array.isArray(value) && Array.isArray(other)) {
+        if (value.length !== other.length) {
+            return false;
+        }
+
+        for (let i = 0; i < value.length; i++) {
+            if (!isEqual(value[i], other[i])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    if (Array.isArray(value) || Array.isArray(other)) {
+        return false;
+    }
+
+    if (Object.keys(value).length !== Object.keys(other).length) {
+        return false;
+    }
+
+    for (const [k, v] of Object.entries(value)) {
+        if (!(k in other)) {
+            return false;
+        }
+
+        if (!isEqual(v, other[k])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function afterMount(/** @ype Function */ callback) {
+    const trigger = van.state(false);
+    van.derive(() => trigger.val && callback());
+    trigger.val = true;
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent };

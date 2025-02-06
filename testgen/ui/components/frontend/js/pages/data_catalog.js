@@ -35,6 +35,7 @@
  * @property {string} column_name
  * @property {string} table_name
  * @property {string} table_group_id
+ * @property {string} connection_id
  * * Characteristics
  * @property {string} column_type
  * @property {string} functional_data_type
@@ -42,7 +43,8 @@
  * @property {number} add_date
  * @property {number} last_mod_date
  * @property {number} drop_date
- * * Column Metadata
+ * * Column Tags
+ * @property {string} description 
  * @property {boolean} critical_data_element
  * @property {string} data_source
  * @property {string} source_system
@@ -51,19 +53,25 @@
  * @property {string} stakeholder_group
  * @property {string} transform_level
  * @property {string} aggregation_level
- * * Table Metadata
+ * @property {string} data_product
+ * * Table Tags
  * @property {boolean} table_critical_data_element
- * @property {string} table_cdata_source
- * @property {string} table_csource_system
- * @property {string} table_csource_process
- * @property {string} table_cbusiness_domain
- * @property {string} table_cstakeholder_group
- * @property {string} table_ctransform_level
- * @property {string} table_caggregation_level
+ * @property {string} table_data_source
+ * @property {string} table_source_system
+ * @property {string} table_source_process
+ * @property {string} table_business_domain
+ * @property {string} table_stakeholder_group
+ * @property {string} table_transform_level
+ * @property {string} table_aggregation_level
+ * @property {string} table_data_product
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
  * @property {number} has_test_runs
+ * * Scores
+ * @property {string} dq_score
+ * @property {string} dq_score_profiling
+ * @property {string} dq_score_testing
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestIssue[]} latest_test_issues
@@ -74,6 +82,7 @@
  * @property {'table'} type
  * @property {string} table_name
  * @property {string} table_group_id
+ * @property {string} connection_id
  * * Characteristics
  * @property {string} functional_table_type
  * @property {number} record_ct
@@ -81,7 +90,8 @@
  * @property {number} data_point_ct
  * @property {number} add_date
  * @property {number} drop_date
- * * Metadata
+ * * Tags
+ * @property {string} description 
  * @property {boolean} critical_data_element
  * @property {string} data_source
  * @property {string} source_system
@@ -90,10 +100,15 @@
  * @property {string} stakeholder_group
  * @property {string} transform_level
  * @property {string} aggregation_level
+ * @property {string} data_product
  * * Latest Profile & Test Runs
  * @property {string} latest_profile_id
  * @property {number} latest_profile_date
  * @property {number} has_test_runs
+ * * Scores
+ * @property {string} dq_score
+ * @property {string} dq_score_profiling
+ * @property {string} dq_score_testing
  * * Issues
  * @property {Anomaly[]} latest_anomalies
  * @property {TestResult[]} latest_test_results
@@ -116,6 +131,7 @@ import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { ColumnProfile } from '../components/column_profile.js';
 import { RadioGroup } from '../components/radio_group.js';
+import { ScoreMetric } from '../components/score_metric.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -194,26 +210,17 @@ const DataCatalog = (/** @type Properties */ props) => {
                             item.column_name,
                         ] : item.table_name,
                     ),
-                    span(
-                        { class: 'flex-row fx-gap-1 fx-justify-content-flex-end mb-2 text-secondary' },
-                        '* as of latest profiling run on ',
-                        Link({
-                            href: 'profiling-runs:results',
-                            params: {
-                                run_id: item.latest_profile_id,
-                                table_name: item.table_name,
-                                column_name: item.column_name,
-                            },
-                            open_new: true,
-                            label: formatTimestamp(item.latest_profile_date),
-                        }),
-                    ),
+                    LatestProfilingLink(item),
                     CharacteristicsCard(item),
                     item.type === 'column' ? Card({
                         title: 'Value Distribution *',
-                        content: ColumnProfile(item),
+                        content: item.latest_profile_id ? ColumnProfile(item) : null,
+                        actionContent: item.latest_profile_id ? null : span(
+                            { class: 'text-secondary' },
+                            'No profiling data available',
+                        ),
                     }) : null,
-                    MetadataCard(item),
+                    TagsCard(item),
                     PotentialPIICard(item),
                     HygieneIssuesCard(item),
                     TestIssuesCard(item),
@@ -240,8 +247,8 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     if (item.type === 'column') {
         attributes.push(
             { key: 'column_type', label: 'Data Type' },
-            { key: 'datatype_suggestion', label: 'Suggested Data Type' },
-            { key: 'functional_data_type', label: 'Semantic Data Type' },
+            { key: 'datatype_suggestion', label: 'Suggested Data Type *' },
+            { key: 'functional_data_type', label: 'Semantic Data Type *' },
             { key: 'add_date', label: 'First Detected' },
         );
         if (item.last_mod_date !== item.add_date) {
@@ -249,7 +256,7 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
         }
     } else {
         attributes.push(
-            { key: 'functional_table_type', label: 'Semantic Table Type' },
+            { key: 'functional_table_type', label: 'Semantic Table Type *' },
             { key: 'record_ct', label: 'Row Count' },
             { key: 'column_ct', label: 'Column Count' },
             { key: 'data_point_ct', label: 'Data Point Count' },
@@ -261,45 +268,53 @@ const CharacteristicsCard = (/** @type Table | Column */ item) => {
     }
 
     return Card({
-        title: `${item.type} Characteristics *`,
+        title: `${item.type} Characteristics`,
         content: div(
-            { class: 'flex-row fx-flex-wrap fx-gap-4' },
-            attributes.map(({ key, label }) => {
-                let value = item[key];
-                if (key === 'column_type') {
-                    const { icon, iconSize } = columnIcons[item.general_type || 'X'];
-                    value = div(
-                        { class: 'flex-row' },
-                        i(
-                            {
-                                class: 'material-symbols-rounded tg-dh--column-icon',
-                                style: `font-size: ${iconSize || 24}px;`,
-                            },
-                            icon,
-                        ),
-                        (value || 'unknown').toLowerCase(),
-                    );
-                } else if (key === 'datatype_suggestion') {
-                    value = (value || '').toLowerCase();
-                } else if (key === 'functional_table_type') {
-                    value = (value || '').split('-')
-                        .map(word => word ? (word[0].toUpperCase() + word.substring(1)) : '')
-                        .join(' ');
-                } else if (['add_date', 'last_mod_date', 'drop_date'].includes(key)) {
-                    value = formatTimestamp(value, true);
-                    if (key === 'drop_date') {
-                        label = span({ class: 'text-error' }, label);
+            { class: 'flex-row fx-gap-4' },
+            div(
+                { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                attributes.map(({ key, label }) => {
+                    let value = item[key];
+                    if (key === 'column_type') {
+                        const { icon, iconSize } = columnIcons[item.general_type || 'X'];
+                        value = div(
+                            { class: 'flex-row' },
+                            i(
+                                {
+                                    class: 'material-symbols-rounded tg-dh--column-icon',
+                                    style: `font-size: ${iconSize || 24}px;`,
+                                },
+                                icon,
+                            ),
+                            (value || 'unknown').toLowerCase(),
+                        );
+                    } else if (key === 'datatype_suggestion') {
+                        value = (value || '').toLowerCase();
+                    } else if (key === 'functional_table_type') {
+                        value = (value || '').split('-')
+                            .map(word => word ? (word[0].toUpperCase() + word.substring(1)) : '')
+                            .join(' ');
+                    } else if (['add_date', 'last_mod_date', 'drop_date'].includes(key)) {
+                        value = formatTimestamp(value, true);
+                        if (key === 'drop_date') {
+                            label = span({ class: 'text-error' }, label);
+                        }
                     }
-                }
 
-                return Attribute({ label, value, width: 300 });
-            }),
+                    return Attribute({ label, value, width: 250 });
+                }),
+            ),
+            div(
+                { style: 'margin-top: -40px;' },
+                ScoreMetric(item.dq_score, item.dq_score_profiling, item.dq_score_testing),
+            ),
         ),
     });
 };
 
-const MetadataCard = (/** @type Table | Column */ item) => {
+const TagsCard = (/** @type Table | Column */ item) => {
     const attributes = [
+        'description',
         'critical_data_element',
         'data_source',
         'source_system',
@@ -308,6 +323,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
         'stakeholder_group',
         'transform_level',
         'aggregation_level',
+        'data_product',
     ].map(key => ({
         key,
         label: key.replaceAll('_', ' '),
@@ -319,10 +335,11 @@ const MetadataCard = (/** @type Table | Column */ item) => {
         icon: 'layers',
         iconSize: 18,
         classes: 'text-disabled',
-        tooltip: 'Inherited from table metadata',
+        tooltip: 'Inherited from table tags',
         tooltipPosition: 'top-right',
     });
     const width = 300;
+    const descriptionWidth = 932;
 
     const content = div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
@@ -352,7 +369,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
                     value,
                 );
             }
-            return Attribute({ label, value, width });
+            return Attribute({ label, value, width: key === 'description' ? descriptionWidth : width });
         }),
     );
 
@@ -375,7 +392,8 @@ const MetadataCard = (/** @type Table | Column */ item) => {
             };
 
             return Input({
-                label, width,
+                label,
+                width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
                 placeholder: inherited ? `Inherited: ${inherited}` : null,
                 style: 'text-transform: capitalize;',
@@ -385,7 +403,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
     );
 
     return EditableCard({
-        title: `${item.type} Metadata`,
+        title: `${item.type} Tags `,
         content,
         // Pass as function so the block is re-rendered with reset values when re-editing after a cancel
         editingContent: () => editingContent,
@@ -394,7 +412,7 @@ const MetadataCard = (/** @type Table | Column */ item) => {
                 object[key] = state.rawVal;
                 return object;
             }, { id: item.id });
-            emitEvent('MetadataChanged', { payload })
+            emitEvent('TagsChanged', { payload })
         },
         // Reset states to original values on cancel
         onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),
@@ -433,8 +451,9 @@ const PotentialPIICard = (/** @type Table | Column */ item) => {
         href: 'profiling-runs:hygiene',
         params: { run_id: item.latest_profile_id, issue_class: 'Potential PII' },
     };
+    const noneContent = item.latest_profile_id ? 'No potential PII detected' : null;
 
-    return IssuesCard('Potential PII', potentialPII, attributes, linkProps, 'No potential PII detected');
+    return IssuesCard('Potential PII *', potentialPII, attributes, linkProps, noneContent);
 };
 
 const HygieneIssuesCard = (/** @type Table | Column */ item) => {
@@ -471,8 +490,9 @@ const HygieneIssuesCard = (/** @type Table | Column */ item) => {
             column_name: item.column_name,
         },
     };
+    const noneContent = item.latest_profile_id ? 'No hygiene issues detected' : null;
 
-    return IssuesCard('Hygiene Issues', hygieneIssues, attributes, linkProps, 'No hygiene issues detected');
+    return IssuesCard('Hygiene Issues *', hygieneIssues, attributes, linkProps, noneContent);
 };
 
 const TestIssuesCard = (/** @type Table | Column */ item) => {
@@ -531,6 +551,7 @@ const TestIssuesCard = (/** @type Table | Column */ item) => {
                 `No test results yet for ${item.type}.`,
                 Link({
                     href: 'test-suites',
+                    params: { table_group_id: item.table_group_id },
                     open_new: true,
                     label: 'Go to Test Suites',
                     right_icon: 'chevron_right',
@@ -611,10 +632,44 @@ const IssuesCard = (
     }
 
     return Card({
-        title: `${title} (${items.length})`,
+        title: title.replace(/([^*]+)( \*)?$/, `$1 (${items.length})$2`),
         content,
         actionContent,
     });
+}
+
+const LatestProfilingLink = (/** @type Table | Column */ item) => {
+    let text = 'as of latest profiling run on ';
+    let link = Link({
+        href: 'profiling-runs:results',
+        params: {
+            run_id: item.latest_profile_id,
+            table_name: item.table_name,
+            column_name: item.column_name,
+        },
+        open_new: true,
+        label: formatTimestamp(item.latest_profile_date),
+    });
+    if (!item.latest_profile_id) {
+        if (item.drop_date) {
+            text = 'No profiling results for table group';
+            link = null;
+        } else {
+            text = 'No profiling results yet for table group.';
+            link = Link({
+                href: 'connections:table-groups',
+                params: { connection_id: item.connection_id },
+                open_new: true,
+                label: 'Go to Table Groups',
+                right_icon: 'chevron_right',
+            });
+        }
+    }
+    return span(
+        { class: 'flex-row fx-gap-1 fx-justify-content-flex-end mb-2 text-secondary' },
+        `* ${text}`,
+        link,
+    );
 }
 
 const stylesheet = new CSSStyleSheet();

@@ -2,7 +2,6 @@ import time
 import typing
 from functools import partial
 
-import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.authentication_service as authentication_service
@@ -10,16 +9,16 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.commands.run_observability_exporter import export_test_results
-from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.queries import project_queries
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.utils import to_int
+from testgen.utils import format_field
 
 PAGE_ICON = "rule"
 PAGE_TITLE = "Test Suites"
@@ -33,137 +32,73 @@ class TestSuitesPage(Page):
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
-
         testgen.page_header(
             PAGE_TITLE,
             "create-a-test-suite",
         )
 
         project_code = project_code or session.project
-        table_groups_df = get_db_table_group_choices(project_code)
-        add_button_onclick = partial(add_test_suite_dialog, project_code, table_groups_df)
-
-        if render_empty_state(project_code, add_button_onclick):
-            return
-
-        group_filter_column, actions_column = st.columns([.2, .8], vertical_alignment="bottom")
-        testgen.flex_row_end(actions_column)
-
-        with group_filter_column:
-            table_group_id = testgen.select(
-                options=table_groups_df,
-                value_column="id",
-                display_column="table_groups_name",
-                default_value=table_group_id,
-                label="Table Group",
-                bind_to_query="table_group_id",
-            )
-
-        df = test_suite_service.get_by_project(project_code, table_group_id)
+        table_groups = get_db_table_group_choices(project_code)
         user_can_edit = authentication_service.current_user_has_edit_role()
+        test_suites = test_suite_service.get_by_project(project_code, table_group_id)
+        project_summary = project_queries.get_summary_by_code(project_code)
 
-        if user_can_edit:
-            with actions_column:
-                st.button(
-                    ":material/add: Add Test Suite",
-                    key="test_suite:keys:add",
-                    help="Add a new test suite",
-                    on_click=add_button_onclick,
-                )
+        test_suite_fields = [
+            "id",
+            "connection_name",
+            "table_groups_name",
+            "test_suite",
+            "test_suite_description",
+            "test_ct",
+            "latest_run_start",
+            "latest_run_id",
+            "last_run_test_ct",
+            "last_run_passed_ct",
+            "last_run_warning_ct",
+            "last_run_failed_ct",
+            "last_run_error_ct",
+            "last_run_dismissed_ct",
+            "last_complete_profile_run_id",
+        ]
+        testgen.testgen_component(
+            "test_suites",
+            props={
+                "project_summary": {
+                    "test_suites_ct": format_field(project_summary["test_suites_ct"]),
+                    "connections_ct": format_field(project_summary["connections_ct"]),
+                    "table_groups_ct": format_field(project_summary["table_groups_ct"]),
+                    "default_connection_id": format_field(project_summary["default_connection_id"]),
+                },
+                "test_suites": [
+                    {
+                        fieldname: format_field(test_suite[fieldname]) for fieldname in test_suite_fields
+                    } for _, test_suite in test_suites.iterrows()
+                ],
+                "table_group_filter_options": [
+                    {
+                        "value": format_field(table_group["id"]),
+                        "label": format_field(table_group["table_groups_name"]),
+                        "selected": str(table_group_id) == str(table_group["id"]),
+                    } for _, table_group in table_groups.iterrows()
+                ],
+                "permissions": {
+                    "can_edit": user_can_edit,
+                }
+            },
+            on_change_handlers={
+                "FilterApplied": on_test_suites_filtered,
+                "AddTestSuiteClicked": lambda *_: add_test_suite_dialog(project_code, table_groups),
+                "ExportActionClicked": observability_export_dialog,
+                "EditActionClicked": partial(edit_test_suite_dialog, project_code, table_groups),
+                "DeleteActionClicked": delete_test_suite_dialog,
+                "RunTestsClicked": lambda test_suite_id: run_tests_dialog(project_code, test_suite_service.get_by_id(test_suite_id)),
+                "GenerateTestsClicked": lambda test_suite_id: generate_tests_dialog(test_suite_service.get_by_id(test_suite_id)),
+            },
+        )
 
-        for _, test_suite in df.iterrows():
-            subtitle = f"{test_suite['connection_name']} > {test_suite['table_groups_name']}"
-            with testgen.card(title=test_suite["test_suite"], subtitle=subtitle) as test_suite_card:
-                if user_can_edit:
-                    with test_suite_card.actions:
-                        testgen.button(
-                            type_="icon",
-                            icon="output",
-                            tooltip="Export results to Observability",
-                            tooltip_position="right",
-                            on_click=partial(observability_export_dialog, test_suite),
-                            key=f"test_suite:keys:export:{test_suite['id']}",
-                        )
-                        testgen.button(
-                            type_="icon",
-                            icon="edit",
-                            tooltip="Edit test suite",
-                            tooltip_position="right",
-                            on_click=partial(edit_test_suite_dialog, project_code, table_groups_df, test_suite),
-                            key=f"test_suite:keys:edit:{test_suite['id']}",
-                        )
-                        testgen.button(
-                            type_="icon",
-                            icon="delete",
-                            tooltip="Delete test suite",
-                            tooltip_position="right",
-                            on_click=partial(delete_test_suite_dialog, test_suite),
-                            key=f"test_suite:keys:delete:{test_suite['id']}",
-                        )
 
-                main_section, latest_run_section, actions_section = st.columns([.4, .4, .2])
-
-                with main_section:
-                    testgen.no_flex_gap()
-                    testgen.link(
-                        label=f"{to_int(test_suite['test_ct'])} tests definitions",
-                        href="test-suites:definitions",
-                        params={ "test_suite_id": test_suite["id"] },
-                        right_icon="chevron_right",
-                        key=f"test_suite:keys:go-to-definitions:{test_suite['id']}",
-                    )
-
-                    testgen.caption("Description")
-                    st.markdown(test_suite["test_suite_description"] or "--")
-
-                with latest_run_section:
-                    testgen.no_flex_gap()
-                    st.caption("Latest Run")
-
-                    if (latest_run_start := test_suite["latest_run_start"]) and pd.notnull(latest_run_start):
-                        testgen.link(
-                            label=date_service.get_timezoned_timestamp(st.session_state, latest_run_start),
-                            href="test-runs:results",
-                            params={ "run_id": str(test_suite["latest_run_id"]) },
-                            style="margin-bottom: 8px;",
-                            height=29,
-                            key=f"test_suite:keys:go-to-runs:{test_suite['id']}",
-                        )
-                        if to_int(test_suite["last_run_test_ct"]):
-                            testgen.summary_bar(
-                                items=[
-                                    { "label": "Passed", "value": to_int(test_suite["last_run_passed_ct"]), "color": "green" },
-                                    { "label": "Warning", "value": to_int(test_suite["last_run_warning_ct"]), "color": "yellow" },
-                                    { "label": "Failed", "value": to_int(test_suite["last_run_failed_ct"]), "color": "red" },
-                                    { "label": "Error", "value": to_int(test_suite["last_run_error_ct"]), "color": "brown" },
-                                    { "label": "Dismissed", "value": to_int(test_suite["last_run_dismissed_ct"]), "color": "grey" },
-                                ],
-                                height=20,
-                                width=350,
-                            )
-                    else:
-                        st.markdown("--")
-
-                if user_can_edit:
-                    with actions_section:
-                        run_disabled = not to_int(test_suite["test_ct"])
-                        testgen.button(
-                            type_="stroked",
-                            label="Run Tests",
-                            tooltip="No test definitions to run" if run_disabled else None,
-                            on_click=partial(run_tests_dialog, project_code, test_suite),
-                            disabled=run_disabled,
-                            key=f"test_suite:keys:runtests:{test_suite['id']}",
-                        )
-                        generate_disabled = pd.isnull(test_suite["last_complete_profile_run_id"])
-                        testgen.button(
-                            type_="stroked",
-                            label="Generate Tests",
-                            tooltip="No profiling data available for test generation" if generate_disabled else None,
-                            on_click=partial(generate_tests_dialog, test_suite),
-                            disabled=generate_disabled,
-                            key=f"test_suite:keys:generatetests:{test_suite['id']}",
-                        )
+def on_test_suites_filtered(table_group_id: str | None = None) -> None:
+    Router().set_query_params({ "table_group_id": table_group_id })
 
 
 def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
@@ -213,7 +148,8 @@ def add_test_suite_dialog(project_code, table_groups_df):
 
 
 @st.dialog(title="Edit Test Suite")
-def edit_test_suite_dialog(project_code, table_groups_df, selected):
+def edit_test_suite_dialog(project_code, table_groups_df, test_suite_id: str) -> None:
+    selected = test_suite_service.get_by_id(test_suite_id)
     show_test_suite("edit", project_code, table_groups_df, selected)
 
 
@@ -233,6 +169,7 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
     test_action = empty_if_null(selected_test_suite["test_action"]) if mode == "edit" else ""
     severity_index = severity_options.index(selected_test_suite["severity"]) if mode == "edit" else 0
     export_to_observability = selected_test_suite["export_to_observability"] == "Y" if mode == "edit" else False
+    dq_score_exclude = selected_test_suite["dq_score_exclude"] if mode == "edit" else False
     test_suite_schema = empty_if_null(selected_test_suite["test_suite_schema"]) if mode == "edit" else ""
     component_key = empty_if_null(selected_test_suite["component_key"]) if mode == "edit" else ""
     component_type = empty_if_null(selected_test_suite["component_type"]) if mode == "edit" else "dataset"
@@ -273,6 +210,10 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
                 "Export to Observability",
                 value=export_to_observability,
                 help="Fields below are only required when overriding the Table Group defaults.",
+            ),
+            "dq_score_exclude": right_column.checkbox(
+                "Exclude from quality scoring",
+                value=dq_score_exclude,
             ),
             "component_key": expander_left_column.text_input(
                 label="Component Key",
@@ -327,7 +268,8 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
 
 
 @st.dialog(title="Delete Test Suite")
-def delete_test_suite_dialog(selected_test_suite):
+def delete_test_suite_dialog(test_suite_id: str) -> None:
+    selected_test_suite = test_suite_service.get_by_id(test_suite_id)
     test_suite_id = selected_test_suite["id"]
     test_suite_name = selected_test_suite["test_suite"]
     can_be_deleted = test_suite_service.cascade_delete([test_suite_id], dry_run=True)
@@ -377,7 +319,8 @@ def delete_test_suite_dialog(selected_test_suite):
 
 
 @st.dialog(title="Export to Observability")
-def observability_export_dialog(selected_test_suite):
+def observability_export_dialog(test_suite_id: str) -> None:
+    selected_test_suite = test_suite_service.get_by_id(test_suite_id)
     project_key = selected_test_suite["project_code"]
     test_suite_key = selected_test_suite["test_suite"]
     start_process_button_message = "Start"

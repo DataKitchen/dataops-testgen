@@ -8,6 +8,7 @@ import pandas as pd
 import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.profiling_query import CProfilingSQL
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
     AssignConnectParms,
     QuoteCSVItems,
@@ -490,9 +491,14 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         raise
     finally:
         LOG.info("Updating the profiling run record")
-        lstProfileRunQuery = [clsProfiling.GetProfileRunInfoRecordUpdateQuery()]
-        lstProfileRunQuery.append(clsProfiling.GetAnomalyScoringRollupQuery())
+        lstProfileRunQuery = [
+            clsProfiling.GetProfileRunInfoRecordUpdateQuery(),
+            clsProfiling.GetAnomalyScoringRollupRunQuery(),
+            clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
+        ]
         RunActionQueryList("DKTG", lstProfileRunQuery)
+        run_refresh_score_cards_results(project_code=dctParms["project_code"])
+
         if booErrors:
             str_error_status = "with errors. Check log for details."
         else:

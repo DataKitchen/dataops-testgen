@@ -3,6 +3,12 @@ SELECT ts.project_code,
        ts.id::VARCHAR as test_suite_id,
        ts.table_groups_id::VARCHAR,
        tg.table_group_schema,
+       CASE
+         WHEN tg.profiling_table_set ILIKE '''%''' THEN tg.profiling_table_set
+         ELSE fn_format_csv_quotes(tg.profiling_table_set)
+       END as profiling_table_set,
+       tg.profiling_include_mask,
+       tg.profiling_exclude_mask,
        cc.sql_flavor,
        cc.project_host,
        cc.project_port,

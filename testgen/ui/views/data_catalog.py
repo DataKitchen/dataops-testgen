@@ -14,7 +14,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import is_uuid4
+from testgen.utils import friendly_score, is_uuid4, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
@@ -54,7 +54,10 @@ class DataCatalogPage(Page):
         with loading_column:
             columns_df = get_table_group_columns(table_group_id)
             selected_item = get_selected_item(selected, table_group_id)
-            if not selected_item:
+            if selected_item:
+                selected_item["connection_id"] = str(
+                    table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
+            else:
                 self.router.set_query_params({ "selected": None })
 
         if columns_df.empty:
@@ -75,13 +78,13 @@ class DataCatalogPage(Page):
                 "data_catalog",
                 props={ "columns": columns_df.to_json(orient="records"), "selected": json.dumps(selected_item) },
                 on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
-                event_handlers={ "MetadataChanged": on_metadata_changed },
+                event_handlers={ "TagsChanged": on_tags_changed },
             )
 
 
-def on_metadata_changed(metadata: dict) -> None:
+def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
-    item_type, item_id = metadata["id"].split("_", 2)
+    item_type, item_id = tags["id"].split("_", 2)
 
     if item_type == "table":
         update_table = "data_table_chars"
@@ -91,21 +94,23 @@ def on_metadata_changed(metadata: dict) -> None:
         id_column = "column_id"
 
     attributes = [
+        "description",
         "data_source",
         "source_system",
         "source_process",
         "business_domain",
         "stakeholder_group",
         "transform_level",
-        "aggregation_level"
+        "aggregation_level",
+        "data_product"
     ]
     cde_value_map = {
         True: "TRUE",
         False: "FALSE",
         None: "NULL",
     }
-    set_attributes = [ f"{key} = NULLIF('{metadata.get(key) or ''}', '')" for key in attributes ]
-    set_attributes.append(f"critical_data_element = {cde_value_map[metadata.get('critical_data_element')]}")
+    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes ]
+    set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
 
     sql = f"""
         UPDATE {schema}.{update_table}
@@ -166,7 +171,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
             column_chars.table_id = table_chars.table_id
         )
     WHERE column_chars.table_groups_id = '{table_group_id}'
-    ORDER BY table_name, column_name;
+    ORDER BY table_name, ordinal_position;
     """
     return db.retrieve_data(sql)
 
@@ -191,9 +196,10 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             record_ct,
             table_chars.column_ct,
             data_point_ct,
-            add_date AS add_date,
-            drop_date AS drop_date,
-            -- Metadata
+            add_date,
+            drop_date,
+            -- Tags
+            description,
             critical_data_element,
             data_source,
             source_system,
@@ -202,6 +208,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             stakeholder_group,
             transform_level,
             aggregation_level,
+            data_product,
             -- Latest Profile & Test Runs
             last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
             profiling_starttime AS latest_profile_date,
@@ -210,7 +217,10 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                 FROM {schema}.test_results
                 WHERE table_groups_id = '{table_group_id}'
                     AND table_name = table_chars.table_name
-            ) AS has_test_runs
+            ) AS has_test_runs,
+            -- Scores
+            table_chars.dq_score_profiling,
+            table_chars.dq_score_testing
         FROM {schema}.data_table_chars table_chars
             LEFT JOIN {schema}.profiling_runs ON (
                 table_chars.last_complete_profile_run_id = profiling_runs.id
@@ -228,10 +238,11 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             column_chars.column_type,
             column_chars.functional_data_type,
             datatype_suggestion,
-            column_chars.add_date AS add_date,
-            column_chars.last_mod_date AS last_mod_date,
-            column_chars.drop_date AS drop_date,
-            -- Column Metadata
+            column_chars.add_date,
+            column_chars.last_mod_date,
+            column_chars.drop_date,
+            -- Column Tags
+            column_chars.description,
             column_chars.critical_data_element,
             column_chars.data_source,
             column_chars.source_system,
@@ -240,7 +251,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             column_chars.stakeholder_group,
             column_chars.transform_level,
             column_chars.aggregation_level,
-            -- Table Metadata
+            column_chars.data_product,
+            -- Table Tags
             table_chars.critical_data_element AS table_critical_data_element,
             table_chars.data_source AS table_data_source,
             table_chars.source_system AS table_source_system,
@@ -249,6 +261,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
             table_chars.stakeholder_group AS table_stakeholder_group,
             table_chars.transform_level AS table_transform_level,
             table_chars.aggregation_level AS table_aggregation_level,
+            table_chars.data_product AS table_data_product,
             -- Latest Profile & Test Runs
             column_chars.last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
             run_date AS latest_profile_date,
@@ -259,6 +272,9 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                     AND table_name = column_chars.table_name
                     AND column_names = column_chars.column_name
             ) AS has_test_runs,
+            -- Scores
+            column_chars.dq_score_profiling,
+            column_chars.dq_score_testing,
             -- Value Counts
             profile_results.record_ct,
             value_ct,
@@ -313,7 +329,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
                 column_chars.last_complete_profile_run_id = profile_results.profile_run_id
                 AND column_chars.column_name = profile_results.column_name
             )
-        WHERE column_id = '{item_id}'
+        WHERE column_chars.column_id = '{item_id}'
             AND column_chars.table_groups_id = '{table_group_id}';
         """
 
@@ -323,13 +339,19 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item = json.loads(item_df.to_json(orient="records"))[0]
         item["id"] = selected
         item["type"] = item_type
+        item["dq_score"] = friendly_score(score(item["dq_score_profiling"], item["dq_score_testing"]))
+        item["dq_score_profiling"] = friendly_score(item["dq_score_profiling"])
+        item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["latest_anomalies"] = get_profile_anomalies(item["latest_profile_id"], item["table_name"], item.get("column_name"))
         item["latest_test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
         return item
 
 
 @st.cache_data(show_spinner=False)
-def get_profile_anomalies(profile_run_id: str, table_name: str, column_name: str | None = None) -> dict | None:
+def get_profile_anomalies(profile_run_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
+    if not profile_run_id:
+        return []
+
     schema = st.session_state["dbschema"]
 
     column_condition = ""

@@ -16,3 +16,4 @@ Thanks to everyone who has contributed to DataOps TestGen!
 - [Eric Estabrooks](https://www.linkedin.com/in/ericestabrooks/) 🤔
 - [Gil Benghiat](https://www.linkedin.com/in/gilbertbenghiat/) 🤔 💬
 - [Chris Bergh](https://www.linkedin.com/in/chrisbergh/) 🤔 📖
+- [Astor Fernandez](https://www.linkedin.com/in/astorfernandez/) 💻

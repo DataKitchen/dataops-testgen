@@ -6,6 +6,7 @@ from testgen.common import CreateDatabaseIfNotExists, RunActionQueryList, date_s
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
+from testgen.common.models.scores import ScoreDefinition
 from testgen.common.read_file import get_template_files
 
 LOG = logging.getLogger("testgen")
@@ -82,3 +83,8 @@ def run_launch_db_config(delete_db: bool) -> None:
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
     )
+
+    ScoreDefinition.from_table_group({
+        "project_code": settings.PROJECT_KEY,
+        "table_groups_name": settings.DEFAULT_TABLE_GROUPS_NAME,
+    }).save()

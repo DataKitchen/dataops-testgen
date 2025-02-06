@@ -4,6 +4,7 @@ import testgen.ui.queries.table_group_queries as table_group_queries
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.common.database.database_service import RetrieveDBResultsToDictList
+from testgen.common.models.scores import ScoreDefinition
 
 
 def get_by_id(table_group_id: str):
@@ -23,7 +24,9 @@ def edit(table_group):
 
 def add(table_group: dict) -> str:
     schema = st.session_state["dbschema"]
-    return table_group_queries.add(schema, table_group)
+    table_group_id = table_group_queries.add(schema, table_group)
+    ScoreDefinition.from_table_group(table_group).save()
+    return table_group_id
 
 
 def cascade_delete(table_group_names, dry_run=False):

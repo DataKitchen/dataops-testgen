@@ -7,18 +7,22 @@
  */
 import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
+import { isEqual, getParents } from './utils.js';
 import { Button } from './components/button.js'
 import { Breadcrumbs } from './components/breadcrumbs.js'
 import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Paginator } from './components/paginator.js';
-import { Select } from './components/select.js'
 import { SortingSelector } from './components/sorting_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 import { DataCatalog } from './pages/data_catalog.js';
-import { Overview } from './pages/overview.js';
+import { ProjectDashboard } from './pages/project_dashboard.js';
+import { TestSuites } from './pages/test_suites.js';
+import { QualityDashboard } from './pages/quality_dashboard.js';
+import { ScoreDetails } from './pages/score_details.js';
+import { ScoreExplorer } from './pages/score_explorer.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -30,14 +34,17 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         expander_toggle: ExpanderToggle,
         link: Link,
         paginator: Paginator,
-        select: Select,
         sorting_selector: SortingSelector,
         sidebar: window.top.testgen.components.Sidebar,
         test_runs: TestRuns,
         profiling_runs: ProfilingRuns,
         database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
-        overview: Overview,
+        project_dashboard: ProjectDashboard,
+        test_suites: TestSuites,
+        quality_dashboard: QualityDashboard,
+        score_details: ScoreDetails,
+        score_explorer: ScoreExplorer,
     };
 
     if (Object.keys(componentById).includes(id)) {
@@ -89,9 +96,26 @@ window.addEventListener('message', (event) => {
         }
 
         for (const [ key, value ] of Object.entries(event.data.args.props)) {
-            if (componentState[key].val !== value) {
+            if (!isEqual(componentState[key].val, value)) {
                 componentState[key].val = value;
             }
+        }
+    }
+});
+
+document.addEventListener('click', (event) => {
+    const openedPortals = (Object.values(window.testgen.portals) ?? []).filter(portal => portal.opened.val);
+    if (Object.keys(openedPortals).length <= 0) {
+        return;
+    }
+
+    const targetParents = getParents(event.target);
+    for (const portal of openedPortals) {
+        const targetEl = document.getElementById(portal.targetId);
+        const portalEl = document.getElementById(portal.domId);
+
+        if (event?.target?.id !== portal.targetId && event?.target?.id !== portal.domId && !targetParents.includes(targetEl) && !targetParents.includes(portalEl)) {
+            portal.opened.val = false;
         }
     }
 });
@@ -105,4 +129,5 @@ function shouldRenderOutsideFrame(componentId) {
 window.testgen = {
     states: {},
     loadedStylesheets: {},
+    portals: {},
 };

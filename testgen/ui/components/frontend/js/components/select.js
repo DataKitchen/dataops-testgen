@@ -9,56 +9,71 @@
  * @type {object}
  * @property {string?} id
  * @property {string} label
+ * @property {string?} value
  * @property {Array.<Option>} options
+ * @property {boolean} allowNull
  * @property {Function|null} onChange
+ * @property {boolean?} disabled
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getRandomId, getValue, getParents, loadStylesheet } from '../utils.js';
+import { getRandomId, getValue, getParents, loadStylesheet, isState } from '../utils.js';
+import { Portal } from './portal.js';
 
 const { div, i, label, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight();
-    }
-
     const domId = van.derive(() => props.id?.val ?? getRandomId());
     const opened = van.state(false);
-    const selected = van.state(Array.from(getValue(props.options) ?? []).filter(option => option.selected)[0]);
-    const changeHandler = props.onChange || post;
+    const options = van.derive(() => {
+        const options = getValue(props.options) ?? [];
+        const allowNull = getValue(props.allowNull);
 
-    const closeHandler = (/** @type MouseEvent*/ event) => {
-        const selectElement = document.getElementById(domId.val);
-        if (event?.target?.id !== domId.val && event?.target?.id !== `${domId.val}-portal` && !getParents(event.target).includes(selectElement)) {
-            opened.val = false;
+        if (allowNull) {
+            return [
+                {label: "---", value: null},
+                ...options,
+            ];
         }
-    };
-    van.derive(() => {
-        const isOpened = opened.val;
-        document.removeEventListener('click', closeHandler);
-        if (isOpened) {
-            document.addEventListener('click', closeHandler);
-        }
+
+        return options;
+    });
+    const value = isState(props.value) ? props.value : van.state(props.value ?? null);
+    const valueLabel = van.derive(() => {
+        const currentOptions = getValue(options);
+        const currentValue = getValue(value);
+        return currentOptions?.find((op) => op.value === currentValue)?.label ?? '';
     });
 
     const changeSelection = (/** @type Option */ option) => {
         opened.val = false;
-        selected.val = option;
-        changeHandler(option.value);
+        value.val = option.value;
     };
+
+    van.derive(() => {
+        const currentOptions = getValue(options);
+        let currentValue = getValue(value);
+        if (currentOptions.find((op) => op.value === currentValue) === undefined) {
+            currentValue = value.val = null;
+        }
+
+        props.onChange?.(currentValue);
+    });
 
     return label(
         {
             id: domId,
-            class: 'flex-column fx-gap-1 text-caption tg-select--label',
+            class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            onclick: () => opened.val = true,
+            onclick: () => {
+                if (!props.disabled || !props.disabled.val) {
+                    opened.val = true;
+                }
+            },
         },
         props.label,
         div(
@@ -68,7 +83,7 @@ const Select = (/** @type {Properties} */ props) => {
             },
             div(
                 { class: 'tg-select--field--content' },
-                () => selected?.val?.label,
+                valueLabel,
             ),
             div(
                 { class: 'tg-select--field--icon' },
@@ -78,48 +93,39 @@ const Select = (/** @type {Properties} */ props) => {
                 ),
             ),
         ),
-        () => opened.val
-            ? SelectOptionsPortal(domId.val, props.options, changeSelection)
-            : '',
+        Portal(
+            {target: domId.val, opened},
+            () => div(
+                { class: 'tg-select--options-wrapper mt-1' },
+                getValue(options).map(option =>
+                    div(
+                        {
+                            class: () => `tg-select--option ${getValue(value) === option.value ? 'selected' : ''}`,
+                            onclick: (/** @type Event */ event) => {
+                                changeSelection(option);
+                                event.stopPropagation();
+                            },
+                        },
+                        span(option.label),
+                    )
+                ),
+            ),
+        ),
     );
 };
 
-const SelectOptionsPortal = (
-    /** @type string */ selectId,
-    /** @type Array.<Option> */ options,
-    /** @type Function */ onChange,
-) => {
-    const domId = `${selectId}-portal`;
-    const select = document.getElementById(selectId);
-    const selectRect = select.getBoundingClientRect();
-
-    const width = `${selectRect.width}px`;
-    const height = `${((options.length ?? 0) * 40)}px`;
-    const top = `${selectRect.top + selectRect.height}px`;
-    const left = `${selectRect.left}px`;
-
-    return div(
-        {
-            id: domId,
-            class: 'tg-select--portal',
-            style: `width: ${width}; height: ${height}; top: ${top}; left: ${left}`,
-        },
-        options.map(option => div(
-            { class: 'tg-select--option', onclick: (/** @type Event */ event) => {
-                onChange(option);
-                event.stopPropagation();
-            } },
-            span(option.label)
-        )),
-    );
-};
-
-function post(/** @type string */ value) {
-    Streamlit.sendData({ value: value });
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tg-select--label.disabled {
+    cursor: not-allowed;
+    color: var(--disabled-text-color);
+}
+
+.tg-select--label.disabled .tg-select--field {
+    color: var(--disabled-text-color);
+}
+
 .tg-select--field {
     box-sizing: border-box;
     width: 100%;
@@ -138,11 +144,13 @@ stylesheet.replace(`
 }
 
 .tg-select--field--content {
+    font-size: 14px;
     display: flex;
     align-items: center;
     justify-content: flex-start;
     height: 100%;
     flex: 1;
+    font-weight: 500;
 }
 
 .tg-select--field--icon {
@@ -157,20 +165,20 @@ stylesheet.replace(`
     font-size: 20px;
 }
 
-.tg-select--portal {
-    position: absolute;
+.tg-select--options-wrapper {
     border-radius: 8px;
     background: var(--select-portal-background);
     box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     min-height: 40px;
+    z-index: 99;
 }
 
-.tg-select--portal > .tg-select--option:first-child {
+.tg-select--options-wrapper > .tg-select--option:first-child {
     border-top-left-radius: 8px;
     border-top-right-radius: 8px;
 }
 
-.tg-select--portal > .tg-select--option:last-child {
+.tg-select--options-wrapper > .tg-select--option:last-child {
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
 }
@@ -186,6 +194,11 @@ stylesheet.replace(`
 }
 .tg-select--option:hover {
     background: var(--select-hover-background);
+}
+
+.tg-select--option.selected {
+    background: var(--select-hover-background);
+    color: var(--primary-color);
 }
 `);
 

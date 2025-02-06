@@ -20,7 +20,7 @@ const Card = (/** @type Properties */ props) => {
         () =>
             props.title || props.actionContent ?
             div(
-                { class: 'flex-row fx-justify-space-between fx-align-flex-start' },
+                { class: 'flex-row fx-justify-space-between fx-align-flex-start fx-gap-4' },
                 () => 
                     props.title ?
                     h3(

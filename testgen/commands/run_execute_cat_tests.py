@@ -1,10 +1,9 @@
 import logging
 
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
+from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
-    AssignConnectParms,
     RetrieveDBResultsToDictList,
-    RetrieveTestExecParms,
     RunActionQueryList,
     RunThreadedRetrievalQueryList,
     WriteListToDB,
@@ -60,22 +59,20 @@ def ParseCATResults(clsCATExecute):
     RunActionQueryList("DKTG", [strQuery])
 
 
-def FinalizeTestRun(clsCATExecute):
+def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
     lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
                   clsCATExecute.PushTestRunStatusUpdateSQL(),
                   clsCATExecute.FinalizeTestSuiteUpdateSQL(),
-                  clsCATExecute.TestScoringRollupSQL()]
+                  clsCATExecute.TestScoringRollupRunSQL(),
+                  clsCATExecute.TestScoringRollupTableGroupSQL()]
     RunActionQueryList(("DKTG"), lstQueries)
+    run_refresh_score_cards_results(project_code=clsCATExecute.project_code)
 
 
 def run_cat_test_queries(
-    strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
+    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
 ):
-    # PARAMETERS AND SET-UP
     booErrors = False
-    LOG.info("CurrentStep: Retrieving Parameters")
-
-    dctParms = RetrieveTestExecParms(strProjectCode, strTestSuite)
 
     LOG.info("CurrentStep: Initializing CAT Query Generator")
     clsCATExecute = CCATExecutionSQL(
@@ -85,26 +82,6 @@ def run_cat_test_queries(
     clsCATExecute.run_date = strTestTime
     clsCATExecute.table_groups_id = dctParms["table_groups_id"]
     clsCATExecute.exception_message += error_msg
-
-    # Set Project Connection Params in common.db_bridgers from retrieved params
-    LOG.info("CurrentStep: Assigning Connection Parms")
-    AssignConnectParms(
-        dctParms["project_code"],
-        dctParms["connection_id"],
-        dctParms["project_host"],
-        dctParms["project_port"],
-        dctParms["project_db"],
-        dctParms["table_group_schema"],
-        dctParms["project_user"],
-        dctParms["sql_flavor"],
-        dctParms["url"],
-        dctParms["connect_by_url"],
-        dctParms["connect_by_key"],
-        dctParms["private_key"],
-        dctParms["private_key_passphrase"],
-        dctParms["http_path"],
-        "PROJECT",
-    )
 
     # START TEST EXECUTION
 

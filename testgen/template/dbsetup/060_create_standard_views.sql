@@ -69,7 +69,8 @@ SELECT r.id as profiling_run_id,
        r.log_message,
        r.table_ct,
        r.column_ct,
-       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct, process_id
+       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct,
+       process_id, r.dq_score_profiling
   FROM profiling_runs r
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id
@@ -249,3 +250,219 @@ INNER JOIN cat_test_conditions c
    ON (cn.sql_flavor = c.sql_flavor
   AND  d.test_type = c.test_type)
 WHERE r.observability_status = 'Queued';
+
+-- ==============================================================================
+-- |   Profile Scoring Views
+-- ==============================================================================
+DROP VIEW IF EXISTS v_dq_profile_scoring_latest_by_column;
+
+CREATE VIEW v_dq_profile_scoring_latest_by_column
+AS
+SELECT
+       tg.project_code,
+       dcc.table_groups_id,
+       tg.last_complete_profile_run_id as profile_run_id,
+       tg.table_groups_name,
+       tg.data_location,
+       COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+       COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+       COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+       COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+       COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+       COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+       COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+       dcc.functional_data_type as semantic_data_type,
+       dtc.table_name, dcc.column_name,
+       pr.profiling_starttime as profiling_run_date,
+       dcc.valid_profile_issue_ct as issue_ct,
+       dtc.last_profile_record_ct as record_ct,
+       dcc.dq_score_profiling AS good_data_pct
+  FROM data_column_chars dcc
+INNER JOIN table_groups tg
+   ON (dcc.table_groups_id = tg.id)
+INNER JOIN data_table_chars dtc
+   ON (dcc.table_id = dtc.table_id)
+INNER JOIN profiling_runs pr
+   ON (tg.last_complete_profile_run_id = pr.id);
+
+
+DROP VIEW IF EXISTS v_dq_profile_scoring_latest_by_dimension;
+
+CREATE VIEW v_dq_profile_scoring_latest_by_dimension
+AS
+SELECT tg.project_code,
+       pr.table_groups_id,
+       tg.last_complete_profile_run_id as profile_run_id,
+       tg.table_groups_name,
+       tg.data_location,
+       COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+       COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+       COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+       COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+       COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+       COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+       COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+       dcc.functional_data_type as semantic_data_type,
+       t.dq_dimension,
+       dcc.table_name,
+       dcc.column_name,
+       pr.run_date,
+       MAX(pr.record_ct) as record_ct,
+       COUNT(p.anomaly_id) as issue_ct,
+       SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct) as good_data_pct
+  FROM table_groups tg
+INNER JOIN profile_results pr
+   ON (tg.last_complete_profile_run_id = pr.profile_run_id)
+INNER JOIN data_column_chars dcc
+   ON (pr.table_groups_id = dcc.table_groups_id
+  AND  pr.table_name = dcc.table_name
+  AND  pr.column_name = dcc.column_name)
+INNER JOIN data_table_chars dtc
+   ON (dcc.table_groups_id = dtc.table_groups_id
+  AND  dcc.table_id = dtc.table_id)
+LEFT JOIN (profile_anomaly_results p
+   INNER JOIN profile_anomaly_types t
+      ON p.anomaly_id = t.id)
+  ON (pr.profile_run_id = p.profile_run_id
+ AND  pr.column_name = p.column_name
+ AND  pr.table_name = p.table_name)
+WHERE COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
+GROUP BY tg.project_code, pr.table_groups_id, tg.last_complete_profile_run_id, tg.table_groups_name,
+         tg.data_location, COALESCE(dcc.data_source, dtc.data_source, tg.data_source),
+         COALESCE(dcc.source_system, dtc.source_system, tg.source_system),
+         COALESCE(dcc.source_process, dtc.source_process, tg.source_process),
+         COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain),
+         COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group),
+         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level),
+         COALESCE(dcc.critical_data_element, dtc.critical_data_element),
+         COALESCE(dcc.data_product, dtc.data_product, tg.data_product),
+         dcc.functional_data_type, dcc.table_name, dcc.column_name, t.dq_dimension,
+         pr.run_date;
+
+
+-- ==============================================================================
+-- |   Result Scoring Views
+-- ==============================================================================
+
+DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_column;
+
+CREATE VIEW v_dq_test_scoring_latest_by_column
+AS
+SELECT
+       tg.project_code,
+       r.table_groups_id,
+       r.test_suite_id,
+       r.test_run_id,
+       tg.table_groups_name,
+       tg.data_location,
+       COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+       COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+       COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+       COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+       COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+       COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+       COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+       dcc.functional_data_type as semantic_data_type,
+       r.test_time, r.table_name, dcc.column_name,
+       COUNT(*) as test_ct,
+       SUM(r.result_code) as passed_ct,
+       SUM(1 - r.result_code) as issue_ct,
+       MAX(r.dq_record_ct) as dq_record_ct,
+       SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct) as good_data_pct
+  FROM test_results r
+INNER JOIN test_suites s
+   ON (r.test_suite_id = s.id
+  AND  r.test_run_id = s.last_complete_test_run_id)
+INNER JOIN table_groups tg
+   ON r.table_groups_id = tg.id
+LEFT JOIN data_table_chars dtc
+   ON (r.table_groups_id = dtc.table_groups_id
+  AND  r.table_name = dtc.table_name)
+LEFT JOIN data_column_chars dcc
+  ON (r.table_groups_id = dcc.table_groups_id
+ AND  r.table_name = dcc.table_name
+ AND  r.column_names = dcc.column_name)
+ WHERE r.dq_prevalence IS NOT NULL
+   AND s.dq_score_exclude = FALSE
+   AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
+GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
+         tg.table_groups_name, dcc.data_source, dtc.data_source,
+         tg.data_source, tg.data_location, dcc.data_source, dtc.data_source,
+         tg.data_source, dcc.source_system, dtc.source_system, tg.source_system,
+         dcc.source_process, dtc.source_process, tg.source_process, dcc.business_domain,
+         dtc.business_domain, tg.business_domain, dcc.stakeholder_group, dtc.stakeholder_group,
+         tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
+         dcc.critical_data_element, dtc.critical_data_element,
+         dcc.data_product, dtc.data_product, tg.data_product,
+         dcc.functional_data_type, r.test_time, r.table_name, dcc.column_name;
+
+
+DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_dimension;
+
+CREATE OR REPLACE VIEW v_dq_test_scoring_latest_by_dimension
+AS
+WITH dimension_rollup
+   AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+              r.table_name, r.column_names, tt.dq_dimension,
+              COUNT(*) as test_ct,
+              SUM(r.result_code) as passed_ct,
+              SUM(1 - r.result_code) as issue_ct,
+              MAX(r.dq_record_ct) as dq_record_ct,
+              SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0), r.dq_record_ct) as good_data_pct
+         FROM test_results r
+         INNER JOIN test_types tt
+            ON (r.test_type = tt.test_type)
+         INNER JOIN test_suites s
+            ON (r.test_suite_id = s.id
+           AND  r.test_run_id = s.last_complete_test_run_id)
+         WHERE r.dq_prevalence IS NOT NULL
+           AND s.dq_score_exclude = FALSE
+           AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
+         GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+              r.table_name, r.column_names, tt.dq_dimension )
+SELECT
+       tg.project_code,
+       r.table_groups_id,
+       r.test_suite_id,
+       r.test_run_id,
+       tg.table_groups_name,
+       tg.data_location,
+       COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+       COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+       COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+       COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+       COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+       COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+       COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+       COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+       dcc.functional_data_type as semantic_data_type,
+       r.dq_dimension,
+       r.test_time, r.table_name, dcc.column_name,
+       SUM(r.test_ct) as test_ct,
+       SUM(r.passed_ct) as passed_ct,
+       SUM(r.issue_ct) as issue_ct,
+       MAX(r.dq_record_ct) as dq_record_ct,
+       SUM_LN(COALESCE(1.0-r.good_data_pct, 0), r.dq_record_ct) as good_data_pct
+  FROM dimension_rollup r
+INNER JOIN table_groups tg
+   ON r.table_groups_id = tg.id
+LEFT JOIN data_table_chars dtc
+   ON (r.table_groups_id = dtc.table_groups_id
+  AND  r.table_name = dtc.table_name)
+LEFT JOIN data_column_chars dcc
+  ON (r.table_groups_id = dcc.table_groups_id
+ AND  r.table_name = dcc.table_name
+ AND  r.column_names = dcc.column_name)
+GROUP BY tg.project_code, r.table_groups_id, r.test_suite_id, r.test_run_id,
+         tg.table_groups_name, dcc.data_source, dtc.data_source,
+         tg.data_source, tg.data_location, dcc.data_source, dtc.data_source,
+         tg.data_source, dcc.source_system, dtc.source_system, tg.source_system,
+         dcc.source_process, dtc.source_process, tg.source_process, dcc.business_domain,
+         dtc.business_domain, tg.business_domain, dcc.stakeholder_group, dtc.stakeholder_group,
+         tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
+         dcc.critical_data_element, dtc.critical_data_element,
+         dcc.data_product, dtc.data_product, tg.data_product,
+         dcc.functional_data_type, r.dq_dimension, r.test_time, r.table_name, dcc.column_name;

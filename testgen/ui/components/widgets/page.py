@@ -71,6 +71,10 @@ def flex_row_end(container: DeltaGenerator | None = None):
     _apply_html('<i class="flex-row flex-end"></i>', container)
 
 
+def flex_row_center(container: DeltaGenerator | None = None):
+    _apply_html('<i class="flex-row flex-center"></i>', container)
+
+
 def no_flex_gap(container: DeltaGenerator | None = None):
     _apply_html('<i class="no-flex-gap"></i>', container)
 

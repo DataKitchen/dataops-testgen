@@ -132,7 +132,16 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
   AND TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN';
-  
+
+-- Process Timestamp
+UPDATE profile_results
+SET functional_data_type = 'Process ' || functional_data_type
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND general_type IN ('A', 'D')
+  AND ( column_name ~ '^(last_?|system_?|)(add|create|update|updt|mod|modif|modf|del|delete|refresh)(.{0,3}d?_?(time|tm|date|day|dt|stamp|timestamp|datestamp))$'
+   OR   column_name ~ '^(last_?|)(change|chg|update|updt|mod|modify|modf|modified|refresh)$' );
+
+
 -- Assign PERIODS:  Period Year, Period Qtr, Period Month, Period Week, Period DOW
 UPDATE profile_results
 SET functional_data_type = 'Period Year'
@@ -304,6 +313,19 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND general_type = 'A'
   AND column_name ~ '(acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise|hco|org|organization|site|supplier|vendor|hospital|practice|clinic)(_| |)(name|nm)$';
+
+-- Process User:  tracks data process
+UPDATE profile_results
+   SET functional_data_type = 'Process User'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND column_name ~ '^(last_?|)(create|update|modif|delete|refresh)(.*?(by|id|name|nm|user|usr))$';
+
+-- System User:  SW system
+UPDATE profile_results
+   SET functional_data_type = 'System User'
+WHERE profile_run_id = '{PROFILE_RUN_ID}'
+  AND column_name ~ '(user|usr)_?(name|nm)?$';
+
 
 -- Assign Boolean
 /*

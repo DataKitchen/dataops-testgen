@@ -79,6 +79,7 @@ def get_by_project(schema, project_code, table_group_id=None):
                 suites.test_action,
                 CASE WHEN suites.severity IS NULL THEN 'Inherit' ELSE suites.severity END,
                 suites.export_to_observability,
+                suites.dq_score_exclude,
                 suites.test_suite_schema,
                 suites.component_key,
                 suites.component_type,
@@ -133,6 +134,7 @@ def get_by_id(schema: str, test_suite_id: str) -> pd.DataFrame:
                 suites.test_action,
                 CASE WHEN suites.severity IS NULL THEN 'Inherit' ELSE suites.severity END,
                 suites.export_to_observability,
+                suites.dq_score_exclude,
                 suites.test_suite_schema,
                 suites.component_key,
                 suites.component_type,
@@ -151,6 +153,7 @@ def edit(schema, test_suite):
                     test_action=NULLIF('{test_suite["test_action"]}', ''),
                     severity=NULLIF('{test_suite["severity"]}', 'Inherit'),
                     export_to_observability='{'Y' if test_suite["export_to_observability"] else 'N'}',
+                    dq_score_exclude={test_suite["dq_score_exclude"]},
                     test_suite_schema=NULLIF('{test_suite["test_suite_schema"]}', ''),
                     component_key=NULLIF('{test_suite["component_key"]}', ''),
                     component_type=NULLIF('{test_suite["component_type"]}', ''),
@@ -166,7 +169,7 @@ def add(schema, test_suite):
     sql = f"""INSERT INTO {schema}.test_suites
                 (id,
                 project_code, test_suite, connection_id, table_groups_id, test_suite_description, test_action,
-                severity, export_to_observability, test_suite_schema, component_key, component_type,
+                severity, export_to_observability, dq_score_exclude, test_suite_schema, component_key, component_type,
                 component_name)
             SELECT
                 gen_random_uuid(),
@@ -178,6 +181,7 @@ def add(schema, test_suite):
                 NULLIF('{test_suite["test_action"]}', ''),
                 NULLIF('{test_suite["severity"]}', 'Inherit'),
                 '{'Y' if test_suite["export_to_observability"] else 'N' }'::character varying,
+                {test_suite["dq_score_exclude"]},
                 NULLIF('{test_suite["test_suite_schema"]}', ''),
                 NULLIF('{test_suite["component_key"]}', ''),
                 NULLIF('{test_suite["component_type"]}', ''),

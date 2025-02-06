@@ -36,37 +36,24 @@ def get_db_profile_run_choices(str_table_groups_id):
     return db.retrieve_data(str_sql)
 
 
-@st.cache_data(show_spinner=False)
-def run_table_lookup_query(str_table_groups_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-           SELECT DISTINCT table_name
-             FROM {str_schema}.profile_results
-            WHERE table_groups_id = '{str_table_groups_id}'::UUID
-           ORDER BY table_name
-    """
-    return db.retrieve_data(str_sql)
 
 
-@st.cache_data(show_spinner=False)
-def run_column_lookup_query(str_table_groups_id, str_table_name):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_column_lookup_query(str_schema, str_table_groups_id, str_table_name)
-
-
-@st.cache_data(show_spinner=False)
-def lookup_db_parentage_from_run(profile_run_id: str) -> tuple[pd.Timestamp, str, str, str] | None:
+@st.cache_data(show_spinner="Loading data ...")
+def get_run_by_id(profile_run_id: str) -> pd.Series:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-            SELECT profiling_starttime as profile_run_date, table_groups_id, g.table_groups_name, g.project_code
-              FROM {schema}.profiling_runs pr
-             INNER JOIN {schema}.table_groups g
-                ON pr.table_groups_id = g.id
-             WHERE pr.id = '{profile_run_id}'
+    SELECT profiling_starttime, table_groups_id::VARCHAR, table_groups_name, pr.project_code, pr.dq_score_profiling,
+        CASE WHEN pr.id = tg.last_complete_profile_run_id THEN true ELSE false END AS is_latest_run
+        FROM {schema}.profiling_runs pr
+    INNER JOIN {schema}.table_groups tg
+        ON pr.table_groups_id = tg.id
+    WHERE pr.id = '{profile_run_id}'
     """
     df = db.retrieve_data(sql)
     if not df.empty:
-        return df.at[0, "profile_run_date"], str(df.at[0, "table_groups_id"]), df.at[0, "table_groups_name"], df.at[0, "project_code"]
+        return df.iloc[0]
+    else:
+        return pd.Series()
 
 
 @st.cache_data(show_spinner="Retrieving Data")

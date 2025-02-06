@@ -28,6 +28,17 @@ const Tooltip = (/** @type Properties */ props) => {
     );
 };
 
+const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */ tooltipProps) => {
+    const showTooltip = van.state(false);
+    const tooltip = Tooltip({ ...tooltipProps, show: showTooltip });
+
+    component.onmouseenter = () => showTooltip.val = true;
+    component.onmouseleave = () => showTooltip.val = false;
+    component.appendChild(tooltip);
+
+    return component;
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-tooltip {
@@ -154,4 +165,4 @@ stylesheet.replace(`
 }
 `);
 
-export { Tooltip };
+export { Tooltip, withTooltip };

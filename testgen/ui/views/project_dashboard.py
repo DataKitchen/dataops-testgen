@@ -1,5 +1,4 @@
 import typing
-import uuid
 
 import pandas as pd
 import streamlit as st
@@ -11,22 +10,23 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.services import test_suite_service
 from testgen.ui.session import session
+from testgen.utils import format_field, friendly_score, score
 
 STALE_PROFILE_DAYS = 30
+PAGE_TITLE = "Project Dashboard"
 PAGE_ICON = "home"
-T = typing.TypeVar("T")
 
 
-class OverviewPage(Page):
-    path = "overview"
+class ProjectDashboardPage(Page):
+    path = "project-dashboard"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Overview", order=0)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, order=0)
 
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
-            "Project Overview",
+            PAGE_TITLE,
             "introduction-to-dataops-testgen",
         )
 
@@ -74,7 +74,7 @@ class OverviewPage(Page):
         expanded_table_groups = st.session_state.get("overview_table_groups_expanded", [])
 
         testgen.testgen_component(
-            "overview",
+            "project_dashboard",
             props={
                 "project": {
                     "table_groups_count": len(table_groups.index),
@@ -119,20 +119,6 @@ class OverviewPage(Page):
             },
             event_handlers={},
         )
-
-
-def format_field(field: typing.Any) -> typing.Any:
-    defaults = {
-        float: 0.0,
-        int: 0,
-    }
-    if isinstance(field, uuid.UUID):
-        return str(field)
-    elif isinstance(field, pd.Timestamp):
-        return field.value / 1_000_000
-    elif pd.isnull(field):
-        return defaults.get(type(field), None)
-    return field
 
 
 def on_table_group_expanded(table_group_id: str) -> None:
@@ -275,34 +261,3 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
     """
 
     return db.retrieve_data(sql)
-
-
-def score(profiling_score_: float, tests_score_: float) -> float:
-    tests_score = _pandas_default(tests_score_, 0.0)
-    profiling_score = _pandas_default(profiling_score_, 0.0)
-    final_score = profiling_score or tests_score or 0.0
-    if profiling_score and tests_score:
-        final_score = (profiling_score * tests_score) / 100
-    return final_score
-
-
-def _pandas_default(value: typing.Any, default: T) -> T:
-    if pd.isnull(value):
-        return default
-    return value
-
-
-def friendly_score(score: float) -> str:
-    if not score or pd.isnull(score):
-        return "--"
-
-    prefix = ""
-    numbers = round(score, 1)
-    if numbers == 0:
-        prefix = "< "
-        numbers = 0.1
-    elif numbers == 100:
-        prefix = "> "
-        numbers = 99.9
-
-    return f"{prefix}{numbers}"
