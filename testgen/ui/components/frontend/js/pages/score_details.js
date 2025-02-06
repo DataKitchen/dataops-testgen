@@ -1,19 +1,10 @@
 /**
+ * @import { Score } from '../components/score_card.js';
+ * 
  * @typedef Dimension
  * @type {object}
  * @property {string} label
  * @property {number} score
- * 
- * @typedef Score
- * @type {object}
- * @property {string} id
- * @property {string} project_code
- * @property {string} name
- * @property {number} score
- * @property {number?} profiling_score
- * @property {number?} testing_score
- * @property {number?} cde_score
- * @property {Array<Dimension>} dimensions
  * 
  * @typedef ResultSet
  * @type {object}

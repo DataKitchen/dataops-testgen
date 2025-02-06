@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testgen.common.models.scores import ScoreCard
+
 import urllib.parse
 from typing import Any, TypeVar
 from uuid import UUID
@@ -5,8 +12,6 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-from testgen.common.models.scores import ScoreCard
 
 T = TypeVar("T")
 
@@ -140,6 +145,7 @@ def format_score_card_breakdown(breakdown: list[dict], category: str) -> dict:
         "columns": [category, "impact", "score", "issue_ct"],
         "items": [{
             **row,
+            "table_groups_id": str(row["table_groups_id"]) if row.get("table_groups_id") else None,
             "score": friendly_score(row["score"]),
             "impact": friendly_score_impact(row["impact"]),
         } for row in breakdown],

@@ -13,6 +13,7 @@ from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_score_card_issue_reports
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 
@@ -20,6 +21,7 @@ class ScoreDetailsPage(Page):
     path = "quality-dashboard:score-details"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
+        lambda: "definition_id" in session.current_page_args or "quality-dashboard",
     ]
 
     def render(
@@ -34,6 +36,13 @@ class ScoreDetailsPage(Page):
         project_code: str = session.project
         user_can_edit = authentication_service.current_user_has_edit_role()
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
+
+        if not score_definition:
+            self.router.navigate_with_warning(
+                f"Scorecard with ID '{definition_id}' does not exist. Redirecting to Quality Dashboard ...",
+                "quality-dashboard",
+            )
+            return
 
         testgen.page_header(
             "Score Details",
@@ -69,6 +78,7 @@ class ScoreDetailsPage(Page):
                 "CategoryChanged": select_category,
                 "ScoreTypeChanged": select_score_type,
                 "IssueReportsExported": export_issue_reports,
+                "ColumnProflingClicked": lambda payload: profiling_results_dialog(payload["column_name"], payload["table_name"], payload["table_group_id"])
             },
         )
 

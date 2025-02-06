@@ -663,14 +663,14 @@ def show_result_detail(
         if selected_row["test_scope"] == "column":
             with v_col2:
                 view_profiling_button(
-                    selected_row["table_name"],
                     selected_row["column_names"],
-                    str_table_groups_id=selected_row["table_groups_id"]
+                    selected_row["table_name"],
+                    selected_row["table_groups_id"],
                 )
 
         with v_col3:
             if st.button(
-                    "Source Data　→", help="Review current source data for highlighted result",
+                    ":material/visibility: Source Data", help="View current source data for highlighted result",
                     use_container_width=True
             ):
                 source_data_dialog(selected_row)
@@ -690,7 +690,7 @@ def show_result_detail(
                 report_btn_help = "Generate PDF report for selected result"
 
             if st.button(
-                ":material/file_save: Issue Report",
+                ":material/download: Issue Report",
                 use_container_width=True,
                 disabled=not report_eligible_rows,
                 help=report_btn_help,

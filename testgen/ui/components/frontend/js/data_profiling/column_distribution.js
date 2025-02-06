@@ -1,64 +1,21 @@
 /**
- * @typedef ColumnProfile
+ * @import { Column } from './data_profiling_utils.js';
+ * 
+ * @typedef Properties
  * @type {object}
- * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
- * * Value Counts
- * @property {number} record_ct
- * @property {number} value_ct
- * @property {number} distinct_value_ct
- * @property {number} null_value_ct
- * @property {number} zero_value_ct
- * * Alpha
- * @property {number} zero_length_ct
- * @property {number} filled_value_ct
- * @property {number} includes_digit_ct
- * @property {number} numeric_ct
- * @property {number} date_ct
- * @property {number} quoted_value_ct
- * @property {number} lead_space_ct
- * @property {number} embedded_space_ct
- * @property {number} avg_embedded_spaces
- * @property {number} min_length
- * @property {number} max_length
- * @property {number} avg_length
- * @property {string} min_text
- * @property {string} max_text
- * @property {number} distinct_std_value_ct
- * @property {number} distinct_pattern_ct
- * @property {'STREET_ADDR' | 'STATE_USA' | 'PHONE_USA' | 'EMAIL' | 'ZIP_USA' | 'FILE_NAME' | 'CREDIT_CARD' | 'DELIMITED_DATA' | 'SSN'} std_pattern_match
- * @property {string} top_freq_values
- * @property {string} top_patterns
- * * Numeric
- * @property {number} min_value
- * @property {number} min_value_over_0
- * @property {number} max_value
- * @property {number} avg_value
- * @property {number} stdev_value
- * @property {number} percentile_25
- * @property {number} percentile_50
- * @property {number} percentile_75
- * * Date
- * @property {number} min_date
- * @property {number} max_date
- * @property {number} before_1yr_date_ct
- * @property {number} before_5yr_date_ct
- * @property {number} before_20yr_date_ct
- * @property {number} within_1yr_date_ct
- * @property {number} within_1mo_date_ct
- * @property {number} future_date_ct
- * * Boolean
- * @property {number} boolean_true_ct
+ * @property {boolean?} border
  */
 import van from '../van.min.js';
+import { Card } from '../components/card.js';
 import { Attribute } from '../components/attribute.js';
-import { SummaryBar } from './summary_bar.js';
-import { PercentBar } from './percent_bar.js';
-import { FrequencyBars } from './frequency_bars.js';
-import { BoxPlot } from './box_plot.js';
+import { SummaryBar } from '../components/summary_bar.js';
+import { PercentBar } from '../components/percent_bar.js';
+import { FrequencyBars } from '../components/frequency_bars.js';
+import { BoxPlot } from '../components/box_plot.js';
 import { loadStylesheet } from '../utils.js';
 import { formatTimestamp, roundDigits } from '../display_utils.js';
 
-const { div } = van.tags;
+const { div, span } = van.tags;
 const columnTypeFunctionMap = {
     A: AlphaColumn,
     B: BooleanColumn,
@@ -71,10 +28,19 @@ const summaryWidth = 400;
 const summaryHeight = 10;
 const boxPlotWidth = 800;
 
-const ColumnProfile = (/** @type ColumnProfile */ item) => {
-    loadStylesheet('column_profile', stylesheet);
+const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column */ item) => {
+    loadStylesheet('column-distribution', stylesheet);
     const columnFunction = columnTypeFunctionMap[item.general_type];
-    return columnFunction ? columnFunction(item) : null;
+
+    return Card({
+        border: props.border,
+        title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
+        content: item.profile_run_id && columnFunction ? columnFunction(item) : null,
+        actionContent: item.profile_run_id ? null : span(
+            { class: 'text-secondary' },
+            'No profiling data available',
+        ),
+    })
 };
 
 function AlphaColumn(/** @type ColumnProfile */ item) {
@@ -280,4 +246,4 @@ stylesheet.replace(`
 }
 `);
 
-export { ColumnProfile };
+export { ColumnDistributionCard };

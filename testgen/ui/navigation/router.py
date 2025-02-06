@@ -71,6 +71,8 @@ class Router(Singleton):
             if is_different_page or query_params_changed:
                 route = self._routes[to]
                 session.page_args_pending_router = with_args
+                if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
+                    st.cache_data.clear()
                 st.switch_page(route.streamlit_page)
 
         except KeyError as k:

@@ -8,6 +8,7 @@ WITH score_profiling_runs AS (
 ),
 anomalies AS (
     SELECT results.id::VARCHAR AS id,
+        runs.table_groups_id::VARCHAR AS table_group_id,
         results.table_name AS table,
         results.column_name AS column,
         types.anomaly_name AS type,
@@ -40,6 +41,7 @@ score_test_runs AS (
 ),
 tests AS (
     SELECT test_results.id::VARCHAR AS id,
+        test_suites.table_groups_id::VARCHAR AS table_group_id,
         test_results.table_name AS table,
         test_results.column_names AS column,
         test_types.test_name_short AS type,

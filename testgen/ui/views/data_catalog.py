@@ -12,9 +12,10 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
+from testgen.ui.queries.profiling_queries import get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import friendly_score, is_uuid4, score
+from testgen.utils import friendly_score, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
@@ -89,9 +90,11 @@ def on_tags_changed(tags: dict) -> None:
     if item_type == "table":
         update_table = "data_table_chars"
         id_column = "table_id"
+        cached_function = get_table_by_id
     else:
         update_table = "data_column_chars"
         id_column = "column_id"
+        cached_function = get_column_by_id
 
     attributes = [
         "description",
@@ -118,7 +121,7 @@ def on_tags_changed(tags: dict) -> None:
         WHERE {id_column} = '{item_id}';
         """
     db.execute_sql(sql)
-    get_selected_item.clear()
+    cached_function.clear()
     st.rerun()
 
 
@@ -176,231 +179,26 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
     return db.retrieve_data(sql)
 
 
-@st.cache_data(show_spinner="Loading data ...")
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
     if not selected:
         return None
     
-    schema = st.session_state["dbschema"]
     item_type, item_id = selected.split("_", 2)
 
-    if item_type not in ["table", "column"] or not is_uuid4(item_id):
+    if item_type == "table":
+        item = get_table_by_id(item_id, table_group_id)
+    elif item_type == "column":
+        item = get_column_by_id(item_id, table_group_id, include_tags=True, include_has_test_runs=True, include_scores=True)
+    else:
         return None
 
-    if item_type == "table":
-        sql = f"""
-        SELECT table_chars.table_name,
-            table_chars.table_groups_id::VARCHAR(50) AS table_group_id,
-            -- Characteristics
-            functional_table_type,
-            record_ct,
-            table_chars.column_ct,
-            data_point_ct,
-            add_date,
-            drop_date,
-            -- Tags
-            description,
-            critical_data_element,
-            data_source,
-            source_system,
-            source_process,
-            business_domain,
-            stakeholder_group,
-            transform_level,
-            aggregation_level,
-            data_product,
-            -- Latest Profile & Test Runs
-            last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
-            profiling_starttime AS latest_profile_date,
-            EXISTS(
-                SELECT 1
-                FROM {schema}.test_results
-                WHERE table_groups_id = '{table_group_id}'
-                    AND table_name = table_chars.table_name
-            ) AS has_test_runs,
-            -- Scores
-            table_chars.dq_score_profiling,
-            table_chars.dq_score_testing
-        FROM {schema}.data_table_chars table_chars
-            LEFT JOIN {schema}.profiling_runs ON (
-                table_chars.last_complete_profile_run_id = profiling_runs.id
-            )
-        WHERE table_id = '{item_id}'
-            AND table_chars.table_groups_id = '{table_group_id}';
-        """
-    else:
-        sql = f"""
-        SELECT column_chars.column_name,
-            column_chars.table_name,
-            column_chars.table_groups_id::VARCHAR(50) AS table_group_id,
-            -- Characteristics
-            column_chars.general_type,
-            column_chars.column_type,
-            column_chars.functional_data_type,
-            datatype_suggestion,
-            column_chars.add_date,
-            column_chars.last_mod_date,
-            column_chars.drop_date,
-            -- Column Tags
-            column_chars.description,
-            column_chars.critical_data_element,
-            column_chars.data_source,
-            column_chars.source_system,
-            column_chars.source_process,
-            column_chars.business_domain,
-            column_chars.stakeholder_group,
-            column_chars.transform_level,
-            column_chars.aggregation_level,
-            column_chars.data_product,
-            -- Table Tags
-            table_chars.critical_data_element AS table_critical_data_element,
-            table_chars.data_source AS table_data_source,
-            table_chars.source_system AS table_source_system,
-            table_chars.source_process AS table_source_process,
-            table_chars.business_domain AS table_business_domain,
-            table_chars.stakeholder_group AS table_stakeholder_group,
-            table_chars.transform_level AS table_transform_level,
-            table_chars.aggregation_level AS table_aggregation_level,
-            table_chars.data_product AS table_data_product,
-            -- Latest Profile & Test Runs
-            column_chars.last_complete_profile_run_id::VARCHAR(50) AS latest_profile_id,
-            run_date AS latest_profile_date,
-            EXISTS(
-                SELECT 1
-                FROM {schema}.test_results
-                WHERE table_groups_id = '{table_group_id}'
-                    AND table_name = column_chars.table_name
-                    AND column_names = column_chars.column_name
-            ) AS has_test_runs,
-            -- Scores
-            column_chars.dq_score_profiling,
-            column_chars.dq_score_testing,
-            -- Value Counts
-            profile_results.record_ct,
-            value_ct,
-            distinct_value_ct,
-            null_value_ct,
-            zero_value_ct,
-            -- Alpha
-            zero_length_ct,
-            filled_value_ct,
-            includes_digit_ct,
-            numeric_ct,
-            date_ct,
-            quoted_value_ct,
-            lead_space_ct,
-            embedded_space_ct,
-            avg_embedded_spaces,
-            min_length,
-            max_length,
-            avg_length,
-            min_text,
-            max_text,
-            distinct_std_value_ct,
-            distinct_pattern_ct,
-            std_pattern_match,
-            top_freq_values,
-            top_patterns,
-            -- Numeric
-            min_value,
-            min_value_over_0,
-            max_value,
-            avg_value,
-            stdev_value,
-            percentile_25,
-            percentile_50,
-            percentile_75,
-            -- Date
-            min_date,
-            max_date,
-            before_1yr_date_ct,
-            before_5yr_date_ct,
-            before_20yr_date_ct,
-            within_1yr_date_ct,
-            within_1mo_date_ct,
-            future_date_ct,
-            -- Boolean
-            boolean_true_ct
-        FROM {schema}.data_column_chars column_chars
-            LEFT JOIN {schema}.data_table_chars table_chars ON (
-                column_chars.table_id = table_chars.table_id
-            )
-            LEFT JOIN {schema}.profile_results ON (
-                column_chars.last_complete_profile_run_id = profile_results.profile_run_id
-                AND column_chars.column_name = profile_results.column_name
-            )
-        WHERE column_chars.column_id = '{item_id}'
-            AND column_chars.table_groups_id = '{table_group_id}';
-        """
-
-    item_df = db.retrieve_data(sql)
-    if not item_df.empty:
-        # to_json converts datetimes, NaN, etc, to JSON-safe values (Note: to_dict does not)
-        item = json.loads(item_df.to_json(orient="records"))[0]
-        item["id"] = selected
-        item["type"] = item_type
+    if item:
         item["dq_score"] = friendly_score(score(item["dq_score_profiling"], item["dq_score_testing"]))
         item["dq_score_profiling"] = friendly_score(item["dq_score_profiling"])
         item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
-        item["latest_anomalies"] = get_profile_anomalies(item["latest_profile_id"], item["table_name"], item.get("column_name"))
-        item["latest_test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
+        item["hygiene_issues"] = get_hygiene_issues(item["profile_run_id"], item["table_name"], item.get("column_name"))
+        item["test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
         return item
-
-
-@st.cache_data(show_spinner=False)
-def get_profile_anomalies(profile_run_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
-    if not profile_run_id:
-        return []
-
-    schema = st.session_state["dbschema"]
-
-    column_condition = ""
-    if column_name:
-        column_condition = f"AND column_name = '{column_name}'"
-    
-    sql = f"""
-    WITH pii_results AS (
-        SELECT id,
-            CASE
-                WHEN detail LIKE 'Risk: HIGH%%' THEN 'High'
-                WHEN detail LIKE 'Risk: MODERATE%%' THEN 'Moderate'
-                ELSE null
-            END AS pii_risk
-        FROM {schema}.profile_anomaly_results
-    )
-    SELECT column_name,
-        anomaly_name,
-        issue_likelihood,
-        detail,
-        pii_risk
-    FROM {schema}.profile_anomaly_results anomaly_results
-        LEFT JOIN {schema}.profile_anomaly_types anomaly_types ON (
-            anomaly_types.id = anomaly_results.anomaly_id
-        )
-        LEFT JOIN pii_results ON (
-            anomaly_results.id = pii_results.id
-        )
-    WHERE profile_run_id = '{profile_run_id}'
-        AND table_name = '{table_name}'
-        {column_condition}
-        AND COALESCE(disposition, 'Confirmed') = 'Confirmed'
-    ORDER BY
-        CASE issue_likelihood
-            WHEN 'Definite' THEN 1
-            WHEN 'Likely' THEN 2
-            WHEN 'Possible' THEN 3
-            ELSE 4
-        END,
-        CASE pii_risk
-            WHEN 'High' THEN 1
-            WHEN 'Moderate' THEN 2
-            ELSE 3
-        END,
-        column_name;
-    """
-
-    df = db.retrieve_data(sql)
-    return json.loads(df.to_json(orient="records"))
 
 
 @st.cache_data(show_spinner=False)
@@ -419,7 +217,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         result_message,
         test_suite,
         test_results.test_run_id::VARCHAR(50),
-        test_starttime AS test_run_date
+        EXTRACT(EPOCH FROM test_starttime) AS test_run_date
     FROM {schema}.test_suites
         LEFT JOIN {schema}.test_runs ON (
             test_suites.last_complete_test_run_id = test_runs.id
@@ -445,4 +243,4 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
     """
 
     df = db.retrieve_data(sql)
-    return json.loads(df.to_json(orient="records"))
+    return [row.to_dict() for _, row in df.iterrows()]

@@ -816,8 +816,9 @@ def show_test_defs_grid(
         if selected_row["test_scope"] == "column":
             with col_profile_button:
                 view_profiling_button(
-                    selected_row["table_name"], selected_row["column_name"],
-                    str_table_groups_id=str_table_groups_id
+                    selected_row["column_name"],
+                    selected_row["table_name"], 
+                    str_table_groups_id,
                 )
 
         with right_column:

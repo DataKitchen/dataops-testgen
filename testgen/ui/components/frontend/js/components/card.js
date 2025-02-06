@@ -4,6 +4,7 @@
  * @property {object?} title
  * @property {object} content
  * @property {object?} actionContent
+ * @property {boolean?} border
  * @property {string?} id
  * @property {string?} class
  */
@@ -16,7 +17,7 @@ const Card = (/** @type Properties */ props) => {
     loadStylesheet('card', stylesheet);
 
     return div(
-        { class: `tg-card mb-4 ${props.class}`, id: props.id ?? '' },
+        { class: `tg-card mb-4 ${props.border ? 'tg-card-border' : ''} ${props.class}`, id: props.id ?? '' },
         () =>
             props.title || props.actionContent ?
             div(
@@ -41,6 +42,10 @@ stylesheet.replace(`
     border-radius: 8px;
     background-color: var(--dk-card-background);
     padding: 16px;
+}
+
+.tg-card-border {
+    border: 1px solid var(--border-color);
 }
 
 .tg-card--title {
