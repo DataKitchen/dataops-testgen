@@ -621,16 +621,9 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
 
 @st.dialog(title="Copy/Move Test")
 def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
-    # TODO confirm if the condition below is correct -> can only move tests that aren't active (locked?)
-    can_be_moved = [td for td in selected_test_definitions if td["lock_refresh"] == "Y"]
-
     st.text(f"Selected tests: {len(selected_test_definitions)}")
 
     user_can_edit = authentication_service.current_user_has_edit_role()
-    disable_move_button = (
-        user_can_edit or len(can_be_moved) == 0
-    )
-    disable_copy_button = user_can_edit
 
     group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
 
@@ -640,7 +633,7 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             options=table_groups_df,
             value_column="id",
             display_column="table_groups_name",
-            default_value=None,
+            default_value=origin_table_group,
             bind_to_query="table_group_id",
             label="Table Group",
         )
@@ -663,35 +656,40 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
     with actions_column:
         move = st.button(
             "Move",
-            disabled=disable_move_button,
+            disabled=user_can_edit,
             use_container_width=True,
         )
         copy = st.button(
             "Copy",
             use_container_width=True,
-            disabled=disable_copy_button,
+            disabled=user_can_edit,
         )
 
+    non_collision_test_definitions = test_definition_service.get_test_definition_can_be_moved(selected_test_definitions, target_table_group_id, target_test_suite_id)
+    movable_test_definitions = selected_test_definitions.drop(
+        pd.merge(selected_test_definitions, non_collision_test_definitions, how='inner', left_on=['table_name','column_name','test_type'], right_on=['table_name','column_name','test_type'], left_index=True).index
+    )
+    
+    if len(movable_test_definitions) != len(selected_test_definitions):
+        with st.container():
+            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.")
+            Unlocked tests that will be overwritten: {len(movable_test_definitions)}
+            Locked tests that will not be overwritten: {len(selected_test_definitions) - len(movable_test_definitions)}
+            """
+            st.warning(warning_message, icon=":material/warning:")
+
     if move:
-        # TODO: get wich test definitions cant be moved to target (colision names?)
-        test_definition_service.move(can_be_moved, target_table_group_id, target_test_suite_id)
+        test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id)
         success_message = f"Test Definitions have been moved. "
         st.success(success_message)
         time.sleep(1)
         st.rerun()
     elif copy:
-        # TODO: get wich test definitions cant be copied to target (colision names?)
-        test_definition_service.copy(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id)
         success_message = f"Test Definitions have been copied. "
         st.success(success_message)
         time.sleep(1)
         st.rerun()
-
-    if not can_be_moved:
-        st.markdown(
-            ":orange[These Test Definitions cannot be moved because it is being used in existing tests.]"
-        )
-
 
 def validate_form(test_scope, test_type, test_definition, column_name_label):
     if test_type == "Condition_Flag" and not test_definition["threshold_value"]:

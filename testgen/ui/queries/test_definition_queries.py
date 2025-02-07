@@ -375,3 +375,19 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
     db.execute_sql(sql)
     st.cache_data.clear()
 
+
+@st.cache_data(show_spinner=False)
+def get_test_definition_can_be_moved(schema, test_definitions, target_table_group, target_test_suite):
+    test_definition_keys = [f"('{td['table_name']}', '{td['column_name']}', '{td['test_type']}')" for td in test_definitions]
+    test_definitions_keys_str = f"({", ".join(test_definition_keys)})"
+    sql = f"""
+    SELECT table_name, column_name, test_type, lock_refresh
+    FROM {schema}.test_definitions
+    WHERE table_groups_id = '{target_table_group}',
+    AND test_suite_id = '{target_test_suite}'
+    AND last_auto_gen_date IS NULL 
+    AND lock_refresh = 'N' 
+    AND (table_name, column_name, test_type) in {test_definitions_keys_str};
+    """
+    return db.retrieve_data(sql)
+
