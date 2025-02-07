@@ -224,6 +224,13 @@ class CProfilingSQL:
         # Runs on DK Postgres Server
         return self._get_data_chars_sql().GetDataCharsUpdateQuery()
 
+    def GetCDEFlaggerQuery(self):
+        # Runs on DK Postgres Server
+        strQ = self.ReplaceParms(
+            read_template_sql_file("cde_flagger_query.sql", sub_directory="profiling")
+        )
+        return strQ
+
     def GetProfileRunInfoRecordsQuery(self):
         # Runs on DK Postgres Server
         strQ = self.ReplaceParms(

@@ -473,6 +473,8 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             # Always runs last
             strQuery = clsProfiling.GetDataCharsRefreshQuery()
             lstQueries.append(strQuery)
+            strQuery = clsProfiling.GetCDEFlaggerQuery()
+            lstQueries.append(strQuery)
 
             LOG.info("CurrentStep: Running profiling update queries")
             RunActionQueryList("DKTG", lstQueries)
