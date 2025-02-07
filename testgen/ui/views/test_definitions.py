@@ -652,23 +652,23 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             bind_to_query="test_suite_id",
             label="Test Suite",
         )
+    
+    non_collision_test_definitions = test_definition_service.get_test_definition_can_be_moved(selected_test_definitions, target_table_group_id, target_test_suite_id)
+    movable_test_definitions = selected_test_definitions.drop(
+        pd.merge(selected_test_definitions, non_collision_test_definitions, how='inner', left_on=['table_name','column_name','test_type'], right_on=['table_name','column_name','test_type'], left_index=True).index
+    )
 
     with actions_column:
         move = st.button(
             "Move",
-            disabled=user_can_edit,
+            disabled=(user_can_edit and len(movable_test_definitions)>0),
             use_container_width=True,
         )
         copy = st.button(
             "Copy",
             use_container_width=True,
-            disabled=user_can_edit,
+            disabled=(user_can_edit and len(movable_test_definitions)>0),
         )
-
-    non_collision_test_definitions = test_definition_service.get_test_definition_can_be_moved(selected_test_definitions, target_table_group_id, target_test_suite_id)
-    movable_test_definitions = selected_test_definitions.drop(
-        pd.merge(selected_test_definitions, non_collision_test_definitions, how='inner', left_on=['table_name','column_name','test_type'], right_on=['table_name','column_name','test_type'], left_index=True).index
-    )
     
     if len(movable_test_definitions) != len(selected_test_definitions):
         with st.container():
