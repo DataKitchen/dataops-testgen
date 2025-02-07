@@ -296,6 +296,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     clsProfiling.profile_id_column_mask = dctParms["profile_id_column_mask"]
     clsProfiling.profile_sk_column_mask = dctParms["profile_sk_column_mask"]
     clsProfiling.profile_use_sampling = dctParms["profile_use_sampling"]
+    clsProfiling.profile_flag_cdes = dctParms["profile_flag_cdes"]
     clsProfiling.profile_sample_percent = dctParms["profile_sample_percent"]
     clsProfiling.profile_sample_min_count = dctParms["profile_sample_min_count"]
     clsProfiling.process_id = process_service.get_current_process_id()
@@ -473,8 +474,9 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             # Always runs last
             strQuery = clsProfiling.GetDataCharsRefreshQuery()
             lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetCDEFlaggerQuery()
-            lstQueries.append(strQuery)
+            if clsProfiling.profile_flag_cdes:
+                strQuery = clsProfiling.GetCDEFlaggerQuery()
+                lstQueries.append(strQuery)
 
             LOG.info("CurrentStep: Running profiling update queries")
             RunActionQueryList("DKTG", lstQueries)

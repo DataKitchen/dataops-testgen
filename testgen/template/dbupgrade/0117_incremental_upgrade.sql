@@ -19,55 +19,60 @@ ALTER TABLE data_column_chars
 DROP AGGREGATE IF EXISTS sum_ln(double precision, double precision);
 DROP FUNCTION IF EXISTS sum_ln_agg_state(sum_ln_state, double precision, double precision);
 DROP FUNCTION IF EXISTS sum_ln_agg_final(sum_ln_state);
-DROP TYPE IF EXISTS sum_ln_state;
+DROP TYPE IF EXISTS sum_ln_state; -- Older version had this
 
-CREATE TYPE sum_ln_state AS (
-    log_sum double precision,
-    pop_sum double precision
-);
-
-
-CREATE OR REPLACE FUNCTION sum_ln_agg_state(state sum_ln_state, probability double precision, population double precision)
-RETURNS sum_ln_state AS $$
+CREATE OR REPLACE FUNCTION sum_ln_agg_state(
+    state       double precision,
+    probability double precision
+)
+RETURNS double precision
+AS $$
 BEGIN
-    -- Initialize log-sum (state[0]) to 0 if NULL
+
+    -- If this is the first row (or state is NULL for some reason), initialize
     IF state IS NULL THEN
-        state := (0,0);
+        state := 0;
     END IF;
 
     -- Handle edge cases: null/zero population, null/invalid/extremely high probabilities
-    IF population IS NULL OR population <= 0
-          OR probability IS NULL OR probability <= 0
-          OR probability > 0.999999 THEN
-        -- Log-sum remains unchanged, but add valid population
-        RETURN (state.log_sum, state.pop_sum + COALESCE(population, 0))::sum_ln_state;
+    IF probability IS NULL
+       OR probability <= 0
+       OR probability > 0.999999
+    THEN
+        RETURN state; -- do not update the log-sum
     END IF;
 
-    -- Update log-sum and total population for valid inputs
-    RETURN (
-        state.log_sum + LN(1 - probability)*population,
-        state.pop_sum + population
-    )::sum_ln_state;
+    -- Otherwise accumulate LN(1 - probability)
+    RETURN state + LN(1 - probability);
+
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION sum_ln_agg_final(state sum_ln_state)
-RETURNS double precision AS $$
+
+CREATE OR REPLACE FUNCTION sum_ln_agg_final(
+    state double precision
+)
+RETURNS double precision
+AS $$
 BEGIN
-    -- Avoid division by zero or incorrect log-sum results
-    IF state.pop_sum <= 0 THEN
-        -- If total population is zero, return 1 (no probability adjustment)
+
+    -- If never updated, or all skipped => return 1 (no effect)
+    IF state IS NULL THEN
         RETURN 1;
     END IF;
 
-    -- Compute weighted probability in log-space
-    RETURN EXP(state.log_sum / state.pop_sum);
+    -- Convert the total logs to a product
+    RETURN EXP(state);
+
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-CREATE OR REPLACE AGGREGATE sum_ln (double precision, double precision) (
-    SFUNC = sum_ln_agg_state,
-    STYPE = sum_ln_state, -- Stores log-sum and population
-    INITCOND  = '(0,0)',  -- Initial state: log-sum = 0, total population = 0
-    FINALFUNC = sum_ln_agg_final
+
+DROP AGGREGATE IF EXISTS sum_ln (double precision);
+
+CREATE AGGREGATE sum_ln (double precision) (
+    SFUNC     = sum_ln_agg_state,
+    STYPE     = double precision,
+    FINALFUNC = sum_ln_agg_final,
+    INITCOND  = '0'
 );

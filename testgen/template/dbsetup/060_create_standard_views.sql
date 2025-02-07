@@ -311,7 +311,7 @@ SELECT tg.project_code,
        pr.run_date,
        MAX(pr.record_ct) as record_ct,
        COUNT(p.anomaly_id) as issue_ct,
-       SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct) as good_data_pct
+       SUM_LN(COALESCE(p.dq_prevalence, 0.0)) as good_data_pct
   FROM table_groups tg
 INNER JOIN profile_results pr
    ON (tg.last_complete_profile_run_id = pr.profile_run_id)
@@ -371,7 +371,7 @@ SELECT
        SUM(r.result_code) as passed_ct,
        SUM(1 - r.result_code) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
-       SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct) as good_data_pct
+       SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r
 INNER JOIN test_suites s
    ON (r.test_suite_id = s.id
@@ -411,7 +411,7 @@ WITH dimension_rollup
               SUM(r.result_code) as passed_ct,
               SUM(1 - r.result_code) as issue_ct,
               MAX(r.dq_record_ct) as dq_record_ct,
-              SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0), r.dq_record_ct) as good_data_pct
+              SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0)) as good_data_pct
          FROM test_results r
          INNER JOIN test_types tt
             ON (r.test_type = tt.test_type)
@@ -445,7 +445,7 @@ SELECT
        SUM(r.passed_ct) as passed_ct,
        SUM(r.issue_ct) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
-       SUM_LN(COALESCE(1.0-r.good_data_pct, 0), r.dq_record_ct) as good_data_pct
+       SUM_LN(COALESCE(1.0-r.good_data_pct, 0)) as good_data_pct
   FROM dimension_rollup r
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id

@@ -9,7 +9,7 @@ UPDATE test_runs
 WITH score_detail
   AS (SELECT r.test_run_id, r.table_name, r.column_names,
              MAX(r.dq_record_ct) as row_ct,
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * MAX(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * MAX(r.dq_record_ct) as affected_data_points
         FROM test_results r
        WHERE r.test_run_id = '{RUN_ID}'
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'

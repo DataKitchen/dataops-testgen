@@ -100,6 +100,7 @@ CREATE TABLE table_groups
     profile_sample_percent   VARCHAR(3) DEFAULT '30',
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0' ,
+    profile_flag_cdes        BOOLEAN DEFAULT TRUE,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
     profile_pair_rule_pct    INTEGER DEFAULT 95,
     description              VARCHAR(1000),

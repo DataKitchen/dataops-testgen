@@ -42,6 +42,7 @@ class CProfilingSQL:
     profile_id_column_mask = ""
     profile_sk_column_mask = ""
     profile_use_sampling = ""
+    profile_flag_cdes = False
     profile_sample_percent = ""
     profile_sample_min_count = ""
 
