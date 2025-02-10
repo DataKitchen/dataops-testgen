@@ -669,6 +669,23 @@ CREATE TABLE IF NOT EXISTS score_definition_results (
     score           DOUBLE PRECISION    DEFAULT NULL
 );
 
+CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
+    id                   UUID                DEFAULT gen_random_uuid() PRIMARY KEY,
+    definition_id        UUID                CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
+                                                REFERENCES score_definitions (id)
+                                                ON DELETE CASCADE,
+    category             TEXT                NOT NULL,
+    score_type           TEXT                NOT NULL,
+    table_groups_id      TEXT                DEFAULT NULL,
+    table_name           TEXT                DEFAULT NULL,
+    column_name          TEXT                DEFAULT NULL,
+    dq_dimension         TEXT                DEFAULT NULL,
+    semantic_data_type   TEXT                DEFAULT NULL,
+    impact               DOUBLE PRECISION    DEFAULT 0.0,
+    score                DOUBLE PRECISION    DEFAULT 0.0,
+    issue_ct             INTEGER             DEFAULT 0
+);
+
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
 
 -- Index working table - ORIGINAL
