@@ -139,7 +139,7 @@ const Toolbar = (
     const displayCategory = van.state(!!definition.category);
     const selectedCategory = van.state(definition.category ?? undefined);
     const scoreName = van.state(definition.name ?? '');
-    const disableSave = van.derive(() => getValue(scoreName)?.length <= 0 || getValue(filters)?.length <= 0);
+    const disableSave = van.derive(() => getValue(scoreName)?.length <= 0 || getValue(filters)?.length <= 0 || getValue(filters)?.every(({ value }) => !value.rawVal));
     const renderedFilters = {};
 
     let isInitialized = getValue(filters).length > 0;
@@ -217,12 +217,12 @@ const Toolbar = (
             )
         ),
         div(
-            { class: 'flex-row fx-align-flex-end' },
+            { class: 'flex-row fx-align-flex-end fx-flex-wrap fx-gap-5' },
             div(
                 { class: 'flex-column fx-flex' },
-                span({ class: 'text-caption mt-3' }, 'Display on scorecard'),
+                span({ class: 'text-caption mt-3 mb-1' }, 'Display on scorecard'),
                 div(
-                    { class: 'flex-row fx-gap-4' },
+                    { class: 'flex-row fx-gap-4 fx-flex-wrap' },
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
@@ -233,18 +233,21 @@ const Toolbar = (
                         checked: displayCDEScore,
                         onChange: (checked) => displayCDEScore.val = checked,
                     }),
-                    Checkbox({
-                        label: 'Category:',
-                        checked: displayCategory,
-                        onChange: (checked) => displayCategory.val = checked,
-                    }),
-                    Select({
-                        style: 'margin-left: -8px;',
-                        height: 40,
-                        value: selectedCategory,
-                        options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
-                        disabled: van.derive(() => !getValue(displayCategory)),
-                    })
+                    div(
+                        { class: 'flex-row fx-gap-4' },
+                        Checkbox({
+                            label: 'Category:',
+                            checked: displayCategory,
+                            onChange: (checked) => displayCategory.val = checked,
+                        }),
+                        Select({
+                            style: 'margin-left: -8px;',
+                            height: 40,
+                            value: selectedCategory,
+                            options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
+                            disabled: van.derive(() => !getValue(displayCategory)),
+                        }),
+                    ),
                 ),
             ),
             div(
