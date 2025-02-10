@@ -4,7 +4,7 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.common.models.scores import ScoreDefinition, SelectedIssue
+from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -36,6 +36,11 @@ class ScoreDetailsPage(Page):
         project_code: str = session.project
         user_can_edit = authentication_service.current_user_has_edit_role()
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
+        score_breakdown = ScoreDefinitionBreakdownItem.filter(
+            definition_id=definition_id,
+            category=category,
+            score_type=score_type,
+        )
 
         if not score_definition:
             self.router.navigate_with_warning(
@@ -59,10 +64,8 @@ class ScoreDetailsPage(Page):
                 "score_type": score_type,
                 "drilldown": drilldown,
                 "score": format_score_card(score_definition.as_score_card()),
-                "breakdown": format_score_card_breakdown(
-                    score_definition.get_score_card_breakdown(score_type, category),
-                    category,
-                ) if not drilldown else None,
+                "breakdown": format_score_card_breakdown([item.to_dict() for item in score_breakdown], category)
+                    if not drilldown else None,
                 "issues": format_score_card_issues(
                     score_definition.get_score_card_issues(score_type, category, drilldown),
                     category,
