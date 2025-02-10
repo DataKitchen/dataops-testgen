@@ -302,6 +302,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             test_action,
             test_mode,
             lock_refresh,
+            last_auto_gen_date,
             schema_name,
             table_name,
             test_active,
@@ -343,6 +344,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.test_action as test_action,
             td.test_mode as test_mode,
             td.lock_refresh as lock_refresh,
+            td.last_auto_gen_date as last_auto_gen_date,
             td.schema_name as schema_name,
             td.table_name as table_name,
             td.test_active as test_active,
@@ -376,17 +378,15 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
     st.cache_data.clear()
 
 
-@st.cache_data(show_spinner=False)
-def get_test_definition_can_be_moved(schema, test_definitions, target_table_group, target_test_suite):
+def get_test_definitions_collision(schema, test_definitions, target_table_group, target_test_suite):
     test_definition_keys = [f"('{td['table_name']}', '{td['column_name']}', '{td['test_type']}')" for td in test_definitions]
     test_definitions_keys_str = f"({", ".join(test_definition_keys)})"
     sql = f"""
     SELECT table_name, column_name, test_type, lock_refresh
     FROM {schema}.test_definitions
-    WHERE table_groups_id = '{target_table_group}',
+    WHERE table_groups_id = '{target_table_group}'
     AND test_suite_id = '{target_test_suite}'
-    AND last_auto_gen_date IS NULL 
-    AND lock_refresh = 'N' 
+    AND last_auto_gen_date IS NOT NULL 
     AND (table_name, column_name, test_type) in {test_definitions_keys_str};
     """
     return db.retrieve_data(sql)

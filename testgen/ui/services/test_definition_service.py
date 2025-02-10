@@ -149,7 +149,7 @@ def copy(test_definitions, target_table_group, target_test_suite):
     test_definition_queries.copy(schema, test_definitions, target_table_group, target_test_suite)
 
 
-def get_test_definition_can_be_moved(test_definitions, target_table_group, target_test_suite):
+def get_test_definitions_collision(test_definitions, target_table_group, target_test_suite):
     schema = st.session_state["dbschema"]
-    test_definition_queries.get_test_definition_can_be_moved(schema, test_definitions, target_table_group, target_test_suite)
+    return test_definition_queries.get_test_definitions_collision(schema, test_definitions, target_table_group, target_test_suite)
 

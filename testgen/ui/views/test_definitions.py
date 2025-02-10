@@ -619,13 +619,13 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
     show_test_form("edit", project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def)
 
 
-@st.dialog(title="Copy/Move Test")
+@st.dialog(title="Copy/Move Tests")
 def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
     st.text(f"Selected tests: {len(selected_test_definitions)}")
 
     user_can_edit = authentication_service.current_user_has_edit_role()
 
-    group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+    group_filter_column, suite_filter_column = st.columns([.5, .5], vertical_alignment="bottom")
 
     with group_filter_column:
         table_groups_df = run_table_groups_lookup_query(project_code)
@@ -633,15 +633,15 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             options=table_groups_df,
             value_column="id",
             display_column="table_groups_name",
-            default_value=origin_table_group,
-            bind_to_query="table_group_id",
-            label="Table Group",
+            default_value=origin_table_group["id"],
+            label="Target Table Group",
         )
 
     with suite_filter_column:
         test_suites_df = run_test_suite_lookup_query(target_table_group_id)
         try:
-            test_suites_df.drop(origin_test_suite, inplace=True)
+            origin_index = test_suites_df[test_suites_df["id"] == origin_test_suite["id"]].index
+            test_suites_df.drop(origin_index, inplace=True)
         except KeyError:
             pass
         target_test_suite_id = testgen.select(
@@ -649,44 +649,49 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             value_column="id",
             display_column="test_suite",
             default_value=None,
-            bind_to_query="test_suite_id",
-            label="Test Suite",
+            label="Target Test Suite",
         )
     
-    non_collision_test_definitions = test_definition_service.get_test_definition_can_be_moved(selected_test_definitions, target_table_group_id, target_test_suite_id)
-    movable_test_definitions = selected_test_definitions.drop(
-        pd.merge(selected_test_definitions, non_collision_test_definitions, how='inner', left_on=['table_name','column_name','test_type'], right_on=['table_name','column_name','test_type'], left_index=True).index
-    )
+    movable_test_definitions = []
+    if target_table_group_id and target_test_suite_id:
+        collision_test_definitions = test_definition_service.get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        if not collision_test_definitions.empty:
+            unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "N"]
+            locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "Y"]
+            locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
+            movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
 
-    with actions_column:
-        move = st.button(
-            "Move",
-            disabled=(user_can_edit and len(movable_test_definitions)>0),
-            use_container_width=True,
-        )
-        copy = st.button(
-            "Copy",
-            use_container_width=True,
-            disabled=(user_can_edit and len(movable_test_definitions)>0),
-        )
-    
-    if len(movable_test_definitions) != len(selected_test_definitions):
-        with st.container():
-            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.")
-            Unlocked tests that will be overwritten: {len(movable_test_definitions)}
-            Locked tests that will not be overwritten: {len(selected_test_definitions) - len(movable_test_definitions)}
+            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
+            \nUnlocked tests that will be overwritten: {len(unlocked)}
+            \nLocked tests that will not be overwritten: {len(locked)}
             """
             st.warning(warning_message, icon=":material/warning:")
+        else:
+            movable_test_definitions = selected_test_definitions
+
+    testgen.whitespace(1)
+    _, copy_column, move_column = st.columns([.6, .2, .2])
+    copy = copy_column.button(
+        "Copy",
+        use_container_width=True,
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+    )
+
+    move = move_column.button(
+        "Move",
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+        use_container_width=True,
+    )
 
     if move:
         test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id)
-        success_message = f"Test Definitions have been moved. "
+        success_message = "Test Definitions have been moved."
         st.success(success_message)
         time.sleep(1)
         st.rerun()
     elif copy:
         test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id)
-        success_message = f"Test Definitions have been copied. "
+        success_message = "Test Definitions have been copied."
         st.success(success_message)
         time.sleep(1)
         st.rerun()
