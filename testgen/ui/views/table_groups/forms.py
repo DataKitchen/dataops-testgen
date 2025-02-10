@@ -63,9 +63,13 @@ class TableGroupForm(BaseForm, ManualRender):
         st_kwargs_max_value=999,
         st_kwargs_help="The number of days to wait before new profiling will be available to generate tests",
     )
+    profile_flag_cdes: bool = Field(
+        default=True,
+        st_kwargs_label="Detect critical data elements (CDEs) during profiling",
+    )
     add_scorecard_definition: bool = Field(
         default=True,
-        st_kwargs_label="Add Scorecard",
+        st_kwargs_label="Add scorecard for table group",
         st_kwargs_help="Add a new scorecard to the Quality Dashboard upon creation of this table group",
     )
     profile_use_sampling: bool = Field(
@@ -153,6 +157,7 @@ class TableGroupForm(BaseForm, ManualRender):
         self.render_field("profiling_include_mask", left_column)
         self.render_field("profiling_exclude_mask", left_column)
         self.render_field("profiling_table_set", left_column)
+        self.render_field("profile_flag_cdes", left_column)
 
         self.render_field("table_group_schema", right_column)
         self.render_field("profile_id_column_mask", right_column)
@@ -160,7 +165,8 @@ class TableGroupForm(BaseForm, ManualRender):
         self.render_field("profiling_delay_days", right_column)
 
         if not self.table_group_id:
-            self.render_field("add_scorecard_definition", container)
+            self.render_field("add_scorecard_definition", right_column)
+
         self.render_field("profile_use_sampling", container)
         profile_sampling_expander = container.expander("Sampling Parameters", expanded=False)
         with profile_sampling_expander:
