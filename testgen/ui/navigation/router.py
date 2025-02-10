@@ -63,14 +63,17 @@ class Router(Singleton):
 
     def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006
         try:
+            final_args = with_args or {}
             is_different_page = to != session.current_page
             query_params_changed = (
-                len((st.query_params or {}).keys()) != len((with_args or {}).keys())
-                or any(st.query_params.get(name) != value for name, value in with_args.items())
+                len((st.query_params or {}).keys()) != len(final_args.keys())
+                or any(st.query_params.get(name) != value for name, value in final_args.items())
             )
             if is_different_page or query_params_changed:
                 route = self._routes[to]
-                session.page_args_pending_router = with_args
+                session.page_args_pending_router = {
+                    name: value for name, value in final_args.items() if value and value != "None"
+                }
                 if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
                     st.cache_data.clear()
                 st.switch_page(route.streamlit_page)
