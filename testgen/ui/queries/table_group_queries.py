@@ -15,7 +15,7 @@ def _get_select_statement(schema):
                       description, data_source, source_system, source_process, data_location,
                       business_domain, stakeholder_group, transform_level, data_product,
                       profile_use_sampling, profile_sample_percent, profile_sample_min_count,
-                      profiling_delay_days
+                      profiling_delay_days, profile_flag_cdes
                FROM {schema}.table_groups
                """
 
@@ -106,7 +106,8 @@ def edit(schema, table_group):
                     profile_sample_percent='{table_group["profile_sample_percent"]}',
                     profile_sample_min_count={int(table_group["profile_sample_min_count"])},
                     profiling_delay_days='{table_group["profiling_delay_days"]}',
-                    description='{table_group["description"]},
+                    profile_flag_cdes={table_group["profile_flag_cdes"]},
+                    description='{table_group["description"]}',
                     data_source='{table_group["data_source"]}',
                     source_system='{table_group["source_system"]}',
                     source_process='{table_group["source_process"]}',
@@ -140,6 +141,7 @@ def add(schema, table_group) -> str:
         profile_sample_percent,
         profile_sample_min_count,
         profiling_delay_days,
+        profile_flag_cdes,
         description,
         data_source,
         source_system,
@@ -162,7 +164,9 @@ def add(schema, table_group) -> str:
         '{table_group["profile_sk_column_mask"]}'::character varying,
         '{'Y' if table_group["profile_use_sampling"]=='True' else 'N' }'::character varying,
         '{table_group["profile_sample_percent"]}'::character varying,
-        {table_group["profile_sample_min_count"]}, '{table_group["profiling_delay_days"]}'::character varying,
+        {table_group["profile_sample_min_count"]},
+        '{table_group["profiling_delay_days"]}'::character varying,
+        {table_group["profile_flag_cdes"]},
         '{table_group["description"]}',
         '{table_group["data_source"]}',
         '{table_group["source_system"]}',

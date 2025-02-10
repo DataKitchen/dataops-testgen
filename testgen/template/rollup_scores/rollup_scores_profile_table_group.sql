@@ -33,7 +33,7 @@ WITH score_detail
   AS (SELECT dcc.column_id,
              COUNT(p.id) as valid_issue_ct,
              MAX(pr.record_ct) as row_ct,
-             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct), 0) as affected_data_points
+             COALESCE( (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0))) * MAX(pr.record_ct), 0) as affected_data_points
         FROM table_groups tg
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
@@ -69,7 +69,7 @@ UPDATE data_table_chars
 WITH score_detail
   AS (SELECT dcc.column_id, dcc.table_id,
              MAX(pr.record_ct) as row_ct,
-             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct), 0) as affected_data_points
+             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0))) * MAX(pr.record_ct), 0) as affected_data_points
         FROM table_groups tg
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
