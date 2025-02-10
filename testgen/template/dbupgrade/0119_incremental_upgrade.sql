@@ -77,7 +77,7 @@ WITH result_calc
           FROM test_results r
           INNER JOIN test_types tt
                 ON r.test_type = tt.test_type
-          LEFT JOIN v_latest_profile_results p
+          INNER JOIN v_latest_profile_results p
                 ON (r.table_groups_id = p.table_groups_id
              AND r.table_name = p.table_name
              AND r.column_names = p.column_name)
