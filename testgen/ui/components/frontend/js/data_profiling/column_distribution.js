@@ -22,9 +22,9 @@ const columnTypeFunctionMap = {
     D: DatetimeColumn,
     N: NumericColumn,
 };
-const attributeWidth = 200;
+const attributeWidth = 250;
 const percentWidth = 250;
-const summaryWidth = 400;
+const summaryWidth = 524;
 const summaryHeight = 10;
 const boxPlotWidth = 800;
 
@@ -65,59 +65,64 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
     const total = item.record_ct;
 
     return div(
-        { class: 'flex-column fx-gap-4' },
+        { class: 'flex-column fx-gap-5' },
         div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--fx-basis-content' },
-            div(
-                {
-                    class: 'flex-column fx-gap-5',
-                },
-                DistinctsBar(item),
-                SummaryBar({
-                    height: summaryHeight,
-                    width: summaryWidth,
-                    label: `Missing Values: ${item.zero_length_ct + item.zero_value_ct + item.filled_value_ct + item.null_value_ct}`,
-                    items: [
-                        { label: 'Values', value: item.value_ct - item.zero_value_ct - item.filled_value_ct - item.zero_length_ct, color: 'green' },
-                        { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
-                        { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
-                        { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
-                        { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
-                    ],
-                }),
-            ),
-            div(
-                {
-                    class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-basis-content',
-                },
-                div(
-                    { class: 'flex-column fx-gap-3' },
-                    PercentBar({ label: 'Includes Digits', value: item.includes_digit_ct, total, width: percentWidth }),
-                    PercentBar({ label: 'Numeric Values', value: item.numeric_ct, total, width: percentWidth }),
-                    PercentBar({ label: 'Date Values', value: item.date_ct, total, width: percentWidth }),
-                    PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
-                ),
-                div(
-                    { class: 'flex-column fx-gap-3' },
-                    PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
-                    PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
-                    Attribute({ label: 'Average Embedded Spaces', value: roundDigits(item.avg_embedded_spaces), width: attributeWidth }),
-                ),
-            ),
+            { class: 'flex-column fx-gap-4' },
+            SummaryBar({
+                height: summaryHeight,
+                width: summaryWidth,
+                label: `Record Count: ${item.record_ct}`,
+                items: [
+                    { label: 'Mixed Case', value: item.mixed_case_ct, color: 'purple' },
+                    { label: 'Lower Case', value: item.lower_case_ct, color: 'blueLight' },
+                    { label: 'Upper Case', value: item.upper_case_ct, color: 'blue' },
+                    { label: 'Non-Alpha', value: item.non_alpha_ct, color: 'brown' },
+                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                ],
+            }),
+            SummaryBar({
+                height: summaryHeight,
+                width: summaryWidth,
+                label: `Missing Values: ${item.zero_length_ct + item.zero_value_ct + item.filled_value_ct + item.null_value_ct}`,
+                items: [
+                    { label: 'Values', value: item.value_ct - item.zero_value_ct - item.filled_value_ct - item.zero_length_ct, color: 'green' },
+                    { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
+                    { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
+                    { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
+                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                ],
+            }),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
+            div(
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
+                PercentBar({ label: 'Includes Digits', value: item.includes_digit_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Numeric Values', value: item.numeric_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Date Values', value: item.date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
+            ),
+            div(
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
+                PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
+                Attribute({ label: 'Average Embedded Spaces', value: roundDigits(item.avg_embedded_spaces), width: attributeWidth }),
+            ),
+        ),
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
             Attribute({ label: 'Minimum Length', value: item.min_length, width: attributeWidth }),
             Attribute({ label: 'Maximum Length', value: item.max_length, width: attributeWidth }),
             Attribute({ label: 'Average Length', value: roundDigits(item.avg_length), width: attributeWidth }),
             Attribute({ label: 'Minimum Text', value: item.min_text, width: attributeWidth }),
             Attribute({ label: 'Maximum Text', value: item.max_text, width: attributeWidth }),
+            Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
+            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
             Attribute({ label: 'Distinct Standard Values', value: item.distinct_std_value_ct, width: attributeWidth }),
             Attribute({ label: 'Distinct Patterns', value: item.distinct_pattern_ct, width: attributeWidth }),
-            Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
         ),
         item.top_freq_values || item.top_patterns ? div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 mt-2 mb-2 tg-profile--fx-basis-content' },
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-5 tg-profile--plot-block' },
             item.top_freq_values ? FrequencyBars({
                 title: 'Frequent Values',
                 total: item.record_ct,
@@ -159,59 +164,69 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
     const total = item.record_ct;
 
     return div(
-        { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--fx-basis-content' },
+        { class: 'flex-column fx-gap-5' },
+        SummaryBar({
+            height: summaryHeight,
+            width: summaryWidth,
+            label: `Record Count: ${item.record_ct}`,
+            items: [
+                { label: 'Values', value: item.record_ct - item.null_value_ct, color: 'blue' },
+                { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+            ],
+        }),
         div(
-            DistinctsBar(item),
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             div(
-                { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mt-5 tg-profile--fx-basis-content' },
-                Attribute({ label: 'Minimum Date', value: formatTimestamp(item.min_date, true) }),
-                Attribute({ label: 'Maximum Date', value: formatTimestamp(item.max_date, true) }),
-            ),
-        ),
-        div(
-            {
-                class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-3 mb-1 tg-profile--fx-basis-content',
-            },
-            div(
-                { class: 'flex-column fx-gap-3' },
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
                 PercentBar({ label: 'Before 1 Year', value: item.before_1yr_date_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Before 5 Year', value: item.before_5yr_date_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Before 20 Year', value: item.before_20yr_date_ct, total, width: percentWidth }),
             ),
             div(
-                { class: 'flex-column fx-gap-3' },
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
                 PercentBar({ label: 'Within 1 Year', value: item.within_1yr_date_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Within 1 Month', value: item.within_1mo_date_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Future Dates', value: item.future_date_ct, total, width: percentWidth }),
             ),
         ),
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
+            Attribute({ label: 'Minimum Date', value: formatTimestamp(item.min_date, true), width: attributeWidth }),
+            Attribute({ label: 'Maximum Date', value: formatTimestamp(item.max_date, true), width: attributeWidth }),
+            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
+        ),
     );
 }
 
 function NumericColumn(/** @type ColumnProfile */ item) {
-    return [
+    return div(
+        { class: 'flex-column fx-gap-5' },
         div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 mb-5 tg-profile--fx-basis-content' },
-            div(
-                DistinctsBar(item),
-            ),
-            div(
-                PercentBar({ label: 'Zero Values', value: item.zero_value_ct, total: item.record_ct, width: percentWidth }),
-            ),
+            SummaryBar({
+                height: summaryHeight,
+                width: summaryWidth,
+                label: `Record Count: ${item.record_ct}`,
+                items: [
+                    { label: 'Values', value: item.record_ct - item.zero_value_ct - item.null_value_ct, color: 'blue' },
+                    { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
+                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                ],
+            }),
         ),
         div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
+            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
+            Attribute({ label: 'Average Value', value: roundDigits(item.avg_value), width: attributeWidth }),
+            Attribute({ label: 'Standard Deviation', value: roundDigits(item.stdev_value), width: attributeWidth }),
             Attribute({ label: 'Minimum Value', value: item.min_value, width: attributeWidth }),
             Attribute({ label: 'Minimum Value > 0', value: item.min_value_over_0, width: attributeWidth }),
             Attribute({ label: 'Maximum Value', value: item.max_value, width: attributeWidth }),
-            Attribute({ label: 'Average Value', value: roundDigits(item.avg_value), width: attributeWidth }),
-            Attribute({ label: 'Standard Deviation', value: roundDigits(item.stdev_value), width: attributeWidth }),
             Attribute({ label: '25th Percentile', value: roundDigits(item.percentile_25), width: attributeWidth }),
             Attribute({ label: 'Median Value', value: roundDigits(item.percentile_50), width: attributeWidth }),
             Attribute({ label: '75th Percentile', value: roundDigits(item.percentile_75), width: attributeWidth }),
         ),
         div(
-            { class: 'flex-row fx-justify-center mt-5 tg-profile--fx-basis-content' },
+            { class: 'flex-row fx-justify-center tg-profile--plot-block' },
             BoxPlot({
                 minimum: item.min_value,
                 maximum: item.max_value,
@@ -223,26 +238,19 @@ function NumericColumn(/** @type ColumnProfile */ item) {
                 width: boxPlotWidth,
             }),
         ),
-    ];
+    );
 }
-
-const DistinctsBar = (/** @type ColumnProfile */ item) => {
-    return SummaryBar({
-        height: summaryHeight,
-        width: summaryWidth,
-        label: `Record count: ${item.record_ct}`,
-        items: [
-            { label: 'Distinct', value: item.distinct_value_ct, color: 'blue' },
-            { label: 'Non-Distinct', value: item.value_ct - item.distinct_value_ct, color: 'blueLight' },
-            { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
-        ],
-    });
-};
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-profile--fx-basis-content > * {
+.tg-profile--plot-block > * {
     flex: 250px;
+}
+.tg-profile--percent-column {
+    flex: 0 1 250px;
+}
+.tg-profile--attribute-block {
+    max-width: 800px;
 }
 `);
 
