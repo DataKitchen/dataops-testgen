@@ -11,7 +11,11 @@ from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, downlo
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries.scoring_queries import get_score_card_issue_reports, get_score_category_values
+from testgen.ui.queries.scoring_queries import (
+    get_all_score_cards,
+    get_score_card_issue_reports,
+    get_score_category_values,
+)
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
@@ -197,6 +201,7 @@ def save_score_definition(_) -> None:
     ]
     score_definition.save()
     run_refresh_score_cards_results(definition_id=score_definition.id)
+    get_all_score_cards.clear()
 
     Router().set_query_params({
         "name": None,

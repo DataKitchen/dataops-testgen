@@ -10,7 +10,7 @@ from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, downlo
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries.scoring_queries import get_score_card_issue_reports
+from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
@@ -154,4 +154,5 @@ def delete_score_card(definition_id: str) -> None:
 
     if delete_clicked():
         score_definition.delete()
+        get_all_score_cards.clear()
         Router().navigate("quality-dashboard")

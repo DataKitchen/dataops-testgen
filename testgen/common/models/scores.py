@@ -7,7 +7,7 @@ from typing import Literal, Self, TypedDict
 import pandas as pd
 from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import joinedload, relationship
+from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, Session, engine
@@ -41,18 +41,18 @@ class ScoreDefinition(Base):
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
-        lazy='joined',
+        lazy="joined",
     )
     filters: Iterable["ScoreDefinitionFilter"] = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
-        lazy='joined',
+        lazy="joined",
     )
     breakdown: Iterable["ScoreDefinitionBreakdownItem"] = relationship(
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
-        lazy='joined',
+        lazy="joined",
     )
 
     @classmethod
