@@ -44,7 +44,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { debounce, emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement, afterMount, getRandomId } from '../utils.js';
+import { debounce, emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement, afterMount, getRandomId, isEqual } from '../utils.js';
 import { Input } from '../components/input.js';
 import { Select } from '../components/select.js';
 import { Button } from '../components/button.js';
@@ -158,7 +158,16 @@ const Toolbar = (
     const refresh = debounce((payload) => emitEvent('ScoreUpdated', { payload }), 300);
 
     van.derive(() => {
-        refresh({
+        const previous = {
+            name: scoreName.oldVal,
+            filters: filters.oldVal
+                .map((filter) => ({ ...filter, value: filter.value.oldVal }))
+                .filter((f) => f.field && f.value),
+            category: displayCategory.oldVal ? selectedCategory.oldVal : null,
+            total_score: displayTotalScore.oldVal,
+            cde_score: displayCDEScore.oldVal,
+        };
+        const current = {
             name: getValue(scoreName),
             filters: getValue(filters)
                 .map((filter) => ({ ...filter, value: getValue(filter.value) }))    
@@ -166,7 +175,11 @@ const Toolbar = (
             category: getValue(displayCategory) ? getValue(selectedCategory) : null,
             total_score: getValue(displayTotalScore),
             cde_score: getValue(displayCDEScore),
-        });
+        };
+
+        if (!isEqual(current, previous)) {
+            refresh(current);
+        }
     });
 
     van.derive(() => {

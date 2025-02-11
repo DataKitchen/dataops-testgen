@@ -19,7 +19,7 @@
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { getRandomId, getValue, getParents, loadStylesheet, isState } from '../utils.js';
+import { getRandomId, getValue, getParents, loadStylesheet, isState, isEqual } from '../utils.js';
 import { Portal } from './portal.js';
 
 const { div, i, label, span } = van.tags;
@@ -56,12 +56,16 @@ const Select = (/** @type {Properties} */ props) => {
 
     van.derive(() => {
         const currentOptions = getValue(options);
+
         let currentValue = getValue(value);
+        let previousValue = value.oldVal;
         if (currentOptions.find((op) => op.value === currentValue) === undefined) {
             currentValue = value.val = null;
         }
 
-        props.onChange?.(currentValue);
+        if (!isEqual(currentValue, previousValue)) {
+            props.onChange?.(currentValue);
+        }
     });
 
     return label(

@@ -53,7 +53,7 @@ class ScoreExplorerPage(Page):
             set_score_definition(score_definition.to_dict())
 
         score_definition.id = score_definition.id or definition_id
-        if name or total_score or category or filters:
+        if name or total_score or cde_score or category or filters:
             score_definition.project_code = project_code
             score_definition.name = name
             score_definition.total_score = total_score and total_score.lower() == "true"
