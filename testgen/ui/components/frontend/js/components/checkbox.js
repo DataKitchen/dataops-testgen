@@ -42,6 +42,7 @@ stylesheet.replace(`
     margin: 0;
     width: 18px;
     height: 18px;
+    flex-shrink: 0;
     border: 1px solid var(--secondary-text-color);
     border-radius: 4px;
     position: relative;

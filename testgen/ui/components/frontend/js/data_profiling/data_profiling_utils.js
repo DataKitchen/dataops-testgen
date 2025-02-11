@@ -73,6 +73,10 @@
  * * Alpha
  * @property {number} zero_length_ct
  * @property {number} filled_value_ct
+ * @property {number} mixed_case_ct
+ * @property {number} lower_case_ct
+ * @property {number} upper_case_ct
+ * @property {number} non_alpha_ct
  * @property {number} includes_digit_ct
  * @property {number} numeric_ct
  * @property {number} date_ct
