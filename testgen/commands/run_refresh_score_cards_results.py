@@ -13,7 +13,7 @@ def run_refresh_score_cards_results(project_code: str | None = None, definition_
     try:
         definitions = []
         if not definition_id:
-            definitions = ScoreDefinition.all(project_code=project_code, fetch_filters=True, fetch_results=True)
+            definitions = ScoreDefinition.all(project_code=project_code)
         else:
             definitions.append(ScoreDefinition.get(str(definition_id)))
     except Exception:

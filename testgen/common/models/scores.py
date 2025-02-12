@@ -7,7 +7,7 @@ from typing import Literal, Self, TypedDict
 import pandas as pd
 from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import joinedload, relationship
+from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, Session, engine
@@ -41,12 +41,18 @@ class ScoreDefinition(Base):
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
+        lazy="joined",
     )
-    filters: Iterable["ScoreDefinitionFilter"] = relationship("ScoreDefinitionFilter", cascade="all, delete-orphan")
+    filters: Iterable["ScoreDefinitionFilter"] = relationship(
+        "ScoreDefinitionFilter",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
     breakdown: Iterable["ScoreDefinitionBreakdownItem"] = relationship(
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
+        lazy="joined",
     )
 
     @classmethod
@@ -69,11 +75,7 @@ class ScoreDefinition(Base):
     
         definition = None
         with Session() as db_session:
-            query = select(ScoreDefinition).options(
-                joinedload(ScoreDefinition.filters),
-                joinedload(ScoreDefinition.results),
-                joinedload(ScoreDefinition.breakdown),
-            ).where(ScoreDefinition.id == id_)
+            query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
             definition = db_session.scalars(query).first()
         return definition
 
@@ -83,16 +85,10 @@ class ScoreDefinition(Base):
         project_code: str | None = None,
         name_filter: str | None = None,
         sorted_by: str | None = "name",
-        fetch_filters: bool = False,
-        fetch_results: bool = True,
     ) -> "Iterable[Self]":
         definitions = []
         with Session() as db_session:
             query = select(ScoreDefinition)
-            if fetch_filters:
-                query = query.options(joinedload(ScoreDefinition.filters))
-            if fetch_results:
-                query = query.options(joinedload(ScoreDefinition.results))
             if name_filter:
                 query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
             if project_code:
