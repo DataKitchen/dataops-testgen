@@ -72,7 +72,7 @@ class Router(Singleton):
             if is_different_page or query_params_changed:
                 route = self._routes[to]
                 session.page_args_pending_router = {
-                    name: value for name, value in final_args.items() if value and value != "None"
+                    name: value for name, value in final_args.items() if value and value not in [None, "None", ""]
                 }
                 if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
                     st.cache_data.clear()

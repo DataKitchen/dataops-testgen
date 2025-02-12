@@ -120,6 +120,19 @@ class ScoreDefinition(Base):
         score_cards/get_category_scores_by_column.sql
         score_cards/get_category_scores_by_dimension.sql
         """
+        if len(self.filters) <= 0:
+            return {
+                "id": self.id,
+                "project_code": self.project_code,
+                "name": self.name,
+                "score": None,
+                "cde_score": None,
+                "profiling_score": None,
+                "testing_score": None,
+                "categories": [],
+                "definition": self,
+            }
+
         overall_score_query_template_file = "get_overall_scores_by_column.sql"
         categories_query_template_file = "get_category_scores_by_column.sql"
         if self.category == ScoreCategory.dq_dimension:
