@@ -29,8 +29,8 @@ class ScoreExplorerPage(Page):
     def render(
         self,
         name: str | None = None,
-        total_score: str | None = None,
-        cde_score: str | None = None,
+        total_score: str | None = "True",
+        cde_score: str | None = "True",
         category: str | None = None,
         filters: list[str] | None = None,
         breakdown_category: str | None = "table_name",
@@ -57,8 +57,8 @@ class ScoreExplorerPage(Page):
             set_score_definition(score_definition.to_dict())
 
         score_definition.id = score_definition.id or definition_id
+        score_definition.project_code = score_definition.project_code or project_code
         if name or total_score or cde_score or category or filters:
-            score_definition.project_code = project_code
             score_definition.name = name
             score_definition.total_score = total_score and total_score.lower() == "true"
             score_definition.cde_score = cde_score and cde_score.lower() == "true"

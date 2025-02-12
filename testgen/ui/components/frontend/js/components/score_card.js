@@ -25,9 +25,10 @@ const ScoreCard = (
 ) => {
     loadStylesheet('score-card', stylesheet);
 
+    const title = van.derive(() => getValue(score)?.name ?? '');
 
     return Card({
-        title: van.derive(() => getValue(score).name),
+        title: title,
         actionContent: actions,
         class: 'tg-score-card',
         content: () => {

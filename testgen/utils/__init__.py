@@ -90,7 +90,7 @@ def _pandas_default(value: Any, default: T) -> T:
     return value
 
 
-def format_score_card(score_card: ScoreCard) -> ScoreCard:
+def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
     definition = None
     if score_card:
         definition = score_card.get("definition")
@@ -121,7 +121,7 @@ def format_score_card(score_card: ScoreCard) -> ScoreCard:
         }
 
     return {
-        "id": str(score_card["id"]) if score_card else None,
+        "id": str(score_card_id) if (score_card_id := score_card.get("id")) else None,
         "project_code": score_card["project_code"],
         "name": score_card["name"],
         "score": (friendly_score(score_card.get("score")) or "--")
