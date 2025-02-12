@@ -139,7 +139,18 @@ const Toolbar = (
     const displayCategory = van.state(!!definition.category);
     const selectedCategory = van.state(definition.category ?? undefined);
     const scoreName = van.state(definition.name ?? '');
-    const disableSave = van.derive(() => getValue(scoreName)?.length <= 0 || getValue(filters)?.length <= 0 || getValue(filters)?.every(({ value }) => !value.rawVal));
+    const disableSave = van.derive(() => {
+        const appliedFilters = getValue(filters);
+
+        return getValue(scoreName)?.length <= 0
+            || appliedFilters?.length <= 0
+            || appliedFilters?.every(({ value }) => !value.rawVal)
+            || (
+                !getValue(displayTotalScore)
+                && !getValue(displayCDEScore)
+                && (!getValue(displayCategory) || !getValue(selectedCategory))
+            )
+    });
     const renderedFilters = {};
 
     let isInitialized = getValue(filters).length > 0;
