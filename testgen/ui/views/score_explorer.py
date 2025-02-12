@@ -75,7 +75,7 @@ class ScoreExplorerPage(Page):
                 ]
 
         score_card = None
-        if score_definition and len(score_definition.filters) > 0:
+        if score_definition:
             score_card = score_definition.as_score_card()
 
         testgen.testgen_component(
@@ -92,7 +92,7 @@ class ScoreExplorerPage(Page):
                         group_by=breakdown_category,
                     ),
                     breakdown_category,
-                ) if score_card else None,
+                ) if len(score_definition.filters) > 0 else None,
                 "drilldown": drilldown,
                 "issues": format_score_card_issues(
                     score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
