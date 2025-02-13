@@ -96,7 +96,7 @@ class TestDefinitionsPage(Page):
 
         disposition_actions = [
             { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
-            { "icon": "✘", "help": "Inactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Inactivated" },
+            { "icon": "🔇", "help": "Deactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Deactivated" },
             { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
             { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
         ]
@@ -899,7 +899,7 @@ def show_test_defs_grid(
             )
 
         _, col_profile_button = right_column.columns([0.7, 0.3])
-        if selected_row["test_scope"] == "column":
+        if selected_row["test_scope"] == "column" and selected_row["profile_run_id"]:
             with col_profile_button:
                 view_profiling_button(
                     selected_row["column_name"],
