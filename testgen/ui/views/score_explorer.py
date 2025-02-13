@@ -51,35 +51,52 @@ class ScoreExplorerPage(Page):
             {"label": last_breadcrumb},
         ])
 
-        score_definition: ScoreDefinition = ScoreDefinition(
-            id=definition_id,
-            project_code=project_code,
-            total_score=True,
-            cde_score=True,
-        )
-        if definition_id and not (name or total_score or category or filters):
-            score_definition = ScoreDefinition.get(definition_id)
-            set_score_definition(score_definition.to_dict())
+        score_breakdown = None
+        issues = None
+        with st.spinner(text="Loading data ..."):
+            score_definition: ScoreDefinition = ScoreDefinition(
+                id=definition_id,
+                project_code=project_code,
+                total_score=True,
+                cde_score=True,
+            )
+            if definition_id and not (name or total_score or category or filters):
+                score_definition = ScoreDefinition.get(definition_id)
+                set_score_definition(score_definition.to_dict())
 
-        if name or total_score or cde_score or category or filters:
-            score_definition.name = name
-            score_definition.total_score = total_score and total_score.lower() == "true"
-            score_definition.cde_score = cde_score and cde_score.lower() == "true"
-            score_definition.category = ScoreCategory(category) if category else None
+            if name or total_score or cde_score or category or filters:
+                score_definition.name = name
+                score_definition.total_score = total_score and total_score.lower() == "true"
+                score_definition.cde_score = cde_score and cde_score.lower() == "true"
+                score_definition.category = ScoreCategory(category) if category else None
 
-            if filters:
-                applied_filters = filters
-                if not isinstance(applied_filters, list):
-                    applied_filters = [filters]
+                if filters:
+                    applied_filters = filters
+                    if not isinstance(applied_filters, list):
+                        applied_filters = [filters]
 
-                score_definition.filters = [
-                    ScoreDefinitionFilter(field=field_value[0], value=field_value[1])
-                    for f in applied_filters if (field_value := f.split("="))
-                ]
+                    score_definition.filters = [
+                        ScoreDefinitionFilter(field=field_value[0], value=field_value[1])
+                        for f in applied_filters if (field_value := f.split("="))
+                    ]
 
-        score_card = None
-        if score_definition:
-            score_card = score_definition.as_score_card()
+            score_card = None
+            if score_definition:
+                score_card = score_definition.as_score_card()
+
+            if len(score_definition.filters) > 0 and not drilldown:
+                score_breakdown = format_score_card_breakdown(
+                    score_definition.get_score_card_breakdown(
+                        score_type=breakdown_score_type,
+                        group_by=breakdown_category,
+                    ),
+                    breakdown_category,
+                )
+            if score_card and drilldown:
+                issues = format_score_card_issues(
+                    score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
+                    breakdown_category,
+                )
 
         testgen.testgen_component(
             "score_explorer",
@@ -89,18 +106,9 @@ class ScoreExplorerPage(Page):
                 "score_card": format_score_card(score_card),
                 "breakdown_category": breakdown_category,
                 "breakdown_score_type": breakdown_score_type,
-                "breakdown": format_score_card_breakdown(
-                    score_definition.get_score_card_breakdown(
-                        score_type=breakdown_score_type,
-                        group_by=breakdown_category,
-                    ),
-                    breakdown_category,
-                ) if len(score_definition.filters) > 0 else None,
+                "breakdown": score_breakdown,
                 "drilldown": drilldown,
-                "issues": format_score_card_issues(
-                    score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
-                    breakdown_category,
-                ) if score_card and drilldown else None,
+                "issues": issues,
                 "is_new": not definition_id,
             },
             event_handlers={},
