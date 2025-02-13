@@ -224,7 +224,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
             const payload = attributes.reduce((object, { key, state }) => {
                 object[key] = state.rawVal;
                 return object;
-            }, { id: item.id });
+            }, { id: item.id, type: item.type });
             emitEvent('TagsChanged', { payload })
         },
         // Reset states to original values on cancel
