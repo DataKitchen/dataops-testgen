@@ -265,3 +265,129 @@ def cascade_delete(schema, test_suite_ids):
     """
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def move(schema, test_definitions, target_table_group, target_test_suite):
+    test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
+    sql = f"""
+        UPDATE {schema}.test_definitions
+        SET 
+            table_groups_id = '{target_table_group}'::UUID,
+            test_suite_id = '{target_test_suite}'::UUID
+        WHERE 
+            id in ({",".join(test_definition_ids)})
+        ;
+    """
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def copy(schema, test_definitions, target_table_group, target_test_suite):
+    test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
+    sql = f"""
+        INSERT INTO {schema}.test_definitions
+        (
+            last_manual_update,
+            skip_errors,
+            custom_query,
+            test_definition_status,
+            export_to_observability,
+            column_name,
+            watch_level,
+            table_groups_id,
+            profile_run_id,
+            test_type,
+            test_suite_id,
+            test_description,
+            test_action,
+            test_mode,
+            lock_refresh,
+            last_auto_gen_date,
+            schema_name,
+            table_name,
+            test_active,
+            severity,
+            check_result,
+            baseline_ct,
+            baseline_unique_ct,
+            baseline_value,
+            baseline_value_ct,
+            threshold_value,
+            baseline_sum,
+            baseline_avg,
+            baseline_sd,
+            subset_condition,
+            groupby_names,
+            having_condition,
+            window_date_column,
+            match_schema_name,
+            match_table_name,
+            match_column_names,
+            match_subset_condition,
+            match_groupby_names,
+            match_having_condition,
+            window_days
+        )
+        SELECT
+            CURRENT_TIMESTAMP AT TIME ZONE 'UTC' as last_manual_update,
+            td.skip_errors as skip_errors,
+            td.custom_query as custom_query,
+            td.test_definition_status as test_definition_status,
+            td.export_to_observability as export_to_observability,
+            td.column_name as column_name,
+            td.watch_level as watch_level,
+            '{target_table_group}'::UUID  as table_groups_id,
+            NULL AS profile_run_id,
+            td.test_type as test_type,
+            '{target_test_suite}'::UUID as test_suite_id,
+            td.test_description as test_description,
+            td.test_action as test_action,
+            td.test_mode as test_mode,
+            td.lock_refresh as lock_refresh,
+            td.last_auto_gen_date as last_auto_gen_date,
+            td.schema_name as schema_name,
+            td.table_name as table_name,
+            td.test_active as test_active,
+            td.severity as severity,
+            td.check_result as check_result,
+            td.baseline_ct as baseline_ct,
+            td.baseline_unique_ct as baseline_unique_ct,
+            td.baseline_value as baseline_value,
+            td.baseline_value_ct as baseline_value_ct,
+            td.threshold_value as threshold_value,
+            td.baseline_sum as baseline_sum,
+            td.baseline_avg as baseline_avg,
+            td.baseline_sd as baseline_sd,
+            td.subset_condition as subset_condition,
+            td.groupby_names as groupby_names,
+            td.having_condition as having_condition,
+            td.window_date_column as window_date_column,
+            td.match_schema_name as match_schema_name,
+            td.match_table_name as match_table_name,
+            td.match_column_names as match_column_names,
+            td.match_subset_condition as match_subset_condition,
+            td.match_groupby_names as match_groupby_names,
+            td.match_having_condition as match_having_condition,
+            td.window_days as window_days
+        FROM {schema}.test_definitions as td
+        WHERE 
+            td.id in ({",".join(test_definition_ids)})
+        ;
+    """
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def get_test_definitions_collision(schema, test_definitions, target_table_group, target_test_suite):
+    test_definition_keys = [f"('{td['table_name']}', '{td['column_name']}', '{td['test_type']}')" for td in test_definitions]
+    test_definitions_keys_str = f"({", ".join(test_definition_keys)})"
+    sql = f"""
+    SELECT table_name, column_name, test_type, lock_refresh
+    FROM {schema}.test_definitions
+    WHERE table_groups_id = '{target_table_group}'
+    AND test_suite_id = '{target_test_suite}'
+    AND last_auto_gen_date IS NOT NULL 
+    AND (table_name, column_name, test_type) in {test_definitions_keys_str};
+    """
+    return db.retrieve_data(sql)
+

@@ -123,6 +123,13 @@ class TestDefinitionsPage(Page):
             edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
         if user_can_edit and actions_column.button(
+            ":material/file_copy: Copy/Move",
+            help="Copy or Move the Test Definition",
+            disabled=not selected,
+        ):
+            copy_move_test_dialog(project_code, table_group, test_suite, selected)
+
+        if user_can_edit and actions_column.button(
             ":material/delete: Delete",
             help="Delete the selected Test Definition",
             disabled=not selected,
@@ -610,6 +617,83 @@ def add_test_dialog(project_code, table_group, test_suite, str_table_name, str_c
 def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def):
     show_test_form("edit", project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def)
 
+
+@st.dialog(title="Copy/Move Tests")
+def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
+    st.text(f"Selected tests: {len(selected_test_definitions)}")
+
+    user_can_edit = authentication_service.current_user_has_edit_role()
+
+    group_filter_column, suite_filter_column = st.columns([.5, .5], vertical_alignment="bottom")
+
+    with group_filter_column:
+        table_groups_df = run_table_groups_lookup_query(project_code)
+        target_table_group_id = testgen.select(
+            options=table_groups_df,
+            value_column="id",
+            display_column="table_groups_name",
+            default_value=origin_table_group["id"],
+            label="Target Table Group",
+        )
+
+    with suite_filter_column:
+        test_suites_df = run_test_suite_lookup_query(target_table_group_id)
+        try:
+            origin_index = test_suites_df[test_suites_df["id"] == origin_test_suite["id"]].index
+            test_suites_df.drop(origin_index, inplace=True)
+        except KeyError:
+            pass
+        target_test_suite_id = testgen.select(
+            options=test_suites_df,
+            value_column="id",
+            display_column="test_suite",
+            default_value=None,
+            label="Target Test Suite",
+        )
+    
+    movable_test_definitions = []
+    if target_table_group_id and target_test_suite_id:
+        collision_test_definitions = test_definition_service.get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        if not collision_test_definitions.empty:
+            unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "N"]
+            locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "Y"]
+            locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
+            movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
+
+            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
+            \nUnlocked tests that will be overwritten: {len(unlocked)}
+            \nLocked tests that will not be overwritten: {len(locked)}
+            """
+            st.warning(warning_message, icon=":material/warning:")
+        else:
+            movable_test_definitions = selected_test_definitions
+
+    testgen.whitespace(1)
+    _, copy_column, move_column = st.columns([.6, .2, .2])
+    copy = copy_column.button(
+        "Copy",
+        use_container_width=True,
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+    )
+
+    move = move_column.button(
+        "Move",
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+        use_container_width=True,
+    )
+
+    if move:
+        test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        success_message = "Test Definitions have been moved."
+        st.success(success_message)
+        time.sleep(1)
+        st.rerun()
+    elif copy:
+        test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        success_message = "Test Definitions have been copied."
+        st.success(success_message)
+        time.sleep(1)
+        st.rerun()
 
 def validate_form(test_scope, test_type, test_definition, column_name_label):
     if test_type == "Condition_Flag" and not test_definition["threshold_value"]:
