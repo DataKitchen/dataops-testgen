@@ -24,7 +24,7 @@ const columnTypeFunctionMap = {
 };
 const attributeWidth = 250;
 const percentWidth = 250;
-const summaryWidth = 524;
+const summaryWidth = 516;
 const summaryHeight = 10;
 const boxPlotWidth = 800;
 
