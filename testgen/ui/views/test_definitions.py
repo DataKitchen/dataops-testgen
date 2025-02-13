@@ -2,7 +2,6 @@ import logging
 import time
 import typing
 
-import pandas as pd
 import streamlit as st
 from streamlit_extras.no_default_selectbox import selectbox
 
