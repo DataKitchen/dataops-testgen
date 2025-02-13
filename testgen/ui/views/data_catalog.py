@@ -85,9 +85,8 @@ class DataCatalogPage(Page):
 
 def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
-    item_type, item_id = tags["id"].split("_", 2)
 
-    if item_type == "table":
+    if tags["type"] == "table":
         update_table = "data_table_chars"
         id_column = "table_id"
         cached_function = get_table_by_id
@@ -118,7 +117,7 @@ def on_tags_changed(tags: dict) -> None:
     sql = f"""
         UPDATE {schema}.{update_table}
         SET {', '.join(set_attributes)}
-        WHERE {id_column} = '{item_id}';
+        WHERE {id_column} = '{tags["id"]}';
         """
     db.execute_sql(sql)
     cached_function.clear()
