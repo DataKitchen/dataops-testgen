@@ -34,13 +34,7 @@ class ScoreDetailsPage(Page):
         **_kwargs
     ):
         project_code: str = session.project
-        user_can_edit = authentication_service.current_user_has_edit_role()
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
-        score_breakdown = ScoreDefinitionBreakdownItem.filter(
-            definition_id=definition_id,
-            category=category,
-            score_type=score_type,
-        )
 
         if not score_definition:
             self.router.navigate_with_warning(
@@ -57,19 +51,34 @@ class ScoreDetailsPage(Page):
             ],
         )
 
+        score_card = None
+        score_breakdown = None
+        issues = None
+        with st.spinner(text="Loading data ..."):
+            user_can_edit = authentication_service.current_user_has_edit_role()
+            score_card = format_score_card(score_definition.as_score_card())
+            if not drilldown:
+                score_breakdown = ScoreDefinitionBreakdownItem.filter(
+                    definition_id=definition_id,
+                    category=category,
+                    score_type=score_type,
+                )
+                score_breakdown = format_score_card_breakdown([item.to_dict() for item in score_breakdown], category)
+            else:
+                issues = format_score_card_issues(
+                    score_definition.get_score_card_issues(score_type, category, drilldown),
+                    category,
+                )
+
         testgen.testgen_component(
             "score_details",
             props={
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
-                "score": format_score_card(score_definition.as_score_card()),
-                "breakdown": format_score_card_breakdown([item.to_dict() for item in score_breakdown], category)
-                    if not drilldown else None,
-                "issues": format_score_card_issues(
-                    score_definition.get_score_card_issues(score_type, category, drilldown),
-                    category,
-                ) if drilldown else None,
+                "score": score_card,
+                "breakdown": score_breakdown,
+                "issues": issues,
                 "permissions": {
                     "can_edit": user_can_edit,
                 }
@@ -81,7 +90,11 @@ class ScoreDetailsPage(Page):
                 "CategoryChanged": select_category,
                 "ScoreTypeChanged": select_score_type,
                 "IssueReportsExported": export_issue_reports,
-                "ColumnProflingClicked": lambda payload: profiling_results_dialog(payload["column_name"], payload["table_name"], payload["table_group_id"])
+                "ColumnProflingClicked": lambda payload: profiling_results_dialog(
+                    payload["column_name"],
+                    payload["table_name"],
+                    payload["table_group_id"],
+                )
             },
         )
 
