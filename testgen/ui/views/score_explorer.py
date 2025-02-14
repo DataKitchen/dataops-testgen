@@ -53,7 +53,10 @@ class ScoreExplorerPage(Page):
 
         score_breakdown = None
         issues = None
+        filter_values = {}
         with st.spinner(text="Loading data ..."):
+            filter_values = get_score_category_values(project_code)
+
             score_definition: ScoreDefinition = ScoreDefinition(
                 id=definition_id,
                 project_code=project_code,
@@ -97,12 +100,13 @@ class ScoreExplorerPage(Page):
                     score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
                     breakdown_category,
                 )
+            score_definition_dict = score_definition.to_dict()
 
         testgen.testgen_component(
             "score_explorer",
             props={
-                "filter_values": get_score_category_values(project_code),
-                "definition": score_definition.to_dict(),
+                "filter_values": filter_values,
+                "definition": score_definition_dict,
                 "score_card": format_score_card(score_card),
                 "breakdown_category": breakdown_category,
                 "breakdown_score_type": breakdown_score_type,
@@ -111,7 +115,6 @@ class ScoreExplorerPage(Page):
                 "issues": issues,
                 "is_new": not definition_id,
             },
-            event_handlers={},
             on_change_handlers={
                 "ScoreUpdated": set_score_definition,
                 "CategoryChanged": set_breakdown_category,
