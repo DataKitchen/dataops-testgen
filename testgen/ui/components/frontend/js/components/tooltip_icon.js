@@ -5,6 +5,7 @@
  * @property {number?} iconSize
  * @property {string} tooltip
  * @property {('top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left')?} tooltipPosition
+ * @property {number} tooltipWidth
  * @property {string} classes
  */
 import { getValue, loadStylesheet } from '../utils.js';
@@ -30,6 +31,7 @@ const TooltipIcon = (/** @type Properties */ props) => {
             text: props.tooltip,
             show: showTooltip,
             position: props.tooltipPosition,
+            width: props.tooltipWidth,
         }),
     );
 };
