@@ -1,6 +1,6 @@
 /**
  * @import { Column } from './data_profiling_utils.js';
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {boolean?} border
@@ -66,12 +66,24 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
 
     return div(
         { class: 'flex-column fx-gap-5' },
+        BaseCounts(item),
         div(
             { class: 'flex-column fx-gap-4' },
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Record Count: ${item.record_ct}`,
+                label: `Missing Values: ${item.null_value_ct + item.filled_value_ct + item.filled_value_ct}`,
+                items: [
+                    { label: 'Actual Values', value: item.value_ct - item.filled_value_ct, color: 'green' },
+                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                    { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
+                    { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
+                ],
+            }),
+            SummaryBar({
+                height: summaryHeight,
+                width: summaryWidth,
+                label: 'Case Distribution',
                 items: [
                     { label: 'Mixed Case', value: item.mixed_case_ct, color: 'purple' },
                     { label: 'Lower Case', value: item.lower_case_ct, color: 'blueLight' },
@@ -80,46 +92,6 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
                     { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
                 ],
             }),
-            SummaryBar({
-                height: summaryHeight,
-                width: summaryWidth,
-                label: `Missing Values: ${item.zero_length_ct + item.zero_value_ct + item.filled_value_ct + item.null_value_ct}`,
-                items: [
-                    { label: 'Values', value: item.value_ct - item.zero_value_ct - item.filled_value_ct - item.zero_length_ct, color: 'green' },
-                    { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
-                    { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
-                    { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
-                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
-                ],
-            }),
-        ),
-        div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            div(
-                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Includes Digits', value: item.includes_digit_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Numeric Values', value: item.numeric_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Date Values', value: item.date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
-            ),
-            div(
-                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
-                PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
-                Attribute({ label: 'Average Embedded Spaces', value: roundDigits(item.avg_embedded_spaces), width: attributeWidth }),
-            ),
-        ),
-        div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
-            Attribute({ label: 'Minimum Length', value: item.min_length, width: attributeWidth }),
-            Attribute({ label: 'Maximum Length', value: item.max_length, width: attributeWidth }),
-            Attribute({ label: 'Average Length', value: roundDigits(item.avg_length), width: attributeWidth }),
-            Attribute({ label: 'Minimum Text', value: item.min_text, width: attributeWidth }),
-            Attribute({ label: 'Maximum Text', value: item.max_text, width: attributeWidth }),
-            Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
-            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
-            Attribute({ label: 'Distinct Standard Values', value: item.distinct_std_value_ct, width: attributeWidth }),
-            Attribute({ label: 'Distinct Patterns', value: item.distinct_pattern_ct, width: attributeWidth }),
         ),
         item.top_freq_values || item.top_patterns ? div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-5 tg-profile--plot-block' },
@@ -144,20 +116,53 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
                 }, []),
             }) : null,
         ) : null,
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
+            div(
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
+                PercentBar({ label: 'Includes Digits', value: item.includes_digit_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Numeric Values', value: item.numeric_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Zero Values', value: item.zero_value_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Date Values', value: item.date_ct, total, width: percentWidth }),
+            ),
+            div(
+                { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
+                PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
+                Attribute({ label: 'Average Embedded Spaces', value: roundDigits(item.avg_embedded_spaces), width: attributeWidth }),
+            ),
+        ),
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
+            Attribute({ label: 'Minimum Length', value: item.min_length, width: attributeWidth }),
+            Attribute({ label: 'Maximum Length', value: item.max_length, width: attributeWidth }),
+            Attribute({ label: 'Average Length', value: roundDigits(item.avg_length), width: attributeWidth }),
+            Attribute({ label: 'Minimum Text', value: item.min_text, width: attributeWidth }),
+            Attribute({ label: 'Maximum Text', value: item.max_text, width: attributeWidth }),
+            Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
+            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
+            Attribute({ label: 'Distinct Standard Values', value: item.distinct_std_value_ct, width: attributeWidth }),
+            Attribute({ label: 'Distinct Patterns', value: item.distinct_pattern_ct, width: attributeWidth }),
+        ),
     );
 }
 
 function BooleanColumn(/** @type ColumnProfile */ item) {
-    return SummaryBar({
-        height: summaryHeight,
-        width: summaryWidth,
-        label: `Record count: ${item.record_ct}`,
-        items: [
-            { label: 'True', value: item.boolean_true_ct, color: 'brownLight' },
-            { label: 'False', value: item.value_ct - item.boolean_true_ct, color: 'brown' },
-            { label: 'Null', value: item.null_value_ct, color: 'brownDark' },
-        ],
-    });
+    return div(
+        { class: 'flex-column fx-gap-5' },
+        BaseCounts(item),
+        SummaryBar({
+            height: summaryHeight,
+            width: summaryWidth,
+            label: 'Boolean Distribution',
+            items: [
+                { label: 'True', value: item.boolean_true_ct, color: 'brownLight' },
+                { label: 'False', value: item.value_ct - item.boolean_true_ct, color: 'brown' },
+                { label: 'Null', value: item.null_value_ct, color: 'brownDark' },
+            ],
+        }),
+    );
 }
 
 function DatetimeColumn(/** @type ColumnProfile */ item) {
@@ -165,10 +170,10 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
 
     return div(
         { class: 'flex-column fx-gap-5' },
+        BaseCounts(item),
         SummaryBar({
             height: summaryHeight,
             width: summaryWidth,
-            label: `Record Count: ${item.record_ct}`,
             items: [
                 { label: 'Values', value: item.record_ct - item.null_value_ct, color: 'blue' },
                 { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
@@ -201,13 +206,14 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
 function NumericColumn(/** @type ColumnProfile */ item) {
     return div(
         { class: 'flex-column fx-gap-5' },
+        BaseCounts(item),
         div(
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Record Count: ${item.record_ct}`,
+                label: 'Numeric Distribution',
                 items: [
-                    { label: 'Values', value: item.record_ct - item.zero_value_ct - item.null_value_ct, color: 'blue' },
+                    { label: 'Non-Zero Values', value: item.record_ct - item.zero_value_ct - item.null_value_ct, color: 'blue' },
                     { label: 'Zero Values', value: item.zero_value_ct, color: 'brown' },
                     { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
                 ],
@@ -240,6 +246,14 @@ function NumericColumn(/** @type ColumnProfile */ item) {
         ),
     );
 }
+
+const BaseCounts = (/** @type ColumnProfile */ item) => {
+    return div(
+        { class: 'flex-row fx-gap-4' },
+        Attribute({ label: 'Record Count', value: item.record_ct, width: attributeWidth }),
+        Attribute({ label: 'Value Count', value: item.value_ct, width: attributeWidth }),
+    );
+};
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

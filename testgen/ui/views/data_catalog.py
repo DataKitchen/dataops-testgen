@@ -37,7 +37,7 @@ class DataCatalogPage(Page):
 
         if render_empty_state(project_code):
             return
-        
+
         group_filter_column, _, loading_column = st.columns([.3, .5, .2], vertical_alignment="center")
 
         with group_filter_column:
@@ -126,7 +126,7 @@ def on_tags_changed(tags: dict) -> None:
 
 def render_empty_state(project_code: str) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
-    if project_summary_df["profiling_runs_ct"]: # Without profiling, we don't have any table and column information in db 
+    if project_summary_df["profiling_runs_ct"]: # Without profiling, we don't have any table and column information in db
         return False
 
     label="Your project is empty"
@@ -166,6 +166,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         column_chars.column_name,
         table_chars.table_name,
         column_chars.general_type,
+        column_chars.functional_data_type,
         column_chars.drop_date AS column_drop_date,
         table_chars.drop_date AS table_drop_date
     FROM {schema}.data_column_chars column_chars
@@ -181,7 +182,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
     if not selected:
         return None
-    
+
     item_type, item_id = selected.split("_", 2)
 
     if item_type == "table":
@@ -207,7 +208,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
     column_condition = ""
     if column_name:
         column_condition = f"AND column_names = '{column_name}'"
-    
+
     sql = f"""
     SELECT test_results.id::VARCHAR(50),
         column_names AS column_name,
