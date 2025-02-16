@@ -2,9 +2,11 @@ import logging
 import time
 import typing
 
+import pandas as pd
 import streamlit as st
 from streamlit_extras.no_default_selectbox import selectbox
 
+import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.table_group_service as table_group_service
@@ -58,9 +60,9 @@ class TestDefinitionsPage(Page):
         testgen.flex_row_end(disposition_column)
 
         with table_filter_column:
-            table_options = run_table_lookup_query(table_group["id"])
+            columns_df = get_test_suite_columns(test_suite_id)
             table_name = testgen.select(
-                options=table_options,
+                options=list(columns_df["table_name"].unique()),
                 value_column="table_name",
                 default_value=table_name,
                 bind_to_query="table_name",
@@ -68,7 +70,7 @@ class TestDefinitionsPage(Page):
                 label="Table Name",
             )
         with column_filter_column:
-            column_options = get_column_names(table_group["id"], table_name)
+            column_options = list(columns_df.loc[columns_df["table_name"] == table_name]["column_name"].unique())
             column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
@@ -650,7 +652,7 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             default_value=None,
             label="Target Test Suite",
         )
-    
+
     movable_test_definitions = []
     if target_table_group_id and target_test_suite_id:
         collision_test_definitions = test_definition_service.get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
@@ -901,7 +903,7 @@ def show_test_defs_grid(
             with col_profile_button:
                 view_profiling_button(
                     selected_row["column_name"],
-                    selected_row["table_name"], 
+                    selected_row["table_name"],
                     str_table_groups_id,
                 )
 
@@ -954,15 +956,15 @@ def run_table_groups_lookup_query(str_project_code, str_connection_id=None, tabl
 
 
 @st.cache_data(show_spinner=False)
-def run_table_lookup_query(str_table_groups_id):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_table_lookup_query(str_schema, str_table_groups_id)
-
-
-@st.cache_data(show_spinner=False)
-def run_column_lookup_query(str_table_groups_id, str_table_name):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_column_lookup_query(str_schema, str_table_groups_id, str_table_name)
+def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT table_name, column_name
+    FROM {schema}.test_definitions
+    WHERE test_suite_id = '{test_suite_id}'
+    ORDER BY table_name, column_name;
+    """
+    return db.retrieve_data(sql)
 
 
 @st.cache_data(show_spinner=False)
@@ -971,7 +973,15 @@ def run_test_suite_lookup_query(str_table_groups_id, test_suite_name=None):
     return dq.run_test_suite_lookup_by_tgroup_query(str_schema, str_table_groups_id, test_suite_name)
 
 
-def get_column_names(str_table_groups_id, str_table_name):
-    df = run_column_lookup_query(str_table_groups_id, str_table_name)
-    lst_choices = df["column_name"].tolist()
-    return lst_choices
+def get_column_names(table_groups_id: str, table_name: str) -> list:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT column_name
+    FROM {schema}.data_column_chars
+    WHERE table_groups_id = '{table_groups_id}'::UUID
+        AND table_name = '{table_name}'
+        AND drop_date IS NULL
+    ORDER BY column_name
+    """
+    df = db.retrieve_data(sql)
+    return df["column_name"].tolist()
