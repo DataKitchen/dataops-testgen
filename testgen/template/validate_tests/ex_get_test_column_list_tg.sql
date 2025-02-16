@@ -10,6 +10,7 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'column'
          UNION
          -- FROM: column_name - referential scope (could be multiple columns)
@@ -21,6 +22,7 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          UNION
          -- FROM: groupby_names (should be referential)
@@ -32,6 +34,7 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope IN ('column', 'referential')
          UNION
          -- FROM: window_date_column (referential)
@@ -43,6 +46,7 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          UNION
          -- FROM: match_column_names (referential)
@@ -54,6 +58,7 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          UNION
          -- FROM: match_groupby_names (referential)
@@ -65,6 +70,17 @@
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = '{TEST_SUITE_ID}'
-         AND t.test_scope = 'referential' ) cols
---    WHERE column_name SIMILAR TO '[A-Za-z0-9_]+'
+         AND COALESCE(test_active, 'Y') = 'Y'
+         AND t.test_scope = 'referential'
+         UNION
+         SELECT cat_test_id,
+                schema_name              AS schema_name,
+                table_name               AS table_name,
+                '' AS column_name
+         FROM test_definitions d
+         INNER JOIN test_types t
+               ON d.test_type = t.test_type
+         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         AND COALESCE(test_active, 'Y') = 'Y'
+         AND t.test_scope = 'table' ) cols
 GROUP BY columns;
