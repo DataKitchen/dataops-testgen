@@ -45,11 +45,12 @@ def render(log_level: int = logging.INFO):
     if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
+                project=project_service.get_project_by_code(session.project)["project_name"],
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,
             )
-            
+
     application.router.run(hide_sidebar)
 
 

@@ -6,26 +6,27 @@
  * @property {string} label
  * @property {(string|null)} page
  * @property {(Array.<MenuItem>|null)} items
- * 
+ *
  * @typedef Version
  * @type {object}
  * @property {string} current
  * @property {string} latest
  * @property {string} schema
- * 
+ *
  * @typedef Menu
  * @type {object}
  * @property {Array.<MenuItem>} items
  * @property {Version} version
- * 
+ *
  * @typedef Project
  * @type {object}
  * @property {string} code
  * @property {string} name
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {Menu} menu
+ * @property {string} project
  * @property {string} username
  * @property {string} current_page
  * @property {string} logout_path
@@ -45,6 +46,11 @@ const Sidebar = (/** @type {Properties} */ props) => {
 
     return div(
         {class: 'menu'},
+        div(
+            { class: 'menu--project' },
+            div({ class: 'caption' }, 'Project'),
+            div(props.project),
+        ),
         () => {
             const menuItems = props.menu?.val.items || [];
             return div(
@@ -153,6 +159,11 @@ stylesheet.replace(`
     display: flex;
     flex-direction: column;
     height: calc(100% - 76px);
+}
+
+.menu > .menu--project {
+    padding: 0 20px;
+    margin-bottom: 16px;
 }
 
 .menu > .menu--username {
