@@ -22,7 +22,8 @@ import { Tree } from '../components/tree.js';
 import { EditableCard } from '../components/editable_card.js';
 import { Attribute } from '../components/attribute.js';
 import { Input } from '../components/input.js';
-import { TooltipIcon } from '../components/tooltip_icon.js';
+import { Icon } from '../components/icon.js';
+import { withTooltip } from '../components/tooltip.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
@@ -146,13 +147,10 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
         inherited: item[`table_${attribute.key}`], // Table values inherited by column
     }));
 
-    const InheritedIcon = () => TooltipIcon({
-        icon: 'layers',
-        iconSize: 18,
-        classes: 'text-disabled',
-        tooltip: 'Inherited from table tags',
-        tooltipPosition: 'top-right',
-    });
+    const InheritedIcon = () => withTooltip(
+        Icon({ size: 18, classes: 'text-disabled' }, 'layers'),
+        { text: 'Inherited from table tags', position: 'top-right'},
+    );
     const width = 300;
     const descriptionWidth = 932;
 

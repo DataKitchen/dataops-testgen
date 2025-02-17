@@ -14,7 +14,8 @@
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet } from '../utils.js';
-import { TooltipIcon } from './tooltip_icon.js';
+import { Icon } from './icon.js';
+import { withTooltip } from './tooltip.js';
 
 const { div,input, label, i } = van.tags;
 const defaultHeight = 32;
@@ -38,14 +39,12 @@ const Input = (/** @type Properties */ props) => {
         div(
             { class: 'flex-row fx-gap-1 text-caption' },
             props.label,
-            () => getValue(props.help) ? TooltipIcon({
-                icon: 'help',
-                iconSize: 16,
-                classes: 'text-disabled',
-                tooltip: props.help,
-                tooltipPosition: 'top',
-                tooltipWidth: 200,
-            }) : null,
+            () => getValue(props.help)
+                ? withTooltip(
+                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: props.help, position: 'top', width: 200 }
+                )
+                : null,
         ),
         () => getValue(props.icon) ? i(
             {
