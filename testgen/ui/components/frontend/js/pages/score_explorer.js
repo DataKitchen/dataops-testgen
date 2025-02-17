@@ -3,7 +3,7 @@
  * @type {object}
  * @property {string} field
  * @property {string} value
- * 
+ *
  * @typedef ScoreDefinition
  * @type {object}
  * @property {string} name
@@ -11,12 +11,12 @@
  * @property {boolean} cde_score
  * @property {string} category
  * @property {ScoreDefinitionFilter[]} filters
- * 
+ *
  * @typedef ScoreCardCategory
  * @type {object}
  * @property {string} label
  * @property {string} score
- * 
+ *
  * @typedef ScoreCard
  * @type {object}
  * @property {string} project_code
@@ -25,13 +25,13 @@
  * @property {string} cde_score
  * @property {string} profiling_score
  * @property {string} testing_score
- * @property {ScoreCardCategory[]} categories 
- * 
+ * @property {ScoreCardCategory[]} categories
+ *
  * @typedef ResultSet
  * @type {object}
  * @property {Array<string>} columns
  * @property {Array<object>} items
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {object} filter_values
@@ -181,7 +181,7 @@ const Toolbar = (
         const current = {
             name: getValue(scoreName),
             filters: getValue(filters)
-                .map((filter) => ({ ...filter, value: getValue(filter.value) }))    
+                .map((filter) => ({ ...filter, value: getValue(filter.value) }))
                 .filter((f) => f.field && f.value),
             category: getValue(displayCategory) ? getValue(selectedCategory) : null,
             total_score: getValue(displayTotalScore),
@@ -374,7 +374,7 @@ const FilterFieldSelector = (/** @type string[] */ options, /** @type string */ 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .score-explorer {
-    min-height: 600px;
+    min-height: 1100px;
 }
 
 .score-explorer--toolbar {

@@ -4,7 +4,7 @@
  * @property {string} label
  * @property {string} value
  * @property {boolean} selected
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string?} id
@@ -74,7 +74,7 @@ const Select = (/** @type {Properties} */ props) => {
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
             onclick: () => {
-                if (!props.disabled || !props.disabled.val) {
+                if (!getValue(props.disabled)) {
                     opened.val = true;
                 }
             },
@@ -174,6 +174,8 @@ stylesheet.replace(`
     background: var(--select-portal-background);
     box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     min-height: 40px;
+    max-height: 400px;
+    overflow: auto;
     z-index: 99;
 }
 
