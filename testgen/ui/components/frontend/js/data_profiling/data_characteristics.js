@@ -1,6 +1,6 @@
 /**
  * @import { Column, Table } from './data_profiling_utils.js';
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {boolean?} scores
@@ -12,7 +12,7 @@ import { Attribute } from '../components/attribute.js';
 import { ScoreMetric } from '../components/score_metric.js';
 import { formatTimestamp } from '../display_utils.js';
 import { loadStylesheet } from '../utils.js';
-import { COLUMN_ICONS } from './data_profiling_utils.js';
+import { getColumnIcon } from './data_profiling_utils.js';
 
 const { div, span, i } = van.tags;
 
@@ -54,7 +54,7 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
                 attributes.map(({ key, label }) => {
                     let value = item[key];
                     if (key === 'column_type') {
-                        const { icon, iconSize } = COLUMN_ICONS[item.general_type || 'X'];
+                        const { icon, iconSize } = getColumnIcon(item);
                         value = div(
                             { class: 'flex-row' },
                             i(

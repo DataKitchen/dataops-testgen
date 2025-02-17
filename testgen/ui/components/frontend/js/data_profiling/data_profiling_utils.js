@@ -17,7 +17,7 @@
  * @property {string} test_suite
  * @property {string} test_run_id
  * @property {number} test_run_date
- * 
+ *
  * @typedef Column
  * @type {object}
  * @property {string} id
@@ -35,7 +35,7 @@
  * @property {number?} last_mod_date
  * @property {number?} drop_date
  * * Column Tags
- * @property {string?} description 
+ * @property {string?} description
  * @property {boolean?} critical_data_element
  * @property {string?} data_source
  * @property {string?} source_system
@@ -171,6 +171,12 @@ const COLUMN_ICONS = {
     T: { icon: 'calendar_clock', iconSize: 20 },
     X: { icon: 'question_mark', iconSize: 18 },
 };
+const BOOLEAN_TYPE = 'Boolean';
+
+const getColumnIcon = (/** @type Column */ column) => {
+    const type = column.functional_data_type === BOOLEAN_TYPE ? 'B' : (column.general_type || 'X');
+    return COLUMN_ICONS[type];
+};
 
 const LatestProfilingLink = (/** @type Table | Column */ item) => {
     let text = 'as of latest profiling run on ';
@@ -206,4 +212,4 @@ const LatestProfilingLink = (/** @type Table | Column */ item) => {
     );
 }
 
-export { TABLE_ICON, COLUMN_ICONS, LatestProfilingLink };
+export { TABLE_ICON, getColumnIcon, LatestProfilingLink };

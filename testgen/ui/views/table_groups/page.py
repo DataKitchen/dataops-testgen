@@ -376,7 +376,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     max_chars=40,
                     value=empty_if_null(selected_table_group["transform_level"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting",
+                    help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)",
                 ),
                 "data_product": tags_right_column.text_input(
                     label="Data Product",

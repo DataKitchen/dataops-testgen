@@ -14,6 +14,7 @@ LOGOUT_PATH = "logout"
 
 def sidebar(
     key: str = SIDEBAR_KEY,
+    project: str | None = None,
     username: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
@@ -31,6 +32,7 @@ def sidebar(
     component(
         id_="sidebar",
         props={
+            "project": project,
             "username": username,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,

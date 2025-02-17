@@ -1,20 +1,20 @@
 /**
  * @import { Score } from '../components/score_card.js';
- * 
+ *
  * @typedef Dimension
  * @type {object}
  * @property {string} label
  * @property {number} score
- * 
+ *
  * @typedef ResultSet
  * @type {object}
  * @property {Array<string>} columns
  * @property {Array<object>} items
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
@@ -97,7 +97,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-details {
-    min-height: 500px;
+    min-height: 900px;
 }
 `);
 

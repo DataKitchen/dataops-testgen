@@ -1,6 +1,6 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
- * 
+ *
  * @typedef ColumnPath
  * @type {object}
  * @property {string} column_id
@@ -8,9 +8,10 @@
  * @property {string} column_name
  * @property {string} table_name
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
+ * @property {string} functional_data_type
  * @property {number} column_drop_date
  * @property {number} table_drop_date
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {ColumnPath[]} columns
@@ -21,13 +22,14 @@ import { Tree } from '../components/tree.js';
 import { EditableCard } from '../components/editable_card.js';
 import { Attribute } from '../components/attribute.js';
 import { Input } from '../components/input.js';
-import { TooltipIcon } from '../components/tooltip_icon.js';
+import { Icon } from '../components/icon.js';
+import { withTooltip } from '../components/tooltip.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
-import { COLUMN_ICONS, TABLE_ICON, LatestProfilingLink } from '../data_profiling/data_profiling_utils.js';
+import { getColumnIcon, TABLE_ICON, LatestProfilingLink } from '../data_profiling/data_profiling_utils.js';
 import { RadioGroup } from '../components/radio_group.js';
 
 const { div, h2, span, i } = van.tags;
@@ -45,7 +47,8 @@ const DataCatalog = (/** @type Properties */ props) => {
         } catch { }
 
         const tables = {};
-        columns.forEach(({ column_id, table_id, column_name, table_name, general_type, column_drop_date, table_drop_date }) => {
+        columns.forEach((item) => {
+            const { column_id, table_id, column_name, table_name, column_drop_date, table_drop_date } = item;
             if (!tables[table_id]) {
                 tables[table_id] = {
                     id: table_id,
@@ -59,7 +62,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                 id: column_id,
                 label: column_name,
                 classes: column_drop_date ? 'text-disabled' : '',
-                ...COLUMN_ICONS[general_type || 'X'],
+                ...getColumnIcon(item),
             });
         });
         return Object.values(tables);
@@ -79,7 +82,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         Tree({
             nodes: treeNodes,
             // Use .rawVal, so only initial value from query params is passed to tree
-            selected: selectedItem.rawVal?.id,
+            selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
             classes: 'tg-dh--tree',
         }),
         () => {
@@ -127,36 +130,33 @@ const DataCatalog = (/** @type Properties */ props) => {
 
 const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) => {
     const attributes = [
-        'description',
-        'critical_data_element',
-        'data_source',
-        'source_system',
-        'source_process',
-        'business_domain',
-        'stakeholder_group',
-        'transform_level',
-        'aggregation_level',
-        'data_product',
-    ].map(key => ({
-        key,
-        label: key.replaceAll('_', ' '),
-        state: van.state(item[key]),
-        inherited: item[`table_${key}`], // Table values inherited by column 
+        { key: 'description' },
+        { key: 'critical_data_element' },
+        { key: 'data_source', help: 'Original source of the dataset' },
+        { key: 'source_system', help: 'Enterprise system source for the dataset' },
+        { key: 'source_process', help: 'Process, program, or data flow that produced the dataset' },
+        { key: 'business_domain', help: 'Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing' },
+        { key: 'stakeholder_group', help: 'Data owners or stakeholders responsible for the dataset' },
+        { key: 'transform_level', help: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)' },
+        { key: 'aggregation_level', help: 'Data granularity of the dataset, e.g. atomic, historical, snapshot, aggregated, time-rollup, rolling, summary' },
+        { key: 'data_product', help: 'Data domain that comprises the dataset' },
+    ].map(attribute => ({
+        ...attribute,
+        label: attribute.key.replaceAll('_', ' '),
+        state: van.state(item[attribute.key]),
+        inherited: item[`table_${attribute.key}`], // Table values inherited by column
     }));
 
-    const InheritedIcon = () => TooltipIcon({
-        icon: 'layers',
-        iconSize: 18,
-        classes: 'text-disabled',
-        tooltip: 'Inherited from table tags',
-        tooltipPosition: 'top-right',
-    });
+    const InheritedIcon = () => withTooltip(
+        Icon({ size: 18, classes: 'text-disabled' }, 'layers'),
+        { text: 'Inherited from table tags', position: 'top-right'},
+    );
     const width = 300;
     const descriptionWidth = 932;
 
     const content = div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, state, inherited }) => {
+        attributes.map(({ key, label, help, state, inherited }) => {
             let value = state.rawVal ?? inherited;
             const isInherited = item.type === 'column' && state.rawVal === null;
 
@@ -182,13 +182,14 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
                     value,
                 );
             }
-            return Attribute({ label, value, width: key === 'description' ? descriptionWidth : width });
+            return Attribute({ label, help, value, width: key === 'description' ? descriptionWidth : width });
         }),
     );
 
-    const editingContent = div(
+    // Define as function so the block is re-rendered with reset values when re-editing after a cancel
+    const editingContent = () => div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, state, inherited }) => {
+        attributes.map(({ key, label, help, state, inherited }) => {
             if (key === 'critical_data_element') {
                 const options = [
                     { label: 'Yes', value: true },
@@ -205,7 +206,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
             };
 
             return Input({
-                label,
+                label, help,
                 width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
                 placeholder: inherited ? `Inherited: ${inherited}` : null,
@@ -217,9 +218,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
 
     return EditableCard({
         title: `${item.type} Tags `,
-        content,
-        // Pass as function so the block is re-rendered with reset values when re-editing after a cancel
-        editingContent: () => editingContent,
+        content, editingContent,
         onSave: () => {
             const payload = attributes.reduce((object, { key, state }) => {
                 object[key] = state.rawVal;

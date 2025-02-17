@@ -137,7 +137,7 @@ class TableGroupForm(BaseForm, ManualRender):
         default="",
         st_kwargs_label="Transform Level",
         st_kwargs_max_chars=40,
-        st_kwargs_help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting",
+        st_kwargs_help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)",
     )
     data_product: str = Field(
         default="",
