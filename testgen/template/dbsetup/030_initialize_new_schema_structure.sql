@@ -363,7 +363,9 @@ CREATE TABLE data_structure_log (
 );
 
 CREATE TABLE data_table_chars (
-   table_id              UUID DEFAULT gen_random_uuid(),
+   table_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dtc_id
+         PRIMARY KEY,
    table_groups_id       UUID,
    schema_name           VARCHAR(50),
    table_name            VARCHAR(120),
@@ -391,7 +393,9 @@ CREATE TABLE data_table_chars (
 );
 
 CREATE TABLE data_column_chars (
-   column_id              UUID DEFAULT gen_random_uuid(),
+   column_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dcc_id
+         PRIMARY KEY,
    table_id               UUID,
    table_groups_id        UUID,
    schema_name            VARCHAR(50),
@@ -703,6 +707,9 @@ CREATE UNIQUE INDEX uix_tg_id
 CREATE INDEX ix_tg_cid
    ON table_groups(connection_id);
 
+CREATE UNIQUE INDEX idx_tg_last_profile
+  ON table_groups (last_complete_profile_run_id)
+  WHERE last_complete_profile_run_id IS NOT NULL;
 
 -- Index Profile Results - ORIGINAL -- still relevant?
 CREATE INDEX profile_results_tgid_sn_tn_cn
@@ -715,6 +722,10 @@ CREATE UNIQUE INDEX uix_ts_id
 
 CREATE INDEX ix_ts_con
    ON test_suites(connection_id);
+
+CREATE UNIQUE INDEX idx_ts_last_run
+  ON test_suites (last_complete_test_run_id)
+  WHERE last_complete_test_run_id IS NOT NULL;
 
 -- Index test_definitions
 CREATE INDEX ix_td_ts_fk
@@ -796,11 +807,24 @@ CREATE INDEX ix_pro_pair_prun
 
 -- Index profile_anomaly_results
 CREATE INDEX ix_ares_prun
-   ON profile_anomaly_results(profile_run_id);
+   ON profile_anomaly_results(profile_run_id, table_name, column_name);
 
 CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
+-- Index data_table_chars
+CREATE INDEX idx_dtc_tgid_table
+  ON data_table_chars (table_groups_id, table_name);
+
+-- Index data_column_chars
+CREATE INDEX idx_dcc_tg_table_column
+  ON data_column_chars (table_groups_id, table_name, column_name);
+
+-- Conditional Index for dq_scoring views
+CREATE INDEX idx_test_results_filter_join
+  ON test_results (test_run_id, table_groups_id, table_name, column_names)
+  WHERE dq_prevalence IS NOT NULL
+    AND (disposition IS NULL OR disposition = 'Confirmed');
 
 -- Conditional index for Observability Export - ORIGINAL
 CREATE INDEX cix_tr_pc_ts

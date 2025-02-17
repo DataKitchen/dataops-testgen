@@ -314,7 +314,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND avg_length <= 20
   AND avg_embedded_spaces BETWEEN 0.9 AND 2.0
-  AND ( column_name ~ '(approver|full|contact|emp|employee|hcp|manager|mgr_|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)(name|nm)$'
+  AND ( column_name ~ '(approver|full|contact|emp|employee|hcp|manager|mgr|owner|party|person|preferred|rep|reviewer|salesperson|spouse)(_| |)(name|nm)$'
    OR   column_name IN ('name', 'nm') );
 
 -- Assign First Name
