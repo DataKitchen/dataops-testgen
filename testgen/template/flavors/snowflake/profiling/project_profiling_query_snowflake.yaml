@@ -22,23 +22,21 @@ strTemplate03_ADN: MIN(LEN("{COL_NAME}"))  AS min_length,
 strTemplate03_else:  NULL as min_length,
   NULL as max_length,
   NULL as avg_length,
-strTemplate04_A:  SUM(CASE
-        WHEN REGEXP_LIKE(TRIM("{COL_NAME}"::VARCHAR), '^0(\.0*)?$') THEN 1 ELSE 0
+strTemplate04_A:  COUNT(CASE
+        WHEN REGEXP_LIKE(TRIM("{COL_NAME}"::VARCHAR), '^0(\.0*)?$') THEN 1
       END)  AS zero_value_ct,
 strTemplate04_N:  SUM( 1 - ABS(SIGN("{COL_NAME}")) )::BIGINT AS zero_value_ct,
 strTemplate04_else: NULL as zero_value_ct,
 strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) as distinct_std_value_ct,
-  SUM(CASE
+  COUNT(CASE
         WHEN "{COL_NAME}" = '' THEN 1
-                             ELSE 0
       END)  AS zero_length_ct,
-  SUM( CASE
+  COUNT( CASE
          WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
-                                              ELSE 0
        END )  AS lead_space_ct,
-  SUM( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 ELSE 0 END ) as quoted_value_ct,
-  SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 ELSE 0 END ) as includes_digit_ct,
-  SUM( CASE
+  COUNT( CASE WHEN "{COL_NAME}"::VARCHAR ILIKE '"%"' OR "{COL_NAME}"::VARCHAR ILIKE '''%''' THEN 1 END ) as quoted_value_ct,
+  COUNT( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '.*[0-9].*') THEN 1 END ) as includes_digit_ct,
+  COUNT( CASE
          WHEN "{COL_NAME}" IN ('.', '?', ' ') THEN 1
          WHEN LOWER("{COL_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP '9{2,}'
               OR LOWER("{COL_NAME}"::VARCHAR) REGEXP 'x{2,}' OR LOWER("{COL_NAME}"::VARCHAR) REGEXP 'z{2,}' THEN 1
@@ -48,24 +46,12 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
                                     '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1
          WHEN LOWER("{COL_NAME}") IN ('[blank]','[error]','[missing]','[tbd]',
                                     '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
-                                                                                   ELSE 0
        END )   AS filled_value_ct,
   LEFT(MIN(NULLIF("{COL_NAME}", '')), 100)  AS min_text,
   LEFT(MAX(NULLIF("{COL_NAME}", '')), 100)  AS max_text,
-  SUM(CASE
-        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-        WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-        ELSE 0
-      END) AS upper_case_ct,
-  SUM(CASE
-        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') = "{COL_NAME}" THEN 1
-        ELSE 0
-      END) AS lower_case_ct,
-  SUM(CASE
-        WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-        ELSE 0
-      END) AS non_alpha_ct,
+  COUNT( CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 END) AS upper_case_ct,
+  COUNT( CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 END) AS lower_case_ct,
+  COUNT( CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 END) AS non_alpha_ct,
   SUM(<%IS_NUM;LEFT("{COL_NAME}", 31)%>)  AS numeric_ct,
   SUM(<%IS_DATE;LEFT("{COL_NAME}", 26)%>)  AS date_ct,
   CASE
@@ -74,8 +60,8 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
     WHEN CAST(SUM(CASE WHEN "{COL_NAME}" IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'STATE_USA'
     WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^([\\+]1 |1-|)[\\+]?[(]?[0-9]{3}[)][ ]?[-\\s\\.]?[0-9]{3}[-\\s\\.]?[0-9]{4,6}$')
-      OR REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^([\+]1 |1-|)[2-9][01][0-9][-| ]?[0-9]{3}[-| ]?[0-9]{4}$')
-                        THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'PHONE_USA'
+      OR REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^([\+]1 |1-|)[2-9][01][0-9][-\\s\\.]?[0-9]{3}[-\\s\\.]?[0-9]{4}$')
+                        THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'PHONE_USA'
     WHEN CAST(SUM( CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
     WHEN CAST(SUM( CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
@@ -154,37 +140,14 @@ strTemplate10_else: NULL as fractional_sum,
 
 strTemplate11_D:  GREATEST(MIN("{COL_NAME}"), '0001-01-01') as min_date,
   MAX("{COL_NAME}") as max_date,
-  SUM(CASE
-        WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 12 THEN 1
-                                                            ELSE 0
-      END) AS before_1yr_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 60 THEN 1
-                                                            ELSE 0
-      END) AS before_5yr_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 240 THEN 1
-                                                              ELSE 0
-      END) AS before_20yr_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 1200 THEN 1
-                                                                ELSE 0
-      END) AS before_100yr_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('DAY', "{COL_NAME}", '{RUN_DATE}') BETWEEN 0 AND 365 THEN 1
-                                                                         ELSE 0
-      END) AS within_1yr_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('DAY', "{COL_NAME}", '{RUN_DATE}') BETWEEN 0 AND 30 THEN 1
-                                                                        ELSE 0
-      END) AS within_1mo_date_ct,
-  SUM(CASE
-        WHEN "{COL_NAME}" > '{RUN_DATE}' THEN 1 ELSE 0
-      END) AS future_date_ct,
-  SUM(CASE
-        WHEN DATEDIFF('MON', '{RUN_DATE}', "{COL_NAME}") > 240 THEN 1
-                                                               ELSE 0
-      END) AS distant_future_date_ct,
+  COUNT( CASE WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 12 THEN 1 END) AS before_1yr_date_ct,
+  COUNT( CASE WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 60 THEN 1 END) AS before_5yr_date_ct,
+  COUNT( CASE WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 240 THEN 1 END) AS before_20yr_date_ct,
+  COUNT( CASE WHEN DATEDIFF('MON', "{COL_NAME}", '{RUN_DATE}') > 1200 THEN 1 END) AS before_100yr_date_ct,
+  COUNT( CASE WHEN DATEDIFF('DAY', "{COL_NAME}", '{RUN_DATE}') BETWEEN 0 AND 365 THEN 1 END) AS within_1yr_date_ct,
+  COUNT( CASE WHEN DATEDIFF('DAY', "{COL_NAME}", '{RUN_DATE}') BETWEEN 0 AND 30 THEN 1 END) AS within_1mo_date_ct,
+  COUNT( CASE WHEN "{COL_NAME}" > '{RUN_DATE}' THEN 1 END) AS future_date_ct,
+  COUNT( CASE WHEN DATEDIFF('MON', '{RUN_DATE}', "{COL_NAME}") > 240 THEN 1 END) AS distant_future_date_ct,
   COUNT(DISTINCT DATEDIFF(day, "{COL_NAME}", '{RUN_DATE}' ) ) as date_days_present,
   COUNT(DISTINCT DATEDIFF(week, "{COL_NAME}", '{RUN_DATE}' ) ) as date_weeks_present,
   COUNT(DISTINCT DATEDIFF(month, "{COL_NAME}", '{RUN_DATE}' ) ) as date_months_present,

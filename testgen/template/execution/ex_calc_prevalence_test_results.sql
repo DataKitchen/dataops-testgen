@@ -17,7 +17,7 @@ INNER JOIN data_table_chars tc
  WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
    AND test_results.id = r.id;
 
--- Update to calculated prevalence for all fails/warnings - result_code = 0
+-- PROFILED COLUMN TESTS:  Update to calculated prevalence for all fails/warnings - result_code = 0
 WITH result_calc
    AS ( SELECT r.id,
                tt.dq_score_risk_factor::FLOAT as risk_calc,
@@ -54,6 +54,35 @@ WITH result_calc
          WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
            AND result_code = 0
            AND r.result_measure IS NOT NULL
+           AND tt.test_scope = 'column'
+           AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
+UPDATE test_results
+   SET dq_record_ct = c.dq_record_ct,
+       dq_prevalence = LEAST(1.0, risk_calc * fn_eval(c.built_score_prevalance_formula))
+  FROM result_calc c
+ WHERE test_results.id = c.id;
+
+-- UNPROFILED TESTS (non-column): Update to calculated prevalence for all fails/warnings - result_code = 0
+WITH result_calc
+   AS ( SELECT r.id,
+               tt.dq_score_risk_factor::FLOAT as risk_calc,
+               REPLACE( REPLACE( REPLACE(
+                 tt.dq_score_prevalence_formula,
+                 '{RESULT_MEASURE}',      COALESCE(r.result_measure::VARCHAR, '')),
+                 '{THRESHOLD_VALUE}',     COALESCE(r.threshold_value::VARCHAR, '')),
+                 '{RECORD_CT}',           COALESCE(r.dq_record_ct::VARCHAR, tc.record_ct::VARCHAR, ''))
+                 as built_score_prevalance_formula,
+               COALESCE(r.dq_record_ct, tc.record_ct) as dq_record_ct
+          FROM test_results r
+          INNER JOIN test_types tt
+                ON r.test_type = tt.test_type
+          INNER JOIN data_table_chars tc
+                ON (r.table_groups_id = tc.table_groups_id
+             AND r.table_name ILIKE tc.table_name)
+         WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
+           AND result_code = 0
+           AND r.result_measure IS NOT NULL
+           AND tt.test_scope <> 'column'
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
 UPDATE test_results
    SET dq_record_ct = c.dq_record_ct,
