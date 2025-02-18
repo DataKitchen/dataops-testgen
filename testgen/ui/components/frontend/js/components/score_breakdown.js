@@ -26,12 +26,16 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
                     });
                 },
-                // span('for'),
-                // () => Select({
-                //     label: '',
-                //     options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
-                //     onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
-                // }),
+                span('for'),
+                () => {
+                    const selectedScoreType = getValue(scoreType);
+                    return Select({
+                        label: '',
+                        value: selectedScoreType,
+                        options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
+                        onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+                    });
+                },
             ),
             () => ['table_name', 'column_name'].includes(getValue(category)) ? span('* Top 100 values by impact') : '',
         ),
