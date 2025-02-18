@@ -31,7 +31,7 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
   COUNT( CASE WHEN "{COL_NAME}" ILIKE '"%"' OR "{COL_NAME}" ILIKE '''%''' THEN 1 END ) as quoted_value_ct,
   COUNT( CASE WHEN "{COL_NAME}" ~ '[0-9]' THEN 1 END ) as includes_digit_ct,
   COUNT( CASE
-         WHEN "{COL_NAME}" IN ('.', '?', ' ') THEN 1
+         WHEN LENGTH("{COL_NAME}") > 0 AND "{COL_NAME}" IN ('.', '?', ' ') THEN 1
          WHEN LOWER("{COL_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1
          WHEN LOWER("{COL_NAME}") IN ('blank','error','missing','tbd',
                                     'n/a','#na','none','null','unknown')           THEN 1
