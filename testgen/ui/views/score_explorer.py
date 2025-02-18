@@ -118,6 +118,7 @@ class ScoreExplorerPage(Page):
             on_change_handlers={
                 "ScoreUpdated": set_score_definition,
                 "CategoryChanged": set_breakdown_category,
+                "ScoreTypeChanged": set_breakdown_score_type,
                 "DrilldownChanged": set_breakdown_drilldown,
                 "IssueReportsExported": export_issue_reports,
                 "ScoreDefinitionSaved": save_score_definition,
@@ -144,6 +145,10 @@ def set_score_definition(definition: dict | None) -> None:
 
 def set_breakdown_category(category: str) -> None:
     Router().set_query_params({"breakdown_category": category})
+
+
+def set_breakdown_score_type(score_type: str) -> None:
+    Router().set_query_params({"breakdown_score_type": score_type})
 
 
 def set_breakdown_drilldown(drilldown: str | None) -> None:
