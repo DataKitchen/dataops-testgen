@@ -24,7 +24,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}';
 UPDATE profile_results
 SET functional_data_type =
         CASE WHEN distinct_value_ct = 1
-                AND (((value_ct :: float - coalesce(filled_value_ct, 0::bigint) :: float)/record_ct :: float) :: float *100.00 ) > 75
+                AND (((value_ct - coalesce(filled_value_ct, 0) - coalesce(zero_length_ct, 0))::float/record_ct::float) * 100.00 ) > 75
                     -- this tells us how much actual values we have filled in; threshold -> if there is only 1 value and it's 75% of the records -> then it's a constant
             THEN 'Constant'
         ELSE functional_data_type END
