@@ -10,9 +10,10 @@
  * @property {number?} level
  * @property {boolean?} expanded
  * @property {boolean?} hidden
- * 
+ *
  * @typedef Properties
  * @type {object}
+ * @property {string} id
  * @property {TreeNode[]} nodes
  * @property {string} selected
  * @property {string} classes
@@ -42,7 +43,10 @@ const Tree = (/** @type Properties */ props) => {
     });
 
     return div(
-        { class: () => `flex-column ${getValue(props.classes)}` },
+        {
+            id: props.id,
+            class: () => `flex-column ${getValue(props.classes)}`,
+        },
         div(
             { class: 'flex-row fx-gap-1 tg-tree--actions' },
             Input({
@@ -174,6 +178,10 @@ stylesheet.replace(`
 
 .tg-tree--actions {
     margin: 4px;
+}
+
+.tg-tree--actions > label {
+    flex: auto;
 }
 
 .tg-tree--nodes {

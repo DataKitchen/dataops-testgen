@@ -34,6 +34,10 @@ import { RadioGroup } from '../components/radio_group.js';
 
 const { div, h2, span, i } = van.tags;
 
+// https://www.sam.today/blog/html5-dnd-globe-icon
+const EMPTY_IMAGE = new Image(1, 1);
+EMPTY_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+
 const DataCatalog = (/** @type Properties */ props) => {
     loadStylesheet('data-catalog', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
@@ -77,14 +81,46 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     });
 
+    const treeDomId = 'data-catalog-tree';
+    const dragState = van.state(null);
+    const dragConstraints = { min: 250, max: 600 };
+    const dragResize = (event) => {
+        // https://stackoverflow.com/questions/36308460/why-is-clientx-reset-to-0-on-last-drag-event-and-how-to-solve-it
+        if (event.screenX && dragState.val) {
+            const dragWidth = dragState.val.startWidth + event.screenX - dragState.val.startX;
+            const constrainedWidth = Math.min(dragConstraints.max, Math.max(dragWidth, dragConstraints.min));
+            document.getElementById(treeDomId).style.minWidth = `${constrainedWidth}px`;
+        }
+    };
+
     return div(
-        { class: 'flex-row tg-dh' },
+        {
+            class: 'flex-row tg-dh',
+            ondragover: (event) => event.preventDefault(),
+        },
         Tree({
+            id: treeDomId,
             nodes: treeNodes,
             // Use .rawVal, so only initial value from query params is passed to tree
             selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
             classes: 'tg-dh--tree',
         }),
+        div(
+            {
+                class: 'tg-dh--dragger',
+                draggable: true,
+                ondragstart: (event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
+                    dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
+                },
+                ondragend: (event) => {
+                    dragResize(event);
+                    dragState.val = null;
+                },
+                ondrag: van.derive(() => dragState.val ? dragResize : null),
+            },
+        ),
         () => {
             const item = selectedItem.val;
             if (item) {
@@ -239,6 +275,11 @@ stylesheet.replace(`
     align-items: stretch;
 }
 
+.tg-dh--dragger {
+    min-width: 16px;
+    cursor: col-resize;
+}
+
 .tg-dh--tree {
     min-width: 250px;
     border-radius: 8px;
@@ -247,7 +288,7 @@ stylesheet.replace(`
 }
 
 .tg-dh--details {
-    padding: 8px 0 0 20px;
+    padding-top: 8px;
     overflow: auto;
     flex-grow: 1;
 }
