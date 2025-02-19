@@ -207,6 +207,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
     profile_sample_percent = 30
     profile_sample_min_count = 15000
     profiling_delay_days = 0
+    profile_flag_cdes = True
 
     with table_groups_settings_tab:
         selected_table_group = table_group if mode == "edit" else None
@@ -216,7 +217,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
             table_group_id = selected_table_group["id"]
             table_groups_name = selected_table_group["table_groups_name"]
             table_group_schema = selected_table_group["table_group_schema"]
-            profiling_table_set = selected_table_group["profiling_table_set"]
+            profiling_table_set = selected_table_group["profiling_table_set"] or ""
             profiling_include_mask = selected_table_group["profiling_include_mask"]
             profiling_exclude_mask = selected_table_group["profiling_exclude_mask"]
             profile_id_column_mask = selected_table_group["profile_id_column_mask"]
@@ -225,6 +226,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
             profile_sample_percent = int(selected_table_group["profile_sample_percent"])
             profile_sample_min_count = int(selected_table_group["profile_sample_min_count"])
             profiling_delay_days = int(selected_table_group["profiling_delay_days"])
+            profile_flag_cdes = selected_table_group["profile_flag_cdes"]
 
         left_column, right_column = st.columns([0.50, 0.50])
 
@@ -232,9 +234,10 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
         with profile_sampling_expander:
             expander_left_column, expander_right_column = st.columns([0.50, 0.50])
 
-        provenance_expander = st.expander("Data Provenance (Optional)", expanded=False)
-        with provenance_expander:
-            provenance_left_column, provenance_right_column = st.columns([0.50, 0.50])
+        table_group_tags_expander = st.expander("Table Group Tags", expanded=False)
+        with table_group_tags_expander:
+            full_width_column = st.container()
+            tags_left_column, tags_right_column = st.columns([0.5, 0.5], vertical_alignment="bottom")
 
         with st.form("Table Group Add / Edit", clear_on_submit=True, border=False):
             entity = {
@@ -290,7 +293,16 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     value=profiling_delay_days,
                     help="The number of days to wait before new profiling will be available to generate tests",
                 ),
-                "profile_use_sampling": left_column.toggle(
+                "profile_flag_cdes": left_column.checkbox(
+                    "Detect critical data elements (CDEs) during profiling",
+                    value=profile_flag_cdes,
+                ),
+                "add_scorecard_definition": right_column.checkbox(
+                    "Add scorecard for table group",
+                    value=True,
+                    help="Add a new scorecard to the Quality Dashboard upon creation of this table group",
+                ) if mode != "edit" else None,
+                "profile_use_sampling": left_column.checkbox(
                     "Use profile sampling",
                     value=profile_use_sampling,
                     help="Toggle on to base profiling on a sample of records instead of the full table",
@@ -311,58 +323,67 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     value=profile_sample_min_count,
                     help="The minimum number of records to be included in any sample (if available)",
                 ),
-                "data_source": provenance_left_column.text_input(
+                "description": full_width_column.text_input(
+                    label="Description",
+                    max_chars=1000,
+                    value=empty_if_null(selected_table_group["description"])
+                    if mode == "edit" and selected_table_group is not None else "",
+                ),
+                "data_source": tags_left_column.text_input(
                     label="Data Source",
                     max_chars=40,
                     value=empty_if_null(selected_table_group["data_source"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="Original source of all tables in this dataset. This can be overridden at the table level. (Optional)",
+                    help="Original source of the dataset",
                 ),
-                "source_system": provenance_left_column.text_input(
-                    label="System of Origin",
+                "source_system": tags_right_column.text_input(
+                    label="Source System",
                     max_chars=40,
                     value=empty_if_null(selected_table_group["source_system"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="Enterprise system source for all tables in this dataset. "
-                            "This can be overridden at the table level. (Optional)",
+                    help="Enterprise system source for the dataset",
                 ),
-                "business_domain": provenance_left_column.text_input(
-                    label="Business Domain",
-                    max_chars=40,
-                    value=empty_if_null(selected_table_group["business_domain"])
-                        if mode == "edit" and selected_table_group is not None else "",
-                    help="Business division responsible for all tables in this dataset. "
-                            "e.g. Finance, Sales, Manufacturing. (Optional)",
-                ),
-                "data_location": provenance_left_column.text_input(
-                    label="Location",
-                    max_chars=40,
-                    value=empty_if_null(selected_table_group["data_location"])
-                        if mode == "edit" and selected_table_group is not None else "",
-                    help="Physical or virtual location of all tables in this dataset. "
-                            "e.g. Headquarters, Cloud, etc. (Optional)",
-                ),
-                "transform_level": provenance_right_column.text_input(
-                    label="Transform Level",
-                    max_chars=40,
-                    value=empty_if_null(selected_table_group["transform_level"])
-                        if mode == "edit" and selected_table_group is not None else "",
-                    help="Data warehouse processing layer. "
-                            "Indicates the processing stage: e.g. Raw, Conformed, Processed, Reporting. (Optional)",
-                ),
-                "source_process": provenance_right_column.text_input(
+                "source_process": tags_left_column.text_input(
                     label="Source Process",
                     max_chars=40,
                     value=empty_if_null(selected_table_group["source_process"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="The process, program or data flow that produced this data. (Optional)",
+                    help="Process, program, or data flow that produced the dataset",
                 ),
-                "stakeholder_group": provenance_right_column.text_input(
+                "data_location": tags_right_column.text_input(
+                    label="Data Location",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["data_location"])
+                    if mode == "edit" and selected_table_group is not None else "",
+                    help="Physical or virtual location of the dataset, e.g., Headquarters, Cloud",
+                ),
+                "business_domain": tags_left_column.text_input(
+                    label="Business Domain",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["business_domain"])
+                    if mode == "edit" and selected_table_group is not None else "",
+                    help="Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing",
+                ),
+                "stakeholder_group": tags_right_column.text_input(
                     label="Stakeholder Group",
                     max_chars=40,
                     value=empty_if_null(selected_table_group["stakeholder_group"])
+                    if mode == "edit" and selected_table_group is not None else "",
+                    help="Data owners or stakeholders responsible for the dataset",
+                ),
+                "transform_level": tags_left_column.text_input(
+                    label="Transform Level",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["transform_level"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="Designator for data owners or stakeholders who are responsible for this data. (Optional)",
+                    help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)",
+                ),
+                "data_product": tags_right_column.text_input(
+                    label="Data Product",
+                    max_chars=40,
+                    value=empty_if_null(selected_table_group["data_product"])
+                        if mode == "edit" and selected_table_group is not None else "",
+                    help="Data domain that comprises the dataset"
                 ),
             }
 

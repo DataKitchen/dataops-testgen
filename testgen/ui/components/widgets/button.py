@@ -3,7 +3,7 @@ import typing
 from testgen.ui.components.utils.component import component
 
 ButtonType = typing.Literal["basic", "flat", "icon", "stroked"]
-ButtonColor = typing.Literal["basic", "primary"]
+ButtonColor = typing.Literal["basic", "primary", "warn"]
 TooltipPosition = typing.Literal["left", "right"]
 
 
@@ -12,6 +12,7 @@ def button(
     color: ButtonColor | None = None,
     label: str | None = None,
     icon: str | None = None,
+    icon_size: int | None = None,
     tooltip: str | None = None,
     tooltip_position: TooltipPosition = "left",
     on_click: typing.Callable[..., None] | None = None,
@@ -39,7 +40,7 @@ def button(
         props.update({"label": label})
 
     if icon:
-        props.update({"icon": icon})
+        props.update({"icon": icon, "iconSize": icon_size})
 
     if tooltip:
         props.update({"tooltip": tooltip, "tooltipPosition": tooltip_position})

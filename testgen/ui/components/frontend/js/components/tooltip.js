@@ -8,6 +8,7 @@
  * @property {string} text
  * @property {boolean} show
  * @property {('top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left')?} position
+ * @property {number} width
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -21,18 +22,28 @@ const Tooltip = (/** @type Properties */ props) => {
     return span(
         {
             class: () => `tg-tooltip ${getValue(props.position) || defaultPosition} ${getValue(props.show) ? '' : 'hidden'}`,
-            style: () => `opacity: ${getValue(props.show) ? 1 : 0};`,
+            style: () => `opacity: ${getValue(props.show) ? 1 : 0}; max-width: ${getValue(props.width) || '400'}px;`,
         },
         props.text,
         div({ class: 'tg-tooltip--triangle' }),
     );
 };
 
+const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */ tooltipProps) => {
+    const showTooltip = van.state(false);
+    const tooltip = Tooltip({ ...tooltipProps, show: showTooltip });
+
+    component.onmouseenter = () => showTooltip.val = true;
+    component.onmouseleave = () => showTooltip.val = false;
+    component.appendChild(tooltip);
+
+    return component;
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-tooltip {
     width: max-content;
-    max-width: 400px;
     position: absolute;
     z-index: 1;
     border-radius: 4px;
@@ -154,4 +165,4 @@ stylesheet.replace(`
 }
 `);
 
-export { Tooltip };
+export { Tooltip, withTooltip };

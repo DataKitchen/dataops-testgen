@@ -2,12 +2,15 @@
  * @typedef Properties
  * @type {object}
  * @property {boolean} default
- * @property {string} expandLabel
- * @property {string} collapseLabel
+ * @property {string?} expandLabel
+ * @property {string?} collapseLabel
+ * @property {string?} style
+ * @property {Function?} onExpand
+ * @property {Function?} onCollapse
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span, i } = van.tags;
 
@@ -18,16 +21,18 @@ const ExpanderToggle = (/** @type Properties */ props) => {
         Streamlit.setFrameHeight(24);
     }
 
-    const expandedState = van.state(!!props.default.val);
-    const expandLabel = props.expandLabel.val || 'Expand';
-    const collapseLabel = props.collapseLabel.val || 'Collapse';
-    
+    const expandedState = van.state(!!props.default);
+    const expandLabel = getValue(props.expandLabel) || 'Expand';
+    const collapseLabel = getValue(props.collapseLabel) || 'Collapse';
+
     return div(
         {
             class: 'expander-toggle',
+            style: () => getValue(props.style) ?? '',
             onclick: () => {
                 expandedState.val = !expandedState.val;
-                Streamlit.sendData(expandedState.val);
+                const handler = (expandedState.val ? props.onExpand : props.onCollapse) ?? Streamlit.sendData;
+                handler(expandedState.val);
             }
         },
         span(

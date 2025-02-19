@@ -29,6 +29,21 @@ CREATE TABLE stg_functional_table_updates (
    table_type    VARCHAR(11)
 );
 
+CREATE TABLE stg_data_chars_updates (
+   project_code          VARCHAR(30),
+   table_groups_id       UUID,
+   run_date              TIMESTAMP,
+   schema_name           VARCHAR(120),
+   table_name            VARCHAR(120),
+   functional_table_type VARCHAR(50),
+   column_name           VARCHAR(120),
+   position              INTEGER,
+   general_type          VARCHAR(1),
+   column_type           VARCHAR(50),
+   functional_data_type  VARCHAR(50),
+   record_ct             BIGINT
+);
+
 CREATE TABLE projects (
    id                    UUID DEFAULT gen_random_uuid(),
    project_code          VARCHAR(30) NOT NULL
@@ -85,15 +100,18 @@ CREATE TABLE table_groups
     profile_sample_percent   VARCHAR(3) DEFAULT '30',
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0' ,
+    profile_flag_cdes        BOOLEAN DEFAULT TRUE,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
     profile_pair_rule_pct    INTEGER DEFAULT 95,
+    description              VARCHAR(1000),
     data_source              VARCHAR(40),
     source_system            VARCHAR(40),
-    data_location            VARCHAR(40),
     source_process           VARCHAR(40),
+    data_location            VARCHAR(40),
     business_domain          VARCHAR(40),
     stakeholder_group        VARCHAR(40),
     transform_level          VARCHAR(40),
+    data_product             VARCHAR(40),
     last_complete_profile_run_id UUID,
     dq_score_profiling       FLOAT,
     dq_score_testing         FLOAT
@@ -202,6 +220,7 @@ CREATE TABLE profile_results (
    dk_id                 BIGINT GENERATED ALWAYS AS IDENTITY,
 --       CONSTRAINT profile_results_dk_id_pk
 --          PRIMARY KEY,
+   column_id             UUID,
    project_code          VARCHAR(30),
    connection_id         BIGINT
       CONSTRAINT profile_results_connections_connection_id_fk
@@ -290,7 +309,8 @@ CREATE TABLE profile_anomaly_types (
    issue_likelihood    VARCHAR(50),  -- Potential, Likely, Certain
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
-   dq_score_risk_factor        TEXT
+   dq_score_risk_factor        TEXT,
+   dq_dimension        VARCHAR(50)
 );
 
 CREATE TABLE profile_anomaly_results (
@@ -343,11 +363,14 @@ CREATE TABLE data_structure_log (
 );
 
 CREATE TABLE data_table_chars (
-   table_id              UUID DEFAULT gen_random_uuid(),
+   table_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dtc_id
+         PRIMARY KEY,
    table_groups_id       UUID,
    schema_name           VARCHAR(50),
    table_name            VARCHAR(120),
    functional_table_type VARCHAR(50),
+   description           VARCHAR(1000),
    critical_data_element BOOLEAN,
    data_source           VARCHAR(40),
    source_system         VARCHAR(40),
@@ -356,26 +379,33 @@ CREATE TABLE data_table_chars (
    stakeholder_group     VARCHAR(40),
    transform_level       VARCHAR(40),
    aggregation_level     VARCHAR(40),
+   data_product          VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
+   last_refresh_date     TIMESTAMP,
    record_ct             BIGINT,
    column_ct             BIGINT,
-   data_point_ct         BIGINT,
+   data_point_ct         BIGINT GENERATED ALWAYS AS (record_ct * column_ct) STORED,
    last_complete_profile_run_id UUID,
+   last_profile_record_ct       BIGINT,
    dq_score_profiling    FLOAT,
    dq_score_testing      FLOAT
 );
 
 CREATE TABLE data_column_chars (
-   column_id              UUID DEFAULT gen_random_uuid(),
+   column_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dcc_id
+         PRIMARY KEY,
    table_id               UUID,
    table_groups_id        UUID,
    schema_name            VARCHAR(50),
    table_name             VARCHAR(120),
    column_name            VARCHAR(120),
+   ordinal_position       INTEGER,
    general_type           VARCHAR(1),
    column_type            VARCHAR(50),
    functional_data_type   VARCHAR(50),
+   description            VARCHAR(1000),
    critical_data_element  BOOLEAN,
    data_source            VARCHAR(40),
    source_system          VARCHAR(40),
@@ -384,6 +414,7 @@ CREATE TABLE data_column_chars (
    stakeholder_group      VARCHAR(40),
    transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
+   data_product           VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,
    drop_date              TIMESTAMP,
@@ -399,6 +430,8 @@ CREATE TABLE data_column_chars (
    warnings_7_days_prior  INTEGER,
    warnings_30_days_prior INTEGER,
    last_complete_profile_run_id UUID,
+   valid_profile_issue_ct BIGINT DEFAULT 0,
+   valid_test_issue_ct    BIGINT DEFAULT 0,
    dq_score_profiling     FLOAT,
    dq_score_testing       FLOAT
 );
@@ -611,6 +644,51 @@ CREATE TABLE tg_revision (
    revision INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS score_definitions (
+   id               UUID          DEFAULT gen_random_uuid() PRIMARY KEY,
+   project_code     VARCHAR(30)   CONSTRAINT score_definitions_projects_project_code_fk
+                                            REFERENCES projects (project_code)
+                                            ON DELETE CASCADE,
+
+  name              VARCHAR(100)  NOT NULL,
+  total_score       BOOLEAN       NOT NULL DEFAULT true,
+  cde_score         BOOLEAN       NOT NULL DEFAULT true,
+  category          VARCHAR(30)   DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS score_definition_filters (
+    id              UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
+    definition_id   UUID         CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
+                                    REFERENCES score_definitions (id)
+                                    ON DELETE CASCADE,
+    field           TEXT         DEFAULT NULL,
+    value           TEXT         DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS score_definition_results (
+    definition_id   UUID                CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
+                                            REFERENCES score_definitions (id)
+                                            ON DELETE CASCADE,
+    category        TEXT                NOT NULL,
+    score           DOUBLE PRECISION    DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
+    id                   UUID                DEFAULT gen_random_uuid() PRIMARY KEY,
+    definition_id        UUID                CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
+                                                REFERENCES score_definitions (id)
+                                                ON DELETE CASCADE,
+    category             TEXT                NOT NULL,
+    score_type           TEXT                NOT NULL,
+    table_groups_id      TEXT                DEFAULT NULL,
+    table_name           TEXT                DEFAULT NULL,
+    column_name          TEXT                DEFAULT NULL,
+    dq_dimension         TEXT                DEFAULT NULL,
+    semantic_data_type   TEXT                DEFAULT NULL,
+    impact               DOUBLE PRECISION    DEFAULT 0.0,
+    score                DOUBLE PRECISION    DEFAULT 0.0,
+    issue_ct             INTEGER             DEFAULT 0
+);
 
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
 
@@ -629,6 +707,9 @@ CREATE UNIQUE INDEX uix_tg_id
 CREATE INDEX ix_tg_cid
    ON table_groups(connection_id);
 
+CREATE UNIQUE INDEX idx_tg_last_profile
+  ON table_groups (last_complete_profile_run_id)
+  WHERE last_complete_profile_run_id IS NOT NULL;
 
 -- Index Profile Results - ORIGINAL -- still relevant?
 CREATE INDEX profile_results_tgid_sn_tn_cn
@@ -641,6 +722,10 @@ CREATE UNIQUE INDEX uix_ts_id
 
 CREATE INDEX ix_ts_con
    ON test_suites(connection_id);
+
+CREATE UNIQUE INDEX idx_ts_last_run
+  ON test_suites (last_complete_test_run_id)
+  WHERE last_complete_test_run_id IS NOT NULL;
 
 -- Index test_definitions
 CREATE INDEX ix_td_ts_fk
@@ -722,11 +807,24 @@ CREATE INDEX ix_pro_pair_prun
 
 -- Index profile_anomaly_results
 CREATE INDEX ix_ares_prun
-   ON profile_anomaly_results(profile_run_id);
+   ON profile_anomaly_results(profile_run_id, table_name, column_name);
 
 CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
+-- Index data_table_chars
+CREATE INDEX idx_dtc_tgid_table
+  ON data_table_chars (table_groups_id, table_name);
+
+-- Index data_column_chars
+CREATE INDEX idx_dcc_tg_table_column
+  ON data_column_chars (table_groups_id, table_name, column_name);
+
+-- Conditional Index for dq_scoring views
+CREATE INDEX idx_test_results_filter_join
+  ON test_results (test_run_id, table_groups_id, table_name, column_names)
+  WHERE dq_prevalence IS NOT NULL
+    AND (disposition IS NULL OR disposition = 'Confirmed');
 
 -- Conditional index for Observability Export - ORIGINAL
 CREATE INDEX cix_tr_pc_ts

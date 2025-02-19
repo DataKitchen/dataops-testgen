@@ -1,5 +1,6 @@
 import typing
 
+from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
 from testgen.common import date_service, read_template_sql_file
 from testgen.common.database import database_service
 from testgen.common.read_file import replace_templated_functions
@@ -21,6 +22,8 @@ class CCATExecutionSQL:
     target_table = ""
     dctTestParms: typing.ClassVar = {}
 
+    _rollup_scores_sql: CRollupScoresSQL = None
+
     def __init__(self, strProjectCode, strTestSuiteId, strTestSuite, strSQLFlavor, max_query_chars, minutes_offset=0):
         # Defaults
         self.test_suite_id = strTestSuiteId
@@ -33,6 +36,12 @@ class CCATExecutionSQL:
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
         self.minutes_offset = minutes_offset
 
+    def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
+        if not self._rollup_scores_sql:
+            self._rollup_scores_sql = CRollupScoresSQL(self.test_run_id, self.table_groups_id)
+    
+        return self._rollup_scores_sql
+    
     def _ReplaceParms(self, strInputString):
         strInputString = strInputString.replace("{MAX_QUERY_CHARS}", str(self.max_query_chars))
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)
@@ -60,8 +69,7 @@ class CCATExecutionSQL:
 
         strInputString = strInputString.replace("{RUN_DATE}", self.run_date)
 
-        if "{{DKFN_" in strInputString:
-            strInputString = replace_templated_functions(strInputString, self.flavor)
+        strInputString = replace_templated_functions(strInputString, self.flavor)
 
         # Adding escape character where ':' is referenced
         strInputString = strInputString.replace(":", "\\:")
@@ -102,8 +110,12 @@ class CCATExecutionSQL:
     def FinalizeTestSuiteUpdateSQL(self):
         strQ = self._ReplaceParms(read_template_sql_file("ex_update_test_suite.sql", "execution"))
         return strQ
+    
+    def CalcPrevalenceTestResultsSQL(self):
+        return self._ReplaceParms(read_template_sql_file("ex_calc_prevalence_test_results.sql", "execution"))
 
-
-    def TestScoringRollupSQL(self):
-        strQ = self._ReplaceParms(read_template_sql_file("test_scoring_rollup.sql", "execution"))
-        return strQ
+    def TestScoringRollupRunSQL(self):
+        return self._get_rollup_scores_sql().GetRollupScoresTestRunQuery()
+    
+    def TestScoringRollupTableGroupSQL(self):
+        return self._get_rollup_scores_sql().GetRollupScoresTestTableGroupQuery()

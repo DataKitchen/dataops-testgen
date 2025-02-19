@@ -2,17 +2,25 @@
  * @typedef Properties
  * @type {object}
  * @property {string?} label
+ * @property {string?} help
  * @property {(string | number)?} value
  * @property {string?} placeholder
  * @property {string?} icon
  * @property {boolean?} clearable
  * @property {function?} onChange
  * @property {number?} width
+ * @property {number?} height
+ * @property {string?} style
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet } from '../utils.js';
+import { Icon } from './icon.js';
+import { withTooltip } from './tooltip.js';
 
-const { input, label, i } = van.tags;
+const { div,input, label, i } = van.tags;
+const defaultHeight = 32;
+const iconSize = 22;
+const clearIconSize = 20;
 
 const Input = (/** @type Properties */ props) => {
     loadStylesheet('input', stylesheet);
@@ -25,23 +33,37 @@ const Input = (/** @type Properties */ props) => {
 
     return label(
         {
-            class: 'flex-column fx-gap-1 text-caption text-capitalize tg-input--label',
-            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
+            class: 'flex-column fx-gap-1 tg-input--label',
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
         },
-        props.label,
+        div(
+            { class: 'flex-row fx-gap-1 text-caption' },
+            props.label,
+            () => getValue(props.help)
+                ? withTooltip(
+                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: props.help, position: 'top', width: 200 }
+                )
+                : null,
+        ),
         () => getValue(props.icon) ? i(
-            { class: 'material-symbols-rounded tg-input--icon' },
+            {
+                class: 'material-symbols-rounded tg-input--icon',
+                style: `bottom: ${((getValue(props.height) || defaultHeight) - iconSize) / 2}px`,
+            },
             props.icon,
         ) : '',
         () => getValue(props.clearable) ? i(
             {
                 class: () => `material-symbols-rounded tg-input--clear clickable ${value.val ? '' : 'hidden'}`,
+                style: `bottom: ${((getValue(props.height) || defaultHeight) - clearIconSize) / 2}px`,
                 onclick: () => value.val = '',
             },
             'clear',
         ) : '',
         input({
             class: 'tg-input--field',
+            style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             value,
             placeholder: () => getValue(props.placeholder) ?? '',
             oninput: debounce(event => value.val = event.target.value, 300),
@@ -57,9 +79,8 @@ stylesheet.replace(`
 
 .tg-input--icon {
     position: absolute;
-    bottom: 5px;
     left: 4px;
-    font-size: 22px;
+    font-size: ${iconSize}px;
 }
 
 .tg-input--icon ~ .tg-input--field {
@@ -68,9 +89,8 @@ stylesheet.replace(`
 
 .tg-input--clear {
     position: absolute;
-    bottom: 6px;
     right: 4px;
-    font-size: 20px;
+    font-size: ${clearIconSize}px;
 }
 
 .tg-input--clear ~ .tg-input--field {
@@ -80,7 +100,6 @@ stylesheet.replace(`
 .tg-input--field {
     box-sizing: border-box;
     width: 100%;
-    height: 32px;
     border-radius: 8px;
     border: 1px solid transparent;
     transition: border-color 0.3s;

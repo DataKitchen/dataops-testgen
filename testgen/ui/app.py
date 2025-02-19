@@ -1,12 +1,12 @@
 import logging
 import sys
-from pathlib import Path
 
 import streamlit as st
 
 from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
 from testgen.ui import bootstrap
+from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services import database_service as db
 from testgen.ui.services import javascript_service, project_service, user_session_service
@@ -16,7 +16,7 @@ from testgen.ui.session import session
 def render(log_level: int = logging.INFO):
     st.set_page_config(
         page_title="TestGen",
-        page_icon=get_image_path("assets/favicon.ico"),
+        page_icon=get_asset_path("favicon.ico"),
         layout="wide",
     )
 
@@ -38,21 +38,19 @@ def render(log_level: int = logging.INFO):
 
     if session.authentication_status is None and not session.logging_out:
         user_session_service.load_user_session()
-    
-    st.logo(
-        image=get_image_path("assets/dk_logo.svg"),
-        icon_image=get_image_path("assets/dk_icon.svg")
-    )
+
+    application.logo.render()
 
     hide_sidebar = not session.authentication_status or session.logging_in
     if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
+                project=project_service.get_project_by_code(session.project)["project_name"],
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,
             )
-            
+
     application.router.run(hide_sidebar)
 
 
@@ -65,10 +63,6 @@ def set_locale():
     timezone = javascript_service.get_browser_locale_timezone()
     if timezone is not None and timezone != 0:
         st.session_state["browser_timezone"] = timezone
-
-
-def get_image_path(path: str) -> str:
-    return str(Path(__file__).parent / path)
 
 
 if __name__ == "__main__":

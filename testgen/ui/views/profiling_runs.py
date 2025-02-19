@@ -17,11 +17,12 @@ from testgen.ui.queries import project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import to_int
+from testgen.utils import friendly_score, to_int
 
 FORM_DATA_WIDTH = 400
 PAGE_SIZE = 50
 PAGE_ICON = "data_thresholding"
+PAGE_TITLE = "Profiling Runs"
 
 
 class DataProfilingPage(Page):
@@ -29,11 +30,11 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label="Data Profiling", order=1)
+    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=1)
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
-            "Profiling Runs",
+            PAGE_TITLE,
             "investigate-profiling",
         )
 
@@ -72,6 +73,7 @@ class DataProfilingPage(Page):
 
         run_count = len(profiling_runs_df)
         page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+        profiling_runs_df["dq_score_profiling"] = profiling_runs_df["dq_score_profiling"].map(lambda score: friendly_score(score))
         paginated_df = profiling_runs_df[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
@@ -191,7 +193,8 @@ def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) 
         profile_anomalies.definite_ct as anomalies_definite_ct,
         profile_anomalies.likely_ct as anomalies_likely_ct,
         profile_anomalies.possible_ct as anomalies_possible_ct,
-        profile_anomalies.dismissed_ct as anomalies_dismissed_ct
+        profile_anomalies.dismissed_ct as anomalies_dismissed_ct,
+        v_profiling_runs.dq_score_profiling
     FROM {schema}.v_profiling_runs
         LEFT JOIN profile_anomalies ON (v_profiling_runs.profiling_run_id = profile_anomalies.profile_run_id)
     WHERE project_code = '{project_code}'

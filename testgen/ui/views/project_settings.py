@@ -10,20 +10,22 @@ from testgen.ui.services import form_service, project_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import view_log_file
 
+PAGE_TITLE = "Project Settings"
+
 
 class ProjectSettingsPage(Page):
     path = "settings"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project is not None or "overview",
+        lambda: session.project is not None or "project-dashboard",
     ]
-    menu_item = MenuItem(icon="settings", label="Settings", order=100)
+    menu_item = MenuItem(icon="settings", label=PAGE_TITLE, section="Settings", order=0)
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
         project = project_service.get_project_by_code(project_code or session.project)
 
         testgen.page_header(
-            "Settings",
+            PAGE_TITLE,
             "tg-project-settings",
         )
 

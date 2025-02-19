@@ -5,8 +5,10 @@
  * @property {(string|null)} color
  * @property {(string|null)} label
  * @property {(string|null)} icon
+ * @property {(int|null)} iconSize
  * @property {(string|null)} tooltip
  * @property {(string|null)} tooltipPosition
+ * @property {(string|null)} id
  * @property {(Function|null)} onclick
  * @property {(bool)} disabled
  * @property {string?} style
@@ -26,7 +28,9 @@ const BUTTON_TYPE = {
 const BUTTON_COLOR = {
     BASIC: 'basic',
     PRIMARY: 'primary',
+    WARN: 'warn',
 };
+const DEFAULT_ICON_SIZE = 18;
 
 
 const Button = (/** @type Properties */ props) => {
@@ -56,6 +60,7 @@ const Button = (/** @type Properties */ props) => {
 
     return button(
         {
+            id: getValue(props.id) ?? undefined,
             class: `tg-button tg-${buttonType}-button tg-${getValue(props.color) ?? 'basic'}-button ${buttonType !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,
@@ -63,13 +68,16 @@ const Button = (/** @type Properties */ props) => {
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
-        props.tooltip ? Tooltip({
+        () => getValue(props.tooltip) ? Tooltip({
             text: props.tooltip,
             show: showTooltip,
             position: props.tooltipPosition,
-        }) : undefined,
+        }) : '',
         span({class: 'tg-button-focus-state-indicator'}, ''),
-        props.icon ? i({class: 'material-symbols-rounded'}, props.icon) : undefined,
+        props.icon ? i({
+            class: 'material-symbols-rounded',
+            style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
+        }, props.icon) : undefined,
         !isIconOnly ? span(props.label) : undefined,
     );
 };
@@ -130,12 +138,8 @@ button.tg-button:not(.tg-icon-button):has(span):has(i) {
 }
 
 button.tg-button[disabled] {
-    color: var(--disabled-text-color);
+    color: var(--disabled-text-color) !important;
     cursor: not-allowed;
-}
-
-button.tg-button > i {
-    font-size: 18px;
 }
 
 button.tg-button > i:has(+ span) {
@@ -186,6 +190,27 @@ button.tg-button.tg-primary-button.tg-flat-button {
 button.tg-button.tg-primary-button.tg-stroked-button {
     color: var(--button-primary-stroked-text-color);
     background: var(--button-primary-stroked-background);
+}
+/* ... */
+
+/* Warn button colors */
+button.tg-button.tg-warn-button {
+    color: var(--button-warn-text-color);
+    background: var(--button-warn-background);
+}
+
+button.tg-button.tg-warn-button .tg-button-focus-state-indicator::before {
+    background: var(--button-warn-hover-state-background);
+}
+
+button.tg-button.tg-warn-button.tg-flat-button {
+    color: var(--button-warn-flat-text-color);
+    background: var(--button-warn-flat-background);
+}
+
+button.tg-button.tg-warn-button.tg-stroked-button {
+    color: var(--button-warn-stroked-text-color);
+    background: var(--button-warn-stroked-background);
 }
 /* ... */
 `);

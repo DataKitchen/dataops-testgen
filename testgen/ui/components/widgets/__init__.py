@@ -11,6 +11,7 @@ from testgen.ui.components.widgets.page import (
     caption,
     css_class,
     divider,
+    flex_row_center,
     flex_row_end,
     flex_row_start,
     no_flex_gap,

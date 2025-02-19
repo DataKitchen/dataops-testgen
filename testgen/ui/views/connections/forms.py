@@ -3,12 +3,11 @@ import time
 import typing
 
 import streamlit as st
-from pydantic import computed_field
 from streamlit.delta_generator import DeltaGenerator
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from testgen.ui.components import widgets as testgen
-from testgen.ui.forms import BaseForm, Field, ManualRender
+from testgen.ui.forms import BaseForm, Field, ManualRender, computed_field
 from testgen.ui.services import connection_service
 
 SQL_FLAVORS = ["redshift", "snowflake", "mssql", "postgresql"]
@@ -81,7 +80,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
         ),
     )
     max_query_chars: int = Field(
-        default=10000,
+        default=9000,
         ge=500,
         le=14000,
         st_kwargs_label="Max Expression Length (Advanced Tuning)",
@@ -162,6 +161,17 @@ class BaseConnectionForm(BaseForm, ManualRender):
         ...
 
     @staticmethod
+    def set_default_port(sql_flavor: SQLFlavor, form: type["BaseConnectionForm"]) -> None:
+        if sql_flavor == "mssql":
+            form.project_port = 1433
+        elif sql_flavor == "redshift":
+            form.project_port = 5439
+        elif sql_flavor == "postgresql":
+            form.project_port = 5432
+        elif sql_flavor == "snowflake":
+            form.project_port = 443
+
+    @staticmethod
     def for_flavor(flavor: SQLFlavor) -> type["BaseConnectionForm"]:
         return {
             "redshift": PasswordConnectionForm,
@@ -205,8 +215,7 @@ class KeyPairConnectionForm(PasswordConnectionForm):
     )
     _uploaded_file: UploadedFile | None = None
 
-    @computed_field
-    @property
+    @computed_field(default="")
     def private_key(self) -> str:
         if self._uploaded_file is None:
             return ""

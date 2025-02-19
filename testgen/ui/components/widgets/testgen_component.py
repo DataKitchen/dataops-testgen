@@ -6,9 +6,21 @@ from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 
+AvailablePages = typing.Literal[
+    "database_flavor_selector",
+    "data_catalog",
+    "column_profiling_results",
+    "project_dashboard",
+    "profiling_runs",
+    "test_runs",
+    "test_suites",
+    "quality_dashboard",
+    "score_details",
+]
+
 
 def testgen_component(
-    component_id: typing.Literal["profiling_runs", "test_runs", "database_flavor_selector", "data_hierarchy"],
+    component_id: AvailablePages,
     props: dict,
     on_change_handlers: dict[str, typing.Callable] | None = None,
     event_handlers: dict[str, typing.Callable] | None = None,
@@ -30,7 +42,9 @@ def testgen_component(
     def on_change():
         event_data = st.session_state[key]
         if event_data and (event := event_data.get("event")):
-            if on_change_handlers and (handler := on_change_handlers.get(event)):
+            if event == "LinkClicked":
+                Router().queue_navigation(to=event_data["href"], with_args=event_data.get("params"))
+            elif on_change_handlers and (handler := on_change_handlers.get(event)):
                 # Prevent handling the same event multiple times
                 event_id = f"{component_id}:{event_data.get('_id', '')}"
                 if event_id != session.testgen_event_id:
@@ -41,19 +55,15 @@ def testgen_component(
         id_=component_id,
         key=key,
         props=props,
-        on_change=on_change if on_change_handlers else None,
+        on_change=on_change,
     )
-    if event_data and (event := event_data.get("event")):
-        if event == "LinkClicked":
-            Router().navigate(to=event_data["href"], with_args=event_data.get("params"))
-
-        elif event_handlers and (handler := event_handlers.get(event)):
-            # Prevent handling the same event multiple times
-            event_id = f"{component_id}:{event_data.get('_id', '')}"
-            if event_id != session.testgen_event_id:
-                session.testgen_event_id = event_id
-                # These events are not handled through the component's on_change callback
-                # because they may call st.rerun(), causing the "Calling st.rerun() within a callback is a noop" error
-                handler(event_data.get("payload"))
+    if event_handlers and event_data and (event := event_data.get("event")) and (handler := event_handlers.get(event)):
+        # Prevent handling the same event multiple times
+        event_id = f"{component_id}:{event_data.get('_id', '')}"
+        if event_id != session.testgen_event_id:
+            session.testgen_event_id = event_id
+            # These events are not handled through the component's on_change callback
+            # because they may call st.rerun(), causing the "Calling st.rerun() within a callback is a noop" error
+            handler(event_data.get("payload"))
 
     return event_data

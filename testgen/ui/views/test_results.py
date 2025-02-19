@@ -1,5 +1,6 @@
 import typing
 from datetime import date
+from functools import partial
 from io import BytesIO
 
 import pandas as pd
@@ -11,6 +12,7 @@ from streamlit.delta_generator import DeltaGenerator
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
+from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -33,6 +35,7 @@ from testgen.ui.services.test_results_service import (
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
+from testgen.utils import friendly_score
 
 ALWAYS_SPIN = False
 
@@ -53,28 +56,27 @@ class TestResultsPage(Page):
         column_name: str | None = None,
         **_kwargs,
     ) -> None:
-        run_parentage = get_drill_test_run(run_id)
-        if not run_parentage:
+        run_df = get_run_by_id(run_id)
+        if run_df.empty:
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",
             )
             return
 
-        run_date, test_suite_name, project_code = run_parentage
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
-        project_service.set_current_project(project_code)
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["test_starttime"])
+        project_service.set_current_project(run_df["project_code"])
 
         testgen.page_header(
             "Test Results",
             "view-testgen-test-results",
             breadcrumbs=[
-                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": project_code } },
-                { "label": f"{test_suite_name} | {run_date}" },
+                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run_df["project_code"] } },
+                { "label": f"{run_df['test_suite']} | {run_date}" },
             ],
         )
 
-        summary_column, actions_column = st.columns([.5, .5], vertical_alignment="bottom")
+        summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
         status_filter_column, test_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
             [.2, .2, .2, .2, .1, .1], vertical_alignment="bottom"
         )
@@ -85,6 +87,9 @@ class TestResultsPage(Page):
         with summary_column:
             tests_summary = get_test_result_summary(run_id)
             testgen.summary_bar(items=tests_summary, height=20, width=800)
+
+        with score_column:
+            render_score(run_df["project_code"], run_id)
 
         with status_filter_column:
             status_options = [
@@ -198,20 +203,58 @@ class TestResultsPage(Page):
         )
 
 
+@st.fragment
+def render_score(project_code: str, run_id: str):
+    run_df = get_run_by_id(run_id)
+    testgen.flex_row_center()
+    with st.container():
+        testgen.caption("Score", "text-align: center;")
+        testgen.text(
+            friendly_score(run_df["dq_score_test_run"]) or "--",
+            "font-size: 28px;",
+        )
+
+    with st.container():
+        testgen.whitespace(0.6)
+        testgen.button(
+            type_="icon",
+            style="color: var(--secondary-text-color);",
+            icon="autorenew",
+            icon_size=22,
+            tooltip=f"Recalculate scores for run {'and table group' if run_df["is_latest_run"] else ''}",
+            on_click=partial(
+                refresh_score,
+                project_code,
+                run_id,
+                run_df["table_groups_id"] if run_df["is_latest_run"] else None,
+            ),
+        )
+
+
+def refresh_score(project_code: str, run_id: str, table_group_id: str | None) -> None:
+    run_test_rollup_scoring_queries(project_code, run_id, table_group_id)
+    st.cache_data.clear()
+
+
 @st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_drill_test_run(test_run_id: str) -> tuple[pd.Timestamp, str, str] | None:
+def get_run_by_id(test_run_id: str) -> pd.Series:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-           SELECT tr.test_starttime as test_date,
+           SELECT tr.test_starttime,
                   ts.test_suite,
-                  ts.project_code
+                  ts.project_code,
+                  ts.table_groups_id::VARCHAR,
+                  tr.dq_score_test_run,
+                  CASE WHEN tr.id = ts.last_complete_test_run_id THEN true ELSE false END AS is_latest_run
              FROM {schema}.test_runs tr
        INNER JOIN {schema}.test_suites ts ON tr.test_suite_id = ts.id
             WHERE tr.id = '{test_run_id}'::UUID;
     """
     df = db.retrieve_data(sql)
     if not df.empty:
-        return df.at[0, "test_date"], df.at[0, "test_suite"], df.at[0, "project_code"]
+        return df.iloc[0]
+    else:
+        return pd.Series()
 
 
 @st.cache_data(show_spinner=False)
@@ -620,14 +663,14 @@ def show_result_detail(
         if selected_row["test_scope"] == "column":
             with v_col2:
                 view_profiling_button(
-                    selected_row["table_name"],
                     selected_row["column_names"],
-                    str_table_groups_id=selected_row["table_groups_id"]
+                    selected_row["table_name"],
+                    selected_row["table_groups_id"],
                 )
 
         with v_col3:
             if st.button(
-                    "Source Data　→", help="Review current source data for highlighted result",
+                    ":material/visibility: Source Data", help="View current source data for highlighted result",
                     use_container_width=True
             ):
                 source_data_dialog(selected_row)
@@ -647,7 +690,7 @@ def show_result_detail(
                 report_btn_help = "Generate PDF report for selected result"
 
             if st.button(
-                ":material/file_save: Issue Report",
+                ":material/download: Issue Report",
                 use_container_width=True,
                 disabled=not report_eligible_rows,
                 help=report_btn_help,

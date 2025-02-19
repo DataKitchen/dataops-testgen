@@ -1,3 +1,5 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.datediff(difftype character varying, firstdate timestamp without time zone, seconddate timestamp without time zone) returns bigint
     language plpgsql
 as
@@ -178,6 +180,9 @@ FROM (
 WHERE trim(value) <> ''
 $$ LANGUAGE sql;
 
+-- ==============================================================================
+-- |   Scoring Prevalence calculation functions
+-- ==============================================================================
 
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_normal_cdf(z_score DOUBLE PRECISION)
 RETURNS DOUBLE PRECISION AS
@@ -200,11 +205,22 @@ $$
     This gives the proportion of values greater than the positive Z-score and
     less than the negative Z-score combined. To get the estimated count of
     observations, multiply this proportion by N:   N * 2 * (1 - normal_cdf(ABS(Z)))
+    It handles extreme Z-scores by assuming a result of 0 for very low Z-scores
+    and 1 for very high Z-scores beyond a defined threshold.
 */
 DECLARE
+    threshold DOUBLE PRECISION := 6.0; -- Threshold for extreme Z-scores
     t DOUBLE PRECISION;
     cdf DOUBLE PRECISION;
 BEGIN
+    -- Handle extreme Z-scores
+    IF z_score <= -threshold THEN
+        RETURN 0.0; -- Near-zero probability for very low Z-scores
+    ELSIF z_score >= threshold THEN
+        RETURN 1.0; -- Near-one probability for very high Z-scores
+    END IF;
+
+    -- Abramowitz and Stegun approximation for normal cases
     t := 1.0 / (1.0 + 0.2316419 * ABS(z_score));
 
     cdf := (1.0 / SQRT(2 * PI())) * EXP(-0.5 * z_score * z_score) *
@@ -214,6 +230,7 @@ BEGIN
             - 1.821255978 * t * t * t * t
             + 1.330274429 * t * t * t * t * t);
 
+    -- Return the CDF based on the sign of the Z-score
     IF z_score >= 0 THEN
         RETURN 1.0 - cdf;
     ELSE
@@ -221,7 +238,6 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
-
 
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_eval(expression TEXT) RETURNS FLOAT
 AS
@@ -243,7 +259,7 @@ BEGIN
    -- Remove all allowed tokens from the validation expression, treating 'FLOAT' as a keyword
    invalid_parts := regexp_replace(
       expression,
-      E'(\\mGREATEST|LEAST|ABS|FN_NORMAL_CDF|DATEDIFF|DAY|FLOAT)\\M|[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?|[+\\-*/(),\\\'":]+|\\s+',
+      E'(\\mGREATEST|LEAST|ABS|FN_NORMAL_CDF|DATEDIFF|DAY|FLOAT|NULLIF)\\M|[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?|[+\\-*/(),\\\'":]+|\\s+',
       '',
       'gi'
    );
@@ -260,3 +276,64 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
+
+-- ==============================================================================
+-- |   Set up scoring aggregate functions
+-- ==============================================================================
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.sum_ln_agg_state(
+    state       double precision,
+    probability double precision
+)
+RETURNS double precision
+AS $$
+BEGIN
+
+    -- If this is the first row (or state is NULL for some reason), initialize
+    IF state IS NULL THEN
+        state := 0;
+    END IF;
+
+    -- Handle edge cases: null/zero population, null/invalid/extremely high probabilities
+    IF probability IS NULL
+       OR probability <= 0
+       OR probability > 0.999999
+    THEN
+        RETURN state; -- do not update the log-sum
+    END IF;
+
+    -- Otherwise accumulate LN(1 - probability)
+    RETURN state + LN(1 - probability);
+
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.sum_ln_agg_final(
+    state double precision
+)
+RETURNS double precision
+AS $$
+BEGIN
+
+    -- If never updated, or all skipped => return 1 (no effect)
+    IF state IS NULL THEN
+        RETURN 1;
+    END IF;
+
+    -- Convert the total logs to a product
+    RETURN EXP(state);
+
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+
+DROP AGGREGATE IF EXISTS {SCHEMA_NAME}.sum_ln (double precision);
+
+CREATE AGGREGATE {SCHEMA_NAME}.sum_ln (double precision) (
+    SFUNC     = sum_ln_agg_state,
+    STYPE     = double precision,
+    FINALFUNC = sum_ln_agg_final,
+    INITCOND  = '0'
+);
+

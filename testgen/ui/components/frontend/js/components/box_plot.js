@@ -31,7 +31,7 @@ const BoxPlot = (/** @type Properties */ props) => {
             style: () => `max-width: ${width ? getValue(width) + 'px' : '100%'};`,
         },
         div(
-            { style: 'flex: 300px' },
+            { class: 'pl-7 pr-7', style: 'flex: 300px' },
             div(
                 {
                     class: 'tg-box-plot--line',

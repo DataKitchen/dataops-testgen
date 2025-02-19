@@ -1,9 +1,12 @@
 /**
  * @typedef Properties
  * @type {object}
- * @property {string} title
+ * @property {object?} title
  * @property {object} content
  * @property {object?} actionContent
+ * @property {boolean?} border
+ * @property {string?} id
+ * @property {string?} class
  */
 import { loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -14,15 +17,21 @@ const Card = (/** @type Properties */ props) => {
     loadStylesheet('card', stylesheet);
 
     return div(
-        { class: 'tg-card mb-4' },
-        div(
-            { class: 'flex-row fx-justify-space-between fx-align-flex-start' },
-            h3(
-                { class: 'tg-card--title' },
-                props.title,
-            ),
-            props.actionContent,
-        ),
+        { class: `tg-card mb-4 ${props.border ? 'tg-card-border' : ''} ${props.class}`, id: props.id ?? '' },
+        () =>
+            props.title || props.actionContent ?
+            div(
+                { class: 'flex-row fx-justify-space-between fx-align-flex-start fx-gap-4' },
+                () => 
+                    props.title ?
+                    h3(
+                        { class: 'tg-card--title' },
+                        props.title,
+                    ) :
+                    '',
+                props.actionContent,
+            ) :
+            '',
         props.content,
     );
 };
@@ -33,6 +42,10 @@ stylesheet.replace(`
     border-radius: 8px;
     background-color: var(--dk-card-background);
     padding: 16px;
+}
+
+.tg-card-border {
+    border: 1px solid var(--border-color);
 }
 
 .tg-card--title {

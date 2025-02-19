@@ -24,7 +24,6 @@ const SummaryBar = (/** @type Properties */ props) => {
     const total = van.derive(() => getValue(props.items).reduce((sum, item) => sum + item.value, 0));
 
     return div(
-        { style: () => `max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};` },
         () => props.label ? div(
             { class: 'tg-summary-bar--label' },
             props.label,
@@ -32,7 +31,7 @@ const SummaryBar = (/** @type Properties */ props) => {
         () => div(
             {
                 class: 'tg-summary-bar',
-                style: () => `height: ${getValue(props.height) || defaultHeight}px;`
+                style: () => `height: ${getValue(props.height) || defaultHeight}px; max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};`
             },
             getValue(props.items).map(item => span({
                 class: 'tg-summary-bar--item',

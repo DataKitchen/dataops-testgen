@@ -4,68 +4,207 @@
  * @property {string} label
  * @property {string} value
  * @property {boolean} selected
- * 
+ *
  * @typedef Properties
  * @type {object}
+ * @property {string?} id
  * @property {string} label
+ * @property {string?} value
  * @property {Array.<Option>} options
+ * @property {boolean} allowNull
  * @property {Function|null} onChange
+ * @property {boolean?} disabled
+ * @property {number?} width
+ * @property {number?} height
+ * @property {string?} style
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getRandomId, getValue, loadStylesheet } from '../utils.js';
+import { getRandomId, getValue, getParents, loadStylesheet, isState, isEqual } from '../utils.js';
+import { Portal } from './portal.js';
 
-const { div, label, option, select } = van.tags;
+const { div, i, label, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
-    Streamlit.setFrameHeight();
 
-    const domId = getRandomId();
-    const changeHandler = props.onChange || post;
-    return div(
-        {class: 'tg-select'},
-        label({for: domId, class: 'tg-select--label'}, props.label),
-        () => {
-            const options = getValue(props.options) || [];
-            return select(
-                {id: domId, class: 'tg-select--field', onchange: changeHandler},
-                options.map(op => option({class: 'tg-select--field--option', value: op.value, selected: op.selected}, op.label)),
-            );
+    const domId = van.derive(() => props.id?.val ?? getRandomId());
+    const opened = van.state(false);
+    const options = van.derive(() => {
+        const options = getValue(props.options) ?? [];
+        const allowNull = getValue(props.allowNull);
+
+        if (allowNull) {
+            return [
+                {label: "---", value: null},
+                ...options,
+            ];
+        }
+
+        return options;
+    });
+    const value = isState(props.value) ? props.value : van.state(props.value ?? null);
+    const valueLabel = van.derive(() => {
+        const currentOptions = getValue(options);
+        const currentValue = getValue(value);
+        return currentOptions?.find((op) => op.value === currentValue)?.label ?? '';
+    });
+
+    const changeSelection = (/** @type Option */ option) => {
+        opened.val = false;
+        value.val = option.value;
+    };
+
+    van.derive(() => {
+        const currentOptions = getValue(options);
+
+        let currentValue = getValue(value);
+        let previousValue = value.oldVal;
+        if (currentOptions.find((op) => op.value === currentValue) === undefined) {
+            currentValue = value.val = null;
+        }
+
+        if (!isEqual(currentValue, previousValue)) {
+            props.onChange?.(currentValue);
+        }
+    });
+
+    return label(
+        {
+            id: domId,
+            class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
+            onclick: () => {
+                if (!getValue(props.disabled)) {
+                    opened.val = true;
+                }
+            },
         },
+        props.label,
+        div(
+            {
+                class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
+                style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+            },
+            div(
+                { class: 'tg-select--field--content' },
+                valueLabel,
+            ),
+            div(
+                { class: 'tg-select--field--icon' },
+                i(
+                    { class: 'material-symbols-rounded' },
+                    'expand_more',
+                ),
+            ),
+        ),
+        Portal(
+            {target: domId.val, opened},
+            () => div(
+                { class: 'tg-select--options-wrapper mt-1' },
+                getValue(options).map(option =>
+                    div(
+                        {
+                            class: () => `tg-select--option ${getValue(value) === option.value ? 'selected' : ''}`,
+                            onclick: (/** @type Event */ event) => {
+                                changeSelection(option);
+                                event.stopPropagation();
+                            },
+                        },
+                        span(option.label),
+                    )
+                ),
+            ),
+        ),
     );
 };
 
-function post(/** @type string */ value) {
-    Streamlit.sendData({ value: value });
-}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-div.tg-select {
-    display: flex;
-    flex-direction: column;
+.tg-select--label.disabled {
+    cursor: not-allowed;
+    color: var(--disabled-text-color);
 }
 
-div.tg-select > .tg-select--label {
-    color: var(--secondary-text-color);
-    margin-bottom: 4px;
+.tg-select--label.disabled .tg-select--field {
+    color: var(--disabled-text-color);
 }
 
-div.tg-select > .tg-select--field {
-    border: unset;
-    border-bottom: 1px solid var(--field-underline-color);
-
-    font-size: inherit;
-    font-family: inherit;
+.tg-select--field {
+    box-sizing: border-box;
+    width: 100%;
+    height: 32px;
+    min-width: 200px;
+    border: 1px solid transparent;
+    transition: border-color 0.3s;
+    background-color: var(--form-field-color);
+    padding: 4px 8px;
     color: var(--primary-text-color);
-
-    background-color: inherit;
+    border-radius: 8px;
 }
 
-div.tg-select > .tg-select--field:focus-visible {
-    outline: unset;
-    border-bottom-color: var(--primary-color);
+.tg-select--field.opened {
+    border-color: var(--primary-color);
+}
+
+.tg-select--field--content {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    height: 100%;
+    flex: 1;
+    font-weight: 500;
+}
+
+.tg-select--field--icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 100%;
+}
+
+.tg-select--field--icon i {
+    font-size: 20px;
+}
+
+.tg-select--options-wrapper {
+    border-radius: 8px;
+    background: var(--select-portal-background);
+    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    min-height: 40px;
+    max-height: 400px;
+    overflow: auto;
+    z-index: 99;
+}
+
+.tg-select--options-wrapper > .tg-select--option:first-child {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.tg-select--options-wrapper > .tg-select--option:last-child {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.tg-select--option {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--primary-text-color);
+}
+.tg-select--option:hover {
+    background: var(--select-hover-background);
+}
+
+.tg-select--option.selected {
+    background: var(--select-hover-background);
+    color: var(--primary-color);
 }
 `);
 

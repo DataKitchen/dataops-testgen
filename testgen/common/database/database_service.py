@@ -562,7 +562,7 @@ def ExecuteDBQuery(strCredentialSet, strRunSQL):
 
 
 def RetrieveSingleResultValue(strCredentialSet, strRunSQL):
-    LOG.info("CurrentDB Operation: RetrieveSingleResultValue. Creds: %s", strCredentialSet)
+    LOG.debug("CurrentDB Operation: RetrieveSingleResultValue. Creds: %s", strCredentialSet)
 
     with _InitDBConnection(strCredentialSet) as con:
         LOG.debug("Last Query='%s'", strRunSQL)

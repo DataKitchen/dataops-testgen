@@ -22,6 +22,7 @@ class Router(Singleton):
         routes: list[type[testgen.ui.navigation.page.Page]] | None = None,
     ) -> None:
         self._routes = {route.path: route(self) for route in routes} if routes else {}
+        self._pending_navigation: dict | None = None
 
     def run(self, hide_sidebar=False) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
@@ -60,12 +61,36 @@ class Router(Singleton):
             session.cookies_ready += 1
             time.sleep(0.3)
 
+    def queue_navigation(self, /, to: str, with_args: dict | None = None) -> None:
+        self._pending_navigation = {"to": to, "with_args": with_args or {}}
+
+    def navigate_to_pending(self) -> None:
+        """
+        Navigate to the last queued navigation. No-op if no navigation
+        queued.
+        """
+        if self._has_pending_navigation():
+            navigation, self._pending_navigation = self._pending_navigation, None
+            return self.navigate(**navigation)
+
+    def _has_pending_navigation(self) -> bool:
+        return isinstance(self._pending_navigation, dict) and "to" in self._pending_navigation
 
     def navigate(self, /, to: str, with_args: dict = {}) -> None:  # noqa: B006
         try:
-            if to != session.current_page:
+            final_args = with_args or {}
+            is_different_page = to != session.current_page
+            query_params_changed = (
+                len((st.query_params or {}).keys()) != len(final_args.keys())
+                or any(st.query_params.get(name) != value for name, value in final_args.items())
+            )
+            if is_different_page or query_params_changed:
                 route = self._routes[to]
-                session.page_args_pending_router = with_args
+                session.page_args_pending_router = {
+                    name: value for name, value in final_args.items() if value and value not in [None, "None", ""]
+                }
+                if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
+                    st.cache_data.clear()
                 st.switch_page(route.streamlit_page)
 
         except KeyError as k:
@@ -78,7 +103,6 @@ class Router(Singleton):
             st.error(error_message)
             LOG.exception(error_message)
 
-    
     def navigate_with_warning(self, warning: str, to: str, with_args: dict = {}) -> None:  # noqa: B006
         st.warning(warning)
         time.sleep(3)
@@ -88,5 +112,8 @@ class Router(Singleton):
     def set_query_params(self, with_args: dict) -> None:
         params = st.query_params
         params.update(with_args)
-        params = {k: v for k, v in params.items() if v not in [None, "None", ""]}
+        params = {
+            k: values_list if len(values_list) > 1 else v for k, v in params.items()
+            if (values_list := params.get_all(k)) and v not in [None, "None", ""]
+        }
         st.query_params.from_dict(params)

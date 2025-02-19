@@ -12,10 +12,10 @@ def _get_select_statement(schema):
                       profiling_include_mask, profiling_exclude_mask,
                       profiling_table_set,
                       profile_id_column_mask, profile_sk_column_mask,
-                      data_source, source_system, data_location, business_domain,
-                      transform_level, source_process, stakeholder_group,
+                      description, data_source, source_system, source_process, data_location,
+                      business_domain, stakeholder_group, transform_level, data_product,
                       profile_use_sampling, profile_sample_percent, profile_sample_min_count,
-                      profiling_delay_days
+                      profiling_delay_days, profile_flag_cdes
                FROM {schema}.table_groups
                """
 
@@ -27,6 +27,17 @@ def get_by_id(schema, table_group_id):
            ORDER BY table_groups_name
     """
     return db.retrieve_data(sql)
+
+
+@st.cache_data(show_spinner=False)
+def get_by_name(project_code: str, table_group_name: str) -> dict | None:
+    schema: str = st.session_state["dbschema"]
+    sql = _get_select_statement(schema)
+    sql += f"""WHERE project_code = '{project_code}' AND table_groups_name = '{table_group_name}';"""
+    results = db.retrieve_data(sql)
+    if results.empty:
+        return None
+    return results.iloc[0].to_dict()
 
 
 def get_test_suite_ids_by_table_group_names(schema, table_group_names):
@@ -95,14 +106,17 @@ def edit(schema, table_group):
                     profile_sample_percent='{table_group["profile_sample_percent"]}',
                     profile_sample_min_count={int(table_group["profile_sample_min_count"])},
                     profiling_delay_days='{table_group["profiling_delay_days"]}',
+                    profile_flag_cdes={table_group["profile_flag_cdes"]},
+                    description='{table_group["description"]}',
                     data_source='{table_group["data_source"]}',
                     source_system='{table_group["source_system"]}',
+                    source_process='{table_group["source_process"]}',
                     data_location='{table_group["data_location"]}',
                     business_domain='{table_group["business_domain"]}',
+                    stakeholder_group='{table_group["stakeholder_group"]}',
                     transform_level='{table_group["transform_level"]}',
-                    source_process='{table_group["source_process"]}',
-                    stakeholder_group='{table_group["stakeholder_group"]}'
-                where
+                    data_product='{table_group["data_product"]}'
+                WHERE
                     id = '{table_group["id"]}'
                 ;
                     """
@@ -127,13 +141,16 @@ def add(schema, table_group) -> str:
         profile_sample_percent,
         profile_sample_min_count,
         profiling_delay_days,
+        profile_flag_cdes,
+        description,
         data_source,
         source_system,
+        source_process,
         data_location,
         business_domain,
+        stakeholder_group,
         transform_level,
-        source_process,
-        stakeholder_group)
+        data_product)
     SELECT
         '{new_table_group_id}',
         '{table_group["project_code"]}',
@@ -147,14 +164,18 @@ def add(schema, table_group) -> str:
         '{table_group["profile_sk_column_mask"]}'::character varying,
         '{'Y' if table_group["profile_use_sampling"]=='True' else 'N' }'::character varying,
         '{table_group["profile_sample_percent"]}'::character varying,
-        {table_group["profile_sample_min_count"]}, '{table_group["profiling_delay_days"]}'::character varying,
+        {table_group["profile_sample_min_count"]},
+        '{table_group["profiling_delay_days"]}'::character varying,
+        {table_group["profile_flag_cdes"]},
+        '{table_group["description"]}',
         '{table_group["data_source"]}',
         '{table_group["source_system"]}',
+        '{table_group["source_process"]}',
         '{table_group["data_location"]}',
         '{table_group["business_domain"]}',
+        '{table_group["stakeholder_group"]}',
         '{table_group["transform_level"]}',
-        '{table_group["source_process"]}',
-        '{table_group["stakeholder_group"]}'
+        '{table_group["data_product"]}'
         ;"""
     db.execute_sql(sql)
     st.cache_data.clear()

@@ -1,4 +1,5 @@
 import typing
+from functools import partial
 from io import BytesIO
 
 import pandas as pd
@@ -9,6 +10,7 @@ import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
+from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -18,6 +20,7 @@ from testgen.ui.services import project_service
 from testgen.ui.services.hygiene_issues_service import get_source_data as get_source_data_uncached
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
+from testgen.utils import friendly_score
 
 
 class HygieneIssuesPage(Page):
@@ -36,28 +39,27 @@ class HygieneIssuesPage(Page):
         column_name: str | None = None,
         **_kwargs,
     ) -> None:
-        run_parentage = profiling_queries.lookup_db_parentage_from_run(run_id)
-        if not run_parentage:
+        run_df = profiling_queries.get_run_by_id(run_id)
+        if run_df.empty:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
             return
 
-        run_date, _table_group_id, table_group_name, project_code = run_parentage
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_date)
-        project_service.set_current_project(project_code)
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
+        project_service.set_current_project(run_df["project_code"])
 
         testgen.page_header(
             "Hygiene Issues",
             "view-hygiene-issues",
             breadcrumbs=[
-                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": project_code } },
-                { "label": f"{table_group_name} | {run_date}" },
+                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run_df["project_code"] } },
+                { "label": f"{run_df['table_groups_name']} | {run_date}" },
             ],
         )
 
-        others_summary_column, pii_summary_column, actions_column = st.columns([.25, .25, .5], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, score_column, actions_column = st.columns([.25, .25, .2, .3], vertical_alignment="bottom")
         (liklihood_filter_column, issue_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column) = (
             st.columns([.15, .25, .2, .2, .1, .1], vertical_alignment="bottom")
         )
@@ -151,7 +153,9 @@ class HygieneIssuesPage(Page):
                         height=20,
                         width=400,
                     )
-            # write_frequency_graph(df_pa)
+
+            with score_column:
+                render_score(run_df["project_code"], run_id)
 
             lst_show_columns = [
                 "table_name",
@@ -218,15 +222,15 @@ class HygieneIssuesPage(Page):
                     )
                 with col2:
                     view_profiling_button(
-                        selected_row["table_name"], selected_row["column_name"], str_profile_run_id=run_id
+                        selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
                     )
 
                     if st.button(
-                        "Source Data →", help="Review current source data for highlighted issue", use_container_width=True
+                        ":material/visibility: Source Data", help="View current source data for highlighted issue", use_container_width=True
                     ):
                         source_data_dialog(selected_row)
                     if st.button(
-                            ":material/file_save: Issue Report",
+                            ":material/download: Issue Report",
                             use_container_width=True,
                             help="Generate a PDF report for each selected issue",
                     ):
@@ -275,14 +279,40 @@ class HygieneIssuesPage(Page):
 
         # Help Links
         st.markdown(
-            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
+            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
+        )
+
+@st.fragment
+def render_score(project_code: str, run_id: str):
+    run_df = profiling_queries.get_run_by_id(run_id)
+    testgen.flex_row_center()
+    with st.container():
+        testgen.caption("Score", "text-align: center;")
+        testgen.text(
+            friendly_score(run_df["dq_score_profiling"]) or "--",
+            "font-size: 28px;",
+        )
+
+    with st.container():
+        testgen.whitespace(0.6)
+        testgen.button(
+            type_="icon",
+            style="color: var(--secondary-text-color);",
+            icon="autorenew",
+            icon_size=22,
+            tooltip=f"Recalculate scores for run {'and table group' if run_df["is_latest_run"] else ''}",
+            on_click=partial(
+                refresh_score,
+                project_code,
+                run_id,
+                run_df["table_groups_id"] if run_df["is_latest_run"] else None,
+            ),
         )
 
 
-@st.cache_data(show_spinner=False)
-def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(schema, project_code)
+def refresh_score(project_code: str, run_id: str, table_group_id: str | None) -> None:
+    run_profile_rollup_scoring_queries(project_code, run_id, table_group_id)
+    st.cache_data.clear()
 
 
 @st.cache_data(show_spinner="False")
