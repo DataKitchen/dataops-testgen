@@ -30,6 +30,8 @@ class Page(abc.ABC):
             st.stop()
 
     def _navigate(self) -> None:
+        self.router.navigate_to_pending()
+
         for guard in self.can_activate or []:
             can_activate = guard()
             if type(can_activate) == str:

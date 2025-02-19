@@ -117,29 +117,6 @@ def run_table_groups_lookup_query(schema: str, project_code: str, connection_id:
     return db.retrieve_data(sql)
 
 
-def run_table_lookup_query(str_schema, str_table_groups_id):
-    str_sql = f"""
-           SELECT table_name
-             FROM {str_schema}.data_table_chars
-            WHERE table_groups_id = '{str_table_groups_id}'::UUID
-              AND drop_date IS NULL
-           ORDER BY table_name
-    """
-    return db.retrieve_data(str_sql)
-
-
-def run_column_lookup_query(str_schema, str_table_groups_id, str_table_name):
-    str_sql = f"""
-           SELECT column_name
-             FROM {str_schema}.data_column_chars
-            WHERE table_groups_id = '{str_table_groups_id}'::UUID
-              AND table_name = '{str_table_name}'
-              AND drop_date IS NULL
-           ORDER BY column_name
-    """
-    return db.retrieve_data(str_sql)
-
-
 def run_test_suite_lookup_by_tgroup_query(str_schema, str_table_groups_id, test_suite_name=None):
     str_sql = f"""
            SELECT id::VARCHAR(50), test_suite, test_suite_schema, severity, export_to_observability

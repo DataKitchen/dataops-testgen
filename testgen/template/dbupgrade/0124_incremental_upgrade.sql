@@ -1,3 +1,4 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
-ALTER TABLE connections ADD COLUMN http_path VARCHAR(200);
+ALTER TABLE table_groups
+ADD COLUMN profile_flag_cdes BOOLEAN DEFAULT TRUE;

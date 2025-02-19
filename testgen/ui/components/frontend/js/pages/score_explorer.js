@@ -3,7 +3,7 @@
  * @type {object}
  * @property {string} field
  * @property {string} value
- * 
+ *
  * @typedef ScoreDefinition
  * @type {object}
  * @property {string} name
@@ -11,12 +11,12 @@
  * @property {boolean} cde_score
  * @property {string} category
  * @property {ScoreDefinitionFilter[]} filters
- * 
+ *
  * @typedef ScoreCardCategory
  * @type {object}
  * @property {string} label
  * @property {string} score
- * 
+ *
  * @typedef ScoreCard
  * @type {object}
  * @property {string} project_code
@@ -25,13 +25,13 @@
  * @property {string} cde_score
  * @property {string} profiling_score
  * @property {string} testing_score
- * @property {ScoreCardCategory[]} categories 
- * 
+ * @property {ScoreCardCategory[]} categories
+ *
  * @typedef ResultSet
  * @type {object}
  * @property {Array<string>} columns
  * @property {Array<object>} items
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {object} filter_values
@@ -44,7 +44,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { debounce, emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement, afterMount, getRandomId } from '../utils.js';
+import { debounce, emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement, afterMount, getRandomId, isEqual } from '../utils.js';
 import { Input } from '../components/input.js';
 import { Select } from '../components/select.js';
 import { Button } from '../components/button.js';
@@ -139,7 +139,18 @@ const Toolbar = (
     const displayCategory = van.state(!!definition.category);
     const selectedCategory = van.state(definition.category ?? undefined);
     const scoreName = van.state(definition.name ?? '');
-    const disableSave = van.derive(() => getValue(scoreName)?.length <= 0 || getValue(filters)?.length <= 0);
+    const disableSave = van.derive(() => {
+        const appliedFilters = getValue(filters);
+
+        return getValue(scoreName)?.length <= 0
+            || appliedFilters?.length <= 0
+            || appliedFilters?.every(({ value }) => !value.rawVal)
+            || (
+                !getValue(displayTotalScore)
+                && !getValue(displayCDEScore)
+                && (!getValue(displayCategory) || !getValue(selectedCategory))
+            )
+    });
     const renderedFilters = {};
 
     let isInitialized = getValue(filters).length > 0;
@@ -158,15 +169,28 @@ const Toolbar = (
     const refresh = debounce((payload) => emitEvent('ScoreUpdated', { payload }), 300);
 
     van.derive(() => {
-        refresh({
+        const previous = {
+            name: scoreName.oldVal,
+            filters: filters.oldVal
+                .map((filter) => ({ ...filter, value: filter.value.oldVal }))
+                .filter((f) => f.field && f.value),
+            category: displayCategory.oldVal ? selectedCategory.oldVal : null,
+            total_score: displayTotalScore.oldVal,
+            cde_score: displayCDEScore.oldVal,
+        };
+        const current = {
             name: getValue(scoreName),
             filters: getValue(filters)
-                .map((filter) => ({ ...filter, value: getValue(filter.value) }))    
+                .map((filter) => ({ ...filter, value: getValue(filter.value) }))
                 .filter((f) => f.field && f.value),
             category: getValue(displayCategory) ? getValue(selectedCategory) : null,
             total_score: getValue(displayTotalScore),
             cde_score: getValue(displayCDEScore),
-        });
+        };
+
+        if (!isEqual(current, previous)) {
+            refresh(current);
+        }
     });
 
     van.derive(() => {
@@ -217,12 +241,12 @@ const Toolbar = (
             )
         ),
         div(
-            { class: 'flex-row fx-align-flex-end' },
+            { class: 'flex-row fx-align-flex-end fx-flex-wrap fx-gap-5' },
             div(
                 { class: 'flex-column fx-flex' },
-                span({ class: 'text-caption mt-3' }, 'Display on scorecard'),
+                span({ class: 'text-caption mt-3 mb-1' }, 'Display on scorecard'),
                 div(
-                    { class: 'flex-row fx-gap-4' },
+                    { class: 'flex-row fx-gap-4 fx-flex-wrap' },
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
@@ -233,18 +257,21 @@ const Toolbar = (
                         checked: displayCDEScore,
                         onChange: (checked) => displayCDEScore.val = checked,
                     }),
-                    Checkbox({
-                        label: 'Category:',
-                        checked: displayCategory,
-                        onChange: (checked) => displayCategory.val = checked,
-                    }),
-                    Select({
-                        style: 'margin-left: -8px;',
-                        height: 40,
-                        value: selectedCategory,
-                        options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
-                        disabled: van.derive(() => !getValue(displayCategory)),
-                    })
+                    div(
+                        { class: 'flex-row fx-gap-4' },
+                        Checkbox({
+                            label: 'Category:',
+                            checked: displayCategory,
+                            onChange: (checked) => displayCategory.val = checked,
+                        }),
+                        Select({
+                            style: 'margin-left: -8px;',
+                            height: 40,
+                            value: selectedCategory,
+                            options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
+                            disabled: van.derive(() => !getValue(displayCategory)),
+                        }),
+                    ),
                 ),
             ),
             div(
@@ -347,7 +374,7 @@ const FilterFieldSelector = (/** @type string[] */ options, /** @type string */ 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .score-explorer {
-    min-height: 600px;
+    min-height: 1100px;
 }
 
 .score-explorer--toolbar {

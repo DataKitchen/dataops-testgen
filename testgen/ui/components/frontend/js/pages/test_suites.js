@@ -98,14 +98,14 @@ const TestSuites = (/** @type Properties */ props) => {
                 () => div(
                     { class: 'flex-column' },
                     getValue(testSuites).map((/** @type TestSuite */ testSuite) => Card({
-                        class: 'tg-test-suites--card',
+                        border: true,
                         title: () => div(
                             { class: 'flex-column tg-test-suites--card-title' },
                             h4(testSuite.test_suite),
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
                         ),
                         actionContent: () => div(
-                            { class: 'flex-row tg-test-suites--card-actions' },
+                            { class: 'flex-row' },
                             userCanEdit
                                 ? [
                                     Button({ type: 'icon', icon: 'output', tooltip: 'Export results to Observability', onclick: () => emitEvent('ExportActionClicked', {payload: testSuite.id}) }),
@@ -232,10 +232,6 @@ stylesheet.replace(`
     min-height: 400px;
 }
 
-.tg-test-suites--card {
-    border: 1px solid var(--border-color);
-}
-
 .tg-test-suites--card-title h4 {
     margin: 0;
     color: var(--primary-text-color);
@@ -253,8 +249,6 @@ stylesheet.replace(`
     color: var(--caption-text-color);
     text-transform: initial;
 }
-
-.tg-test-suites--card-actions {}
 `);
 
 export { TestSuites };

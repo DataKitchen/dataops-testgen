@@ -112,6 +112,9 @@ class CCATExecutionSQL:
         strQ = self._ReplaceParms(read_template_sql_file("ex_update_test_suite.sql", "execution"))
         return strQ
 
+    def CalcPrevalenceTestResultsSQL(self):
+        return self._ReplaceParms(read_template_sql_file("ex_calc_prevalence_test_results.sql", "execution"))
+
     def TestScoringRollupRunSQL(self):
         return self._get_rollup_scores_sql().GetRollupScoresTestRunQuery()
 

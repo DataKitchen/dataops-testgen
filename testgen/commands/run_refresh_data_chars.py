@@ -26,15 +26,18 @@ def run_refresh_data_chars_queries(params: dict, run_date: str, spinner: Spinner
         f"{item['table_schema']}.{item['table_name']}"
         for item in ddf_results
     }
-    count_queries = sql_generator.GetRecordCountQueries(distinct_tables)
-    
-    LOG.info("CurrentStep: Getting record counts for table group")
-    count_results, _, error_count = RunThreadedRetrievalQueryList(
-        "PROJECT", count_queries, params["max_threads"], spinner
-    )
-
-    if error_count:
-        LOG.warning(f"{error_count} errors were encountered while retrieving record counts.")
+    if distinct_tables:
+        count_queries = sql_generator.GetRecordCountQueries(distinct_tables)
+        
+        LOG.info("CurrentStep: Getting record counts for table group")
+        count_results, _, error_count = RunThreadedRetrievalQueryList(
+            "PROJECT", count_queries, params["max_threads"], spinner
+        )
+        if error_count:
+            LOG.warning(f"{error_count} errors were encountered while retrieving record counts.")
+    else:
+        count_results = []
+        LOG.warning("No tables detected in table group. Skipping retrieval of record counts")
 
     count_map = dict(count_results)
     staging_columns = [

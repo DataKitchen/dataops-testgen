@@ -9,7 +9,7 @@ UPDATE profiling_runs
 WITH score_detail
   AS (SELECT pr.profile_run_id, pr.table_name, pr.column_name,
              MAX(pr.record_ct) as row_ct,
-             (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0), pr.record_ct)) * MAX(pr.record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0))) * MAX(pr.record_ct) as affected_data_points
         FROM profile_results pr
       INNER JOIN profiling_runs r
          ON (pr.profile_run_id = r.id)

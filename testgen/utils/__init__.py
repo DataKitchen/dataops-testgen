@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testgen.common.models.scores import ScoreCard
+
 import urllib.parse
 from typing import Any, TypeVar
 from uuid import UUID
@@ -5,8 +12,6 @@ from uuid import UUID
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-from testgen.common.models.scores import ScoreCard
 
 T = TypeVar("T")
 
@@ -85,7 +90,7 @@ def _pandas_default(value: Any, default: T) -> T:
     return value
 
 
-def format_score_card(score_card: ScoreCard) -> ScoreCard:
+def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
     definition = None
     if score_card:
         definition = score_card.get("definition")
@@ -116,7 +121,7 @@ def format_score_card(score_card: ScoreCard) -> ScoreCard:
         }
 
     return {
-        "id": str(score_card["id"]) if score_card else None,
+        "id": str(score_card_id) if (score_card_id := score_card.get("id")) else None,
         "project_code": score_card["project_code"],
         "name": score_card["name"],
         "score": (friendly_score(score_card.get("score")) or "--")
@@ -140,6 +145,7 @@ def format_score_card_breakdown(breakdown: list[dict], category: str) -> dict:
         "columns": [category, "impact", "score", "issue_ct"],
         "items": [{
             **row,
+            "table_groups_id": str(row["table_groups_id"]) if row.get("table_groups_id") else None,
             "score": friendly_score(row["score"]),
             "impact": friendly_score_impact(row["impact"]),
         } for row in breakdown],

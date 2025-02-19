@@ -2,10 +2,13 @@
  * @typedef Properties
  * @type {object}
  * @property {string} label
+ * @property {string?} help
  * @property {string | number} value
  * @property {number?} width
  */
 import { getValue, loadStylesheet } from '../utils.js';
+import { Icon } from './icon.js';
+import { withTooltip } from './tooltip.js';
 import van from '../van.min.js';
 
 const { div } = van.tags;
@@ -16,8 +19,14 @@ const Attribute = (/** @type Properties */ props) => {
     return div(
         { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: 'text-caption text-capitalize mb-1' },
+            { class: 'flex-row fx-gap-1 text-caption text-capitalize mb-1' },
             props.label,
+            () => getValue(props.help)
+                ? withTooltip(
+                    Icon({size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: props.help, position: 'top', width: 200 },
+                )
+                : null,
         ),
         div(
             { class: 'attribute-value' },

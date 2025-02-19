@@ -97,6 +97,11 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     const sortFunctions = {
         table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.table_groups_name.toLowerCase()),
         latest_activity_date: (a, b) => Math.max(b.latest_profile_start, b.latest_tests_start) - Math.max(a.latest_profile_start, a.latest_tests_start),
+        lowest_score: (a, b) => {
+            const scoreA = a.dq_score ? (a.dq_score.startsWith('>') ? 99.99 : Number(a.dq_score)) : 101;
+            const scoreB = b.dq_score ? (b.dq_score.startsWith('>') ? 99.99 : Number(b.dq_score)) : 101;
+            return scoreA - scoreB;
+        },
     };
     const onFiltersChange = function() {
         const searchTerm = getValue(tableGroupsSearchTerm);
@@ -122,6 +127,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 Card({
                     id: 'overview-project-summary',
                     class: 'tg-overview--project',
+                    border: true,
                     content: [
                         () => div(
                             { class: 'flex-row fx-align-flex-start' },
@@ -183,7 +189,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     return Card({
-        class: 'tg-overview--table-group-card',
+        border: true,
         title: tableGroup.table_groups_name,
         actionContent: () => ExpanderToggle({
             default: tableGroup.expanded,
@@ -325,7 +331,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
             ),
             suite.latest_run_id
                 ? Link({
-                    label: formatTimestamp(suite.latest_auto_gen_date),
+                    label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
                     params: { run_id: suite.latest_run_id },
                     style: 'flex: 1 1 15%;',
@@ -383,7 +389,6 @@ stylesheet.replace(`
 
 .tg-overview--project {
     margin: 8px 0;
-    border: 1px solid var(--border-color);
     width: 50%;
 }
 
@@ -393,10 +398,6 @@ stylesheet.replace(`
 
 .tg-overview--project--summary {
     margin-right: auto;
-}
-
-.tg-overview--table-group-card {
-    border: 1px solid var(--border-color);
 }
 
 hr.tg-overview--table-group-divider {

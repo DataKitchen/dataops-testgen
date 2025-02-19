@@ -34,9 +34,25 @@ WITH tablesrank AS
                      WHEN SUM(CASE WHEN record_ct - prev_record_ct < 0 THEN 1 ELSE 0 END) = 0 THEN 'cumulative'
                      ELSE 'window' END AS table_period,
                  CASE
-                     WHEN SUM(CASE WHEN functional_data_type = 'Measurement' THEN 1 ELSE 0 END) > 0
-                         AND SUM(CASE WHEN functional_data_type ILIKE '%Transactional Date%' THEN 1 ELSE 0 END) > 0
+                     WHEN COUNT(CASE
+                                WHEN functional_data_type ILIKE 'ID%'
+                                  OR functional_data_type = 'Category' THEN 1 END) > 0
+                      AND (
+                            (COUNT(CASE WHEN functional_data_type ILIKE 'Period%' THEN 1 END) > 0
+                              AND COUNT(CASE WHEN functional_data_type ILIKE 'Measure%' THEN 1 END) > 0)
+                           OR COUNT(CASE WHEN functional_data_type ILIKE 'Measure%' THEN 1 END)::FLOAT
+                                 /COUNT(CASE WHEN functional_data_type <> 'Constant' THEN 1 END)::FLOAT > 0.4
+                         )  THEN 'summary'
+                     WHEN COUNT(CASE WHEN functional_data_type ILIKE 'Measure%' THEN 1 END) > 0
+                         AND COUNT(CASE WHEN functional_data_type ILIKE '%Transactional Date%' THEN 1 END) > 0
                          THEN 'transaction'
+                     WHEN COUNT(CASE WHEN functional_data_type IN ('Entity Name', 'Person Last Name', 'Person Given Name', 'Person Full Name') THEN 1 END) > 0
+                          AND COUNT(CASE WHEN functional_data_type IN ('Address', 'City', 'State') THEN 1 END) > 1
+                          THEN 'entity'
+                     WHEN COUNT(CASE WHEN functional_data_type IN ('ID-Unique', 'ID-Unique-SK', 'ID-Secondary') THEN 1 END) > 1
+                      AND COUNT(CASE WHEN functional_data_type IN ('Attribute', 'Description') THEN 1 END) <= 1
+                      AND COUNT(CASE WHEN functional_data_type ILIKE 'Measure%' THEN 1 END) <= 1
+                          THEN 'bridge'
                      ELSE 'domain' END AS table_type
           FROM tablescount
           GROUP BY project_code, schema_name, table_name

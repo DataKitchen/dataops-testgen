@@ -222,15 +222,15 @@ class HygieneIssuesPage(Page):
                     )
                 with col2:
                     view_profiling_button(
-                        selected_row["table_name"], selected_row["column_name"], str_profile_run_id=run_id
+                        selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
                     )
 
                     if st.button(
-                        "Source Data →", help="Review current source data for highlighted issue", use_container_width=True
+                        ":material/visibility: Source Data", help="View current source data for highlighted issue", use_container_width=True
                     ):
                         source_data_dialog(selected_row)
                     if st.button(
-                            ":material/file_save: Issue Report",
+                            ":material/download: Issue Report",
                             use_container_width=True,
                             help="Generate a PDF report for each selected issue",
                     ):
@@ -279,9 +279,8 @@ class HygieneIssuesPage(Page):
 
         # Help Links
         st.markdown(
-            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/profile-anomalies)"
+            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
         )
-
 
 @st.fragment
 def render_score(project_code: str, run_id: str):
@@ -314,12 +313,6 @@ def render_score(project_code: str, run_id: str):
 def refresh_score(project_code: str, run_id: str, table_group_id: str | None) -> None:
     run_profile_rollup_scoring_queries(project_code, run_id, table_group_id)
     st.cache_data.clear()
-
-
-@st.cache_data(show_spinner=False)
-def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(schema, project_code)
 
 
 @st.cache_data(show_spinner="False")

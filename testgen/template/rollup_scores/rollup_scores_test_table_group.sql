@@ -35,7 +35,7 @@ WITH score_calc
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
         FROM data_column_chars dcc
       LEFT JOIN (test_results r
                   INNER JOIN test_suites ts
@@ -65,7 +65,7 @@ WITH score_detail
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
         FROM data_table_chars dtc
       LEFT JOIN (test_results r
                   INNER JOIN test_suites ts

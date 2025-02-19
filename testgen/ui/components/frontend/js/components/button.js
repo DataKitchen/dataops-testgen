@@ -138,7 +138,7 @@ button.tg-button:not(.tg-icon-button):has(span):has(i) {
 }
 
 button.tg-button[disabled] {
-    color: var(--disabled-text-color);
+    color: var(--disabled-text-color) !important;
     cursor: not-allowed;
 }
 

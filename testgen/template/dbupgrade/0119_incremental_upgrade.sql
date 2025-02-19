@@ -77,7 +77,7 @@ WITH result_calc
           FROM test_results r
           INNER JOIN test_types tt
                 ON r.test_type = tt.test_type
-          LEFT JOIN v_latest_profile_results p
+          INNER JOIN v_latest_profile_results p
                 ON (r.table_groups_id = p.table_groups_id
              AND r.table_name = p.table_name
              AND r.column_names = p.column_name)
@@ -99,7 +99,7 @@ UPDATE test_results
 WITH score_detail
   AS (SELECT r.test_run_id, r.table_name, r.column_names,
              MAX(r.dq_record_ct) as dq_record_ct,
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * MAX(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * MAX(r.dq_record_ct) as affected_data_points
         FROM test_results r
        WHERE COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY r.test_run_id, r.table_name, r.column_names ),
@@ -147,7 +147,7 @@ WITH score_calc
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
         FROM test_results r
       INNER JOIN test_suites ts
          ON (r.test_suite_id = ts.id
@@ -175,7 +175,7 @@ WITH score_detail
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0), r.dq_record_ct)) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
         FROM test_results r
       INNER JOIN test_suites ts
          ON (r.test_suite_id = ts.id

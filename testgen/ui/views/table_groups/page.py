@@ -207,6 +207,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
     profile_sample_percent = 30
     profile_sample_min_count = 15000
     profiling_delay_days = 0
+    profile_flag_cdes = True
 
     with table_groups_settings_tab:
         selected_table_group = table_group if mode == "edit" else None
@@ -225,6 +226,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
             profile_sample_percent = int(selected_table_group["profile_sample_percent"])
             profile_sample_min_count = int(selected_table_group["profile_sample_min_count"])
             profiling_delay_days = int(selected_table_group["profiling_delay_days"])
+            profile_flag_cdes = selected_table_group["profile_flag_cdes"]
 
         left_column, right_column = st.columns([0.50, 0.50])
 
@@ -291,12 +293,16 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     value=profiling_delay_days,
                     help="The number of days to wait before new profiling will be available to generate tests",
                 ),
-                "add_scorecard_definition": left_column.toggle(
-                    "Add Scorecard",
+                "profile_flag_cdes": left_column.checkbox(
+                    "Detect critical data elements (CDEs) during profiling",
+                    value=profile_flag_cdes,
+                ),
+                "add_scorecard_definition": right_column.checkbox(
+                    "Add scorecard for table group",
                     value=True,
                     help="Add a new scorecard to the Quality Dashboard upon creation of this table group",
                 ) if mode != "edit" else None,
-                "profile_use_sampling": left_column.toggle(
+                "profile_use_sampling": left_column.checkbox(
                     "Use profile sampling",
                     value=profile_use_sampling,
                     help="Toggle on to base profiling on a sample of records instead of the full table",
@@ -370,7 +376,7 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                     max_chars=40,
                     value=empty_if_null(selected_table_group["transform_level"])
                         if mode == "edit" and selected_table_group is not None else "",
-                    help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting",
+                    help="Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)",
                 ),
                 "data_product": tags_right_column.text_input(
                     label="Data Product",

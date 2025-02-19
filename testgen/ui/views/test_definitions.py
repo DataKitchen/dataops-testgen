@@ -2,9 +2,11 @@ import logging
 import time
 import typing
 
+import pandas as pd
 import streamlit as st
 from streamlit_extras.no_default_selectbox import selectbox
 
+import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.table_group_service as table_group_service
@@ -58,9 +60,9 @@ class TestDefinitionsPage(Page):
         testgen.flex_row_end(disposition_column)
 
         with table_filter_column:
-            table_options = run_table_lookup_query(table_group["id"])
+            columns_df = get_test_suite_columns(test_suite_id)
             table_name = testgen.select(
-                options=table_options,
+                options=list(columns_df["table_name"].unique()),
                 value_column="table_name",
                 default_value=table_name,
                 bind_to_query="table_name",
@@ -68,7 +70,7 @@ class TestDefinitionsPage(Page):
                 label="Table Name",
             )
         with column_filter_column:
-            column_options = get_column_names(table_group["id"], table_name)
+            column_options = list(columns_df.loc[columns_df["table_name"] == table_name]["column_name"].unique())
             column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
@@ -94,7 +96,7 @@ class TestDefinitionsPage(Page):
 
         disposition_actions = [
             { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
-            { "icon": "✘", "help": "Inactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Inactivated" },
+            { "icon": "🔇", "help": "Deactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Deactivated" },
             { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
             { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
         ]
@@ -121,6 +123,13 @@ class TestDefinitionsPage(Page):
             disabled=not selected,
         ):
             edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
+
+        if user_can_edit and actions_column.button(
+            ":material/file_copy: Copy/Move",
+            help="Copy or Move the Test Definition",
+            disabled=not selected,
+        ):
+            copy_move_test_dialog(project_code, table_group, test_suite, selected)
 
         if user_can_edit and actions_column.button(
             ":material/delete: Delete",
@@ -611,6 +620,83 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
     show_test_form("edit", project_code, table_group, test_suite, str_table_name, str_column_name, selected_test_def)
 
 
+@st.dialog(title="Copy/Move Tests")
+def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
+    st.text(f"Selected tests: {len(selected_test_definitions)}")
+
+    user_can_edit = authentication_service.current_user_has_edit_role()
+
+    group_filter_column, suite_filter_column = st.columns([.5, .5], vertical_alignment="bottom")
+
+    with group_filter_column:
+        table_groups_df = run_table_groups_lookup_query(project_code)
+        target_table_group_id = testgen.select(
+            options=table_groups_df,
+            value_column="id",
+            display_column="table_groups_name",
+            default_value=origin_table_group["id"],
+            label="Target Table Group",
+        )
+
+    with suite_filter_column:
+        test_suites_df = run_test_suite_lookup_query(target_table_group_id)
+        try:
+            origin_index = test_suites_df[test_suites_df["id"] == origin_test_suite["id"]].index
+            test_suites_df.drop(origin_index, inplace=True)
+        except KeyError:
+            pass
+        target_test_suite_id = testgen.select(
+            options=test_suites_df,
+            value_column="id",
+            display_column="test_suite",
+            default_value=None,
+            label="Target Test Suite",
+        )
+
+    movable_test_definitions = []
+    if target_table_group_id and target_test_suite_id:
+        collision_test_definitions = test_definition_service.get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        if not collision_test_definitions.empty:
+            unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "N"]
+            locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == "Y"]
+            locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
+            movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
+
+            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
+            \nUnlocked tests that will be overwritten: {len(unlocked)}
+            \nLocked tests that will not be overwritten: {len(locked)}
+            """
+            st.warning(warning_message, icon=":material/warning:")
+        else:
+            movable_test_definitions = selected_test_definitions
+
+    testgen.whitespace(1)
+    _, copy_column, move_column = st.columns([.6, .2, .2])
+    copy = copy_column.button(
+        "Copy",
+        use_container_width=True,
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+    )
+
+    move = move_column.button(
+        "Move",
+        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+        use_container_width=True,
+    )
+
+    if move:
+        test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        success_message = "Test Definitions have been moved."
+        st.success(success_message)
+        time.sleep(1)
+        st.rerun()
+    elif copy:
+        test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        success_message = "Test Definitions have been copied."
+        st.success(success_message)
+        time.sleep(1)
+        st.rerun()
+
 def validate_form(test_scope, test_type, test_definition, column_name_label):
     if test_type == "Condition_Flag" and not test_definition["threshold_value"]:
         st.error("Threshold Error Count is a required field.")
@@ -813,11 +899,12 @@ def show_test_defs_grid(
             )
 
         _, col_profile_button = right_column.columns([0.7, 0.3])
-        if selected_row["test_scope"] == "column":
+        if selected_row["test_scope"] == "column" and selected_row["profile_run_id"]:
             with col_profile_button:
                 view_profiling_button(
-                    selected_row["table_name"], selected_row["column_name"],
-                    str_table_groups_id=str_table_groups_id
+                    selected_row["column_name"],
+                    selected_row["table_name"],
+                    str_table_groups_id,
                 )
 
         with right_column:
@@ -869,15 +956,15 @@ def run_table_groups_lookup_query(str_project_code, str_connection_id=None, tabl
 
 
 @st.cache_data(show_spinner=False)
-def run_table_lookup_query(str_table_groups_id):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_table_lookup_query(str_schema, str_table_groups_id)
-
-
-@st.cache_data(show_spinner=False)
-def run_column_lookup_query(str_table_groups_id, str_table_name):
-    str_schema = st.session_state["dbschema"]
-    return dq.run_column_lookup_query(str_schema, str_table_groups_id, str_table_name)
+def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT table_name, column_name
+    FROM {schema}.test_definitions
+    WHERE test_suite_id = '{test_suite_id}'
+    ORDER BY table_name, column_name;
+    """
+    return db.retrieve_data(sql)
 
 
 @st.cache_data(show_spinner=False)
@@ -886,7 +973,15 @@ def run_test_suite_lookup_query(str_table_groups_id, test_suite_name=None):
     return dq.run_test_suite_lookup_by_tgroup_query(str_schema, str_table_groups_id, test_suite_name)
 
 
-def get_column_names(str_table_groups_id, str_table_name):
-    df = run_column_lookup_query(str_table_groups_id, str_table_name)
-    lst_choices = df["column_name"].tolist()
-    return lst_choices
+def get_column_names(table_groups_id: str, table_name: str) -> list:
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+    SELECT column_name
+    FROM {schema}.data_column_chars
+    WHERE table_groups_id = '{table_groups_id}'::UUID
+        AND table_name = '{table_name}'
+        AND drop_date IS NULL
+    ORDER BY column_name
+    """
+    df = db.retrieve_data(sql)
+    return df["column_name"].tolist()

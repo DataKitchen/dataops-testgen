@@ -5,12 +5,13 @@ from collections.abc import Iterable
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
-from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, String, select, text
+from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import joinedload, relationship
+from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, Session, engine
+from testgen.utils import is_uuid4
 
 
 class ScoreCategory(enum.Enum):
@@ -40,8 +41,19 @@ class ScoreDefinition(Base):
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
+        lazy="joined",
     )
-    filters: Iterable["ScoreDefinitionFilter"] = relationship("ScoreDefinitionFilter", cascade="all, delete-orphan")
+    filters: Iterable["ScoreDefinitionFilter"] = relationship(
+        "ScoreDefinitionFilter",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
+    breakdown: Iterable["ScoreDefinitionBreakdownItem"] = relationship(
+        "ScoreDefinitionBreakdownItem",
+        cascade="all, delete-orphan",
+        order_by="ScoreDefinitionBreakdownItem.impact.desc()",
+        lazy="joined",
+    )
 
     @classmethod
     def from_table_group(cls, table_group: dict) -> Self:
@@ -58,12 +70,12 @@ class ScoreDefinition(Base):
 
     @classmethod
     def get(cls, id_: str) -> "Self | None":
+        if not is_uuid4(id_):
+            return None
+    
         definition = None
         with Session() as db_session:
-            query = select(ScoreDefinition).options(
-                joinedload(ScoreDefinition.filters),
-                joinedload(ScoreDefinition.results),
-            ).where(ScoreDefinition.id == id_)
+            query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
             definition = db_session.scalars(query).first()
         return definition
 
@@ -73,16 +85,10 @@ class ScoreDefinition(Base):
         project_code: str | None = None,
         name_filter: str | None = None,
         sorted_by: str | None = "name",
-        fetch_filters: bool = False,
-        fetch_results: bool = True,
     ) -> "Iterable[Self]":
         definitions = []
         with Session() as db_session:
             query = select(ScoreDefinition)
-            if fetch_filters:
-                query = query.options(joinedload(ScoreDefinition.filters))
-            if fetch_results:
-                query = query.options(joinedload(ScoreDefinition.results))
             if name_filter:
                 query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
             if project_code:
@@ -94,7 +100,7 @@ class ScoreDefinition(Base):
     def save(self) -> None:
         with Session() as db_session:
             db_session.add(self)
-            db_session.flush()
+            db_session.flush([self])
             db_session.commit()
             db_session.refresh(self, ["id"])
 
@@ -114,6 +120,19 @@ class ScoreDefinition(Base):
         score_cards/get_category_scores_by_column.sql
         score_cards/get_category_scores_by_dimension.sql
         """
+        if len(self.filters) <= 0:
+            return {
+                "id": self.id,
+                "project_code": self.project_code,
+                "name": self.name,
+                "score": None,
+                "cde_score": None,
+                "profiling_score": None,
+                "testing_score": None,
+                "categories": [],
+                "definition": self,
+            }
+
         overall_score_query_template_file = "get_overall_scores_by_column.sql"
         categories_query_template_file = "get_category_scores_by_column.sql"
         if self.category == ScoreCategory.dq_dimension:
@@ -171,7 +190,8 @@ class ScoreDefinition(Base):
             query_template_file = "get_score_card_breakdown_by_dimension.sql"
 
         columns = {
-            "column_name": ["table_name", "column_name"],
+            "table_name": ["table_groups_id", "table_name"],
+            "column_name": ["table_groups_id", "table_name", "column_name"],
         }.get(group_by, [group_by])
         filters = " AND ".join(self._get_raw_query_filters(cde_only=score_type == "cde_score"))
         join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
@@ -222,8 +242,12 @@ class ScoreDefinition(Base):
 
         value_ = value
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
-        if group_by == "column_name":
-            table_name, value_ = value.split(".")
+        if group_by == "table_name":
+            table_group_id, value_ = value.split(".")
+            filters.append(f"table_groups_id = '{table_group_id}'")
+        elif group_by == "column_name":
+            table_group_id, table_name, value_ = value.split(".")
+            filters.append(f"table_groups_id = '{table_group_id}'")
             filters.append(f"table_name = '{table_name}'")
         filters = " AND ".join(filters)
 
@@ -284,6 +308,56 @@ class ScoreDefinitionResult(Base):
     )
     category: str = Column(String, nullable=False, primary_key=True)
     score: float = Column(Float, nullable=True)
+
+
+class ScoreDefinitionBreakdownItem(Base):
+    __tablename__ = "score_definition_results_breakdown"
+
+    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    definition_id: str = Column(
+        UUID(as_uuid=True),
+        ForeignKey("score_definitions.id", ondelete="CASCADE"),
+    )
+    category: str = Column(String, nullable=False)
+    score_type: str = Column(String, nullable=False)
+    table_groups_id: str = Column(String, nullable=True)
+    table_name: str = Column(String, nullable=True)
+    column_name: str = Column(String, nullable=True)
+    dq_dimension: str = Column(String, nullable=True)
+    semantic_data_type: str = Column(String, nullable=True)
+    impact: float = Column(Float)
+    score: float = Column(Float)
+    issue_ct: int = Column(Integer)
+
+    @classmethod
+    def filter(
+        cls,
+        *,
+        definition_id: str,
+        category: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        score_type: Literal["score", "cde_score"],
+    ) -> "Iterable[Self]":
+        items = []
+        with Session() as db_session:
+            query = select(ScoreDefinitionBreakdownItem).where(
+                ScoreDefinitionBreakdownItem.definition_id == definition_id,
+                ScoreDefinitionBreakdownItem.category == category,
+                ScoreDefinitionBreakdownItem.score_type == score_type,
+            ).order_by(ScoreDefinitionBreakdownItem.impact.desc())
+            items = db_session.scalars(query).unique().all()
+        return items
+
+    def to_dict(self) -> dict:
+        category_fields = {
+            "table_name": ["table_groups_id", "table_name"],
+            "column_name": ["table_groups_id", "table_name", "column_name"],
+        }.get(self.category, [self.category])
+        return {
+            **{field_name: getattr(self, field_name) for field_name in category_fields},
+            "impact": self.impact,
+            "score": self.score,
+            "issue_ct": self.issue_ct,
+        }
 
 
 class ScoreCard(TypedDict):

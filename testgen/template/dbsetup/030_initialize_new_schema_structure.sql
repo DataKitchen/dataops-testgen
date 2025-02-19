@@ -101,6 +101,7 @@ CREATE TABLE table_groups
     profile_sample_percent   VARCHAR(3) DEFAULT '30',
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0' ,
+    profile_flag_cdes        BOOLEAN DEFAULT TRUE,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
     profile_pair_rule_pct    INTEGER DEFAULT 95,
     description              VARCHAR(1000),
@@ -363,7 +364,9 @@ CREATE TABLE data_structure_log (
 );
 
 CREATE TABLE data_table_chars (
-   table_id              UUID DEFAULT gen_random_uuid(),
+   table_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dtc_id
+         PRIMARY KEY,
    table_groups_id       UUID,
    schema_name           VARCHAR(50),
    table_name            VARCHAR(120),
@@ -391,7 +394,9 @@ CREATE TABLE data_table_chars (
 );
 
 CREATE TABLE data_column_chars (
-   column_id              UUID DEFAULT gen_random_uuid(),
+   column_id              UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dcc_id
+         PRIMARY KEY,
    table_id               UUID,
    table_groups_id        UUID,
    schema_name            VARCHAR(50),
@@ -669,6 +674,23 @@ CREATE TABLE IF NOT EXISTS score_definition_results (
     score           DOUBLE PRECISION    DEFAULT NULL
 );
 
+CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
+    id                   UUID                DEFAULT gen_random_uuid() PRIMARY KEY,
+    definition_id        UUID                CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
+                                                REFERENCES score_definitions (id)
+                                                ON DELETE CASCADE,
+    category             TEXT                NOT NULL,
+    score_type           TEXT                NOT NULL,
+    table_groups_id      TEXT                DEFAULT NULL,
+    table_name           TEXT                DEFAULT NULL,
+    column_name          TEXT                DEFAULT NULL,
+    dq_dimension         TEXT                DEFAULT NULL,
+    semantic_data_type   TEXT                DEFAULT NULL,
+    impact               DOUBLE PRECISION    DEFAULT 0.0,
+    score                DOUBLE PRECISION    DEFAULT 0.0,
+    issue_ct             INTEGER             DEFAULT 0
+);
+
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
 
 -- Index working table - ORIGINAL
@@ -686,6 +708,9 @@ CREATE UNIQUE INDEX uix_tg_id
 CREATE INDEX ix_tg_cid
    ON table_groups(connection_id);
 
+CREATE UNIQUE INDEX idx_tg_last_profile
+  ON table_groups (last_complete_profile_run_id)
+  WHERE last_complete_profile_run_id IS NOT NULL;
 
 -- Index Profile Results - ORIGINAL -- still relevant?
 CREATE INDEX profile_results_tgid_sn_tn_cn
@@ -698,6 +723,10 @@ CREATE UNIQUE INDEX uix_ts_id
 
 CREATE INDEX ix_ts_con
    ON test_suites(connection_id);
+
+CREATE UNIQUE INDEX idx_ts_last_run
+  ON test_suites (last_complete_test_run_id)
+  WHERE last_complete_test_run_id IS NOT NULL;
 
 -- Index test_definitions
 CREATE INDEX ix_td_ts_fk
@@ -779,11 +808,24 @@ CREATE INDEX ix_pro_pair_prun
 
 -- Index profile_anomaly_results
 CREATE INDEX ix_ares_prun
-   ON profile_anomaly_results(profile_run_id);
+   ON profile_anomaly_results(profile_run_id, table_name, column_name);
 
 CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
+-- Index data_table_chars
+CREATE INDEX idx_dtc_tgid_table
+  ON data_table_chars (table_groups_id, table_name);
+
+-- Index data_column_chars
+CREATE INDEX idx_dcc_tg_table_column
+  ON data_column_chars (table_groups_id, table_name, column_name);
+
+-- Conditional Index for dq_scoring views
+CREATE INDEX idx_test_results_filter_join
+  ON test_results (test_run_id, table_groups_id, table_name, column_names)
+  WHERE dq_prevalence IS NOT NULL
+    AND (disposition IS NULL OR disposition = 'Confirmed');
 
 -- Conditional index for Observability Export - ORIGINAL
 CREATE INDEX cix_tr_pc_ts

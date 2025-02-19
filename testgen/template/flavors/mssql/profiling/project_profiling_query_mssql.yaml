@@ -80,8 +80,8 @@ strTemplate05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE("{COL_NAME}",' '''',.-',
     WHEN CAST(SUM(CASE WHEN "{COL_NAME}" IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'STATE_USA'
     WHEN CAST(SUM( CASE WHEN ("{COL_NAME}" LIKE '[+]1%[0-9][0-9][0-9]%[-. ][0-9][0-9][0-9]%[0-9][0-9][0-9][0-9,0-9,0-9,0-9,0-9,0-9]' AND "{COL_NAME}" NOT LIKE '%[^0-9+()-]%')
-                     OR ("{COL_NAME}" LIKE '[+]1%[0-9][0-9][0-9][- ][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]' AND "{COL_NAME}" NOT LIKE '%[^0-9+-]%')
-         THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'PHONE_USA'
+                     OR ("{COL_NAME}" LIKE '[+]1%[0-9][0-9][0-9][-. ][0-9][0-9][0-9][-. ][0-9][0-9][0-9][0-9]' AND "{COL_NAME}" NOT LIKE '%[^0-9+-]%')
+         THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'PHONE_USA'
     WHEN CAST(SUM( CASE WHEN "{COL_NAME}" LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%'
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
     WHEN CAST(SUM( CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')

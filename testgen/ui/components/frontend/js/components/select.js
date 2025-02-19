@@ -4,7 +4,7 @@
  * @property {string} label
  * @property {string} value
  * @property {boolean} selected
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string?} id
@@ -19,7 +19,7 @@
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { getRandomId, getValue, getParents, loadStylesheet, isState } from '../utils.js';
+import { getRandomId, getValue, getParents, loadStylesheet, isState, isEqual } from '../utils.js';
 import { Portal } from './portal.js';
 
 const { div, i, label, span } = van.tags;
@@ -56,12 +56,16 @@ const Select = (/** @type {Properties} */ props) => {
 
     van.derive(() => {
         const currentOptions = getValue(options);
+
         let currentValue = getValue(value);
+        let previousValue = value.oldVal;
         if (currentOptions.find((op) => op.value === currentValue) === undefined) {
             currentValue = value.val = null;
         }
 
-        props.onChange?.(currentValue);
+        if (!isEqual(currentValue, previousValue)) {
+            props.onChange?.(currentValue);
+        }
     });
 
     return label(
@@ -70,7 +74,7 @@ const Select = (/** @type {Properties} */ props) => {
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
             onclick: () => {
-                if (!props.disabled || !props.disabled.val) {
+                if (!getValue(props.disabled)) {
                     opened.val = true;
                 }
             },
@@ -170,6 +174,8 @@ stylesheet.replace(`
     background: var(--select-portal-background);
     box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     min-height: 40px;
+    max-height: 400px;
+    overflow: auto;
     z-index: 99;
 }
 

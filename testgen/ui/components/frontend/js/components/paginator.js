@@ -102,7 +102,7 @@ stylesheet.replace(`
 
 .tg-paginator--button[disabled] {
     color: var(--disabled-text-color);
-    cursor: default;
+    cursor: not-allowed;
 }
 `);
 

@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string?} label
+ * @property {string?} help
  * @property {(string | number)?} value
  * @property {string?} placeholder
  * @property {string?} icon
@@ -13,8 +14,10 @@
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet } from '../utils.js';
+import { Icon } from './icon.js';
+import { withTooltip } from './tooltip.js';
 
-const { input, label, i } = van.tags;
+const { div,input, label, i } = van.tags;
 const defaultHeight = 32;
 const iconSize = 22;
 const clearIconSize = 20;
@@ -30,10 +33,19 @@ const Input = (/** @type Properties */ props) => {
 
     return label(
         {
-            class: 'flex-column fx-gap-1 text-caption tg-input--label',
+            class: 'flex-column fx-gap-1 tg-input--label',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
         },
-        props.label,
+        div(
+            { class: 'flex-row fx-gap-1 text-caption' },
+            props.label,
+            () => getValue(props.help)
+                ? withTooltip(
+                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: props.help, position: 'top', width: 200 }
+                )
+                : null,
+        ),
         () => getValue(props.icon) ? i(
             {
                 class: 'material-symbols-rounded tg-input--icon',

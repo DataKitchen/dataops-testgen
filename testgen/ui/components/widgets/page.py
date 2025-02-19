@@ -29,11 +29,6 @@ def page_header(
 
         st.html('<hr size="3" class="tg-header--line">')
 
-    if "last_page" in st.session_state:
-        if title != st.session_state["last_page"]:
-            st.cache_data.clear()
-    st.session_state["last_page"] = title
-
 
 def page_links(help_topic: str | None = None):
     css_class("tg-header--links")

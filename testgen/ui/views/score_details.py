@@ -4,15 +4,16 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.common.models.scores import ScoreDefinition, SelectedIssue
+from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries.scoring_queries import get_score_card_issue_reports
+from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 
@@ -20,6 +21,7 @@ class ScoreDetailsPage(Page):
     path = "quality-dashboard:score-details"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
+        lambda: "definition_id" in session.current_page_args or "quality-dashboard",
     ]
 
     def render(
@@ -32,8 +34,14 @@ class ScoreDetailsPage(Page):
         **_kwargs
     ):
         project_code: str = session.project
-        user_can_edit = authentication_service.current_user_has_edit_role()
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
+
+        if not score_definition:
+            self.router.navigate_with_warning(
+                f"Scorecard with ID '{definition_id}' does not exist. Redirecting to Quality Dashboard ...",
+                "quality-dashboard",
+            )
+            return
 
         testgen.page_header(
             "Score Details",
@@ -43,21 +51,34 @@ class ScoreDetailsPage(Page):
             ],
         )
 
+        score_card = None
+        score_breakdown = None
+        issues = None
+        with st.spinner(text="Loading data ..."):
+            user_can_edit = authentication_service.current_user_has_edit_role()
+            score_card = format_score_card(score_definition.as_score_card())
+            if not drilldown:
+                score_breakdown = ScoreDefinitionBreakdownItem.filter(
+                    definition_id=definition_id,
+                    category=category,
+                    score_type=score_type,
+                )
+                score_breakdown = format_score_card_breakdown([item.to_dict() for item in score_breakdown], category)
+            else:
+                issues = format_score_card_issues(
+                    score_definition.get_score_card_issues(score_type, category, drilldown),
+                    category,
+                )
+
         testgen.testgen_component(
             "score_details",
             props={
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
-                "score": format_score_card(score_definition.as_score_card()),
-                "breakdown": format_score_card_breakdown(
-                    score_definition.get_score_card_breakdown(score_type, category),
-                    category,
-                ) if not drilldown else None,
-                "issues": format_score_card_issues(
-                    score_definition.get_score_card_issues(score_type, category, drilldown),
-                    category,
-                ) if drilldown else None,
+                "score": score_card,
+                "breakdown": score_breakdown,
+                "issues": issues,
                 "permissions": {
                     "can_edit": user_can_edit,
                 }
@@ -69,6 +90,11 @@ class ScoreDetailsPage(Page):
                 "CategoryChanged": select_category,
                 "ScoreTypeChanged": select_score_type,
                 "IssueReportsExported": export_issue_reports,
+                "ColumnProflingClicked": lambda payload: profiling_results_dialog(
+                    payload["column_name"],
+                    payload["table_name"],
+                    payload["table_group_id"],
+                )
             },
         )
 
@@ -141,4 +167,5 @@ def delete_score_card(definition_id: str) -> None:
 
     if delete_clicked():
         score_definition.delete()
+        get_all_score_cards.clear()
         Router().navigate("quality-dashboard")

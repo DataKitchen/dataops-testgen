@@ -11,7 +11,11 @@ from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, downlo
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries.scoring_queries import get_score_card_issue_reports, get_score_category_values
+from testgen.ui.queries.scoring_queries import (
+    get_all_score_cards,
+    get_score_card_issue_reports,
+    get_score_category_values,
+)
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
@@ -47,59 +51,74 @@ class ScoreExplorerPage(Page):
             {"label": last_breadcrumb},
         ])
 
-        score_definition: ScoreDefinition = ScoreDefinition()
-        if definition_id and not (name or total_score or category or filters):
-            score_definition = ScoreDefinition.get(definition_id)
-            set_score_definition(score_definition.to_dict())
+        score_breakdown = None
+        issues = None
+        filter_values = {}
+        with st.spinner(text="Loading data ..."):
+            filter_values = get_score_category_values(project_code)
 
-        score_definition.id = score_definition.id or definition_id
-        if name or total_score or category or filters:
-            score_definition.project_code = project_code
-            score_definition.name = name
-            score_definition.total_score = total_score and total_score.lower() == "true"
-            score_definition.cde_score = cde_score and cde_score.lower() == "true"
-            score_definition.category = ScoreCategory(category) if category else None
+            score_definition: ScoreDefinition = ScoreDefinition(
+                id=definition_id,
+                project_code=project_code,
+                total_score=True,
+                cde_score=True,
+            )
+            if definition_id and not (name or total_score or category or filters):
+                score_definition = ScoreDefinition.get(definition_id)
+                set_score_definition(score_definition.to_dict())
 
-            if filters:
-                applied_filters = filters
-                if not isinstance(applied_filters, list):
-                    applied_filters = [filters]
+            if name or total_score or cde_score or category or filters:
+                score_definition.name = name
+                score_definition.total_score = total_score and total_score.lower() == "true"
+                score_definition.cde_score = cde_score and cde_score.lower() == "true"
+                score_definition.category = ScoreCategory(category) if category else None
 
-                score_definition.filters = [
-                    ScoreDefinitionFilter(field=field_value[0], value=field_value[1])
-                    for f in applied_filters if (field_value := f.split("="))
-                ]
+                if filters:
+                    applied_filters = filters
+                    if not isinstance(applied_filters, list):
+                        applied_filters = [filters]
 
-        score_card = None
-        if score_definition and len(score_definition.filters) > 0:
-            score_card = score_definition.as_score_card()
+                    score_definition.filters = [
+                        ScoreDefinitionFilter(field=field_value[0], value=field_value[1])
+                        for f in applied_filters if (field_value := f.split("="))
+                    ]
 
-        testgen.testgen_component(
-            "score_explorer",
-            props={
-                "filter_values": get_score_category_values(project_code),
-                "definition": score_definition.to_dict(),
-                "score_card": format_score_card(score_card),
-                "breakdown_category": breakdown_category,
-                "breakdown_score_type": breakdown_score_type,
-                "breakdown": format_score_card_breakdown(
+            score_card = None
+            if score_definition:
+                score_card = score_definition.as_score_card()
+
+            if len(score_definition.filters) > 0 and not drilldown:
+                score_breakdown = format_score_card_breakdown(
                     score_definition.get_score_card_breakdown(
                         score_type=breakdown_score_type,
                         group_by=breakdown_category,
                     ),
                     breakdown_category,
-                ) if score_card else None,
-                "drilldown": drilldown,
-                "issues": format_score_card_issues(
+                )
+            if score_card and drilldown:
+                issues = format_score_card_issues(
                     score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
                     breakdown_category,
-                ) if score_card and drilldown else None,
+                )
+            score_definition_dict = score_definition.to_dict()
+
+        testgen.testgen_component(
+            "score_explorer",
+            props={
+                "filter_values": filter_values,
+                "definition": score_definition_dict,
+                "score_card": format_score_card(score_card),
+                "breakdown_category": breakdown_category,
+                "breakdown_score_type": breakdown_score_type,
+                "breakdown": score_breakdown,
+                "drilldown": drilldown,
+                "issues": issues,
                 "is_new": not definition_id,
             },
-            event_handlers={},
             on_change_handlers={
                 "ScoreUpdated": set_score_definition,
                 "CategoryChanged": set_breakdown_category,
+                "ScoreTypeChanged": set_breakdown_score_type,
                 "DrilldownChanged": set_breakdown_drilldown,
                 "IssueReportsExported": export_issue_reports,
                 "ScoreDefinitionSaved": save_score_definition,
@@ -126,6 +145,10 @@ def set_score_definition(definition: dict | None) -> None:
 
 def set_breakdown_category(category: str) -> None:
     Router().set_query_params({"breakdown_category": category})
+
+
+def set_breakdown_score_type(score_type: str) -> None:
+    Router().set_query_params({"breakdown_score_type": score_type})
 
 
 def set_breakdown_drilldown(drilldown: str | None) -> None:
@@ -197,6 +220,7 @@ def save_score_definition(_) -> None:
     ]
     score_definition.save()
     run_refresh_score_cards_results(definition_id=score_definition.id)
+    get_all_score_cards.clear()
 
     Router().set_query_params({
         "name": None,
@@ -206,3 +230,5 @@ def save_score_definition(_) -> None:
         "filters": None,
         "definition_id": str(score_definition.id) if score_definition.id else None,
     })
+
+    st.toast("Scorecard saved", icon=":material/task_alt:")

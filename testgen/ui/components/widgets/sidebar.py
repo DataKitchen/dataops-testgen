@@ -14,6 +14,7 @@ LOGOUT_PATH = "logout"
 
 def sidebar(
     key: str = SIDEBAR_KEY,
+    project: str | None = None,
     username: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
@@ -28,16 +29,10 @@ def sidebar(
     :param menu: menu object with all root pages
     :param current_page: page address to highlight the selected item
     """
-
-    if session.page_pending_sidebar is not None:
-        path = session.page_pending_sidebar
-        session.page_pending_sidebar = None
-        params = { "project_code": session.project } if path != "" else {}
-        Router().navigate(to=path, with_args=params)
-
     component(
         id_="sidebar",
         props={
+            "project": project,
             "username": username,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
@@ -57,6 +52,6 @@ def on_change():
     if path == LOGOUT_PATH:
         javascript_service.clear_component_states()
         user_session_service.end_user_session()
-        session.page_pending_sidebar = ""
+        Router().queue_navigation(to="", with_args={ "project_code": session.project })
     else:
-        session.page_pending_sidebar = path
+        Router().queue_navigation(to=path, with_args={ "project_code": session.project })

@@ -156,7 +156,7 @@ def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=
         pass
 
     LOG.info("CurrentStep: Execute Step - Test Validation")
-    run_parameter_validation_queries(test_exec_params, test_run_id, test_time, test_suite, True)
+    run_parameter_validation_queries(test_exec_params, test_run_id, test_time, test_suite)
 
     LOG.info("CurrentStep: Execute Step - Test Execution")
     has_errors, error_msg = run_test_queries(
