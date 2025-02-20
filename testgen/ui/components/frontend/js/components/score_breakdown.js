@@ -28,11 +28,16 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                 },
                 span('for'),
                 () => {
+                    const scoreValue = getValue(score);
                     const selectedScoreType = getValue(scoreType);
+                    const scoreTypeOptions = ['score', 'cde_score'].filter((s) => scoreValue[s])
+                    if (!scoreTypeOptions.length) {
+                        scoreTypeOptions.push('score');
+                    }
                     return Select({
                         label: '',
                         value: selectedScoreType,
-                        options: ['score', 'cde_score'].map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
+                        options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
                         onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
                     });
                 },
@@ -41,7 +46,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
         ),
         () => div(
             { class: 'table-header breakdown-columns flex-row' },
-            getValue(breakdown)?.columns?.map(column => span({ 
+            getValue(breakdown)?.columns?.map(column => span({
                 style: `flex: ${BREAKDOWN_COLUMNS_SIZES[column]};` },
                 getReadableColumn(column, getValue(scoreType)),
             )),
@@ -64,7 +69,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
 
 /**
  * Translate the column names for the table.
- * 
+ *
  * @param {Array<string>} columns
  * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
  * @param {('score' | 'cde_score')} scoreType
@@ -82,7 +87,7 @@ function getReadableColumn(column, scoreType) {
 }
 
 /**
- * 
+ *
  * @param {object} row
  * @param {string} column
  * @returns {<string>}
