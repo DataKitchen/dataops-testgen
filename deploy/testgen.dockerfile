@@ -1,13 +1,16 @@
-ARG TESTGEN_BASE_LABEL
-ARG TESTGEN_VERSION
+ARG TESTGEN_BASE_LABEL=v1
 
-FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} as build-image
+FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS build-image
 
 # Now install everything
 COPY . /tmp/dk/
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 
 FROM python:3.12.7-alpine3.20 AS release-image
+
+# Args have to be set in current build stage: https://github.com/moby/moby/issues/37345
+ARG TESTGEN_VERSION
+ARG TESTGEN_DOCKER_HUB_REPO
 
 RUN addgroup -S testgen && adduser -S testgen -G testgen
 
@@ -25,7 +28,7 @@ ENV PATH="$PATH:/dk/bin:/opt/mssql-tools/bin/"
 
 ENV TESTGEN_VERSION=${TESTGEN_VERSION}
 ENV TG_RELEASE_CHECK=docker
-ENV TESTGEN_DOCKER_HUB_REPO=datakitchen/dataops-testgen-enterprise
+ENV TESTGEN_DOCKER_HUB_REPO=${TESTGEN_DOCKER_HUB_REPO}
 ENV STREAMLIT_SERVER_MAX_UPLOAD_SIZE=200
 
 RUN mkdir /var/lib/testgen && chown testgen:testgen /var/lib/testgen
