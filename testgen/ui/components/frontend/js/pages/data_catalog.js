@@ -16,6 +16,7 @@
  * @type {object}
  * @property {ColumnPath[]} columns
  * @property {Table | Column} selected
+ * @property {Object.<string, string[]>} tag_values
  */
 import van from '../van.min.js';
 import { Tree } from '../components/tree.js';
@@ -31,6 +32,7 @@ import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.
 import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
 import { getColumnIcon, TABLE_ICON, LatestProfilingLink } from '../data_profiling/data_profiling_utils.js';
 import { RadioGroup } from '../components/radio_group.js';
+import { capitalize } from '../display_utils.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -164,7 +166,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     ),
                     DataCharacteristicsCard({ scores: true }, item),
                     item.type === 'column' ? ColumnDistributionCard({}, item) : null,
-                    TagsCard({}, item),
+                    TagsCard({ tagOptions: getValue(props.tag_values) }, item),
                     PotentialPIICard({}, item),
                     HygieneIssuesCard({}, item),
                     TestIssuesCard({}, item),
@@ -186,7 +188,12 @@ const DataCatalog = (/** @type Properties */ props) => {
     );
 };
 
-const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) => {
+/**
+* @typedef TagProperties
+* @type {object}
+* @property {Object.<string, string[]>} tagOptions
+*/
+const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ item) => {
     const attributes = [
         'description',
         'critical_data_element',
@@ -194,7 +201,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
     ].map(key => ({
         key,
         help: TAG_HELP[key],
-        label: key.replaceAll('_', ' '),
+        label: capitalize(key.replaceAll('_', ' ')),
         state: van.state(item[key]),
         inheritTableGroup: item[`table_group_${key}`] ?? null, // Table group values inherited by table or column
         inheritTable: item[`table_${key}`] ?? null, // Table values inherited by column
@@ -267,7 +274,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
                 width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
                 placeholder: (inheritTable || inheritTableGroup) ? `Inherited: ${inheritTable ?? inheritTableGroup}` : null,
-                style: 'text-transform: capitalize;',
+                autocompleteOptions: props.tagOptions[key],
                 onChange: (value) => state.val = value || null,
             });
         }),

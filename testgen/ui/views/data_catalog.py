@@ -1,5 +1,6 @@
 import json
 import typing
+from collections import defaultdict
 from functools import partial
 
 import pandas as pd
@@ -77,7 +78,11 @@ class DataCatalogPage(Page):
 
             testgen_component(
                 "data_catalog",
-                props={ "columns": columns_df.to_json(orient="records"), "selected": json.dumps(selected_item) },
+                props={
+                    "columns": columns_df.to_json(orient="records"),
+                    "selected": json.dumps(selected_item),
+                    "tag_values": get_tag_values(),
+                },
                 on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
                 event_handlers={ "TagsChanged": on_tags_changed },
             )
@@ -86,7 +91,7 @@ class DataCatalogPage(Page):
 def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
 
-    cache_functions = [ get_column_by_id ]
+    cache_functions = [ get_column_by_id, get_tag_values ]
     if tags["type"] == "table":
         update_table = "data_table_chars"
         id_column = "table_id"
@@ -237,3 +242,34 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
 
     df = db.retrieve_data(sql)
     return [row.to_dict() for _, row in df.iterrows()]
+
+
+@st.cache_data(show_spinner=False)
+def get_tag_values() -> dict[str, list[str]]:
+    schema = st.session_state["dbschema"]
+
+    quote = lambda v: f"'{v}'"
+    sql = f"""
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+    FROM {schema}.data_column_chars
+    UNION
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+    FROM {schema}.data_table_chars
+    UNION
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS if t != 'aggregation_level'])}]) as tag,
+        UNNEST(array[{', '.join([ t for t in TAG_FIELDS if t != 'aggregation_level'])}]) AS value
+    FROM {schema}.table_groups
+    ORDER BY value
+    """
+    df = db.retrieve_data(sql)
+
+    values = defaultdict(list)
+    for _, row in df.iterrows():
+        if row["tag"] and row["value"]:
+            values[row["tag"]].append(row["value"])
+    return values

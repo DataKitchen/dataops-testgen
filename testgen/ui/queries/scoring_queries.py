@@ -127,22 +127,20 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
     ]
 
     quote = lambda v: f"'{v}'"
-    query = " UNION ".join([
-        f"""
+    query = f"""
         SELECT DISTINCT
             UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
             UNNEST(array[{', '.join(categories)}]) AS value
         FROM v_dq_test_scoring_latest_by_column
         WHERE project_code = '{project_code}'
-        """,
-        f"""
+        UNION
         SELECT DISTINCT
             UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
             UNNEST(array[{', '.join(categories)}]) AS value
         FROM v_dq_profile_scoring_latest_by_column
         WHERE project_code = '{project_code}'
-        """,
-    ])
+        ORDER BY value
+    """,
     results = pd.read_sql_query(query, engine)
     for _, row in results.iterrows():
         if row["category"] and row["value"]:

@@ -3,7 +3,7 @@
  * @type {object}
  * @property {string} label
  * @property {string | number | boolean | null} value
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} label
@@ -24,13 +24,13 @@ const RadioGroup = (/** @type Properties */ props) => {
     return div(
         { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: 'text-caption text-capitalize mb-1' },
+            { class: 'text-caption mb-1' },
             props.label,
         ),
         () => div(
             { class: 'flex-row fx-gap-4 tg-radio-group' },
             getValue(props.options).map(option => label(
-                { class: 'flex-row fx-gap-2 text-capitalize clickable' },
+                { class: 'flex-row fx-gap-2 clickable' },
                 input({
                     type: 'radio',
                     name: groupName,
@@ -64,7 +64,7 @@ stylesheet.replace(`
     border-radius: 9px;
     position: relative;
     transition-property: border-color, background-color;
-    transition-duration: 0.3s; 
+    transition-duration: 0.3s;
 }
 
 .tg-radio-group--input:focus,

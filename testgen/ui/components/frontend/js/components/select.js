@@ -19,7 +19,7 @@
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { getRandomId, getValue, getParents, loadStylesheet, isState, isEqual } from '../utils.js';
+import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../utils.js';
 import { Portal } from './portal.js';
 
 const { div, i, label, span } = van.tags;
@@ -171,8 +171,8 @@ stylesheet.replace(`
 
 .tg-select--options-wrapper {
     border-radius: 8px;
-    background: var(--select-portal-background);
-    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
     min-height: 40px;
     max-height: 400px;
     overflow: auto;
