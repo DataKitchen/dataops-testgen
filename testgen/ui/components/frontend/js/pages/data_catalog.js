@@ -38,6 +38,28 @@ const { div, h2, span, i } = van.tags;
 const EMPTY_IMAGE = new Image(1, 1);
 EMPTY_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
 
+const TAG_KEYS = [
+    'data_source',
+    'source_system',
+    'source_process',
+    'business_domain',
+    'stakeholder_group',
+    'transform_level',
+    'aggregation_level',
+    'data_product',
+];
+const TAG_HELP = {
+    data_source: 'Original source of the dataset',
+    source_system: 'Enterprise system source for the dataset',
+    source_process: 'Process, program, or data flow that produced the dataset',
+    business_domain: 'Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing',
+    stakeholder_group: 'Data owners or stakeholders responsible for the dataset',
+    transform_level: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)',
+    aggregation_level: 'Data granularity of the dataset, e.g. atomic, historical, snapshot, aggregated, time-rollup, rolling, summary',
+    data_product: 'Data domain that comprises the dataset',
+};
+
+
 const DataCatalog = (/** @type Properties */ props) => {
     loadStylesheet('data-catalog', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
@@ -166,35 +188,29 @@ const DataCatalog = (/** @type Properties */ props) => {
 
 const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) => {
     const attributes = [
-        { key: 'description' },
-        { key: 'critical_data_element' },
-        { key: 'data_source', help: 'Original source of the dataset' },
-        { key: 'source_system', help: 'Enterprise system source for the dataset' },
-        { key: 'source_process', help: 'Process, program, or data flow that produced the dataset' },
-        { key: 'business_domain', help: 'Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing' },
-        { key: 'stakeholder_group', help: 'Data owners or stakeholders responsible for the dataset' },
-        { key: 'transform_level', help: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)' },
-        { key: 'aggregation_level', help: 'Data granularity of the dataset, e.g. atomic, historical, snapshot, aggregated, time-rollup, rolling, summary' },
-        { key: 'data_product', help: 'Data domain that comprises the dataset' },
-    ].map(attribute => ({
-        ...attribute,
-        label: attribute.key.replaceAll('_', ' '),
-        state: van.state(item[attribute.key]),
-        inherited: item[`table_${attribute.key}`], // Table values inherited by column
+        'description',
+        'critical_data_element',
+        ...TAG_KEYS,
+    ].map(key => ({
+        key,
+        help: TAG_HELP[key],
+        label: key.replaceAll('_', ' '),
+        state: van.state(item[key]),
+        inheritTableGroup: item[`table_group_${key}`] ?? null, // Table group values inherited by table or column
+        inheritTable: item[`table_${key}`] ?? null, // Table values inherited by column
     }));
 
-    const InheritedIcon = () => withTooltip(
+    const InheritedIcon = (/** @type string */ inheritedFrom) => withTooltip(
         Icon({ size: 18, classes: 'text-disabled' }, 'layers'),
-        { text: 'Inherited from table tags', position: 'top-right'},
+        { text: `Inherited from ${inheritedFrom} tags`, position: 'top-right'},
     );
     const width = 300;
     const descriptionWidth = 932;
 
     const content = div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, help, state, inherited }) => {
-            let value = state.rawVal ?? inherited;
-            const isInherited = item.type === 'column' && state.rawVal === null;
+        attributes.map(({ key, label, help, state, inheritTable, inheritTableGroup }) => {
+            let value = state.rawVal ?? inheritTable ?? inheritTableGroup;
 
             if (key === 'critical_data_element') {
                 return span(
@@ -207,14 +223,19 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
                         { class: value ? 'text-capitalize' : 'text-secondary' },
                         value ? label : `Not a ${label}`,
                     ),
-                    isInherited ? InheritedIcon() : null,
+                    (item.type === 'column' && state.rawVal === null) ? InheritedIcon('table') : null,
                 );
             }
 
-            if (isInherited && value) {
+            const inheritedFrom = state.rawVal !== null ? null
+                : inheritTable !== null ? 'table'
+                : inheritTableGroup !== null ? 'table group'
+                : null;
+
+            if (inheritedFrom && value) {
                 value = span(
                     { class: 'flex-row fx-gap-1' },
-                    InheritedIcon(),
+                    InheritedIcon(inheritedFrom),
                     value,
                 );
             }
@@ -225,7 +246,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
     // Define as function so the block is re-rendered with reset values when re-editing after a cancel
     const editingContent = () => div(
         { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, help, state, inherited }) => {
+        attributes.map(({ key, label, help, state, inheritTable, inheritTableGroup }) => {
             if (key === 'critical_data_element') {
                 const options = [
                     { label: 'Yes', value: true },
@@ -245,7 +266,7 @@ const TagsCard = (/** @type object */ _props, /** @type Table | Column */ item) 
                 label, help,
                 width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
-                placeholder: inherited ? `Inherited: ${inherited}` : null,
+                placeholder: (inheritTable || inheritTableGroup) ? `Inherited: ${inheritTable ?? inheritTableGroup}` : null,
                 style: 'text-transform: capitalize;',
                 onChange: (value) => state.val = value || null,
             });

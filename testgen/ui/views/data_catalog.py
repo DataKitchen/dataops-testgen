@@ -12,7 +12,7 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
-from testgen.ui.queries.profiling_queries import get_column_by_id, get_hygiene_issues, get_table_by_id
+from testgen.ui.queries.profiling_queries import TAG_FIELDS, get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, score
@@ -86,26 +86,17 @@ class DataCatalogPage(Page):
 def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
 
+    cache_functions = [ get_column_by_id ]
     if tags["type"] == "table":
         update_table = "data_table_chars"
         id_column = "table_id"
-        cached_function = get_table_by_id
+        cache_functions.append(get_table_by_id)
     else:
         update_table = "data_column_chars"
         id_column = "column_id"
-        cached_function = get_column_by_id
 
-    attributes = [
-        "description",
-        "data_source",
-        "source_system",
-        "source_process",
-        "business_domain",
-        "stakeholder_group",
-        "transform_level",
-        "aggregation_level",
-        "data_product"
-    ]
+    attributes = ["description"]
+    attributes.extend(TAG_FIELDS)
     cde_value_map = {
         True: "TRUE",
         False: "FALSE",
@@ -120,7 +111,9 @@ def on_tags_changed(tags: dict) -> None:
         WHERE {id_column} = '{tags["id"]}';
         """
     db.execute_sql(sql)
-    cached_function.clear()
+
+    for func in cache_functions:
+        func.clear()
     st.rerun()
 
 
