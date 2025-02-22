@@ -17,16 +17,20 @@
  * @property {TreeNode[]} nodes
  * @property {string} selected
  * @property {string} classes
+ * @property {(function(TreeNode): boolean) | null} isNodeHidden
+ * @property {(function(): boolean) | null} hasActiveFilters
+ * @property {function?} resetFilters
  */
 import van from '../van.min.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, getRandomId } from '../utils.js';
 import { Input } from './input.js';
 import { Button } from './button.js';
+import { Portal } from './portal.js';
 
-const { div, i } = van.tags;
+const { div, i, h3, span } = van.tags;
 const levelOffset = 14;
 
-const Tree = (/** @type Properties */ props) => {
+const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) => {
     loadStylesheet('tree', stylesheet);
 
     // Use only initial prop value as default and maintain internal state
@@ -42,35 +46,14 @@ const Tree = (/** @type Properties */ props) => {
         return nodes;
     });
 
+    const noMatches = van.derive(() => treeNodes.val.every(node => node.hidden.val));
+
     return div(
         {
             id: props.id,
             class: () => `flex-column ${getValue(props.classes)}`,
         },
-        div(
-            { class: 'flex-row fx-gap-1 tg-tree--actions' },
-            Input({
-                icon: 'search',
-                clearable: true,
-                onChange: (value) => searchTree(treeNodes.val, value),
-            }),
-            Button({
-                type: 'icon',
-                icon: 'expand_all',
-                style: 'width: 24px; height: 24px; padding: 4px;',
-                tooltip: 'Expand All',
-                tooltipPosition: 'bottom',
-                onclick: () => expandOrCollapseTree(treeNodes.val, true),
-            }),
-            Button({
-                type: 'icon',
-                icon: 'collapse_all',
-                style: 'width: 24px; height: 24px; padding: 4px;',
-                tooltip: 'Collapse All',
-                tooltipPosition: 'bottom',
-                onclick: () => expandOrCollapseTree(treeNodes.val, false),
-            }),
-        ),
+        Toolbar(treeNodes.val, props, filtersContent),
         div(
             { class: 'tg-tree' },
             () => div(
@@ -78,6 +61,100 @@ const Tree = (/** @type Properties */ props) => {
                 treeNodes.val.map(node => TreeNode(node, selected)),
             ),
         ),
+        () => noMatches.val
+            ? span({ class: 'tg-tree--empty mt-7 mb-7 text-secondary' }, 'No matching itens found')
+            : '',
+    );
+};
+
+const Toolbar = (
+    /** @type TreeNode[] */ nodes,
+    /** @type Properties */ props,
+    /** @type any? */ filtersContent,
+) => {
+    const search = van.state('');
+    const filterDomId = `tree-filters-${getRandomId()}`;
+    const filtersOpened = van.state(false);
+    const filtersActive = van.state(false);
+    const isNodeHidden = (/** @type TreeNode */ node) => !node.label.includes(search.val) || props.isNodeHidden?.(node);
+
+    return div(
+        { class: 'flex-row fx-gap-1 tg-tree--actions' },
+        Input({
+            icon: 'search',
+            clearable: true,
+            onChange: (value) => {
+                search.val = value;
+                filterTree(nodes, isNodeHidden);
+            },
+        }),
+        filtersContent ? [
+            div(
+                { class: () => `tg-tree--filter-button ${filtersActive.val ? 'active' : ''}` },
+                Button({
+                    id: filterDomId,
+                    type: 'icon',
+                    icon: 'filter_list',
+                    style: 'width: 24px; height: 24px; padding: 4px;',
+                    tooltip: () => filtersActive.val ? 'Filters active' : 'Filters',
+                    tooltipPosition: 'bottom',
+                    onclick: () => filtersOpened.val = !filtersOpened.val,
+                }),
+            ),
+            Portal(
+                { target: filterDomId, opened: filtersOpened },
+                () => div(
+                    { class: 'tg-tree--filters' },
+                    h3(
+                        { class: 'flex-row fx-justify-space-between'},
+                        'Filters',
+                        Button({
+                            type: 'icon',
+                            icon: 'close',
+                            iconSize: 22,
+                            onclick: () => filtersOpened.val = false,
+                        }),
+                    ),
+                    filtersContent,
+                    div(
+                        { class: 'flex-row fx-justify-space-between mt-4' },
+                        Button({
+                            label: 'Reset filters',
+                            width: '110px',
+                            disabled: () => !props.hasActiveFilters(),
+                            onclick: props.resetFilters,
+                        }),
+                        Button({
+                            type: 'stroked',
+                            color: 'primary',
+                            label: 'Apply',
+                            width: '80px',
+                            onclick: () => {
+                                filterTree(nodes, isNodeHidden);
+                                filtersActive.val = props.hasActiveFilters();
+                                filtersOpened.val = false;
+                            },
+                        }),
+                    ),
+                ),
+            )
+        ] : null,
+        Button({
+            type: 'icon',
+            icon: 'expand_all',
+            style: 'width: 24px; height: 24px; padding: 4px;',
+            tooltip: 'Expand All',
+            tooltipPosition: 'bottom',
+            onclick: () => expandOrCollapseTree(nodes, true),
+        }),
+        Button({
+            type: 'icon',
+            icon: 'collapse_all',
+            style: 'width: 24px; height: 24px; padding: 4px;',
+            tooltip: 'Collapse All',
+            tooltipPosition: 'bottom',
+            onclick: () => expandOrCollapseTree(nodes, false),
+        }),
     );
 };
 
@@ -144,14 +221,14 @@ const initTreeState = (
     return treeExpanded;
 };
 
-const searchTree = (
+const filterTree = (
     /** @type TreeNode[] */ nodes,
-    /** @type string */ search,
+    /** @type function(TreeNode): boolean */ isNodeHidden,
 ) => {
     nodes.forEach(node => {
-        let hidden = !node.label.includes(search);
+        let hidden = isNodeHidden(node);
         if (node.children) {
-            searchTree(node.children, search);
+            filterTree(node.children, isNodeHidden);
             hidden = hidden && node.children.every(child => child.hidden.rawVal);
         }
         node.hidden.val = hidden;
@@ -176,12 +253,42 @@ stylesheet.replace(`
     overflow: auto;
 }
 
+.tg-tree--empty {
+    text-align: center;
+}
+
 .tg-tree--actions {
     margin: 4px;
 }
 
 .tg-tree--actions > label {
     flex: auto;
+}
+
+.tg-tree--filter-button {
+    position: relative;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: 0.3s;
+}
+
+.tg-tree--filter-button.active {
+    border-color: var(--primary-color);
+}
+
+.tg-tree--filters {
+    border-radius: 8px;
+    background: var(--dk-card-background);
+    box-shadow: var(--portal-box-shadow);
+    padding: 16px;
+    overflow: visible;
+    z-index: 99;
+}
+
+.tg-tree--filters > h3 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    font-weight: 500;
 }
 
 .tg-tree--nodes {

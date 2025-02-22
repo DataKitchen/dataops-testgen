@@ -1,5 +1,6 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
+ * @import { TreeNode } from '../components/tree.js';
  *
  * @typedef ColumnPath
  * @type {object}
@@ -9,8 +10,10 @@
  * @property {string} table_name
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
  * @property {string} functional_data_type
- * @property {number} column_drop_date
+ * @property {number} drop_date
  * @property {number} table_drop_date
+ * @property {boolean} critical_data_element
+ * @property {boolean} table_critical_data_element
  *
  * @typedef Properties
  * @type {object}
@@ -32,6 +35,8 @@ import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.
 import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
 import { getColumnIcon, TABLE_ICON, LatestProfilingLink } from '../data_profiling/data_profiling_utils.js';
 import { RadioGroup } from '../components/radio_group.js';
+import { Checkbox } from '../components/checkbox.js';
+import { Select } from '../components/select.js';
 import { capitalize } from '../display_utils.js';
 
 const { div, h2, span, i } = van.tags;
@@ -68,6 +73,7 @@ const DataCatalog = (/** @type Properties */ props) => {
     window.frameElement.style.setProperty('height', 'calc(100vh - 175px)');
     window.testgen.isPage = true;
 
+    /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
         let columns = [];
         try {
@@ -76,22 +82,27 @@ const DataCatalog = (/** @type Properties */ props) => {
 
         const tables = {};
         columns.forEach((item) => {
-            const { column_id, table_id, column_name, table_name, column_drop_date, table_drop_date } = item;
+            const { column_id, table_id, column_name, table_name, drop_date, table_drop_date } = item;
             if (!tables[table_id]) {
                 tables[table_id] = {
                     id: table_id,
                     label: table_name,
                     classes: table_drop_date ? 'text-disabled' : '',
                     ...TABLE_ICON,
+                    criticalDataElement: !!item.table_critical_data_element,
                     children: [],
                 };
+                TAG_KEYS.forEach(key => tables[table_id][key] = item[`table_${key}`]);
             }
-            tables[table_id].children.push({
+            const columnNode = {
                 id: column_id,
                 label: column_name,
-                classes: column_drop_date ? 'text-disabled' : '',
+                classes: drop_date ? 'text-disabled' : '',
                 ...getColumnIcon(item),
-            });
+                criticalDataElement: !!(item.critical_data_element ?? item.table_critical_data_element),
+            };
+            TAG_KEYS.forEach(key => columnNode[key] = item[key] ?? item[`table_${key}`]);
+            tables[table_id].children.push(columnNode);
         });
         return Object.values(tables);
     });
@@ -117,18 +128,59 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     };
 
+    const filters = { criticalDataElement: van.state(false) };
+    TAG_KEYS.forEach(key => filters[key] = van.state(null));
+
     return div(
         {
             class: 'flex-row tg-dh',
             ondragover: (event) => event.preventDefault(),
         },
-        Tree({
-            id: treeDomId,
-            nodes: treeNodes,
-            // Use .rawVal, so only initial value from query params is passed to tree
-            selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-            classes: 'tg-dh--tree',
-        }),
+        Tree(
+            {
+                id: treeDomId,
+                nodes: treeNodes,
+                // Use .rawVal, so only initial value from query params is passed to tree
+                selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
+                classes: 'tg-dh--tree',
+                isNodeHidden: (/** @type TreeNode */ node) => {
+                    let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
+                    hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
+                    return hidden;
+                },
+                hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
+                resetFilters: () => {
+                    filters.criticalDataElement.val = false;
+                    TAG_KEYS.forEach(key => filters[key].val = null);
+                },
+            },
+            // Pass as a function that will be called when the filter portal is opened
+            // Otherwise state bindings get garbage collected and Select dropdowns won't open
+            // https://vanjs.org/advanced#gc
+            () => div(
+                Checkbox({
+                    label: 'Only critical data elements (CDEs)',
+                    checked: filters.criticalDataElement,
+                    onChange: (checked) => filters.criticalDataElement.val = checked,
+                }),
+                div(
+                    {
+                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
+                        style: 'max-width: 420px;',
+                    },
+                    TAG_KEYS.map(key => Select({
+                        id: `data-catalog-${key}`,
+                        label: capitalize(key.replaceAll('_', ' ')),
+                        height: 32,
+                        value: filters[key],
+                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
+                        allowNull: true,
+                        disabled: !getValue(props.tag_values)?.[key]?.length,
+                        onChange: v => filters[key].val = v,
+                    })),
+                ),
+            ),
+        ),
         div(
             {
                 class: 'tg-dh--dragger',

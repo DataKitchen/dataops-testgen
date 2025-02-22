@@ -30,10 +30,6 @@ const Input = (/** @type Properties */ props) => {
 
     const domId = van.derive(() => getValue(props.id) ?? getRandomId());
     const value = van.derive(() => getValue(props.value) ?? '');
-    van.derive(() => {
-        const onChange = props.onChange?.val ?? props.onChange;
-        onChange?.(value.val);
-    });
 
     const autocompleteOpened = van.state(false);
     const autocompleteOptions = van.derive(() => {
@@ -84,7 +80,10 @@ const Input = (/** @type Properties */ props) => {
             style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             value,
             placeholder: () => getValue(props.placeholder) ?? '',
-            oninput: debounce(event => value.val = event.target.value, 300),
+            oninput: van.derive(() => {
+                const onChange = props.onChange?.val ?? props.onChange;
+                return onChange ? debounce(event => onChange(event.target.value), 300) : null;
+            }),
             onclick: van.derive(() => autocompleteOptions.val?.length
                 ? () => autocompleteOpened.val = true
                 : null

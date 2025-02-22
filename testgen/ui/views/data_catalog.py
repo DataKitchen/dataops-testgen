@@ -91,7 +91,7 @@ class DataCatalogPage(Page):
 def on_tags_changed(tags: dict) -> None:
     schema = st.session_state["dbschema"]
 
-    cache_functions = [ get_column_by_id, get_tag_values ]
+    cache_functions = [ get_table_group_columns, get_column_by_id, get_tag_values ]
     if tags["type"] == "table":
         update_table = "data_table_chars"
         id_column = "table_id"
@@ -165,8 +165,12 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         table_chars.table_name,
         column_chars.general_type,
         column_chars.functional_data_type,
-        column_chars.drop_date AS column_drop_date,
-        table_chars.drop_date AS table_drop_date
+        column_chars.drop_date,
+        table_chars.drop_date AS table_drop_date,
+        column_chars.critical_data_element,
+        table_chars.critical_data_element AS table_critical_data_element,
+        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
     FROM {schema}.data_column_chars column_chars
         LEFT JOIN {schema}.data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
