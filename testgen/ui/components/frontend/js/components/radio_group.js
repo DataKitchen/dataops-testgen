@@ -9,7 +9,7 @@
  * @property {string} label
  * @property {Option[]} options
  * @property {string | number | boolean | null} selected
- * @property {function?} onChange
+ * @property {function(string | number | boolean | null)?} onChange
  * @property {number?} width
  */
 import van from '../van.min.js';

@@ -10,24 +10,38 @@
  * @property {number?} level
  * @property {boolean?} expanded
  * @property {boolean?} hidden
+ * @property {boolean?} selected
+ *
+ * @typedef SelectedNode
+ * @type {object}
+ * @property {string} id
+ * @property {boolean} all
+ * @property {SelectedNode[]?} children
  *
  * @typedef Properties
  * @type {object}
  * @property {string} id
+ * @property {string} classes
  * @property {TreeNode[]} nodes
  * @property {string} selected
- * @property {string} classes
+ * @property {function(string)?} onSelect
+ * @property {boolean?} multiSelect
+ * @property {boolean?} multiSelectToggle
+ * @property {function(SelectedNode[] | null)?} onMultiSelect
  * @property {(function(TreeNode): boolean) | null} isNodeHidden
  * @property {(function(): boolean) | null} hasActiveFilters
- * @property {function?} resetFilters
+ * @property {function()?} onResetFilters
  */
 import van from '../van.min.js';
-import { emitEvent, getValue, loadStylesheet, getRandomId } from '../utils.js';
+import { getValue, loadStylesheet, getRandomId, isState } from '../utils.js';
 import { Input } from './input.js';
 import { Button } from './button.js';
 import { Portal } from './portal.js';
+import { Icon } from './icon.js';
+import { Checkbox } from './checkbox.js';
+import { Toggle } from './toggle.js';
 
-const { div, i, h3, span } = van.tags;
+const { div, h3, span } = van.tags;
 const levelOffset = 14;
 
 const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) => {
@@ -46,7 +60,22 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
         return nodes;
     });
 
+    const multiSelect = isState(props.multiSelect) ? props.multiSelect : van.state(!!props.multiSelect);
     const noMatches = van.derive(() => treeNodes.val.every(node => node.hidden.val));
+
+    van.derive(() => {
+        const onSelect = props.onSelect?.val ?? props.onSelect;
+        if (!multiSelect.val && onSelect) {
+            onSelect(selected.val);
+        }
+    });
+
+    van.derive(() => {
+        if (!multiSelect.val) {
+            selectTree(treeNodes.val, false);
+        }
+        props.onMultiSelect(multiSelect.val ? [] : null);
+    });
 
     return div(
         {
@@ -54,11 +83,24 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
             class: () => `flex-column ${getValue(props.classes)}`,
         },
         Toolbar(treeNodes.val, props, filtersContent),
+        props.multiSelectToggle
+            ? div(
+                { class: 'mt-1 mb-2 ml-1 text-secondary' },
+                Toggle({
+                    label: 'Select multiple',
+                    checked: multiSelect,
+                    onChange: (/** @type boolean */ checked) => multiSelect.val = checked,
+                }),
+            )
+            : null,
         div(
             { class: 'tg-tree' },
             () => div(
-                { class: 'tg-tree--nodes' },
-                treeNodes.val.map(node => TreeNode(node, selected)),
+                {
+                    class: 'tg-tree--nodes',
+                    onclick: van.derive(() => multiSelect.val ? () => props.onMultiSelect(getMultiSelection(treeNodes.val)) : null),
+                },
+                treeNodes.val.map(node => TreeNode(node, selected, multiSelect.val)),
             ),
         ),
         () => noMatches.val
@@ -83,7 +125,7 @@ const Toolbar = (
         Input({
             icon: 'search',
             clearable: true,
-            onChange: (value) => {
+            onChange: (/** @type string */ value) => {
                 search.val = value;
                 filterTree(nodes, isNodeHidden);
             },
@@ -122,7 +164,7 @@ const Toolbar = (
                             label: 'Reset filters',
                             width: '110px',
                             disabled: () => !props.hasActiveFilters(),
-                            onclick: props.resetFilters,
+                            onclick: props.onResetFilters,
                         }),
                         Button({
                             type: 'stroked',
@@ -161,41 +203,63 @@ const Toolbar = (
 const TreeNode = (
     /** @type TreeNode */ node,
     /** @type string */ selected,
+    /** @type boolean */ multiSelect,
 ) => {
     const hasChildren = !!node.children?.length;
     return div(
+        {
+            onclick: multiSelect
+                ? (/** @type Event */ event) => {
+                    if (hasChildren) {
+                        if (!event.fromChild) {
+                            // Prevent the default behavior of toggling the "checked" property - we want to control it
+                            event.preventDefault();
+                            selectTree(
+                                node.children,
+                                node.selected.val ? false : node.children.some(child => !child.hidden.val && !child.selected.val),
+                            );
+                        }
+                        node.selected.val = node.children.every(child => child.selected.val);
+                    } else {
+                        node.selected.val = !node.selected.val;
+                        event.fromChild = true;
+                    }
+                }
+                : null,
+        },
         div(
             {
                 class: () => `tg-tree--row flex-row clickable ${node.classes || ''}
                     ${selected.val === node.id ? 'selected' : ''}
                     ${node.hidden.val ? 'hidden' : ''}`,
                 style: `padding-left: ${levelOffset * node.level}px;`,
-                onclick: () => {
-                    selected.val = node.id;
-                    emitEvent('TreeNodeSelected', { payload: node.id });
-                },
+                onclick: () => selected.val = node.id,
             },
-            i(
+            Icon(
                 {
-                    class: `material-symbols-rounded text-secondary ${hasChildren ? '' : 'invisible'}`,
-                    onclick: () => {
+                    classes: hasChildren ? '' : 'invisible',
+                    onclick: (/** @type Event */ event) => {
+                        event.stopPropagation();
                         node.expanded.val = hasChildren ? !node.expanded.val : false;
                     },
                 },
                 () => node.expanded.val ? 'arrow_drop_down' : 'arrow_right',
             ),
-            node.icon ? i(
-                {
-                    class: 'material-symbols-rounded tg-tree--row-icon',
-                    style: `font-size: ${node.iconSize || 24}px;`,
-                },
-                node.icon,
-            ) : null,
+            multiSelect
+                ? [
+                    Checkbox({
+                        checked: () => node.selected.val,
+                        indeterminate: hasChildren ? () => !node.selected.val && node.children.some(({ selected }) => selected.val) : false,
+                    }),
+                    span({ class: 'mr-1' }),
+                ]
+                : null,
+            node.icon ? Icon({ size: 24, classes: 'tg-tree--row-icon' }, node.icon) : null,
             node.label,
         ),
         hasChildren ? div(
             { class: () => node.expanded.val ? '' : 'hidden' },
-            node.children.map(node => TreeNode(node, selected)),
+            node.children.map(node => TreeNode(node, selected, multiSelect)),
         ) : null,
     );
 };
@@ -216,6 +280,7 @@ const initTreeState = (
         }
         node.expanded = van.state(expanded);
         node.hidden = van.state(false);
+        node.selected = van.state(false);
         treeExpanded = treeExpanded || expanded;
     });
     return treeExpanded;
@@ -245,7 +310,44 @@ const expandOrCollapseTree = (
             node.expanded.val = expanded;
         }
     });
-}
+};
+
+const selectTree = (
+    /** @type TreeNode[] */ nodes,
+    /** @type boolean */ selected,
+) => {
+    nodes.forEach(node => {
+        if (!selected || !node.hidden.val) {
+            node.selected.val = selected;
+            if (node.children) {
+                selectTree(node.children, selected);
+            }
+        }
+    });
+};
+
+/**
+ * @param {TreeNode[]} nodes
+ * @returns {SelectedNode[]}
+ */
+const getMultiSelection = (nodes) => {
+    const selected = [];
+    nodes.forEach(node => {
+        if (node.children) {
+            const selectedChildren = getMultiSelection(node.children);
+            if (selectedChildren.length) {
+                selected.push({
+                    id: node.id,
+                    all: selectedChildren.length === node.children.length,
+                    children: selectedChildren,
+                });
+            }
+        } else if (node.selected.val) {
+            selected.push({ id: node.id });
+        }
+    });
+    return selected;
+};
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

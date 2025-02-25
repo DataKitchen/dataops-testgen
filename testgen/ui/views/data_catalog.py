@@ -1,10 +1,12 @@
 import json
 import typing
 from collections import defaultdict
+from datetime import datetime
 from functools import partial
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.database_service as db
 import testgen.ui.services.query_service as dq
@@ -74,8 +76,8 @@ class DataCatalogPage(Page):
                 button_icon="play_arrow",
             )
         else:
-            def on_tree_node_select(node_id):
-                self.router.set_query_params({ "selected": node_id })
+            def on_item_selected(item_id):
+                self.router.set_query_params({ "selected": item_id })
 
             testgen_component(
                 "data_catalog",
@@ -83,9 +85,10 @@ class DataCatalogPage(Page):
                     "columns": columns_df.to_json(orient="records"),
                     "selected": json.dumps(selected_item),
                     "tag_values": get_tag_values(),
+                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp")
                 },
                 on_change_handlers={
-                    "TreeNodeSelected": on_tree_node_select,
+                    "ItemSelected": on_item_selected,
                     "DataPreviewClicked": lambda item: data_preview_dialog(
                         item["table_group_id"],
                         item["schema_name"],
@@ -93,22 +96,11 @@ class DataCatalogPage(Page):
                         item.get("column_name"),
                     ),
                 },
-                event_handlers={ "TagsChanged": on_tags_changed },
+                event_handlers={ "TagsChanged": partial(on_tags_changed, loading_column) },
             )
 
 
-def on_tags_changed(tags: dict) -> None:
-    schema = st.session_state["dbschema"]
-
-    cache_functions = [ get_table_group_columns, get_column_by_id, get_tag_values ]
-    if tags["type"] == "table":
-        update_table = "data_table_chars"
-        id_column = "table_id"
-        cache_functions.append(get_table_by_id)
-    else:
-        update_table = "data_column_chars"
-        id_column = "column_id"
-
+def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
     cde_value_map = {
@@ -116,18 +108,39 @@ def on_tags_changed(tags: dict) -> None:
         False: "FALSE",
         None: "NULL",
     }
-    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes ]
-    set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
 
-    sql = f"""
-        UPDATE {schema}.{update_table}
-        SET {', '.join(set_attributes)}
-        WHERE {id_column} = '{tags["id"]}';
-        """
-    db.execute_sql(sql)
+    tags = payload["tags"]
+    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes if key in tags ]
+    if "critical_data_element" in tags:
+        set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
 
-    for func in cache_functions:
+    tables = []
+    columns = []
+    for item in payload["items"]:
+        id_list = tables if item["type"] == "table" else columns
+        id_list.append(item["id"])
+
+    schema = st.session_state["dbschema"]
+
+    with spinner_container:
+        with st.spinner("Saving tags"):
+            if tables:
+                db.execute_sql(f"""
+                UPDATE {schema}.data_table_chars
+                SET {', '.join(set_attributes)}
+                WHERE table_id IN ({", ".join([ f"'{item}'" for item in tables ])});
+                """)
+
+            if columns:
+                db.execute_sql(f"""
+                UPDATE {schema}.data_column_chars
+                SET {', '.join(set_attributes)}
+                WHERE column_id IN ({", ".join([ f"'{item}'" for item in columns ])});
+                """)
+
+    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
         func.clear()
+    st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
     st.rerun()
 
 

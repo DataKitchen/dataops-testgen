@@ -9,7 +9,7 @@
  * @property {string[]?} autocompleteOptions
  * @property {string?} icon
  * @property {boolean?} clearable
- * @property {function?} onChange
+ * @property {function(string)?} onChange
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
@@ -82,7 +82,7 @@ const Input = (/** @type Properties */ props) => {
             placeholder: () => getValue(props.placeholder) ?? '',
             oninput: van.derive(() => {
                 const onChange = props.onChange?.val ?? props.onChange;
-                return onChange ? debounce(event => onChange(event.target.value), 300) : null;
+                return onChange ? debounce((/** @type Event */ event) => onChange(event.target.value), 300) : null;
             }),
             onclick: van.derive(() => autocompleteOptions.val?.length
                 ? () => autocompleteOpened.val = true

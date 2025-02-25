@@ -20,6 +20,7 @@
  * @property {ColumnPath[]} columns
  * @property {Table | Column} selected
  * @property {Object.<string, string[]>} tag_values
+ * @property {string} last_saved_timestamp
  */
 import van from '../van.min.js';
 import { Tree } from '../components/tree.js';
@@ -39,6 +40,8 @@ import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
 import { capitalize } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
+import { Card } from '../components/card.js';
+import { Button } from '../components/button.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -117,10 +120,14 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     });
 
+    // Reset to false after saving
+    const multiEditMode = van.derive(() => getValue(props.last_saved_timestamp) && false);
+    const multiSelectedItems = van.state(null);
+
     const treeDomId = 'data-catalog-tree';
     const dragState = van.state(null);
     const dragConstraints = { min: 250, max: 600 };
-    const dragResize = (event) => {
+    const dragResize = (/** @type Event */ event) => {
         // https://stackoverflow.com/questions/36308460/why-is-clientx-reset-to-0-on-last-drag-event-and-how-to-solve-it
         if (event.screenX && dragState.val) {
             const dragWidth = dragState.val.startWidth + event.screenX - dragState.val.startX;
@@ -140,17 +147,21 @@ const DataCatalog = (/** @type Properties */ props) => {
         Tree(
             {
                 id: treeDomId,
+                classes: 'tg-dh--tree',
                 nodes: treeNodes,
                 // Use .rawVal, so only initial value from query params is passed to tree
                 selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                classes: 'tg-dh--tree',
+                onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
+                multiSelect: multiEditMode,
+                multiSelectToggle: true,
+                onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
                 isNodeHidden: (/** @type TreeNode */ node) => {
                     let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
                     hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
                     return hidden;
                 },
                 hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
-                resetFilters: () => {
+                onResetFilters: () => {
                     filters.criticalDataElement.val = false;
                     TAG_KEYS.forEach(key => filters[key].val = null);
                 },
@@ -198,49 +209,43 @@ const DataCatalog = (/** @type Properties */ props) => {
                 ondrag: van.derive(() => dragState.val ? dragResize : null),
             },
         ),
-        () => {
-            const item = selectedItem.val;
-            if (item) {
-                return div(
-                    { class: 'tg-dh--details' },
-                    div(
-                        { class: 'mb-2' },
-                        h2(
-                            { class: 'tg-dh--title' },
-                            item.type === 'column' ? [
-                                span(
-                                    { class: 'text-secondary' },
-                                    `${item.table_name} > `,
-                                ),
-                                item.column_name,
-                            ] : item.table_name,
-                        ),
-                        LatestProfilingLink(item),
-                    ),
-                    DataCharacteristicsCard({ scores: true }, item),
-                    item.type === 'column'
-                        ? ColumnDistributionCard({ dataPreview: true }, item)
-                        : TableSizeCard({}, item),
-                    TagsCard({ tagOptions: getValue(props.tag_values) }, item),
-                    PotentialPIICard({}, item),
-                    HygieneIssuesCard({}, item),
-                    TestIssuesCard({}, item),
-                );
-            }
-
-            return div(
-                { class: 'flex-column fx-align-flex-center fx-justify-center tg-dh--no-selection' },
-                i(
-                    { class: 'material-symbols-rounded text-disabled mb-5' },
-                    'quick_reference_all',
-                ),
-                span(
-                    { class: 'text-secondary' },
-                    'Select a table or column on the left to view its details.',
-                ),
-            );
-        },
+        () => multiEditMode.val
+            ? MultiEdit(props, multiSelectedItems, multiEditMode)
+            : SelectedDetails(props, selectedItem.val),
     );
+};
+
+const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    return item
+        ? div(
+            { class: 'tg-dh--details' },
+            div(
+                { class: 'mb-2' },
+                h2(
+                    { class: 'tg-dh--title' },
+                    item.type === 'column' ? [
+                        span(
+                            { class: 'text-secondary' },
+                            `${item.table_name} > `,
+                        ),
+                        item.column_name,
+                    ] : item.table_name,
+                ),
+                LatestProfilingLink(item),
+            ),
+            DataCharacteristicsCard({ scores: true }, item),
+            item.type === 'column'
+                ? ColumnDistributionCard({ dataPreview: true }, item)
+                : TableSizeCard({}, item),
+            TagsCard({ tagOptions: getValue(props.tag_values) }, item),
+            PotentialPIICard({}, item),
+            HygieneIssuesCard({}, item),
+            TestIssuesCard({}, item),
+        )
+        : EmptyState(
+            'Select a table or column on the left to view its details.',
+            'quick_reference_all',
+        );
 };
 
 /**
@@ -277,8 +282,8 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
             if (key === 'critical_data_element') {
                 return span(
                     { class: 'flex-row fx-gap-1', style: `width: ${width}px` },
-                    i(
-                        { class: `material-symbols-rounded ${value ? 'text-green' : 'text-disabled'}` },
+                    Icon(
+                        { classes: value ? 'text-green' : 'text-disabled' },
                         value ? 'check_circle' : 'cancel',
                     ),
                     span(
@@ -313,13 +318,11 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
                 const options = [
                     { label: 'Yes', value: true },
                     { label: 'No', value: false },
+                    { label: 'Inherit', value: null },
                 ];
-                if (item.type === 'column') {
-                    options.push({ label: 'Inherit', value: null });
-                }
                 return RadioGroup({
                     label, width, options,
-                    value: item.type === 'column' ? state.rawVal : !!state.rawVal, // Coerce null to false for tables
+                    value: state.rawVal,
                     onChange: (value) => state.val = value,
                 });
             };
@@ -329,7 +332,7 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
                 width: key === 'description' ? descriptionWidth : width,
                 value: state.rawVal,
                 placeholder: (inheritTable || inheritTableGroup) ? `Inherited: ${inheritTable ?? inheritTableGroup}` : null,
-                autocompleteOptions: props.tagOptions[key],
+                autocompleteOptions: props.tagOptions?.[key],
                 onChange: (value) => state.val = value || null,
             });
         }),
@@ -339,16 +342,140 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
         title: `${item.type} Tags `,
         content, editingContent,
         onSave: () => {
-            const payload = attributes.reduce((object, { key, state }) => {
+            const items = [{ type: item.type, id: item.id }];
+            const tags = attributes.reduce((object, { key, state }) => {
                 object[key] = state.rawVal;
                 return object;
-            }, { id: item.id, type: item.type });
-            emitEvent('TagsChanged', { payload })
+            }, {});
+            emitEvent('TagsChanged', { payload: { items, tags } });
         },
         // Reset states to original values on cancel
         onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),
         hasChanges: () => attributes.some(({ key, state }) => state.val !== item[key]),
     });
+};
+
+const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedItems, /** @type Object */ multiEditMode) => {
+    const hasSelection = van.derive(() => selectedItems.val?.length);
+    const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
+
+    const attributes = [
+        'description',
+        'critical_data_element',
+        ...TAG_KEYS,
+    ].map(key => ({
+        key,
+        help: TAG_HELP[key],
+        label: capitalize(key.replaceAll('_', ' ')),
+        checkedState: van.state(null),
+        valueState: van.state(null),
+    }));
+
+    const cdeOptions = [
+        { label: 'Yes', value: true },
+        { label: 'No', value: false },
+        { label: 'Inherit', value: null },
+    ];
+    const tagOptions = getValue(props.tag_values) ?? {};
+    const width = 400;
+    const descriptionWidth = 800;
+
+    return div(
+        { class: 'tg-dh--details flex-column' },
+        () => hasSelection.val
+            ? Card({
+                title: 'Edit Tags for Selection',
+                actionContent: span(
+                    { class: 'text-secondary mr-4' },
+                    span({ style: 'font-weight: 500' }, columnCount),
+                    () => ` column${columnCount.val > 1 ? 's' : ''} selected`
+                ),
+                content: div(
+                    { class: 'flex-column' },
+                    attributes.map(({ key, label, help, checkedState, valueState }) => div(
+                        { class: 'flex-row fx-gap-3' },
+                        Checkbox({
+                            checked: checkedState,
+                            onChange: (checked) => checkedState.val = checked,
+                        }),
+                        div(
+                            {
+                                class: 'pb-4 flex-row',
+                                style: `min-width: ${width}px`,
+                                onclick: () => checkedState.val = true,
+                            },
+                            key === 'critical_data_element'
+                                ? RadioGroup({
+                                    label, width,
+                                    options: cdeOptions,
+                                    onChange: (value) => valueState.val = value,
+                                })
+                                : Input({
+                                    label, help,
+                                    width: key === 'description' ? descriptionWidth : width,
+                                    autocompleteOptions: tagOptions[key],
+                                    onChange: (value) => valueState.val = value || null,
+                                }),
+                        ),
+                    )),
+                    div(
+                        { class: 'flex-row fx-justify-content-flex-end fx-gap-3 mt-4' },
+                        Button({
+                            type: 'stroked',
+                            label: 'Cancel',
+                            width: 'auto',
+                            onclick: () => multiEditMode.val = false,
+                        }),
+                        Button({
+                            type: 'stroked',
+                            color: 'primary',
+                            label: 'Save',
+                            width: 'auto',
+                            disabled: () => attributes.every(({ checkedState }) => !checkedState.val),
+                            onclick: () => {
+                                const items = selectedItems.val.reduce((array, table) => {
+                                    if (table.all) {
+                                        const [ type, id ] = table.id.split('_');
+                                        array.push({ type, id });
+                                    } else {
+                                        const columns = table.children.map(column => {
+                                            const [ type, id ] = column.id.split('_');
+                                            return { type, id };
+                                        });
+                                        array.push(...columns);
+                                    }
+                                    return array;
+                                }, []);
+
+                                const tags = attributes.reduce((object, { key, checkedState, valueState }) => {
+                                    if (checkedState.val) {
+                                        object[key] = valueState.rawVal;
+                                    }
+                                    return object;
+                                }, {});
+
+                                emitEvent('TagsChanged', { payload: { items, tags } });
+                                // Don't set multiEditMode to false here
+                                // Otherwise this event gets superseded by the ItemSelected event
+                                // Let the Streamlit rerun handle the state reset with 'last_saved_timestamp'
+                            },
+                        }),
+                    ),
+                ),
+            })
+            : EmptyState(
+                'Select tables or columns on the left to edit their tags.',
+                'edit_document',
+            ),
+    );
+};
+
+const EmptyState = (/** @type string */ message, /** @type string */ icon) => {
+    return div(
+        { class: 'flex-column fx-align-flex-center fx-justify-center tg-dh--no-selection' },
+        Icon({ size: 80, classes: 'text-disabled mb-5' }, icon),
+        span({ class: 'text-secondary' }, message),
+    );
 };
 
 const stylesheet = new CSSStyleSheet();
@@ -391,10 +518,6 @@ stylesheet.replace(`
     flex: auto;
     max-height: 400px;
     padding: 16px;
-}
-
-.tg-dh--no-selection > i {
-    font-size: 80px;
 }
 
 .tg-dh--no-selection > span {
