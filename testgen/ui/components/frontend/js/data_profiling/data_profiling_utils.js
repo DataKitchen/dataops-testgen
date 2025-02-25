@@ -24,6 +24,7 @@
  * @property {'column'} type
  * @property {string} column_name
  * @property {string} table_name
+ * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
  * * Characteristics
@@ -131,6 +132,7 @@
  * @property {string} id
  * @property {'table'} type
  * @property {string} table_name
+ * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
  * * Characteristics

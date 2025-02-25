@@ -29,9 +29,6 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
     } else {
         attributes.push(
             { key: 'functional_table_type', label: `Semantic Table Type ${item.is_latest_profile ? '*' : ''}` },
-            { key: 'record_ct', label: 'Row Count' },
-            { key: 'column_ct', label: 'Column Count' },
-            { key: 'data_point_ct', label: 'Data Point Count' },
         );
     }
     if (item.add_date) {
@@ -48,7 +45,7 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
         border: props.border,
         title: `${item.type} Characteristics`,
         content: div(
-            { class: 'flex-row fx-gap-4' },
+            { class: 'flex-row fx-gap-4 fx-justify-space-between' },
             div(
                 { class: 'flex-row fx-flex-wrap fx-gap-4' },
                 attributes.map(({ key, label }) => {

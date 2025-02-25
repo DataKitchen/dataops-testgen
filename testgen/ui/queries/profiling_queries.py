@@ -152,6 +152,7 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         table_chars.table_id::VARCHAR AS id,
         'table' AS type,
         table_chars.table_name,
+        table_chars.schema_name,
         table_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         functional_table_type,
@@ -247,6 +248,7 @@ def get_column_by_condition(
         'column' AS type,
         column_chars.column_name,
         column_chars.table_name,
+        column_chars.schema_name,
         column_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         column_chars.general_type,

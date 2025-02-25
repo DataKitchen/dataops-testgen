@@ -4,15 +4,17 @@
  * @typedef Properties
  * @type {object}
  * @property {boolean?} border
+ * @property {boolean?} dataPreview
  */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
 import { Attribute } from '../components/attribute.js';
+import { Button } from '../components/button.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { PercentBar } from '../components/percent_bar.js';
 import { FrequencyBars } from '../components/frequency_bars.js';
 import { BoxPlot } from '../components/box_plot.js';
-import { loadStylesheet } from '../utils.js';
+import { loadStylesheet, emitEvent, getValue } from '../utils.js';
 import { formatTimestamp, roundDigits } from '../display_utils.js';
 
 const { div, span } = van.tags;
@@ -36,10 +38,20 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
         border: props.border,
         title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
         content: item.profile_run_id && columnFunction ? columnFunction(item) : null,
-        actionContent: item.profile_run_id ? null : span(
-            { class: 'text-secondary' },
-            'No profiling data available',
-        ),
+        actionContent: item.profile_run_id
+            ? (getValue(props.dataPreview)
+                ? Button({
+                    type: 'stroked',
+                    label: 'Data Preview',
+                    icon: 'pageview',
+                    width: 'auto',
+                    onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                })
+                : null)
+            : span(
+                { class: 'text-secondary' },
+                'No profiling data available',
+            ),
     })
 };
 

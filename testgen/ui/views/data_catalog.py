@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.queries.profiling_queries import TAG_FIELDS, get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, score
 
@@ -83,7 +84,15 @@ class DataCatalogPage(Page):
                     "selected": json.dumps(selected_item),
                     "tag_values": get_tag_values(),
                 },
-                on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
+                on_change_handlers={
+                    "TreeNodeSelected": on_tree_node_select,
+                    "DataPreviewClicked": lambda item: data_preview_dialog(
+                        item["table_group_id"],
+                        item["schema_name"],
+                        item["table_name"],
+                        item.get("column_name"),
+                    ),
+                },
                 event_handlers={ "TagsChanged": on_tags_changed },
             )
 

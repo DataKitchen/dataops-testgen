@@ -38,6 +38,7 @@ import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
 import { capitalize } from '../display_utils.js';
+import { TableSizeCard } from '../data_profiling/table_size.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -217,7 +218,9 @@ const DataCatalog = (/** @type Properties */ props) => {
                         LatestProfilingLink(item),
                     ),
                     DataCharacteristicsCard({ scores: true }, item),
-                    item.type === 'column' ? ColumnDistributionCard({}, item) : null,
+                    item.type === 'column'
+                        ? ColumnDistributionCard({ dataPreview: true }, item)
+                        : TableSizeCard({}, item),
                     TagsCard({ tagOptions: getValue(props.tag_values) }, item),
                     PotentialPIICard({}, item),
                     HygieneIssuesCard({}, item),
