@@ -1,0 +1,40 @@
+{{- define "testgen.environment" -}}
+- name: TG_DECRYPT_SALT
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "testgen.fullname" . }}
+      key: "decrypt-salt"
+- name: TG_DECRYPT_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "testgen.fullname" . }}
+      key: "decrypt-password"
+- name: TG_METADATA_DB_HOST
+  value: {{ .Values.testgen.databaseHost | quote }}
+- name: TG_METADATA_DB_NAME
+  value: {{ .Values.testgen.databaseName | quote }}
+- name: TG_METADATA_DB_SCHEMA
+  value: {{ .Values.testgen.databaseSchema | quote }}
+- name: TG_METADATA_DB_USER
+  value: {{ .Values.testgen.databaseUser | quote }}
+- name: TG_METADATA_DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.testgen.databasePasswordSecret.name | quote }}
+      key: {{ .Values.testgen.databasePasswordSecret.key | quote }}
+- name: TG_TARGET_DB_TRUST_SERVER_CERTIFICATE
+  value: {{ .Values.testgen.trustTargetDatabaseCertificate | ternary "yes" "no" | quote }}
+- name: TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL
+  value: {{ .Values.testgen.observabilityVerifySsl | ternary "yes" "no" | quote }}
+- name: TG_DOCKER_RELEASE_CHECK_ENABLED
+  value: {{ .Values.testgen.releaseCheck | ternary "yes" "no" | quote }}
+{{- end -}}
+
+{{- define "testgen.hookEnvironment" -}}
+{{- if .Values.testgen.uiPassword -}}
+- name: TESTGEN_USERNAME
+  value: {{ .Values.testgen.uiUser | quote }}
+- name: TESTGEN_PASSWORD
+  value: {{ .Values.testgen.uiPassword | quote }}
+{{- end -}}
+{{- end -}}
