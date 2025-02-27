@@ -2,6 +2,7 @@ import typing
 
 import streamlit as st
 
+from testgen.common.models import with_database_session
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
@@ -36,9 +37,10 @@ def testgen_component(
 
     For both on_change_handlers and event_handlers, the "payload" data from the event is passed as the only argument to the callback function
     """
-    
+
     key = f"testgen:{component_id}"
-    
+
+    @with_database_session
     def on_change():
         event_data = st.session_state[key]
         if event_data and (event := event_data.get("event")):

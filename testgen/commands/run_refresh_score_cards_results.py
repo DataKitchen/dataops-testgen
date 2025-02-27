@@ -1,12 +1,22 @@
 import logging
 import time
 
-from testgen.common.models.scores import ScoreCard, ScoreDefinition, ScoreDefinitionBreakdownItem, ScoreDefinitionResult
+from testgen.common.models import with_database_session
+from testgen.common.models.scores import (
+    ScoreCard,
+    ScoreDefinition,
+    ScoreDefinitionBreakdownItem,
+    ScoreDefinitionResult,
+)
 
 LOG = logging.getLogger("testgen")
 
 
-def run_refresh_score_cards_results(project_code: str | None = None, definition_id: str | None = None):
+@with_database_session
+def run_refresh_score_cards_results(
+    project_code: str | None = None,
+    definition_id: str | None = None,
+):
     start_time = time.time()
     LOG.info("CurrentStep: Initializing scorecards results refresh")
 

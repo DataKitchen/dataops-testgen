@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
-from testgen.common.models import Base, Session, engine
+from testgen.common.models import Base, engine, get_current_session
 from testgen.utils import is_uuid4
 
 
@@ -74,9 +74,9 @@ class ScoreDefinition(Base):
             return None
     
         definition = None
-        with Session() as db_session:
-            query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
-            definition = db_session.scalars(query).first()
+        db_session = get_current_session()
+        query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
+        definition = db_session.scalars(query).first()
         return definition
 
     @classmethod
@@ -87,28 +87,28 @@ class ScoreDefinition(Base):
         sorted_by: str | None = "name",
     ) -> "Iterable[Self]":
         definitions = []
-        with Session() as db_session:
-            query = select(ScoreDefinition)
-            if name_filter:
-                query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
-            if project_code:
-                query = query.where(ScoreDefinition.project_code == project_code)
-            query = query.order_by(text(sorted_by))
-            definitions = db_session.scalars(query).unique().all()
+        db_session = get_current_session()
+        query = select(ScoreDefinition)
+        if name_filter:
+            query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
+        if project_code:
+            query = query.where(ScoreDefinition.project_code == project_code)
+        query = query.order_by(text(sorted_by))
+        definitions = db_session.scalars(query).unique().all()
         return definitions
 
     def save(self) -> None:
-        with Session() as db_session:
-            db_session.add(self)
-            db_session.flush([self])
-            db_session.commit()
-            db_session.refresh(self, ["id"])
+        db_session = get_current_session()
+        db_session.add(self)
+        db_session.flush([self])
+        db_session.commit()
+        db_session.refresh(self, ["id"])
 
     def delete(self) -> None:
-        with Session() as db_session:
-            db_session.add(self)
-            db_session.delete(self)
-            db_session.commit()
+        db_session = get_current_session()
+        db_session.add(self)
+        db_session.delete(self)
+        db_session.commit()
 
     def as_score_card(self) -> "ScoreCard":
         """
@@ -338,13 +338,13 @@ class ScoreDefinitionBreakdownItem(Base):
         score_type: Literal["score", "cde_score"],
     ) -> "Iterable[Self]":
         items = []
-        with Session() as db_session:
-            query = select(ScoreDefinitionBreakdownItem).where(
-                ScoreDefinitionBreakdownItem.definition_id == definition_id,
-                ScoreDefinitionBreakdownItem.category == category,
-                ScoreDefinitionBreakdownItem.score_type == score_type,
-            ).order_by(ScoreDefinitionBreakdownItem.impact.desc())
-            items = db_session.scalars(query).unique().all()
+        db_session = get_current_session()
+        query = select(ScoreDefinitionBreakdownItem).where(
+            ScoreDefinitionBreakdownItem.definition_id == definition_id,
+            ScoreDefinitionBreakdownItem.category == category,
+            ScoreDefinitionBreakdownItem.score_type == score_type,
+        ).order_by(ScoreDefinitionBreakdownItem.impact.desc())
+        items = db_session.scalars(query).unique().all()
         return items
 
     def to_dict(self) -> dict:
