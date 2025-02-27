@@ -1,13 +1,16 @@
 # Default values for testgen.
 
 testgen:
-  databaseHost: "testgen-services-postgresql"
+  databaseHost: "postgresql"
   databaseName: "datakitchen"
   databaseSchema: "tgapp"
   databaseUser: "postgres"
   databasePasswordSecret:
     name: "testgen-services-postgresql"
     key: "postgres-password"
+  databaseDecryptSecret:
+    create: true
+    name: testgen-database-decrypt
   uiUser: "admin"
   uiPassword:
   trustTargetDatabaseCertificate: false
@@ -28,9 +31,6 @@ image:
   repository: "datakitchen/dataops-testgen"
   pullPolicy: IfNotPresent
   tag: "v3"
-
-secrets:
-  create: true
 
 imagePullSecrets: []
 nameOverride: ""
@@ -62,8 +62,9 @@ securityContext: {}
   # runAsUser: 1000
 
 service:
-  type: ClusterIP
+  type: NodePort
   port: 8501
+  nodePort: 8501
 
 resources: {}
   # limits:
