@@ -1,0 +1,21 @@
+name: Release New Version
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    branches:
+      - main
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Latest Changes
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package and Publish Charts
+        uses: ./.github/actions/publish_charts
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
