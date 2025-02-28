@@ -1,3 +1,4 @@
+import datetime
 import logging
 import time
 
@@ -7,6 +8,7 @@ from testgen.common.models.scores import (
     ScoreDefinition,
     ScoreDefinitionBreakdownItem,
     ScoreDefinitionResult,
+    ScoreDefinitionResultHistoryEntry,
 )
 
 LOG = logging.getLogger("testgen")
@@ -16,8 +18,13 @@ LOG = logging.getLogger("testgen")
 def run_refresh_score_cards_results(
     project_code: str | None = None,
     definition_id: str | None = None,
+    add_history_entry: bool = False,
+    refresh_date: datetime.datetime | None = None,
+    test_run_id: str | None = None,
+    profiling_run_id: str | None = None,
 ):
     start_time = time.time()
+    _refresh_date = refresh_date or datetime.datetime.now(datetime.UTC)
     LOG.info("CurrentStep: Initializing scorecards results refresh")
 
     try:
@@ -41,6 +48,24 @@ def run_refresh_score_cards_results(
             fresh_score_card = definition.as_score_card()
             definition.results = _score_card_to_results(fresh_score_card)
             definition.breakdown = _score_definition_to_results_breakdown(definition)
+            if add_history_entry:
+                LOG.info(
+                    "CurrentStep: Adding history entry for scorecard %s in project %s",
+                    definition.name,
+                    definition.project_code,
+                )
+
+                historical_categories = ["score", "cde_score"]
+                for result in definition.results:
+                    if result.category in historical_categories:
+                        definition.history.append(ScoreDefinitionResultHistoryEntry(
+                            definition_id=result.definition_id,
+                            category=result.category,
+                            score=result.score,
+                            last_run_time=_refresh_date,
+                            test_run_id=test_run_id,
+                            profiling_run_id=profiling_run_id,
+                        ))
             definition.save()
             LOG.info(
                 "CurrentStep: Done rereshing scorecard %s in project %s",

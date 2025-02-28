@@ -2,10 +2,11 @@ import enum
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
-from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, select, text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -53,6 +54,12 @@ class ScoreDefinition(Base):
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
         lazy="joined",
+    )
+    history: Iterable["ScoreDefinitionResultHistoryEntry"] = relationship(
+        "ScoreDefinitionResultHistoryEntry",
+        order_by="ScoreDefinitionResultHistoryEntry.last_run_time.asc()",
+        cascade="all, delete-orphan",
+        lazy="select",
     )
 
     @classmethod
@@ -130,6 +137,7 @@ class ScoreDefinition(Base):
                 "profiling_score": None,
                 "testing_score": None,
                 "categories": [],
+                "history": [],
                 "definition": self,
             }
 
@@ -168,8 +176,39 @@ class ScoreDefinition(Base):
             "profiling_score": overall_scores.get("profiling_score") if self.total_score else None,
             "testing_score": overall_scores.get("testing_score") if self.total_score else None,
             "categories": categories_scores,
+            "history": [],
             "definition": self,
         }
+
+    def as_cached_score_card(self) -> "ScoreCard":
+        """Reads the cached values to build a scorecard"""
+        root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
+        score_card: ScoreCard = {
+            "id": self.id,
+            "project_code": self.project_code,
+            "name": self.name,
+            "categories": [],
+            "history": [],
+            "definition": self,
+        }
+
+        for result in sorted(self.results, key=lambda r: r.category):
+            if result.category in root_keys:
+                score_card[result.category] = result.score
+                continue
+            score_card["categories"].append({"label": result.category, "score": result.score})
+
+        history_categories: list[str] = []
+        if self.total_score:
+            history_categories.append("score")
+        if self.cde_score:
+            history_categories.append("cde_score")
+
+        for entry in self.history:
+            if entry.category in history_categories:
+                score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
+
+        return score_card
 
     def get_score_card_breakdown(
         self,
@@ -360,6 +399,21 @@ class ScoreDefinitionBreakdownItem(Base):
         }
 
 
+class ScoreDefinitionResultHistoryEntry(Base):
+    __tablename__ = "score_definition_results_history"
+
+    definition_id: str = Column(
+        UUID(as_uuid=True),
+        ForeignKey("score_definitions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    category: str = Column(String, nullable=False, primary_key=True)
+    score: float = Column(Float, nullable=True, primary_key=True)
+    last_run_time: datetime = Column(DateTime(timezone=True), nullable=False, primary_key=True)
+    test_run_id: str = Column(UUID(as_uuid=True), nullable=True)
+    profiling_run_id: str = Column(UUID(as_uuid=True), nullable=True)
+
+
 class ScoreCard(TypedDict):
     id: str
     project_code: str
@@ -369,6 +423,7 @@ class ScoreCard(TypedDict):
     profiling_score: float
     testing_score: float
     categories: list["CategoryScore"]
+    history: list["HistoryEntry"]
     definition: ScoreDefinition | None
 
 
@@ -380,3 +435,9 @@ class CategoryScore(TypedDict):
 class SelectedIssue(TypedDict):
     id: str
     issue_type: Literal["hygiene", "test"]
+
+
+class HistoryEntry(TypedDict):
+    score: float
+    category: Literal["score", "cde_score"]
+    time: datetime

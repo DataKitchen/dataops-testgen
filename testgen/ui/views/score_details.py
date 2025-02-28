@@ -56,7 +56,7 @@ class ScoreDetailsPage(Page):
         issues = None
         with st.spinner(text="Loading data ..."):
             user_can_edit = authentication_service.current_user_has_edit_role()
-            score_card = format_score_card(score_definition.as_score_card())
+            score_card = format_score_card(score_definition.as_cached_score_card())
             if not score_type:
                 score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
             if not drilldown:

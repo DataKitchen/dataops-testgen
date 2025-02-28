@@ -499,7 +499,12 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
         ]
         RunActionQueryList("DKTG", lstProfileRunQuery)
-        run_refresh_score_cards_results(project_code=dctParms["project_code"])
+        run_refresh_score_cards_results(
+            project_code=dctParms["project_code"],
+            add_history_entry=True,
+            refresh_date=date_service.parse_now(clsProfiling.run_date),
+            profiling_run_id=str(clsProfiling.profile_run_id) if clsProfiling.profile_run_id else None,
+        )
 
         if booErrors:
             str_error_status = "with errors. Check log for details."

@@ -4,8 +4,8 @@ import sys
 import streamlit as st
 
 from testgen import settings
-from testgen.common.models import with_database_session
 from testgen.common.docker_service import check_basic_configuration
+from testgen.common.models import with_database_session
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen

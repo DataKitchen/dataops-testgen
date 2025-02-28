@@ -206,8 +206,10 @@ def save_score_definition(_) -> None:
         raise ValueError("At least one filter is required to save the scorecard")
 
     score_definition = ScoreDefinition()
+    is_new_definition = True
     if definition_id:
         score_definition = ScoreDefinition.get(definition_id)
+        is_new_definition = False
 
     score_definition.project_code = session.project
     score_definition.name = name
@@ -219,7 +221,7 @@ def save_score_definition(_) -> None:
         for f in filters if (field_value := f.split("="))
     ]
     score_definition.save()
-    run_refresh_score_cards_results(definition_id=score_definition.id)
+    run_refresh_score_cards_results(definition_id=score_definition.id, add_history_entry=is_new_definition)
     get_all_score_cards.clear()
 
     Router().set_query_params({

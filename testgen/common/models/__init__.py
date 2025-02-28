@@ -2,11 +2,11 @@ import functools
 import platform
 import threading
 import urllib.parse
-from typing import Any, Callable
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session as SQLAlchemySession
+from sqlalchemy.orm import Session as SQLAlchemySession
+from sqlalchemy.orm import sessionmaker
 
 from testgen import settings
 
