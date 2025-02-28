@@ -1,0 +1,57 @@
+{{- range .Values.cliHooks }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "testgen.fullname" $ }}-{{ .name | default "hook" }}
+  labels:
+    {{- include "testgen.labels" $ | nindent 4 }}
+  annotations:
+    "helm.sh/hook": {{ .triggers | quote }}
+    "helm.sh/hook-delete-policy": {{ .deletePolicy | default "before-hook-creation,hook-succeeded" | quote }}
+spec:
+  template:
+    metadata:
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "testgen.labels" $ | nindent 8 }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      restartPolicy: {{ .restartPolicy | default "Never" | quote }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "testgen.serviceAccountName" $ }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ $.Chart.Name }}
+          securityContext:
+            {{- toYaml $.Values.securityContext | nindent 12 }}
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+          env:
+            {{- include "testgen.environment" $ | nindent 12 }}
+            {{- include "testgen.hookEnvironment" $ | nindent 12 }}
+          command: {{ toJson .command }}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- end }}

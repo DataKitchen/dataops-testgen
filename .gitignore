@@ -30,6 +30,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+deploy/charts/*/charts
 
 # Installer logs
 pip-log.txt
