@@ -284,7 +284,8 @@ INNER JOIN table_groups tg
 INNER JOIN data_table_chars dtc
    ON (dcc.table_id = dtc.table_id)
 INNER JOIN profiling_runs pr
-   ON (tg.last_complete_profile_run_id = pr.id);
+   ON (tg.last_complete_profile_run_id = pr.id)
+WHERE dcc.drop_date IS NULL;
 
 
 DROP VIEW IF EXISTS v_dq_profile_scoring_latest_by_dimension;
