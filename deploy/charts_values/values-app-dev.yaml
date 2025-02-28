@@ -1,0 +1,13 @@
+testgen:
+  # Password that will be assigned to the 'admin' user during the database preparation
+  uiPassword: "admin"
+
+  # Whether to trust the target database certificates.
+  trustTargetDatabaseCertificate: true
+
+  # Whether to run the SSL certificate verifications when connecting to DataOps Observability
+  observabilityVerifySsl: false
+
+image:
+  # DataOps TestGen version to be installed / upgraded
+  tag: v3

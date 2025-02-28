@@ -29,7 +29,7 @@ class ScoreDetailsPage(Page):
         *,
         definition_id: str,
         category: str = "table_name",
-        score_type: str = "score",
+        score_type: str | None = None,
         drilldown: str | None = None,
         **_kwargs
     ):
@@ -57,6 +57,8 @@ class ScoreDetailsPage(Page):
         with st.spinner(text="Loading data ..."):
             user_can_edit = authentication_service.current_user_has_edit_role()
             score_card = format_score_card(score_definition.as_score_card())
+            if not score_type:
+                score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
             if not drilldown:
                 score_breakdown = ScoreDefinitionBreakdownItem.filter(
                     definition_id=definition_id,

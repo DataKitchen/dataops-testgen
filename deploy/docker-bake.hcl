@@ -1,11 +1,15 @@
 variable "TESTGEN_LABELS" {}
 variable "TESTGEN_BASE_LABEL" {}
 variable "TESTGEN_VERSION" {}
+variable "TESTGEN_DOCKER_HUB_REPO" {
+  "default": "datakitchen/dataops-testgen"
+}
 
 target "testgen-release" {
   args = {
     TESTGEN_VERSION = "${TESTGEN_VERSION}"
     TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
+    TESTGEN_DOCKER_HUB_REPO = "${TESTGEN_DOCKER_HUB_REPO}"
   }
   context = "."
   dockerfile = "deploy/testgen.dockerfile"
@@ -17,6 +21,7 @@ target "testgen-qa" {
   args = {
     TESTGEN_VERSION = "${TESTGEN_VERSION}"
     TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
+    TESTGEN_DOCKER_HUB_REPO = "${TESTGEN_DOCKER_HUB_REPO}"
   }
   context = "."
   dockerfile = "deploy/testgen.dockerfile"
