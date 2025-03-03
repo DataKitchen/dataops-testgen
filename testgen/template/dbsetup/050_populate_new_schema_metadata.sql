@@ -394,7 +394,7 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('6014', 'LOV_Match', 'databricks', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('6015', 'Min_Date', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} < ''{BASELINE_VALUE}'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('6016', 'Min_Val', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
-        ('6017', 'Missing_Pct', 'databricks', 'ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )', '>=', '{THRESHOLD_VALUE}'),
+        ('6017', 'Missing_Pct', 'databricks', 'ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT({COLUMN_NAME})::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )', '>=', '{THRESHOLD_VALUE}'),
         ('6018', 'Monthly_Rec_Ct', 'databricks', '(MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};''{RUN_DATE}''::DATE%>)', '>', '{THRESHOLD_VALUE}'),
         ('6019', 'Outlier_Pct_Above', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT', '>', '{THRESHOLD_VALUE}'),
         ('6020', 'Outlier_Pct_Below', 'databricks', 'SUM(CASE WHEN {COLUMN_NAME}::FLOAT < {BASELINE_AVG}-(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT', '>', '{THRESHOLD_VALUE}'),

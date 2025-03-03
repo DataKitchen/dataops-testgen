@@ -51,6 +51,7 @@ class CCATExecutionSQL:
         strInputString = strInputString.replace("{TABLE_GROUPS_ID}", self.table_groups_id)
 
         strInputString = strInputString.replace("{SQL_FLAVOR}", self.flavor)
+        strInputString = strInputString.replace("{ID_SEPARATOR}", "`" if self.flavor == "databricks" else '"')
         strInputString = strInputString.replace("{CONCAT_OPERATOR}", self.concat_operator)
 
         strInputString = strInputString.replace("{SCHEMA_NAME}", self.target_schema)
