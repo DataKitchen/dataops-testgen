@@ -40,7 +40,7 @@ class LoginPage(Page):
                         <h3 style="text-align: center;">Welcome to DataKitchen DataOps TestGen</h3>
                         """)
             name, authentication_status, username = authenticator.login("Login")
-                
+
             if authentication_status is False:
                 st.error("Username or password is incorrect.")
 
@@ -60,4 +60,3 @@ class LoginPage(Page):
                     self.router.navigate(next_route)
                 else:
                     session.logging_in = True
-                
