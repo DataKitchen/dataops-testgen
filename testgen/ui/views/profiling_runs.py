@@ -177,11 +177,7 @@ def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) 
     SELECT v_profiling_runs.profiling_run_id::VARCHAR,
         v_profiling_runs.start_time,
         v_profiling_runs.table_groups_name,
-        CASE
-            WHEN v_profiling_runs.status = 'Running'
-            AND v_profiling_runs.start_time < CURRENT_DATE - 1 THEN 'Error'
-            ELSE v_profiling_runs.status
-        END as status,
+        v_profiling_runs.status,
         v_profiling_runs.process_id,
         v_profiling_runs.duration,
         v_profiling_runs.log_message,
