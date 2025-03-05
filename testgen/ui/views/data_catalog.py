@@ -217,7 +217,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         result_message,
         test_suite,
         test_results.test_run_id::VARCHAR(50),
-        EXTRACT(EPOCH FROM test_starttime) AS test_run_date
+        EXTRACT(EPOCH FROM test_starttime) * 1000 AS test_run_date
     FROM {schema}.test_suites
         LEFT JOIN {schema}.test_runs ON (
             test_suites.last_complete_test_run_id = test_runs.id
