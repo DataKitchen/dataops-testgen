@@ -39,3 +39,12 @@ def update_status(test_run_id: str, status: str) -> None:
     """
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def cancel_all_running() -> None:
+    schema: str = db.get_schema()
+    db.execute_sql(f"""
+    UPDATE {schema}.test_runs
+        SET status = 'Cancelled'
+        WHERE status = 'Running';
+    """)

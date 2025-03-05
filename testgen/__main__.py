@@ -43,6 +43,7 @@ from testgen.common import (
     logs,
     version_service,
 )
+from testgen.ui.queries import profiling_run_queries, test_run_queries
 from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
@@ -606,6 +607,11 @@ def run(debug: bool):
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
     patch_streamlit.patch(force=True)
+    try:
+        profiling_run_queries.cancel_all_running()
+        test_run_queries.cancel_all_running()
+    except Exception:
+        LOG.warning("Failed to cancel 'Running' profiling/test runs")
 
     try:
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
