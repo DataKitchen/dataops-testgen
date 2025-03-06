@@ -8,12 +8,11 @@ import testgen.common.process_service as process_service
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-from testgen.commands.run_profiling_bridge import update_profile_run_status
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.queries import project_queries
+from testgen.ui.queries import profiling_run_queries, project_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
@@ -123,7 +122,7 @@ def render_empty_state(project_code: str) -> bool:
 def on_cancel_run(profiling_run: pd.Series) -> None:
     process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
-        update_profile_run_status(profiling_run["profiling_run_id"], "Cancelled")
+        profiling_run_queries.update_status(profiling_run["profiling_run_id"], "Cancelled")
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -178,11 +177,7 @@ def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) 
     SELECT v_profiling_runs.profiling_run_id::VARCHAR,
         v_profiling_runs.start_time,
         v_profiling_runs.table_groups_name,
-        CASE
-            WHEN v_profiling_runs.status = 'Running'
-            AND v_profiling_runs.start_time < CURRENT_DATE - 1 THEN 'Error'
-            ELSE v_profiling_runs.status
-        END as status,
+        v_profiling_runs.status,
         v_profiling_runs.process_id,
         v_profiling_runs.duration,
         v_profiling_runs.log_message,

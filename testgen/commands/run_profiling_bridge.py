@@ -17,8 +17,6 @@ from testgen.common import (
     RunActionQueryList,
     RunThreadedRetrievalQueryList,
     WriteListToDB,
-    date_service,
-    read_template_sql_file,
 )
 from testgen.common.database.database_service import empty_cache
 
@@ -509,14 +507,3 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             str_error_status = "successfully."
         message += str_error_status
     return message
-
-
-def update_profile_run_status(profile_run_id, status):
-    sql_template = read_template_sql_file("project_profile_run_record_update_status.sql", sub_directory="profiling")
-
-    sql_template = sql_template.replace("{STATUS}", status)
-    sql_template = sql_template.replace("{NOW}", date_service.get_now_as_string())
-    sql_template = sql_template.replace("{EXCEPTION_MESSAGE}", "")
-    sql_template = sql_template.replace("{PROFILE_RUN_ID}", profile_run_id)
-
-    RunActionQueryList("DKTG", [sql_template])

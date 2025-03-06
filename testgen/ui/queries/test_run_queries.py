@@ -4,10 +4,11 @@ import testgen.common.date_service as date_service
 import testgen.ui.services.database_service as db
 
 
-def cascade_delete(schema: str, test_suite_ids: list[str]) -> None:
+def cascade_delete(test_suite_ids: list[str]) -> None:
     if not test_suite_ids:
         raise ValueError("No Test Suite is specified.")
 
+    schema: str = st.session_state["dbschema"]
     ids_str = ", ".join([f"'{item}'" for item in test_suite_ids])
     sql = f"""
         DELETE
@@ -23,10 +24,11 @@ def cascade_delete(schema: str, test_suite_ids: list[str]) -> None:
     st.cache_data.clear()
 
 
-def update_status(schema: str, test_run_id: str, status: str) -> None:
+def update_status(test_run_id: str, status: str) -> None:
     if not all([test_run_id, status]):
         raise ValueError("Missing query parameters.")
 
+    schema: str = st.session_state["dbschema"]
     now = date_service.get_now_as_string()
 
     sql = f"""
@@ -37,3 +39,12 @@ def update_status(schema: str, test_run_id: str, status: str) -> None:
     """
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def cancel_all_running() -> None:
+    schema: str = db.get_schema()
+    db.execute_sql(f"""
+    UPDATE {schema}.test_runs
+        SET status = 'Cancelled'
+        WHERE status = 'Running';
+    """)
