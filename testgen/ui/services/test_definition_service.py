@@ -4,7 +4,7 @@ import testgen.ui.queries.test_definition_queries as test_definition_queries
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.database_service as database_service
 import testgen.ui.services.table_group_service as table_group_service
-import testgen.ui.services.test_run_service as test_run_service
+from testgen.ui.queries import test_run_queries
 
 
 def update_attribute(test_definition_ids, attribute, value):
@@ -54,7 +54,7 @@ def delete(test_definition_ids, dry_run=False):
 
 def cascade_delete(test_suite_ids: list[str]):
     schema = st.session_state["dbschema"]
-    test_run_service.cascade_delete(test_suite_ids)
+    test_run_queries.cascade_delete(test_suite_ids)
     test_definition_queries.cascade_delete(schema, test_suite_ids)
 
 
@@ -138,7 +138,7 @@ def validate_test(test_definition):
     )
 
 
-def move(test_definitions, target_table_group, target_test_suite):    
+def move(test_definitions, target_table_group, target_test_suite):
     schema = st.session_state["dbschema"]
     test_definition_queries.move(schema, test_definitions, target_table_group, target_test_suite)
 
@@ -152,4 +152,3 @@ def copy(test_definitions, target_table_group, target_test_suite):
 def get_test_definitions_collision(test_definitions, target_table_group, target_test_suite):
     schema = st.session_state["dbschema"]
     return test_definition_queries.get_test_definitions_collision(schema, test_definitions, target_table_group, target_test_suite)
-

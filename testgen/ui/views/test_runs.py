@@ -8,12 +8,11 @@ import testgen.common.process_service as process_service
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
-import testgen.ui.services.test_run_service as test_run_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.queries import project_queries
+from testgen.ui.queries import project_queries, test_run_queries
 from testgen.ui.services import authentication_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
@@ -141,7 +140,7 @@ def render_empty_state(project_code: str) -> bool:
 def on_cancel_run(test_run: pd.Series) -> None:
     process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
-        test_run_service.update_status(test_run["test_run_id"], "Cancelled")
+        test_run_queries.update_status(test_run["test_run_id"], "Cancelled")
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 

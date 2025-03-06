@@ -17,7 +17,7 @@ anomalies AS (
         EXTRACT(
             EPOCH
             FROM runs.profiling_starttime
-        ) AS time,
+        ) * 1000 AS time,
         '' AS name,
         runs.id::text AS run_id,
         'hygiene' AS issue_type
@@ -51,7 +51,7 @@ tests AS (
         EXTRACT(
             EPOCH
             FROM test_time
-        ) AS time,
+        ) * 1000 AS time,
         test_suites.test_suite AS name,
         test_results.test_run_id::text AS run_id,
         'test' AS issue_type
