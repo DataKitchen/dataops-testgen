@@ -15,6 +15,7 @@ LOG = logging.getLogger("testgen")
 def run_parameter_validation_queries(
     dctParms, test_run_id="", test_time="", strTestSuite=""
 ):
+
     LOG.info("CurrentStep: Initializing Test Parameter Validation")
     clsExecute = CTestParamValidationSQL(dctParms["sql_flavor"], dctParms["test_suite_id"])
     clsExecute.run_date = test_time

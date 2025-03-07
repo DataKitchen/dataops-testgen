@@ -13,6 +13,7 @@
            ts.id::VARCHAR as test_suite_id,
            cc.url,
            cc.connect_by_url,
+           cc.http_path,
            CURRENT_TIMESTAMP AT TIME ZONE 'UTC' -
              CAST(tg.profiling_delay_days AS integer) * INTERVAL '1 day' as profiling_as_of_date
       FROM table_groups tg

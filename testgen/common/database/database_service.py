@@ -42,6 +42,7 @@ class CConnectParms:
     private_key = ""
     private_key_passphrase = ""
     password = None
+    http_path = ""
 
     def __init__(self, connectname):
         self.connectname = connectname
@@ -89,6 +90,7 @@ def AssignConnectParms(
     connect_by_key,
     private_key,
     private_key_passphrase,
+    http_path,
     connectname="PROJECT",
     password=None,
 ):
@@ -109,6 +111,7 @@ def AssignConnectParms(
     clsConnectParms.connect_by_key = connect_by_key
     clsConnectParms.private_key = private_key
     clsConnectParms.private_key_passphrase = private_key_passphrase
+    clsConnectParms.http_path = http_path
 
 
 def _RetrieveProjectPW(strProjectCode, strConnID):
@@ -181,6 +184,7 @@ def _GetDBCredentials(strCredentialSet):
             "connect_by_key": clsConnectParms.connect_by_key,
             "private_key": clsConnectParms.private_key,
             "private_key_passphrase": clsConnectParms.private_key_passphrase,
+            "http_path": clsConnectParms.http_path,
         }
     elif strCredentialSet == "DKTG":
         # Get credentials from functions in my_dk_credentials.py

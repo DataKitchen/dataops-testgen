@@ -31,7 +31,7 @@ WITH test_detail
                 -- Nested parm replacements - part of query, not Python parms
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure,
-                        '{COLUMN_NAME}', COALESCE(fn_PrepColumnName(t.column_name), '')),
+                        '{COLUMN_NAME}', '{ID_SEPARATOR}' || COALESCE(t.column_name, '') || '{ID_SEPARATOR}'),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),
@@ -49,7 +49,7 @@ WITH test_detail
                 -- Nested parm replacements - standard
                 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure || c.test_operator || c.test_condition,
-                        '{COLUMN_NAME}', COALESCE(fn_PrepColumnName(t.column_name), '')),
+                        '{COLUMN_NAME}', '{ID_SEPARATOR}' || COALESCE(t.column_name, '') || '{ID_SEPARATOR}'),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),

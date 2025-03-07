@@ -83,6 +83,7 @@ def _prepare_connection_to_target_database(params_mapping):
         False,
         None,
         None,
+        None,
         "PROJECT",
     )
 

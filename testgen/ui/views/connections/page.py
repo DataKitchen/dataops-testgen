@@ -86,7 +86,7 @@ class ConnectionsPage(Page):
             FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
             if connection:
                 connection["password"] = connection["password"] or ""
-                
+
             form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
             form = FlavorForm(**form_kwargs)
 
@@ -207,6 +207,7 @@ class ConnectionsPage(Page):
                 connection["connect_by_key"],
                 connection["private_key"],
                 connection["private_key_passphrase"],
+                connection["http_path"],
                 sql_query,
             )
             connection_successful = len(results) == 1 and results[0][0] == 1

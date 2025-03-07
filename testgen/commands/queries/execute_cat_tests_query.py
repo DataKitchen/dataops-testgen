@@ -39,9 +39,9 @@ class CCATExecutionSQL:
     def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
         if not self._rollup_scores_sql:
             self._rollup_scores_sql = CRollupScoresSQL(self.test_run_id, self.table_groups_id)
-    
+
         return self._rollup_scores_sql
-    
+
     def _ReplaceParms(self, strInputString):
         strInputString = strInputString.replace("{MAX_QUERY_CHARS}", str(self.max_query_chars))
         strInputString = strInputString.replace("{TEST_RUN_ID}", self.test_run_id)
@@ -51,6 +51,7 @@ class CCATExecutionSQL:
         strInputString = strInputString.replace("{TABLE_GROUPS_ID}", self.table_groups_id)
 
         strInputString = strInputString.replace("{SQL_FLAVOR}", self.flavor)
+        strInputString = strInputString.replace("{ID_SEPARATOR}", "`" if self.flavor == "databricks" else '"')
         strInputString = strInputString.replace("{CONCAT_OPERATOR}", self.concat_operator)
 
         strInputString = strInputString.replace("{SCHEMA_NAME}", self.target_schema)
@@ -71,8 +72,9 @@ class CCATExecutionSQL:
 
         strInputString = replace_templated_functions(strInputString, self.flavor)
 
-        # Adding escape character where ':' is referenced
-        strInputString = strInputString.replace(":", "\\:")
+        if self.flavor != "databricks":
+            # Adding escape character where ':' is referenced
+            strInputString = strInputString.replace(":", "\\:")
 
         return strInputString
 
@@ -110,12 +112,12 @@ class CCATExecutionSQL:
     def FinalizeTestSuiteUpdateSQL(self):
         strQ = self._ReplaceParms(read_template_sql_file("ex_update_test_suite.sql", "execution"))
         return strQ
-    
+
     def CalcPrevalenceTestResultsSQL(self):
         return self._ReplaceParms(read_template_sql_file("ex_calc_prevalence_test_results.sql", "execution"))
 
     def TestScoringRollupRunSQL(self):
         return self._get_rollup_scores_sql().GetRollupScoresTestRunQuery()
-    
+
     def TestScoringRollupTableGroupSQL(self):
         return self._get_rollup_scores_sql().GetRollupScoresTestTableGroupQuery()
