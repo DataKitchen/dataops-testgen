@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS score_definition_results_history (
                                                     ON DELETE CASCADE,
     category          TEXT                        NOT NULL,
     score             DOUBLE PRECISION            DEFAULT NULL,
-    test_run_id       UUID                        DEFAULT NULL,
-    profiling_run_id  UUID                        DEFAULT NULL,
-    last_run_time     TIMESTAMP WITH TIME ZONE    NOT NULL
+    last_run_time     TIMESTAMP                   NOT NULL
 );
+
+CREATE INDEX sdrh_def_last_run
+   ON score_definition_results_history(definition_id, last_run_time);
