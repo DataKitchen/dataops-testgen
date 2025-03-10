@@ -1,7 +1,11 @@
+from datetime import datetime
+from typing import NamedTuple
+
 import streamlit as st
 
 import testgen.common.date_service as date_service
 import testgen.ui.services.database_service as db
+from testgen.common.models import get_current_session
 
 
 def cascade_delete(test_suite_ids: list[str]) -> None:
@@ -48,3 +52,24 @@ def cancel_all_running() -> None:
         SET status = 'Cancelled'
         WHERE status = 'Running';
     """)
+
+
+class LatestTestRun(NamedTuple):
+    id: str
+    run_time: datetime
+
+
+def get_latest_run_date(project_code: str) -> LatestTestRun | None:
+    session = get_current_session()
+    result = session.execute(
+        """
+        SELECT runs.id, test_starttime
+        FROM test_runs AS runs
+        INNER JOIN test_suites AS suite ON (suite.id = runs.test_suite_id)
+        WHERE project_code = :project_code ORDER BY test_starttime DESC LIMIT 1
+        """,
+        params={"project_code": project_code},
+    )
+    if result and (latest_run := result.first()):
+        return LatestTestRun(str(latest_run.id), latest_run.test_starttime)
+    return None

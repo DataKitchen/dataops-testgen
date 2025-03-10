@@ -1,9 +1,12 @@
 import json
+from datetime import datetime
+from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
+from testgen.common.models import get_current_session
 from testgen.utils import is_uuid4
 
 COLUMN_PROFILING_FIELDS = """
@@ -360,3 +363,19 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
 
     results = db.retrieve_data(query)
     return [row.to_dict() for _, row in results.iterrows()]
+
+
+class LatestProfilingRun(NamedTuple):
+    id: str
+    run_time: datetime
+
+
+def get_latest_run_date(project_code: str) -> LatestProfilingRun | None:
+    session = get_current_session()
+    result = session.execute(
+        "SELECT id, profiling_starttime FROM profiling_runs WHERE project_code = :project_code ORDER BY profiling_starttime DESC LIMIT 1",
+        params={"project_code": project_code},
+    )
+    if result and (latest_run := result.first()):
+        return LatestProfilingRun(str(latest_run.id), latest_run.profiling_starttime)
+    return None

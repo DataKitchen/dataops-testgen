@@ -58,14 +58,17 @@ def run_refresh_score_cards_results(
                 historical_categories = ["score", "cde_score"]
                 for result in definition.results:
                     if result.category in historical_categories:
-                        definition.history.append(ScoreDefinitionResultHistoryEntry(
+                        history_entry = ScoreDefinitionResultHistoryEntry(
                             definition_id=result.definition_id,
                             category=result.category,
                             score=result.score,
                             last_run_time=_refresh_date,
-                            test_run_id=test_run_id,
-                            profiling_run_id=profiling_run_id,
-                        ))
+                        )
+                        definition.history.append(history_entry)
+                        history_entry.add_as_cutoff(
+                            from_profiling=bool(profiling_run_id),
+                            from_testing=bool(test_run_id),
+                        )
             definition.save()
             LOG.info(
                 "CurrentStep: Done rereshing scorecard %s in project %s",
@@ -74,7 +77,7 @@ def run_refresh_score_cards_results(
             )
         except Exception:
             LOG.exception(
-                "CurrentStep: Unexpected error refreshing scorecard %sin project %s",
+                "CurrentStep: Unexpected error refreshing scorecard %s in project %s",
                 definition.name,
                 definition.project_code,
             )
@@ -140,3 +143,25 @@ def _score_definition_to_results_breakdown(score_definition: ScoreDefinition) ->
             ])
 
     return all_breakdown_items
+
+
+@with_database_session
+def run_recalculate_score_card(*, project_code: str, definition_id: str):
+    LOG.info("Recalculating history for scorecard %s in project %s", definition_id, project_code)
+    start_time = time.time()
+
+    try:
+        definition = ScoreDefinition.get(str(definition_id))
+        definition.recalculate_scores_history()
+        definition.save()
+    except Exception:
+        LOG.exception("CurrentStep: Stopping history recalculation after unexpected error")
+        return
+
+    end_time = time.time()
+    LOG.info(
+        "Recalculating history for scorecard %s in project %s is over after %s seconds",
+        definition_id,
+        project_code,
+        round(end_time - start_time, 2),
+    )

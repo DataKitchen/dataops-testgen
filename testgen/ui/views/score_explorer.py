@@ -4,13 +4,17 @@ from typing import ClassVar
 import pandas as pd
 import streamlit as st
 
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.run_refresh_score_cards_results import (
+    run_recalculate_score_card,
+    run_refresh_score_cards_results,
+)
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionFilter, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
+from testgen.ui.queries import profiling_queries, test_run_queries
 from testgen.ui.queries.scoring_queries import (
     get_all_score_cards,
     get_score_card_issue_reports,
@@ -205,11 +209,24 @@ def save_score_definition(_) -> None:
     if not filters:
         raise ValueError("At least one filter is required to save the scorecard")
 
+    is_new = True
     score_definition = ScoreDefinition()
-    is_new_definition = True
+    refresh_kwargs = {}
     if definition_id:
+        is_new = False
         score_definition = ScoreDefinition.get(definition_id)
-        is_new_definition = False
+
+    if is_new:
+        latest_run = max(
+            profiling_queries.get_latest_run_date(session.project),
+            test_run_queries.get_latest_run_date(session.project),
+            key=lambda run: getattr(run, "run_time", 0),
+        )
+
+        refresh_kwargs = {
+            "add_history_entry": True,
+            "refresh_date": latest_run.run_time if latest_run else None,
+        }
 
     score_definition.project_code = session.project
     score_definition.name = name
@@ -221,8 +238,11 @@ def save_score_definition(_) -> None:
         for f in filters if (field_value := f.split("="))
     ]
     score_definition.save()
-    run_refresh_score_cards_results(definition_id=score_definition.id, add_history_entry=is_new_definition)
+    run_refresh_score_cards_results(definition_id=score_definition.id, **refresh_kwargs)
     get_all_score_cards.clear()
+
+    if not is_new:
+        run_recalculate_score_card(project_code=score_definition.project_code, definition_id=score_definition.id)
 
     Router().set_query_params({
         "name": None,

@@ -116,8 +116,9 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
             "cde_score": "--" if not definition or definition.cde_score else None,
             "profiling_score": "--" if not definition or definition.total_score else None,
             "testing_score": "--" if not definition or definition.total_score else None,
-            "categories": [],
             "categories_label": None,
+            "categories": [],
+            "history": [],
         }
 
     return {
@@ -136,6 +137,11 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
         "categories": [
             {**category, "score": friendly_score(category["score"])}
             for category in score_card.get("categories", [])
+        ],
+        "history": [
+            {**entry, "score": round(100 * float(entry["score"]), 1), "time": entry["time"].isoformat()}
+            for entry in score_card.get("history", [])
+            if entry["score"] and not pd.isnull(entry["score"])
         ],
     }
 
