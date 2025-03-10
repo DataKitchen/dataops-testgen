@@ -2,9 +2,16 @@ ARG TESTGEN_BASE_LABEL=v1
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS build-image
 
+# Temporariily adding back the musl-dev lib to allow pip to compile lz4, a Databricks connector dependency. This can
+# be removed after the base image is updated with the latest added python dependencies.
+RUN apk add musl-dev
+
 # Now install everything
 COPY . /tmp/dk/
 RUN python3 -m pip install --prefix=/dk /tmp/dk
+
+# The temporary musl-dev lib is no longer neded after this point.
+RUN apk del musl-dev
 
 FROM python:3.12.7-alpine3.20 AS release-image
 
