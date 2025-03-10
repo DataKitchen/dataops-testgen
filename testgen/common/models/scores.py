@@ -462,8 +462,8 @@ class ScoreDefinitionResultHistoryEntry(Base):
             query = (
                 read_template_sql_file(template, sub_directory="score_cards")
                 .replace("{project_code}", self.definition.project_code)
-                .replace("{definition_id}", self.definition_id)
-                .replace("{score_history_cutoff_time}", self.last_run_time)
+                .replace("{definition_id}", str(self.definition_id))
+                .replace("{score_history_cutoff_time}", self.last_run_time.isoformat())
             )
             session = get_current_session()
             session.execute(query)

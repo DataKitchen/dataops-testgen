@@ -466,7 +466,8 @@ GROUP BY r.table_groups_id, r.test_run_id, r.test_suite_id,
          tg.stakeholder_group, dcc.transform_level, dtc.transform_level, tg.transform_level,
          dcc.critical_data_element, dtc.critical_data_element,
          dcc.data_product, dtc.data_product, tg.data_product,
-         dcc.functional_data_type, r.dq_dimension, r.test_time, r.table_name, dcc.column_name;
+         dcc.functional_data_type, r.dq_dimension, r.test_time, r.table_name, dcc.column_name,
+         tg.project_code;
 
 
 -- ==============================================================================

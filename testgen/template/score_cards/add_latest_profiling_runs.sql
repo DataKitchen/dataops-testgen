@@ -1,5 +1,3 @@
-SET SEARCH_PATH TO {SCHEMA_NAME};
-
 -- Delete existing records for the combo of definition_id and cutoff
 DELETE FROM score_history_latest_runs
 WHERE definition_id = '{definition_id}'

@@ -141,6 +141,10 @@ const LineChart = (
     }), {});
 
     function dimAllExcept(lineId) {
+        if (linesStates[lineId].hidden.val) {
+            return;
+        }
+
         Object.values(linesStates).forEach(states => states.dimmed.val = true);
         linesStates[lineId].dimmed.val = false;
     }

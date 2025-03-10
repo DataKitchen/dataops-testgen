@@ -74,7 +74,8 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                             href: 'quality-dashboard:score-details',
                             class: 'ml-4',
                             params: { definition_id: score.id },
-                        })
+                        }),
+                        {showHistory: true},
                     ))
                 ),
             ) : ConditionalEmptyState(getValue(props.project_summary)),
