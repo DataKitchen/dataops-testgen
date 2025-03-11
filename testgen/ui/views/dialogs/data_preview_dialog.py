@@ -52,7 +52,8 @@ def get_preview_data(
         c.connect_by_url,
         c.connect_by_key,
         c.private_key,
-        c.private_key_passphrase
+        c.private_key_passphrase,
+        c.http_path
     FROM {tg_schema}.table_groups tg
         INNER JOIN {tg_schema}.connections c ON (
             tg.connection_id = c.connection_id
@@ -82,6 +83,7 @@ def get_preview_data(
             connection_df["connect_by_key"],
             connection_df["private_key"],
             connection_df["private_key_passphrase"],
+            connection_df["http_path"],
         )
         df.index = df.index + 1
         return df
