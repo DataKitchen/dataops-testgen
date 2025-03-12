@@ -9,6 +9,7 @@
  * @property {boolean} show
  * @property {('top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left')?} position
  * @property {number} width
+ * @property {string?} style
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -22,7 +23,7 @@ const Tooltip = (/** @type Properties */ props) => {
     return span(
         {
             class: () => `tg-tooltip ${getValue(props.position) || defaultPosition} ${getValue(props.show) ? '' : 'hidden'}`,
-            style: () => `opacity: ${getValue(props.show) ? 1 : 0}; max-width: ${getValue(props.width) || '400'}px;`,
+            style: () => `opacity: ${getValue(props.show) ? 1 : 0}; max-width: ${getValue(props.width) || '400'}px; ${getValue(props.style) ?? ''}`,
         },
         props.text,
         div({ class: 'tg-tooltip--triangle' }),

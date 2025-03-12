@@ -6,6 +6,7 @@ from testgen.common import CreateDatabaseIfNotExists, RunActionQueryList, date_s
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
+from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.read_file import get_template_files
 
@@ -68,6 +69,7 @@ def _get_params_mapping() -> dict:
     }
 
 
+@with_database_session
 def run_launch_db_config(delete_db: bool) -> None:
     params_mapping = _get_params_mapping()
 

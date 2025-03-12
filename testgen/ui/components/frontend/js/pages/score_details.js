@@ -29,12 +29,13 @@ import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { ScoreCard } from '../components/score_card.js';
+import { ScoreHistory } from '../components/score_history.js';
 import { ScoreLegend } from '../components/score_legend.js';
 import { ScoreBreakdown } from '../components/score_breakdown.js';
 import { IssuesTable } from '../components/score_issues.js';
 import { Button } from '../components/button.js';
 
-const { div } = van.tags;
+const { div, i } = van.tags;
 
 const ScoreDetails = (/** @type {Properties} */ props) => {
     window.testgen.isPage = true;
@@ -53,7 +54,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
         { id: domId, class: 'tg-score-details flex-column' },
         ScoreLegend(),
         div(
-            { class: 'flex-row mb-4'},
+            { class: 'flex-row mb-4 mt-4', style: 'height: 216px;'},
             ScoreCard(
                 props.score,
                 () => {
@@ -65,6 +66,14 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     ) : '';
                 },
             ),
+            i({ class: 'ml-3 mr-3' }),
+            () => {
+                const score = getValue(props.score);
+                const history = getValue(props.score).history;
+                return history?.length > 0
+                    ? ScoreHistory({style: 'height: 100%;', showRefresh: userCanEdit, score}, ...history)
+                    : null;
+            },
         ),
         () => {
             const issuesValue = getValue(props.issues);

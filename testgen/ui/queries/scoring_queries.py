@@ -9,25 +9,10 @@ from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefiniti
 
 @st.cache_data(show_spinner="Loading data ...")
 def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
-    definitions = ScoreDefinition.all(project_code=project_code)
-    score_cards: list[ScoreCard] = []
-    root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
-
-    for definition in definitions:
-        score_card: ScoreCard = {
-            "id": definition.id,
-            "project_code": project_code,
-            "name": definition.name,
-            "categories": [],
-            "definition": definition,
-        }
-        for result in sorted(definition.results, key=lambda r: r.category):
-            if result.category in root_keys:
-                score_card[result.category] = result.score
-                continue
-            score_card["categories"].append({"label": result.category, "score": result.score})
-        score_cards.append(score_card)
-    return score_cards
+    return [
+        definition.as_cached_score_card()
+        for definition in ScoreDefinition.all(project_code=project_code)
+    ]
 
 
 def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):

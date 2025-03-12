@@ -1,9 +1,11 @@
+import logging
 from io import BytesIO
 from typing import ClassVar
 
 import pandas as pd
 import streamlit as st
 
+from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -15,6 +17,8 @@ from testgen.ui.services import authentication_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
+
+LOG = logging.getLogger("testgen")
 
 
 class ScoreDetailsPage(Page):
@@ -56,7 +60,7 @@ class ScoreDetailsPage(Page):
         issues = None
         with st.spinner(text="Loading data ..."):
             user_can_edit = authentication_service.current_user_has_edit_role()
-            score_card = format_score_card(score_definition.as_score_card())
+            score_card = format_score_card(score_definition.as_cached_score_card())
             if not score_type:
                 score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
             if not drilldown:
@@ -96,7 +100,8 @@ class ScoreDetailsPage(Page):
                     payload["column_name"],
                     payload["table_name"],
                     payload["table_group_id"],
-                )
+                ),
+                "RecalculateHistory": recalculate_score_history,
             },
         )
 
@@ -171,3 +176,13 @@ def delete_score_card(definition_id: str) -> None:
         score_definition.delete()
         get_all_score_cards.clear()
         Router().navigate("quality-dashboard")
+
+
+def recalculate_score_history(definition_id: str) -> None:
+    try:
+        score_definition = ScoreDefinition.get(definition_id)
+        run_recalculate_score_card(project_code=score_definition.project_code, definition_id=score_definition.id)
+        st.toast("Scorecard trend recalculated", icon=":material/task_alt:")
+    except:
+        LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
+        st.toast("Recalculating the trend failed. Try again", icon=":material/error:")

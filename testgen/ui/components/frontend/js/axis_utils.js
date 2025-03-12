@@ -51,4 +51,26 @@ function niceBounds(axisStart, axisEnd, tickCount = 4) {
     };
 }
 
-export { niceBounds };
+/**
+ *
+ * @typedef Range
+ * @type {object}
+ * @property {number} max
+ * @property {number} min
+ *
+ * @param {number} value
+ * @param {({new: Range, old: Range})} ranges
+ * @property {number?} zero
+ */
+function scale(value, ranges, zero=0) {
+    const oldRange = (ranges.old.max - ranges.old.min);
+    const newRange = (ranges.new.max - ranges.new.min);
+
+    if (oldRange === 0) {
+        return zero;
+    }
+
+    return ((value - ranges.old.min) * newRange / oldRange) + ranges.new.min;
+}
+
+export { niceBounds, scale };
