@@ -82,7 +82,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
             id: props.id,
             class: () => `flex-column ${getValue(props.classes)}`,
         },
-        Toolbar(treeNodes.val, props, filtersContent),
+        Toolbar(treeNodes, props, filtersContent),
         props.multiSelectToggle
             ? div(
                 { class: 'mt-1 mb-2 ml-1 text-secondary' },
@@ -110,7 +110,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
 };
 
 const Toolbar = (
-    /** @type TreeNode[] */ nodes,
+    /** @type { val: TreeNode[] } */ nodes,
     /** @type Properties */ props,
     /** @type any? */ filtersContent,
 ) => {
@@ -127,7 +127,7 @@ const Toolbar = (
             clearable: true,
             onChange: (/** @type string */ value) => {
                 search.val = value;
-                filterTree(nodes, isNodeHidden);
+                filterTree(nodes.val, isNodeHidden);
             },
         }),
         filtersContent ? [
@@ -172,7 +172,7 @@ const Toolbar = (
                             label: 'Apply',
                             width: '80px',
                             onclick: () => {
-                                filterTree(nodes, isNodeHidden);
+                                filterTree(nodes.val, isNodeHidden);
                                 filtersActive.val = props.hasActiveFilters();
                                 filtersOpened.val = false;
                             },
@@ -187,7 +187,7 @@ const Toolbar = (
             style: 'width: 24px; height: 24px; padding: 4px;',
             tooltip: 'Expand All',
             tooltipPosition: 'bottom',
-            onclick: () => expandOrCollapseTree(nodes, true),
+            onclick: () => expandOrCollapseTree(nodes.val, true),
         }),
         Button({
             type: 'icon',
@@ -195,7 +195,7 @@ const Toolbar = (
             style: 'width: 24px; height: 24px; padding: 4px;',
             tooltip: 'Collapse All',
             tooltipPosition: 'bottom',
-            onclick: () => expandOrCollapseTree(nodes, false),
+            onclick: () => expandOrCollapseTree(nodes.val, false),
         }),
     );
 };
