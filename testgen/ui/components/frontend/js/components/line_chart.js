@@ -109,13 +109,13 @@ const LineChart = (
         return scale(value, {
             old: {min: Math.min(...xValues), max: Math.max(...xValues)},
             new: {min: origin.x + _options.xAxisLeftPadding, max: end.x - _options.xAxisRightPadding},
-        });
+        }, origin.x + _options.xAxisLeftPadding);
     };
     const asSVGY = (/** @type {number} */ value) => {
         return _options.height - scale(value, {
             old: {min: Math.min(...yValues), max: Math.max(...yValues)},
             new: {min: origin.y + _options.yAxisBottomPadding, max: end.y - _options.yAxisTopPadding},
-        });
+        }, end.y - _options.yAxisTopPadding);
     };
 
     const lines = values

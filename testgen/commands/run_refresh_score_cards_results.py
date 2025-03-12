@@ -20,8 +20,6 @@ def run_refresh_score_cards_results(
     definition_id: str | None = None,
     add_history_entry: bool = False,
     refresh_date: datetime.datetime | None = None,
-    test_run_id: str | None = None,
-    profiling_run_id: str | None = None,
 ):
     start_time = time.time()
     _refresh_date = refresh_date or datetime.datetime.now(datetime.UTC)
@@ -65,10 +63,7 @@ def run_refresh_score_cards_results(
                             last_run_time=_refresh_date,
                         )
                         definition.history.append(history_entry)
-                        history_entry.add_as_cutoff(
-                            from_profiling=bool(profiling_run_id),
-                            from_testing=bool(test_run_id),
-                        )
+                        history_entry.add_as_cutoff()
             definition.save()
             LOG.info(
                 "CurrentStep: Done rereshing scorecard %s in project %s",

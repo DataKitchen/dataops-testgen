@@ -18,7 +18,6 @@
  *
  * @typedef ScoreCardOptions
  * @type {object}
- * @property {number?} height
  * @property {boolean} showHistory
  */
 import van from '../van.min.js';
@@ -59,6 +58,9 @@ const ScoreCard = (score, actions, options) => {
             const categories = score_.dimensions ?? score_.categories ?? [];
             const categoriesLabel = score_.categories_label ?? 'Quality Dimension';
 
+            const overallScoreHistory = score.history?.filter(e => e.category === 'score') ?? [];
+            const cdeScoreHistory = score.history?.filter(e => e.category === 'cde_score') ?? [];
+
             return div(
                 { class: 'flex-row fx-justify-center fx-align-flex-start' },
                 score_.score ? div(
@@ -67,7 +69,8 @@ const ScoreCard = (score, actions, options) => {
                         "Total Score",
                         score_.score,
                         score.history?.filter(e => e.category === 'score') ?? [],
-                        options?.showHistory ?? false,
+                        (options?.showHistory ?? false) && overallScoreHistory.length > 1,
+                        colorMap.teal,
                     ),
                     div(
                         { class: 'flex-row fx-justify-center fx-gap-2 mt-1' },
@@ -80,7 +83,8 @@ const ScoreCard = (score, actions, options) => {
                         "CDE Score",
                         score_.cde_score,
                         score.history?.filter(e => e.category === 'cde_score') ?? [],
-                        options?.showHistory ?? false,
+                        (options?.showHistory ?? false) && cdeScoreHistory.length > 1,
+                        colorMap.purpleLight,
                       )
                     : '',
                 (score_.cde_score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
@@ -112,9 +116,10 @@ const ScoreCard = (score, actions, options) => {
  * @param {number} score
  * @param {Array<HistoryEntry>} history
  * @param {boolean} showHistory
+ * @param {string?} trendColor
  * @returns {SVGElement}
  */
-const ScoreChart = (label, score, history, showHistory) => {
+const ScoreChart = (label, score, history, showHistory, trendColor) => {
     const variables = {
         size: '100px',
         'stroke-width': '4px',
@@ -142,7 +147,7 @@ const ScoreChart = (label, score, history, showHistory) => {
         showHistory ? g(
             {fill: 'none', style: 'transform: translate(10px, 70px);'},
             rect({ width: 80, height: 30, x: 0, y: 0, rx: 2, ry: 2, fill: 'var(--dk-card-background)', stroke: 'var(--empty)' }),
-            SparkLine({color: colorMap.purpleLight}, historyLine.map(line => ({ x: scale(line.x, xRanges), y: yLength - scale(line.y, yRanges)}))),
+            SparkLine({color: trendColor}, historyLine.map(line => ({ x: scale(line.x, xRanges), y: yLength - scale(line.y, yRanges, yLength)}))),
         ) : null,
     );
 };

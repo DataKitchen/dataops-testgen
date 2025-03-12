@@ -66,7 +66,10 @@ def get_latest_run_date(project_code: str) -> LatestTestRun | None:
         SELECT runs.id, test_starttime
         FROM test_runs AS runs
         INNER JOIN test_suites AS suite ON (suite.id = runs.test_suite_id)
-        WHERE project_code = :project_code ORDER BY test_starttime DESC LIMIT 1
+        WHERE project_code = :project_code
+            AND status = 'Complete'
+        ORDER BY test_starttime DESC
+        LIMIT 1
         """,
         params={"project_code": project_code},
     )

@@ -154,7 +154,6 @@ class ScoreDefinition(Base):
                 sub_directory="score_cards",
             ).replace("{filters}", filters)
         ).mappings().first() or {}
-        # overall_scores = overall_scores.iloc[0].to_dict() if not overall_scores.empty else {}
 
         categories_scores = []
         if (category := self.category):
@@ -205,7 +204,7 @@ class ScoreDefinition(Base):
         if self.cde_score:
             history_categories.append("cde_score")
 
-        for entry in self.history:
+        for entry in self.history[:50]:
             if entry.category in history_categories:
                 score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
 
@@ -441,32 +440,24 @@ class ScoreDefinitionResultHistoryEntry(Base):
 
     definition: ScoreDefinition = relationship("ScoreDefinition", back_populates="history")
 
-    def add_as_cutoff(self, from_profiling: bool = False, from_testing: bool = False):
+    def add_as_cutoff(self):
         """
         Insert new records into table 'score_history_latest_runs'
         corresponding to the latest profiling and test runs as of
         `self.last_run_time`.
 
         Query templates:
-        add_latest_profiling_runs.sql
-        add_latest_test_runs.sql
+        add_latest_runs.sql
         """
-        template: str | None = None
-        if from_profiling:
-            template = "add_latest_profiling_runs.sql"
-        elif from_testing:
-            template = "add_latest_test_runs.sql"
-
-        if template:
-            # ruff: noqa: RUF027
-            query = (
-                read_template_sql_file(template, sub_directory="score_cards")
-                .replace("{project_code}", self.definition.project_code)
-                .replace("{definition_id}", str(self.definition_id))
-                .replace("{score_history_cutoff_time}", self.last_run_time.isoformat())
-            )
-            session = get_current_session()
-            session.execute(query)
+        # ruff: noqa: RUF027
+        query = (
+            read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
+            .replace("{project_code}", self.definition.project_code)
+            .replace("{definition_id}", str(self.definition_id))
+            .replace("{score_history_cutoff_time}", self.last_run_time.isoformat())
+        )
+        session = get_current_session()
+        session.execute(query)
 
 
 class ScoreCard(TypedDict):

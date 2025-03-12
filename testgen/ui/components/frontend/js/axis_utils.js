@@ -60,13 +60,14 @@ function niceBounds(axisStart, axisEnd, tickCount = 4) {
  *
  * @param {number} value
  * @param {({new: Range, old: Range})} ranges
+ * @property {number?} zero
  */
-function scale(value, ranges) {
+function scale(value, ranges, zero=0) {
     const oldRange = (ranges.old.max - ranges.old.min);
     const newRange = (ranges.new.max - ranges.new.min);
 
     if (oldRange === 0) {
-        return 0;
+        return zero;
     }
 
     return ((value - ranges.old.min) * newRange / oldRange) + ranges.new.min;

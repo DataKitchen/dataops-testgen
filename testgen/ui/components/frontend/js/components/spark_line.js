@@ -18,6 +18,8 @@ import { getValue } from '../utils.js';
 import van from '../van.min.js';
 
 const { circle, g, polyline } = van.tags("http://www.w3.org/2000/svg");
+const defaultCircleRadius = 3;
+const onHoverCircleRadius = 5;
 
 /**
  * Creates a line to be redenred inside an SVG.
@@ -39,7 +41,7 @@ const SparkLine = (
         }),
         options?.interactive
             ? line.map(point => {
-                const circleRadius = van.state(1);
+                const circleRadius = van.state(defaultCircleRadius);
     
                 return circle({
                     cx: point.x,
@@ -48,11 +50,11 @@ const SparkLine = (
                     'pointer-events': 'all',
                     fill: options.color,
                     onmouseenter: () => {
-                        circleRadius.val = 5;
+                        circleRadius.val = onHoverCircleRadius;
                         options?.onPointMouseEnter?.(point, line);
                     },
                     onmouseleave: () => {
-                        circleRadius.val = 1;
+                        circleRadius.val = defaultCircleRadius;
                         options?.onPointMouseLeave?.(point, line);
                     },
                 });

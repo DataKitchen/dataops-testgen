@@ -373,7 +373,14 @@ class LatestProfilingRun(NamedTuple):
 def get_latest_run_date(project_code: str) -> LatestProfilingRun | None:
     session = get_current_session()
     result = session.execute(
-        "SELECT id, profiling_starttime FROM profiling_runs WHERE project_code = :project_code ORDER BY profiling_starttime DESC LIMIT 1",
+        """
+        SELECT id, profiling_starttime
+        FROM profiling_runs
+        WHERE project_code = :project_code
+            AND status = 'Complete'
+        ORDER BY profiling_starttime DESC
+        LIMIT 1
+        """,
         params={"project_code": project_code},
     )
     if result and (latest_run := result.first()):

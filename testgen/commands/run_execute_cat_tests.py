@@ -72,7 +72,6 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
         project_code=clsCATExecute.project_code,
         add_history_entry=True,
         refresh_date=date_service.parse_now(clsCATExecute.run_date),
-        test_run_id=str(clsCATExecute.test_run_id) if clsCATExecute.test_run_id else None,
     )
 
 

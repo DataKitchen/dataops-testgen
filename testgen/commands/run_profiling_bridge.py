@@ -504,7 +504,6 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             project_code=dctParms["project_code"],
             add_history_entry=True,
             refresh_date=date_service.parse_now(clsProfiling.run_date),
-            profiling_run_id=str(clsProfiling.profile_run_id) if clsProfiling.profile_run_id else None,
         )
 
         if booErrors:
