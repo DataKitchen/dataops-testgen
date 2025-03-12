@@ -9,7 +9,7 @@ from testgen.common.encrypt import encrypt_ui_password
 from testgen.ui.queries import authentication_queries
 from testgen.ui.session import session
 
-RoleType = typing.Literal["admin", "edit", "read"]
+RoleType = typing.Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
 LOG = logging.getLogger("testgen")
 
@@ -44,11 +44,19 @@ def current_user_has_admin_role():
 
 
 def current_user_has_edit_role():
-    return session.auth_role in ("edit", "admin")
+    return session.auth_role in ("admin", "data_quality")
 
 
 def current_user_has_read_role():
-    return not session.auth_role or session.auth_role == "read"
+    return session.auth_role in ("analyst", "business", "catalog")
+
+
+def current_user_has_business_role():
+    return session.auth_role == "business"
+
+
+def current_user_has_catalog_role():
+    return session.auth_role == "catalog"
 
 
 def current_user_has_role(role: RoleType) -> bool:

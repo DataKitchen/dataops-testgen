@@ -28,7 +28,7 @@ class TestgenSession(Singleton):
     name: str
     username: str
     authentication_status: bool
-    auth_role: Literal["admin", "edit", "read"]
+    auth_role: Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
     project: str
     add_project: bool

@@ -32,9 +32,13 @@ class Menu:
     def filter_for_current_user(self) -> "Menu":
         filtered_items = []
         for menu_item in self.items:
+            if menu_item.label != "Data Catalog" and authentication_service.current_user_has_catalog_role():
+                continue
+
             item_roles = menu_item.roles or []
             if len(item_roles) <= 0 or any(map(authentication_service.current_user_has_role, item_roles)):
                 filtered_items.append(menu_item)
+
         return dataclasses.replace(self, items=filtered_items)
 
     def sort_items(self) -> "Menu":
