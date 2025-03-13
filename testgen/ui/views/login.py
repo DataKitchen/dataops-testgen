@@ -4,6 +4,7 @@ import typing
 import streamlit as st
 import streamlit_authenticator as stauth
 
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import javascript_service, user_session_service
@@ -60,3 +61,4 @@ class LoginPage(Page):
                     self.router.navigate(next_route)
                 else:
                     session.logging_in = True
+                    MixpanelService().send_event("login")
