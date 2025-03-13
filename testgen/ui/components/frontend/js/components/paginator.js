@@ -4,7 +4,7 @@
  * @property {number} count
  * @property {number} pageSize
  * @property {number?} pageIndex
- * @property {function?} onChange
+ * @property {function(number)?} onChange
  */
 
 import van from '../van.min.js';

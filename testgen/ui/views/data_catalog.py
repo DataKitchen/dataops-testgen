@@ -1,9 +1,12 @@
 import json
 import typing
+from collections import defaultdict
+from datetime import datetime
 from functools import partial
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.database_service as db
 import testgen.ui.services.query_service as dq
@@ -12,8 +15,9 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
-from testgen.ui.queries.profiling_queries import get_column_by_id, get_hygiene_issues, get_table_by_id
+from testgen.ui.queries.profiling_queries import TAG_FIELDS, get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, score
 
@@ -72,55 +76,71 @@ class DataCatalogPage(Page):
                 button_icon="play_arrow",
             )
         else:
-            def on_tree_node_select(node_id):
-                self.router.set_query_params({ "selected": node_id })
+            def on_item_selected(item_id):
+                self.router.set_query_params({ "selected": item_id })
 
             testgen_component(
                 "data_catalog",
-                props={ "columns": columns_df.to_json(orient="records"), "selected": json.dumps(selected_item) },
-                on_change_handlers={ "TreeNodeSelected": on_tree_node_select },
-                event_handlers={ "TagsChanged": on_tags_changed },
+                props={
+                    "columns": columns_df.to_json(orient="records"),
+                    "selected": json.dumps(selected_item),
+                    "tag_values": get_tag_values(),
+                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp")
+                },
+                on_change_handlers={
+                    "ItemSelected": on_item_selected,
+                    "DataPreviewClicked": lambda item: data_preview_dialog(
+                        item["table_group_id"],
+                        item["schema_name"],
+                        item["table_name"],
+                        item.get("column_name"),
+                    ),
+                },
+                event_handlers={ "TagsChanged": partial(on_tags_changed, loading_column) },
             )
 
 
-def on_tags_changed(tags: dict) -> None:
-    schema = st.session_state["dbschema"]
-
-    if tags["type"] == "table":
-        update_table = "data_table_chars"
-        id_column = "table_id"
-        cached_function = get_table_by_id
-    else:
-        update_table = "data_column_chars"
-        id_column = "column_id"
-        cached_function = get_column_by_id
-
-    attributes = [
-        "description",
-        "data_source",
-        "source_system",
-        "source_process",
-        "business_domain",
-        "stakeholder_group",
-        "transform_level",
-        "aggregation_level",
-        "data_product"
-    ]
+def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
+    attributes = ["description"]
+    attributes.extend(TAG_FIELDS)
     cde_value_map = {
         True: "TRUE",
         False: "FALSE",
         None: "NULL",
     }
-    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes ]
-    set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
 
-    sql = f"""
-        UPDATE {schema}.{update_table}
-        SET {', '.join(set_attributes)}
-        WHERE {id_column} = '{tags["id"]}';
-        """
-    db.execute_sql(sql)
-    cached_function.clear()
+    tags = payload["tags"]
+    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes if key in tags ]
+    if "critical_data_element" in tags:
+        set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
+
+    tables = []
+    columns = []
+    for item in payload["items"]:
+        id_list = tables if item["type"] == "table" else columns
+        id_list.append(item["id"])
+
+    schema = st.session_state["dbschema"]
+
+    with spinner_container:
+        with st.spinner("Saving tags"):
+            if tables:
+                db.execute_sql(f"""
+                UPDATE {schema}.data_table_chars
+                SET {', '.join(set_attributes)}
+                WHERE table_id IN ({", ".join([ f"'{item}'" for item in tables ])});
+                """)
+
+            if columns:
+                db.execute_sql(f"""
+                UPDATE {schema}.data_column_chars
+                SET {', '.join(set_attributes)}
+                WHERE column_id IN ({", ".join([ f"'{item}'" for item in columns ])});
+                """)
+
+    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
+        func.clear()
+    st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
     st.rerun()
 
 
@@ -167,8 +187,12 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         table_chars.table_name,
         column_chars.general_type,
         column_chars.functional_data_type,
-        column_chars.drop_date AS column_drop_date,
-        table_chars.drop_date AS table_drop_date
+        column_chars.drop_date,
+        table_chars.drop_date AS table_drop_date,
+        column_chars.critical_data_element,
+        table_chars.critical_data_element AS table_critical_data_element,
+        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
     FROM {schema}.data_column_chars column_chars
         LEFT JOIN {schema}.data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
@@ -244,3 +268,34 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
 
     df = db.retrieve_data(sql)
     return [row.to_dict() for _, row in df.iterrows()]
+
+
+@st.cache_data(show_spinner=False)
+def get_tag_values() -> dict[str, list[str]]:
+    schema = st.session_state["dbschema"]
+
+    quote = lambda v: f"'{v}'"
+    sql = f"""
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+    FROM {schema}.data_column_chars
+    UNION
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+    FROM {schema}.data_table_chars
+    UNION
+    SELECT DISTINCT
+        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS if t != 'aggregation_level'])}]) as tag,
+        UNNEST(array[{', '.join([ t for t in TAG_FIELDS if t != 'aggregation_level'])}]) AS value
+    FROM {schema}.table_groups
+    ORDER BY value
+    """
+    df = db.retrieve_data(sql)
+
+    values = defaultdict(list)
+    for _, row in df.iterrows():
+        if row["tag"] and row["value"]:
+            values[row["tag"]].append(row["value"])
+    return values

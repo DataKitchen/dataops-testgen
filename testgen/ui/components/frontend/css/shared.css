@@ -28,7 +28,7 @@ body {
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
     --form-field-color: rgb(240, 242, 246); /* Match Streamlit's form field color */
-    --border-color: rgba(0, 0, 0, .12); 
+    --border-color: rgba(0, 0, 0, .12);
     --tooltip-color: #333d;
     --dk-card-background: #fff;
 
@@ -40,7 +40,7 @@ body {
     --field-underline-color: #9e9e9e;
 
     --button-hover-state-opacity: 0.12;
-    --button-generic-background-color: #ffffff; 
+    --button-generic-background-color: #ffffff;
 
     --button-basic-background: transparent;
     --button-basic-text-color: rgba(0, 0, 0, .87);
@@ -73,7 +73,8 @@ body {
     --button-warn-stroked-text-color: var(--red);
     --button-warn-stroked-background: transparent;
 
-    --select-portal-background: white;
+    --portal-background: white;
+    --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     --select-hover-background: rgb(240, 242, 246);
 }
 
@@ -101,16 +102,17 @@ body {
         --button-basic-background: transparent;
         --button-basic-text-color: rgba(255, 255, 255);
         --button-basic-hover-state-background: rgba(255, 255, 255, .54);
-    
+
         --button-basic-flat-text-color: rgba(255, 255, 255);
         --button-basic-flat-background: rgba(255, 255, 255, .54);
-    
+
         --button-basic-stroked-text-color: rgba(255, 255, 255, .87);
         --button-basic-stroked-background: transparent;
 
         --button-stroked-border: 1px solid var(--border-color);
 
-        --select-portal-background: rgb(38, 39, 48);
+        --portal-background: #14181f;
+        --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
         --select-hover-background: rgba(255, 255, 255, .32);
     }
 }

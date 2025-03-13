@@ -19,7 +19,7 @@ const Attribute = (/** @type Properties */ props) => {
     return div(
         { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: 'flex-row fx-gap-1 text-caption text-capitalize mb-1' },
+            { class: 'flex-row fx-gap-1 text-caption mb-1' },
             props.label,
             () => getValue(props.help)
                 ? withTooltip(

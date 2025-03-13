@@ -19,7 +19,7 @@
  * @property {string?} style
  */
 import van from '../van.min.js';
-import { getRandomId, getValue, getParents, loadStylesheet, isState, isEqual } from '../utils.js';
+import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../utils.js';
 import { Portal } from './portal.js';
 
 const { div, i, label, span } = van.tags;
@@ -73,11 +73,7 @@ const Select = (/** @type {Properties} */ props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            onclick: () => {
-                if (!getValue(props.disabled)) {
-                    opened.val = true;
-                }
-            },
+            onclick: van.derive(() => !getValue(props.disabled) ? () => opened.val = !opened.val : null),
         },
         props.label,
         div(
@@ -98,7 +94,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
         ),
         Portal(
-            {target: domId.val, opened},
+            {target: domId.val, targetRelative: true, opened},
             () => div(
                 { class: 'tg-select--options-wrapper mt-1' },
                 getValue(options).map(option =>
@@ -121,6 +117,9 @@ const Select = (/** @type {Properties} */ props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tg-select--label {
+    position: relative;
+}
 .tg-select--label.disabled {
     cursor: not-allowed;
     color: var(--disabled-text-color);
@@ -171,8 +170,8 @@ stylesheet.replace(`
 
 .tg-select--options-wrapper {
     border-radius: 8px;
-    background: var(--select-portal-background);
-    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
     min-height: 40px;
     max-height: 400px;
     overflow: auto;

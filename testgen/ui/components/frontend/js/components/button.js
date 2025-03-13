@@ -3,6 +3,7 @@
  * @type {object}
  * @property {(string)} type
  * @property {(string|null)} color
+ * @property {(string|null)} width
  * @property {(string|null)} label
  * @property {(string|null)} icon
  * @property {(int|null)} iconSize
@@ -39,7 +40,7 @@ const Button = (/** @type Properties */ props) => {
     const buttonType = getValue(props.type);
     const width = getValue(props.width);
     const isIconOnly = buttonType === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
-    
+
     if (!window.testgen.isPage) {
         Streamlit.setFrameHeight(40);
         if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
