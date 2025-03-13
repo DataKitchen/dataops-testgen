@@ -35,7 +35,9 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.score_definitions,
     {SCHEMA_NAME}.score_definition_filters,
     {SCHEMA_NAME}.score_definition_results,
-    {SCHEMA_NAME}.score_definition_results_breakdown
+    {SCHEMA_NAME}.score_definition_results_breakdown,
+    {SCHEMA_NAME}.score_definition_results_history,
+    {SCHEMA_NAME}.score_history_latest_runs
     TO testgen_execute_role;
 
 

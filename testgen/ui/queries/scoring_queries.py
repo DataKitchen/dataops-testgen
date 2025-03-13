@@ -9,25 +9,10 @@ from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefiniti
 
 @st.cache_data(show_spinner="Loading data ...")
 def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
-    definitions = ScoreDefinition.all(project_code=project_code)
-    score_cards: list[ScoreCard] = []
-    root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
-
-    for definition in definitions:
-        score_card: ScoreCard = {
-            "id": definition.id,
-            "project_code": project_code,
-            "name": definition.name,
-            "categories": [],
-            "definition": definition,
-        }
-        for result in sorted(definition.results, key=lambda r: r.category):
-            if result.category in root_keys:
-                score_card[result.category] = result.score
-                continue
-            score_card["categories"].append({"label": result.category, "score": result.score})
-        score_cards.append(score_card)
-    return score_cards
+    return [
+        definition.as_cached_score_card()
+        for definition in ScoreDefinition.all(project_code=project_code)
+    ]
 
 
 def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
@@ -142,22 +127,20 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
     ]
 
     quote = lambda v: f"'{v}'"
-    query = " UNION ".join([
-        f"""
+    query = f"""
         SELECT DISTINCT
             UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
             UNNEST(array[{', '.join(categories)}]) AS value
         FROM v_dq_test_scoring_latest_by_column
         WHERE project_code = '{project_code}'
-        """,
-        f"""
+        UNION
         SELECT DISTINCT
             UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
             UNNEST(array[{', '.join(categories)}]) AS value
         FROM v_dq_profile_scoring_latest_by_column
         WHERE project_code = '{project_code}'
-        """,
-    ])
+        ORDER BY value
+    """,
     results = pd.read_sql_query(query, engine)
     for _, row in results.iterrows():
         if row["category"] and row["value"]:

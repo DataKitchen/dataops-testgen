@@ -393,8 +393,8 @@ stylesheet.replace(`
 .score-explorer--selector {
     min-height: 41px;
     overflow-y: auto;
-    background: var(--select-portal-background);
-    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
     border-radius: 8px;
 
     z-index: 99;

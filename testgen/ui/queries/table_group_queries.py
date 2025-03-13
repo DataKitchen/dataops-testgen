@@ -108,14 +108,14 @@ def edit(schema, table_group):
                     profiling_delay_days='{table_group["profiling_delay_days"]}',
                     profile_flag_cdes={table_group["profile_flag_cdes"]},
                     description='{table_group["description"]}',
-                    data_source='{table_group["data_source"]}',
-                    source_system='{table_group["source_system"]}',
-                    source_process='{table_group["source_process"]}',
-                    data_location='{table_group["data_location"]}',
-                    business_domain='{table_group["business_domain"]}',
-                    stakeholder_group='{table_group["stakeholder_group"]}',
-                    transform_level='{table_group["transform_level"]}',
-                    data_product='{table_group["data_product"]}'
+                    data_source=NULLIF('{table_group["data_source"]}', ''),
+                    source_system=NULLIF('{table_group["source_system"]}', ''),
+                    source_process=NULLIF('{table_group["source_process"]}', ''),
+                    data_location=NULLIF('{table_group["data_location"]}', ''),
+                    business_domain=NULLIF('{table_group["business_domain"]}', ''),
+                    stakeholder_group=NULLIF('{table_group["stakeholder_group"]}', ''),
+                    transform_level=NULLIF('{table_group["transform_level"]}', ''),
+                    data_product=NULLIF('{table_group["data_product"]}', '')
                 WHERE
                     id = '{table_group["id"]}'
                 ;
@@ -168,14 +168,14 @@ def add(schema, table_group) -> str:
         '{table_group["profiling_delay_days"]}'::character varying,
         {table_group["profile_flag_cdes"]},
         '{table_group["description"]}',
-        '{table_group["data_source"]}',
-        '{table_group["source_system"]}',
-        '{table_group["source_process"]}',
-        '{table_group["data_location"]}',
-        '{table_group["business_domain"]}',
-        '{table_group["stakeholder_group"]}',
-        '{table_group["transform_level"]}',
-        '{table_group["data_product"]}'
+        NULLIF('{table_group["data_source"]}', ''),
+        NULLIF('{table_group["source_system"]}', ''),
+        NULLIF('{table_group["source_process"]}', ''),
+        NULLIF('{table_group["data_location"]}', ''),
+        NULLIF('{table_group["business_domain"]}', ''),
+        NULLIF('{table_group["stakeholder_group"]}', ''),
+        NULLIF('{table_group["transform_level"]}', ''),
+        NULLIF('{table_group["data_product"]}', '')
         ;"""
     db.execute_sql(sql)
     st.cache_data.clear()

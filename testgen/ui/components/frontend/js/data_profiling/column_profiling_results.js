@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {Column} column
+ * @property {boolean?} data_preview
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
@@ -47,7 +48,7 @@ const ColumnProfilingResults = (/** @type Properties */ props) => {
                 column.val.is_latest_profile ? LatestProfilingLink(column.val) : null,
             ),
             DataCharacteristicsCard({ border: true }, column.val),
-            ColumnDistributionCard({ border: true }, column.val),
+            ColumnDistributionCard({ border: true, dataPreview: !!props.data_preview?.val }, column.val),
             column.val.hygiene_issues ? [
                 PotentialPIICard({ border: true }, column.val),
                 HygieneIssuesCard({ border: true }, column.val),

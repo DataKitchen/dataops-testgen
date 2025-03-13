@@ -4,7 +4,7 @@
  * @property {string} label
  * @property {boolean?} checked
  * @property {boolean?} indeterminate
- * @property {function?} onChange
+ * @property {function(boolean, Event)?} onChange
  * @property {number?} width
  */
 import van from '../van.min.js';
@@ -27,7 +27,7 @@ const Checkbox = (/** @type Properties */ props) => {
             indeterminate: props.indeterminate,
             onchange: van.derive(() => {
                 const onChange = props.onChange?.val ?? props.onChange;
-                return onChange ? (event) => onChange(event.target.checked) : null;
+                return onChange ? (/** @type Event */ event) => onChange(event.target.checked, event) : null;
             }),
         }),
         props.label,
@@ -47,7 +47,7 @@ stylesheet.replace(`
     border-radius: 4px;
     position: relative;
     transition-property: border-color, background-color;
-    transition-duration: 0.3s; 
+    transition-duration: 0.3s;
 }
 
 .tg-checkbox--input:focus,

@@ -24,6 +24,7 @@
  * @property {'column'} type
  * @property {string} column_name
  * @property {string} table_name
+ * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
  * * Characteristics
@@ -55,6 +56,14 @@
  * @property {string?} table_transform_level
  * @property {string?} table_aggregation_level
  * @property {string?} table_data_product
+ * * Table Group Tags
+ * @property {string} table_group_data_source
+ * @property {string} table_group_source_system
+ * @property {string} table_group_source_process
+ * @property {string} table_group_business_domain
+ * @property {string} table_group_stakeholder_group
+ * @property {string} table_group_transform_level
+ * @property {string} table_group_data_product
  * * Profile & Test Runs
  * @property {string?} profile_run_id
  * @property {number?} profile_run_date
@@ -123,6 +132,7 @@
  * @property {string} id
  * @property {'table'} type
  * @property {string} table_name
+ * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
  * * Characteristics
@@ -132,7 +142,7 @@
  * @property {number} data_point_ct
  * @property {number} add_date
  * @property {number} drop_date
- * * Tags
+ * * Table Tags
  * @property {string} description
  * @property {boolean} critical_data_element
  * @property {string} data_source
@@ -143,6 +153,14 @@
  * @property {string} transform_level
  * @property {string} aggregation_level
  * @property {string} data_product
+ * * Table Group Tags
+ * @property {string} table_group_data_source
+ * @property {string} table_group_source_system
+ * @property {string} table_group_source_process
+ * @property {string} table_group_business_domain
+ * @property {string} table_group_stakeholder_group
+ * @property {string} table_group_transform_level
+ * @property {string} table_group_data_product
  * * Profile & Test Runs
  * @property {string} profile_run_id
  * @property {number} profile_run_date

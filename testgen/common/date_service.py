@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
@@ -9,6 +9,10 @@ def get_today_as_string():
 
 def get_now_as_string():
     return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def parse_now(value: str) -> datetime:
+    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
 
 
 def get_now_as_string_with_offset(minutes_offset):

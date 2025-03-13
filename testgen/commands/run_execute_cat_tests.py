@@ -7,6 +7,7 @@ from testgen.common import (
     RunActionQueryList,
     RunThreadedRetrievalQueryList,
     WriteListToDB,
+    date_service,
 )
 
 LOG = logging.getLogger("testgen")
@@ -67,7 +68,11 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
                   clsCATExecute.TestScoringRollupRunSQL(),
                   clsCATExecute.TestScoringRollupTableGroupSQL()]
     RunActionQueryList(("DKTG"), lstQueries)
-    run_refresh_score_cards_results(project_code=clsCATExecute.project_code)
+    run_refresh_score_cards_results(
+        project_code=clsCATExecute.project_code,
+        add_history_entry=True,
+        refresh_date=date_service.parse_now(clsCATExecute.run_date),
+    )
 
 
 def run_cat_test_queries(
