@@ -108,41 +108,6 @@ def on_test_suites_filtered(table_group_id: str | None = None) -> None:
     Router().set_query_params({ "table_group_id": table_group_id })
 
 
-def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
-    project_summary_df = project_queries.get_summary_by_code(project_code)
-    if project_summary_df["test_suites_ct"]:
-        return False
-
-    label="No test suites yet"
-    testgen.whitespace(5)
-    if not project_summary_df["connections_ct"]:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Connection,
-            action_label="Go to Connections",
-            link_href="connections",
-        )
-    elif not project_summary_df["table_groups_ct"]:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TableGroup,
-            action_label="Go to Table Groups",
-            link_href="connections:table-groups",
-            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
-        )
-    else:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TestSuite,
-            action_label="Add Test Suite",
-            button_onclick=add_button_onclick,
-        )
-    return True
-
-
 @st.cache_data(show_spinner=False)
 def get_db_table_group_choices(project_code):
     schema = st.session_state["dbschema"]

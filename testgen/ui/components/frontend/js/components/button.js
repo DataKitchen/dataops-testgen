@@ -69,7 +69,7 @@ const Button = (/** @type Properties */ props) => {
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
-        () => getValue(props.tooltip) ? Tooltip({
+        () => window.testgen.isPage && getValue(props.tooltip) ? Tooltip({
             text: props.tooltip,
             show: showTooltip,
             position: props.tooltipPosition,

@@ -46,7 +46,7 @@ class DataProfilingPage(Page):
 
         project_code = project_code or session.project
         user_can_run = user_session_service.user_can_edit()
-        if render_empty_state(project_code):
+        if render_empty_state(project_code, user_can_run):
             return
 
         group_filter_column, actions_column = st.columns([.3, .7], vertical_alignment="bottom")
@@ -91,7 +91,7 @@ class DataProfilingPage(Page):
             )
 
 
-def render_empty_state(project_code: str) -> bool:
+def render_empty_state(project_code: str, user_can_run: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["profiling_runs_ct"]:
         return False
@@ -121,6 +121,7 @@ def render_empty_state(project_code: str) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.Profiling,
             action_label="Run Profiling",
+            action_disabled=not user_can_run,
             button_onclick=partial(run_profiling_dialog, project_code),
             button_icon="play_arrow",
         )

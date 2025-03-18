@@ -45,7 +45,7 @@ class TestRunsPage(Page):
 
         project_code = project_code or session.project
         user_can_run = user_session_service.user_can_edit()
-        if render_empty_state(project_code):
+        if render_empty_state(project_code, user_can_run):
             return
 
         group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
@@ -100,7 +100,7 @@ class TestRunsPage(Page):
             )
 
 
-def render_empty_state(project_code: str) -> bool:
+def render_empty_state(project_code: str, user_can_run: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["test_runs_ct"]:
         return False
@@ -138,6 +138,7 @@ def render_empty_state(project_code: str) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.TestExecution,
             action_label="Run Tests",
+            action_disabled=not user_can_run,
             button_onclick=partial(run_tests_dialog, project_code),
             button_icon="play_arrow",
         )
