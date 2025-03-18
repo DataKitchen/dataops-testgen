@@ -88,7 +88,11 @@ class DataCatalogPage(Page):
                     "columns": columns_df.to_json(orient="records"),
                     "selected": json.dumps(selected_item),
                     "tag_values": get_tag_values(),
-                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp")
+                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
+                    "permissions": {
+                        "can_edit": user_session_service.user_can_disposition(),
+                        "can_navigate": user_can_navigate,
+                    },
                 },
                 on_change_handlers={
                     "ItemSelected": on_item_selected,

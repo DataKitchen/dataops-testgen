@@ -15,12 +15,18 @@
  * @property {boolean} critical_data_element
  * @property {boolean} table_critical_data_element
  *
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
+ * @property {boolean} can_navigate
+ *
  * @typedef Properties
  * @type {object}
  * @property {ColumnPath[]} columns
  * @property {Table | Column} selected
  * @property {Object.<string, string[]>} tag_values
  * @property {string} last_saved_timestamp
+ * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Tree } from '../components/tree.js';
@@ -34,7 +40,7 @@ import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
-import { getColumnIcon, TABLE_ICON, LatestProfilingLink } from '../data_profiling/data_profiling_utils.js';
+import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profiling/data_profiling_utils.js';
 import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
@@ -139,6 +145,8 @@ const DataCatalog = (/** @type Properties */ props) => {
     const filters = { criticalDataElement: van.state(false) };
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
 
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+
     return div(
         {
             class: 'flex-row tg-dh',
@@ -153,7 +161,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                 selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
                 onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
                 multiSelect: multiEditMode,
-                multiSelectToggle: true,
+                multiSelectToggle: userCanEdit,
                 onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
                 isNodeHidden: (/** @type TreeNode */ node) => {
                     let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
@@ -216,6 +224,9 @@ const DataCatalog = (/** @type Properties */ props) => {
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
+
     return item
         ? div(
             { class: 'tg-dh--details' },
@@ -231,16 +242,16 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                         item.column_name,
                     ] : item.table_name,
                 ),
-                LatestProfilingLink(item),
+                LatestProfilingTime({ noLinks: !userCanNavigate }, item),
             ),
             DataCharacteristicsCard({ scores: true }, item),
             item.type === 'column'
                 ? ColumnDistributionCard({ dataPreview: true }, item)
                 : TableSizeCard({}, item),
-            TagsCard({ tagOptions: getValue(props.tag_values) }, item),
-            PotentialPIICard({}, item),
-            HygieneIssuesCard({}, item),
-            TestIssuesCard({}, item),
+            TagsCard({ tagOptions: getValue(props.tag_values), editable: userCanEdit }, item),
+            PotentialPIICard({ noLinks: !userCanNavigate }, item),
+            HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
+            TestIssuesCard({ noLinks: !userCanNavigate }, item),
         )
         : EmptyState(
             'Select a table or column on the left to view its details.',
@@ -252,8 +263,10 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
 * @typedef TagProperties
 * @type {object}
 * @property {Object.<string, string[]>} tagOptions
+* @property {boolean} editable
 */
 const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ item) => {
+    const title = `${item.type} Tags `;
     const attributes = [
         'description',
         'critical_data_element',
@@ -309,6 +322,10 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
             return Attribute({ label, help, value, width: key === 'description' ? descriptionWidth : width });
         }),
     );
+
+    if (!props.editable) {
+        return Card({ title, content });
+    }
 
     // Define as function so the block is re-rendered with reset values when re-editing after a cancel
     const editingContent = () => div(

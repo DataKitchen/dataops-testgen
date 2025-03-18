@@ -1,6 +1,6 @@
 /**
  * @import { Column, Table, HygieneIssue, TestIssue } from './data_profiling_utils.js';
- * 
+ *
  * @typedef Attribute
  * @type {object}
  * @property {string} key
@@ -8,10 +8,11 @@
  * @property {string} label
  * @property {string} classes
  * @property {function?} value_function
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {boolean?} border
+ * @property {boolean?} noLinks
  */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -60,7 +61,7 @@ const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Colum
     }
 
     const potentialPII = item.hygiene_issues.filter(({ issue_likelihood }) => issue_likelihood === 'Potential PII');
-    const linkProps = {
+    const linkProps = props.noLinks ? null : {
         href: 'profiling-runs:hygiene',
         params: { run_id: item.profile_run_id, issue_class: 'Potential PII' },
     };
@@ -89,7 +90,7 @@ const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Colu
     }
 
     const hygieneIssues = item.hygiene_issues.filter(({ issue_likelihood }) => issue_likelihood !== 'Potential PII');
-    const linkProps = {
+    const linkProps = props.noLinks ? null : {
         href: 'profiling-runs:hygiene',
         params: {
             run_id: item.profile_run_id,
@@ -121,18 +122,23 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
                     { class: 'text-secondary' },
                     issue.test_suite,
                 ),
-                Link({
-                    href: 'test-runs:results',
-                    params: {
-                        run_id: issue.test_run_id,
-                        table_name: item.table_name,
-                        column_name: item.column_name,
-                        selected: issue.id,
-                    },
-                    open_new: true,
-                    label: formatTimestamp(issue.test_run_date),
-                    style: 'font-size: 12px; margin-top: 2px;',
-                }),
+                props.noLinks
+                    ? span(
+                        { style: 'font-size: 12px; margin-top: 2px;' },
+                        formatTimestamp(issue.test_run_date)
+                    )
+                    : Link({
+                        href: 'test-runs:results',
+                        params: {
+                            run_id: issue.test_run_id,
+                            table_name: item.table_name,
+                            column_name: item.column_name,
+                            selected: issue.id,
+                        },
+                        open_new: true,
+                        label: formatTimestamp(issue.test_run_date),
+                        style: 'font-size: 12px; margin-top: 2px;',
+                    }),
             ),
         },
     ];
@@ -150,7 +156,7 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
             noneContent = span(
                 { class: 'text-secondary flex-row fx-gap-1 fx-justify-content-flex-end' },
                 `No test results yet for ${item.type}.`,
-                Link({
+                props.noLinks ? null : Link({
                     href: 'test-suites',
                     params: { table_group_id: item.table_group_id },
                     open_new: true,
