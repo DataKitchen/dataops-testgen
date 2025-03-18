@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -152,6 +153,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
 
 
 @st.dialog(title="Delete Scorecard")
+@with_database_session
 def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
 

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
@@ -140,6 +141,7 @@ class TableGroupsPage(Page):
                         )
 
     @st.dialog(title="Add Table Group")
+    @with_database_session
     def add_table_group_dialog(self, project_code, connection):
         show_table_group_form("add", project_code, connection)
 

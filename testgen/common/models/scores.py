@@ -80,7 +80,7 @@ class ScoreDefinition(Base):
     def get(cls, id_: str) -> "Self | None":
         if not is_uuid4(id_):
             return None
-    
+
         definition = None
         db_session = get_current_session()
         query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
@@ -435,7 +435,7 @@ class ScoreDefinitionResultHistoryEntry(Base):
         primary_key=True,
     )
     category: str = Column(String, nullable=False, primary_key=True)
-    score: float = Column(Float, nullable=True, primary_key=True)
+    score: float = Column(Float, nullable=True)
     last_run_time: datetime = Column(DateTime(timezone=False), nullable=False, primary_key=True)
 
     definition: ScoreDefinition = relationship("ScoreDefinition", back_populates="history")

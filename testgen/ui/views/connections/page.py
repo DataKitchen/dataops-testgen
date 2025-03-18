@@ -11,6 +11,7 @@ from streamlit.delta_generator import DeltaGenerator
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -230,6 +231,7 @@ class ConnectionsPage(Page):
             return ConnectionStatus(message="Error attempting the Connection.", details=error.args[0], successful=False)
 
     @st.dialog(title="Data Configuration Setup")
+    @with_database_session
     def setup_data_configuration(self, project_code: str, connection: dict) -> None:
         will_run_profiling = st.session_state.get("connection_form-new:run-profiling-toggle", True)
         testgen.wizard(

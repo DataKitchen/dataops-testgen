@@ -140,7 +140,7 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         FROM v_dq_profile_scoring_latest_by_column
         WHERE project_code = '{project_code}'
         ORDER BY value
-    """,
+    """
     results = pd.read_sql_query(query, engine)
     for _, row in results.iterrows():
         if row["category"] and row["value"]:
