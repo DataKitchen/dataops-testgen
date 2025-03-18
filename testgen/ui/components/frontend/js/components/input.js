@@ -32,7 +32,9 @@ const Input = (/** @type Properties */ props) => {
     const value = van.derive(() => getValue(props.value) ?? '');
     van.derive(() => {
         const onChange = props.onChange?.val ?? props.onChange;
-        onChange(value.val);
+        if (value.val !== value.oldVal) {
+            onChange(value.val);
+        }
     });
 
     const autocompleteOpened = van.state(false);
@@ -152,6 +154,7 @@ stylesheet.replace(`
 }
 
 .tg-input--field::placeholder {
+    font-style: italic;
     color: var(--disabled-text-color);
 }
 

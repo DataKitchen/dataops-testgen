@@ -430,6 +430,7 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                                 : Input({
                                     label, help,
                                     width: key === 'description' ? descriptionWidth : width,
+                                    placeholder: () => checkedState.val ? null : '(keep current values)',
                                     autocompleteOptions: tagOptions[key],
                                     onChange: (value) => valueState.val = value || null,
                                 }),
