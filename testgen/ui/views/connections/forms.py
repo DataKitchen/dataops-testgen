@@ -170,6 +170,8 @@ class BaseConnectionForm(BaseForm, ManualRender):
             form.project_port = 5432
         elif sql_flavor == "snowflake":
             form.project_port = 443
+        elif sql_flavor == "databricks":
+            form.project_port = 443
 
     @staticmethod
     def for_flavor(flavor: SQLFlavor) -> type["BaseConnectionForm"]:

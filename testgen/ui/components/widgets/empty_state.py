@@ -63,7 +63,13 @@ def empty_state(
                     right_icon="chevron_right",
                     underline=False,
                     height=40,
-                    style="margin: auto; border-radius: 4px; border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
+                    style=f"""
+                        margin: auto;
+                        border-radius: 4px;
+                        border: var(--button-stroked-border);
+                        padding: 8px 8px 8px 16px;
+                        color: {"var(--disabled-text-color)" if action_disabled else "var(--primary-color)"};
+                    """,
                     disabled=action_disabled,
                     tooltip=DISABLED_ACTION_TEXT if action_disabled else None,
                 )

@@ -17,6 +17,7 @@ def get_projects():
 
 def set_current_project(project_code: str) -> None:
     session.project = project_code
+    st.query_params.from_dict({ "project_code": project_code })
 
 
 @st.cache_data(show_spinner=False)
@@ -24,4 +25,3 @@ def get_project_by_code(code: str):
     if not code:
         return None
     return query_service.get_project_by_code(session.dbschema, code)
-
