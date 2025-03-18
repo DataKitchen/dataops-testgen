@@ -43,6 +43,7 @@ class TestDefinitionsPage(Page):
         project_code = table_group["project_code"]
         project_service.set_current_project(project_code)
         user_can_edit = user_session_service.user_can_edit()
+        user_can_disposition = user_session_service.user_can_disposition()
 
         testgen.page_header(
             "Test Definitions",
@@ -82,7 +83,7 @@ class TestDefinitionsPage(Page):
 
         with disposition_column:
             str_help = "Toggle on to perform actions on multiple test definitions"
-            do_multi_select = st.toggle("Multi-Select", help=str_help)
+            do_multi_select = user_can_disposition and st.toggle("Multi-Select", help=str_help)
 
         if user_can_edit and actions_column.button(
             ":material/add: Add", help="Add a new Test Definition"
@@ -95,49 +96,55 @@ class TestDefinitionsPage(Page):
         )
         fm.render_refresh_button(table_actions_column)
 
-        disposition_actions = [
-            { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
-            { "icon": "🔇", "help": "Deactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Deactivated" },
-            { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
-            { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
-        ]
+        if user_can_disposition:
+            disposition_actions = [
+                { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
+                { "icon": "🔇", "help": "Deactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Deactivated" },
+            ]
 
-        for action in disposition_actions:
-            action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=not selected)
+            if user_can_edit:
+                disposition_actions.extend([
+                    { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
+                    { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
+                ])
 
-        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-        for action in disposition_actions:
-            if action["button"]:
-                fm.reset_post_updates(
-                    update_test_definition(selected, action["attribute"], action["value"], action["message"]),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=[],
-                )
+            for action in disposition_actions:
+                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=not selected)
+
+            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+            for action in disposition_actions:
+                if action["button"]:
+                    fm.reset_post_updates(
+                        update_test_definition(selected, action["attribute"], action["value"], action["message"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=[],
+                    )
 
         if selected:
             selected_test_def = selected[0]
 
-        if user_can_edit and actions_column.button(
-            ":material/edit: Edit",
-            help="Edit the Test Definition",
-            disabled=not selected,
-        ):
-            edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
+        if user_can_edit:
+            if actions_column.button(
+                ":material/edit: Edit",
+                help="Edit the Test Definition",
+                disabled=not selected,
+            ):
+                edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
-        if user_can_edit and actions_column.button(
-            ":material/file_copy: Copy/Move",
-            help="Copy or Move the Test Definition",
-            disabled=not selected,
-        ):
-            copy_move_test_dialog(project_code, table_group, test_suite, selected)
+            if actions_column.button(
+                ":material/file_copy: Copy/Move",
+                help="Copy or Move the Test Definition",
+                disabled=not selected,
+            ):
+                copy_move_test_dialog(project_code, table_group, test_suite, selected)
 
-        if user_can_edit and actions_column.button(
-            ":material/delete: Delete",
-            help="Delete the selected Test Definition",
-            disabled=not selected,
-        ):
-            delete_test_dialog(selected_test_def)
+            if actions_column.button(
+                ":material/delete: Delete",
+                help="Delete the selected Test Definition",
+                disabled=not selected,
+            ):
+                delete_test_dialog(selected_test_def)
 
 
 @st.dialog("Delete Test")

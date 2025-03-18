@@ -185,18 +185,19 @@ class TestResultsPage(Page):
             { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
         ]
 
-        for action in disposition_actions:
-            action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
+        if user_session_service.user_can_disposition():
+            for action in disposition_actions:
+                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
 
-        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-        for action in disposition_actions:
-            if action["button"]:
-                fm.reset_post_updates(
-                    do_disposition_update(selected, action["status"]),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=affected_cached_functions,
-                )
+            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+            for action in disposition_actions:
+                if action["button"]:
+                    fm.reset_post_updates(
+                        do_disposition_update(selected, action["status"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=affected_cached_functions,
+                    )
 
         # Help Links
         st.markdown(

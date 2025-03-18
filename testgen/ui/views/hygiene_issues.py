@@ -262,19 +262,20 @@ class HygieneIssuesPage(Page):
                 { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
             ]
 
-            # Need to render toolbar buttons after grid, so selection status is maintained
-            for action in disposition_actions:
-                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
+            if user_session_service.user_can_disposition():
+                # Need to render toolbar buttons after grid, so selection status is maintained
+                for action in disposition_actions:
+                    action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
 
-            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-            for action in disposition_actions:
-                if action["button"]:
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, action["status"]),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=cached_functions,
-                    )
+                # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+                for action in disposition_actions:
+                    if action["button"]:
+                        fm.reset_post_updates(
+                            do_disposition_update(selected, action["status"]),
+                            as_toast=True,
+                            clear_cache=True,
+                            lst_cached_functions=cached_functions,
+                        )
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
 
