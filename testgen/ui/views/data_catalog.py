@@ -16,6 +16,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
 from testgen.ui.queries.profiling_queries import TAG_FIELDS, get_column_by_id, get_hygiene_issues, get_table_by_id
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
@@ -38,8 +39,9 @@ class DataCatalogPage(Page):
         )
 
         project_code = project_code or session.project
+        user_can_navigate = not user_session_service.user_has_catalog_role()
 
-        if render_empty_state(project_code):
+        if render_empty_state(project_code, user_can_navigate):
             return
 
         group_filter_column, _, loading_column = st.columns([.3, .5, .2], vertical_alignment="center")
@@ -72,6 +74,7 @@ class DataCatalogPage(Page):
                 icon=PAGE_ICON,
                 message=testgen.EmptyStateMessage.Profiling,
                 action_label="Run Profiling",
+                action_disabled=not user_session_service.user_can_edit(),
                 button_onclick=partial(run_profiling_dialog, project_code, table_group),
                 button_icon="play_arrow",
             )
@@ -85,7 +88,11 @@ class DataCatalogPage(Page):
                     "columns": columns_df.to_json(orient="records"),
                     "selected": json.dumps(selected_item),
                     "tag_values": get_tag_values(),
-                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp")
+                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
+                    "permissions": {
+                        "can_edit": user_session_service.user_can_disposition(),
+                        "can_navigate": user_can_navigate,
+                    },
                 },
                 on_change_handlers={
                     "ItemSelected": on_item_selected,
@@ -144,7 +151,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     st.rerun()
 
 
-def render_empty_state(project_code: str) -> bool:
+def render_empty_state(project_code: str, user_can_navigate: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["profiling_runs_ct"]: # Without profiling, we don't have any table and column information in db
         return False
@@ -157,6 +164,7 @@ def render_empty_state(project_code: str) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
+            action_disabled=not user_can_navigate,
             link_href="connections",
         )
     else:
@@ -165,6 +173,7 @@ def render_empty_state(project_code: str) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
+            action_disabled=not user_can_navigate,
             link_href="connections:table-groups",
             link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
         )

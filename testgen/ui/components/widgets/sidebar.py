@@ -9,7 +9,7 @@ from testgen.ui.session import session
 LOG = logging.getLogger("testgen")
 
 SIDEBAR_KEY = "testgen:sidebar"
-LOGOUT_PATH = "logout"
+LOGOUT_PATH = ""
 
 
 def sidebar(

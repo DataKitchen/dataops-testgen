@@ -1,7 +1,7 @@
 import dataclasses
 import typing
 
-from testgen.ui.services import authentication_service
+from testgen.ui.services import user_session_service
 
 MenuSections = typing.Literal["Data Profiling", "Data Quality Testing", "Data Configuration", "Settings"]
 
@@ -11,7 +11,7 @@ class MenuItem:
     label: str
     icon: str | None = dataclasses.field(default=None)
     page: str | None = dataclasses.field(default=None)
-    roles: list[authentication_service.RoleType] | None = dataclasses.field(default_factory=list)
+    roles: list[user_session_service.RoleType] | None = dataclasses.field(default_factory=list)
     order: int = dataclasses.field(default=0)
     section: MenuSections | None = dataclasses.field(default=None)
     items: list["MenuItem"] | None = dataclasses.field(default=None)
@@ -33,13 +33,13 @@ class Menu:
         filtered_items = []
         for menu_item in self.items:
             item_roles = menu_item.roles or []
-            if len(item_roles) <= 0 or any(map(authentication_service.current_user_has_role, item_roles)):
+            if len(item_roles) <= 0 or any(map(user_session_service.user_has_role, item_roles)):
                 filtered_items.append(menu_item)
         return dataclasses.replace(self, items=filtered_items)
 
     def sort_items(self) -> "Menu":
         return dataclasses.replace(self, items=sorted(self.items, key=lambda item: item.order))
-    
+
     def unflatten(self) -> "Menu":
         unflattened_items = []
         section_items = { section: [] for section in typing.get_args(MenuSections) }

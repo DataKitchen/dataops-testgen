@@ -65,4 +65,6 @@ const colorMap = {
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
 }
 
-export { formatTimestamp, formatDuration, roundDigits, capitalize, colorMap };
+const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
+
+export { formatTimestamp, formatDuration, roundDigits, capitalize, colorMap, DISABLED_ACTION_TEXT };

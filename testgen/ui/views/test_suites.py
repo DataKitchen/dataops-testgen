@@ -4,7 +4,6 @@ from functools import partial
 
 import streamlit as st
 
-import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_suite_service as test_suite_service
@@ -14,6 +13,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import project_queries
+from testgen.ui.services import user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
@@ -28,8 +28,15 @@ class TestSuitesPage(Page):
     path = "test-suites"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=1)
+    menu_item = MenuItem(
+        icon=PAGE_ICON,
+        label=PAGE_TITLE,
+        section="Data Quality Testing",
+        order=1,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
@@ -39,7 +46,7 @@ class TestSuitesPage(Page):
 
         project_code = project_code or session.project
         table_groups = get_db_table_group_choices(project_code)
-        user_can_edit = authentication_service.current_user_has_edit_role()
+        user_can_edit = user_session_service.user_can_edit()
         test_suites = test_suite_service.get_by_project(project_code, table_group_id)
         project_summary = project_queries.get_summary_by_code(project_code)
 
@@ -99,41 +106,6 @@ class TestSuitesPage(Page):
 
 def on_test_suites_filtered(table_group_id: str | None = None) -> None:
     Router().set_query_params({ "table_group_id": table_group_id })
-
-
-def render_empty_state(project_code: str, add_button_onclick: partial) -> bool:
-    project_summary_df = project_queries.get_summary_by_code(project_code)
-    if project_summary_df["test_suites_ct"]:
-        return False
-
-    label="No test suites yet"
-    testgen.whitespace(5)
-    if not project_summary_df["connections_ct"]:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Connection,
-            action_label="Go to Connections",
-            link_href="connections",
-        )
-    elif not project_summary_df["table_groups_ct"]:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TableGroup,
-            action_label="Go to Table Groups",
-            link_href="connections:table-groups",
-            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
-        )
-    else:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TestSuite,
-            action_label="Add Test Suite",
-            button_onclick=add_button_onclick,
-        )
-    return True
 
 
 @st.cache_data(show_spinner=False)
@@ -239,7 +211,6 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
             submit = st.form_submit_button(
                 "Save" if mode == "edit" else "Add",
                 use_container_width=True,
-                disabled=authentication_service.current_user_has_read_role(),
             )
 
         if submit:
@@ -293,17 +264,13 @@ def delete_test_suite_dialog(test_suite_id: str) -> None:
         accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
 
     with st.form("Delete Test Suite", clear_on_submit=True, border=False):
-        disable_delete_button = authentication_service.current_user_has_read_role() or (
-            not can_be_deleted and not accept_cascade_delete
-        )
-
         delete = False
         _, button_column = st.columns([.85, .15])
         with button_column:
             delete = st.form_submit_button(
                 "Delete",
                 type="primary",
-                disabled=disable_delete_button,
+                disabled=not can_be_deleted and not accept_cascade_delete,
                 use_container_width=True,
             )
 

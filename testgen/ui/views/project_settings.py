@@ -6,7 +6,7 @@ from testgen.commands.run_observability_exporter import test_observability_expor
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import form_service, project_service
+from testgen.ui.services import form_service, project_service, user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import view_log_file
 
@@ -17,9 +17,16 @@ class ProjectSettingsPage(Page):
     path = "settings"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project is not None or "project-dashboard",
+        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.project is not None,
     ]
-    menu_item = MenuItem(icon="settings", label=PAGE_TITLE, section="Settings", order=0)
+    menu_item = MenuItem(
+        icon="settings",
+        label=PAGE_TITLE,
+        section="Settings",
+        order=0,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
         project = project_service.get_project_by_code(project_code or session.project)
@@ -37,6 +44,7 @@ class ProjectSettingsPage(Page):
             project.keys(),
             ["id"],
             form_unique_key="project-settings",
+            submit_disabled=not user_session_service.user_is_admin(),
         )
 
         _, col2, col3 = st.columns([50, 25, 25])

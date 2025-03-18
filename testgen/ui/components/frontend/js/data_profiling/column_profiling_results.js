@@ -9,13 +9,13 @@ import { Streamlit } from '../streamlit.js';
 import { getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
 import { DataCharacteristicsCard } from './data_characteristics.js';
-import { LatestProfilingLink } from './data_profiling_utils.js';
+import { LatestProfilingTime } from './data_profiling_utils.js';
 import { HygieneIssuesCard, PotentialPIICard } from './data_issues.js';
 
 const { div, h2, span } = van.tags;
 
 const ColumnProfilingResults = (/** @type Properties */ props) => {
-    loadStylesheet('data-catalog', stylesheet);
+    loadStylesheet('column-profiling-results', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
     window.testgen.isPage = true;
 
@@ -45,7 +45,7 @@ const ColumnProfilingResults = (/** @type Properties */ props) => {
                     ),
                     column.val.column_name,
                 ),
-                column.val.is_latest_profile ? LatestProfilingLink(column.val) : null,
+                column.val.is_latest_profile ? LatestProfilingTime({}, column.val) : null,
             ),
             DataCharacteristicsCard({ border: true }, column.val),
             ColumnDistributionCard({ border: true, dataPreview: !!props.data_preview?.val }, column.val),

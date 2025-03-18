@@ -13,7 +13,7 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries, test_run_queries
-from testgen.ui.services import authentication_service
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score, to_int
@@ -27,9 +27,15 @@ class TestRunsPage(Page):
     path = "test-runs"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project != None or "project-dashboard",
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Quality Testing", order=0)
+    menu_item = MenuItem(
+        icon=PAGE_ICON,
+        label=PAGE_TITLE,
+        section="Data Quality Testing",
+        order=0,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
@@ -38,7 +44,8 @@ class TestRunsPage(Page):
         )
 
         project_code = project_code or session.project
-        if render_empty_state(project_code):
+        user_can_run = user_session_service.user_can_edit()
+        if render_empty_state(project_code, user_can_run):
             return
 
         group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
@@ -68,7 +75,7 @@ class TestRunsPage(Page):
         with actions_column:
             testgen.flex_row_end(actions_column)
 
-            if authentication_service.current_user_has_edit_role():
+            if user_can_run:
                 st.button(
                     ":material/play_arrow: Run Tests",
                     help="Run tests for a test suite",
@@ -88,12 +95,17 @@ class TestRunsPage(Page):
         with list_container:
             testgen_component(
                 "test_runs",
-                props={ "items": paginated_df.to_json(orient="records") },
+                props={
+                    "items": paginated_df.to_json(orient="records"),
+                    "permissions": {
+                        "can_run": user_can_run,
+                    },
+                },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
 
 
-def render_empty_state(project_code: str) -> bool:
+def render_empty_state(project_code: str, user_can_run: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["test_runs_ct"]:
         return False
@@ -131,6 +143,7 @@ def render_empty_state(project_code: str) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.TestExecution,
             action_label="Run Tests",
+            action_disabled=not user_can_run,
             button_onclick=partial(run_tests_dialog, project_code),
             button_icon="play_arrow",
         )

@@ -10,7 +10,7 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 
@@ -21,6 +21,7 @@ class ProfilingResultsPage(Page):
     path = "profiling-runs:results"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 

@@ -16,7 +16,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.hygiene_issues_service import get_source_data as get_source_data_uncached
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
@@ -27,6 +27,7 @@ class HygieneIssuesPage(Page):
     path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 
@@ -261,19 +262,20 @@ class HygieneIssuesPage(Page):
                 { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
             ]
 
-            # Need to render toolbar buttons after grid, so selection status is maintained
-            for action in disposition_actions:
-                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
+            if user_session_service.user_can_disposition():
+                # Need to render toolbar buttons after grid, so selection status is maintained
+                for action in disposition_actions:
+                    action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
 
-            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-            for action in disposition_actions:
-                if action["button"]:
-                    fm.reset_post_updates(
-                        do_disposition_update(selected, action["status"]),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=cached_functions,
-                    )
+                # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+                for action in disposition_actions:
+                    if action["button"]:
+                        fm.reset_post_updates(
+                            do_disposition_update(selected, action["status"]),
+                            as_toast=True,
+                            clear_cache=True,
+                            lst_cached_functions=cached_functions,
+                        )
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
 

@@ -53,7 +53,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
 
     const treeNodes = van.derive(() => {
         const nodes = getValue(props.nodes) || [];
-        const treeSelected = initTreeState(nodes, initialSelection);
+        const treeSelected = initTreeState(nodes, selected.rawVal);
         if (!treeSelected) {
             selected.val = null;
         }

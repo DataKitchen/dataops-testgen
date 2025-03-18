@@ -5,13 +5,13 @@
  * @property {number} connections_ct
  * @property {number} table_groups_ct
  * @property {string} default_connection_id
- * 
+ *
  * @typedef TableGroupOption
  * @type {object}
  * @property {string} id
  * @property {string} name
  * @property {boolean} selected
- * 
+ *
  * @typedef TestSuite
  * @type {object}
  * @property {string} id
@@ -29,11 +29,11 @@
  * @property {number} last_run_error_ct
  * @property {number} last_run_dismissed_ct
  * @property {string} last_complete_profile_run_id
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
@@ -44,7 +44,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { formatTimestamp } from '../display_utils.js';
+import { formatTimestamp, DISABLED_ACTION_TEXT } from '../display_utils.js';
 import { Select } from '../components/select.js';
 import { Button } from '../components/button.js';
 import { Card } from '../components/card.js';
@@ -69,7 +69,7 @@ const TestSuites = (/** @type Properties */ props) => {
 
     return div(
         { id: wrapperId, style: 'overflow-y: auto;' },
-        () => 
+        () =>
             getValue(props.project_summary).test_suites_ct > 0
             ? div(
                 { class: 'tg-test-suites'},
@@ -181,11 +181,14 @@ const TestSuites = (/** @type Properties */ props) => {
                     })),
                 ),
             )
-            : ConditionalEmptyState(getValue(props.project_summary)),
+            : ConditionalEmptyState(getValue(props.project_summary), userCanEdit),
     );
 };
 
-const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
+const ConditionalEmptyState = (
+    /** @type ProjectSummary */ projectSummary,
+    /** @type boolean */ userCanEdit,
+) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.testSuite,
         button: Button({
@@ -195,6 +198,9 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
             label: 'Add Test Suite',
             width: 'fit-content',
             style: 'margin: auto; background: white;',
+            disabled: !userCanEdit,
+            tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
+            tooltipPosition: 'bottom',
             onclick: () => emitEvent('AddTestSuiteClicked', {}),
         }),
     };

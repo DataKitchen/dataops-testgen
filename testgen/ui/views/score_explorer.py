@@ -20,6 +20,7 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_issue_reports,
     get_score_category_values,
 )
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
@@ -28,6 +29,7 @@ class ScoreExplorerPage(Page):
     path = "quality-dashboard:explorer"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
 
     def render(
@@ -59,6 +61,7 @@ class ScoreExplorerPage(Page):
         issues = None
         filter_values = {}
         with st.spinner(text="Loading data ..."):
+            user_can_edit = user_session_service.user_can_edit()
             filter_values = get_score_category_values(project_code)
 
             score_definition: ScoreDefinition = ScoreDefinition(
@@ -118,6 +121,9 @@ class ScoreExplorerPage(Page):
                 "drilldown": drilldown,
                 "issues": issues,
                 "is_new": not definition_id,
+                "permissions": {
+                    "can_edit": user_can_edit,
+                },
             },
             on_change_handlers={
                 "ScoreUpdated": set_score_definition,

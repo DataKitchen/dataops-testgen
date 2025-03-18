@@ -6,6 +6,7 @@ import streamlit as st
 from testgen.ui.components.widgets.button import button
 from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import css_class, whitespace
+from testgen.ui.services.user_session_service import DISABLED_ACTION_TEXT
 
 
 class EmptyStateMessage(Enum):
@@ -36,6 +37,7 @@ def empty_state(
     icon: str,
     message: EmptyStateMessage,
     action_label: str,
+    action_disabled: bool = False,
     link_href: str | None = None,
     link_params: dict | None = None,
     button_onclick: typing.Callable[..., None] | None = None,
@@ -61,15 +63,25 @@ def empty_state(
                     right_icon="chevron_right",
                     underline=False,
                     height=40,
-                    style="margin: auto; border-radius: 4px; border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
+                    style=f"""
+                        margin: auto;
+                        border-radius: 4px;
+                        border: var(--button-stroked-border);
+                        padding: 8px 8px 8px 16px;
+                        color: {"var(--disabled-text-color)" if action_disabled else "var(--primary-color)"};
+                    """,
+                    disabled=action_disabled,
+                    tooltip=DISABLED_ACTION_TEXT if action_disabled else None,
                 )
             elif button_onclick:
                 button(
-                    type_="flat",
-                    color="primary",
+                    type_="stroked" if action_disabled else "flat",
+                    color="basic" if action_disabled else "primary",
                     label=action_label,
                     icon=button_icon,
                     on_click=button_onclick,
                     style="margin: auto; width: auto;",
+                    disabled=action_disabled,
+                    tooltip=DISABLED_ACTION_TEXT if action_disabled else None,
                 )
         whitespace(5)

@@ -178,7 +178,7 @@ import van from '../van.min.js';
 import { Link } from '../components/link.js';
 import { formatTimestamp } from '../display_utils.js';
 
-const { span } = van.tags;
+const { span, b } = van.tags;
 
 const TABLE_ICON = { icon: 'table', iconSize: 20 };
 const COLUMN_ICONS = {
@@ -196,8 +196,16 @@ const getColumnIcon = (/** @type Column */ column) => {
     return COLUMN_ICONS[type];
 };
 
-const LatestProfilingLink = (/** @type Table | Column */ item) => {
-    let text = 'as of latest profiling run on ';
+/**
+ * @typedef Properties
+ * @type {object}
+ * @property {boolean?} noLinks
+ */
+const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    let text = [
+        'as of latest profiling run on ',
+        props.noLinks ? b(formatTimestamp(item.profile_run_date)) : null,
+    ];
     let link = Link({
         href: 'profiling-runs:results',
         params: {
@@ -225,9 +233,10 @@ const LatestProfilingLink = (/** @type Table | Column */ item) => {
     }
     return span(
         { class: 'flex-row fx-gap-1 fx-justify-content-flex-end text-secondary' },
-        `* ${text}`,
-        link,
+        '* ',
+        text,
+        props.noLinks ? null : link,
     );
 }
 
-export { TABLE_ICON, getColumnIcon, LatestProfilingLink };
+export { TABLE_ICON, getColumnIcon, LatestProfilingTime };

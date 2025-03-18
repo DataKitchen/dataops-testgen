@@ -1,5 +1,9 @@
+import typing
+
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
+
+TooltipPosition = typing.Literal["left", "right"]
 
 
 def link(
@@ -16,6 +20,9 @@ def link(
     height: float | None = 21.0,
     width: float | None = None,
     style: str | None = None,
+    disabled: bool = False,
+    tooltip: str | None = None,
+    tooltip_position: TooltipPosition = "left",
     key: str = "testgen:link",
 ) -> None:
     props = {
@@ -25,6 +32,7 @@ def link(
         "height": height,
         "open_new": open_new,
         "underline": underline,
+        "disabled": disabled,
     }
     if left_icon:
         props.update({"left_icon": left_icon, "left_icon_size": left_icon_size})
@@ -37,6 +45,9 @@ def link(
 
     if width:
         props.update({"width": width})
+
+    if tooltip:
+        props.update({"tooltip": tooltip, "tooltipPosition": tooltip_position})
 
     clicked = component(id_="link", key=key, props=props)
     if clicked:

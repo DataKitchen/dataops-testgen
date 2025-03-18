@@ -31,7 +31,6 @@ class Page(abc.ABC):
 
     def _navigate(self) -> None:
         self.router.navigate_to_pending()
-
         for guard in self.can_activate or []:
             can_activate = guard()
             if type(can_activate) == str:
@@ -39,7 +38,7 @@ class Page(abc.ABC):
 
             if not can_activate:
                 session.page_pending_login = self.path
-                return self.router.navigate(to="")
+                return self.router.navigate(to=session.user_default_page or "")
 
         session.current_page_args = session.current_page_args or {}
         self._validate_project_query_param()

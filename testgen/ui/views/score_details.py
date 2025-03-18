@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -13,7 +14,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
-from testgen.ui.services import authentication_service
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
@@ -25,6 +26,7 @@ class ScoreDetailsPage(Page):
     path = "quality-dashboard:score-details"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "definition_id" in session.current_page_args or "quality-dashboard",
     ]
 
@@ -59,7 +61,7 @@ class ScoreDetailsPage(Page):
         score_breakdown = None
         issues = None
         with st.spinner(text="Loading data ..."):
-            user_can_edit = authentication_service.current_user_has_edit_role()
+            user_can_edit = user_session_service.user_can_edit()
             score_card = format_score_card(score_definition.as_cached_score_card())
             if not score_type:
                 score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
@@ -151,6 +153,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
 
 
 @st.dialog(title="Delete Scorecard")
+@with_database_session
 def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
 

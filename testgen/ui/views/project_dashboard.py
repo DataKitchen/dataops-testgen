@@ -8,7 +8,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries
-from testgen.ui.services import test_suite_service
+from testgen.ui.services import test_suite_service, user_session_service
 from testgen.ui.session import session
 from testgen.utils import format_field, friendly_score, score
 
@@ -21,8 +21,14 @@ class ProjectDashboardPage(Page):
     path = "project-dashboard"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
-    menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, order=0)
+    menu_item = MenuItem(
+        icon=PAGE_ICON,
+        label=PAGE_TITLE,
+        order=0,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str | None = None, **_kwargs):
         testgen.page_header(
