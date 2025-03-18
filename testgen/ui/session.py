@@ -19,7 +19,7 @@ class TestgenSession(Singleton):
     page_pending_login: str
     page_pending_sidebar: str
     page_args_pending_router: dict
-    
+
     current_page: str
     current_page_args: dict
 
@@ -29,6 +29,7 @@ class TestgenSession(Singleton):
     username: str
     authentication_status: bool
     auth_role: Literal["admin", "data_quality", "analyst", "business", "catalog"]
+    user_default_page: str
 
     project: str
     add_project: bool

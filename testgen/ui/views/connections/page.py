@@ -14,7 +14,7 @@ from testgen.common.database.database_service import empty_cache
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import connection_service, table_group_service
+from testgen.ui.services import connection_service, table_group_service, user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections.forms import BaseConnectionForm
 from testgen.ui.views.connections.models import ConnectionStatus
@@ -28,8 +28,15 @@ class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
-    menu_item = MenuItem(icon="database", label=PAGE_TITLE, section="Data Configuration", order=0)
+    menu_item = MenuItem(
+        icon="database",
+        label=PAGE_TITLE,
+        section="Data Configuration",
+        order=0,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str, **_kwargs) -> None:
         dataframe = connection_service.get_connections(project_code)

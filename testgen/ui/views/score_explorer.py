@@ -20,6 +20,7 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_issue_reports,
     get_score_category_values,
 )
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
@@ -28,6 +29,7 @@ class ScoreExplorerPage(Page):
     path = "quality-dashboard:explorer"
     can_activate: ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
 
     def render(

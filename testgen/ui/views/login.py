@@ -15,7 +15,7 @@ LOG = logging.getLogger("testgen")
 class LoginPage(Page):
     path = ""
     can_activate: typing.ClassVar = [
-        lambda: not session.authentication_status or session.logging_in or "project-dashboard",
+        lambda: not session.authentication_status or session.logging_in,
     ]
 
     def render(self, **_kwargs) -> None:
@@ -55,7 +55,7 @@ class LoginPage(Page):
                 # This hack is needed because the auth cookie is not set if navigation happens immediately
                 if session.logging_in:
                     session.logging_in = False
-                    next_route = session.page_pending_login or "project-dashboard"
+                    next_route = session.page_pending_login or session.user_default_page
                     session.page_pending_login = None
                     self.router.navigate(next_route)
                 else:

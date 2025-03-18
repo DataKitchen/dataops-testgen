@@ -15,7 +15,7 @@ import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import authentication_service, project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
@@ -27,6 +27,7 @@ class TestDefinitionsPage(Page):
     path = "test-suites:definitions"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "test_suite_id" in session.current_page_args or "test-suites",
     ]
 
@@ -41,7 +42,7 @@ class TestDefinitionsPage(Page):
         table_group = table_group_service.get_by_id(test_suite["table_groups_id"])
         project_code = table_group["project_code"]
         project_service.set_current_project(project_code)
-        user_can_edit = authentication_service.current_user_has_edit_role()
+        user_can_edit = user_session_service.user_can_edit()
 
         testgen.page_header(
             "Test Definitions",
@@ -166,12 +167,11 @@ def delete_test_dialog(selected_test_definition):
     )
 
     with st.form("Delete Test Definition", clear_on_submit=True, border=False):
-        disable_delete_button = authentication_service.current_user_has_read_role() or not can_be_deleted
         _, button_column = st.columns([.85, .15])
         with button_column:
             delete = st.form_submit_button(
                 "Delete",
-                disabled=disable_delete_button,
+                disabled=not can_be_deleted,
                 type="primary",
                 use_container_width=True,
             )
@@ -583,7 +583,7 @@ def show_test_form(
     # Add Validate button
     if test_type in ("Condition_Flag", "CUSTOM"):
         validate = bottom_left_column.button(
-            "Validate", disabled=authentication_service.current_user_has_read_role()
+            "Validate",
         )
         if validate:
             try:
@@ -598,7 +598,7 @@ def show_test_form(
             # Some or all (it seems random) of the input fields disappear when this happens
             time.sleep(0.1)
 
-    submit = bottom_left_column.button("Save", disabled=authentication_service.current_user_has_read_role())
+    submit = bottom_left_column.button("Save")
 
     if submit:
         if validate_form(test_scope, test_type, test_definition, column_name_label):
@@ -623,8 +623,6 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
 @st.dialog(title="Copy/Move Tests")
 def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
     st.text(f"Selected tests: {len(selected_test_definitions)}")
-
-    user_can_edit = authentication_service.current_user_has_edit_role()
 
     group_filter_column, suite_filter_column = st.columns([.5, .5], vertical_alignment="bottom")
 
@@ -675,12 +673,12 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
     copy = copy_column.button(
         "Copy",
         use_container_width=True,
-        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+        disabled=not len(movable_test_definitions)>0,
     )
 
     move = move_column.button(
         "Move",
-        disabled=not (user_can_edit and len(movable_test_definitions)>0),
+        disabled=not len(movable_test_definitions)>0,
         use_container_width=True,
     )
 

@@ -16,7 +16,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.hygiene_issues_service import get_source_data as get_source_data_uncached
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
@@ -27,6 +27,7 @@ class HygieneIssuesPage(Page):
     path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 

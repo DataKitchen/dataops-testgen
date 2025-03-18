@@ -18,7 +18,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
-from testgen.ui.services import authentication_service, project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.services.test_definition_service import (
     get_test_definition as get_test_definition_uncached,
@@ -44,6 +44,7 @@ class TestResultsPage(Page):
     path = "test-runs:results"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
@@ -657,7 +658,7 @@ def show_result_detail(
 
         with pg_col2:
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
-        if authentication_service.current_user_has_edit_role():
+        if user_session_service.user_can_edit():
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
 
         if selected_row["test_scope"] == "column":

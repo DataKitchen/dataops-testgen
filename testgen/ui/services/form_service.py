@@ -17,7 +17,6 @@ from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBu
 from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.common.date_service as date_service
-import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
 from testgen.ui.navigation.router import Router
 
@@ -334,7 +333,7 @@ def render_form_by_field_specs(
             submit = (
                 False
                 if boo_display_only
-                else st.form_submit_button("Save Changes", disabled=authentication_service.current_user_has_read_role())
+                else st.form_submit_button("Save Changes")
             )
 
             if submit and not boo_display_only:
@@ -592,38 +591,6 @@ def render_column_list(row_selected, lst_columns, str_prompt):
                 st.text_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
 
 
-def render_grid_form(
-    str_form_name,
-    df_data,
-    str_table_name,
-    lst_key_columns,
-    lst_show_columns,
-    lst_disabled_columns,
-    lst_no_update_columns,
-    dct_hard_default_columns,
-    dct_column_config,
-    str_prompt=None,
-):
-    show_header(str_form_name)
-    with st.form(str_form_name, clear_on_submit=True):
-        show_prompt(str_prompt)
-        df_edits = st.data_editor(
-            df_data,
-            column_order=lst_show_columns,
-            column_config=dct_column_config,
-            disabled=lst_disabled_columns,
-            num_rows="dynamic",
-            hide_index=True,
-        )
-        submit = st.form_submit_button("Save Changes", disabled=authentication_service.current_user_has_read_role())
-        if submit:
-            booStatus = db.apply_df_edits(
-                df_data, df_edits, str_table_name, lst_key_columns, lst_no_update_columns, dct_hard_default_columns
-            )
-            if booStatus:
-                reset_post_updates("Changes have been saved.")
-
-
 def render_edit_form(
     str_form_name,
     row_selected,
@@ -689,7 +656,7 @@ def render_edit_form(
                 else:
                     # If Hidden, add directly to dct_mods for updates
                     dct_mods[column] = row_selected[column]
-            edit_allowed = not submit_disabled and authentication_service.current_user_has_edit_role()
+            edit_allowed = not submit_disabled
             submit = st.form_submit_button("Save Changes", disabled=not edit_allowed)
 
             if submit and edit_allowed:

@@ -6,13 +6,12 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
@@ -22,7 +21,7 @@ class TableGroupsPage(Page):
     path = "connections:table-groups"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: authentication_service.current_user_has_admin_role(),
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "connection_id" in session.current_page_args or "connections",
     ]
 
@@ -168,14 +167,11 @@ class TableGroupsPage(Page):
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 
         with st.form("Delete Table Group", clear_on_submit=True, border=False):
-            disable_delete_button = authentication_service.current_user_has_read_role() or (
-                not can_be_deleted and not accept_cascade_delete
-            )
             _, button_column = st.columns([.85, .15])
             with button_column:
                 delete = st.form_submit_button(
                     "Delete",
-                    disabled=disable_delete_button,
+                    disabled=not can_be_deleted and not accept_cascade_delete,
                     type="primary",
                     use_container_width=True,
                 )
@@ -392,7 +388,6 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                 submit = st.form_submit_button(
                     "Save" if mode == "edit" else "Add",
                     use_container_width=True,
-                    disabled=authentication_service.current_user_has_read_role(),
                 )
 
             if submit:

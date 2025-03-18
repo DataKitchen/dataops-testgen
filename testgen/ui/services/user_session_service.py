@@ -1,16 +1,20 @@
 import datetime
 import logging
+import typing
 
 import extra_streamlit_components as stx
 import jwt
+import streamlit as st
 
-from testgen.ui.queries import authentication_queries
-from testgen.ui.services.authentication_service import get_role_for_user
+from testgen.ui.queries import user_queries
 from testgen.ui.session import session
+
+RoleType = typing.Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
 JWT_HASHING_KEY = "dk_signature_key"
 AUTH_TOKEN_COOKIE_NAME = "dk_cookie_name"  # noqa: S105
-AUTH_TOKEN_EXPIRATION_DAYS = 5
+AUTH_TOKEN_EXPIRATION_DAYS = 1
+DISABLED_ACTION_TEXT = "You do not have permissions to perform this action. Contact your administrator."
 
 LOG = logging.getLogger("testgen")
 
@@ -32,22 +36,28 @@ def load_user_session() -> None:
 def start_user_session(name: str, username: str) -> None:
     session.name = name
     session.username = username
-    session.auth_role = get_role_for_user(get_auth_data(), username)
+    session.auth_role = get_auth_data()["credentials"]["usernames"][username]["role"]
     session.authentication_status = True
     session.logging_out = False
+    if user_has_catalog_role():
+        session.user_default_page = "data-catalog"
+        st.rerun()
+    else:
+        session.user_default_page = "project-dashboard"
 
 
 def end_user_session() -> None:
     session.auth_role = None
     session.authentication_status = None
     session.logging_out = True
+    session.user_default_page = ""
 
     del session.name
     del session.username
 
 
 def get_auth_data():
-    auth_data = authentication_queries.get_users(session.dbschema)
+    auth_data = user_queries.get_users()
 
     usernames = {}
     preauthorized_list = []
@@ -67,3 +77,23 @@ def get_auth_data():
         "cookie": {"expiry_days": AUTH_TOKEN_EXPIRATION_DAYS, "key": JWT_HASHING_KEY, "name": AUTH_TOKEN_COOKIE_NAME},
         "preauthorized": {"emails": preauthorized_list},
     }
+
+
+def user_is_admin():
+    return session.auth_role == "admin"
+
+
+def user_can_edit():
+    return session.auth_role in ("admin", "data_quality")
+
+
+def user_can_disposition():
+    return session.auth_role in ("admin", "data_quality", "analyst")
+
+
+def user_has_catalog_role():
+    return session.auth_role == "catalog"
+
+
+def user_has_role(role: RoleType) -> bool:
+    return session.auth_role == role

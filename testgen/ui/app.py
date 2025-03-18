@@ -20,6 +20,7 @@ def render(log_level: int = logging.INFO):
         page_title="TestGen",
         page_icon=get_asset_path("favicon.ico"),
         layout="wide",
+        initial_sidebar_state="collapsed" if user_session_service.user_has_catalog_role() else "auto"
     )
 
     application = get_application(log_level=log_level)
