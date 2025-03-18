@@ -95,7 +95,12 @@ class TestRunsPage(Page):
         with list_container:
             testgen_component(
                 "test_runs",
-                props={ "items": paginated_df.to_json(orient="records") },
+                props={
+                    "items": paginated_df.to_json(orient="records"),
+                    "permissions": {
+                        "can_run": user_can_run,
+                    },
+                },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
 
