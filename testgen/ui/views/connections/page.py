@@ -71,6 +71,7 @@ class ConnectionsPage(Page):
                         " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:
+            user_can_edit = user_session_service.user_can_edit()
             with actions_column:
                 testgen.button(
                     type_="stroked",
@@ -79,6 +80,8 @@ class ConnectionsPage(Page):
                     label="Setup Table Groups",
                     style="background: white;",
                     width=200,
+                    disabled=not user_can_edit,
+                    tooltip=None if user_can_edit else user_session_service.DISABLED_ACTION_TEXT,
                     on_click=lambda: self.setup_data_configuration(project_code, connection.to_dict()),
                 )
 
@@ -137,13 +140,14 @@ class ConnectionsPage(Page):
             f"connection_form-{connection_id}:test_conn"
         )
 
-        with save_button_column:
-            testgen.button(
-                type_="flat",
-                label="Save",
-                key=f"connection_form:{connection_id}:submit",
-                on_click=lambda: set_submitted(True),
-            )
+        if user_session_service.user_is_admin():
+            with save_button_column:
+                testgen.button(
+                    type_="flat",
+                    label="Save",
+                    key=f"connection_form:{connection_id}:submit",
+                    on_click=lambda: set_submitted(True),
+                )
 
         with test_button_column:
             testgen.button(

@@ -61,6 +61,7 @@ class ScoreExplorerPage(Page):
         issues = None
         filter_values = {}
         with st.spinner(text="Loading data ..."):
+            user_can_edit = user_session_service.user_can_edit()
             filter_values = get_score_category_values(project_code)
 
             score_definition: ScoreDefinition = ScoreDefinition(
@@ -120,6 +121,9 @@ class ScoreExplorerPage(Page):
                 "drilldown": drilldown,
                 "issues": issues,
                 "is_new": not definition_id,
+                "permissions": {
+                    "can_edit": user_can_edit,
+                },
             },
             on_change_handlers={
                 "ScoreUpdated": set_score_definition,

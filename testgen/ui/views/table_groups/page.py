@@ -35,6 +35,7 @@ class TableGroupsPage(Page):
 
         project_code = connection["project_code"]
         project_service.set_current_project(project_code)
+        user_can_edit = user_session_service.user_can_edit()
 
         testgen.page_header(
             "Table Groups",
@@ -54,6 +55,7 @@ class TableGroupsPage(Page):
                 icon="table_view",
                 message=testgen.EmptyStateMessage.TableGroup,
                 action_label="Add Table Group",
+                action_disabled=not user_can_edit,
                 button_onclick=partial(self.add_table_group_dialog, project_code, connection),
             )
             return
@@ -62,25 +64,32 @@ class TableGroupsPage(Page):
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 
+        if user_can_edit:
+            actions_column.button(
+                ":material/add: Add Table Group",
+                on_click=partial(self.add_table_group_dialog, project_code, connection)
+            )
+
         for _, table_group in df.iterrows():
             with testgen.card(title=table_group["table_groups_name"]) as table_group_card:
-                with table_group_card.actions:
-                    testgen.button(
-                        type_="icon",
-                        icon="edit",
-                        tooltip="Edit table group",
-                        tooltip_position="right",
-                        on_click=partial(self.edit_table_group_dialog, project_code, connection, table_group),
-                        key=f"tablegroups:keys:edit:{table_group['id']}",
-                    )
-                    testgen.button(
-                        type_="icon",
-                        icon="delete",
-                        tooltip="Delete table group",
-                        tooltip_position="right",
-                        on_click=partial(self.delete_table_group_dialog, table_group),
-                        key=f"tablegroups:keys:delete:{table_group['id']}",
-                    )
+                if user_can_edit:
+                    with table_group_card.actions:
+                        testgen.button(
+                            type_="icon",
+                            icon="edit",
+                            tooltip="Edit table group",
+                            tooltip_position="right",
+                            on_click=partial(self.edit_table_group_dialog, project_code, connection, table_group),
+                            key=f"tablegroups:keys:edit:{table_group['id']}",
+                        )
+                        testgen.button(
+                            type_="icon",
+                            icon="delete",
+                            tooltip="Delete table group",
+                            tooltip_position="right",
+                            on_click=partial(self.delete_table_group_dialog, table_group),
+                            key=f"tablegroups:keys:delete:{table_group['id']}",
+                        )
 
                 main_section, actions_section = st.columns([.8, .2])
 
@@ -121,19 +130,14 @@ class TableGroupsPage(Page):
                         testgen.caption("Min Profiling Age (Days)")
                         st.markdown(table_group["profiling_delay_days"] or "0")
 
-                with actions_section:
-                    testgen.button(
-                        type_="stroked",
-                        label="Run Profiling",
-                        on_click=partial(run_profiling_dialog, project_code, table_group),
-                        key=f"tablegroups:keys:runprofiling:{table_group['id']}",
-                    )
-
-        actions_column.button(
-            ":material/add: Add Table Group",
-            help="Add a new Table Group",
-            on_click=partial(self.add_table_group_dialog, project_code, connection)
-        )
+                if user_can_edit:
+                    with actions_section:
+                        testgen.button(
+                            type_="stroked",
+                            label="Run Profiling",
+                            on_click=partial(run_profiling_dialog, project_code, table_group),
+                            key=f"tablegroups:keys:runprofiling:{table_group['id']}",
+                        )
 
     @st.dialog(title="Add Table Group")
     def add_table_group_dialog(self, project_code, connection):
