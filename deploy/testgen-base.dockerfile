@@ -20,9 +20,13 @@ RUN apk update && apk upgrade && apk add --no-cache \
     openblas=0.3.28-r0 \
     openblas-dev=0.3.28-r0 \
     unixodbc=2.3.12-r0 \
-    unixodbc-dev=2.3.12-r0 \
-    apache-arrow=16.1.0-r0 \
-    apache-arrow-dev=16.1.0-r0
+    unixodbc-dev=2.3.12-r0
+
+RUN apk add --no-cache \
+    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/community \
+    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/main \
+    libarrow=18.1.0-r0 \
+    apache-arrow-dev=18.1.0-r0
 
 # Install TestGen's main project empty pyproject.toml to install (and cache) the dependencies first
 COPY ./pyproject.toml /tmp/dk/pyproject.toml

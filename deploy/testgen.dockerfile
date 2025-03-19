@@ -1,9 +1,6 @@
-ARG TESTGEN_BASE_LABEL=v2
+ARG TESTGEN_BASE_LABEL=v3
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
-
-# TODO: Move this to the base image instead
-RUN apk add libarrow=16.1.0-r0
 
 # Args have to be set in current build stage: https://github.com/moby/moby/issues/37345
 ARG TESTGEN_VERSION
