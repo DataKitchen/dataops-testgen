@@ -7,6 +7,106 @@ from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.services.test_definition_service import get_test_definition
 
 
+def get_test_results(
+    schema: str,
+    run_id: str,
+    test_status: str | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    sorting_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    # First visible row first, so multi-select checkbox will render
+    order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
+    filters = ""
+    if test_status:
+        filters += f" AND r.result_status IN ({test_status})"
+    if test_type_id:
+        filters += f" AND r.test_type = '{test_type_id}'"
+    if table_name:
+        filters += f" AND r.table_name = '{table_name}'"
+    if column_name:
+        filters += f" AND r.column_names = '{column_name}'"
+
+    sql = f"""
+            WITH run_results
+               AS (SELECT *
+                     FROM {schema}.test_results r
+                    WHERE
+                      r.test_run_id = '{run_id}'
+                      {filters}
+                    )
+            SELECT r.table_name,
+                   p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
+                   tt.dq_dimension, tt.test_scope,
+                   r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
+                   tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
+                   c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
+                   CASE
+                     WHEN r.result_code <> 1 THEN r.disposition
+                        ELSE 'Passed'
+                   END as disposition,
+                   NULL::VARCHAR(1) as action,
+                   r.input_parameters, r.result_message, CASE WHEN result_code <> 1 THEN r.severity END as severity,
+                   r.result_code as passed_ct,
+                   (1 - r.result_code)::INTEGER as exception_ct,
+                   CASE
+                     WHEN result_status = 'Warning'
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+                   END::INTEGER as warning_ct,
+                   CASE
+                     WHEN result_status = 'Failed'
+                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+                   END::INTEGER as failed_ct,
+                   CASE
+                     WHEN result_message ILIKE 'Inactivated%%' THEN 1
+                   END as execution_error_ct,
+                   p.project_code, r.table_groups_id::VARCHAR,
+                   r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
+                   c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
+                   r.test_definition_id::VARCHAR as test_definition_id_runtime,
+                   CASE
+                     WHEN r.auto_gen = TRUE THEN d.id
+                                            ELSE r.test_definition_id
+                   END::VARCHAR as test_definition_id_current,
+                   r.auto_gen,
+
+                   -- These are used in the PDF report
+                   tt.threshold_description, tt.usage_notes, r.test_time
+
+              FROM run_results r
+            INNER JOIN {schema}.test_types tt
+               ON (r.test_type = tt.test_type)
+            LEFT JOIN {schema}.test_definitions rd
+              ON (r.test_definition_id = rd.id)
+            LEFT JOIN {schema}.test_definitions d
+               ON (r.test_suite_id = d.test_suite_id
+              AND  r.table_name = d.table_name
+              AND  r.column_names = COALESCE(d.column_name, 'N/A')
+              AND  r.test_type = d.test_type
+              AND  r.auto_gen = TRUE
+              AND  d.last_auto_gen_date IS NOT NULL)
+            INNER JOIN {schema}.test_suites ts
+               ON r.test_suite_id = ts.id
+            INNER JOIN {schema}.projects p
+               ON (ts.project_code = p.project_code)
+            INNER JOIN {schema}.table_groups tg
+               ON (ts.table_groups_id = tg.id)
+            INNER JOIN {schema}.connections cn
+               ON (tg.connection_id = cn.connection_id)
+            LEFT JOIN {schema}.cat_test_conditions c
+               ON (cn.sql_flavor = c.sql_flavor
+              AND  r.test_type = c.test_type)
+            {order_by} ;
+    """
+    df = db.retrieve_data(sql)
+
+    # Clean Up
+    df["test_date"] = pd.to_datetime(df["test_date"])
+
+    return df
+
+
 def get_test_result_history(db_schema, tr_data):
     if tr_data["auto_gen"]:
         str_where = f"""
