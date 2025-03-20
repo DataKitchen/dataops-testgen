@@ -37,9 +37,8 @@ const DEFAULT_ICON_SIZE = 18;
 const Button = (/** @type Properties */ props) => {
     loadStylesheet('button', stylesheet);
 
-    const buttonType = getValue(props.type);
     const width = getValue(props.width);
-    const isIconOnly = buttonType === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
+    const isIconOnly = getValue(props.type) === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
 
     if (!window.testgen.isPage) {
         Streamlit.setFrameHeight(40);
@@ -62,7 +61,7 @@ const Button = (/** @type Properties */ props) => {
     return button(
         {
             id: getValue(props.id) ?? undefined,
-            class: `tg-button tg-${buttonType}-button tg-${getValue(props.color) ?? 'basic'}-button ${buttonType !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+            class: () => `tg-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,
             disabled: props.disabled,
