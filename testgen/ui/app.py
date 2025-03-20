@@ -36,6 +36,8 @@ def render(log_level: int = logging.INFO):
     session.dbschema = db.get_schema()
 
     projects = project_service.get_projects()
+    if not session.project:
+        session.project = st.query_params.get("project_code")
     if not session.project and len(projects) > 0:
         project_service.set_current_project(projects[0]["code"])
 

@@ -45,56 +45,57 @@ class ProjectSettingsPage(Page):
         self.show_edit_form()
 
     def show_edit_form(self) -> None:
-        form_container = testgen.card()
+        form_container = st.container()
         status_container = st.container()
 
         with form_container:
-            name_input = st.text_input(
-                label="Project Name",
-                value=self.project["project_name"],
-                max_chars=30,
-                key="project_settings:keys:project_name",
-            )
-            st.text_input(
-                label="Observability API URL",
-                value=self.project["observability_api_url"],
-                key="project_settings:keys:observability_api_url",
-            )
-            st.text_input(
-                label="Observability API Key",
-                value=self.project["observability_api_key"],
-                key="project_settings:keys:observability_api_key",
-            )
-
-            testgen.whitespace(1)
-            test_button_column, warning_column, save_button_column = st.columns([.4, .3, .3])
-            testgen.flex_row_start(test_button_column)
-            testgen.flex_row_end(save_button_column)
-
-            with test_button_column:
-                testgen.button(
-                    type_="stroked",
-                    color="basic",
-                    label="Test Observability Connection",
-                    width=250,
-                    on_click=partial(self._display_connection_status, status_container),
-                    key="project-settings:keys:test-connection",
+            with testgen.card():
+                name_input = st.text_input(
+                    label="Project Name",
+                    value=self.project["project_name"],
+                    max_chars=30,
+                    key="project_settings:keys:project_name",
+                )
+                st.text_input(
+                    label="Observability API URL",
+                    value=self.project["observability_api_url"],
+                    key="project_settings:keys:observability_api_url",
+                )
+                st.text_input(
+                    label="Observability API Key",
+                    value=self.project["observability_api_key"],
+                    key="project_settings:keys:observability_api_key",
                 )
 
-            with warning_column:
-                if not name_input:
-                    testgen.text("Project name is required", "color: var(--red)")
-                elif self.existing_names and name_input in self.existing_names:
-                    testgen.text("Project name in use", "color: var(--red)")
+                testgen.whitespace(1)
+                test_button_column, warning_column, save_button_column = st.columns([.4, .3, .3])
+                testgen.flex_row_start(test_button_column)
+                testgen.flex_row_end(save_button_column)
 
-            with save_button_column:
-                testgen.button(
-                    type_="flat",
-                    label="Save",
-                    width=100,
-                    on_click=self.edit_project,
-                    key="project-settings:keys:edit",
-                )
+                with test_button_column:
+                    testgen.button(
+                        type_="stroked",
+                        color="basic",
+                        label="Test Observability Connection",
+                        width=250,
+                        on_click=partial(self._display_connection_status, status_container),
+                        key="project-settings:keys:test-connection",
+                    )
+
+                with warning_column:
+                    if not name_input:
+                        testgen.text("Project name is required", "color: var(--red)")
+                    elif self.existing_names and name_input in self.existing_names:
+                        testgen.text("Project name in use", "color: var(--red)")
+
+                with save_button_column:
+                    testgen.button(
+                        type_="flat",
+                        label="Save",
+                        width=100,
+                        on_click=self.edit_project,
+                        key="project-settings:keys:edit",
+                    )
 
     def edit_project(self) -> None:
         project = self._get_edited_project()
