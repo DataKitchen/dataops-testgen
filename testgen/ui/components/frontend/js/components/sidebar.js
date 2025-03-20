@@ -23,13 +23,19 @@
  * @property {string} code
  * @property {string} name
  *
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
+ *
  * @typedef Properties
  * @type {object}
  * @property {Menu} menu
- * @property {string} project
+ * @property {Project[]} projects
  * @property {string} username
  * @property {string} current_page
+ * @property {string} current_project
  * @property {string} logout_path
+ * @property {Permissions} permissions
  */
 const van = window.top.van;
 const { a, button, div, i, img, label, option, select, span } = van.tags;
@@ -44,30 +50,93 @@ const Sidebar = (/** @type {Properties} */ props) => {
         window.testgen.loadedStylesheets.sidebar = true;
     }
 
+    const currentProject = van.derive(() => props.projects.val.find(({ code }) => code === props.current_project.val));
+
     return div(
         {class: 'menu'},
         div(
-            { class: 'menu--project' },
-            div({ class: 'caption' }, 'Project'),
-            div(props.project),
+            div(
+                { class: 'menu--project' },
+                div({ class: 'caption' }, 'Project'),
+                () => props.projects.val.length > 1
+                    ? ProjectSelect(props.projects, currentProject)
+                    : div(currentProject.val.name),
+            ),
+            () => {
+                const menuItems = props.menu?.val.items || [];
+                return div(
+                    {class: 'content'},
+                    menuItems.map(item =>
+                        item.items?.length > 0
+                        ? MenuSection(item, props.current_page)
+                        : MenuItem(item, props.current_page))
+                );
+            },
         ),
-        () => {
-            const menuItems = props.menu?.val.items || [];
-            return div(
-                {class: 'content'},
-                menuItems.map(item =>
-                    item.items?.length > 0
-                    ? MenuSection(item, props.current_page)
-                    : MenuItem(item, props.current_page))
-            );
+        div(
+            span({class: 'menu--username'}, props.username),
+            div(
+                { class: 'menu--buttons' },
+                button(
+                    {
+                        class: 'tg-button logout',
+                        onclick: (event) => navigate(event, props.logout_path?.val),
+                    },
+                    i({class: 'material-symbols-rounded'}, 'logout'),
+                    span('Logout'),
+                ),
+                props.permissions.val?.can_edit ? button(
+                    {
+                        class: 'tg-button',
+                        onclick: () => emitEvent({ view_logs: true }),
+                    },
+                    'App Logs',
+                ) : null,
+            ),
+            () => Version(props.menu?.val.version),
+        ),
+    );
+};
+
+const ProjectSelect = (/** @type Project[] */ projects, /** @type string */ currentProject) => {
+    const opened = van.state(false);
+    van.derive(() => {
+        const clickHandler = () => opened.val = false;
+        if (opened.val) {
+            document.addEventListener('click', clickHandler);
+        } else {
+            document.removeEventListener('click', clickHandler);
+        }
+    });
+
+    return div(
+        {
+            class: 'project-select',
+            onclick: (/** @type Event */ event) => event.stopPropagation(),
         },
-        button(
-            { class: `tg-button logout`, onclick: (event) => navigate(event, props.logout_path?.val) },
-            i({class: 'material-symbols-rounded'}, 'logout'),
-            span('Logout'),
+        div(
+            {
+                class: 'project-select--label',
+                onclick: () => opened.val = !opened.val,
+            },
+            div(currentProject.val.name),
+            i({ class: 'material-symbols-rounded' }, 'arrow_drop_down'),
         ),
-        span({class: 'menu--username'}, props.username),
-        () => Version(props.menu?.val.version),
+        () => opened.val
+            ? div(
+                { class: 'project-select--options-wrapper' },
+                projects.val.map(({ name, code }) => div(
+                    {
+                        class: `project-select--option ${code === currentProject.val.code ? 'selected' : ''}`,
+                        onclick: () => {
+                            opened.val = false;
+                            emitEvent({ project: code });
+                        },
+                    },
+                    name,
+                )),
+            )
+            : '',
     );
 };
 
@@ -106,7 +175,7 @@ const Version = (/** @type {Version} */ version) => {
     return div(
         {class: classes, onclick: () => { expanded.val = !expanded.val; }},
         VersionRow(
-            'version',
+            'Version',
             version.current,
             i({class: 'material-symbols-rounded version--dropdown-icon'}, icon),
         ),
@@ -127,6 +196,12 @@ const VersionRow = (/** @type string */ label, /** @type string */ version, icon
     );
 };
 
+function emitEvent(/** @type Object */ data) {
+    if (Sidebar.StreamlitInstance) {
+        Sidebar.StreamlitInstance.sendData(data);
+    }
+}
+
 function navigate(/** @type object */ event, /** @type string */ path, /** @type string */ currentPage = null) {
     // Needed to prevent page refresh
     // Returning false does not work because VanJS does not use inline handlers -> https://github.com/vanjs-org/van/discussions/246
@@ -135,7 +210,7 @@ function navigate(/** @type object */ event, /** @type string */ path, /** @type
     event.stopPropagation();
 
     if (Sidebar.StreamlitInstance && path !== currentPage) {
-        Sidebar.StreamlitInstance.sendData(path);
+        Sidebar.StreamlitInstance.sendData({ path });
     }
 }
 
@@ -158,20 +233,54 @@ stylesheet.replace(`
     position: relative;
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
     height: calc(100% - 76px);
 }
 
-.menu > .menu--project {
+.menu .menu--project {
     padding: 0 20px;
     margin-bottom: 16px;
 }
 
-.menu > .menu--username {
+.project-select {
+    position: relative;
+}
+
+.project-select--label {
+    display: flex;
+}
+
+.project-select--options-wrapper {
     position: absolute;
+    border-radius: 8px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
+    min-width: 200px;
+    min-height: 40px;
+    max-height: 400px;
+    overflow: auto;
+    z-index: 99;
+}
 
-    left: 0;
-    bottom: 0;
+.project-select--option {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    padding: 0px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--primary-text-color);
+}
+.project-select--option:hover {
+    background: var(--select-hover-background);
+}
 
+.project-select--option.selected {
+    background: var(--select-hover-background);
+    color: var(--primary-color);
+}
+
+.menu .menu--username {
     padding-left: 16px;
     padding-bottom: 8px;
 
@@ -183,11 +292,11 @@ stylesheet.replace(`
     color: var(--secondary-text-color);
 }
 
-.menu > .menu--username:before {
+.menu .menu--username:before {
     content: 'User: ';
 }
 
-.menu > .content > .menu--section > .menu--section--label {
+.menu .content > .menu--section > .menu--section--label {
     padding: 8px 16px;
     font-size: 15px;
     color: var(--disabled-text-color);
@@ -222,6 +331,11 @@ stylesheet.replace(`
 .menu .menu--item:hover {
     cursor: pointer;
     background: var(--sidebar-item-hover-color);
+}
+
+.menu .menu--buttons {
+    display: flex;
+    justify-content: space-between;
 }
 
 .menu .version {
