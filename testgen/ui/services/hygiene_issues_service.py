@@ -22,7 +22,7 @@ def get_source_data(hi_data):
                AND t.lookup_query > '';
     """
 
-    def get_lookup_query(test_id, detail_exp, column_names):
+    def get_lookup_query(test_id, detail_exp, column_names, sql_flavor):
         if test_id in {"1019", "1020"}:
             start_index = detail_exp.find("Columns: ")
             if start_index == -1:
@@ -31,8 +31,9 @@ def get_source_data(hi_data):
                 start_index += len("Columns: ")
                 column_names_str = detail_exp[start_index:]
                 columns = [col.strip() for col in column_names_str.split(",")]
+            quote = "`" if sql_flavor == "databricks" else '"'
             queries = [
-                f"SELECT '{column}' AS column_name, MAX({column}) AS max_date_available FROM {{TARGET_SCHEMA}}.{{TABLE_NAME}}"
+                f"SELECT '{column}' AS column_name, MAX({quote}{column}{quote}) AS max_date_available FROM {{TARGET_SCHEMA}}.{{TABLE_NAME}}"
                 for column in columns
             ]
             sql_query = " UNION ALL ".join(queries) + " ORDER BY max_date_available DESC;"
@@ -42,7 +43,7 @@ def get_source_data(hi_data):
 
     def replace_parms(str_query):
         str_query = (
-            get_lookup_query(hi_data["anomaly_id"], hi_data["detail"], hi_data["column_name"])
+            get_lookup_query(hi_data["anomaly_id"], hi_data["detail"], hi_data["column_name"], lst_query[0]["sql_flavor"])
             if lst_query[0]["lookup_query"] == "created_in_ui"
             else lst_query[0]["lookup_query"]
         )
