@@ -128,6 +128,9 @@ const Toolbar = (
             onChange: (/** @type string */ value) => {
                 search.val = value;
                 filterTree(nodes.val, isNodeHidden);
+                if (value) {
+                    expandOrCollapseTree(nodes.val, true);
+                }
             },
         }),
         filtersContent ? [

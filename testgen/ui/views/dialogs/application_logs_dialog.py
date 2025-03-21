@@ -42,14 +42,6 @@ def _search_text(log_data, search_query):
     return [line for line in log_data if search_query in line]
 
 
-def view_log_file(button_container):
-    with button_container:
-        if st.button(
-            "Troubleshooting　→", help="Open and review TestGen Log files", use_container_width=True
-        ):
-            application_logs_dialog()
-
-
 @st.dialog(title="Application Logs")
 def application_logs_dialog():
     _, file_out_path = display_service.get_in_out_paths()

@@ -54,7 +54,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
         { id: domId, class: 'tg-score-details flex-column' },
         ScoreLegend(),
         div(
-            { class: 'flex-row mb-4 mt-4', style: 'height: 216px;'},
+            { class: 'flex-row fx-flex-wrap fx-gap-4 mb-4 mt-4'},
             ScoreCard(
                 props.score,
                 () => {
@@ -66,12 +66,11 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     ) : '';
                 },
             ),
-            i({ class: 'ml-3 mr-3' }),
             () => {
                 const score = getValue(props.score);
                 const history = getValue(props.score).history;
                 return history?.length > 0
-                    ? ScoreHistory({style: 'height: 100%;', showRefresh: userCanEdit, score}, ...history)
+                    ? ScoreHistory({style: 'min-height: 216px; flex: 610px 0 1;', showRefresh: userCanEdit, score}, ...history)
                     : null;
             },
         ),

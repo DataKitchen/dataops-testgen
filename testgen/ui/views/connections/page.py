@@ -79,7 +79,7 @@ class ConnectionsPage(Page):
                     color="primary",
                     icon="table_view",
                     label="Setup Table Groups",
-                    style="background: white;",
+                    style="var(--dk-card-background)",
                     width=200,
                     disabled=not user_can_edit,
                     tooltip=None if user_can_edit else user_session_service.DISABLED_ACTION_TEXT,
@@ -150,14 +150,14 @@ class ConnectionsPage(Page):
                     on_click=lambda: set_submitted(True),
                 )
 
-        with test_button_column:
-            testgen.button(
-                type_="stroked",
-                color="basic",
-                label="Test Connection",
-                key=f"connection_form:{connection_id}:test",
-                on_click=lambda: set_connecting(True),
-            )
+            with test_button_column:
+                testgen.button(
+                    type_="stroked",
+                    color="basic",
+                    label="Test Connection",
+                    key=f"connection_form:{connection_id}:test",
+                    on_click=lambda: set_connecting(True),
+                )
 
         if is_connecting():
             single_element_container = st.empty()
@@ -228,7 +228,7 @@ class ConnectionsPage(Page):
                 return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
             return ConnectionStatus(message="The connection was successful.", successful=True)
         except Exception as error:
-            return ConnectionStatus(message="Error attempting the Connection.", details=error.args[0], successful=False)
+            return ConnectionStatus(message="Error attempting the connection.", details=error.args[0], successful=False)
 
     @st.dialog(title="Data Configuration Setup")
     @with_database_session

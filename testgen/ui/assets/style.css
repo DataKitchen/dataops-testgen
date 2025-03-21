@@ -29,6 +29,10 @@ body {
     --dk-card-background: #fff;
 
     --dk-tooltip-background: rgb(255, 255, 255);
+
+    --portal-background: white;
+    --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    --select-hover-background: rgb(240, 242, 246);
 }
 
 img.dk-logo-img {
@@ -369,6 +373,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
         --dk-text-value-background: unset;
         --dk-card-background: #14181f;
         --dk-tooltip-background: rgb(14, 17, 23);
+
+        --portal-background: #14181f;
+        --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
+        --select-hover-background: rgba(255, 255, 255, .32);
     }
 
     /* Main content */

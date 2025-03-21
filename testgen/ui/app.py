@@ -36,6 +36,8 @@ def render(log_level: int = logging.INFO):
     session.dbschema = db.get_schema()
 
     projects = project_service.get_projects()
+    if not session.project:
+        session.project = st.query_params.get("project_code")
     if not session.project and len(projects) > 0:
         project_service.set_current_project(projects[0]["code"])
 
@@ -48,7 +50,8 @@ def render(log_level: int = logging.INFO):
     if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
-                project=project_service.get_project_by_code(session.project)["project_name"],
+                projects=projects,
+                current_project=session.project,
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,
