@@ -204,7 +204,7 @@ class ScoreDefinition(Base):
         if self.cde_score:
             history_categories.append("cde_score")
 
-        for entry in self.history[:50]:
+        for entry in self.history[-50:]:
             if entry.category in history_categories:
                 score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
 
