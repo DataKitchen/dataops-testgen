@@ -14,7 +14,7 @@ from .toolbox import ensure_tools
 
 DOCKER_BUILDER_NAME = "dk-builder"
 DOCKER_BUILDER_PLATFORMS = "linux/amd64,linux/arm64"
-TESTGEN_DEFAULT_BASE_LABEL = "v1"
+TESTGEN_DEFAULT_BASE_LABEL = "v3"
 
 
 @task
