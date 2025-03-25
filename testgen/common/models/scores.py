@@ -2,15 +2,16 @@ import enum
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
-from sqlalchemy import Boolean, Column, Enum, Float, ForeignKey, Integer, String, select, text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, select, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
-from testgen.common.models import Base, Session, engine
+from testgen.common.models import Base, engine, get_current_session
 from testgen.utils import is_uuid4
 
 
@@ -54,6 +55,13 @@ class ScoreDefinition(Base):
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
         lazy="joined",
     )
+    history: Iterable["ScoreDefinitionResultHistoryEntry"] = relationship(
+        "ScoreDefinitionResultHistoryEntry",
+        order_by="ScoreDefinitionResultHistoryEntry.last_run_time.asc()",
+        cascade="all, delete-orphan",
+        lazy="select",
+        back_populates="definition",
+    )
 
     @classmethod
     def from_table_group(cls, table_group: dict) -> Self:
@@ -72,11 +80,11 @@ class ScoreDefinition(Base):
     def get(cls, id_: str) -> "Self | None":
         if not is_uuid4(id_):
             return None
-    
+
         definition = None
-        with Session() as db_session:
-            query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
-            definition = db_session.scalars(query).first()
+        db_session = get_current_session()
+        query = select(ScoreDefinition).where(ScoreDefinition.id == id_)
+        definition = db_session.scalars(query).first()
         return definition
 
     @classmethod
@@ -87,28 +95,28 @@ class ScoreDefinition(Base):
         sorted_by: str | None = "name",
     ) -> "Iterable[Self]":
         definitions = []
-        with Session() as db_session:
-            query = select(ScoreDefinition)
-            if name_filter:
-                query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
-            if project_code:
-                query = query.where(ScoreDefinition.project_code == project_code)
-            query = query.order_by(text(sorted_by))
-            definitions = db_session.scalars(query).unique().all()
+        db_session = get_current_session()
+        query = select(ScoreDefinition)
+        if name_filter:
+            query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
+        if project_code:
+            query = query.where(ScoreDefinition.project_code == project_code)
+        query = query.order_by(text(sorted_by))
+        definitions = db_session.scalars(query).unique().all()
         return definitions
 
     def save(self) -> None:
-        with Session() as db_session:
-            db_session.add(self)
-            db_session.flush([self])
-            db_session.commit()
-            db_session.refresh(self, ["id"])
+        db_session = get_current_session()
+        db_session.add(self)
+        db_session.flush([self])
+        db_session.commit()
+        db_session.refresh(self, ["id"])
 
     def delete(self) -> None:
-        with Session() as db_session:
-            db_session.add(self)
-            db_session.delete(self)
-            db_session.commit()
+        db_session = get_current_session()
+        db_session.add(self)
+        db_session.delete(self)
+        db_session.commit()
 
     def as_score_card(self) -> "ScoreCard":
         """
@@ -130,6 +138,7 @@ class ScoreDefinition(Base):
                 "profiling_score": None,
                 "testing_score": None,
                 "categories": [],
+                "history": [],
                 "definition": self,
             }
 
@@ -139,25 +148,24 @@ class ScoreDefinition(Base):
             categories_query_template_file = "get_category_scores_by_dimension.sql"
 
         filters = " AND ".join(self._get_raw_query_filters())
-        overall_scores = pd.read_sql_query(
+        overall_scores = get_current_session().execute(
             read_template_sql_file(
                 overall_score_query_template_file,
                 sub_directory="score_cards",
-            ).replace("{filters}", filters),
-            engine,
-        )
-        overall_scores = overall_scores.iloc[0].to_dict() if not overall_scores.empty else {}
+            ).replace("{filters}", filters)
+        ).mappings().first() or {}
 
         categories_scores = []
         if (category := self.category):
-            categories_scores = pd.read_sql_query(
-                read_template_sql_file(
-                    categories_query_template_file,
-                    sub_directory="score_cards",
-                ).replace("{category}", category.value).replace("{filters}", filters),
-                engine,
-            )
-            categories_scores = [category.to_dict() for _, category in categories_scores.iterrows()]
+            categories_scores = [
+                dict(result)
+                for result in get_current_session().execute(
+                    read_template_sql_file(
+                        categories_query_template_file,
+                        sub_directory="score_cards",
+                    ).replace("{category}", category.value).replace("{filters}", filters)
+                ).mappings().all()
+            ]
 
         return {
             "id": self.id,
@@ -168,8 +176,39 @@ class ScoreDefinition(Base):
             "profiling_score": overall_scores.get("profiling_score") if self.total_score else None,
             "testing_score": overall_scores.get("testing_score") if self.total_score else None,
             "categories": categories_scores,
+            "history": [],
             "definition": self,
         }
+
+    def as_cached_score_card(self) -> "ScoreCard":
+        """Reads the cached values to build a scorecard"""
+        root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
+        score_card: ScoreCard = {
+            "id": self.id,
+            "project_code": self.project_code,
+            "name": self.name,
+            "categories": [],
+            "history": [],
+            "definition": self,
+        }
+
+        for result in sorted(self.results, key=lambda r: r.category):
+            if result.category in root_keys:
+                score_card[result.category] = result.score
+                continue
+            score_card["categories"].append({"label": result.category, "score": result.score})
+
+        history_categories: list[str] = []
+        if self.total_score:
+            history_categories.append("score")
+        if self.cde_score:
+            history_categories.append("cde_score")
+
+        for entry in self.history[-50:]:
+            if entry.category in history_categories:
+                score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
+
+        return score_card
 
     def get_score_card_breakdown(
         self,
@@ -265,6 +304,33 @@ class ScoreDefinition(Base):
         results = pd.read_sql_query(query, engine)
         return [row.to_dict() for _, row in results.iterrows()]
 
+    def recalculate_scores_history(self) -> None:
+        """
+        Executes a raw query to get the total score and cde score for
+        each history entry of this definition.
+
+        Query templates:
+        get_historical_overall_scores_by_column.sql
+        """
+        template = "get_historical_overall_scores_by_column.sql"
+        query = (
+            read_template_sql_file(template, sub_directory="score_cards")
+            .replace("{filters}", " AND ".join(self._get_raw_query_filters()))
+            .replace("{definition_id}", str(self.id))
+        )
+        overall_scores = get_current_session().execute(query).mappings().all()
+        current_history: dict[tuple[datetime, str, str], ScoreDefinitionResultHistoryEntry] = {}
+        for entry in self.history:
+            current_history[(entry.last_run_time, entry.category,)] = entry
+
+        renewed_history: dict[tuple[datetime, str, str], float] = {}
+        for scores in overall_scores:
+            renewed_history[(scores["last_run_time"], "score",)] = scores["score"]
+            renewed_history[(scores["last_run_time"], "cde_score",)] = scores["cde_score"]
+
+        for key, entry in current_history.items():
+            entry.score = renewed_history[key]
+
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         values_by_field = defaultdict(list)
         for filter_ in self.filters:
@@ -338,13 +404,13 @@ class ScoreDefinitionBreakdownItem(Base):
         score_type: Literal["score", "cde_score"],
     ) -> "Iterable[Self]":
         items = []
-        with Session() as db_session:
-            query = select(ScoreDefinitionBreakdownItem).where(
-                ScoreDefinitionBreakdownItem.definition_id == definition_id,
-                ScoreDefinitionBreakdownItem.category == category,
-                ScoreDefinitionBreakdownItem.score_type == score_type,
-            ).order_by(ScoreDefinitionBreakdownItem.impact.desc())
-            items = db_session.scalars(query).unique().all()
+        db_session = get_current_session()
+        query = select(ScoreDefinitionBreakdownItem).where(
+            ScoreDefinitionBreakdownItem.definition_id == definition_id,
+            ScoreDefinitionBreakdownItem.category == category,
+            ScoreDefinitionBreakdownItem.score_type == score_type,
+        ).order_by(ScoreDefinitionBreakdownItem.impact.desc())
+        items = db_session.scalars(query).unique().all()
         return items
 
     def to_dict(self) -> dict:
@@ -360,6 +426,40 @@ class ScoreDefinitionBreakdownItem(Base):
         }
 
 
+class ScoreDefinitionResultHistoryEntry(Base):
+    __tablename__ = "score_definition_results_history"
+
+    definition_id: str = Column(
+        UUID(as_uuid=True),
+        ForeignKey("score_definitions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    category: str = Column(String, nullable=False, primary_key=True)
+    score: float = Column(Float, nullable=True)
+    last_run_time: datetime = Column(DateTime(timezone=False), nullable=False, primary_key=True)
+
+    definition: ScoreDefinition = relationship("ScoreDefinition", back_populates="history")
+
+    def add_as_cutoff(self):
+        """
+        Insert new records into table 'score_history_latest_runs'
+        corresponding to the latest profiling and test runs as of
+        `self.last_run_time`.
+
+        Query templates:
+        add_latest_runs.sql
+        """
+        # ruff: noqa: RUF027
+        query = (
+            read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
+            .replace("{project_code}", self.definition.project_code)
+            .replace("{definition_id}", str(self.definition_id))
+            .replace("{score_history_cutoff_time}", self.last_run_time.isoformat())
+        )
+        session = get_current_session()
+        session.execute(query)
+
+
 class ScoreCard(TypedDict):
     id: str
     project_code: str
@@ -369,6 +469,7 @@ class ScoreCard(TypedDict):
     profiling_score: float
     testing_score: float
     categories: list["CategoryScore"]
+    history: list["HistoryEntry"]
     definition: ScoreDefinition | None
 
 
@@ -380,3 +481,9 @@ class CategoryScore(TypedDict):
 class SelectedIssue(TypedDict):
     id: str
     issue_type: Literal["hygiene", "test"]
+
+
+class HistoryEntry(TypedDict):
+    score: float
+    category: Literal["score", "cde_score"]
+    time: datetime

@@ -20,7 +20,8 @@ SELECT ts.project_code,
        cc.max_threads,
        cc.max_query_chars,
        cc.url,
-       cc.connect_by_url
+       cc.connect_by_url,
+       cc.http_path
   FROM test_suites ts
   JOIN connections cc ON (ts.connection_id = cc.connection_id)
   JOIN table_groups tg ON (ts.table_groups_id = tg.id)

@@ -10,8 +10,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.forms import BaseForm, Field, ManualRender, computed_field
 from testgen.ui.services import connection_service
 
-SQL_FLAVORS = ["redshift", "snowflake", "mssql", "postgresql"]
-SQLFlavor = typing.Literal["redshift", "snowflake", "mssql", "postgresql"]
+SQL_FLAVORS = ["redshift", "snowflake", "mssql", "postgresql", "databricks"]
+SQLFlavor = typing.Literal["redshift", "snowflake", "mssql", "postgresql", "databricks"]
 
 
 class BaseConnectionForm(BaseForm, ManualRender):
@@ -170,6 +170,8 @@ class BaseConnectionForm(BaseForm, ManualRender):
             form.project_port = 5432
         elif sql_flavor == "snowflake":
             form.project_port = 443
+        elif sql_flavor == "databricks":
+            form.project_port = 443
 
     @staticmethod
     def for_flavor(flavor: SQLFlavor) -> type["BaseConnectionForm"]:
@@ -178,6 +180,7 @@ class BaseConnectionForm(BaseForm, ManualRender):
             "snowflake": KeyPairConnectionForm,
             "mssql": PasswordConnectionForm,
             "postgresql": PasswordConnectionForm,
+            "databricks": HttpPathConnectionForm,
         }[flavor]
 
 
@@ -199,6 +202,25 @@ class PasswordConnectionForm(BaseConnectionForm):
         _data: dict,
     ) -> None:
         self.render_field("password", left_fields_container)
+
+
+class HttpPathConnectionForm(PasswordConnectionForm):
+    http_path: str = Field(
+        default="",
+        max_length=200,
+        st_kwargs_label="HTTP Path",
+        st_kwargs_max_chars=50,
+    )
+
+    def render_extra(
+        self,
+        _container: DeltaGenerator,
+        left_fields_container: DeltaGenerator,
+        _right_fields_container: DeltaGenerator,
+        _data: dict,
+    ) -> None:
+        super().render_extra(_container, left_fields_container, _right_fields_container, _data)
+        self.render_field("http_path", left_fields_container)
 
 
 class KeyPairConnectionForm(PasswordConnectionForm):

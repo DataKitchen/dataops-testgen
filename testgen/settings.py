@@ -466,3 +466,21 @@ SSL_KEY_FILE: str = os.getenv("SSL_KEY_FILE", "")
 File paths for SSL certificate and private key to support HTTPS.
 Both files must be provided.
 """
+
+
+MIXPANEL_URL: str = "https://api.mixpanel.com"
+MIXPANEL_TIMEOUT: int = 3
+MIXPANEL_TOKEN: str = "973680ddf8c2b512e6f6d1f2959149eb"
+"""
+Mixpanel configuration
+"""
+
+INSTANCE_ID: str | None = os.getenv("TG_INSTANCE_ID", None)
+"""
+Random ID that uniquely identifies the instance.
+"""
+
+ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("true", "yes")
+"""
+Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
+"""

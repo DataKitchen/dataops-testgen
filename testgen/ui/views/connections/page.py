@@ -11,10 +11,11 @@ from streamlit.delta_generator import DeltaGenerator
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import connection_service, table_group_service
+from testgen.ui.services import connection_service, table_group_service, user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections.forms import BaseConnectionForm
 from testgen.ui.views.connections.models import ConnectionStatus
@@ -28,8 +29,15 @@ class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
     ]
-    menu_item = MenuItem(icon="database", label=PAGE_TITLE, section="Data Configuration", order=0)
+    menu_item = MenuItem(
+        icon="database",
+        label=PAGE_TITLE,
+        section="Data Configuration",
+        order=0,
+        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
+    )
 
     def render(self, project_code: str, **_kwargs) -> None:
         dataframe = connection_service.get_connections(project_code)
@@ -64,14 +72,17 @@ class ConnectionsPage(Page):
                         " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
                 )
         else:
+            user_can_edit = user_session_service.user_can_edit()
             with actions_column:
                 testgen.button(
                     type_="stroked",
                     color="primary",
                     icon="table_view",
                     label="Setup Table Groups",
-                    style="background: white;",
+                    style="var(--dk-card-background)",
                     width=200,
+                    disabled=not user_can_edit,
+                    tooltip=None if user_can_edit else user_session_service.DISABLED_ACTION_TEXT,
                     on_click=lambda: self.setup_data_configuration(project_code, connection.to_dict()),
                 )
 
@@ -86,7 +97,7 @@ class ConnectionsPage(Page):
             FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
             if connection:
                 connection["password"] = connection["password"] or ""
-                
+
             form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
             form = FlavorForm(**form_kwargs)
 
@@ -130,22 +141,23 @@ class ConnectionsPage(Page):
             f"connection_form-{connection_id}:test_conn"
         )
 
-        with save_button_column:
-            testgen.button(
-                type_="flat",
-                label="Save",
-                key=f"connection_form:{connection_id}:submit",
-                on_click=lambda: set_submitted(True),
-            )
+        if user_session_service.user_is_admin():
+            with save_button_column:
+                testgen.button(
+                    type_="flat",
+                    label="Save",
+                    key=f"connection_form:{connection_id}:submit",
+                    on_click=lambda: set_submitted(True),
+                )
 
-        with test_button_column:
-            testgen.button(
-                type_="stroked",
-                color="basic",
-                label="Test Connection",
-                key=f"connection_form:{connection_id}:test",
-                on_click=lambda: set_connecting(True),
-            )
+            with test_button_column:
+                testgen.button(
+                    type_="stroked",
+                    color="basic",
+                    label="Test Connection",
+                    key=f"connection_form:{connection_id}:test",
+                    on_click=lambda: set_connecting(True),
+                )
 
         if is_connecting():
             single_element_container = st.empty()
@@ -207,6 +219,7 @@ class ConnectionsPage(Page):
                 connection["connect_by_key"],
                 connection["private_key"],
                 connection["private_key_passphrase"],
+                connection["http_path"],
                 sql_query,
             )
             connection_successful = len(results) == 1 and results[0][0] == 1
@@ -215,9 +228,10 @@ class ConnectionsPage(Page):
                 return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
             return ConnectionStatus(message="The connection was successful.", successful=True)
         except Exception as error:
-            return ConnectionStatus(message="Error attempting the Connection.", details=error.args[0], successful=False)
+            return ConnectionStatus(message="Error attempting the connection.", details=error.args[0], successful=False)
 
     @st.dialog(title="Data Configuration Setup")
+    @with_database_session
     def setup_data_configuration(self, project_code: str, connection: dict) -> None:
         will_run_profiling = st.session_state.get("connection_form-new:run-profiling-toggle", True)
         testgen.wizard(

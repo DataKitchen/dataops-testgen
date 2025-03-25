@@ -16,6 +16,7 @@ const Icon = (/** @type Properties */ props, /** @type string */ icon) => {
         {
             class: () => `material-symbols-rounded tg-icon text-secondary ${getValue(props.classes)}`,
             style: () => `font-size: ${getValue(props.size) || DEFAULT_SIZE}px;`,
+            ...props,
         },
         icon,
     );

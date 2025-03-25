@@ -1,11 +1,24 @@
 import json
+from datetime import datetime
+from typing import NamedTuple
 
 import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
+from testgen.common.models import get_current_session
 from testgen.utils import is_uuid4
 
+TAG_FIELDS = [
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "aggregation_level",
+    "data_product",
+]
 COLUMN_PROFILING_FIELDS = """
 -- Value Counts
 profile_results.record_ct,
@@ -139,6 +152,7 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         table_chars.table_id::VARCHAR AS id,
         'table' AS type,
         table_chars.table_name,
+        table_chars.schema_name,
         table_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         functional_table_type,
@@ -147,19 +161,14 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         data_point_ct,
         add_date,
         drop_date,
-        -- Tags
-        description,
-        critical_data_element,
-        data_source,
-        source_system,
-        source_process,
-        business_domain,
-        stakeholder_group,
-        transform_level,
-        aggregation_level,
-        data_product,
+        -- Table Tags
+        table_chars.description,
+        table_chars.critical_data_element,
+        {", ".join([ f"table_chars.{tag}" for tag in TAG_FIELDS ])},
+        -- Table Groups Tags
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
         -- Profile & Test Runs
-        last_complete_profile_run_id::VARCHAR AS profile_run_id,
+        table_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         profiling_starttime AS profile_run_date,
         TRUE AS is_latest_profile,
         EXISTS(
@@ -174,6 +183,9 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
     FROM {schema}.data_table_chars table_chars
         LEFT JOIN {schema}.profiling_runs ON (
             table_chars.last_complete_profile_run_id = profiling_runs.id
+        )
+        LEFT JOIN {schema}.table_groups ON (
+            table_chars.table_groups_id = table_groups.id
         )
     WHERE table_id = '{table_id}'
         AND table_chars.table_groups_id = '{table_group_id}';
@@ -236,6 +248,7 @@ def get_column_by_condition(
         'column' AS type,
         column_chars.column_name,
         column_chars.table_name,
+        column_chars.schema_name,
         column_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         column_chars.general_type,
@@ -245,28 +258,16 @@ def get_column_by_condition(
         column_chars.add_date,
         column_chars.last_mod_date,
         column_chars.drop_date,
-        {"""
+        {f"""
         -- Column Tags
         column_chars.description,
         column_chars.critical_data_element,
-        column_chars.data_source,
-        column_chars.source_system,
-        column_chars.source_process,
-        column_chars.business_domain,
-        column_chars.stakeholder_group,
-        column_chars.transform_level,
-        column_chars.aggregation_level,
-        column_chars.data_product,
+        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         -- Table Tags
         table_chars.critical_data_element AS table_critical_data_element,
-        table_chars.data_source AS table_data_source,
-        table_chars.source_system AS table_source_system,
-        table_chars.source_process AS table_source_process,
-        table_chars.business_domain AS table_business_domain,
-        table_chars.stakeholder_group AS table_stakeholder_group,
-        table_chars.transform_level AS table_transform_level,
-        table_chars.aggregation_level AS table_aggregation_level,
-        table_chars.data_product AS table_data_product,
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
+        -- Table Groups Tags
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
         """ if include_tags else ""}
         -- Profile & Test Runs
         column_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
@@ -292,6 +293,9 @@ def get_column_by_condition(
         LEFT JOIN {schema}.data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
+        LEFT JOIN {schema}.table_groups ON (
+            column_chars.table_groups_id = table_groups.id
+        )
         """ if include_tags else ""}
         LEFT JOIN {schema}.profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
@@ -316,7 +320,7 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
     column_condition = ""
     if column_name:
         column_condition = f"AND column_name = '{column_name}'"
-    
+
     query = f"""
     WITH pii_results AS (
         SELECT id,
@@ -360,3 +364,26 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
 
     results = db.retrieve_data(query)
     return [row.to_dict() for _, row in results.iterrows()]
+
+
+class LatestProfilingRun(NamedTuple):
+    id: str
+    run_time: datetime
+
+
+def get_latest_run_date(project_code: str) -> LatestProfilingRun | None:
+    session = get_current_session()
+    result = session.execute(
+        """
+        SELECT id, profiling_starttime
+        FROM profiling_runs
+        WHERE project_code = :project_code
+            AND status = 'Complete'
+        ORDER BY profiling_starttime DESC
+        LIMIT 1
+        """,
+        params={"project_code": project_code},
+    )
+    if result and (latest_run := result.first()):
+        return LatestProfilingRun(str(latest_run.id), latest_run.profiling_starttime)
+    return None

@@ -12,19 +12,22 @@ def RetrieveProfilingParms(strTableGroupsID):
 
     if lstParms is None:
         raise ValueError("Project Connection Parameters not found")
-    elif (
-        lstParms[0]["project_code"] == ""
-        or lstParms[0]["connection_id"] == ""
-        or lstParms[0]["sql_flavor"] == ""
-        or lstParms[0]["project_user"] == ""
-        or lstParms[0]["profile_use_sampling"] == ""
-        or lstParms[0]["profile_sample_percent"] == ""
-        or lstParms[0]["profile_sample_min_count"] == ""
-        or lstParms[0]["table_group_schema"] == ""
-    ):
-        raise ValueError("Project Connection parameters not correctly set")
-    else:
-        return lstParms[0]
+
+    required_params = (
+        "project_code",
+        "connection_id",
+        "sql_flavor",
+        "project_user",
+        "profile_use_sampling",
+        "profile_sample_percent",
+        "profile_sample_min_count",
+        "table_group_schema",
+    )
+
+    if missing := [param for param in required_params if not lstParms[0][param]]:
+        raise ValueError(f"Project Connection parameters are missing: {', '.join(missing)}.")
+
+    return lstParms[0]
 
 
 def RetrieveTestGenParms(strTableGroupsID, strTestSuite):

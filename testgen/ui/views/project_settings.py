@@ -1,14 +1,16 @@
+import time
 import typing
+from functools import partial
 
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import form_service, project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.application_logs_dialog import view_log_file
 
 PAGE_TITLE = "Project Settings"
 
@@ -17,12 +19,22 @@ class ProjectSettingsPage(Page):
     path = "settings"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: session.project is not None or "project-dashboard",
+        lambda: user_session_service.user_is_admin(),
+        lambda: session.project is not None,
     ]
-    menu_item = MenuItem(icon="settings", label=PAGE_TITLE, section="Settings", order=0)
+    menu_item = MenuItem(
+        icon="settings",
+        label=PAGE_TITLE,
+        section="Settings",
+        order=0,
+        roles=[ "admin" ],
+    )
+
+    project: dict | None = None
+    existing_names: list[str] | None = None
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
-        project = project_service.get_project_by_code(project_code or session.project)
+        self.project = project_service.get_project_by_code(project_code or session.project)
 
         testgen.page_header(
             PAGE_TITLE,
@@ -30,38 +42,97 @@ class ProjectSettingsPage(Page):
         )
 
         testgen.whitespace(1)
-        form_service.render_edit_form(
-            "",
-            project,
-            "projects",
-            project.keys(),
-            ["id"],
-            form_unique_key="project-settings",
-        )
+        self.show_edit_form()
 
-        _, col2, col3 = st.columns([50, 25, 25])
-        if col2.button("Test Observability Connection", use_container_width=False):
-            status = st.empty()
-            status.info("Testing your connection to DataKitchen Observability...")
-            try:
-                project_code = project["project_code"]
-                api_url = project["observability_api_url"]
-                api_key = project["observability_api_key"]
-                test_observability_exporter(project_code, api_url, api_key)
-                status.empty()
-                status.success("The Observability connection test was successful.")
-            except Exception as e:
-                status.empty()
-                status.error("An error occurred during the Observability connection test.")
+    def show_edit_form(self) -> None:
+        form_container = st.container()
+        status_container = st.container()
+
+        with form_container:
+            with testgen.card():
+                name_input = st.text_input(
+                    label="Project Name",
+                    value=self.project["project_name"],
+                    max_chars=30,
+                    key="project_settings:keys:project_name",
+                )
+                st.text_input(
+                    label="Observability API URL",
+                    value=self.project["observability_api_url"],
+                    key="project_settings:keys:observability_api_url",
+                )
+                st.text_input(
+                    label="Observability API Key",
+                    value=self.project["observability_api_key"],
+                    key="project_settings:keys:observability_api_key",
+                )
+
+                testgen.whitespace(1)
+                test_button_column, warning_column, save_button_column = st.columns([.4, .3, .3])
+                testgen.flex_row_start(test_button_column)
+                testgen.flex_row_end(save_button_column)
+
+                with test_button_column:
+                    testgen.button(
+                        type_="stroked",
+                        color="basic",
+                        label="Test Observability Connection",
+                        width=250,
+                        on_click=partial(self._display_connection_status, status_container),
+                        key="project-settings:keys:test-connection",
+                    )
+
+                with warning_column:
+                    if not name_input:
+                        testgen.text("Project name is required", "color: var(--red)")
+                    elif self.existing_names and name_input in self.existing_names:
+                        testgen.text("Project name in use", "color: var(--red)")
+
+                with save_button_column:
+                    testgen.button(
+                        type_="flat",
+                        label="Save",
+                        width=100,
+                        on_click=self.edit_project,
+                        key="project-settings:keys:edit",
+                    )
+
+    def edit_project(self) -> None:
+        project = self._get_edited_project()
+        if project["project_name"] and (not self.existing_names or project["project_name"] not in self.existing_names):
+            project_service.edit_project(project)
+            st.toast("Changes have been saved.")
+
+    def _get_edited_project(self) -> None:
+        edited_project = {
+            "id": self.project["id"],
+            "project_code": self.project["project_code"],
+        }
+        # We have to get the input widget values from the session state
+        # The return values for st.text_input do not reflect the latest user input if the button is clicked without unfocusing the input
+        # https://discuss.streamlit.io/t/issue-with-modifying-text-using-st-text-input-and-st-button/56619/5
+        for key in [ "project_name", "observability_api_url", "observability_api_key" ]:
+            edited_project[key] = st.session_state[f"project_settings:keys:{key}"].strip()
+        return edited_project
+
+    def _display_connection_status(self, status_container: DeltaGenerator) -> None:
+        single_element_container = status_container.empty()
+        single_element_container.info("Connecting ...")
+
+        try:
+            project = self._get_edited_project()
+            test_observability_exporter(
+                project["project_code"],
+                project["observability_api_url"],
+                project["observability_api_key"],
+            )
+            status_container.success("The connection was successful.")
+        except Exception as e:
+            with single_element_container.container():
+                st.error("Error attempting the connection.")
                 error_message = e.args[0]
-                st.text_area("Error Details", value=error_message)
+                st.caption("Connection Error Details")
+                with st.container(border=True):
+                    st.markdown(error_message)
 
-        view_log_file(col3)
-
-
-def set_add_new_project():
-    session.add_project = True
-
-
-def set_edit_current_project():
-    session.add_project = False
+        time.sleep(0.1)

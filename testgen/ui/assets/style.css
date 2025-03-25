@@ -16,7 +16,7 @@ body {
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
     --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
-    --border-color: rgba(0, 0, 0, .12); 
+    --border-color: rgba(0, 0, 0, .12);
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
@@ -29,6 +29,10 @@ body {
     --dk-card-background: #fff;
 
     --dk-tooltip-background: rgb(255, 255, 255);
+
+    --portal-background: white;
+    --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    --select-hover-background: rgb(240, 242, 246);
 }
 
 img.dk-logo-img {
@@ -90,6 +94,15 @@ div[data-testid="stDialog"] div[role="dialog"] {
     width: calc(55rem);
 }
 /*  */
+
+
+div[data-testid="stDialog"] div[role="dialog"]:has(i.s-dialog) {
+    width: calc(35rem);
+}
+
+div[data-testid="stDialog"] div[role="dialog"]:has(i.xl-dialog) {
+    width: calc(95rem);
+}
 
 div[data-testid="stSpinner"] {
     background: transparent;
@@ -360,6 +373,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
         --dk-text-value-background: unset;
         --dk-card-background: #14181f;
         --dk-tooltip-background: rgb(14, 17, 23);
+
+        --portal-background: #14181f;
+        --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
+        --select-hover-background: rgba(255, 255, 255, .32);
     }
 
     /* Main content */

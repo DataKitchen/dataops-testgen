@@ -18,7 +18,7 @@ function formatDuration(/** @type string */ duration) {
     if (!duration) {
         return '--';
     }
-        
+
     const [ hour, minute, second ] = duration.split(':');
     let formatted = [
         { value: Number(hour), unit: 'h' },
@@ -35,6 +35,13 @@ function roundDigits(/** @type number | string */ number, /** @type number */ pr
         return '--';
     }
     return parseFloat(Number(number).toPrecision(precision));
+}
+
+function capitalize(/** @type string */ text) {
+    return text.toLowerCase()
+        .split(' ')
+        .map((s) => s.charAt(0).toUpperCase() + s.substring(1))
+        .join(' ');
 }
 
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
@@ -58,4 +65,6 @@ const colorMap = {
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
 }
 
-export { formatTimestamp, formatDuration, roundDigits, colorMap };
+const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
+
+export { formatTimestamp, formatDuration, roundDigits, capitalize, colorMap, DISABLED_ACTION_TEXT };

@@ -2,7 +2,6 @@
 import base64
 import typing
 from builtins import float
-from datetime import date, datetime, time
 from enum import Enum
 from io import BytesIO
 from os.path import splitext
@@ -17,7 +16,6 @@ from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBu
 from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.common.date_service as date_service
-import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.database_service as db
 from testgen.ui.navigation.router import Router
 
@@ -334,7 +332,7 @@ def render_form_by_field_specs(
             submit = (
                 False
                 if boo_display_only
-                else st.form_submit_button("Save Changes", disabled=authentication_service.current_user_has_read_role())
+                else st.form_submit_button("Save Changes")
             )
 
             if submit and not boo_display_only:
@@ -572,194 +570,6 @@ def render_markdown_table(df, lst_columns):
         md_str += f"|{'|'.join(row_str)}|\n"
 
     st.markdown(md_str)
-
-
-def render_column_list(row_selected, lst_columns, str_prompt):
-    with st.container():
-        show_prompt(str_prompt)
-
-        for column in lst_columns:
-            column_type = type(row_selected[column])
-            if column_type is str:
-                st.text_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
-            elif column_type is (int | float):
-                st.number_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
-            elif column_type is (date | datetime):
-                st.date_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
-            elif column_type is time:
-                st.time_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
-            else:
-                st.text_input(label=ut_prettify_header(column), value=row_selected[column], disabled=True)
-
-
-def render_grid_form(
-    str_form_name,
-    df_data,
-    str_table_name,
-    lst_key_columns,
-    lst_show_columns,
-    lst_disabled_columns,
-    lst_no_update_columns,
-    dct_hard_default_columns,
-    dct_column_config,
-    str_prompt=None,
-):
-    show_header(str_form_name)
-    with st.form(str_form_name, clear_on_submit=True):
-        show_prompt(str_prompt)
-        df_edits = st.data_editor(
-            df_data,
-            column_order=lst_show_columns,
-            column_config=dct_column_config,
-            disabled=lst_disabled_columns,
-            num_rows="dynamic",
-            hide_index=True,
-        )
-        submit = st.form_submit_button("Save Changes", disabled=authentication_service.current_user_has_read_role())
-        if submit:
-            booStatus = db.apply_df_edits(
-                df_data, df_edits, str_table_name, lst_key_columns, lst_no_update_columns, dct_hard_default_columns
-            )
-            if booStatus:
-                reset_post_updates("Changes have been saved.")
-
-
-def render_edit_form(
-    str_form_name,
-    row_selected,
-    str_table_name,
-    lst_show_columns,
-    lst_key_columns,
-    lst_disabled=None,
-    str_text_display=None,
-    submit_disabled=False,
-    form_unique_key: str | None = None,
-):
-    show_header(str_form_name)
-
-    layout_column_1 = st.empty()
-    if str_text_display:
-        layout_column_1, layout_column_2 = st.columns([0.7, 0.3])
-
-    dct_mods = {}
-    if not lst_disabled:
-        lst_disabled = lst_key_columns
-    # Retrieve data types
-    row_selected.map(type)
-
-    if str_text_display:
-        with layout_column_2:
-            st.markdown(str_text_display)
-
-    with layout_column_1:
-        with st.form(form_unique_key or str_form_name, clear_on_submit=True):
-            for column, value in row_selected.items():
-                if column in lst_show_columns:
-                    column_type = type(value)
-                    if column_type is str:
-                        dct_mods[column] = st.text_input(
-                            label=ut_prettify_header(column),
-                            value=row_selected[column],
-                            disabled=(column in lst_disabled),
-                        )
-                    elif column_type in (int, float):
-                        dct_mods[column] = st.number_input(
-                            label=ut_prettify_header(column),
-                            value=row_selected[column],
-                            disabled=(column in lst_disabled),
-                        )
-                    elif column_type in (date, datetime, datetime.date):
-                        dct_mods[column] = st.date_input(
-                            label=ut_prettify_header(column),
-                            value=row_selected[column],
-                            disabled=(column in lst_disabled),
-                        )
-                    elif column_type is time:
-                        dct_mods[column] = st.time_input(
-                            label=ut_prettify_header(column),
-                            value=row_selected[column],
-                            disabled=(column in lst_disabled),
-                        )
-                    else:
-                        dct_mods[column] = st.text_input(
-                            label=ut_prettify_header(column),
-                            value=row_selected[column],
-                            disabled=(column in lst_disabled),
-                        )
-                else:
-                    # If Hidden, add directly to dct_mods for updates
-                    dct_mods[column] = row_selected[column]
-            edit_allowed = not submit_disabled and authentication_service.current_user_has_edit_role()
-            submit = st.form_submit_button("Save Changes", disabled=not edit_allowed)
-
-            if submit and edit_allowed:
-                # Construct SQL UPDATE statement based on the changed columns
-                changes = []
-                keys = []
-                for col, val in dct_mods.items():
-                    if col in lst_key_columns:
-                        keys.append(f"{col} = {db.make_value_db_friendly(val)}")
-                    if val != row_selected[col]:
-                        changes.append(f"{col} = {db.make_value_db_friendly(val)}")
-
-                # If there are any changes, construct and run the SQL statement
-                if changes:
-                    str_schema = st.session_state["dbschema"]
-                    str_sql = (
-                        f"UPDATE {str_schema}.{str_table_name} SET {', '.join(changes)} WHERE {' AND '.join(keys)};"
-                    )
-                    db.execute_sql(str_sql)
-                    reset_post_updates("Changes have been saved.")
-            elif submit:
-                reset_post_updates("The current user does not have permission to save changes.", style="warning")
-
-
-
-def render_insert_form(
-    str_form_name,
-    lst_columns,
-    str_table_name,
-    dct_default_values=None,
-    lst_hidden=None,
-    lst_disabled=None,
-    form_unique_key: str | None = None,
-    on_cancel=None,
-):
-    show_header(str_form_name)
-    dct_mods = {}
-
-    with st.form(form_unique_key or str_form_name, clear_on_submit=True):
-        for column in lst_columns:
-            if column not in (lst_hidden or []):
-                val = "" if column not in (dct_default_values or []) else dct_default_values[column]
-                input_type_by_default_value = {
-                    date: st.date_input,
-                }
-                is_disabled = column in (lst_disabled or [])
-                input_type = input_type_by_default_value.get(type(val), st.text_input)
-
-                dct_mods[column] = input_type(label=ut_prettify_header(column), value=val, disabled=is_disabled)
-            else:
-                dct_mods[column] = dct_default_values[column]
-
-        _, col1, col2 = st.columns([0.7, 0.1, 0.2])
-        with col2:
-            submit = st.form_submit_button("Insert Record", use_container_width=True)
-        if on_cancel:
-            with col1:
-                st.form_submit_button("Cancel", on_click=on_cancel, use_container_width=True)
-
-        if submit:
-            str_schema = st.session_state["dbschema"]
-            # Construct SQL INSERT statement based on all columns
-            insert_cols = []
-            insert_vals = []
-            for col, val in dct_mods.items():
-                insert_cols.append(col)
-                insert_vals.append(f"'{val}'")
-            str_sql = f"INSERT INTO {str_schema}.{str_table_name} ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
-            db.execute_sql(str_sql)
-            reset_post_updates("New record created.")
 
 
 def render_grid_select(

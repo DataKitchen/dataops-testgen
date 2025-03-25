@@ -5,6 +5,7 @@ import streamlit as st
 
 from testgen import settings
 from testgen.common.docker_service import check_basic_configuration
+from testgen.common.models import with_database_session
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
@@ -13,11 +14,13 @@ from testgen.ui.services import javascript_service, project_service, user_sessio
 from testgen.ui.session import session
 
 
+@with_database_session
 def render(log_level: int = logging.INFO):
     st.set_page_config(
         page_title="TestGen",
         page_icon=get_asset_path("favicon.ico"),
         layout="wide",
+        initial_sidebar_state="collapsed" if user_session_service.user_has_catalog_role() else "auto"
     )
 
     application = get_application(log_level=log_level)
@@ -33,6 +36,8 @@ def render(log_level: int = logging.INFO):
     session.dbschema = db.get_schema()
 
     projects = project_service.get_projects()
+    if not session.project:
+        session.project = st.query_params.get("project_code")
     if not session.project and len(projects) > 0:
         project_service.set_current_project(projects[0]["code"])
 
@@ -45,7 +50,8 @@ def render(log_level: int = logging.INFO):
     if not hide_sidebar:
         with st.sidebar:
             testgen.sidebar(
-                project=project_service.get_project_by_code(session.project)["project_name"],
+                projects=projects,
+                current_project=session.project,
                 menu=application.menu.update_version(application.get_version()),
                 username=session.username,
                 current_page=session.current_page,

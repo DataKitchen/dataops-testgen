@@ -18,20 +18,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
-from testgen.ui.services import authentication_service, project_service
+from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null
-from testgen.ui.services.test_definition_service import (
-    get_test_definition as get_test_definition_uncached,
-)
-from testgen.ui.services.test_results_service import (
-    do_source_data_lookup as do_source_data_lookup_uncached,
-)
-from testgen.ui.services.test_results_service import (
-    do_source_data_lookup_custom as do_source_data_lookup_custom_uncached,
-)
-from testgen.ui.services.test_results_service import (
-    get_test_result_history as get_test_result_history_uncached,
-)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
@@ -44,6 +32,7 @@ class TestResultsPage(Page):
     path = "test-runs:results"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "test-runs",
     ]
 
@@ -184,18 +173,19 @@ class TestResultsPage(Page):
             { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
         ]
 
-        for action in disposition_actions:
-            action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
+        if user_session_service.user_can_disposition():
+            for action in disposition_actions:
+                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
 
-        # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-        for action in disposition_actions:
-            if action["button"]:
-                fm.reset_post_updates(
-                    do_disposition_update(selected, action["status"]),
-                    as_toast=True,
-                    clear_cache=True,
-                    lst_cached_functions=affected_cached_functions,
-                )
+            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+            for action in disposition_actions:
+                if action["button"]:
+                    fm.reset_post_updates(
+                        do_disposition_update(selected, action["status"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=affected_cached_functions,
+                    )
 
         # Help Links
         st.markdown(
@@ -286,107 +276,7 @@ def get_test_results(
     sorting_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
-    return get_test_results_uncached(schema, run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
-
-
-def get_test_results_uncached(
-    schema: str,
-    run_id: str,
-    test_status: str | None = None,
-    test_type_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    sorting_columns: list[str] | None = None,
-) -> pd.DataFrame:
-    # First visible row first, so multi-select checkbox will render
-    order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns)) if sorting_columns else ""
-    filters = ""
-    if test_status:
-        filters += f" AND r.result_status IN ({test_status})"
-    if test_type_id:
-        filters += f" AND r.test_type = '{test_type_id}'"
-    if table_name:
-        filters += f" AND r.table_name = '{table_name}'"
-    if column_name:
-        filters += f" AND r.column_names = '{column_name}'"
-
-    sql = f"""
-            WITH run_results
-               AS (SELECT *
-                     FROM {schema}.test_results r
-                    WHERE
-                      r.test_run_id = '{run_id}'
-                      {filters}
-                    )
-            SELECT r.table_name,
-                   p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-                   tt.dq_dimension, tt.test_scope,
-                   r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
-                   tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
-                   c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
-                   CASE
-                     WHEN r.result_code <> 1 THEN r.disposition
-                        ELSE 'Passed'
-                   END as disposition,
-                   NULL::VARCHAR(1) as action,
-                   r.input_parameters, r.result_message, CASE WHEN result_code <> 1 THEN r.severity END as severity,
-                   r.result_code as passed_ct,
-                   (1 - r.result_code)::INTEGER as exception_ct,
-                   CASE
-                     WHEN result_status = 'Warning'
-                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
-                   END::INTEGER as warning_ct,
-                   CASE
-                     WHEN result_status = 'Failed'
-                      AND result_message NOT ILIKE 'Inactivated%%' THEN 1
-                   END::INTEGER as failed_ct,
-                   CASE
-                     WHEN result_message ILIKE 'Inactivated%%' THEN 1
-                   END as execution_error_ct,
-                   p.project_code, r.table_groups_id::VARCHAR,
-                   r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
-                   c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
-                   r.test_definition_id::VARCHAR as test_definition_id_runtime,
-                   CASE
-                     WHEN r.auto_gen = TRUE THEN d.id
-                                            ELSE r.test_definition_id
-                   END::VARCHAR as test_definition_id_current,
-                   r.auto_gen,
-
-                   -- These are used in the PDF report
-                   tt.threshold_description, tt.usage_notes, r.test_time
-
-              FROM run_results r
-            INNER JOIN {schema}.test_types tt
-               ON (r.test_type = tt.test_type)
-            LEFT JOIN {schema}.test_definitions rd
-              ON (r.test_definition_id = rd.id)
-            LEFT JOIN {schema}.test_definitions d
-               ON (r.test_suite_id = d.test_suite_id
-              AND  r.table_name = d.table_name
-              AND  r.column_names = COALESCE(d.column_name, 'N/A')
-              AND  r.test_type = d.test_type
-              AND  r.auto_gen = TRUE
-              AND  d.last_auto_gen_date IS NOT NULL)
-            INNER JOIN {schema}.test_suites ts
-               ON r.test_suite_id = ts.id
-            INNER JOIN {schema}.projects p
-               ON (ts.project_code = p.project_code)
-            INNER JOIN {schema}.table_groups tg
-               ON (ts.table_groups_id = tg.id)
-            INNER JOIN {schema}.connections cn
-               ON (tg.connection_id = cn.connection_id)
-            LEFT JOIN {schema}.cat_test_conditions c
-               ON (cn.sql_flavor = c.sql_flavor
-              AND  r.test_type = c.test_type)
-            {order_by} ;
-    """
-    df = db.retrieve_data(sql)
-
-    # Clean Up
-    df["test_date"] = pd.to_datetime(df["test_date"])
-
-    return df
+    return test_results_service.get_test_results(schema, run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
 
 
 @st.cache_data(show_spinner="Retrieving Status")
@@ -464,25 +354,25 @@ def get_test_result_summary(run_id):
 @st.cache_data(show_spinner=ALWAYS_SPIN)
 def get_test_definition(str_test_def_id):
     str_schema = st.session_state["dbschema"]
-    return get_test_definition_uncached(str_schema, str_test_def_id)
+    return test_definition_service.get_test_definition(str_schema, str_test_def_id)
 
 
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup(selected_row):
     schema = st.session_state["dbschema"]
-    return do_source_data_lookup_uncached(schema, selected_row)
+    return test_results_service.do_source_data_lookup(schema, selected_row)
 
 
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup_custom(selected_row):
     schema = st.session_state["dbschema"]
-    return do_source_data_lookup_custom_uncached(schema, selected_row)
+    return test_results_service.do_source_data_lookup_custom(schema, selected_row)
 
 
 @st.cache_data(show_spinner=False)
 def get_test_result_history(selected_row):
     schema = st.session_state["dbschema"]
-    return get_test_result_history_uncached(schema, selected_row)
+    return test_results_service.get_test_result_history(schema, selected_row)
 
 
 def show_test_def_detail(str_test_def_id):
@@ -657,7 +547,7 @@ def show_result_detail(
 
         with pg_col2:
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
-        if authentication_service.current_user_has_edit_role():
+        if user_session_service.user_can_edit():
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
 
         if selected_row["test_scope"] == "column":

@@ -1,0 +1,23 @@
+IS_NUM: CASE
+            WHEN {$1} RLIKE '^\\s*[+-]?\\$?\\s*[0-9]+(,[0-9]{3})*(\\.[0-9]*)?[\\%]?\\s*$' THEN 1
+            ELSE 0
+        END
+
+IS_DATE: CASE
+      WHEN to_date({$1}, 'yyyyMMdd') IS NOT NULL THEN 1
+      WHEN to_date({$1}, 'yyyy-MM-dd') IS NOT NULL THEN 1
+      WHEN to_date({$1}, 'MM/dd/yyyy') IS NOT NULL THEN 1
+      WHEN to_date({$1}, 'MM-dd-yyyy') IS NOT NULL THEN 1
+      WHEN to_date({$1}, 'MM-dd-yy') IS NOT NULL THEN 1
+      WHEN to_date({$1}, 'dd LLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN to_date({$1}, 'dd LLLL yyyy') IS NOT NULL AND RIGHT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN to_date({$1}, 'yyyy-MM-dd HH:mm:ss SSSSSS') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      WHEN to_date({$1}, 'yyyy-MM-dd HH:mm:ss') IS NOT NULL AND LEFT({$1}, 4)::INT BETWEEN 1800 AND 2200 THEN 1
+      ELSE 0
+  END
+
+DATEDIFF_MONTH: (YEAR({$2}) * 12 + MONTH({$2}) - YEAR({$1}) * 12 - MONTH({$1}))
+
+DATEDIFF_WEEK: CAST(DATEDIFF(DATE_TRUNC('week', {$2} + INTERVAL 1 DAY), DATE_TRUNC('week', {$1} + INTERVAL 1 DAY)) / 7 AS INT)
+
+DATEDIFF_DAY: EXTRACT(DAY FROM DATE({$2}) - DATE({$1}))

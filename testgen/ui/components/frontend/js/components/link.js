@@ -14,6 +14,9 @@
  * @property {number?} width
  * @property {string?} style
  * @property {string?} class
+ * @property {string?} tooltip
+ * @property {string?} tooltipPosition
+ * @property {boolean?} disabled
  */
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -30,15 +33,23 @@ const Link = (/** @type Properties */ props) => {
         if (width) {
             enforceElementWidth(window.frameElement, width);
         }
+        if (props.tooltip) {
+            window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
+            window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
+        }
     }
 
     const href = getValue(props.href);
     const params = getValue(props.params) ?? {};
     const open_new = !!getValue(props.open_new);
+    const showTooltip = van.state(false);
 
     return a(
         {
-            class: `tg-link ${getValue(props.underline) ? 'tg-link--underline' : ''} ${getValue(props.class) ?? ''}`,
+            class: `tg-link
+                ${getValue(props.underline) ? 'tg-link--underline' : ''}
+                ${getValue(props.disabled) ? 'disabled' : ''}
+                ${getValue(props.class) ?? ''}`,
             style: props.style,
             href: `/${href}${getQueryFromParams(params)}`,
             target: open_new ? '_blank' : '',
@@ -47,7 +58,14 @@ const Link = (/** @type Properties */ props) => {
                 event.stopPropagation();
                 emitEvent('LinkClicked', { href, params });
             },
+            onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
+            onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
+        () => getValue(props.tooltip) ? Tooltip({
+            text: props.tooltip,
+            show: showTooltip,
+            position: props.tooltipPosition,
+        }) : '',
         div(
             {class: 'tg-link--wrapper'},
             props.left_icon ? LinkIcon(props.left_icon, props.left_icon_size, 'left') : undefined,
@@ -87,6 +105,11 @@ stylesheet.replace(`
         text-decoration: unset !important;
         color: var(--link-color);
         cursor: pointer;
+    }
+
+    .tg-link.disabled {
+        pointer-events: none;
+        cursor: not-allowed;
     }
 
     .tg-link .tg-link--wrapper {

@@ -10,8 +10,9 @@ from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 
 FORM_DATA_WIDTH = 400
 
@@ -20,6 +21,7 @@ class ProfilingResultsPage(Page):
     path = "profiling-runs:results"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "run_id" in session.current_page_args or "profiling-runs",
     ]
 
@@ -124,7 +126,15 @@ class ProfilingResultsPage(Page):
             item["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, item["table_name"], item.get("column_name"))
             testgen_component(
                 "column_profiling_results",
-                props={ "column": json.dumps(item) },
+                props={ "column": json.dumps(item), "data_preview": True },
+                on_change_handlers={
+                    "DataPreviewClicked": lambda item: data_preview_dialog(
+                        item["table_group_id"],
+                        item["schema_name"],
+                        item["table_name"],
+                        item.get("column_name"),
+                    ),
+                },
             )
 
 
@@ -192,7 +202,7 @@ def render_export_button(df):
         "fractional_sum",
         "date_days_present",
         "date_weeks_present",
-        "date_months_present",   
+        "date_months_present",
     ]
     wrap_columns = ["top_freq_values", "top_patterns"]
     caption = "{TIMESTAMP}"

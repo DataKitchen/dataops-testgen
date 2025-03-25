@@ -4,6 +4,7 @@ import typing
 import streamlit as st
 import streamlit_authenticator as stauth
 
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import javascript_service, user_session_service
@@ -15,7 +16,7 @@ LOG = logging.getLogger("testgen")
 class LoginPage(Page):
     path = ""
     can_activate: typing.ClassVar = [
-        lambda: not session.authentication_status or session.logging_in or "project-dashboard",
+        lambda: not session.authentication_status or session.logging_in,
     ]
 
     def render(self, **_kwargs) -> None:
@@ -40,7 +41,7 @@ class LoginPage(Page):
                         <h3 style="text-align: center;">Welcome to DataKitchen DataOps TestGen</h3>
                         """)
             name, authentication_status, username = authenticator.login("Login")
-                
+
             if authentication_status is False:
                 st.error("Username or password is incorrect.")
 
@@ -55,9 +56,9 @@ class LoginPage(Page):
                 # This hack is needed because the auth cookie is not set if navigation happens immediately
                 if session.logging_in:
                     session.logging_in = False
-                    next_route = session.page_pending_login or "project-dashboard"
+                    next_route = session.page_pending_login or session.user_default_page
                     session.page_pending_login = None
                     self.router.navigate(next_route)
                 else:
                     session.logging_in = True
-                
+                    MixpanelService().send_event("login")

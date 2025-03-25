@@ -34,6 +34,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
         dctParms["connect_by_key"],
         dctParms["private_key"],
         dctParms["private_key_passphrase"],
+        dctParms["http_path"],
         "PROJECT",
     )
 

@@ -138,6 +138,7 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     project_db = connection["project_db"]
     project_user = connection["project_user"]
     password = connection["password"]
+    http_path = connection["http_path"]
 
     # prepare the profiling query
     clsProfiling = InitializeProfilingSQL(project_code, sql_flavor)
@@ -156,6 +157,7 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
         connect_by_key,
         private_key,
         private_key_passphrase,
+        http_path,
         connectname="PROJECT",
         password=password,
     )

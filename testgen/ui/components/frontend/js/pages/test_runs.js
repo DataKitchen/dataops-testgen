@@ -16,10 +16,15 @@
  * @property {number} error_ct
  * @property {number} dismissed_ct
  * @property {string} dq_score_testing
- * 
+ *
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_run
+ *
  * @typedef Properties
  * @type {object}
  * @property {TestRun[]} items
+ * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Tooltip } from '../components/tooltip.js';
@@ -27,7 +32,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
@@ -44,6 +49,8 @@ const TestRuns = (/** @type Properties */ props) => {
         return items;
     });
     const columns = ['30%', '20%', '40%', '10%'];
+
+    const userCanRun = getValue(props.permissions)?.can_run ?? false;
 
     const tableId = 'test-runs-table';
     resizeFrameHeightToElement(tableId);
@@ -70,12 +77,16 @@ const TestRuns = (/** @type Properties */ props) => {
             ),
         ),
         () => div(
-            testRunItems.val.map(item => TestRunItem(item, columns)),
+            testRunItems.val.map(item => TestRunItem(item, columns, userCanRun)),
         ),
     );
 }
 
-const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) => {
+const TestRunItem = (
+    /** @type TestRun */ item,
+    /** @type string[] */ columns,
+    /** @type boolean */ userCanRun,
+) => {
     return div(
         { class: 'table-row flex-row' },
         div(
@@ -100,7 +111,7 @@ const TestRunItem = (/** @type TestRun */ item, /** @type string[] */ columns) =
                     formatDuration(item.duration),
                 ),
             ),
-            item.status === 'Running' && item.process_id ? Button({
+            item.status === 'Running' && item.process_id && userCanRun ? Button({
                 type: 'stroked',
                 label: 'Cancel Run',
                 style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',

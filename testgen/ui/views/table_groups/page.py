@@ -6,13 +6,13 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-import testgen.ui.services.authentication_service as authentication_service
 import testgen.ui.services.connection_service as connection_service
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.table_group_service as table_group_service
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
@@ -22,7 +22,7 @@ class TableGroupsPage(Page):
     path = "connections:table-groups"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
-        lambda: authentication_service.current_user_has_admin_role(),
+        lambda: not user_session_service.user_has_catalog_role(),
         lambda: "connection_id" in session.current_page_args or "connections",
     ]
 
@@ -36,6 +36,7 @@ class TableGroupsPage(Page):
 
         project_code = connection["project_code"]
         project_service.set_current_project(project_code)
+        user_can_edit = user_session_service.user_can_edit()
 
         testgen.page_header(
             "Table Groups",
@@ -55,6 +56,7 @@ class TableGroupsPage(Page):
                 icon="table_view",
                 message=testgen.EmptyStateMessage.TableGroup,
                 action_label="Add Table Group",
+                action_disabled=not user_can_edit,
                 button_onclick=partial(self.add_table_group_dialog, project_code, connection),
             )
             return
@@ -63,25 +65,32 @@ class TableGroupsPage(Page):
         _, actions_column = st.columns([.1, .9], vertical_alignment="bottom")
         testgen.flex_row_end(actions_column)
 
+        if user_can_edit:
+            actions_column.button(
+                ":material/add: Add Table Group",
+                on_click=partial(self.add_table_group_dialog, project_code, connection)
+            )
+
         for _, table_group in df.iterrows():
             with testgen.card(title=table_group["table_groups_name"]) as table_group_card:
-                with table_group_card.actions:
-                    testgen.button(
-                        type_="icon",
-                        icon="edit",
-                        tooltip="Edit table group",
-                        tooltip_position="right",
-                        on_click=partial(self.edit_table_group_dialog, project_code, connection, table_group),
-                        key=f"tablegroups:keys:edit:{table_group['id']}",
-                    )
-                    testgen.button(
-                        type_="icon",
-                        icon="delete",
-                        tooltip="Delete table group",
-                        tooltip_position="right",
-                        on_click=partial(self.delete_table_group_dialog, table_group),
-                        key=f"tablegroups:keys:delete:{table_group['id']}",
-                    )
+                if user_can_edit:
+                    with table_group_card.actions:
+                        testgen.button(
+                            type_="icon",
+                            icon="edit",
+                            tooltip="Edit table group",
+                            tooltip_position="right",
+                            on_click=partial(self.edit_table_group_dialog, project_code, connection, table_group),
+                            key=f"tablegroups:keys:edit:{table_group['id']}",
+                        )
+                        testgen.button(
+                            type_="icon",
+                            icon="delete",
+                            tooltip="Delete table group",
+                            tooltip_position="right",
+                            on_click=partial(self.delete_table_group_dialog, table_group),
+                            key=f"tablegroups:keys:delete:{table_group['id']}",
+                        )
 
                 main_section, actions_section = st.columns([.8, .2])
 
@@ -122,21 +131,17 @@ class TableGroupsPage(Page):
                         testgen.caption("Min Profiling Age (Days)")
                         st.markdown(table_group["profiling_delay_days"] or "0")
 
-                with actions_section:
-                    testgen.button(
-                        type_="stroked",
-                        label="Run Profiling",
-                        on_click=partial(run_profiling_dialog, project_code, table_group),
-                        key=f"tablegroups:keys:runprofiling:{table_group['id']}",
-                    )
-
-        actions_column.button(
-            ":material/add: Add Table Group",
-            help="Add a new Table Group",
-            on_click=partial(self.add_table_group_dialog, project_code, connection)
-        )
+                if user_can_edit:
+                    with actions_section:
+                        testgen.button(
+                            type_="stroked",
+                            label="Run Profiling",
+                            on_click=partial(run_profiling_dialog, project_code, table_group),
+                            key=f"tablegroups:keys:runprofiling:{table_group['id']}",
+                        )
 
     @st.dialog(title="Add Table Group")
+    @with_database_session
     def add_table_group_dialog(self, project_code, connection):
         show_table_group_form("add", project_code, connection)
 
@@ -168,14 +173,11 @@ class TableGroupsPage(Page):
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 
         with st.form("Delete Table Group", clear_on_submit=True, border=False):
-            disable_delete_button = authentication_service.current_user_has_read_role() or (
-                not can_be_deleted and not accept_cascade_delete
-            )
             _, button_column = st.columns([.85, .15])
             with button_column:
                 delete = st.form_submit_button(
                     "Delete",
-                    disabled=disable_delete_button,
+                    disabled=not can_be_deleted and not accept_cascade_delete,
                     type="primary",
                     use_container_width=True,
                 )
@@ -392,7 +394,6 @@ def show_table_group_form(mode, project_code: str, connection: dict, table_group
                 submit = st.form_submit_button(
                     "Save" if mode == "edit" else "Add",
                     use_container_width=True,
-                    disabled=authentication_service.current_user_has_read_role(),
                 )
 
             if submit:

@@ -15,6 +15,7 @@ LOG = logging.getLogger("testgen")
 def run_parameter_validation_queries(
     dctParms, test_run_id="", test_time="", strTestSuite=""
 ):
+
     LOG.info("CurrentStep: Initializing Test Parameter Validation")
     clsExecute = CTestParamValidationSQL(dctParms["sql_flavor"], dctParms["test_suite_id"])
     clsExecute.run_date = test_time
@@ -31,6 +32,7 @@ def run_parameter_validation_queries(
     if not test_columns:
         LOG.warning(f"No test columns are present to validate in Test Suite {strTestSuite}")
         missing_columns = []
+        missing_tables = set()
     else:
         # Derive test schema list -- make CSV string from list of columns
         #  to be used as criteria for retrieving data dictionary

@@ -53,38 +53,6 @@ $$
 $$;
 
 
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_PrepColumnName(value_to_check TEXT)
-    RETURNS TEXT AS
-$$
-DECLARE
-    keyword_arr TEXT[] := ARRAY ['ALL', 'ALTER', 'ANALYSE', 'ANALYZE', 'AND', 'ANY', 'ARRAY', 'AS', 'ASC', 'ASYMMETRIC',
-                                 'AUTHORIZATION', 'BINARY', 'BOTH', 'CASE', 'CAST', 'CHECK', 'COLLATE', 'COLLATION',
-                                 'COLUMN', 'CONCURRENTLY', 'CONSTRAINT', 'CREATE', 'CROSS', 'CURRENT_CATALOG',
-                                 'CURRENT_DATE', 'CURRENT_ROLE', 'CURRENT_SCHEMA', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
-                                 'CURRENT_USER', 'CREDENTIALS',
-                                 'DEFAULT', 'DEFERRABLE', 'DESC', 'DISTINCT', 'DO', 'DROP',
-                                 'ELSE', 'END', 'EXCEPT', 'FALSE', 'FETCH', 'FOR', 'FOREIGN', 'FREEZE', 'FROM', 'FULL',
-                                 'GRANT', 'GROUP', 'HAVING', 'ILIKE', 'IN', 'INITIALLY', 'INNER', 'INTERSECT', 'INTO',
-                                 'IS', 'ISNULL', 'JOIN', 'LATERAL', 'LEADING', 'LEFT', 'LIKE', 'LIMIT', 'LOCALTIME',
-                                 'LOCALTIMESTAMP', 'NATURAL', 'NOT', 'NOTNULL', 'NULL', 'OFFSET', 'ON', 'ONLY', 'OR',
-                                 'ORDER', 'OUTER', 'OVERLAPS', 'PLACING', 'PRIMARY', 'REFERENCES', 'RETURNING', 'RIGHT',
-                                 'SELECT', 'SESSION_USER', 'SIMILAR', 'SOME', 'SYMMETRIC', 'TABLE', 'TABLESAMPLE',
-                                 'THEN', 'TIMESTAMP', 'TIMEZONE', 'TO', 'TRAILING', 'TRUE', 'UNION', 'UNIQUE', 'USER', 'USING',
-                                 'VARIADIC', 'VERBOSE', 'WHEN', 'WHERE', 'WINDOW', 'WITH']; -- Add more keywords here
-BEGIN
-    -- Check if the value matches any of the keywords (case-insensitive)
-    IF value_to_check ILIKE ANY (keyword_arr) THEN
-        RETURN '"' || value_to_check || '"';
-    -- Check if the value contains a space or a comma or it starts with a number
-    ELSIF value_to_check !~ '^[a-zA-Z_][a-zA-Z0-9_]*$' THEN
-        RETURN '"' || value_to_check || '"';
-    ELSE
-        RETURN value_to_check;
-    END IF;
-END;
-$$ LANGUAGE plpgsql;
-
-
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_pct(numerator NUMERIC, denominator NUMERIC, decs INTEGER DEFAULT 0) returns NUMERIC
     language plpgsql
 as
@@ -104,12 +72,14 @@ DECLARE
 BEGIN
     lower_case_sql_flavor := LOWER(sql_flavor);
 
-    IF lower_case_sql_flavor = 'postgres'  OR lower_case_sql_flavor = 'postgresql' THEN
+    IF lower_case_sql_flavor IN ('postgres', 'postgresql') THEN
         escaped_value := QUOTE_LITERAL(var_value);
-    ELSIF lower_case_sql_flavor = 'redshift' OR lower_case_sql_flavor = 'snowflake' THEN
+    ELSIF lower_case_sql_flavor IN ('redshift', 'snowflake') THEN
         escaped_value := TRIM(LEADING 'E' FROM QUOTE_LITERAL(var_value));
     ELSIF lower_case_sql_flavor = 'mssql' THEN
         escaped_value := '''' || REPLACE(var_value, '''', '''''') || '''';
+    ELSIF lower_case_sql_flavor = 'databricks' THEN
+        escaped_value := '''' || REPLACE(REPLACE(var_value, '\', '\\'), '''', '\''') || '''';
     ELSE
         RAISE EXCEPTION 'Invalid sql_flavor name: %', sql_flavor;
     END IF;
@@ -196,7 +166,7 @@ $$
 
     The approximation formula uses a series expansion to estimate the
     CDF, which is accurate for most practical purposes.
-    
+
     To estimate the count of observations that fall outside a certain Z-score
     (both above and below), you can use the `normal_cdf()` function. For a
     total number of observations N, the proportion of values outside the Z-score
@@ -336,4 +306,3 @@ CREATE AGGREGATE {SCHEMA_NAME}.sum_ln (double precision) (
     FINALFUNC = sum_ln_agg_final,
     INITCOND  = '0'
 );
-

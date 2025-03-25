@@ -32,6 +32,10 @@
  * @property {Array<string>} columns
  * @property {Array<object>} items
  *
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
+ *
  * @typedef Properties
  * @type {object}
  * @property {object} filter_values
@@ -41,6 +45,7 @@
  * @property {string} breakdown_category
  * @property {string} breakdown_score_type
  * @property {boolean} is_new
+ * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
@@ -77,12 +82,14 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
     Streamlit.setFrameHeight(1);
 
     const domId = 'score-explorer-page';
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
 
     return div(
         { id: domId, class: 'score-explorer' },
-        Toolbar(props.filter_values, getValue(props.definition), props.is_new),
+        Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit),
         span({ class: 'mb-4', style: 'display: block;' }),
         ScoreCard(props.score_card),
         span({ class: 'mb-4', style: 'display: block;' }),
@@ -117,6 +124,7 @@ const Toolbar = (
     /** @type object */ filterValues,
     /** @type ScoreDefinition */ definition,
     /** @type boolean */ isNew,
+    /** @type boolean */ userCanEdit,
 ) => {
     const addFilterButtonId = 'score-explorer--add-filter-btn';
     const categories = [
@@ -274,7 +282,7 @@ const Toolbar = (
                     ),
                 ),
             ),
-            div(
+            userCanEdit ? div(
                 { class: 'flex-row fx-align-flex-end' },
                 Input({
                     label: 'Scorecard Name',
@@ -312,7 +320,7 @@ const Toolbar = (
                         onclick: () => emitEvent('LinkClicked', { href, params }),
                     });
                 },
-            ),
+            ) : '',
         ),
     );
 };
@@ -393,8 +401,8 @@ stylesheet.replace(`
 .score-explorer--selector {
     min-height: 41px;
     overflow-y: auto;
-    background: var(--select-portal-background);
-    box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
     border-radius: 8px;
 
     z-index: 99;

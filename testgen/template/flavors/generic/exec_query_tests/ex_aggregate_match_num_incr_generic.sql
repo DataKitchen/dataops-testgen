@@ -8,9 +8,9 @@ SELECT '{TEST_TYPE}' as test_type,
          as input_parameters,
        CASE WHEN COUNT(*) > COALESCE(skip_errors, 0) THEN 0 ELSE 1 END as result_code,
        CONCAT(
-             CONCAT( 'Mismatched measures: ', CAST( COALESCE(COUNT(*), 0) AS VARCHAR) ),
+             CONCAT( 'Mismatched measures: ', CAST( COALESCE(COUNT(*), 0) AS {VARCHAR_TYPE}) ),
              CONCAT( ', Threshold: ',
-                     CONCAT( CAST(COALESCE(skip_errors, 0) AS VARCHAR), '.')
+                     CONCAT( CAST(COALESCE(skip_errors, 0) AS {VARCHAR_TYPE}), '.')
                     )
               )  AS result_message,
        COUNT(*) as result_measure,

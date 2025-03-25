@@ -144,6 +144,7 @@ def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=
         test_exec_params["connect_by_key"],
         test_exec_params["private_key"],
         test_exec_params["private_key_passphrase"],
+        test_exec_params["http_path"],
         "PROJECT",
     )
 

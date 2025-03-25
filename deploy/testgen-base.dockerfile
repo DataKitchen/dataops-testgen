@@ -6,77 +6,41 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONFAULTHANDLER=1
 ENV ACCEPT_EULA=Y
 
-RUN apk update && apk add --no-cache \
+RUN apk update && apk upgrade && apk add --no-cache \
+    # Tools needed for building the python wheels
     gcc \
     g++ \
-    bash \
-    libffi-dev \
-    openssl-dev \
-    cargo \
-    musl-dev \
-    postgresql-dev \
+    make \
     cmake \
-    rust \
-    linux-headers \
-    libc-dev \
-    libgcc \
-    libstdc++ \
-    ca-certificates \
-    zlib-dev \
-    bzip2-dev \
-    xz-dev \
-    lz4-dev \
-    zstd-dev \
-    snappy-dev \
-    brotli-dev \
-    build-base \
-    autoconf \
-    boost-dev \
-    flex \
-    libxml2-dev \
-    libxslt-dev \
-    libjpeg-turbo-dev \
-    ninja \
-    git \
-    curl \
-    unixodbc-dev \
-    gpg \
-    openssl=3.3.2-r1 \
+    musl-dev \
     gfortran \
-    openblas-dev
+    linux-headers=6.6-r0 \
+    # Additional libraries needed and their dev counterparts. We add both so that we can remove
+    # the *-dev later, keeping the libraries
+    openblas=0.3.28-r0 \
+    openblas-dev=0.3.28-r0 \
+    unixodbc=2.3.12-r0 \
+    unixodbc-dev=2.3.12-r0
 
-RUN mkdir /dk
-
-COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
-RUN /tmp/dk/install_linuxodbc.sh
-
-COPY --chmod=775 ./deploy/install_arrow.sh /tmp/dk/install_arrow.sh
-RUN /tmp/dk/install_arrow.sh
+RUN apk add --no-cache \
+    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/community \
+    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/main \
+    libarrow=18.1.0-r0 \
+    apache-arrow-dev=18.1.0-r0
 
 # Install TestGen's main project empty pyproject.toml to install (and cache) the dependencies first
 COPY ./pyproject.toml /tmp/dk/pyproject.toml
+RUN mkdir /dk
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 
 RUN apk del \
     gcc \
     g++ \
-    bash \
-    libffi-dev \
-    openssl-dev \
-    cargo \
-    musl-dev \
-    postgresql-dev \
+    make \
     cmake \
-    rust \
+    musl-dev \
+    gfortran \
     linux-headers \
-    libc-dev \
-    build-base \
-    autoconf \
-    boost-dev \
-    flex \
-    ninja \
-    curl \
+    openblas-dev \
     unixodbc-dev \
-    gpg \
-    ca-certificates \
-    git
+    apache-arrow-dev

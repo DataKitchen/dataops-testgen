@@ -17,6 +17,7 @@ from testgen.common import (
     RunActionQueryList,
     RunThreadedRetrievalQueryList,
     WriteListToDB,
+    date_service,
 )
 from testgen.common.database.database_service import empty_cache
 
@@ -273,6 +274,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         dctParms["connect_by_key"],
         dctParms["private_key"],
         dctParms["private_key_passphrase"],
+        dctParms["http_path"],
         "PROJECT",
     )
 
@@ -498,7 +500,11 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
         ]
         RunActionQueryList("DKTG", lstProfileRunQuery)
-        run_refresh_score_cards_results(project_code=dctParms["project_code"])
+        run_refresh_score_cards_results(
+            project_code=dctParms["project_code"],
+            add_history_entry=True,
+            refresh_date=date_service.parse_now(clsProfiling.run_date),
+        )
 
         if booErrors:
             str_error_status = "with errors. Check log for details."
