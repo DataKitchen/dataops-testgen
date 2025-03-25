@@ -32,4 +32,4 @@ USER testgen
 WORKDIR /dk
 
 ENTRYPOINT ["testgen"]
-CMD [ "ui", "run" ]
+CMD [ "run-app" ]

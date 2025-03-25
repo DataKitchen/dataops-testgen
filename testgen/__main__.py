@@ -1,8 +1,8 @@
 import logging
 import os
+import signal
 import subprocess
 import sys
-import typing
 from dataclasses import dataclass, field
 
 import click
@@ -40,13 +40,15 @@ from testgen.common import (
     get_tg_db,
     get_tg_host,
     get_tg_schema,
-    logs,
     version_service,
 )
+from testgen.scheduler import register_scheduler_job, run_scheduler
 from testgen.ui.queries import profiling_run_queries, test_run_queries
 from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
+
+APP_MODULES = ["ui", "scheduler"]
 
 
 @dataclass
@@ -58,8 +60,17 @@ class Configuration:
 pass_configuration = click.make_pass_decorator(Configuration)
 
 
+class CliGroup(click.Group):
+    def invoke(self, ctx: Context):
+        try:
+            super().invoke(ctx)
+        except Exception:
+            LOG.exception("There was an unexpected error")
+
+
 @tui()
 @click.group(
+    cls=CliGroup,
     help=f"This version: {settings.VERSION} \n\nLatest version: {version_service.get_latest_version()} \n\nSchema revision: {get_schema_revision()}"
 )
 @click.option(
@@ -93,6 +104,7 @@ def cli(ctx: Context, verbose: bool):
     LOG.debug("Current Step: Main Program")
 
 
+@register_scheduler_job
 @cli.command("run-profile", help="Generates a new profile of the table group.")
 @pass_configuration
 @click.option(
@@ -112,6 +124,7 @@ def run_profile(configuration: Configuration, table_group_id: str):
     click.echo("\n" + message)
 
 
+@register_scheduler_job
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
 @click.option(
     "-tg",
@@ -143,6 +156,7 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
     click.echo("\n" + message)
 
 
+@register_scheduler_job
 @cli.command("run-tests", help="Performs tests defined for a test suite.")
 @click.option(
     "-pk",
@@ -590,19 +604,19 @@ def list_table_groups(configuration: Configuration, project_key: str, display: b
 def ui(): ...
 
 
-@ui.command("run", help="Run the browser application with default settings")
-@click.option("-d", "--debug", is_flag=True, default=False)
-def run(debug: bool):
+@ui.command("plugins", help="List installed application plugins")
+def list_ui_plugins():
+    installed_plugins = list(plugins.discover())
+
+    click.echo(click.style(len(installed_plugins), fg="bright_magenta") + click.style(" plugins installed", bold=True))
+    for plugin in installed_plugins:
+        click.echo(click.style(" + ", fg="bright_green") + f"{plugin.package: <30}" + f"\tversion: {plugin.version}")
+
+
+def run_ui():
     from testgen.ui.scripts import patch_streamlit
-    configure_logging(
-        level=logging.INFO,
-        log_format="%(message)s",
-    )
 
     status_code: int = -1
-    logger = logging.getLogger("testgen")
-    stderr: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
-    stdout: typing.TextIO = typing.cast(typing.TextIO, logs.LogPipe(logger, logging.INFO))
 
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
@@ -624,28 +638,43 @@ def run(debug: bool):
                 f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
                 f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
                 "--",
-                f"{'--debug' if debug else ''}",
+                f"{'--debug' if settings.IS_DEBUG else ''}",
             ],
-            stdout=stdout,
-            stderr=stderr,
         )
     except Exception:
         LOG.exception(f"Testgen UI exited with status code {status_code}")
-        raise
-    finally:
-        if stderr:
-            stderr.close()
-        if stdout:
-            stdout.close()
 
 
-@ui.command("plugins", help="List installed application plugins")
-def list_ui_plugins():
-    installed_plugins = list(plugins.discover())
+@cli.command("run-app", help="Runs TestGen's application modules")
+@click.argument(
+    "module",
+    type=click.Choice(["all", *APP_MODULES]),
+    default="all",
+)
+def run_app(module):
 
-    click.echo(click.style(len(installed_plugins), fg="bright_magenta") + click.style(" plugins installed", bold=True))
-    for plugin in installed_plugins:
-        click.echo(click.style(" + ", fg="bright_green") + f"{plugin.package: <30}" + f"\tversion: {plugin.version}")
+    match module:
+        case "ui":
+            run_ui()
+
+        case "scheduler":
+            run_scheduler()
+
+        case "all":
+            children = [
+                subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
+                for m in APP_MODULES
+            ]
+
+            def term_children(signum, _):
+                for child in children:
+                    child.send_signal(signum)
+
+            signal.signal(signal.SIGINT, term_children)
+            signal.signal(signal.SIGTERM, term_children)
+
+            for child in children:
+                child.wait()
 
 
 if __name__ == "__main__":

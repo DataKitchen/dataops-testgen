@@ -2,8 +2,10 @@ import time
 import typing
 from functools import partial
 
+import pandas as pd
 import streamlit as st
 
+import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 import testgen.ui.services.test_suite_service as test_suite_service
@@ -17,6 +19,7 @@ from testgen.ui.services import user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
+from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import format_field
 
@@ -100,8 +103,57 @@ class TestSuitesPage(Page):
                 "DeleteActionClicked": delete_test_suite_dialog,
                 "RunTestsClicked": lambda test_suite_id: run_tests_dialog(project_code, test_suite_service.get_by_id(test_suite_id)),
                 "GenerateTestsClicked": lambda test_suite_id: generate_tests_dialog(test_suite_service.get_by_id(test_suite_id)),
+                "SchedulesClicked": lambda _: TestGenerationScheduleDialog().open(project_code),
             },
         )
+
+
+class TestGenerationScheduleDialog(ScheduleDialog):
+
+    title = "Manage Test Generation Schedules"
+    arg_label = "Test Suite"
+    job_key = "run-test-generation"
+    test_suites: pd.DataFrame | None = None
+
+    def init(self, project_code: str) -> None:
+        self.test_suites = get_db_test_suite_choices(project_code)
+
+    def get_arg_value(self, job):
+        return self.test_suites.loc[
+            (
+                (self.test_suites["test_suite"] == job.kwargs["test_suite_key"]) &
+                (self.test_suites["table_groups_id"] == job.kwargs["table_group_id"])
+            ),
+            "test_suite"
+        ].iloc[0]
+
+    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
+        ts_id = testgen.select(
+            label="Test Suite",
+            options=self.test_suites,
+            value_column="id",
+            display_column="test_suite",
+            required=True,
+        )
+        ts_row = self.test_suites.loc[self.test_suites["id"] == ts_id].iloc[0]
+
+        return bool(ts_id), [], {"test_suite_key": ts_row["test_suite"], "table_group_id": ts_row["table_groups_id"]}
+
+
+
+@st.cache_data(show_spinner=False)
+def get_db_test_suite_choices(project_code: str) -> pd.DataFrame:
+    schema = st.session_state["dbschema"]
+
+    sql = f"""
+        SELECT id::VARCHAR, test_suite, table_groups_id::VARCHAR
+        FROM {schema}.test_suites
+        WHERE project_code = '{project_code}'
+        ORDER BY test_suite
+        """
+
+    return db.retrieve_data(sql)
+
 
 
 def on_test_suites_filtered(table_group_id: str | None = None) -> None:

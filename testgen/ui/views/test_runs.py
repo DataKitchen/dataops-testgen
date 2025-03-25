@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries, test_run_queries
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score, to_int
 
@@ -77,6 +78,12 @@ class TestRunsPage(Page):
 
             if user_can_run:
                 st.button(
+                    ":material/today: Test Run Schedules",
+                    help="Manages when a test suite should run.",
+                    on_click=partial(TestRunScheduleDialog().open, project_code)
+                )
+
+                st.button(
                     ":material/play_arrow: Run Tests",
                     help="Run tests for a test suite",
                     on_click=partial(run_tests_dialog, project_code, None, test_suite_id)
@@ -103,6 +110,32 @@ class TestRunsPage(Page):
                 },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
+
+
+class TestRunScheduleDialog(ScheduleDialog):
+
+    title = "Manage Test Run Schedules"
+    arg_label = "Test Suite"
+    job_key = "run-tests"
+    test_suites: pd.DataFrame | None = None
+
+    def init(self, project_code: str) -> None:
+        self.test_suites = get_db_test_suite_choices(project_code)
+
+    def get_arg_value(self, job):
+        return self.test_suites.loc[
+            self.test_suites["id"] == job.kwargs["test_suite_id"], "test_suite"
+        ].iloc[0]
+
+    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
+        ts_id = testgen.select(
+            label="Test Suite",
+            options=self.test_suites,
+            value_column="id",
+            display_column="test_suite",
+            required=True,
+        )
+        return bool(ts_id), [], {"test_suite_id": ts_id}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
