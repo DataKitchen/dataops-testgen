@@ -5,7 +5,6 @@ import logging
 import queue as qu
 import threading
 from contextlib import suppress
-from io import StringIO
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, text
@@ -20,6 +19,7 @@ from testgen.common.credentials import (
     get_tg_schema,
     get_tg_username,
 )
+from testgen.common.database import FilteredStringIO
 from testgen.common.encrypt import DecryptText
 from testgen.common.read_file import get_template_files
 
@@ -582,15 +582,14 @@ def RetrieveSingleResultValue(strCredentialSet, strRunSQL):
 def WriteListToDB(strCredentialSet, lstData, lstColumns, strDBTable):
     LOG.info("CurrentDB Operation: WriteListToDB. Creds: %s", strCredentialSet)
     LOG.debug("(Processing ingestion query: %s records)", lstData)
+
     # List should have same column names as destination table, though not all columns in table are required
-
     # Use COPY for DKTG database, otherwise executemany()
-
     con = _InitDBConnection(strCredentialSet, "Y")
     cur = con.cursor()
     if strCredentialSet == "DKTG":
         # Write List to CSV in memory
-        sio = StringIO()
+        sio = FilteredStringIO(["\x00"])
         writer = csv.writer(sio, quoting=csv.QUOTE_MINIMAL)
         writer.writerows(lstData)
         sio.seek(0)
@@ -602,7 +601,6 @@ def WriteListToDB(strCredentialSet, lstData, lstColumns, strDBTable):
 
         cur.copy_expert(strCopySQL, sio)
         con.commit()
-
     else:
         # Get list of column names and column names formatted as parms
         strColumnNames = ", ".join(lstColumns)
