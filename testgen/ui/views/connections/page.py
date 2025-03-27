@@ -124,6 +124,8 @@ class ConnectionsPage(Page):
                     "private_key": None,
                 })
 
+            data.setdefault("http_path", "")
+
             try:
                 FlavorForm(**data)
             except ValidationError as error:
