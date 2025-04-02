@@ -15,6 +15,9 @@ RUN apk update && apk upgrade && apk add --no-cache \
     musl-dev \
     gfortran \
     linux-headers=6.6-r0 \
+    # Tools needed for installing the MSSQL ODBC drivers \
+    curl \
+    gpg \
     # Additional libraries needed and their dev counterparts. We add both so that we can remove
     # the *-dev later, keeping the libraries
     openblas=0.3.28-r0 \
@@ -28,6 +31,9 @@ RUN apk add --no-cache \
     libarrow=18.1.0-r0 \
     apache-arrow-dev=18.1.0-r0
 
+COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
+RUN /tmp/dk/install_linuxodbc.sh
+
 # Install TestGen's main project empty pyproject.toml to install (and cache) the dependencies first
 COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
@@ -40,7 +46,11 @@ RUN apk del \
     cmake \
     musl-dev \
     gfortran \
+    curl \
+    gpg \
     linux-headers \
     openblas-dev \
     unixodbc-dev \
     apache-arrow-dev
+
+RUN rm /tmp/dk/install_linuxodbc.sh
