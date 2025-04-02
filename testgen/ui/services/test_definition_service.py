@@ -134,6 +134,7 @@ def validate_test(test_definition):
         connection["connect_by_key"],
         connection["private_key"],
         connection["private_key_passphrase"],
+        connection["http_path"],
         sql_query,
     )
 
