@@ -14,8 +14,6 @@ from .toolbox import ensure_tools
 
 DOCKER_BUILDER_NAME = "dk-builder"
 DOCKER_BUILDER_PLATFORMS = "linux/amd64,linux/arm64"
-TESTGEN_DEFAULT_BASE_LABEL = "v3"
-
 
 @task
 def required_tools(ctx: Context) -> None:
@@ -91,7 +89,7 @@ def build_public_image(
     version: str = "",
 
     load: bool = False,
-    base_label: str = TESTGEN_DEFAULT_BASE_LABEL,
+    base_label: str = "",
     debug: bool = False
 ) -> None:
     """Builds and pushes the TestGen image"""
@@ -114,12 +112,12 @@ def build_public_image(
     if debug:
         extra_args.append("--print")
 
-    ctx.run(
-        f"docker buildx bake -f deploy/docker-bake.hcl testgen-{target} {' '.join(extra_args)} ",
-        env={
-            "TESTGEN_LABELS": " ".join(label),
-            "TESTGEN_BASE_LABEL": base_label,
-            "TESTGEN_VERSION": version,
-        },
-        echo=True,
-    )
+    env={
+        "TESTGEN_LABELS": " ".join(label),
+        "TESTGEN_VERSION": version,
+    }
+    if base_label:
+        env["TESTGEN_BASE_LABEL"] = base_label
+
+    cmd = f"docker buildx bake -f deploy/docker-bake.hcl testgen-{target} {' '.join(extra_args)} "
+    ctx.run(cmd, env=env, echo=True)
