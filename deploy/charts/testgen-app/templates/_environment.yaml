@@ -2,12 +2,12 @@
 - name: TG_DECRYPT_SALT
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.testgen.databaseDecryptSecret.name | quote }}
+      name: {{ .Values.testgen.authSecrets.name | quote }}
       key: "decrypt-salt"
 - name: TG_DECRYPT_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ .Values.testgen.databaseDecryptSecret.name | quote }}
+      name: {{ .Values.testgen.authSecrets.name | quote }}
       key: "decrypt-password"
 - name: TG_METADATA_DB_HOST
   value: {{ .Values.testgen.databaseHost | quote }}
