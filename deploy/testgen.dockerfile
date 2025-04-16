@@ -1,4 +1,4 @@
-ARG TESTGEN_BASE_LABEL=v4
+ARG TESTGEN_BASE_LABEL=v5
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
 
@@ -8,6 +8,8 @@ ARG TESTGEN_DOCKER_HUB_REPO
 
 ENV PYTHONPATH=/dk/lib/python3.12/site-packages
 ENV PATH=$PATH:/dk/bin
+
+RUN apk upgrade
 
 # Now install everything
 COPY . /tmp/dk/
