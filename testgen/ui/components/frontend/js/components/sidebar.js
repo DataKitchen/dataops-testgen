@@ -198,7 +198,7 @@ const VersionRow = (/** @type string */ label, /** @type string */ version, icon
 
 function emitEvent(/** @type Object */ data) {
     if (Sidebar.StreamlitInstance) {
-        Sidebar.StreamlitInstance.sendData(data);
+        Sidebar.StreamlitInstance.sendData({ ...data, _id: Math.random() }); // Identify the event so its handler is called once
     }
 }
 
@@ -209,9 +209,7 @@ function navigate(/** @type object */ event, /** @type string */ path, /** @type
     // Prevent Streamlit from reacting to event
     event.stopPropagation();
 
-    if (Sidebar.StreamlitInstance && path !== currentPage) {
-        Sidebar.StreamlitInstance.sendData({ path });
-    }
+    emitEvent({ path });
 }
 
 function isCurrentPage(/** @type string */ itemPath, /** @type string */ currentPage) {
@@ -234,7 +232,7 @@ stylesheet.replace(`
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: calc(100% - 76px);
+    height: calc(100% - 78px);
 }
 
 .menu .menu--project {

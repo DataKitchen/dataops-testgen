@@ -20,7 +20,9 @@ def render(log_level: int = logging.INFO):
         page_title="TestGen",
         page_icon=get_asset_path("favicon.ico"),
         layout="wide",
-        initial_sidebar_state="collapsed" if user_session_service.user_has_catalog_role() else "auto"
+        # Collapse when logging out because the sidebar takes some time to be removed from the DOM
+        # Collapse for Catalog role since they only have access to one page
+        initial_sidebar_state="collapsed" if session.logging_out or user_session_service.user_has_catalog_role() else "auto"
     )
 
     application = get_application(log_level=log_level)
@@ -39,15 +41,14 @@ def render(log_level: int = logging.INFO):
     if not session.project:
         session.project = st.query_params.get("project_code")
     if not session.project and len(projects) > 0:
-        project_service.set_current_project(projects[0]["code"])
+        session.project = projects[0]["code"]
 
     if session.authentication_status is None and not session.logging_out:
         user_session_service.load_user_session()
 
     application.logo.render()
 
-    hide_sidebar = not session.authentication_status or session.logging_in
-    if not hide_sidebar:
+    if session.authentication_status and not session.logging_in:
         with st.sidebar:
             testgen.sidebar(
                 projects=projects,
@@ -57,7 +58,7 @@ def render(log_level: int = logging.INFO):
                 current_page=session.current_page,
             )
 
-    application.router.run(hide_sidebar)
+    application.router.run()
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)

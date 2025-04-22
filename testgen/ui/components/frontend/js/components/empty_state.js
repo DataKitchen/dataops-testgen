@@ -8,7 +8,7 @@
 * @type {object}
 * @property {string} href
 * @property {string} label
-* 
+*
 * @typedef Properties
 * @type {object}
 * @property {string} icon
@@ -78,7 +78,7 @@ stylesheet.replace(`
 .tg-empty-state {
     margin-top: 80px;
     border: 1px solid var(--border-color);
-    padding: 112px 0px !important;
+    padding: 112px 24px !important;
 }
 
 .tg-empty-state--title {

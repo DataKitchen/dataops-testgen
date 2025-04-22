@@ -38,7 +38,7 @@ class LoginPage(Page):
         with login_column:
             st.html("""
                         <br><br><br>
-                        <h3 style="text-align: center;">Welcome to DataKitchen DataOps TestGen</h3>
+                        <h3 style="text-align: center; font-size: 26px; font-weight: 600;">Welcome to DataKitchen DataOps TestGen</h3>
                         """)
             name, authentication_status, username = authenticator.login("Login")
 

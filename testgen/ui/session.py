@@ -12,7 +12,7 @@ TempValueSetter = Callable[[T], None]
 
 
 class TestgenSession(Singleton):
-    cookies_ready: int
+    cookies_ready: bool
     logging_in: bool
     logging_out: bool
     page_pending_cookies: st.Page  # type: ignore
@@ -36,6 +36,9 @@ class TestgenSession(Singleton):
     latest_version: str | None
 
     testgen_event_id: str | None
+    sidebar_event_id: str | None
+    link_event_id: str | None
+    breadcrumb_event_id: str | None
 
     def __init__(self, state: SessionStateProxy) -> None:
         super().__setattr__("_state", state)

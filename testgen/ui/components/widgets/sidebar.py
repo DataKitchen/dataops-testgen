@@ -56,6 +56,13 @@ def on_change():
     # So we store the path and navigate on the next run
 
     event_data = getattr(session, SIDEBAR_KEY)
+
+    # Prevent handling the same event multiple times
+    event_id = event_data.get("_id")
+    if event_id == session.sidebar_event_id:
+        return
+    session.sidebar_event_id = event_id
+
     project = event_data.get("project")
     path = event_data.get("path")
     view_logs = event_data.get("view_logs")

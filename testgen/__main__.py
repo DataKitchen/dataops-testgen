@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 import click
 from click.core import Context
 from progress.spinner import MoonSpinner
-from trogon import tui
 
 from testgen import settings
 from testgen.commands.run_execute_tests import run_execution_steps
@@ -58,7 +57,6 @@ class Configuration:
 pass_configuration = click.make_pass_decorator(Configuration)
 
 
-@tui()
 @click.group(
     help=f"This version: {settings.VERSION} \n\nLatest version: {version_service.get_latest_version()} \n\nSchema revision: {get_schema_revision()}"
 )
@@ -83,7 +81,7 @@ def cli(ctx: Context, verbose: bool):
         sys.exit(1)
 
     if (
-        ctx.invoked_subcommand not in ["ui", "tui", "setup-system-db", "upgrade-system-version", "quick-start"]
+        ctx.invoked_subcommand not in ["ui", "setup-system-db", "upgrade-system-version", "quick-start"]
         and not is_db_revision_up_to_date()
     ):
         click.secho("The system database schema is outdated. Automatically running the following command:", fg="red")
@@ -621,6 +619,8 @@ def run(debug: bool):
                 "run",
                 app_file,
                 "--browser.gatherUsageStats=false",
+                "--client.showErrorDetails=none",
+                "--client.toolbarMode=minimal",
                 f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
                 f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
                 "--",
