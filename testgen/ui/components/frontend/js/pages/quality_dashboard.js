@@ -106,6 +106,7 @@ const Toolbar = (
             placeholder: 'Search scores',
             value: filterBy,
             onChange: options?.onsearch,
+            testId: 'scorecards-filter',
         }),
         Select({
             id: 'score-dashboard-sort',
@@ -115,6 +116,7 @@ const Toolbar = (
             value: sortedBy,
             options: sortOptions,
             onChange: options?.onsort,
+            testId: 'scorecards-sort',
         }),
         span({ style: 'margin: 0 auto;' }),
         Button({
@@ -126,6 +128,7 @@ const Toolbar = (
             onclick: () => emitEvent('LinkClicked', {
                 href: 'quality-dashboard:explorer',
                 params: { project_code: projectSummary.project_code },
+                testId: 'scorecards-goto-explorer',
             }),
         }),
         Button({
@@ -135,6 +138,7 @@ const Toolbar = (
             tooltipPosition: 'left',
             style: 'border: var(--button-stroked-border); border-radius: 4px;',
             onclick: () => emitEvent('RefreshData', {}),
+            testId: 'scorecards-refresh',
         }),
     );
 };

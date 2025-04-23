@@ -128,6 +128,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 Card({
                     id: 'overview-project-summary',
                     class: 'tg-overview--project',
+                    testId: 'project-summary',
                     border: true,
                     content: [
                         () => div(
@@ -167,6 +168,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     icon: 'search',
                     clearable: true,
                     placeholder: 'Search table group names',
+                    testId: 'table-groups-filter',
                     onChange: (value) => tableGroupsSearchTerm.val = value,
                 }),
                 span({ style: 'margin-right: 1rem;' }),
@@ -176,6 +178,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     options: props.table_groups_sort_options?.val ?? [],
                     height: 38,
                     style: 'font-size: 14px;',
+                    testId: 'table-groups-sort',
                 }),
             )
             : '',
@@ -190,6 +193,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     return Card({
+        testId: 'table-group-summary-card',
         border: true,
         title: tableGroup.table_groups_name,
         actionContent: () => ExpanderToggle({

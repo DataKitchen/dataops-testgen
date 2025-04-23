@@ -93,12 +93,12 @@ const ProfilingRunItem = (
     /** @type boolean */ userCanRun,
 ) => {
     return div(
-        { class: 'table-row flex-row' },
+        { class: 'table-row flex-row', 'data-testid': 'profiling-run-item' },
         div(
             { style: `flex: ${columns[0]}` },
-            div(formatTimestamp(item.start_time)),
+            div({'data-testid': 'profiling-run-item-starttime'}, formatTimestamp(item.start_time)),
             div(
-                { class: 'text-caption mt-1' },
+                { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-tablegroup' },
                 item.table_groups_name,
             ),
         ),
@@ -107,7 +107,7 @@ const ProfilingRunItem = (
             div(
                 ProfilingRunStatus(item),
                 div(
-                    { class: 'text-caption mt-1' },
+                    { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
                     formatDuration(item.duration),
                 ),
             ),
@@ -120,11 +120,12 @@ const ProfilingRunItem = (
         ),
         div(
             { style: `flex: ${columns[2]}` },
-            div(item.schema_name),
+            div({'data-testid': 'profiling-run-item-schema'}, item.schema_name),
             div(
                 {
                     class: 'text-caption mt-1 mb-1',
                     style: item.status === 'Complete' && !item.column_ct ? 'color: var(--red);' : '',
+                    'data-testid': 'profiling-run-item-counts',
                 },
                 item.status === 'Complete' ? `${item.table_ct || 0} tables, ${item.column_ct || 0} columns` : null,
             ),
@@ -155,6 +156,7 @@ const ProfilingRunItem = (
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 8px;',
+                'data-testid': 'profiling-run-item-viewissues'
             }) : null,
         ),
         div(
@@ -176,6 +178,7 @@ function ProfilingRunStatus(/** @type ProfilingRun */ item) {
         {
             class: 'flex-row',
             style: `color: var(--${attributes.color});`,
+            'data-testid': 'profiling-run-item-status'
         },
         attributes.label,
         () => {
