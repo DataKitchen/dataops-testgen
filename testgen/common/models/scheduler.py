@@ -28,6 +28,10 @@ class JobSchedule(Base):
         query = select(cls).where(*clauses).order_by(order_by)
         return get_current_session().execute(query)
 
+    @classmethod
+    def count(cls):
+        return get_current_session().query(cls).count()
+
     def get_sample_triggering_timestamps(self, n=3) -> list[datetime]:
         schedule = Cron(cron_string=self.cron_expr).schedule(timezone_str=self.cron_tz)
         return [schedule.next() for _ in range(n)]

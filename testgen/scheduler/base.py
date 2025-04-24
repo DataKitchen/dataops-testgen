@@ -68,8 +68,14 @@ class Scheduler:
 
     def _get_next_jobs(self):
 
+        try:
+            all_jobs = self.get_jobs()
+        except Exception as e:
+            LOG.error("Error obtaining jobs: %r", e)  # noqa: TRY400
+            return
+
         job_list_head = []
-        for job in self.get_jobs():
+        for job in all_jobs:
             gen = job.get_triggering_times(self.base_time)
             job_list_head.append((next(gen), gen, job))
         self._reload_event.clear()
@@ -121,7 +127,10 @@ class Scheduler:
                 if self._wait_until(triggering_time):
                     LOG.info("%d jobs to start at %s", len(jobs), triggering_time)
                     for job in jobs:
-                        self.start_job(job, triggering_time)
+                        try:
+                            self.start_job(job, triggering_time)
+                        except Exception as e:
+                            LOG.error("Error starting %r: %r", job, e)  # noqa: TRY400
                     self.base_time = triggering_time + timedelta(seconds=1)
                 else:
                     break

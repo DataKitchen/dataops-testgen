@@ -484,7 +484,3 @@ ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("true", "
 """
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
-
-SCHEDULER_ADDRESS: str = os.getenv("TG_SCHEDULER_ADDRESS", "localhost:8510")
-
-SCHEDULER_AUTH_KEY: str = os.getenv("TG_SCHEDULER_AUTH_KEY", "scheduler_key")

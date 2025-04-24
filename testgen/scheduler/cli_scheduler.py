@@ -3,6 +3,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,7 +60,7 @@ class CliScheduler(Scheduler):
                 )
             )
 
-        LOG.info("Loaded %s schedules", len(job_list))
+        LOG.info("Loaded %s schedule(s)", len(job_list))
 
         return job_list
 
@@ -76,7 +77,7 @@ class CliScheduler(Scheduler):
             *chain(*chain((opt.opts[0], str(job.kwargs[opt.name])) for opt in cmd.params if opt.name in job.kwargs)),
         ]
 
-        LOG.info("Executing  %s"," ".join(exec_cmd))
+        LOG.info("Executing  '%s'", " ".join(exec_cmd))
 
         proc = subprocess.Popen(exec_cmd, start_new_session=True)  # noqa: S603
         threading.Thread(target=self._proc_wrapper, args=(proc,)).start()
@@ -100,7 +101,7 @@ class CliScheduler(Scheduler):
         def sig_handler(signum, _):
             sig = signal.Signals(signum)
             if interrupted.is_set():
-                LOG.info("Received signal %s, propagating to %d running jobs", sig.name, len(self._running_jobs))
+                LOG.info("Received signal %s, propagating to %d running job(s)", sig.name, len(self._running_jobs))
                 for job in self._running_jobs:
                     job.send_signal(signum)
             else:
@@ -122,15 +123,30 @@ class CliScheduler(Scheduler):
 
             with self._running_jobs_cond:
                 if self._running_jobs:
-                    LOG.info("Waiting %d running jobs to complete", len(self._running_jobs))
+                    LOG.info("Waiting %d running job(s) to complete", len(self._running_jobs))
                     self._running_jobs_cond.wait_for(lambda: len(self._running_jobs) == 0)
 
             LOG.info("All jobs terminated")
 
 
+@with_database_session
+def check_db_is_ready() -> bool:
+    try:
+        count = JobSchedule.count()
+    except Exception:
+        LOG.info("Database is not ready yet.")
+        return False
+    else:
+        LOG.info("Database is ready. A total of %d schedule(s) were found.", count)
+        return True
+
+
 def run_scheduler():
+    while not check_db_is_ready():
+        time.sleep(10)
     scheduler = CliScheduler()
     scheduler.run()
+
 
 def register_scheduler_job(cmd: Command):
     if cmd.name in JOB_REGISTRY:

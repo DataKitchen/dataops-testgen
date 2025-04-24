@@ -22,7 +22,7 @@ def scheduler_instance() -> Scheduler:
         get_jobs = Mock()
         start_job = Mock()
 
-    return TestScheduler()
+    yield TestScheduler()
 
 
 @pytest.fixture
@@ -47,6 +47,17 @@ def now_5_min_ahead(scheduler_instance, base_time):
     with patch.object(scheduler_instance, "_get_now", now_func):
         yield now_func
 
+
+@pytest.mark.unit
+def test_getting_jobs_wont_crash(scheduler_instance, base_time):
+    scheduler_instance.get_jobs.side_effect = Exception
+    scheduler_instance.start(base_time)
+
+    time.sleep(0.05)
+    assert scheduler_instance.thread.is_alive()
+
+    scheduler_instance.shutdown()
+    scheduler_instance.wait()
 
 
 @pytest.mark.unit
@@ -100,18 +111,15 @@ def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_ti
 
 
 @pytest.mark.unit
-def test_job_start_is_called(scheduler_instance, base_time, no_wait):
+@pytest.mark.parametrize("start_side_effect", (lambda *_: None, Exception))
+def test_job_start_is_called(start_side_effect, scheduler_instance, base_time, no_wait):
     jobs = [
         Job(cron_expr="* * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL),
         Job(cron_expr="*/2 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL),
     ]
+    scheduler_instance.get_jobs.side_effect = lambda: iter(jobs)
+    scheduler_instance.start_job.side_effect = start_side_effect
     with (
-        patch.object(scheduler_instance, "start_job") as start_job_mock,
-        patch.object(
-            scheduler_instance,
-            "get_jobs",
-            side_effect=lambda: iter(jobs),
-        ) as get_jobs_mock,
         patch.object(
             scheduler_instance,
             "_get_next_jobs",
@@ -121,10 +129,10 @@ def test_job_start_is_called(scheduler_instance, base_time, no_wait):
         scheduler_instance.start(base_time)
 
         for multiplier in (1, 2):
-            while start_job_mock.call_count != 6 * multiplier:
+            while scheduler_instance.start_job.call_count != 6 * multiplier:
                 time.sleep(0.01)
 
-            assert get_jobs_mock.call_count == multiplier
+            assert scheduler_instance.get_jobs.call_count == multiplier
             assert get_next_mock.call_count == multiplier
 
             if multiplier == 1:

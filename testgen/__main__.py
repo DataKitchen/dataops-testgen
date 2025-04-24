@@ -94,7 +94,7 @@ def cli(ctx: Context, verbose: bool):
         sys.exit(1)
 
     if (
-        ctx.invoked_subcommand not in ["ui", "tui", "setup-system-db", "upgrade-system-version", "quick-start"]
+        ctx.invoked_subcommand not in ["run-app", "scheduler", "ui", "tui", "setup-system-db", "upgrade-system-version", "quick-start"]
         and not is_db_revision_up_to_date()
     ):
         click.secho("The system database schema is outdated. Automatically running the following command:", fg="red")
