@@ -246,12 +246,12 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
-    booErrors = False
+    has_errors = False
 
     LOG.info("CurrentStep: Retrieving Parameters")
 
     # Generate UUID for Profile Run ID
-    strProfileRunID = str(uuid.uuid4())
+    profiling_run_id = str(uuid.uuid4())
 
     dctParms = RetrieveProfilingParms(strTableGroupsID)
 
@@ -288,7 +288,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     clsProfiling.parm_max_freq_length = 25
     clsProfiling.parm_do_patterns = "Y"
     clsProfiling.parm_max_pattern_length = 25
-    clsProfiling.profile_run_id = strProfileRunID
+    clsProfiling.profile_run_id = profiling_run_id
     clsProfiling.data_schema = dctParms["table_group_schema"]
     clsProfiling.parm_table_set = dctParms["profiling_table_set"]
     clsProfiling.parm_table_include_mask = dctParms["profiling_include_mask"]
@@ -307,7 +307,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     RunActionQueryList("DKTG", lstProfileRunQuery)
     if spinner:
         spinner.next()
-    message = "Profiling completed "
+
     try:
         # Retrieve Column Metadata
         LOG.info("CurrentStep: Getting DDF from project")
@@ -342,7 +342,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
                 )
                 dctSampleTables = {x[0]: [x[1], x[2]] for x in lstSampleTables}
                 if intErrors > 0:
-                    booErrors = True
+                    has_errors = True
                     LOG.warning(
                         f"Errors were encountered retrieving sampling table counts. ({intErrors} errors occurred.) Please check log."
                     )
@@ -358,7 +358,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
                 clsProfiling.data_table = dctColumnRecord["table_name"]
                 clsProfiling.col_name = dctColumnRecord["column_name"]
                 clsProfiling.col_type = dctColumnRecord["data_type"]
-                clsProfiling.profile_run_id = strProfileRunID
+                clsProfiling.profile_run_id = profiling_run_id
                 clsProfiling.col_is_decimal = dctColumnRecord["is_decimal"]
                 clsProfiling.col_ordinal_position = dctColumnRecord["ordinal_position"]
                 clsProfiling.col_max_char_length = dctColumnRecord["character_maximum_length"]
@@ -389,7 +389,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
                 "PROJECT", lstQueries, dctParms["max_threads"], spinner
             )
             if intErrors > 0:
-                booErrors = True
+                has_errors = True
                 LOG.warning(
                     f"Errors were encountered executing profiling queries. ({intErrors} errors occurred.) Please check log."
                 )
@@ -432,7 +432,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
                         "PROJECT", lstQueries, dctParms["max_threads"], spinner
                     )
                     if intErrors > 0:
-                        booErrors = True
+                        has_errors = True
                         LOG.warning(
                             f"Errors were encountered executing frequency queries. ({intErrors} errors occurred.) Please check log."
                         )
@@ -487,7 +487,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         else:
             LOG.info("No columns were selected to profile.")
     except Exception as e:
-        booErrors = True
+        has_errors = True
         sqlsplit = e.args[0].split("[SQL", 1)
         errorline = sqlsplit[0].replace("'", "''") if len(sqlsplit) > 0 else "unknown error"
         clsProfiling.exception_message = f"{type(e).__name__}: {errorline}"
@@ -506,9 +506,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
             refresh_date=date_service.parse_now(clsProfiling.run_date),
         )
 
-        if booErrors:
-            str_error_status = "with errors. Check log for details."
-        else:
-            str_error_status = "successfully."
-        message += str_error_status
-    return message
+    return f"""
+        Profiling completed {"with errors. Check log for details." if has_errors else "successfully."}
+        Run ID: {profiling_run_id}
+    """
