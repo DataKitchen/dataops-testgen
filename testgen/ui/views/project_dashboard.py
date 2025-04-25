@@ -22,6 +22,7 @@ class ProjectDashboardPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon=PAGE_ICON,
@@ -30,13 +31,12 @@ class ProjectDashboardPage(Page):
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
-    def render(self, project_code: str | None = None, **_kwargs):
+    def render(self, project_code: str, **_kwargs):
         testgen.page_header(
             PAGE_TITLE,
             "introduction-to-dataops-testgen",
         )
 
-        project_code = project_code or session.project
         table_groups = get_table_groups_summary(project_code)
         project_summary_df = project_queries.get_summary_by_code(project_code)
 
@@ -83,6 +83,7 @@ class ProjectDashboardPage(Page):
             "project_dashboard",
             props={
                 "project": {
+                    "project_code": project_code,
                     "table_groups_count": len(table_groups.index),
                     "test_suites_count": int(table_groups["latest_tests_suite_ct"].sum()),
                     "test_definitions_count": int(table_groups["latest_tests_ct"].sum()),

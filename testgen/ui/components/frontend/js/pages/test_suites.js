@@ -1,6 +1,7 @@
 /**
  * @typedef ProjectSummary
  * @type {object}
+ * @property {string} project_code
  * @property {number} test_suites_ct
  * @property {number} connections_ct
  * @property {number} table_groups_ct
@@ -211,6 +212,7 @@ const ConditionalEmptyState = (
             link: {
                 label: 'Go to Connections',
                 href: 'connections',
+                params: { project_code: projectSummary.project_code },
             },
         };
     } else if (projectSummary.table_groups_ct <= 0) {

@@ -30,15 +30,15 @@ class DataCatalogPage(Page):
     path = "data-catalog"
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
 
-    def render(self, project_code: str | None = None, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
         )
 
-        project_code = project_code or session.project
         user_can_navigate = not user_session_service.user_has_catalog_role()
 
         if render_empty_state(project_code, user_can_navigate):
@@ -62,6 +62,7 @@ class DataCatalogPage(Page):
             columns_df = get_table_group_columns(table_group_id)
             selected_item = get_selected_item(selected, table_group_id)
             if selected_item:
+                selected_item["project_code"] = project_code
                 selected_item["connection_id"] = str(
                     table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
             else:
@@ -166,6 +167,7 @@ def render_empty_state(project_code: str, user_can_navigate: bool) -> bool:
             action_label="Go to Connections",
             action_disabled=not user_can_navigate,
             link_href="connections",
+            link_params={ "project_code": project_code },
         )
     else:
         testgen.empty_state(

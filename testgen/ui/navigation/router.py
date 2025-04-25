@@ -27,14 +27,28 @@ class Router(Singleton):
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
 
         current_page = st.navigation(streamlit_pages, position="hidden")
-        session.current_page_args = st.query_params
+
+        # This hack is needed because the auth cookie is not set if navigation happens immediately after login
+        # We have to navigate on the next run
+        if session.logging_in:
+            session.logging_in = False
+
+            pending_route = session.page_pending_login or session.user_default_page or ""
+            pending_args = (
+                (session.page_args_pending_login or {})
+                if session.page_pending_login
+                else {"project_code": session.sidebar_project}
+            )
+            session.page_pending_login = None
+            session.page_args_pending_login = None
+
+            self.navigate(to=pending_route, with_args=pending_args)
 
         if session.cookies_ready:
             current_page = session.page_pending_cookies or current_page
             session.page_pending_cookies = None
 
             if session.page_args_pending_router is not None:
-                session.current_page_args = session.page_args_pending_router
                 st.query_params.from_dict(session.page_args_pending_router)
                 session.page_args_pending_router = None
 
@@ -42,9 +56,8 @@ class Router(Singleton):
             current_page.run()
         else:
             # This hack is needed because the auth cookie is not retrieved on the first run
-            # We have to store the page and wait for the next run
+            # We have to store the page and wait until cookies are ready
             session.page_pending_cookies = current_page
-            session.cookies_ready = True
             st.rerun()
 
     def queue_navigation(self, /, to: str, with_args: dict | None = None) -> None:

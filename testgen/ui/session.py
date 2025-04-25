@@ -17,11 +17,9 @@ class TestgenSession(Singleton):
     logging_out: bool
     page_pending_cookies: st.Page  # type: ignore
     page_pending_login: str
-    page_pending_sidebar: str
+    page_args_pending_login: dict
     page_args_pending_router: dict
-
     current_page: str
-    current_page_args: dict
 
     dbschema: str
 
@@ -31,7 +29,7 @@ class TestgenSession(Singleton):
     auth_role: Literal["admin", "data_quality", "analyst", "business", "catalog"]
     user_default_page: str
 
-    project: str
+    sidebar_project: str
     add_project: bool
     latest_version: str | None
 

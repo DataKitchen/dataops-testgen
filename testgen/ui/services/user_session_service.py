@@ -23,6 +23,9 @@ def load_user_session() -> None:
     # Replacing this with st.context.cookies does not work
     # Because it does not update when cookies are deleted on logout
     cookies = stx.CookieManager(key="testgen.cookies.get")
+    if cookies.cookies:
+        session.cookies_ready = True
+
     token = cookies.get(AUTH_TOKEN_COOKIE_NAME)
     if token is not None:
         try:

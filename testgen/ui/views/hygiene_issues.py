@@ -27,7 +27,7 @@ class HygieneIssuesPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "run_id" in session.current_page_args or "profiling-runs",
+        lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 
     def render(
@@ -48,7 +48,7 @@ class HygieneIssuesPage(Page):
             return
 
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
-        project_service.set_current_project(run_df["project_code"])
+        project_service.set_sidebar_project(run_df["project_code"])
 
         testgen.page_header(
             "Hygiene Issues",

@@ -40,6 +40,8 @@
 const van = window.top.van;
 const { a, button, div, i, img, label, option, select, span } = van.tags;
 
+const PROJECT_CODE_QUERY_PARAM = "project_code"
+
 const Sidebar = (/** @type {Properties} */ props) => {
     if (Sidebar.StreamlitInstance) {
         Sidebar.StreamlitInstance.setFrameHeight(1);
@@ -60,7 +62,7 @@ const Sidebar = (/** @type {Properties} */ props) => {
                 div({ class: 'caption' }, 'Project'),
                 () => props.projects.val.length > 1
                     ? ProjectSelect(props.projects, currentProject)
-                    : div(currentProject.val.name),
+                    : div(currentProject.val?.name ?? '...'),
             ),
             () => {
                 const menuItems = props.menu?.val.items || [];
@@ -68,8 +70,8 @@ const Sidebar = (/** @type {Properties} */ props) => {
                     {class: 'content'},
                     menuItems.map(item =>
                         item.items?.length > 0
-                        ? MenuSection(item, props.current_page)
-                        : MenuItem(item, props.current_page))
+                        ? MenuSection(item, props.current_page, currentProject.val?.code)
+                        : MenuItem(item, props.current_page, currentProject.val?.code))
                 );
             },
         ),
@@ -119,18 +121,19 @@ const ProjectSelect = (/** @type Project[] */ projects, /** @type string */ curr
                 class: 'project-select--label',
                 onclick: () => opened.val = !opened.val,
             },
-            div(currentProject.val.name),
+            div(currentProject.val?.name ?? '...'),
             i({ class: 'material-symbols-rounded' }, 'arrow_drop_down'),
         ),
         () => opened.val
             ? div(
                 { class: 'project-select--options-wrapper' },
-                projects.val.map(({ name, code }) => div(
+                projects.val.map(({ name, code }) => a(
                     {
-                        class: `project-select--option ${code === currentProject.val.code ? 'selected' : ''}`,
-                        onclick: () => {
+                        class: `project-select--option ${code === currentProject.val?.code ? 'selected' : ''}`,
+                        href: `/?${PROJECT_CODE_QUERY_PARAM}=${code}`,
+                        onclick: (event) => {
                             opened.val = false;
-                            emitEvent({ project: code });
+                            navigate(event, '', { [PROJECT_CODE_QUERY_PARAM]: code });
                         },
                     },
                     name,
@@ -140,18 +143,26 @@ const ProjectSelect = (/** @type Project[] */ projects, /** @type string */ curr
     );
 };
 
-const MenuSection = (/** @type {MenuItem} */ item, /** @type {string} */ currentPage) => {
+const MenuSection = (
+    /** @type {MenuItem} */ item,
+    /** @type {string} */ currentPage,
+    /** @type {string} */ projectCode,
+) => {
     return div(
         {class: 'menu--section'},
         div({class: 'menu--section--label'}, item.label),
         div(
             {class: 'menu--section--items'},
-            ...item.items.map(child => MenuItem(child, currentPage)),
+            ...item.items.map(child => MenuItem(child, currentPage, projectCode)),
         )
     );
 }
 
-const MenuItem = (/** @type {MenuItem} */ item, /** @type {string} */ currentPage) => {
+const MenuItem = (
+    /** @type {MenuItem} */ item,
+    /** @type {string} */ currentPage,
+    /** @type {string} */ projectCode,
+) => {
     const classes = van.derive(() => {
         if (isCurrentPage(item.page, currentPage?.val)) {
             return 'menu--item active';
@@ -160,7 +171,11 @@ const MenuItem = (/** @type {MenuItem} */ item, /** @type {string} */ currentPag
     });
 
     return a(
-        {class: classes, href: `/${item.page}`, onclick: (event) => navigate(event, item.page, currentPage?.val)},
+        {
+            class: classes,
+            href: `/${item.page}?${PROJECT_CODE_QUERY_PARAM}=${projectCode}`,
+            onclick: (event) => navigate(event, item.page, { [PROJECT_CODE_QUERY_PARAM]: projectCode }),
+        },
         i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
         span({class: 'menu--item--label'}, item.label),
     );
@@ -202,14 +217,18 @@ function emitEvent(/** @type Object */ data) {
     }
 }
 
-function navigate(/** @type object */ event, /** @type string */ path, /** @type string */ currentPage = null) {
+function navigate(
+    /** @type object */ event,
+    /** @type string */ path,
+    /** @type object */ params = {},
+) {
     // Needed to prevent page refresh
     // Returning false does not work because VanJS does not use inline handlers -> https://github.com/vanjs-org/van/discussions/246
     event.preventDefault();
     // Prevent Streamlit from reacting to event
     event.stopPropagation();
 
-    emitEvent({ path });
+    emitEvent({ path, params });
 }
 
 function isCurrentPage(/** @type string */ itemPath, /** @type string */ currentPage) {
@@ -260,7 +279,7 @@ stylesheet.replace(`
     z-index: 99;
 }
 
-.project-select--option {
+.project-select .project-select--option {
     display: flex;
     align-items: center;
     height: 40px;
@@ -269,11 +288,12 @@ stylesheet.replace(`
     font-size: 14px;
     color: var(--primary-text-color);
 }
-.project-select--option:hover {
+.project-select .project-select--option:hover {
     background: var(--select-hover-background);
 }
 
-.project-select--option.selected {
+.project-select .project-select--option.selected {
+    pointer-events: none;
     background: var(--select-hover-background);
     color: var(--primary-color);
 }

@@ -52,13 +52,5 @@ class LoginPage(Page):
 
             if authentication_status:
                 user_session_service.start_user_session(name, username)
-
-                # This hack is needed because the auth cookie is not set if navigation happens immediately
-                if session.logging_in:
-                    session.logging_in = False
-                    next_route = session.page_pending_login or session.user_default_page
-                    session.page_pending_login = None
-                    self.router.navigate(next_route)
-                else:
-                    session.logging_in = True
-                    MixpanelService().send_event("login")
+                session.logging_in = True
+                MixpanelService().send_event("login")

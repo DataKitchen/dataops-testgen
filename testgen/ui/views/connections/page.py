@@ -30,6 +30,7 @@ class ConnectionsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon="database",
@@ -342,7 +343,8 @@ class ConnectionsPage(Page):
                         on_click=lambda: (
                             st.session_state.__setattr__("setup_data_config:navigate-to", "profiling-runs")
                             or st.session_state.__setattr__("setup_data_config:navigate-to-args", {
-                                "table_group": table_group_id
+                                "project_code": table_group["project_code"],
+                                "table_group": table_group_id,
                             })
                         ),
                     )

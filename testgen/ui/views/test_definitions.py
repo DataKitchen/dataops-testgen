@@ -28,7 +28,7 @@ class TestDefinitionsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "test_suite_id" in session.current_page_args or "test-suites",
+        lambda: "test_suite_id" in st.query_params or "test-suites",
     ]
 
     def render(self, test_suite_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
@@ -41,7 +41,7 @@ class TestDefinitionsPage(Page):
 
         table_group = table_group_service.get_by_id(test_suite["table_groups_id"])
         project_code = table_group["project_code"]
-        project_service.set_current_project(project_code)
+        project_service.set_sidebar_project(project_code)
         user_can_edit = user_session_service.user_can_edit()
         user_can_disposition = user_session_service.user_can_disposition()
 
@@ -91,7 +91,7 @@ class TestDefinitionsPage(Page):
             add_test_dialog(project_code, table_group, test_suite, table_name, column_name)
 
         selected = show_test_defs_grid(
-            session.project, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
+            project_code, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
             table_group["id"]
         )
         fm.render_refresh_button(table_actions_column)
