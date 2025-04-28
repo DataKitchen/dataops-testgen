@@ -86,21 +86,11 @@ const TestSuites = (/** @type Properties */ props) => {
                     }),
                     userCanEdit
                         ? Button({
-                            icon: 'today',
-                            type: 'stroked',
-                            label: 'Test Generation Schedules',
-                            width: 'fit-content',
-                            style: 'margin-left: auto; background: var(--dk-card-background);',
-                            onclick: () => emitEvent('SchedulesClicked', {}),
-                        })
-                        : '',
-                    userCanEdit
-                        ? Button({
                             icon: 'add',
                             type: 'stroked',
                             label: 'Add Test Suite',
                             width: 'fit-content',
-                            style: 'margin-left: 10px; background: var(--dk-card-background);',
+                            style: 'margin-left: auto; background: var(--dk-card-background);',
                             onclick: () => emitEvent('AddTestSuiteClicked', {}),
                         })
                         : '',
