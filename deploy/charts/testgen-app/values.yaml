@@ -6,16 +6,17 @@ testgen:
   databaseSchema: "tgapp"
   databaseUser: "postgres"
   databasePasswordSecret:
-    name: "testgen-services-postgresql"
+    name: "postgresql"
     key: "postgres-password"
-  databaseDecryptSecret:
+  authSecrets:
     create: true
-    name: testgen-database-decrypt
+    name: testgen-auth
   uiUser: "admin"
   uiPassword:
   trustTargetDatabaseCertificate: false
   observabilityVerifySsl: true
   releaseCheck: true
+  labels:
 
 cliHooks:
   - name: "setup-db"
@@ -32,7 +33,7 @@ image:
   pullPolicy: IfNotPresent
   tag: "v3"
 
-imagePullSecrets: []
+imagePullSecrets:
 nameOverride: ""
 fullnameOverride: ""
 
@@ -64,7 +65,7 @@ securityContext: {}
 service:
   type: NodePort
   port: 8501
-  nodePort: 8501
+  nodePort:
 
 resources: {}
   # limits:

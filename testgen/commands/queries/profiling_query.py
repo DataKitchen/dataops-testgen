@@ -85,15 +85,15 @@ class CProfilingSQL:
                 "profiling_table_set": self.parm_table_set,
                 "profiling_include_mask": self.parm_table_include_mask,
                 "profiling_exclude_mask": self.parm_table_exclude_mask,
-            } 
+            }
             self._data_chars_sql = CRefreshDataCharsSQL(params, self.run_date, "v_latest_profile_results")
-    
+
         return self._data_chars_sql
-    
+
     def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
         if not self._rollup_scores_sql:
             self._rollup_scores_sql = CRollupScoresSQL(self.profile_run_id, self.table_groups_id)
-    
+
         return self._rollup_scores_sql
 
     def ReplaceParms(self, strInputString):
@@ -106,7 +106,7 @@ class CProfilingSQL:
         strInputString = strInputString.replace("{COL_NAME}", self.col_name)
         strInputString = strInputString.replace("{COL_NAME_SANITIZED}", self.col_name.replace("'", "''"))
         strInputString = strInputString.replace("{COL_GEN_TYPE}", self.col_gen_type)
-        strInputString = strInputString.replace("{COL_TYPE}", self.col_type)
+        strInputString = strInputString.replace("{COL_TYPE}", self.col_type or "")
         strInputString = strInputString.replace("{COL_POS}", str(self.col_ordinal_position))
         strInputString = strInputString.replace("{TOP_FREQ}", self.col_top_freq_update)
         strInputString = strInputString.replace("{PROFILE_RUN_ID}", self.profile_run_id)
@@ -177,7 +177,7 @@ class CProfilingSQL:
     def GetAnomalyScoringRollupRunQuery(self):
         # Runs on DK Postgres Server
         return self._get_rollup_scores_sql().GetRollupScoresProfileRunQuery()
-    
+
     def GetAnomalyScoringRollupTableGroupQuery(self):
         # Runs on DK Postgres Server
         return self._get_rollup_scores_sql().GetRollupScoresProfileTableGroupQuery()

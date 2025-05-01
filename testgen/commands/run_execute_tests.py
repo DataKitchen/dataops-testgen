@@ -169,9 +169,7 @@ def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=
     ):
         has_errors = True
 
-    if has_errors:
-        error_status = "with errors. Check log for details."
-    else:
-        error_status = "successfully."
-    message = f"Test Execution completed {error_status}"
-    return message
+    return f"""
+        Test execution completed {"with errors. Check log for details." if has_errors else "successfully."}
+        Run ID: {test_run_id}
+    """

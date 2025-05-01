@@ -40,15 +40,7 @@ spec:
           env:
             {{- include "testgen.environment" $ | nindent 12 }}
             {{- include "testgen.hookEnvironment" $ | nindent 12 }}
-          {{- with .Values.extraVolumeMounts }}
-          volumeMounts:
-            {{ toYaml . | nindent 12 }}
-          {{- end }}
           command: {{ toJson .command }}
-      {{- with .Values.extraVolumes }}
-      volumes:
-        {{ toYaml . | nindent 8 }}
-      {{- end }}
       {{- with $.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

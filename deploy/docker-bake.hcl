@@ -15,6 +15,15 @@ target "testgen-release" {
   dockerfile = "deploy/testgen.dockerfile"
   platforms = ["linux/amd64", "linux/arm64"]
   tags = formatlist("datakitchen/dataops-testgen:%s", split(" ", TESTGEN_LABELS))
+  attest = [
+    {
+      type = "provenance",
+      mode = "max",
+    },
+    {
+      type = "sbom",
+    }
+  ]
 }
 
 target "testgen-qa" {
