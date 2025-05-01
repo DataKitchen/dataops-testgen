@@ -37,7 +37,7 @@ The [dk-installer](https://github.com/DataKitchen/data-observability-installer/?
 | Software                | Tested Versions               | Command to check version                |
 |-------------------------|-------------------------|-------------------------------|
 | [Python](https://www.python.org/downloads/) <br/>- Most Linux and macOS systems have Python pre-installed. <br/>- On Windows machines, you will need to download and install it.  <br/> Why Python?  To run the installer.       | 3.9, 3.10, 3.11, 3.12                | `python3 --version`                |
-| [Docker](https://docs.docker.com/get-docker/) <br/>[Docker Compose](https://docs.docker.com/compose/install/)  <br/> Why Docker?  Docker lets you try TestGen without affecting your local software environment.  All the dependencies TestGen needs are isolated in its own container, so installation is easy and insulated.  | 25.0.3, 26.1.1, <br/> 2.24.6, 2.27.0, 2.28.1        | `docker -v` <br/> `docker compose version`         |
+| [Docker](https://docs.docker.com/get-docker/) <br/>[Docker Compose](https://docs.docker.com/compose/install/)  <br/> Why Docker?  Docker lets you try TestGen without affecting your local software environment.  All the dependencies TestGen needs are isolated in its own container, so installation is easy and insulated.  | 26.1, 27.5, 28.0 <br/> 2.32, 2.33, 2.34        | `docker -v` <br/> `docker compose version`         |
 
 ### Download the installer
 
