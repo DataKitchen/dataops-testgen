@@ -299,6 +299,7 @@ def get_column_by_condition(
         """ if include_tags else ""}
         LEFT JOIN {schema}.profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
+            AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
         )
     WHERE {filter_condition};
