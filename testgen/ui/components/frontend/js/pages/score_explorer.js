@@ -7,6 +7,7 @@
  * @typedef ScoreDefinition
  * @type {object}
  * @property {string} name
+ * @property {string} project_code
  * @property {boolean} total_score
  * @property {boolean} cde_score
  * @property {string} category
@@ -306,7 +307,7 @@ const Toolbar = (
                 () => {
                     const isNew_ = getValue(isNew);
                     let href = 'quality-dashboard';
-                    let params = {};
+                    let params = {project_code: definition.project_code};
                     if (!isNew_) {
                         href = 'quality-dashboard:score-details';
                         params = {definition_id: definition.id};

@@ -3,7 +3,6 @@ from functools import partial
 from io import BytesIO
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
@@ -28,7 +27,7 @@ class HygieneIssuesPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "run_id" in session.current_page_args or "profiling-runs",
+        lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 
     def render(
@@ -49,7 +48,7 @@ class HygieneIssuesPage(Page):
             return
 
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
-        project_service.set_current_project(run_df["project_code"])
+        project_service.set_sidebar_project(run_df["project_code"])
 
         testgen.page_header(
             "Hygiene Issues",
@@ -461,24 +460,6 @@ def get_profiling_anomaly_summary(str_profile_run_id):
 @st.cache_data(show_spinner=False)
 def get_source_data(hi_data):
     return get_source_data_uncached(hi_data)
-
-
-def write_frequency_graph(df_tests):
-    # Count the frequency of each test_name
-    df_count = df_tests["anomaly_name"].value_counts().reset_index()
-    df_count.columns = ["anomaly_name", "frequency"]
-
-    # Sort the DataFrame by frequency in ascending order for display
-    df_count = df_count.sort_values(by="frequency", ascending=True)
-
-    # Create a horizontal bar chart using Plotly Express
-    fig = px.bar(df_count, x="frequency", y="anomaly_name", orientation="h", title="Issue Frequency")
-    fig.update_layout(title_font={"color": "green"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    if len(df_count) <= 5:
-        # fig.update_layout(bargap=0.9)
-        fig.update_layout(height=300)
-
-    st.plotly_chart(fig)
 
 
 @st.dialog(title="Source Data")

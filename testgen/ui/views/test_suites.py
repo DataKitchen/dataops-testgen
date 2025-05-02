@@ -29,6 +29,7 @@ class TestSuitesPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon=PAGE_ICON,
@@ -38,13 +39,12 @@ class TestSuitesPage(Page):
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
-    def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "create-a-test-suite",
         )
 
-        project_code = project_code or session.project
         table_groups = get_db_table_group_choices(project_code)
         user_can_edit = user_session_service.user_can_edit()
         test_suites = test_suite_service.get_by_project(project_code, table_group_id)
@@ -71,6 +71,7 @@ class TestSuitesPage(Page):
             "test_suites",
             props={
                 "project_summary": {
+                    "project_code": project_code,
                     "test_suites_ct": format_field(project_summary["test_suites_ct"]),
                     "connections_ct": format_field(project_summary["connections_ct"]),
                     "table_groups_ct": format_field(project_summary["table_groups_ct"]),

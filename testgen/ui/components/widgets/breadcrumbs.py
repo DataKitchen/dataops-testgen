@@ -2,6 +2,7 @@ import typing
 
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
+from testgen.ui.session import session
 
 
 def breadcrumbs(
@@ -23,7 +24,11 @@ def breadcrumbs(
         props={"breadcrumbs": breadcrumbs},
     )
     if data:
-        Router().navigate(to=data["href"], with_args=data["params"])
+        # Prevent handling the same event multiple times
+        event_id = data.get("_id")
+        if event_id != session.breadcrumb_event_id:
+            session.breadcrumb_event_id = event_id
+            Router().navigate(to=data["href"], with_args=data["params"])
 
 class Breadcrumb(typing.TypedDict):
     path: str | None

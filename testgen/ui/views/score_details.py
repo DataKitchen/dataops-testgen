@@ -14,7 +14,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
-from testgen.ui.services import user_session_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
@@ -27,7 +27,7 @@ class ScoreDetailsPage(Page):
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "definition_id" in session.current_page_args or "quality-dashboard",
+        lambda: "definition_id" in st.query_params or "quality-dashboard",
     ]
 
     def render(
@@ -39,7 +39,6 @@ class ScoreDetailsPage(Page):
         drilldown: str | None = None,
         **_kwargs
     ):
-        project_code: str = session.project
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
 
         if not score_definition:
@@ -48,11 +47,13 @@ class ScoreDetailsPage(Page):
                 "quality-dashboard",
             )
             return
+        
+        project_service.set_sidebar_project(score_definition.project_code)
 
         testgen.page_header(
             "Score Details",
             breadcrumbs=[
-                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
+                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": score_definition.project_code}},
                 {"label": score_definition.name},
             ],
         )

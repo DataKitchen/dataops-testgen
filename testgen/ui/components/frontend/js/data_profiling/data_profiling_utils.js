@@ -27,6 +27,7 @@
  * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
+ * @property {string} project_code
  * * Characteristics
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
  * @property {string} column_type
@@ -135,6 +136,7 @@
  * @property {string} schema_name
  * @property {string} table_group_id
  * @property {string} connection_id
+ * @property {string} project_code
  * * Characteristics
  * @property {string} functional_table_type
  * @property {number} record_ct

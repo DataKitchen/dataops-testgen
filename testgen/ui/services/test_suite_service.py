@@ -3,6 +3,7 @@ import streamlit as st
 
 import testgen.ui.queries.test_suite_queries as test_suite_queries
 import testgen.ui.services.test_definition_service as test_definition_service
+from testgen.utils import is_uuid4
 
 
 def get_by_project(project_code, table_group_id=None):
@@ -11,6 +12,9 @@ def get_by_project(project_code, table_group_id=None):
 
 
 def get_by_id(test_suite_id: str) -> pd.Series:
+    if not is_uuid4(test_suite_id):
+        return pd.Series()
+    
     schema = st.session_state["dbschema"]
     df = test_suite_queries.get_by_id(schema, test_suite_id)
     if not df.empty:

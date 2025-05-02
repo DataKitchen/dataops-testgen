@@ -12,16 +12,14 @@ TempValueSetter = Callable[[T], None]
 
 
 class TestgenSession(Singleton):
-    cookies_ready: int
+    cookies_ready: bool
     logging_in: bool
     logging_out: bool
     page_pending_cookies: st.Page  # type: ignore
     page_pending_login: str
-    page_pending_sidebar: str
+    page_args_pending_login: dict
     page_args_pending_router: dict
-
     current_page: str
-    current_page_args: dict
 
     dbschema: str
 
@@ -31,11 +29,14 @@ class TestgenSession(Singleton):
     auth_role: Literal["admin", "data_quality", "analyst", "business", "catalog"]
     user_default_page: str
 
-    project: str
+    sidebar_project: str
     add_project: bool
     latest_version: str | None
 
     testgen_event_id: str | None
+    sidebar_event_id: str | None
+    link_event_id: str | None
+    breadcrumb_event_id: str | None
 
     def __init__(self, state: SessionStateProxy) -> None:
         super().__setattr__("_state", state)

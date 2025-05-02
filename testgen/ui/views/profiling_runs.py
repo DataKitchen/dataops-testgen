@@ -30,6 +30,7 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon=PAGE_ICON,
@@ -39,13 +40,12 @@ class DataProfilingPage(Page):
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
-    def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "investigate-profiling",
         )
 
-        project_code = project_code or session.project
         user_can_run = user_session_service.user_can_edit()
         if render_empty_state(project_code, user_can_run):
             return
@@ -143,6 +143,7 @@ def render_empty_state(project_code: str, user_can_run: bool) -> bool:
             message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
+            link_params={ "project_code": project_code },
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(

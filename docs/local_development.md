@@ -63,6 +63,7 @@ Create a `local.env` file with the following environment variables, replacing th
 ```shell
 export TESTGEN_DEBUG=yes
 export TESTGEN_LOG_TO_FILE=no
+export TG_ANALYTICS=no
 export TESTGEN_USERNAME=<username>
 export TESTGEN_PASSWORD=<password>
 export TG_DECRYPT_SALT=<decrypt_salt>
