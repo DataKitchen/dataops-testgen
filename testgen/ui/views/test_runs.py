@@ -76,13 +76,13 @@ class TestRunsPage(Page):
         with actions_column:
             testgen.flex_row_end(actions_column)
 
-            if user_can_run:
-                st.button(
-                    ":material/today: Test Run Schedules",
-                    help="Manages when a test suite should run.",
-                    on_click=partial(TestRunScheduleDialog().open, project_code)
-                )
+            st.button(
+                ":material/today: Test Run Schedules",
+                help="Manages when a test suite should run.",
+                on_click=partial(TestRunScheduleDialog().open, project_code)
+            )
 
+            if user_can_run:
                 st.button(
                     ":material/play_arrow: Run Tests",
                     help="Run tests for a test suite",
@@ -114,13 +114,13 @@ class TestRunsPage(Page):
 
 class TestRunScheduleDialog(ScheduleDialog):
 
-    title = "Manage Test Run Schedules"
+    title = "Test Run Schedules"
     arg_label = "Test Suite"
     job_key = "run-tests"
     test_suites: pd.DataFrame | None = None
 
-    def init(self, project_code: str) -> None:
-        self.test_suites = get_db_test_suite_choices(project_code)
+    def init(self) -> None:
+        self.test_suites = get_db_test_suite_choices(self.project_code)
 
     def get_arg_value(self, job):
         return self.test_suites.loc[

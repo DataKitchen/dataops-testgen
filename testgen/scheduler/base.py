@@ -68,17 +68,18 @@ class Scheduler:
 
     def _get_next_jobs(self):
 
+        job_list_head = []
+
         try:
             all_jobs = self.get_jobs()
         except Exception as e:
             LOG.error("Error obtaining jobs: %r", e)  # noqa: TRY400
-            return
-
-        job_list_head = []
-        for job in all_jobs:
-            gen = job.get_triggering_times(self.base_time)
-            job_list_head.append((next(gen), gen, job))
-        self._reload_event.clear()
+        else:
+            for job in all_jobs:
+                gen = job.get_triggering_times(self.base_time)
+                job_list_head.append((next(gen), gen, job))
+        finally:
+            self._reload_event.clear()
 
         while job_list_head and not self._stopping.is_set():
 

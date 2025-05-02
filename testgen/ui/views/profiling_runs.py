@@ -66,12 +66,13 @@ class DataProfilingPage(Page):
         with actions_column:
             testgen.flex_row_end()
 
+            st.button(
+                ":material/today: Profiling Schedules",
+                help="Manages when profiling should run for a given table group",
+                on_click=partial(ProfilingScheduleDialog().open, project_code)
+            )
+
             if user_can_run:
-                st.button(
-                    ":material/today: Profiling Schedules",
-                    help="Manages when profiling should run for a given table group",
-                    on_click=partial(ProfilingScheduleDialog().open, project_code)
-                )
                 st.button(
                     ":material/play_arrow: Run Profiling",
                     help="Run profiling for a table group",
@@ -104,13 +105,13 @@ class DataProfilingPage(Page):
 
 class ProfilingScheduleDialog(ScheduleDialog):
 
-    title = "Manage Profiling Schedules"
+    title = "Profiling Schedules"
     arg_label = "Table Group"
     job_key = "run-profile"
     table_groups: pd.DataFrame | None = None
 
-    def init(self, project_code: str) -> None:
-        self.table_groups = get_db_table_group_choices(project_code)
+    def init(self) -> None:
+        self.table_groups = get_db_table_group_choices(self.project_code)
 
     def get_arg_value(self, job):
         return self.table_groups.loc[
@@ -126,7 +127,6 @@ class ProfilingScheduleDialog(ScheduleDialog):
             required=True,
         )
         return bool(tg_id), [], {"table_group_id": tg_id}
-
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:

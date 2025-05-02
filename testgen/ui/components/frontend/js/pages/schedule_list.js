@@ -6,11 +6,15 @@
  * @property {string} cronTz
  * @property {string[]} sample
  *
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
+ *
  * @typedef Properties
  * @type {object}
  * @property {Schedule[]} items
  * @property {Permissions} permissions
- * @property {string} argLabel
+ * @property {string} arg_label
  */
 import van from '../van.min.js';
 import { Button } from '../components/button.js';
@@ -45,7 +49,7 @@ const ScheduleList = (/** @type Properties */ props) => {
             { class: 'table-header flex-row' },
             span(
                 { style: `flex: ${columns[0]}` },
-                getValue(props.argLabel),
+                getValue(props.arg_label),
             ),
             span(
                 { style: `flex: ${columns[1]}` },
@@ -57,7 +61,7 @@ const ScheduleList = (/** @type Properties */ props) => {
             ),
         ),
         () => div(
-            scheduleItems.val.map(item => ScheduleListItem(item, columns)),
+            scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions))),
         ),
     );
 }
@@ -65,6 +69,7 @@ const ScheduleList = (/** @type Properties */ props) => {
 const ScheduleListItem = (
     /** @type Schedule */ item,
     /** @type string[] */ columns,
+    /** @type Permissions */ permissions,
 ) => {
     return div(
         { class: 'table-row flex-row' },
@@ -86,7 +91,7 @@ const ScheduleListItem = (
                             },
                             'info',
                         ),
-                        { text: [div("Sample triggering timestamps:"), ...item.sample?.map(v => div(v))] },
+                        { text: [div("Next runs:"), ...item.sample?.map(v => div(v))] },
                     ),
                 ),
                 div(
@@ -97,12 +102,12 @@ const ScheduleListItem = (
         ),
         div(
             { style: `flex: ${columns[2]}` },
-            Button({
+            permissions.can_edit ? Button({
                 type: 'stroked',
                 label: 'Delete',
                 style: 'width: auto; height: 32px;',
                 onclick: () => emitEvent('DeleteSchedule', { payload: item }),
-            }),
+            }) : null,
         ),
     );
 }

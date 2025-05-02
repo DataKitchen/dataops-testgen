@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Any, Self
 
 from cron_converter import Cron
-from sqlalchemy import JSON, Column, String, select
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, select
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import Base, get_current_session
@@ -18,8 +18,8 @@ class JobSchedule(Base):
     project_code: str = Column(String)
 
     key: str = Column(String, nullable=False)
-    args: list[Any] = Column(JSON, nullable=False, default=[])
-    kwargs: dict[str, Any] = Column(JSON, nullable=False, default={})
+    args: list[Any] = Column(JSONB, nullable=False, default=[])
+    kwargs: dict[str, Any] = Column(JSONB, nullable=False, default={})
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)
 

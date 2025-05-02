@@ -98,8 +98,24 @@ testgen run-tests --project-key DEFAULT --test-suite-key default-suite-1
 testgen quick-start --simulate-fast-forward
 ```
 
-### Run Streamlit
-Run the local Streamlit-based TestGen application. It will open the browser at [http://localhost:8501](http://localhost:8501).
+### Run the Application
+
+TheGen has two modules that have to be running: The web user interface (UI) and the Scheduler.
+The scheduler starts jobs (profiling, test execution, ...) at their scheduled times.
+
+The following command starts both modules, each in their own process:
+
 ```shell
-testgen ui run
+testgen run-app
+```
+
+Alternatively, you can run each individually:
+
+
+```shell
+testgen run-app ui
+```
+
+```shell
+testgen run-app scheduler
 ```

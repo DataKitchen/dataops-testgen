@@ -55,6 +55,7 @@ def test_getting_jobs_wont_crash(scheduler_instance, base_time):
 
     time.sleep(0.05)
     assert scheduler_instance.thread.is_alive()
+    assert not scheduler_instance._reload_event.is_set()
 
     scheduler_instance.shutdown()
     scheduler_instance.wait()
