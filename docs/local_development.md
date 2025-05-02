@@ -100,7 +100,7 @@ testgen quick-start --simulate-fast-forward
 
 ### Run the Application
 
-TheGen has two modules that have to be running: The web user interface (UI) and the Scheduler.
+TestGen has two modules that have to be running: The web user interface (UI) and the Scheduler.
 The scheduler starts jobs (profiling, test execution, ...) at their scheduled times.
 
 The following command starts both modules, each in their own process:

@@ -129,8 +129,8 @@ class ScheduleDialog:
                 except Exception as e:
                     st.error("Error validating the Cron expression")
                 else:
-                    # We postpone the validation status update when the previous reran was a failed
-                    # attempt to insert an schedule so that it does not override the error message
+                    # We postpone the validation status update when the previous rerun had a failed
+                    # attempt to insert a schedule. This prevents the error message of being overridden
                     if st.session_state.get("schedule_form_success", None) is None:
                         st.success(
                             f"**Next runs:** {' | '.join(sample)} ({cron_tz.replace('_', ' ')})",
@@ -139,29 +139,26 @@ class ScheduleDialog:
                     else:
                         st.session_state["schedule_form_success"] = None
 
+        is_form_valid = bool(args_valid and cron_obj)
         with button_column:
-            add_button = st.button(
-                "Add",
-                use_container_width=True,
-                disabled=not args_valid or not cron_obj,
-            )
+            add_button = st.button("Add", use_container_width=True, disabled=not is_form_valid)
 
-        if add_button:
+        # We also check for `is_form_valid` here because apparently it's possible to click a disabled button =)
+        if add_button and is_form_valid:
             with Session() as db_session:
-                with status_container:
-                    try:
-                        sched_model = JobSchedule(
-                            project_code=self.project_code,
-                            key=self.job_key,
-                            cron_expr=cron_obj.to_string(),
-                            cron_tz=cron_tz,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                        db_session.add(sched_model)
-                        db_session.commit()
-                    except IntegrityError:
-                        st.session_state["schedule_form_success"] = False
-                    else:
-                        st.session_state["schedule_form_success"] = True
+                try:
+                    sched_model = JobSchedule(
+                        project_code=self.project_code,
+                        key=self.job_key,
+                        cron_expr=cron_obj.to_string(),
+                        cron_tz=cron_tz,
+                        args=args,
+                        kwargs=kwargs,
+                    )
+                    db_session.add(sched_model)
+                    db_session.commit()
+                except IntegrityError:
+                    st.session_state["schedule_form_success"] = False
+                else:
+                    st.session_state["schedule_form_success"] = True
             st.rerun(scope="fragment")
