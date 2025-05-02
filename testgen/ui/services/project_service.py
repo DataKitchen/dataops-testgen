@@ -1,6 +1,5 @@
 import streamlit as st
 
-from testgen.ui.navigation.router import Router
 from testgen.ui.queries import project_queries
 from testgen.ui.services import database_service, query_service
 from testgen.ui.session import session
