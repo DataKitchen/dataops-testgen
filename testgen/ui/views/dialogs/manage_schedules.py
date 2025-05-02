@@ -94,11 +94,9 @@ class ScheduleDialog:
             match st.session_state.get("schedule_form_success", None):
                 case True:
                     st.success("Schedule added.", icon=":material/check:")
-                    st.session_state["schedule_cron_expr"] = ""
-                    st.session_state["schedule_cron_tz"] = st.session_state.get(
-                        "browser_timezone", st.session_state["schedule_cron_tz"]
-                    )
-                    st.session_state["schedule_form_success"] = None
+                    del st.session_state["schedule_cron_expr"]
+                    del st.session_state["schedule_cron_tz"]
+                    del st.session_state["schedule_form_success"]
                 case False:
                     st.error("This schedule already exists.", icon=":material/block:")
                 case None:
