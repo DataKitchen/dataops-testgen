@@ -1,16 +1,12 @@
-# For render_logo
-import base64
 import typing
 from builtins import float
 from enum import Enum
 from io import BytesIO
-from os.path import splitext
 from pathlib import Path
 from time import sleep
 
 import pandas as pd
 import streamlit as st
-from attrs import validators
 from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox
@@ -515,63 +511,6 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
         st.divider()
 
 
-def render_markdown_list(dct_row, lst_columns, str_header=None):
-    # Renders sets of values as vertical markdown list
-
-    str_blank_line = "<br>"  # chr(10) + chr(10)
-
-    if str_header:
-        # Header with extra line
-        str_markdown = f":green[**{str_header}**]" + str_blank_line
-    else:
-        str_markdown = ""
-
-    for col in lst_columns:
-        # Column:  Value with extra line
-        str_markdown += f"**{ut_prettify_header(col)}**:&nbsp;&nbsp;`{dct_row[col]!s}`" + str_blank_line
-
-    # Drop last blank line
-    i = str_markdown.rfind(str_blank_line)
-    if i != -1:
-        str_markdown = str_markdown[:i]
-
-    with st.container():
-        st.markdown(str_markdown, unsafe_allow_html=True)
-        st.divider()
-
-
-def render_markdown_table(df, lst_columns):
-    # Filter the DataFrame to include only the specified columns
-
-    df_filtered = df[lst_columns]
-
-    # Initialize markdown string
-    md_str = ""
-    # Add headers
-    headers = "|".join([f" {ut_prettify_header(col)} " for col in lst_columns])
-    md_str += f"|{headers}|\n"
-    # Add alignment row
-    alignments = []
-    for col in lst_columns:
-        if pd.api.types.is_numeric_dtype(df_filtered[col]):
-            alignments.append("---:")
-        else:
-            alignments.append(":---")
-    md_str += f"|{'|'.join(alignments)}|\n"
-
-    # Add rows
-    for _, row in df_filtered.iterrows():
-        row_str = []
-        for col in lst_columns:
-            if pd.api.types.is_numeric_dtype(df_filtered[col]):
-                row_str.append(f" {row[col]} ")
-            else:
-                row_str.append(f" {row[col]} ")
-        md_str += f"|{'|'.join(row_str)}|\n"
-
-    st.markdown(md_str)
-
-
 def render_grid_select(
     df: pd.DataFrame,
     show_columns,
@@ -766,73 +705,3 @@ function(params) {
         if bind_to_query_name and bind_to_query_prop:
             Router().set_query_params({bind_to_query_name: selected_rows[0][bind_to_query_prop]})
         return selected_rows
-
-
-def render_logo(logo_path: str = logo_file):
-    st.markdown(
-        f"""<img class="dk-logo-img" src="data:image/svg+xml;base64,{base64.b64encode(open(logo_path, "rb").read()).decode()}">""",
-        unsafe_allow_html=True,
-    )
-
-
-def render_icon_link(target_url, width=20, height=20, icon_path=help_icon):
-    # left, right = st.columns([0.5, 0.5])
-    # with left:
-
-    # Check if the icon_path is a URL or a local path
-    if validators.url(icon_path):
-        img_data = icon_path
-    else:
-        # If local path, convert the image to base64
-        img_data = base64.b64encode(Path(icon_path).read_bytes()).decode()
-
-    # Get the image extension
-    img_format = splitext(icon_path)[-1].replace(".", "")
-
-    base_html = f"""
-        <a href="{target_url}" style="display: flex; justify-content: center; align-items: center; height: 100%;">
-            <img src="{{}}" style="width:{width}px; height:{height}px;" />
-        </a>
-    """
-    if validators.url(icon_path):
-        html_code = base_html.format(img_data)
-    else:
-        html_code = base_html.format(f"data:image/{img_format};base64,{img_data}")
-
-    st.markdown(html_code, unsafe_allow_html=True)
-
-
-def render_icon_link_new(target_url, width=20, height=20, icon_path=help_icon):
-    # FIXME:  Why doesn't this work?
-
-    # Check if the icon_path is a URL or a local path
-    if validators.url(icon_path):
-        img_data = icon_path
-    else:
-        # If local path, convert the image to base64
-        img_data = base64.b64encode(Path(icon_path).read_bytes()).decode()
-
-    # Get the image extension
-    img_format = splitext(icon_path)[-1].replace(".", "")
-
-    if not validators.url(icon_path):
-        img_data = f"data:image/{img_format};base64,{img_data}"
-
-    html_code = f"""
-    <a href="#" onclick="DKlowerRightPopup('{target_url}'); return false;">
-        <img src="{img_data}" style="width:{width}px; height:{height}px;" />
-    </a>
-    <script>
-        function DKlowerRightPopup(url) {{
-            let win_width = 300;
-            let win_height = 400;
-            let offsetX = 20;
-            let offsetY = 20;
-            let left = screen.width - win_width - offsetX;
-            let top = screen.height - win_height - offsetY;
-            window.open(url, 'PopupWindow', `width=${{win_width}},height=${{win_height}},left=${{left}},top=${{top}},scrollbars=yes,resizable=yes`);
-        }}
-    </script>
-"""
-
-    st.markdown(html_code, unsafe_allow_html=True)

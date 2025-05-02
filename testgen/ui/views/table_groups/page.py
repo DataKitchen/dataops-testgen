@@ -23,7 +23,7 @@ class TableGroupsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "connection_id" in session.current_page_args or "connections",
+        lambda: "connection_id" in st.query_params or "connections",
     ]
 
     def render(self, connection_id: str, **_kwargs) -> None:
@@ -35,7 +35,7 @@ class TableGroupsPage(Page):
             )
 
         project_code = connection["project_code"]
-        project_service.set_current_project(project_code)
+        project_service.set_sidebar_project(project_code)
         user_can_edit = user_session_service.user_can_edit()
 
         testgen.page_header(

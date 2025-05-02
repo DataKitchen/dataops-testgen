@@ -74,6 +74,9 @@ boolean_true_ct
 
 @st.cache_data(show_spinner="Loading data ...")
 def get_run_by_id(profile_run_id: str) -> pd.Series:
+    if not is_uuid4(profile_run_id):
+        return pd.Series()
+    
     schema: str = st.session_state["dbschema"]
     sql = f"""
     SELECT profiling_starttime, table_groups_id::VARCHAR, table_groups_name, pr.project_code, pr.dq_score_profiling,

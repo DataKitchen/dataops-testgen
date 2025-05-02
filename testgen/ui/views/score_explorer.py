@@ -30,6 +30,7 @@ class ScoreExplorerPage(Page):
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "definition_id" in st.query_params or "project_code" in st.query_params or "quality-dashboard",
     ]
 
     def render(
@@ -43,13 +44,22 @@ class ScoreExplorerPage(Page):
         breakdown_score_type: str | None = "score",
         drilldown: str | None = None,
         definition_id: str | None = None,
+        project_code: str | None = None,
         **_kwargs
     ):
-        project_code: str = session.project
         page_title: str = "Score Explorer"
         last_breadcrumb: str = page_title
         if definition_id:
             original_score_definition = ScoreDefinition.get(definition_id)
+
+            if not original_score_definition:
+                self.router.navigate_with_warning(
+                    f"Scorecard with ID '{definition_id}' does not exist. Redirecting to Quality Dashboard ...",
+                    "quality-dashboard",
+                )
+                return
+        
+            project_code = original_score_definition.project_code
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
         testgen.page_header(page_title, breadcrumbs=[
@@ -202,6 +212,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
 
 
 def save_score_definition(_) -> None:
+    project_code = st.query_params.get("project_code")
     definition_id = st.query_params.get("definition_id")
     name = st.query_params.get("name")
     total_score = st.query_params.get("total_score")
@@ -221,11 +232,12 @@ def save_score_definition(_) -> None:
     if definition_id:
         is_new = False
         score_definition = ScoreDefinition.get(definition_id)
+        project_code = score_definition.project_code
 
     if is_new:
         latest_run = max(
-            profiling_queries.get_latest_run_date(session.project),
-            test_run_queries.get_latest_run_date(session.project),
+            profiling_queries.get_latest_run_date(project_code),
+            test_run_queries.get_latest_run_date(project_code),
             key=lambda run: getattr(run, "run_time", 0),
         )
 
@@ -234,7 +246,7 @@ def save_score_definition(_) -> None:
             "refresh_date": latest_run.run_time if latest_run else None,
         }
 
-    score_definition.project_code = session.project
+    score_definition.project_code = project_code
     score_definition.name = name
     score_definition.total_score = total_score and total_score.lower() == "true"
     score_definition.cde_score = cde_score and cde_score.lower() == "true"
@@ -248,7 +260,7 @@ def save_score_definition(_) -> None:
     get_all_score_cards.clear()
 
     if not is_new:
-        run_recalculate_score_card(project_code=score_definition.project_code, definition_id=score_definition.id)
+        run_recalculate_score_card(project_code=project_code, definition_id=score_definition.id)
 
     Router().set_query_params({
         "name": None,

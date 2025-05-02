@@ -1,6 +1,7 @@
 /**
  * @typedef ProjectSummary
  * @type {object}
+ * @property {string} project_code
  * @property {number} table_groups_count
  * @property {number} test_suites_count
  * @property {number} test_definitions_count
@@ -8,7 +9,7 @@
  * @property {number} profiling_runs_count
  * @property {number} connections_count
  * @property {string} default_connection_id
- * 
+ *
  * @typedef TestSuiteSummary
  * @type {object}
  * @property {string} id
@@ -23,7 +24,7 @@
  * @property {number} last_run_failed_ct
  * @property {number} last_run_error_ct
  * @property {number} last_run_dismissed_ct
- * 
+ *
  * @typedef TableGroupSummary
  * @type {object}
  * @property {string} id
@@ -51,13 +52,13 @@
  * @property {number} latest_tests_dismissed_ct
  * @property {TestSuiteSummary[]} test_suites
  * @property {boolean} expanded
- * 
+ *
  * @typedef SortOption
  * @type {object}
  * @property {string} value
  * @property {string} label
  * @property {boolean} selected
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project
@@ -177,13 +178,13 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     style: 'font-size: 14px;',
                 }),
             )
-            : undefined,
+            : '',
         () => !getValue(isEmpty)
             ? div(
                 { class: 'flex-column mt-2' },
                 getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
             )
-            : undefined,
+            : '',
     );
 }
 
@@ -361,6 +362,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
         link: {
             label: 'Go to Connections',
             href: 'connections',
+            params: { project_code: project.project_code },
         },
     };
     const forTablegroups = {

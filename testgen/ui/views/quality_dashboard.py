@@ -1,5 +1,7 @@
 from typing import ClassVar, get_args
 
+import streamlit as st
+
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -17,6 +19,7 @@ class QualityDashboardPage(Page):
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon="readiness_score",
@@ -33,6 +36,7 @@ class QualityDashboardPage(Page):
             "quality_dashboard",
             props={
                 "project_summary": {
+                    "project_code": project_code,
                     "connections_count": int(project_summary["connections_ct"]),
                     "default_connection_id": str(project_summary["default_connection_id"]),
                     "table_groups_count": int(project_summary["table_groups_ct"]),

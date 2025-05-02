@@ -2,6 +2,7 @@ import typing
 
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.router import Router
+from testgen.ui.session import session
 
 TooltipPosition = typing.Literal["left", "right"]
 
@@ -51,4 +52,8 @@ def link(
 
     clicked = component(id_="link", key=key, props=props)
     if clicked:
-        Router().navigate(to=href, with_args=params)
+        # Prevent handling the same event multiple times
+        event_id = clicked.get("_id")
+        if event_id != session.link_event_id:
+            session.link_event_id = event_id
+            Router().navigate(to=href, with_args=params)

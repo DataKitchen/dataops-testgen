@@ -1,6 +1,5 @@
 import streamlit as st
 
-from testgen.ui.navigation.router import Router
 from testgen.ui.queries import project_queries
 from testgen.ui.services import database_service, query_service
 from testgen.ui.session import session
@@ -16,9 +15,10 @@ def get_projects():
     return projects
 
 
-def set_current_project(project_code: str) -> None:
-    session.project = project_code
-    Router().set_query_params({ "project_code": project_code })
+def set_sidebar_project(project_code: str) -> None:
+    if project_code != session.sidebar_project:
+        session.sidebar_project = project_code
+        st.rerun()
 
 
 @st.cache_data(show_spinner=False)
