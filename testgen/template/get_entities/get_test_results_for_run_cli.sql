@@ -3,8 +3,9 @@ SELECT ts.test_suite as test_suite_key,
        column_names as column_name,
        r.test_type,
        CASE
-         WHEN result_code = 1 THEN 'Pass'
-         WHEN result_code = 0 THEN 'Fail'
+         WHEN result_code = 1 THEN 'Passed'
+         WHEN result_code = 0 AND r.severity = 'Warning' THEN 'Warning'
+         WHEN result_code = 0 AND r.severity = 'Fail' THEN 'Failed'
        END as result,
        COALESCE(r.result_message, '') as result_message,
        result_measure,
