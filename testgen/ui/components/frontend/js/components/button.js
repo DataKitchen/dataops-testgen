@@ -13,6 +13,7 @@
  * @property {(Function|null)} onclick
  * @property {(bool)} disabled
  * @property {string?} style
+ * @property {string?} testId
  */
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -67,6 +68,7 @@ const Button = (/** @type Properties */ props) => {
             disabled: props.disabled,
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
+            'data-testid': getValue(props.testId) ?? '',
         },
         () => window.testgen.isPage && getValue(props.tooltip) ? Tooltip({
             text: props.tooltip,

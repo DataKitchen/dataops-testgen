@@ -8,6 +8,7 @@
  * @property {boolean?} interactive
  * @property {Function<void>?} onPointMouseEnter
  * @property {Function<void>?} onPointMouseLeave
+ * @property {string?} testId
  * 
  * @typedef Point
  * @type {object}
@@ -34,7 +35,7 @@ const SparkLine = (
 ) => {
     const display = van.derive(() => getValue(options.hidden) === true ? 'none' : '');
     return g(
-        { fill: 'none', opacity: options.opacity ?? 1, style: 'overflow: visible;', display },
+        { fill: 'none', opacity: options.opacity ?? 1, style: 'overflow: visible;', 'data-testid': options.testId, display },
         polyline({
             points: line.map(point => `${point.x} ${point.y}`).join(', '),
             style: `stroke: ${options.color}; stroke-width: ${options.stroke ?? 1};`,

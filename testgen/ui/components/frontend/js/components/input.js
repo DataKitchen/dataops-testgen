@@ -13,6 +13,7 @@
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
+ * @property {string?} testId
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet, getRandomId } from '../utils.js';
@@ -55,6 +56,7 @@ const Input = (/** @type Properties */ props) => {
             id: domId,
             class: 'flex-column fx-gap-1 tg-input--label',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
+            'data-testid': props.testId ?? '',
         },
         div(
             { class: 'flex-row fx-gap-1 text-caption' },

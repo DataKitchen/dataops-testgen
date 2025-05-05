@@ -11,7 +11,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
     loadStylesheet('score-breakdown', stylesheet);
 
     return div(
-        { class: 'table' },
+        { class: 'table', 'data-testid': 'score-breakdown' },
         div(
             { class: 'flex-row fx-justify-space-between fx-align-flex-start text-caption' },
             div(
@@ -24,6 +24,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         value: selectedCategory,
                         options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c })),
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
+                        testId: 'groupby-selector',
                     });
                 },
                 span('for'),
@@ -39,6 +40,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         value: selectedScoreType,
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
                         onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+                        testId: 'score-type-selector',
                     });
                 },
             ),
@@ -59,7 +61,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
             const columns = breakdownValue?.columns;
             return div(
                 breakdownValue?.items?.map((row) => div(
-                    { class: 'table-row flex-row' },
+                    { class: 'table-row flex-row', 'data-testid': 'score-breakdown-row' },
                     columns.map((columnName) => TableCell(row, columnName, scoreValue, categoryValue, scoreTypeValue, onViewDetails)),
                 )),
             );
@@ -106,7 +108,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 
     const size = BREAKDOWN_COLUMNS_SIZES[column];
     return div(
-        { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;`, 'data-testid': 'score-breakdown-cell' },
         span(row[column]),
     );
 };
@@ -114,7 +116,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 const BreakdownColumnCell = (value, row) => {
     const size = BREAKDOWN_COLUMNS_SIZES.column_name;
     return div(
-        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;` },
+        { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;`, 'data-testid': 'score-breakdown-cell' },
         Caption({ content: row.table_name, style: 'font-size: 12px;' }),
         span(value),
     );
@@ -122,7 +124,7 @@ const BreakdownColumnCell = (value, row) => {
 
 const ImpactCell = (value) => {
     return div(
-        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.impact}` },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.impact}`, 'data-testid': 'score-breakdown-cell' },
         value && !String(value).startsWith('-')
         ? i(
             {class: 'material-symbols-rounded', style: 'font-size: 20px; color: #E57373;'},
@@ -135,7 +137,7 @@ const ImpactCell = (value) => {
 
 const ScoreCell = (value) => {
     return div(
-        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.score}` },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.score}`, 'data-testid': 'score-breakdown-cell' },
         dot({ class: 'mr-2' }, getScoreColor(value)),
         span(value ?? '--'),
     );
@@ -150,11 +152,16 @@ const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) =
     }
 
     return div(
-        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}` },
+        { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}`, 'data-testid': 'score-breakdown-cell' },
         span({ class: 'mr-2', style: 'min-width: 40px;' }, value || '-'),
         (value && onViewDetails)
         ? div(
-            { class: 'flex-row clickable', style: 'color: var(--link-color);', onclick: () => onViewDetails(score.project_code, score.name, scoreType, category, drilldown) },
+            {
+                class: 'flex-row clickable',
+                style: 'color: var(--link-color);',
+                'data-testid': 'view-issues',
+                onclick: () => onViewDetails(score.project_code, score.name, scoreType, category, drilldown),
+            },
             span('View'),
             i({class: 'material-symbols-rounded', style: 'font-size: 20px;'}, 'chevron_right'),
         )

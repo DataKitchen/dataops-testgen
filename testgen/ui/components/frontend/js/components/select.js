@@ -17,6 +17,7 @@
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
+ * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../utils.js';
@@ -74,19 +75,21 @@ const Select = (/** @type {Properties} */ props) => {
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
             onclick: van.derive(() => !getValue(props.disabled) ? () => opened.val = !opened.val : null),
+            'data-testid': getValue(props.testId) ?? '',
         },
-        props.label,
+        span({'data-testid': 'select-label'}, props.label),
         div(
             {
                 class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
                 style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+                'data-testid': 'select-input',
             },
             div(
-                { class: 'tg-select--field--content' },
+                { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
                 valueLabel,
             ),
             div(
-                { class: 'tg-select--field--icon' },
+                { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
                 i(
                     { class: 'material-symbols-rounded' },
                     'expand_more',
@@ -96,7 +99,7 @@ const Select = (/** @type {Properties} */ props) => {
         Portal(
             {target: domId.val, targetRelative: true, opened},
             () => div(
-                { class: 'tg-select--options-wrapper mt-1' },
+                { class: 'tg-select--options-wrapper mt-1', 'data-testid': 'select-options' },
                 getValue(options).map(option =>
                     div(
                         {
@@ -105,6 +108,7 @@ const Select = (/** @type {Properties} */ props) => {
                                 changeSelection(option);
                                 event.stopPropagation();
                             },
+                            'data-testid': 'select-options-item',
                         },
                         span(option.label),
                     )

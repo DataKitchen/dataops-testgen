@@ -83,6 +83,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         allowNull: true,
                         height: 38,
                         style: 'font-size: 14px;',
+                        testId: 'table-group-filter',
                         onChange: (value) => emitEvent('FilterApplied', {payload: value}),
                     }),
                     userCanEdit
@@ -100,8 +101,9 @@ const TestSuites = (/** @type Properties */ props) => {
                     { class: 'flex-column' },
                     getValue(testSuites).map((/** @type TestSuite */ testSuite) => Card({
                         border: true,
+                        testId: 'test-suite-card',
                         title: () => div(
-                            { class: 'flex-column tg-test-suites--card-title' },
+                            { class: 'flex-column tg-test-suites--card-title', 'data-testid': 'test-suite-title' },
                             h4(testSuite.test_suite),
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
                         ),
@@ -128,7 +130,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                     class: 'mb-4',
                                 }),
                                 Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
-                                span(testSuite.test_suite_description ?? '--'),
+                                span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
                             ),
                             div(
                                 { class: 'flex-column' },

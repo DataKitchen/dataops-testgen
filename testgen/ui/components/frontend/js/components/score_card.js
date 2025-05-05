@@ -53,6 +53,7 @@ const ScoreCard = (score, actions, options) => {
         title: title,
         actionContent: actions,
         class: 'tg-score-card',
+        testId: 'scorecard',
         content: () => {
             const score_ = getValue(score);
             const categories = score_.dimensions ?? score_.categories ?? [];
@@ -94,11 +95,11 @@ const ScoreCard = (score, actions, options) => {
                     div(
                         { class: 'tg-score-card--categories' },
                         categories.map(category => div(
-                            { class: 'flex-row fx-align-flex-center fx-gap-2' },
+                            { class: 'flex-row fx-align-flex-center fx-gap-2', 'data-testid': 'scorecard-category' },
                             dot({}, getScoreColor(category.score)),
-                            span({ class: 'tg-score-card--category-score' }, category.score ?? '--'),
+                            span({ class: 'tg-score-card--category-score', 'data-testid': 'scorecard-category-score' }, category.score ?? '--'),
                             span(
-                                { class: 'tg-score-card--category-label', title: category.label, style: 'position: relative;' },
+                                { class: 'tg-score-card--category-label', title: category.label, 'data-testid': 'scorecard-category-label', style: 'position: relative;' },
                                 category.label,
                             ),
                         )),
@@ -138,11 +139,11 @@ const ScoreChart = (label, score, history, showHistory, trendColor) => {
     const yRanges = {old: {min: Math.min(...yValues), max: Math.max(...yValues)}, new: {min: 0, max: yLength}};
 
     return svg(
-        { class: 'tg-score-chart', width: 100, height: 100, viewBox: "0 0 100 100", overflow: 'visible', style },
+        { class: 'tg-score-chart', width: 100, height: 100, viewBox: "0 0 100 100", overflow: 'visible', 'data-testid': 'score-chart', style },
         circle({ class: 'tg-score-chart--bg' }),
         circle({ class: 'tg-score-chart--fg' }),
-        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--primary-text-color)', 'font-size': '18px', 'font-weight': 500 }, score ?? '-'),
-        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--secondary-text-color)', 'font-size': '14px', class: 'tg-score-chart--label' }, label),
+        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--primary-text-color)', 'font-size': '18px', 'font-weight': 500, 'data-testid': 'score-chart-value' }, score ?? '-'),
+        text({ x: '50%', y: '40%', 'dominant-baseline': 'middle', 'text-anchor': 'middle', fill: 'var(--secondary-text-color)', 'font-size': '14px', class: 'tg-score-chart--label', 'data-testid': 'score-chart-text' }, label),
 
         showHistory ? g(
             {fill: 'none', style: 'transform: translate(10px, 70px);'},
