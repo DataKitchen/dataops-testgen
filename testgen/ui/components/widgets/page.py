@@ -38,8 +38,8 @@ def page_links(help_topic: str | None = None):
     st.link_button(":material/school:", TRAINING_URL, help="Training Portal")
 
 
-def whitespace(size: float, container: DeltaGenerator | None = None):
-    _apply_html(f'<div style="height: {size}rem"></div>', container)
+def whitespace(size: float, unit: str = "rem", container: DeltaGenerator | None = None):
+    _apply_html(f'<div style="height: {size}{unit};"></div>', container)
 
 
 def divider(margin_top: int = 0, margin_bottom: int = 0, container: DeltaGenerator | None = None):

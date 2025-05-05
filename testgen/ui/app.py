@@ -1,5 +1,4 @@
 import logging
-import sys
 
 import streamlit as st
 
@@ -72,7 +71,4 @@ def set_locale():
 
 
 if __name__ == "__main__":
-    log_level = logging.INFO
-    if settings.IS_DEBUG_LOG_LEVEL or "--debug" in sys.argv:
-        log_level = logging.DEBUG
-    render(log_level=log_level)
+    render(log_level=logging.DEBUG if settings.IS_DEBUG_LOG_LEVEL else logging.INFO)

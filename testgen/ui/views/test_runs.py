@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries, test_run_queries
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score, to_int
 
@@ -75,6 +76,12 @@ class TestRunsPage(Page):
         with actions_column:
             testgen.flex_row_end(actions_column)
 
+            st.button(
+                ":material/today: Test Run Schedules",
+                help="Manages when a test suite should run.",
+                on_click=partial(TestRunScheduleDialog().open, project_code)
+            )
+
             if user_can_run:
                 st.button(
                     ":material/play_arrow: Run Tests",
@@ -103,6 +110,32 @@ class TestRunsPage(Page):
                 },
                 event_handlers={ "RunCanceled": on_cancel_run }
             )
+
+
+class TestRunScheduleDialog(ScheduleDialog):
+
+    title = "Test Run Schedules"
+    arg_label = "Test Suite"
+    job_key = "run-tests"
+    test_suites: pd.DataFrame | None = None
+
+    def init(self) -> None:
+        self.test_suites = get_db_test_suite_choices(self.project_code)
+
+    def get_arg_value(self, job):
+        return self.test_suites.loc[
+            self.test_suites["id"] == job.kwargs["test_suite_id"], "test_suite"
+        ].iloc[0]
+
+    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
+        ts_id = testgen.select(
+            label="Test Suite",
+            options=self.test_suites,
+            value_column="id",
+            display_column="test_suite",
+            required=True,
+        )
+        return bool(ts_id), [], {"test_suite_id": ts_id}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:

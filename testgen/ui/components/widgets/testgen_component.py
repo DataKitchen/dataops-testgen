@@ -17,6 +17,7 @@ AvailablePages = typing.Literal[
     "test_suites",
     "quality_dashboard",
     "score_details",
+    "schedule_list",
 ]
 
 
@@ -52,7 +53,7 @@ def testgen_component(
                 if event_id != session.testgen_event_id:
                     session.testgen_event_id = event_id
                     handler(event_data.get("payload"))
-    
+
     event_data = component(
         id_=component_id,
         key=key,
