@@ -1,3 +1,4 @@
+import base64
 import datetime
 import logging
 import typing
@@ -6,17 +7,27 @@ import extra_streamlit_components as stx
 import jwt
 import streamlit as st
 
+from testgen import settings
 from testgen.ui.queries import user_queries
 from testgen.ui.session import session
 
 RoleType = typing.Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
-JWT_HASHING_KEY = "dk_signature_key"
 AUTH_TOKEN_COOKIE_NAME = "dk_cookie_name"  # noqa: S105
 AUTH_TOKEN_EXPIRATION_DAYS = 1
 DISABLED_ACTION_TEXT = "You do not have permissions to perform this action. Contact your administrator."
 
 LOG = logging.getLogger("testgen")
+
+
+def _get_jwt_hashing_key() -> bytes:
+    try:
+        return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
+    except Exception as e:
+        raise ValueError(
+            "Error reading the JWT signing key from settings. Make sure you have a valid base 64 "
+            "string assigned to the TG_JWT_HASHING_KEY environment variable."
+        ) from e
 
 
 def load_user_session() -> None:
@@ -29,7 +40,7 @@ def load_user_session() -> None:
     token = cookies.get(AUTH_TOKEN_COOKIE_NAME)
     if token is not None:
         try:
-            token = jwt.decode(token, JWT_HASHING_KEY, algorithms=["HS256"])
+            token = jwt.decode(token, _get_jwt_hashing_key(), algorithms=["HS256"])
             if token["exp_date"] > datetime.datetime.utcnow().timestamp():
                 start_user_session(token["name"], token["username"])
         except Exception:
@@ -77,7 +88,11 @@ def get_auth_data():
 
     return {
         "credentials": {"usernames": usernames},
-        "cookie": {"expiry_days": AUTH_TOKEN_EXPIRATION_DAYS, "key": JWT_HASHING_KEY, "name": AUTH_TOKEN_COOKIE_NAME},
+        "cookie": {
+            "expiry_days": AUTH_TOKEN_EXPIRATION_DAYS,
+            "key": _get_jwt_hashing_key(),
+            "name": AUTH_TOKEN_COOKIE_NAME,
+        },
         "preauthorized": {"emails": preauthorized_list},
     }
 
