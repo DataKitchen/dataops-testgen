@@ -14,6 +14,37 @@ from testgen.common import read_template_sql_file
 from testgen.common.models import Base, engine, get_current_session
 from testgen.utils import is_uuid4
 
+SCORE_CATEGORIES = [
+    "column_name",
+    "table_name",
+    "dq_dimension",
+    "semantic_data_type",
+    "table_groups_name",
+    "data_location",
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "data_product",
+]
+Categories = Literal[
+    "column_name",
+    "table_name",
+    "dq_dimension",
+    "semantic_data_type",
+    "table_groups_name",
+    "data_location",
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "data_product",
+]
+
 
 class ScoreCategory(enum.Enum):
     table_groups_name = "table_groups_name"
@@ -213,7 +244,7 @@ class ScoreDefinition(Base):
     def get_score_card_breakdown(
         self,
         score_type: Literal["score", "cde_score"],
-        group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        group_by: Categories,
     ) -> list[dict]:
         """
         Executes a raw query to filter and aggregate the score details
@@ -264,7 +295,7 @@ class ScoreDefinition(Base):
     def get_score_card_issues(
         self,
         score_type: Literal["score", "cde_score"],
-        group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        group_by: Categories,
         value: str,
     ):
         """
@@ -391,6 +422,15 @@ class ScoreDefinitionBreakdownItem(Base):
     column_name: str = Column(String, nullable=True)
     dq_dimension: str = Column(String, nullable=True)
     semantic_data_type: str = Column(String, nullable=True)
+    table_groups_name: str = Column(String, nullable=True)
+    data_location: str = Column(String, nullable=True)
+    data_source: str = Column(String, nullable=True)
+    source_system: str = Column(String, nullable=True)
+    source_process: str = Column(String, nullable=True)
+    business_domain: str = Column(String, nullable=True)
+    stakeholder_group: str = Column(String, nullable=True)
+    transform_level: str = Column(String, nullable=True)
+    data_product: str = Column(String, nullable=True)
     impact: float = Column(Float)
     score: float = Column(Float)
     issue_ct: int = Column(Integer)
@@ -400,7 +440,7 @@ class ScoreDefinitionBreakdownItem(Base):
         cls,
         *,
         definition_id: str,
-        category: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        category: Categories,
         score_type: Literal["score", "cde_score"],
     ) -> "Iterable[Self]":
         items = []
