@@ -33,6 +33,7 @@ class CliScheduler(Scheduler):
         self._running_jobs: set[subprocess.Popen] = set()
         self._running_jobs_cond = threading.Condition()
         self.reload_timer = None
+        self._current_jobs = {}
         LOG.info("Starting CLI Scheduler with registered jobs: %s", ", ".join(JOB_REGISTRY.keys()))
         super().__init__()
 
@@ -43,26 +44,30 @@ class CliScheduler(Scheduler):
         self.reload_timer = threading.Timer((110 - datetime.now().second) % 60 or 60, self.reload_jobs)
         self.reload_timer.start()
 
-        job_list = []
+        jobs = {}
         for (job_model,) in JobSchedule.select_where():
             if job_model.key not in JOB_REGISTRY:
                 LOG.error("Job '%s' scheduled but not registered", job_model.key)
                 continue
 
-            job_list.append(
-                CliJob(
-                    cron_expr=job_model.cron_expr,
-                    cron_tz=job_model.cron_tz,
-                    delayed_policy=DelayedPolicy.SKIP,
-                    key=job_model.key,
-                    args=job_model.args,
-                    kwargs=job_model.kwargs
-                )
+            jobs[job_model.id] = CliJob(
+                cron_expr=job_model.cron_expr,
+                cron_tz=job_model.cron_tz,
+                delayed_policy=DelayedPolicy.SKIP,
+                key=job_model.key,
+                args=job_model.args,
+                kwargs=job_model.kwargs
             )
 
-        LOG.info("Loaded %s schedule(s)", len(job_list))
+        for job_id in jobs.keys() - self._current_jobs.keys():
+            LOG.info("Enabled job: %s", jobs[job_id])
 
-        return job_list
+        for job_id in self._current_jobs.keys() - jobs.keys():
+            LOG.info("Disabled job: %s", self._current_jobs[job_id])
+
+        self._current_jobs = jobs
+
+        return jobs.values()
 
     def start_job(self, job: CliJob, triggering_time: datetime) -> None:
         cmd = JOB_REGISTRY[job.key]
