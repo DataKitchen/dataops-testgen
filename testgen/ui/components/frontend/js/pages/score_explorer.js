@@ -59,6 +59,7 @@ import { Checkbox } from '../components/checkbox.js';
 import { Portal } from '../components/portal.js';
 import { ScoreBreakdown } from '../components/score_breakdown.js';
 import { IssuesTable } from '../components/score_issues.js';
+import { Alert } from '../components/alert.js';
 
 const { div, i, span } = van.tags;
 
@@ -92,6 +93,13 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
         { id: domId, class: 'score-explorer' },
         Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit),
         span({ class: 'mb-4', style: 'display: block;' }),
+        () =>
+            getValue(props.is_new) && getValue(props.definition)?.filters?.length <= 0
+            ? Alert(
+                { icon: 'info', type: 'info', class: 'mb-4' },
+                span({}, 'Add filters to the scorecard to get started.'),
+            )
+            : '',
         ScoreCard(props.score_card),
         span({ class: 'mb-4', style: 'display: block;' }),
         () => {
