@@ -42,7 +42,11 @@ class QualityDashboardPage(Page):
                     "table_groups_count": int(project_summary["table_groups_ct"]),
                     "profiling_runs_count": int(project_summary["profiling_runs_ct"]),
                 },
-                "scores": [format_score_card(score) for score in get_all_score_cards(project_code) if score.get("score") or score.get("cde_score") or score.get("categories")],
+                "scores": [
+                    format_score_card(score)
+                    for score in get_all_score_cards(project_code)
+                    if score.get("score") or score.get("cde_score") or score.get("categories")
+                ],
             },
             on_change_handlers={
                 "RefreshData": refresh_data,

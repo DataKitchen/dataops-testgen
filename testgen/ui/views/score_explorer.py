@@ -73,7 +73,7 @@ class ScoreExplorerPage(Page):
         score_breakdown = None
         issues = None
         filter_values = {}
-        with st.spinner(text="Loading data ..."):
+        with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
             user_can_edit = user_session_service.user_can_edit()
             filter_values = get_score_category_values(project_code)
 

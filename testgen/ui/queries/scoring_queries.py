@@ -7,7 +7,7 @@ from testgen.common.models import engine
 from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefinition, SelectedIssue
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner="Loading data :gray[:small[(This might take a few minutes)]] ...")
 def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
     return [
         definition.as_cached_score_card()

@@ -63,7 +63,7 @@ class ScoreDetailsPage(Page):
         score_card = None
         score_breakdown = None
         issues = None
-        with st.spinner(text="Loading data ..."):
+        with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
             user_can_edit = user_session_service.user_can_edit()
             score_card = format_score_card(score_definition.as_cached_score_card())
             if not score_type:
