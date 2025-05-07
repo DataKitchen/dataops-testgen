@@ -22,7 +22,9 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                     return Select({
                         label: '',
                         value: selectedCategory,
-                        options:  ['table_name', 'column_name', 'semantic_data_type', 'dq_dimension'].map((c) => ({ label: CATEGORY_LABEL[c], value: c })),
+                        options:  Object.entries(CATEGORIES)
+                            .sort((A, B) => A[1].localeCompare(B[1]))
+                            .map(([value, label]) => ({ value, label })),
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
                         testId: 'groupby-selector',
                     });
@@ -49,7 +51,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
         () => div(
             { class: 'table-header breakdown-columns flex-row' },
             getValue(breakdown)?.columns?.map(column => span({
-                style: `flex: ${BREAKDOWN_COLUMNS_SIZES[column]};` },
+                style: `flex: ${BREAKDOWN_COLUMNS_SIZES[column] ?? COLUMN_DEFAULT_SIZE};` },
                 getReadableColumn(column, getValue(scoreType)),
             )),
         ),
@@ -106,7 +108,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
         return componentByColumn[column](row[column], row, score, category, scoreType, onViewDetails);
     }
 
-    const size = BREAKDOWN_COLUMNS_SIZES[column];
+    const size = BREAKDOWN_COLUMNS_SIZES[column] ?? COLUMN_DEFAULT_SIZE;
     return div(
         { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;`, 'data-testid': 'score-breakdown-cell' },
         span(row[column]),
@@ -114,7 +116,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
 };
 
 const BreakdownColumnCell = (value, row) => {
-    const size = BREAKDOWN_COLUMNS_SIZES.column_name;
+    const size = COLUMN_DEFAULT_SIZE;
     return div(
         { class: 'flex-column', style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;`, 'data-testid': 'score-breakdown-cell' },
         Caption({ content: row.table_name, style: 'font-size: 12px;' }),
@@ -169,14 +171,24 @@ const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) =
     );
 };
 
-const CATEGORY_LABEL = {
+const CATEGORIES = {
     table_name: 'Tables',
     column_name: 'Columns',
     semantic_data_type: 'Semantic Data Types',
     dq_dimension: 'Quality Dimensions',
+    table_groups_name: 'Table Group',
+    data_location: 'Data Location',
+    data_source: 'Data Source',
+    source_system: 'Source System',
+    source_process: 'Source Process',
+    business_domain: 'Business Domain',
+    stakeholder_group: 'Stakeholder Group',
+    transform_level: 'Transform Level',
+    data_product: 'Data Product',
 };
 
 const BREAKDOWN_COLUMN_LABEL = {
+    ...CATEGORIES,
     table_name: 'Table',
     column_name: 'Table | Column',
     semantic_data_type: 'Semantic Data Type',
@@ -191,11 +203,8 @@ const SCORE_TYPE_LABEL = {
     cde_score: 'CDE Score',
 };
 
+const COLUMN_DEFAULT_SIZE = '40%';
 const BREAKDOWN_COLUMNS_SIZES = {
-    table_name: '40%',
-    column_name: '40%',
-    semantic_data_type: '40%',
-    dq_dimension: '40%',
     impact: '20%',
     score: '20%',
     issue_ct: '20%',
