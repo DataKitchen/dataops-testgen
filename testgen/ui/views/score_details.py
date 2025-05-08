@@ -8,7 +8,7 @@ import streamlit as st
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
+from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -36,7 +36,7 @@ class ScoreDetailsPage(Page):
         self,
         *,
         definition_id: str,
-        category: str = "table_name",
+        category: str | None = None,
         score_type: str | None = None,
         drilldown: str | None = None,
         **_kwargs
@@ -49,7 +49,7 @@ class ScoreDetailsPage(Page):
                 "quality-dashboard",
             )
             return
-        
+
         project_service.set_sidebar_project(score_definition.project_code)
 
         testgen.page_header(
@@ -59,6 +59,12 @@ class ScoreDetailsPage(Page):
                 {"label": score_definition.name},
             ],
         )
+
+        if not category and score_definition.category:
+            category = score_definition.category.value
+
+        if not category:
+            category = ScoreCategory.dq_dimension.value
 
         score_card = None
         score_breakdown = None

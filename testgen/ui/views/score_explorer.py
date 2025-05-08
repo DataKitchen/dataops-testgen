@@ -43,7 +43,7 @@ class ScoreExplorerPage(Page):
         cde_score: str | None = None,
         category: str | None = None,
         filters: list[str] | None = None,
-        breakdown_category: str | None = "table_name",
+        breakdown_category: str | None = None,
         breakdown_score_type: str | None = "score",
         drilldown: str | None = None,
         definition_id: str | None = None,
@@ -61,7 +61,10 @@ class ScoreExplorerPage(Page):
                     "quality-dashboard",
                 )
                 return
-        
+
+            if original_score_definition.category:
+                breakdown_category = original_score_definition.category.value
+
             project_code = original_score_definition.project_code
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
@@ -69,6 +72,9 @@ class ScoreExplorerPage(Page):
             {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
             {"label": last_breadcrumb},
         ])
+
+        if not breakdown_category:
+            breakdown_category = ScoreCategory.dq_dimension.value
 
         score_breakdown = None
         issues = None
