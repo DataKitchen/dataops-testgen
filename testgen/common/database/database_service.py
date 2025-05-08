@@ -393,7 +393,8 @@ def RunActionQueryList(strCredentialSet, lstQueries, strAdminNDS="N", user_overr
     ) as con:
         i = 0
         n = len(lstQueries)
-        lstInsertedIds = []
+        insert_ids = []
+        row_counts = []
         if n == 0:
             LOG.info("No queries to process")
         for q in lstQueries:
@@ -402,20 +403,21 @@ def RunActionQueryList(strCredentialSet, lstQueries, strAdminNDS="N", user_overr
             LOG.info(f"(Processing {i} of {n})")
             tx = con.begin()
             exQ = con.execute(text(q))
+            row_counts.append(exQ.rowcount)
             if exQ.rowcount == -1:
                 strMsg = "Action query processed no records."
             else:
                 strMsg = str(exQ.rowcount) + " records processed."
 
                 try:
-                    lstInsertedIds.append(exQ.fetchone()[0])
+                    insert_ids.append(exQ.fetchone()[0])
                 except Exception:
-                    lstInsertedIds.append(None)
+                    insert_ids.append(None)
 
             tx.commit()
             LOG.info(strMsg)
 
-    return lstInsertedIds
+    return insert_ids, row_counts
 
 
 

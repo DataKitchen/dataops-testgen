@@ -71,7 +71,7 @@ def generate_tests_dialog(test_suite: pd.Series) -> None:
         status_container.info("Starting test generation ...")
 
         try:
-            run_test_gen_queries(table_group_id, test_suite_name, selected_set)
+            run_test_gen_queries(table_group_id, test_suite_name, selected_set, "ui")
         except Exception as e:
             status_container.error(f"Test generation encountered errors: {e!s}.")
 

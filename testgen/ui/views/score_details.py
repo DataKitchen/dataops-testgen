@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
@@ -20,10 +21,11 @@ from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 LOG = logging.getLogger("testgen")
+PAGE_PATH = "quality-dashboard:score-details"
 
 
 class ScoreDetailsPage(Page):
-    path = "quality-dashboard:score-details"
+    path = PAGE_PATH
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
@@ -118,6 +120,12 @@ def select_score_type(score_type: str) -> None:
 
 
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
+    MixpanelService().send_event(
+        "download-issue-report",
+        page=PAGE_PATH,
+        issue_count=len(selected_issues),
+    )
+
     issues_data = get_score_card_issue_reports(selected_issues)
     dialog_title = "Download Issue Reports"
     if len(issues_data) == 1:

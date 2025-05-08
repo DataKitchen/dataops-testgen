@@ -6,6 +6,7 @@ import time
 import streamlit as st
 
 import testgen.ui.navigation.page
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -83,6 +84,8 @@ class Router(Singleton):
                 len((st.query_params or {}).keys()) != len(final_args.keys())
                 or any(st.query_params.get(name) != value for name, value in final_args.items())
             )
+            if is_different_page:
+                MixpanelService().send_event(f"nav-{to}")
             if is_different_page or query_params_changed:
                 route = self._routes[to]
                 session.page_args_pending_router = {

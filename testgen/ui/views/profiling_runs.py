@@ -126,7 +126,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
             display_column="table_groups_name",
             required=True,
         )
-        return bool(tg_id), [], {"table_group_id": tg_id}
+        return bool(tg_id), [], {"table_group_id": tg_id, "source": "scheduler"}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
