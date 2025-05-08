@@ -104,7 +104,6 @@ def run_execution_steps_in_background(project_code, test_suite):
         background_thread = threading.Thread(
             target=run_execution_steps,
             args=(project_code, test_suite),
-            kwargs={"source": "ui"},
         )
         background_thread.start()
     else:
@@ -118,7 +117,6 @@ def run_execution_steps(
     test_suite: str,
     minutes_offset: int=0,
     spinner: Spinner=None,
-    source: str | None=None,
 ) -> str:
     # Initialize required parms for all steps
     has_errors = False
@@ -169,7 +167,7 @@ def run_execution_steps(
 
     LOG.info("CurrentStep: Execute Step - CAT Test Execution")
     if run_cat_test_queries(
-        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner, source
+        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner
     ):
         has_errors = True
 
