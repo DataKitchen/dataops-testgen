@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 
+from testgen import settings
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
@@ -62,20 +63,13 @@ def ParseCATResults(clsCATExecute):
     RunActionQueryList("DKTG", [strQuery])
 
 
-def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, source: str):
+def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
     _, row_counts = RunActionQueryList(("DKTG"), [
         clsCATExecute.FinalizeTestResultsSQL(),
         clsCATExecute.PushTestRunStatusUpdateSQL(),
         clsCATExecute.FinalizeTestSuiteUpdateSQL(),
     ])
-
-    MixpanelService().send_event(
-        "run-tests",
-        source=source,
-        sql_flavor=clsCATExecute.flavor,
-        test_count=row_counts[0],
-        duration=(datetime.now(UTC) - date_service.parse_now(clsCATExecute.run_date)).total_seconds(),
-    )
+    end_time = datetime.now(UTC)
     
     RunActionQueryList(("DKTG"), [
         clsCATExecute.CalcPrevalenceTestResultsSQL(),
@@ -88,9 +82,18 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, source: str):
         refresh_date=date_service.parse_now(clsCATExecute.run_date),
     )
 
+    MixpanelService().send_event(
+        "run-tests",
+        source=settings.ANALYTICS_JOB_SOURCE,
+        sql_flavor=clsCATExecute.flavor,
+        test_count=row_counts[0],
+        run_duration=(end_time - date_service.parse_now(clsCATExecute.run_date)).total_seconds(),
+        scoring_duration=(datetime.now(UTC) - end_time).total_seconds(),
+    )
+
 
 def run_cat_test_queries(
-    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None, source=None
+    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
 ):
     booErrors = False
 
@@ -160,4 +163,4 @@ def run_cat_test_queries(
 
     finally:
         LOG.info("Finalizing test run")
-        FinalizeTestRun(clsCATExecute, source)
+        FinalizeTestRun(clsCATExecute)

@@ -24,10 +24,11 @@ def _get_jwt_hashing_key() -> bytes:
     try:
         return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
     except Exception as e:
-        raise ValueError(
-            "Error reading the JWT signing key from settings. Make sure you have a valid base 64 "
-            "string assigned to the TG_JWT_HASHING_KEY environment variable."
-        ) from e
+        st.error(
+            "Error reading the JWT signing key from settings.\n\n Make sure you have a valid "
+            "base64 string assigned to the TG_JWT_HASHING_KEY environment variable."
+        )
+        st.stop()
 
 
 def load_user_session() -> None:

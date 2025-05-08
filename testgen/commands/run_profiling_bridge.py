@@ -238,8 +238,7 @@ def run_profiling_in_background(table_group_id):
         empty_cache()
         background_thread = threading.Thread(
             target=run_profiling_queries,
-            args=(table_group_id),
-            kwargs={"source": "ui"},
+            args=(table_group_id,),
         )
         background_thread.start()
     else:
@@ -248,7 +247,7 @@ def run_profiling_in_background(table_group_id):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_profiling_queries(strTableGroupsID, spinner=None, source=None):
+def run_profiling_queries(strTableGroupsID, spinner=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -504,16 +503,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None, source=None):
         RunActionQueryList("DKTG", [
             clsProfiling.GetProfileRunInfoRecordUpdateQuery(),
         ])
-
-        MixpanelService().send_event(
-            "run-profiling",
-            source=source,
-            sql_flavor=clsProfiling.flavor,
-            sampling=clsProfiling.profile_use_sampling == "Y",
-            table_count=table_count,
-            column_count=column_count,
-            duration=(datetime.now(UTC) - date_service.parse_now(clsProfiling.run_date)).total_seconds(),
-        )
+        end_time = datetime.now(UTC)
 
         RunActionQueryList("DKTG", [
             clsProfiling.GetAnomalyScoringRollupRunQuery(),
@@ -523,6 +513,17 @@ def run_profiling_queries(strTableGroupsID, spinner=None, source=None):
             project_code=dctParms["project_code"],
             add_history_entry=True,
             refresh_date=date_service.parse_now(clsProfiling.run_date),
+        )
+
+        MixpanelService().send_event(
+            "run-profiling",
+            source=settings.ANALYTICS_JOB_SOURCE,
+            sql_flavor=clsProfiling.flavor,
+            sampling=clsProfiling.profile_use_sampling == "Y",
+            table_count=table_count,
+            column_count=column_count,
+            run_duration=(end_time - date_service.parse_now(clsProfiling.run_date)).total_seconds(),
+            scoring_duration=(datetime.now(UTC) - end_time).total_seconds(),
         )
 
     return f"""

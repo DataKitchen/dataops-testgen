@@ -1,4 +1,5 @@
 import logging
+import os
 import signal
 import subprocess
 import sys
@@ -84,7 +85,7 @@ class CliScheduler(Scheduler):
 
         LOG.info("Executing  '%s'", " ".join(exec_cmd))
 
-        proc = subprocess.Popen(exec_cmd, start_new_session=True)  # noqa: S603
+        proc = subprocess.Popen(exec_cmd, start_new_session=True, env={**os.environ, "TG_JOB_SOURCE": "SCHEDULER"})  # noqa: S603
         threading.Thread(target=self._proc_wrapper, args=(proc,)).start()
 
     def _proc_wrapper(self, proc: subprocess.Popen):

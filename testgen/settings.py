@@ -485,6 +485,11 @@ ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("true", "
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
 
+ANALYTICS_JOB_SOURCE: str = os.getenv("TG_JOB_SOURCE", "CLI")
+"""
+Identifies the job trigger for analytics purposes.
+"""
+
 JWT_HASHING_KEY_B64: str = os.getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token

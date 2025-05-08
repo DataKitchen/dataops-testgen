@@ -1,5 +1,6 @@
 import logging
 
+from testgen import settings
 from testgen.commands.queries.generate_tests_query import CDeriveTestsSQL
 from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, RetrieveTestGenParms, RunActionQueryList
 from testgen.common.mixpanel_service import MixpanelService
@@ -7,7 +8,7 @@ from testgen.common.mixpanel_service import MixpanelService
 LOG = logging.getLogger("testgen")
 
 
-def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None, source=None):
+def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -112,7 +113,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None, 
     
     MixpanelService().send_event(
         "generate-tests",
-        source=source,
+        source=settings.ANALYTICS_JOB_SOURCE,
         sql_flavor=clsTests.sql_flavor,
         generation_set=clsTests.generation_set,
     )
