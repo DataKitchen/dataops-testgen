@@ -135,6 +135,9 @@ export TG_DECRYPT_SALT=<encryption_salt>
 export TESTGEN_USERNAME=<username>
 export TESTGEN_PASSWORD=<password>
 
+# Set an arbitrary base64-encoded string to be used for signing authentication tokens
+export TG_JWT_HASHING_KEY=<base64_key>
+
 # Set an accessible path for storing application logs
 export TESTGEN_LOG_FILE_PATH=<path_for_logs>
 ```
