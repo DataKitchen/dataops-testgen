@@ -8,6 +8,7 @@ from testgen.commands.run_refresh_score_cards_results import (
     run_recalculate_score_card,
     run_refresh_score_cards_results,
 )
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionFilter, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -24,9 +25,10 @@ from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
+PAGE_PATH = "quality-dashboard:explorer"
 
 class ScoreExplorerPage(Page):
-    path = "quality-dashboard:explorer"
+    path = PAGE_PATH
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
@@ -176,6 +178,12 @@ def set_breakdown_drilldown(drilldown: str | None) -> None:
 
 
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
+    MixpanelService().send_event(
+        "download-issue-report",
+        page=PAGE_PATH,
+        issue_count=len(selected_issues),
+    )
+    
     issues_data = get_score_card_issue_reports(selected_issues)
     dialog_title = "Download Issue Reports"
     if len(issues_data) == 1:

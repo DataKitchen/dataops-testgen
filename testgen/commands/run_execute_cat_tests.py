@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
@@ -9,6 +10,7 @@ from testgen.common import (
     WriteListToDB,
     date_service,
 )
+from testgen.common.mixpanel_service import MixpanelService
 
 LOG = logging.getLogger("testgen")
 
@@ -60,14 +62,26 @@ def ParseCATResults(clsCATExecute):
     RunActionQueryList("DKTG", [strQuery])
 
 
-def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
-    lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
-                  clsCATExecute.PushTestRunStatusUpdateSQL(),
-                  clsCATExecute.FinalizeTestSuiteUpdateSQL(),
-                  clsCATExecute.CalcPrevalenceTestResultsSQL(),
-                  clsCATExecute.TestScoringRollupRunSQL(),
-                  clsCATExecute.TestScoringRollupTableGroupSQL()]
-    RunActionQueryList(("DKTG"), lstQueries)
+def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, source: str):
+    _, row_counts = RunActionQueryList(("DKTG"), [
+        clsCATExecute.FinalizeTestResultsSQL(),
+        clsCATExecute.PushTestRunStatusUpdateSQL(),
+        clsCATExecute.FinalizeTestSuiteUpdateSQL(),
+    ])
+
+    MixpanelService().send_event(
+        "run-tests",
+        source=source,
+        sql_flavor=clsCATExecute.flavor,
+        test_count=row_counts[0],
+        duration=(datetime.now(UTC) - date_service.parse_now(clsCATExecute.run_date)).total_seconds(),
+    )
+    
+    RunActionQueryList(("DKTG"), [
+        clsCATExecute.CalcPrevalenceTestResultsSQL(),
+        clsCATExecute.TestScoringRollupRunSQL(),
+        clsCATExecute.TestScoringRollupTableGroupSQL(),
+    ])
     run_refresh_score_cards_results(
         project_code=clsCATExecute.project_code,
         add_history_entry=True,
@@ -76,7 +90,7 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
 
 
 def run_cat_test_queries(
-    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
+    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None, source=None
 ):
     booErrors = False
 
@@ -146,4 +160,4 @@ def run_cat_test_queries(
 
     finally:
         LOG.info("Finalizing test run")
-        FinalizeTestRun(clsCATExecute)
+        FinalizeTestRun(clsCATExecute, source)

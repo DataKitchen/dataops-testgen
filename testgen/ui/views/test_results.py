@@ -14,6 +14,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -26,10 +27,11 @@ from testgen.ui.views.test_definitions import show_test_form_by_id
 from testgen.utils import friendly_score, is_uuid4
 
 ALWAYS_SPIN = False
+PAGE_PATH = "test-runs:results"
 
 
 class TestResultsPage(Page):
-    path = "test-runs:results"
+    path = PAGE_PATH
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
@@ -566,6 +568,11 @@ def show_result_detail(
                     ":material/visibility: Source Data", help="View current source data for highlighted result",
                     use_container_width=True
             ):
+                MixpanelService().send_event(
+                    "view-source-data",
+                    page=PAGE_PATH,
+                    test_type=selected_row["test_name_short"],
+                )
                 source_data_dialog(selected_row)
 
         with v_col4:
@@ -588,6 +595,11 @@ def show_result_detail(
                 disabled=not report_eligible_rows,
                 help=report_btn_help,
             ):
+                MixpanelService().send_event(
+                    "download-issue-report",
+                    page=PAGE_PATH,
+                    issue_count=len(report_eligible_rows),
+                )
                 dialog_title = "Download Issue Report"
                 if len(report_eligible_rows) == 1:
                     download_dialog(

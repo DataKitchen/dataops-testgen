@@ -113,12 +113,19 @@ def cli(ctx: Context, verbose: bool):
     help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
     default=None,
 )
-def run_profile(configuration: Configuration, table_group_id: str):
+@click.option(
+    "-s",
+    "--source",
+    required=False,
+    type=click.STRING,
+    default="cli",
+)
+def run_profile(configuration: Configuration, table_group_id: str, source: str):
     click.echo(f"run-profile with table_group_id: {table_group_id}")
     spinner = None
     if not configuration.verbose:
         spinner = MoonSpinner("Processing ... ")
-    message = run_profiling_queries(table_group_id, spinner=spinner)
+    message = run_profiling_queries(table_group_id, spinner=spinner, source=source)
     click.echo("\n" + message)
 
 
@@ -145,10 +152,17 @@ def run_profile(configuration: Configuration, table_group_id: str):
     required=False,
     default=None,
 )
+@click.option(
+    "-s",
+    "--source",
+    required=False,
+    type=click.STRING,
+    default="cli",
+)
 @pass_configuration
-def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str, generation_set: str):
+def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str, generation_set: str, source: str):
     LOG.info("CurrentStep: Generate Tests - Main Procedure")
-    message = run_test_gen_queries(table_group_id, test_suite_key, generation_set)
+    message = run_test_gen_queries(table_group_id, test_suite_key, generation_set, source)
     LOG.info("Current Step: Generate Tests - Main Procedure Complete")
     click.echo("\n" + message)
 
@@ -170,13 +184,20 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
+@click.option(
+    "-s",
+    "--source",
+    required=False,
+    type=click.STRING,
+    default="cli",
+)
 @pass_configuration
-def run_tests(configuration: Configuration, project_key: str, test_suite_key: str):
+def run_tests(configuration: Configuration, project_key: str, test_suite_key: str, source: str):
     click.echo(f"run-tests for suite: {test_suite_key}")
     spinner = None
     if not configuration.verbose:
         spinner = MoonSpinner("Processing ... ")
-    message = run_execution_steps(project_key, test_suite_key, spinner=spinner)
+    message = run_execution_steps(project_key, test_suite_key, spinner=spinner, source=source)
     click.echo("\n" + message)
 
 

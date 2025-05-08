@@ -103,10 +103,8 @@ def run_execution_steps_in_background(project_code, test_suite):
         empty_cache()
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(
-                project_code,
-                test_suite
-            ),
+            args=(project_code, test_suite),
+            kwargs={"source": "ui"},
         )
         background_thread.start()
     else:
@@ -115,7 +113,13 @@ def run_execution_steps_in_background(project_code, test_suite):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=0, spinner: Spinner=None) -> str:
+def run_execution_steps(
+    project_code: str,
+    test_suite: str,
+    minutes_offset: int=0,
+    spinner: Spinner=None,
+    source: str | None=None,
+) -> str:
     # Initialize required parms for all steps
     has_errors = False
     error_msg = ""
@@ -165,7 +169,7 @@ def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=
 
     LOG.info("CurrentStep: Execute Step - CAT Test Execution")
     if run_cat_test_queries(
-        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner
+        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner, source
     ):
         has_errors = True
 

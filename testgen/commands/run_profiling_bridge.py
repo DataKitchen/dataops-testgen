@@ -2,6 +2,7 @@ import logging
 import subprocess
 import threading
 import uuid
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -20,6 +21,7 @@ from testgen.common import (
     date_service,
 )
 from testgen.common.database.database_service import empty_cache
+from testgen.common.mixpanel_service import MixpanelService
 
 booClean = True
 LOG = logging.getLogger("testgen")
@@ -234,7 +236,11 @@ def run_profiling_in_background(table_group_id):
     if settings.IS_DEBUG:
         LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
         empty_cache()
-        background_thread = threading.Thread(target=run_profiling_queries, args=(table_group_id,))
+        background_thread = threading.Thread(
+            target=run_profiling_queries,
+            args=(table_group_id),
+            kwargs={"source": "ui"},
+        )
         background_thread.start()
     else:
         LOG.info(msg)
@@ -242,7 +248,7 @@ def run_profiling_in_background(table_group_id):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_profiling_queries(strTableGroupsID, spinner=None):
+def run_profiling_queries(strTableGroupsID, spinner=None, source=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -308,28 +314,29 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
     if spinner:
         spinner.next()
 
+    table_count = 0
+    column_count = 0
     try:
         # Retrieve Column Metadata
         LOG.info("CurrentStep: Getting DDF from project")
 
         strQuery = clsProfiling.GetDDFQuery()
         lstResult = RetrieveDBResultsToDictList("PROJECT", strQuery)
-
-        if len(lstResult) == 0:
-            LOG.warning("SQL retrieved 0 records")
+        column_count = len(lstResult)
 
         if lstResult:
+            # Get distinct tables
+            distinct_tables = set()
+            for item in lstResult:
+                schema_name = item["table_schema"]
+                table_name = item["table_name"]
+                distinct_tables.add(f"{schema_name}.{table_name}")
+
+            # Convert the set to a list
+            distinct_tables_list = list(distinct_tables)
+            table_count = len(distinct_tables_list)
+
             if clsProfiling.profile_use_sampling == "Y":
-                # Get distinct tables
-                distinct_tables = set()
-                for item in lstResult:
-                    schema_name = item["table_schema"]
-                    table_name = item["table_name"]
-                    distinct_tables.add(f"{schema_name}.{table_name}")
-
-                # Convert the set to a list
-                distinct_tables_list = list(distinct_tables)
-
                 # Sampling tables
                 lstQueries = []
                 for parm_sampling_table in distinct_tables_list:
@@ -494,12 +501,24 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         raise
     finally:
         LOG.info("Updating the profiling run record")
-        lstProfileRunQuery = [
+        RunActionQueryList("DKTG", [
             clsProfiling.GetProfileRunInfoRecordUpdateQuery(),
+        ])
+
+        MixpanelService().send_event(
+            "run-profiling",
+            source=source,
+            sql_flavor=clsProfiling.flavor,
+            sampling=clsProfiling.profile_use_sampling == "Y",
+            table_count=table_count,
+            column_count=column_count,
+            duration=(datetime.now(UTC) - date_service.parse_now(clsProfiling.run_date)).total_seconds(),
+        )
+
+        RunActionQueryList("DKTG", [
             clsProfiling.GetAnomalyScoringRollupRunQuery(),
             clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
-        ]
-        RunActionQueryList("DKTG", lstProfileRunQuery)
+        ])
         run_refresh_score_cards_results(
             project_code=dctParms["project_code"],
             add_history_entry=True,
