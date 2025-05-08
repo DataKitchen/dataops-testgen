@@ -165,11 +165,16 @@ stylesheet.replace(`
 }
 
 .tg-score-card--categories {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    column-gap: 16px;
     max-height: 100px;
     overflow-y: auto;
-    display: grid;
-    grid-gap: 8px;
-    grid-template-columns: 160px 160px;
+}
+.tg-score-card--categories > div {
+    min-width: 160px;
 }
 
 .tg-score-card--category-score {
