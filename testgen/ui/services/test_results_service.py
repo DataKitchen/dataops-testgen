@@ -72,7 +72,17 @@ def get_test_results(
                    r.auto_gen,
 
                    -- These are used in the PDF report
-                   tt.threshold_description, tt.usage_notes, r.test_time
+                   tt.threshold_description, tt.usage_notes, r.test_time,
+                   dcc.description as column_description,
+                   COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+                   COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+                   COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+                   COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+                   COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+                   COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+                   COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+                   COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
+                   COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
 
               FROM run_results r
             INNER JOIN {schema}.test_types tt
@@ -97,6 +107,13 @@ def get_test_results(
             LEFT JOIN {schema}.cat_test_conditions c
                ON (cn.sql_flavor = c.sql_flavor
               AND  r.test_type = c.test_type)
+            LEFT JOIN {schema}.data_column_chars dcc
+               ON (tg.id = dcc.table_groups_id
+              AND  r.schema_name = dcc.schema_name
+              AND  r.table_name = dcc.table_name
+              AND  r.column_names = dcc.column_name)
+            LEFT JOIN {schema}.data_table_chars dtc
+               ON dcc.table_id = dtc.table_id
             {order_by} ;
     """
     df = db.retrieve_data(sql)

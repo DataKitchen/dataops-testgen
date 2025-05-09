@@ -55,7 +55,7 @@ def build_summary_table(document, tr_data):
             *[
                 (cmd[0], *coords, *cmd[1:])
                 for coords in (
-                    ((3, 3), (3, -2)),
+                    ((3, 3), (3, -3)),
                     ((0, 0), (0, -2))
                 )
                 for cmd in (
@@ -78,10 +78,11 @@ def build_summary_table(document, tr_data):
             ("SPAN", (4, 5), (5, 5)),
             ("SPAN", (1, 6), (2, 6)),
             ("SPAN", (4, 6), (5, 6)),
-            ("SPAN", (0, 7), (5, 7)),
+            ("SPAN", (1, 7), (5, 7)),
+            ("SPAN", (0, 8), (5, 8)),
 
             # Link cell
-            ("BACKGROUND", (0, 7), (5, 7), colors.white),
+            ("BACKGROUND", (0, 8), (5, 8), colors.white),
 
             # Measure cell
             ("FONT", (1, 1), (1, 1), "Helvetica-Bold"),
@@ -118,10 +119,36 @@ def build_summary_table(document, tr_data):
         ("Measured Value", tr_data["result_measure"], tr_data["measure_uom_description"]),
         ("Threshold Value", tr_data["threshold_value"], tr_data["threshold_description"]),
 
-        ("Test Run Date", test_timestamp, None, "Table Group", tr_data["table_groups_name"]),
-        ("Database/Schema", tr_data["schema_name"], None, "Test Suite", tr_data["test_suite"]),
+        ("Test Run Date", test_timestamp, None, "Test Suite", tr_data["test_suite"]),
+        ("Database/Schema", tr_data["schema_name"], None, "Table Group", tr_data["table_groups_name"]),
         ("Table", tr_data["table_name"], None, "Data Quality Dimension", tr_data["dq_dimension"]),
         ("Column", tr_data["column_names"], None, "Disposition", tr_data["disposition"] or "No Decision"),
+        (
+            "Column Tags",
+            (
+                Paragraph(
+                    "<b>Critical data element</b>: Yes" if tr_data["critical_data_element"] else "<i>Critical data element</i>: No",
+                    style=PARA_STYLE_CELL,
+                ),
+                Paragraph(f"<i>Description</i>: {tr_data['column_description']}", style=PARA_STYLE_CELL)
+                if tr_data["column_description"]
+                else [],
+                [
+                    Paragraph(f"<i>{tag.replace('_', ' ').capitalize()}</i>: {tr_data[tag]}", style=PARA_STYLE_CELL)
+                    for tag in [
+                        "data_source",
+                        "source_system",
+                        "source_process",
+                        "business_domain",
+                        "stakeholder_group",
+                        "transform_level",
+                        "aggregation_level",
+                        "data_product",
+                    ]
+                    if tr_data[tag]
+                ],
+            ),
+        ),
         (
             Paragraph(
                 f"""<a href="{get_base_url()}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}">
@@ -203,10 +230,11 @@ def get_report_content(document, tr_data):
     yield Paragraph("TestGen Test Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, tr_data)
 
-    yield KeepTogether([
-        Paragraph("Usage Notes", PARA_STYLE_H1),
-        Paragraph(f"{tr_data['usage_notes']}", PARA_STYLE_TEXT),
-    ])
+    if tr_data["usage_notes"]:
+        yield KeepTogether([
+            Paragraph("Usage Notes", PARA_STYLE_H1),
+            Paragraph(f"{tr_data['usage_notes']}", PARA_STYLE_TEXT),
+        ])
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Result History", PARA_STYLE_H1)

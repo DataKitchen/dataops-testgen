@@ -384,7 +384,21 @@ def get_profiling_anomalies(
                    END AS likelihood_order,
                    t.anomaly_description, r.detail, t.suggested_action,
                    r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-                   tg.table_groups_name
+                   tg.table_groups_name,
+
+                   -- These are used in the PDF report
+                   dcc.functional_data_type,
+                   dcc.description as column_description,
+                   COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+                   COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+                   COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+                   COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+                   COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+                   COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+                   COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+                   COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
+                   COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+
               FROM {schema}.profile_anomaly_results r
             INNER JOIN {schema}.profile_anomaly_types t
                ON r.anomaly_id = t.id
@@ -392,6 +406,13 @@ def get_profiling_anomalies(
                 ON r.profile_run_id = p.id
             INNER JOIN {schema}.table_groups tg
                 ON r.table_groups_id = tg.id
+            LEFT JOIN {schema}.data_column_chars dcc
+               ON (tg.id = dcc.table_groups_id
+              AND  r.schema_name = dcc.schema_name
+              AND  r.table_name = dcc.table_name
+              AND  r.column_name = dcc.column_name)
+            LEFT JOIN {schema}.data_table_chars dtc
+               ON dcc.table_id = dtc.table_id
              WHERE r.profile_run_id = '{profile_run_id}'
                {criteria}
             {order_by}
