@@ -104,6 +104,7 @@ FROM last_run l
       AND d.table_name = n.table_name
    )
 WHERE data_table_chars.table_id = d.table_id
+   AND d.drop_date IS NULL
    AND n.table_name IS NULL;
 
 -- ==============================================================================
@@ -221,4 +222,5 @@ FROM last_run l
    )
 WHERE data_column_chars.table_id = d.table_id
    AND data_column_chars.column_name = d.column_name
+   AND d.drop_date IS NULL
    AND n.column_name IS NULL;
