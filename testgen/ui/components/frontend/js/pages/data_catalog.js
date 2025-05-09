@@ -300,8 +300,10 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
                         value ? 'check_circle' : 'cancel',
                     ),
                     span(
-                        { class: value ? 'text-capitalize' : 'text-secondary' },
-                        value ? label : `Not a ${label}`,
+                        { class: value ? '' : 'text-secondary' },
+                        item.type === 'column'
+                            ? (value ? 'Critical data element' : 'Not a critical data element')
+                            : (value ? 'All critical data elements' : 'Not all critical data elements'),
                     ),
                     (item.type === 'column' && state.rawVal === null) ? InheritedIcon('table') : null,
                 );

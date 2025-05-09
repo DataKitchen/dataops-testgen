@@ -76,6 +76,7 @@ class TestSuitesPage(Page):
                     "connections_ct": format_field(project_summary["connections_ct"]),
                     "table_groups_ct": format_field(project_summary["table_groups_ct"]),
                     "default_connection_id": format_field(project_summary["default_connection_id"]),
+                    "can_export_to_observability": format_field(project_summary["can_export_to_observability"]),
                 },
                 "test_suites": [
                     {
