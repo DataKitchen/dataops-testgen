@@ -7,8 +7,7 @@ profiling_records AS (
         SUM(record_ct) AS data_point_ct,
         SUM(record_ct * good_data_pct) / NULLIF(SUM(record_ct), 0) AS score
     FROM v_dq_profile_scoring_latest_by_column
-    WHERE NULLIF({group_by}, '') IS NOT NULL
-        AND {filters}
+    WHERE {filters}
     GROUP BY project_code, {columns}
 ),
 test_records AS (
@@ -19,8 +18,7 @@ test_records AS (
         SUM(dq_record_ct) AS data_point_ct,
         SUM(dq_record_ct * good_data_pct) / NULLIF(SUM(dq_record_ct), 0) AS score
     FROM v_dq_test_scoring_latest_by_column
-    WHERE NULLIF({group_by}, '') IS NOT NULL
-        AND {filters}
+    WHERE {filters}
     GROUP BY project_code, {columns}
 ),
 parent AS (
