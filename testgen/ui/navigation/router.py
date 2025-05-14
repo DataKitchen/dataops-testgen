@@ -59,7 +59,11 @@ class Router(Singleton):
             # This hack is needed because the auth cookie is not retrieved on the first run
             # We have to store the page and wait until cookies are ready
             session.page_pending_cookies = current_page
-            st.rerun()
+
+            # Don't use st.rerun() here!
+            # It will work fine locally, but cause a long initial load on deployed instances
+            # The time.sleep somehow causes the cookie to be detected quicker
+            time.sleep(0.3)
 
     def queue_navigation(self, /, to: str, with_args: dict | None = None) -> None:
         self._pending_navigation = {"to": to, "with_args": with_args or {}}
