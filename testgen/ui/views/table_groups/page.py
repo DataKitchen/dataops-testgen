@@ -98,7 +98,7 @@ class TableGroupsPage(Page):
                     testgen.link(
                         label="Test Suites",
                         href="test-suites",
-                        params={"table_group_id": table_group["id"]},
+                        params={ "project_code": project_code, "table_group_id": table_group["id"] },
                         right_icon="chevron_right",
                         key=f"tablegroups:keys:go-to-tsuites:{table_group['id']}",
                     )
