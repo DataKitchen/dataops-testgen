@@ -3,6 +3,7 @@
  * @type {object}
  * @property {string} field
  * @property {string} value
+ * @property {Array<FilterValue>?} others
  *
  * @typedef ScoreDefinition
  * @type {object}
@@ -12,6 +13,7 @@
  * @property {boolean} cde_score
  * @property {string} category
  * @property {ScoreDefinitionFilter[]} filters
+ * @property {boolean} filter_by_columns
  *
  * @typedef ScoreCardCategory
  * @type {object}
@@ -59,7 +61,8 @@ import { Checkbox } from '../components/checkbox.js';
 import { Portal } from '../components/portal.js';
 import { ScoreBreakdown } from '../components/score_breakdown.js';
 import { IssuesTable } from '../components/score_issues.js';
-import { Alert } from '../components/alert.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
+import { ColumnFilter } from '../components/explorer_column_selector.js';
 
 const { div, i, span } = van.tags;
 
@@ -85,45 +88,66 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
 
     const domId = 'score-explorer-page';
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const updateToolbarFilters = van.derive(() => {
+        const oldFilters = props.definition.oldVal.filters;
+        const newFilters = props.definition.val.filters;
+        const oldFilterByColumns = props.definition.oldVal.filter_by_columns;
+        const newFilterByColumns = props.definition.val.filter_by_columns;
+
+        if (!isEqual(oldFilters, newFilters) || oldFilterByColumns !== newFilterByColumns) {
+            return {filters: newFilters, filter_by_columns: newFilterByColumns};
+        }
+
+        return null;
+    });
 
     resizeFrameHeightToElement(domId);
     resizeFrameHeightOnDOMChange(domId);
 
     return div(
         { id: domId, class: 'score-explorer' },
-        Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit),
-        span({ class: 'mb-4', style: 'display: block;' }),
-        () =>
-            getValue(props.is_new) && getValue(props.definition)?.filters?.length <= 0
-            ? Alert(
-                { icon: 'info', type: 'info', class: 'mb-4' },
-                span({}, 'Add filters to the scorecard to get started.'),
-            )
-            : '',
-        ScoreCard(props.score_card),
+        Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit, updateToolbarFilters),
         span({ class: 'mb-4', style: 'display: block;' }),
         () => {
-            const drilldown = getValue(props.drilldown);
-            const issuesValue = getValue(props.issues);
+            const isEmpty = getValue(props.is_new) && getValue(props.definition)?.filters?.length <= 0;
 
-            return (
-                (issuesValue && getValue(props.drilldown))
-                ? IssuesTable(
-                    issuesValue?.items,
-                    issuesValue?.columns,
-                    getValue(props.score_card),
-                    getValue(props.breakdown_score_type),
-                    getValue(props.breakdown_category),
-                    drilldown,
-                    () => emitEvent('DrilldownChanged', { payload: null }),
-                )
-                : ScoreBreakdown(
-                    props.score_card,
-                    props.breakdown,
-                    props.breakdown_category,
-                    props.breakdown_score_type,
-                    (project_code, name, score_type, category, drilldown) => emitEvent('DrilldownChanged', { payload: drilldown }),
-                )
+            if (isEmpty) {
+                return EmptyState({
+                    class: 'explorer-empty-state',
+                    label: 'No filters or columns selected yet',
+                    icon: 'readiness_score',
+                    message: EMPTY_STATE_MESSAGE.explorer,
+                });
+            }
+            
+            return div(
+                {class: 'flex-column'},
+                ScoreCard(props.score_card),
+                span({ class: 'mb-4', style: 'display: block;' }),
+                () => {
+                    const drilldown = getValue(props.drilldown);
+                    const issuesValue = getValue(props.issues);
+        
+                    return (
+                        (issuesValue && getValue(props.drilldown))
+                        ? IssuesTable(
+                            issuesValue?.items,
+                            issuesValue?.columns,
+                            getValue(props.score_card),
+                            getValue(props.breakdown_score_type),
+                            getValue(props.breakdown_category),
+                            drilldown,
+                            () => emitEvent('DrilldownChanged', { payload: null }),
+                        )
+                        : ScoreBreakdown(
+                            props.score_card,
+                            props.breakdown,
+                            props.breakdown_category,
+                            props.breakdown_score_type,
+                            (project_code, name, score_type, category, drilldown) => emitEvent('DrilldownChanged', { payload: drilldown }),
+                        )
+                    );
+                },
             );
         },
     );
@@ -134,6 +158,7 @@ const Toolbar = (
     /** @type ScoreDefinition */ definition,
     /** @type boolean */ isNew,
     /** @type boolean */ userCanEdit,
+    /** @type ... */ updates,
 ) => {
     const addFilterButtonId = 'score-explorer--add-filter-btn';
     const categories = [
@@ -149,7 +174,8 @@ const Toolbar = (
         'data_product',
     ];
     const filterableFields = categories.filter((c) => c !== 'dq_dimension');
-    const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value) })));
+    const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value), others: f.others ?? [] })));
+    const filterByColumns = van.state(definition.filter_by_columns);
     const filterSelectorOpened = van.state(false);
     const displayTotalScore = van.state(definition.total_score ?? true);
     const displayCDEScore = van.state(definition.cde_score ?? true);
@@ -180,6 +206,7 @@ const Toolbar = (
         filters.val = [ ...filters.val.slice(0, position), ...filters.val.slice(position + 1) ];
     };
     const setFilterValue = (/** @type number*/ position, /** @type string */ value) => {
+        filterByColumns.val = false;
         filters.val[position].value.val = value
         filters.val = [ ...filters.val ];
     };
@@ -194,6 +221,7 @@ const Toolbar = (
             category: displayCategory.oldVal ? selectedCategory.oldVal : null,
             total_score: displayTotalScore.oldVal,
             cde_score: displayCDEScore.oldVal,
+            filter_by_columns: filterByColumns.oldVal,
         };
         const current = {
             name: getValue(scoreName),
@@ -203,10 +231,17 @@ const Toolbar = (
             category: getValue(displayCategory) ? getValue(selectedCategory) : null,
             total_score: getValue(displayTotalScore),
             cde_score: getValue(displayCDEScore),
+            filter_by_columns: getValue(filterByColumns),
         };
 
         if (!isEqual(current, previous)) {
-            refresh(current);
+            if (current.filter_by_columns && !previous.filter_by_columns) {
+                emitEvent('ColumnSelectorOpened', {});
+            } else if (!current.filter_by_columns && previous.filter_by_columns) {
+                filterSelectorOpened.val = true;
+            } else {
+                refresh(current);
+            }
         }
     });
 
@@ -220,42 +255,120 @@ const Toolbar = (
         }
     });
 
+    van.derive(() => {
+        const updatesValue = getValue(updates);
+        if (updatesValue != null) {
+            const simplifiedFilters = (filters.rawVal ?? []).map(f => ({ field: f.field, value: f.value.rawVal, others: f.others ?? []}))
+            if (!isEqual(updatesValue.filters, simplifiedFilters)) {
+                filters.val = updatesValue.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value), others: f.others ?? [] }));
+            }
+
+            if (updatesValue.filter_by_columns !== filterByColumns.rawVal) {
+                filterByColumns.val = updatesValue.filter_by_columns;
+            }
+        }
+    });
+
     return div(
         { class: 'flex-column score-explorer--toolbar' },
         div(
             { class: 'flex-column' },
-            span({ class: 'text-caption mb-1' }, 'Filter by'),
             div(
-                { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                { class: 'flex-column' },
+                span({ class: 'text-caption mb-1' }, 'Filter by'),
+                div(
+                    { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                    () => {
+                        const filters_ = getValue(filters);
+                        const filterValues_ = getValue(filterValues);
+                        if (filters_?.length <= 0) {
+                            return '';
+                        }
+    
+                        return div(
+                            { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                            filters_.map(({ key, field, value, others }, idx) => {
+                                renderedFilters[key] = renderedFilters[key] ?? (
+                                    filterByColumns.val
+                                        ? ColumnFilter({field, value, others})
+                                        : Filter(idx, field, value, filterValues_[field], setFilterValue, removeFilter, !isInitialized && !value.val)
+                                );
+                                return renderedFilters[key];
+                            }),
+                        );
+                    },
+                    () => {
+                        const filters_ = getValue(filters);
+                        const filterByColumns_ = getValue(filterByColumns);
+
+                        const fieldFilterTrigger = Button({
+                            id: addFilterButtonId,
+                            icon: 'add',
+                            label: 'Add Filter',
+                            type: 'basic',
+                            color: 'primary',
+                            style: 'width: auto;',
+                            onclick: () => filterSelectorOpened.val = true,
+                        });
+                        const columnsSelectorTrigger = Button({
+                            id: addFilterButtonId,
+                            label: 'Select Columns',
+                            type: 'basic',
+                            color: 'primary',
+                            style: 'width: auto;',
+                            onclick: () => emitEvent('ColumnSelectorOpened', {}),
+                        });
+                        const combinedTrigger = div(
+                            {class: 'flex-row fx-gap-3'},
+                            fieldFilterTrigger,
+                            span({class: 'text-caption'}, 'Or'),
+                            columnsSelectorTrigger,
+                        );
+    
+                        if (filters_?.length <= 0 && filterByColumns_ == undefined) {
+                            return combinedTrigger;
+                        }
+    
+                        if (filterByColumns_) {
+                            return columnsSelectorTrigger;
+                        }
+    
+                        return fieldFilterTrigger;
+                    },
+                    Portal(
+                        { target: addFilterButtonId, style: '',  opened: filterSelectorOpened},
+                        FilterFieldSelector(filterableFields, undefined, addEmptyFilter),
+                    ),
+                )
+            ),
+            div(
+                { class: 'flex-row fx-justify-content-flex-end', style: 'width: 100%;' },
                 () => {
-                    const filters_ = getValue(filters);
-                    const filterValues_ = getValue(filterValues);
-                    if (filters_?.length <= 0) {
+                    if (filterByColumns.val == undefined) {
                         return '';
                     }
 
-                    return div(
-                        { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                        getValue(filters).map(({ key, field, value }, idx) => {
-                            renderedFilters[key] = renderedFilters[key] ?? Filter(idx, field, value, filterValues_[field], setFilterValue, removeFilter, !isInitialized);
-                            return renderedFilters[key];
-                        }),
-                    );
-                },
-                Button({
-                    id: addFilterButtonId,
-                    icon: 'add',
-                    label: 'Add Filter',
-                    type: 'basic',
-                    color: 'primary',
-                    style: 'width: auto;',
-                    onclick: () => filterSelectorOpened.val = true,
-                }),
-                Portal(
-                    { target: addFilterButtonId, style: '',  opened: filterSelectorOpened},
-                    FilterFieldSelector(filterableFields, undefined, addEmptyFilter),
-                ),
-            )
+                    const switchToColumnSelectorTrigger = Button({
+                        label: 'Switch to Column Selector',
+                        type: 'basic',
+                        color: 'primary',
+                        style: 'width: auto;',
+                        onclick: () => emitEvent('FilterModeChanged', {payload: true}),
+                    });
+                    const switchToCategoryFilterTrigger = Button({
+                        label: 'Switch to Category Filters',
+                        type: 'basic',
+                        color: 'primary',
+                        style: 'width: auto;',
+                        onclick: () => emitEvent('FilterModeChanged', {payload: false}),
+                    });
+
+                    if (filterByColumns.val) {
+                        return switchToCategoryFilterTrigger;
+                    }
+                    return switchToColumnSelectorTrigger;
+                }
+            ),
         ),
         div(
             { class: 'flex-row fx-align-flex-end fx-flex-wrap fx-gap-5' },
@@ -400,12 +513,17 @@ stylesheet.replace(`
     min-height: 1100px;
 }
 
+.explorer-empty-state {
+    margin-top: unset !important;
+}
+
 .score-explorer--toolbar {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     height: auto;
     padding: 16px;
 }
+
 
 .score-explorer--filter {
     background: var(--form-field-color);

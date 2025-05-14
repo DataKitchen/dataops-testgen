@@ -14,6 +14,7 @@ import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Paginator } from './components/paginator.js';
 import { SortingSelector } from './components/sorting_selector.js';
+import { ColumnSelector } from './components/explorer_column_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
@@ -49,6 +50,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         score_details: ScoreDetails,
         score_explorer: ScoreExplorer,
         schedule_list: ScheduleList,
+        column_selector: ColumnSelector,
     };
 
     if (Object.keys(componentById).includes(id)) {

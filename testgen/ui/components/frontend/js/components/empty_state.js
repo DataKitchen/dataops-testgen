@@ -16,6 +16,7 @@
 * @property {Message} message
 * @property {Link?} link
 * @property {any?} button
+* @property {string?} class
 */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -49,13 +50,17 @@ const EMPTY_STATE_MESSAGE = {
         line1: 'Track data quality scores',
         line2: 'Create custom scorecards to assess quality of your data assets across different categories.',
     },
+    explorer: {
+        line1: 'Track data quality scores',
+        line2: 'Filter or select columns to assess the quality of your data assets across different categories.',
+    },
 };
 
 const EmptyState = (/** @type Properties */ props) => {
     loadStylesheet('empty-state', stylesheet);
 
     return Card({
-        class: 'tg-empty-state flex-column fx-align-flex-center',
+        class: `tg-empty-state flex-column fx-align-flex-center ${getValue(props.class ?? '')}`,
         content: [
             span({ class: 'tg-empty-state--title mb-5' }, props.label),
             i({class: 'material-symbols-rounded mb-5'}, props.icon),
@@ -63,11 +68,15 @@ const EmptyState = (/** @type Properties */ props) => {
             span({ class: 'mb-5' }, props.message.line2),
             (
                 getValue(props.button) ??
-                Link({
-                    class: 'tg-empty-state--link',
-                    right_icon: 'chevron_right',
-                    ...(getValue(props.link)),
-                })
+                (
+                    getValue(props.link)
+                    ? Link({
+                        class: 'tg-empty-state--link',
+                        right_icon: 'chevron_right',
+                        ...(getValue(props.link)),
+                    })
+                    : ''
+                )
             ),
         ],
     });

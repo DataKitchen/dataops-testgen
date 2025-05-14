@@ -1,8 +1,8 @@
 import enum
 import uuid
-from collections import defaultdict
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import groupby
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
@@ -69,15 +69,17 @@ class ScoreDefinition(Base):
     cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
+    criteria: "ScoreDefinitionCriteria" = relationship(
+        "ScoreDefinitionCriteria",
+        cascade="all, delete-orphan",
+        lazy="joined",
+        uselist=False,
+        single_parent=True,
+    )
     results: Iterable["ScoreDefinitionResult"] = relationship(
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
-        lazy="joined",
-    )
-    filters: Iterable["ScoreDefinitionFilter"] = relationship(
-        "ScoreDefinitionFilter",
-        cascade="all, delete-orphan",
         lazy="joined",
     )
     breakdown: Iterable["ScoreDefinitionBreakdownItem"] = relationship(
@@ -102,9 +104,12 @@ class ScoreDefinition(Base):
         definition.total_score = True
         definition.cde_score = True
         definition.category = ScoreCategory.dq_dimension
-        definition.filters = [
-            ScoreDefinitionFilter(field="table_groups_name", value=table_group["table_groups_name"]),
-        ]
+        definition.criteria = ScoreDefinitionCriteria(
+            operand="AND",
+            filters=[
+                ScoreDefinitionFilter(field="table_groups_name", value=table_group["table_groups_name"]),
+            ],
+        )
         return definition
 
     @classmethod
@@ -159,7 +164,7 @@ class ScoreDefinition(Base):
         score_cards/get_category_scores_by_column.sql
         score_cards/get_category_scores_by_dimension.sql
         """
-        if len(self.filters) <= 0:
+        if not self.criteria.has_filters():
             return {
                 "id": self.id,
                 "project_code": self.project_code,
@@ -378,15 +383,15 @@ class ScoreDefinition(Base):
         self.history = list(current_history.values())
 
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
-        values_by_field = defaultdict(list)
-        for filter_ in self.filters:
-            values_by_field[filter_.field].append(f"'{filter_.value}'")
-        values_by_field["project_code"].append(f"'{self.project_code}'")
+        extra_filters = [
+            f"{prefix or ''}project_code = '{self.project_code}'"
+        ]
         if cde_only:
-            values_by_field["critical_data_element"].append("true")
+            extra_filters.append(f"{prefix or ''}critical_data_element = true")
 
         return [
-            f"{prefix or ''}{field} IN ({', '.join(values)})" for field, values in values_by_field.items()
+            *extra_filters,
+            self.criteria.get_as_sql(prefix=prefix),
         ]
 
     def to_dict(self) -> dict:
@@ -397,17 +402,144 @@ class ScoreDefinition(Base):
             "total_score": self.total_score,
             "cde_score": self.cde_score,
             "category": self.category.value if self.category else None,
-            "filters": [{"field": f.field, "value": f.value} for f in self.filters],
+            "filters": list(self.criteria),
+            "filter_by_columns": (not self.criteria.group_by_field)
+                if self.criteria.group_by_field is not None else None,
         }
+
+
+class ScoreDefinitionCriteria(Base):
+    """
+    Hold the filter conditions applied for a given scorecard.
+
+    Properties are as follow:
+
+    :param operand: boolean operand to join the final filters
+
+        Either `AND` or `OR`. The operand is used to join the filters
+        after they have been individually processed, grouped and
+        formatted into valid SQL expressions.
+
+    :param group_by_field: boolean to group filters by field name
+
+        Boolean indicating that filters to same field must be combined
+        to produce the intermediary filters that will later be joined
+        with :property:`operand`.
+
+        When false, filters are individually converted to valid SQL and
+        then joined with :property:`operand`.
+
+        When true, filters are sorted and grouped by field name, all
+        filters for a given field name are combined with an `OR` boolean
+        condition into a single filter. Then, the resulting filters
+        are joined with :property:`operand`.
+
+    :param filters: a list of :class:`ScoreDefinitionFilter` objects
+    """
+
+    __tablename__ = "score_definition_criteria"
+
+    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    definition_id: str = Column(UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
+    operand: Literal["AND", "OR"] = Column(String, nullable=False, default="AND")
+    group_by_field: bool = Column(Boolean, nullable=False, default=True)
+    filters: list["ScoreDefinitionFilter"] = relationship(
+        "ScoreDefinitionFilter",
+        cascade="all, delete-orphan",
+        lazy="joined",
+    )
+
+    def __str__(self):
+        return self.get_as_sql()
+
+    def get_as_sql(
+        self,
+        prefix: str | None = None,
+    ) -> str | None:
+        if len(self.filters) > 0:
+            if self.group_by_field:
+                filters_sql = []
+                grouped_filters = groupby(sorted(self.filters, key=lambda f: f.field), key=lambda f: f.field)
+                for _, field_filters in grouped_filters:
+                    field_filters_sql = [f.get_as_sql(prefix=prefix, operand="AND") for f in field_filters]
+                    filters_sql.append(
+                        f"({" OR ".join(field_filters_sql)})" if len(field_filters_sql) > 1 else field_filters_sql[0]
+                    )
+            else:
+                filters_sql = [ f.get_as_sql(prefix=prefix, operand="AND") for f in self.filters ]
+            return f"({f' {self.operand} '.join(filters_sql)})" if len(filters_sql) > 1 else filters_sql[0]
+        return None
+
+    def __iter__(self):
+        for filter_ in self.filters:
+            yield {
+                "field": filter_.field,
+                "value": filter_.value,
+                "others": [
+                    {"field": linked_filter.field, "value": linked_filter.value}
+                    for linked_filter in filter_.next_filter
+                ] if filter_.next_filter else [],
+            }
+
+    def has_filters(self) -> bool:
+        return len(self.filters) > 0
+
+    @classmethod
+    def from_filters(cls, filters: list[dict], group_by_field: bool = True) -> "ScoreDefinitionCriteria":
+        chained_filters: list[ScoreDefinitionFilter] = []
+        for filter_ in filters:
+            root_filter = current_filter = ScoreDefinitionFilter(
+                field=filter_["field"],
+                value=filter_["value"],
+                next_filter=None,
+            )
+            for linked_filter in (filter_.get("others") or []):
+                current_filter.next_filter = ScoreDefinitionFilter(
+                    field=linked_filter["field"],
+                    value=linked_filter["value"],
+                    next_filter=None,
+                )
+                current_filter = current_filter.next_filter
+            chained_filters.append(root_filter)
+        return cls(operand="AND" if group_by_field else "OR", filters=chained_filters, group_by_field=group_by_field)
 
 
 class ScoreDefinitionFilter(Base):
     __tablename__ = "score_definition_filters"
 
     id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    definition_id: str = Column(UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
+    criteria_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("score_definition_criteria.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+    )
     field: str = Column(String, nullable=False)
     value: str = Column(String, nullable=False)
+    next_filter_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("score_definition_filters.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+    )
+    next_filter: "ScoreDefinitionFilter" = relationship(
+        "ScoreDefinitionFilter",
+        cascade="all, delete-orphan",
+        lazy="joined",
+        uselist=False,
+        single_parent=True,
+    )
+
+    def __iter__(self):
+        current_filter = self
+        yield current_filter
+        while current_filter.next_filter:
+            yield current_filter.next_filter
+            current_filter = current_filter.next_filter
+
+    def get_as_sql(self, prefix: str | None = None, operand: Literal["AND", "OR"] = "AND") -> str:
+        sql_filters = [f"{prefix or ''}{f.field} = '{f.value}'" for f in self]
+        return f"({f' {operand} '.join(sql_filters)})"
 
 
 class ScoreDefinitionResult(Base):

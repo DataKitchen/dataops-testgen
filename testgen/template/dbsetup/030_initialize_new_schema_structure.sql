@@ -657,13 +657,23 @@ CREATE TABLE IF NOT EXISTS score_definitions (
   category          VARCHAR(30)   DEFAULT NULL
 );
 
+CREATE TABLE IF NOT EXISTS score_definition_criteria (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    definition_id UUID NOT NULL REFERENCES score_definitions(id) ON DELETE CASCADE,
+    operand VARCHAR NOT NULL DEFAULT 'AND',
+    group_by_field BOOLEAN NOT NULL DEFAULT true
+);
+
 CREATE TABLE IF NOT EXISTS score_definition_filters (
-    id              UUID         DEFAULT gen_random_uuid() PRIMARY KEY,
-    definition_id   UUID         CONSTRAINT score_definitions_filters_score_definitions_definition_id_fk
-                                    REFERENCES score_definitions (id)
-                                    ON DELETE CASCADE,
-    field           TEXT         DEFAULT NULL,
-    value           TEXT         DEFAULT NULL
+    id              UUID               DEFAULT gen_random_uuid() PRIMARY KEY,
+    criteria_id     UUID DEFAULT NULL  CONSTRAINT score_definitions_filters_score_definition_criteria_fk
+                                          REFERENCES score_definition_criteria (id)
+                                          ON DELETE CASCADE,
+    next_filter_id  UUID DEFAULT NULL  CONSTRAINT score_definitions_filters_score_definitions_filters_fk
+                                          REFERENCES score_definition_filters (id)
+                                          ON DELETE CASCADE,
+    field           TEXT DEFAULT NULL,
+    value           TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS score_definition_results (
