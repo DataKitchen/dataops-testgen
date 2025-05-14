@@ -97,6 +97,7 @@ class ConnectionsPage(Page):
             FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
             if connection:
                 connection["password"] = connection["password"] or ""
+                connection["private_key"] = connection["private_key"] or ""
 
             form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
             form = FlavorForm(**form_kwargs)
