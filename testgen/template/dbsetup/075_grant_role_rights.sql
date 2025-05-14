@@ -37,7 +37,8 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.score_definition_results,
     {SCHEMA_NAME}.score_definition_results_breakdown,
     {SCHEMA_NAME}.score_definition_results_history,
-    {SCHEMA_NAME}.score_history_latest_runs
+    {SCHEMA_NAME}.score_history_latest_runs,
+    {SCHEMA_NAME}.job_schedules
     TO testgen_execute_role;
 
 

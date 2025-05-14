@@ -264,7 +264,13 @@ class ScoreDefinition(Base):
             "column_name": ["table_groups_id", "table_name", "column_name"],
         }.get(group_by, [group_by])
         filters = " AND ".join(self._get_raw_query_filters(cde_only=score_type == "cde_score"))
-        join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
+
+        if group_by in ["table_groups_name", "table_name", "column_name"]:
+            join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
+        else:
+            join_condition = f"""(test_records.{group_by} = profiling_records.{group_by}
+                OR (test_records.{group_by} IS NULL 
+                AND profiling_records.{group_by} IS NULL))"""
 
         profile_records_filters = self._get_raw_query_filters(
             cde_only=score_type == "cde_score",

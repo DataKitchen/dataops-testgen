@@ -111,7 +111,7 @@ const TableCell = (row, column, score=undefined, category=undefined, scoreType=u
     const size = BREAKDOWN_COLUMNS_SIZES[column] ?? COLUMN_DEFAULT_SIZE;
     return div(
         { style: `flex: ${size}; max-width: ${size}; word-wrap: break-word;`, 'data-testid': 'score-breakdown-cell' },
-        span(row[column]),
+        span(row[column] ?? '-'),
     );
 };
 

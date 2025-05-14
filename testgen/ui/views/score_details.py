@@ -187,7 +187,7 @@ def delete_score_card(definition_id: str) -> None:
     if delete_clicked():
         score_definition.delete()
         get_all_score_cards.clear()
-        Router().navigate("quality-dashboard")
+        Router().navigate("quality-dashboard", { "project_code": score_definition.project_code })
 
 
 def recalculate_score_history(definition_id: str) -> None:

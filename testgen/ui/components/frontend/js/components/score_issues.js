@@ -311,6 +311,7 @@ const TimeCell = (value, row) => {
                 run_id: row.run_id,
                 table_name: row.table,
                 column_name: row.column,
+                selected: row.id,
             },
         }),
     );

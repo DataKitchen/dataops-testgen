@@ -372,7 +372,7 @@ def show_test_form(
         "test_description": left_column.text_area(
             label="Test Description Override",
             max_chars=1000,
-            height=3,
+            height=114,
             placeholder=test_description_placeholder,
             value=test_description,
             help=test_description_help,
