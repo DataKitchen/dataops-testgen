@@ -288,15 +288,14 @@ class KeyPairConnectionForm(PasswordConnectionForm):
             elif self._uploaded_file is None and (cached_file_upload := st.session_state.get(cached_file_upload_key)):
                 self._uploaded_file = cached_file_upload
                 file_size = f"{round(self._uploaded_file.size / 1024, 2)}KB"
-                container.markdown(
+                container.html(
                     f"""
                     <div style="display: flex; align-items: center; justify-content: flex-start; padding: 0 16px; margin-bottom: 16px;">
                         <span style="font-family: 'Material Symbols Rounded'; font-weight: normal; white-space: nowrap; overflow-wrap: normal; font-size: 28.8px; color: rgb(151, 166, 195);">draft</span>
                         <span style="margin-left: 16px; margin-right: 8px;">{self._uploaded_file.name}</span>
                         <small style='color: rgba(49, 51, 63, 0.6); font-size: 14px; line-height: 1.25;'>{file_size}</small>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
+                    """
                 )
 
     def reset_cache(self) -> None:

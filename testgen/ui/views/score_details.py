@@ -169,10 +169,7 @@ def delete_score_card(definition_id: str) -> None:
     delete_clicked, set_delelte_clicked = temp_value(
         "score-details:confirm-delete-score-val"
     )
-    st.markdown(
-        f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?",
-        unsafe_allow_html=True,
-    )
+    st.html(f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?")
 
     _, button_column = st.columns([.85, .15])
     with button_column:

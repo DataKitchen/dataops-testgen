@@ -166,9 +166,17 @@ class TableGroupsPage(Page):
         )
 
         if not can_be_deleted:
-            st.markdown(
-                ":orange[This Table Group has related data, which may include profiling, test definitions and test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
-                unsafe_allow_html=True,
+            st.html(
+                """
+                <div style=\"color: rgb(217, 90, 0);\">
+                    <span>
+                        This Table Group has related data, which may include profiling, test definitions and test results.
+                        If you proceed, all related data will be permanently deleted.
+                    </span>
+                    <br/>
+                    <span>Are you sure you want to proceed?</span>
+                </div>
+                """
             )
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 

@@ -507,7 +507,7 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
         str_markdown += f"""<div><span class="dk-field-label">{label}</span><span class="dk-{str_use_class}-value">{dct_row[col]!s}</span></div>"""
 
     with st.container():
-        st.markdown(str_markdown, unsafe_allow_html=True)
+        st.html(str_markdown)
         st.divider()
 
 

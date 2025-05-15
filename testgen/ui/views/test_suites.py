@@ -258,9 +258,17 @@ def delete_test_suite_dialog(test_suite_id: str) -> None:
     )
 
     if not can_be_deleted:
-        st.markdown(
-            ":orange[This Test Suite has related data, which includes test definitions and may include test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
-            unsafe_allow_html=True,
+        st.html(
+            """
+            <div style=\"color: rgb(217, 90, 0);\">
+                <span>
+                    This Test Suite has related data, which includes test definitions and may
+                    include test results. If you proceed, all related data will be permanently deleted.
+                </span>
+                <br/>
+                <span>Are you sure you want to proceed?</span>
+            </div>
+            """
         )
         accept_cascade_delete = st.toggle("I accept deletion of this Test Suite and all related TestGen data.")
 
