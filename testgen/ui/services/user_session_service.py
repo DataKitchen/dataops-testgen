@@ -78,7 +78,7 @@ def get_auth_data():
     preauthorized_list = []
 
     for item in auth_data.itertuples():
-        usernames[item.username] = {
+        usernames[item.username.lower()] = {
             "email": item.email,
             "name": item.name,
             "password": item.password,

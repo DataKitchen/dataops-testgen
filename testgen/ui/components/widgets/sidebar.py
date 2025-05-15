@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Literal
 
 from testgen.ui.components.utils.component import component
@@ -70,6 +71,9 @@ def on_change():
         javascript_service.clear_component_states()
         user_session_service.end_user_session()
         Router().queue_navigation(to="")
+        # Without the time.sleep, cookies sometimes don't get cleared on deployed instances 
+        # (even though it works fine locally)
+        time.sleep(0.3)
     else:
         Router().queue_navigation(
             to=event_data.get("path") or session.user_default_page,

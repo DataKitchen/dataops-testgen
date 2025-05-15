@@ -251,7 +251,7 @@ stylesheet.replace(`
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: calc(100% - 78px);
+    height: calc(100% - 64px);
 }
 
 .menu .menu--project {
