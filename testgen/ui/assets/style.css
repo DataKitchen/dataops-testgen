@@ -47,6 +47,10 @@ header {
 /* ... */
 
 /* Sidebar */
+[data-testid="stSidebarHeader"] {
+    padding: 16px 20px;
+}
+
 section[data-testid="stSidebar"] {
     width: 250px;
     z-index: 999;
