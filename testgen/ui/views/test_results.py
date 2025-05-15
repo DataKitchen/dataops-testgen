@@ -381,6 +381,10 @@ def get_test_result_history(selected_row):
 
 
 def show_test_def_detail(str_test_def_id):
+    if not str_test_def_id:
+        st.warning("Test definition no longer exists.")
+        return
+    
     df = get_test_definition(str_test_def_id)
 
     specs = []
@@ -758,9 +762,10 @@ def source_data_dialog(selected_row):
 
 
 def view_edit_test(button_container, test_definition_id):
-    with button_container:
-        if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
-            show_test_form_by_id(test_definition_id)
+    if test_definition_id:
+        with button_container:
+            if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
+                show_test_form_by_id(test_definition_id)
 
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
