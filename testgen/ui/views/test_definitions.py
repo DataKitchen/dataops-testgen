@@ -343,13 +343,12 @@ def show_test_form(
 
     # Using the test_type, display the default description and usage_notes
     if selected_test_type_row["test_description"]:
-        st.markdown(
+        st.html(
             f"""
                 <div style="border: 1px solid #e6e6e6; border-radius: 5px; padding: 10px;">
                     {selected_test_type_row['test_description']}
                 </div><br/>
-                """,
-            unsafe_allow_html=True,
+            """
         )
 
     if selected_test_type_row["usage_notes"]:
@@ -854,7 +853,7 @@ def show_test_defs_grid(
         )
 
     if dct_selected_row:
-        st.markdown("</p>&nbsp;</br>", unsafe_allow_html=True)
+        st.html("</p>&nbsp;</br>")
         selected_row = dct_selected_row[0]
         str_test_id = selected_row["id"]
         row_selected = df[df["id"] == str_test_id].iloc[0]
