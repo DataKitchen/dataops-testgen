@@ -112,6 +112,10 @@ div[data-testid="stSpinner"] > div > i {
     border-color: var(--primary-color) rgba(49, 51, 63, 0.2) rgba(49, 51, 63, 0.2);
 }
 
+div.st-key-data_catalog-spinner {
+    position: absolute;
+}
+
 /* Theming for buttons, tabs and form inputs */
 button[data-testid="stBaseButton-secondary"]:hover,
 button[data-testid="stBaseButton-secondary"]:focus:not(:active),

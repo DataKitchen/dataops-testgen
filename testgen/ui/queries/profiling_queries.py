@@ -144,7 +144,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str, column_name: s
     return db.retrieve_data(query)
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
     if not is_uuid4(table_id):
         return None
@@ -200,7 +200,7 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         return json.loads(results.to_json(orient="records"))[0]
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_column_by_id(
     column_id: str,
     table_group_id: str,

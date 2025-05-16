@@ -2,6 +2,13 @@
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
  * @import { TreeNode } from '../components/tree.js';
  *
+ * @typedef ProjectSummary
+ * @type {object}
+ * @property {string} project_code
+ * @property {number} connections_ct
+ * @property {number} table_groups_ct
+ * @property {string} default_connection_id
+ * 
  * @typedef ColumnPath
  * @type {object}
  * @property {string} column_id
@@ -22,8 +29,9 @@
  *
  * @typedef Properties
  * @type {object}
+ * @property {ProjectSummary} project_summary
  * @property {ColumnPath[]} columns
- * @property {Table | Column} selected
+ * @property {Table | Column} selected_item
  * @property {Object.<string, string[]>} tag_values
  * @property {string} last_saved_timestamp
  * @property {Permissions} permissions
@@ -48,6 +56,7 @@ import { capitalize } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -80,14 +89,14 @@ const TAG_HELP = {
 const DataCatalog = (/** @type Properties */ props) => {
     loadStylesheet('data-catalog', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
-    window.frameElement.style.setProperty('height', 'calc(100vh - 175px)');
+    window.frameElement.style.setProperty('height', 'calc(100vh - 85px)');
     window.testgen.isPage = true;
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
         let columns = [];
         try {
-            columns = JSON.parse(getValue(props.columns));
+            columns = JSON.parse(getValue(props.columns) ?? []);
         } catch { }
 
         const tables = {};
@@ -119,7 +128,7 @@ const DataCatalog = (/** @type Properties */ props) => {
 
     const selectedItem = van.derive(() => {
         try {
-            return JSON.parse(getValue(props.selected));
+            return JSON.parse(getValue(props.selected_item));
         } catch (e) {
             console.error(e)
             return null;
@@ -146,81 +155,102 @@ const DataCatalog = (/** @type Properties */ props) => {
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
 
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
+    const projectSummary = getValue(props.project_summary);
 
-    return div(
-        {
-            class: 'flex-row tg-dh',
-            ondragover: (event) => event.preventDefault(),
-        },
-        Tree(
-            {
-                id: treeDomId,
-                classes: 'tg-dh--tree',
-                nodes: treeNodes,
-                // Use .rawVal, so only initial value from query params is passed to tree
-                selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
-                multiSelect: multiEditMode,
-                multiSelectToggle: userCanEdit,
-                onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                isNodeHidden: (/** @type TreeNode */ node) => {
-                    let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
-                    hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
-                    return hidden;
-                },
-                hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
-                onResetFilters: () => {
-                    filters.criticalDataElement.val = false;
-                    TAG_KEYS.forEach(key => filters[key].val = null);
-                },
-            },
-            // Pass as a function that will be called when the filter portal is opened
-            // Otherwise state bindings get garbage collected and Select dropdowns won't open
-            // https://vanjs.org/advanced#gc
+    return projectSummary.table_groups_ct > 0
+        ? div(
+            { class: 'flex-column tg-dh' },
             () => div(
-                Checkbox({
-                    label: 'Only critical data elements (CDEs)',
-                    checked: filters.criticalDataElement,
-                    onChange: (checked) => filters.criticalDataElement.val = checked,
+                { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-2' },
+                Select({
+                    label: 'Table Group',
+                    value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
+                    options: getValue(props.table_group_filter_options) ?? [],
+                    height: 38,
+                    style: 'font-size: 14px;',
+                    testId: 'table-group-filter',
+                    onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                div(
-                    {
-                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
-                        style: 'max-width: 420px;',
-                    },
-                    TAG_KEYS.map(key => Select({
-                        id: `data-catalog-${key}`,
-                        label: capitalize(key.replaceAll('_', ' ')),
-                        height: 32,
-                        value: filters[key],
-                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
-                        allowNull: true,
-                        disabled: !getValue(props.tag_values)?.[key]?.length,
-                        onChange: v => filters[key].val = v,
-                    })),
-                ),
             ),
-        ),
-        div(
-            {
-                class: 'tg-dh--dragger',
-                draggable: true,
-                ondragstart: (event) => {
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
-                    dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
-                },
-                ondragend: (event) => {
-                    dragResize(event);
-                    dragState.val = null;
-                },
-                ondrag: van.derive(() => dragState.val ? dragResize : null),
-            },
-        ),
-        () => multiEditMode.val
-            ? MultiEdit(props, multiSelectedItems, multiEditMode)
-            : SelectedDetails(props, selectedItem.val),
-    );
+            () => treeNodes.val.length
+                ? div(
+                    {
+                        class: 'flex-row tg-dh--content',
+                        ondragover: (event) => event.preventDefault(),
+                    },
+                    Tree(
+                        {
+                            id: treeDomId,
+                            classes: 'tg-dh--tree',
+                            nodes: treeNodes,
+                            // Use .rawVal, so only initial value from query params is passed to tree
+                            selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
+                            onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
+                            multiSelect: multiEditMode,
+                            multiSelectToggle: userCanEdit,
+                            onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
+                            isNodeHidden: (/** @type TreeNode */ node) => {
+                                let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
+                                hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
+                                return hidden;
+                            },
+                            hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
+                            onResetFilters: () => {
+                                filters.criticalDataElement.val = false;
+                                TAG_KEYS.forEach(key => filters[key].val = null);
+                            },
+                        },
+                        // Pass as a function that will be called when the filter portal is opened
+                        // Otherwise state bindings get garbage collected and Select dropdowns won't open
+                        // https://vanjs.org/advanced#gc
+                        () => div(
+                            Checkbox({
+                                label: 'Only critical data elements (CDEs)',
+                                checked: filters.criticalDataElement,
+                                onChange: (checked) => filters.criticalDataElement.val = checked,
+                            }),
+                            div(
+                                {
+                                    class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
+                                    style: 'max-width: 420px;',
+                                },
+                                TAG_KEYS.map(key => Select({
+                                    id: `data-catalog-${key}`,
+                                    label: capitalize(key.replaceAll('_', ' ')),
+                                    height: 32,
+                                    value: filters[key],
+                                    options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
+                                    allowNull: true,
+                                    disabled: !getValue(props.tag_values)?.[key]?.length,
+                                    onChange: v => filters[key].val = v,
+                                })),
+                            ),
+                        ),
+                    ),
+                    div(
+                        {
+                            class: 'tg-dh--dragger',
+                            draggable: true,
+                            ondragstart: (event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
+                                dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
+                            },
+                            ondragend: (event) => {
+                                dragResize(event);
+                                dragState.val = null;
+                            },
+                            ondrag: van.derive(() => dragState.val ? dragResize : null),
+                        },
+                    ),
+                    () => multiEditMode.val
+                        ? MultiEdit(props, multiSelectedItems, multiEditMode)
+                        : SelectedDetails(props, selectedItem.val),
+                )
+                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
+        )
+        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
@@ -253,7 +283,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
         )
-        : EmptyState(
+        : ItemEmptyState(
             'Select a table or column on the left to view its details.',
             'quick_reference_all',
         );
@@ -483,14 +513,14 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                     ),
                 ),
             })
-            : EmptyState(
+            : ItemEmptyState(
                 'Select tables or columns on the left to edit their tags.',
                 'edit_document',
             ),
     );
 };
 
-const EmptyState = (/** @type string */ message, /** @type string */ icon) => {
+const ItemEmptyState = (/** @type string */ message, /** @type string */ icon) => {
     return div(
         { class: 'flex-column fx-align-flex-center fx-justify-center tg-dh--no-selection' },
         Icon({ size: 80, classes: 'text-disabled mb-5' }, icon),
@@ -498,10 +528,66 @@ const EmptyState = (/** @type string */ message, /** @type string */ icon) => {
     );
 };
 
+const ConditionalEmptyState = (
+    /** @type ProjectSummary */ projectSummary,
+    /** @type boolean */ userCanEdit,
+    /** @type boolean */ userCanNavigate,
+) => {
+    let args = {
+        label: 'No profiling data yet',
+        message: EMPTY_STATE_MESSAGE.profiling,
+        button: Button({
+            icon: 'play_arrow',
+            type: 'stroked',
+            color: 'primary',
+            label: 'Run Profiling',
+            width: 'fit-content',
+            style: 'margin: auto; background: background: var(--dk-card-background);',
+            disabled: !userCanEdit,
+            tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
+            tooltipPosition: 'bottom',
+            onclick: () => emitEvent('RunProfilingClicked', {}),
+        }),
+    }
+    if (projectSummary.connections_ct <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.connection,
+            link: {
+                label: 'Go to Connections',
+                href: 'connections',
+                params: { project_code: projectSummary.project_code },
+                disabled: !userCanNavigate,
+            },
+        };
+    } else if (projectSummary.table_groups_ct <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.tableGroup,
+            link: {
+                label: 'Go to Table Groups',
+                href: 'connections:table-groups',
+                params: { connection_id: projectSummary.default_connection_id },
+                disabled: !userCanNavigate,
+            },
+        };
+    }
+    
+    return EmptyState({
+        icon: 'dataset',
+        ...args,
+    });
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-dh {
     height: 100%;
+}
+
+.tg-dh--content {
+    min-height: 0;
+    flex: auto;
     align-items: stretch;
 }
 

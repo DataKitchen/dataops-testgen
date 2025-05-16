@@ -14,13 +14,14 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.queries import project_queries
 from testgen.ui.queries.profiling_queries import TAG_FIELDS, get_column_by_id, get_hygiene_issues, get_table_by_id
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import friendly_score, score
+from testgen.utils import format_field, friendly_score, is_uuid4, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
@@ -39,75 +40,88 @@ class DataCatalogPage(Page):
             PAGE_TITLE,
         )
 
-        user_can_navigate = not user_session_service.user_has_catalog_role()
+        _, loading_column = st.columns([.4, .6])
+        spinner_container = loading_column.container(key="data_catalog:spinner")
 
-        if render_empty_state(project_code, user_can_navigate):
-            return
+        with spinner_container:
+            with st.spinner(text="Loading data ..."):
+                # Make sure none of the loading logic use @st.cache_data(show_spinner=True)
+                # Otherwise, the testgen_component randomly remounts for no reason when selecting items
+                # (something to do with displaying the extra cache spinner next to the custom component)
+                # Enclosing the loading logic in a Streamlit container also fixes it
 
-        group_filter_column, _, loading_column = st.columns([.3, .5, .2], vertical_alignment="center")
+                project_summary = project_queries.get_summary_by_code(project_code)
+                user_can_navigate = not user_session_service.user_has_catalog_role()
+                table_groups = get_table_group_options(project_code)
 
-        with group_filter_column:
-            table_groups_df = get_table_group_options(project_code)
-            table_group_id = testgen.select(
-                options=table_groups_df,
-                value_column="id",
-                display_column="table_groups_name",
-                default_value=table_group_id,
-                required=True,
-                label="Table Group",
-                bind_to_query="table_group_id",
-            )
+                if not table_group_id or table_group_id not in table_groups["id"].values:
+                    table_group_id = table_groups.iloc[0]["id"] if not table_groups.empty else None
+                    on_table_group_selected(table_group_id)
 
-        with loading_column:
-            columns_df = get_table_group_columns(table_group_id)
-            selected_item = get_selected_item(selected, table_group_id)
-            if selected_item:
-                selected_item["project_code"] = project_code
-                selected_item["connection_id"] = str(
-                    table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]["connection_id"])
-            else:
-                self.router.set_query_params({ "selected": None })
+                columns, selected_item, selected_table_group = pd.DataFrame(), None, None
+                if table_group_id:
+                    selected_table_group = table_groups.loc[table_groups["id"] == table_group_id].iloc[0]
+                    columns = get_table_group_columns(table_group_id)
+                    selected_item = get_selected_item(selected, table_group_id)
 
-        if columns_df.empty:
-            table_group = table_groups_df.loc[table_groups_df["id"] == table_group_id].iloc[0]
-            testgen.empty_state(
-                label="No profiling data yet",
-                icon=PAGE_ICON,
-                message=testgen.EmptyStateMessage.Profiling,
-                action_label="Run Profiling",
-                action_disabled=not user_session_service.user_can_edit(),
-                button_onclick=partial(run_profiling_dialog, project_code, table_group),
-                button_icon="play_arrow",
-            )
+        if selected_item:
+            selected_item["project_code"] = project_code
+            selected_item["connection_id"] = format_field(selected_table_group["connection_id"])
         else:
-            def on_item_selected(item_id):
-                self.router.set_query_params({ "selected": item_id })
-
-            testgen_component(
-                "data_catalog",
-                props={
-                    "columns": columns_df.to_json(orient="records"),
-                    "selected": json.dumps(selected_item),
-                    "tag_values": get_tag_values(),
-                    "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
-                    "permissions": {
-                        "can_edit": user_session_service.user_can_disposition(),
-                        "can_navigate": user_can_navigate,
-                    },
+            on_item_selected(None)
+        
+        testgen_component(
+            "data_catalog",
+            props={
+                "project_summary": {
+                    "project_code": project_code,
+                    "connections_ct": format_field(project_summary["connections_ct"]),
+                    "table_groups_ct": format_field(project_summary["table_groups_ct"]),
+                    "default_connection_id": format_field(project_summary["default_connection_id"]),
                 },
-                on_change_handlers={
-                    "ItemSelected": on_item_selected,
-                    "DataPreviewClicked": lambda item: data_preview_dialog(
-                        item["table_group_id"],
-                        item["schema_name"],
-                        item["table_name"],
-                        item.get("column_name"),
-                    ),
+                "table_group_filter_options": [
+                    {
+                        "value": format_field(table_group["id"]),
+                        "label": format_field(table_group["table_groups_name"]),
+                        "selected": str(table_group_id) == str(table_group["id"]),
+                    } for _, table_group in table_groups.iterrows()
+                ],
+                "columns": columns.to_json(orient="records") if not columns.empty else None,
+                "selected_item": json.dumps(selected_item),
+                "tag_values": get_tag_values(),
+                "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
+                "permissions": {
+                    "can_edit": user_session_service.user_can_disposition(),
+                    "can_navigate": user_can_navigate,
                 },
-                event_handlers={ "TagsChanged": partial(on_tags_changed, loading_column) },
-            )
+            },
+            on_change_handlers={
+                "RunProfilingClicked": partial(
+                    run_profiling_dialog,
+                    project_code,
+                    selected_table_group,
+                ),
+                "TableGroupSelected": on_table_group_selected,
+                "ItemSelected": on_item_selected,
+                "DataPreviewClicked": lambda item: data_preview_dialog(
+                    item["table_group_id"],
+                    item["schema_name"],
+                    item["table_name"],
+                    item.get("column_name"),
+                ),
+            },
+            event_handlers={ "TagsChanged": partial(on_tags_changed, spinner_container) },
+        )
 
 
+def on_table_group_selected(table_group_id: str | None) -> None:
+    Router().set_query_params({ "table_group_id": table_group_id })
+
+
+def on_item_selected(item_id: str | None) -> None:
+    Router().set_query_params({ "selected": item_id })
+
+    
 def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
@@ -152,44 +166,17 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     st.rerun()
 
 
-def render_empty_state(project_code: str, user_can_navigate: bool) -> bool:
-    project_summary_df = project_queries.get_summary_by_code(project_code)
-    if project_summary_df["profiling_runs_ct"]: # Without profiling, we don't have any table and column information in db
-        return False
-
-    label="Your project is empty"
-    testgen.whitespace(5)
-    if not project_summary_df["connections_ct"]:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Connection,
-            action_label="Go to Connections",
-            action_disabled=not user_can_navigate,
-            link_href="connections",
-            link_params={ "project_code": project_code },
-        )
-    else:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Profiling if project_summary_df["table_groups_ct"] else testgen.EmptyStateMessage.TableGroup,
-            action_label="Go to Table Groups",
-            action_disabled=not user_can_navigate,
-            link_href="connections:table-groups",
-            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
-        )
-    return True
-
-
 @st.cache_data(show_spinner=False)
 def get_table_group_options(project_code):
     schema = st.session_state["dbschema"]
     return dq.run_table_groups_lookup_query(schema, project_code)
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
+    if not is_uuid4(table_group_id):
+        return pd.DataFrame()
+    
     schema = st.session_state["dbschema"]
     sql = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
@@ -215,7 +202,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
-    if not selected:
+    if not selected or not is_uuid4(table_group_id):
         return None
 
     item_type, item_id = selected.split("_", 2)
