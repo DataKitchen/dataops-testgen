@@ -172,6 +172,28 @@ const DataCatalog = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
+                Button({
+                    icon: 'download',
+                    type: 'stroked',
+                    label: 'Export',
+                    tooltip: 'Download filtered columns to Excel',
+                    tooltipPosition: 'left',
+                    width: 'fit-content',
+                    style: 'background: var(--dk-card-background);',
+                    onclick: () => {
+                        const columnIds = treeNodes.val.reduce((ids, table) => {
+                            if (!table.hidden.val) {
+                                table.children.forEach(column => {
+                                    if (!column.hidden.val) {
+                                        ids.push(column.id);
+                                    }
+                                });
+                            }
+                            return ids;
+                        }, []);
+                        emitEvent('ExportClicked', { payload: columnIds });
+                    },
+                }),
             ),
             () => treeNodes.val.length
                 ? div(

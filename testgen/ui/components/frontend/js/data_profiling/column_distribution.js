@@ -196,8 +196,8 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
                 PercentBar({ label: 'Before 1 Year', value: item.before_1yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 5 Year', value: item.before_5yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 20 Year', value: item.before_20yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Before 5 Years', value: item.before_5yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Before 20 Years', value: item.before_20yr_date_ct, total, width: percentWidth }),
             ),
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
