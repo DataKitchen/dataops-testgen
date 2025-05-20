@@ -2,7 +2,7 @@ import enum
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
@@ -237,7 +237,11 @@ class ScoreDefinition(Base):
 
         for entry in self.history[-50:]:
             if entry.category in history_categories:
-                score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
+                score_card["history"].append({
+                    "score": entry.score,
+                    "category": entry.category,
+                    "time": entry.last_run_time.replace(tzinfo=UTC),
+                })
 
         return score_card
 
