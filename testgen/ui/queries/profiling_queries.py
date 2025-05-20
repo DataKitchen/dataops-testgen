@@ -129,12 +129,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str, column_name: s
             WHERE profile_run_id = profile_results.profile_run_id
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
-        ) THEN 'Yes' END AS hygiene_issues,
-        distinct_value_hash,
-        fractional_sum,
-        date_days_present,
-        date_weeks_present,
-        date_months_present
+        ) THEN 'Yes' END AS hygiene_issues
     FROM {schema}.profile_results
     WHERE profile_run_id = '{profiling_run_id}'
         AND table_name ILIKE '{table_name}'

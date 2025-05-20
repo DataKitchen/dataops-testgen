@@ -1,7 +1,6 @@
 import typing
 from builtins import float
 from enum import Enum
-from io import BytesIO
 from pathlib import Path
 from time import sleep
 
@@ -11,7 +10,6 @@ from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 from streamlit_extras.no_default_selectbox import selectbox
 
-import testgen.common.date_service as date_service
 import testgen.ui.services.database_service as db
 from testgen.ui.navigation.router import Router
 
@@ -169,109 +167,6 @@ class FieldSpec:
             case _:
                 raise ValueError(f"Widget {self.widget} is not supported.")
 
-
-@st.cache_data(show_spinner=False)
-def _generate_excel_export(
-    df_data, lst_export_columns, str_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
-):
-    if lst_export_columns:
-        # Filter the DataFrame to keep only the columns in lst_export_columns
-        df_to_export = df_data[lst_export_columns]
-    else:
-        lst_export_columns = list(df_data.columns)
-        df_to_export = df_data
-
-    dct_col_to_header = dict(zip(lst_export_columns, lst_column_headers, strict=True)) if lst_column_headers else None
-
-    if not str_title:
-        str_title = "TestGen Data Export"
-    start_row = 4 if str_caption else 3
-
-    # Create a BytesIO buffer to hold the Excel file
-    output = BytesIO()
-
-    # Create a Pandas Excel writer using XlsxWriter as the engine
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        # Write the DataFrame to an Excel file, starting from the fourth row
-        df_to_export.to_excel(writer, index=False, sheet_name="Sheet1", startrow=start_row)
-
-        # Access the XlsxWriter workbook and worksheet objects from the dataframe
-        workbook = writer.book
-        worksheet = writer.sheets["Sheet1"]
-
-        # Add table formatting
-        (max_row, max_col) = df_to_export.shape
-        if dct_col_to_header:
-            column_settings = [{"header": dct_col_to_header[column]} for column in df_to_export.columns]
-        else:
-            column_settings = [{"header": column} for column in df_to_export.columns]
-        worksheet.add_table(
-            start_row,
-            0,
-            max_row + start_row,
-            max_col - 1,
-            {"columns": column_settings, "style": "Table Style Medium 16"},
-        )
-
-        # Define the format for wrapped text
-        wrap_format = workbook.add_format(
-            {
-                "text_wrap": True,
-                "valign": "top",  # Align to the top to better display wrapped text
-            }
-        )
-        valign_format = workbook.add_format({"valign": "top"})
-
-        # Autofit the worksheet (before adding title or settingwrapped column width)
-        worksheet.set_column(0, 1000, None, valign_format)
-        worksheet.autofit()
-
-        # Set a fixed column width for wrapped columns and apply wrap format
-        approx_width = 60
-        for col_idx, column in enumerate(df_to_export[lst_export_columns].columns):
-            if column in lst_wrap_columns:
-                # Set column width and format for wrapping
-                worksheet.set_column(col_idx, col_idx, approx_width, wrap_format)
-
-        # Add a cell format for the title
-        title_format = workbook.add_format({"bold": True, "size": 14})
-        # Write the title in cell A2 with formatting
-        worksheet.write("A2", str_title, title_format)
-
-        if str_caption:
-            str_caption = str_caption.replace("{TIMESTAMP}", date_service.get_timezoned_now(st.session_state))
-            caption_format = workbook.add_format({"italic": True, "size": 9, "valign": "top"})
-            worksheet.write("A3", str_caption, caption_format)
-
-    # Rewind the buffer
-    output.seek(0)
-
-    # Return the Excel file
-    return output.getvalue()
-
-
-def render_excel_export(
-    df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
-):
-
-    if st.button(label=":material/download: Export", help="Download to Excel"):
-        download_excel(df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers)
-
-
-@st.dialog(title="Download to Excel")
-def download_excel(
-    df, lst_export_columns, str_export_title=None, str_caption=None, lst_wrap_columns=None, lst_column_headers=None
-):
-    st.write(f'**Are you sure you want to download "{str_export_title}.xlsx"?**')
-
-    st.download_button(
-        label="Download",
-        data=_generate_excel_export(
-            df, lst_export_columns, str_export_title, str_caption, lst_wrap_columns, lst_column_headers
-        ),
-        file_name=f"{str_export_title}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
 
 def render_refresh_button(button_container):
     with button_container:

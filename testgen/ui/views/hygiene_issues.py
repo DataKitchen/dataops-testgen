@@ -13,7 +13,13 @@ from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_querie
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
+from testgen.ui.components.widgets.download_dialog import (
+    FILE_DATA_TYPE,
+    PROGRESS_UPDATE_TYPE,
+    download_dialog,
+    get_excel_file_data,
+    zip_multi_file_data,
+)
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.services import project_service, user_session_service
@@ -178,21 +184,12 @@ class HygieneIssuesPage(Page):
             )
 
             with export_button_column:
-                lst_export_columns = [
-                    "schema_name",
-                    "table_name",
-                    "column_name",
-                    "anomaly_name",
-                    "issue_likelihood",
-                    "anomaly_description",
-                    "action",
-                    "detail",
-                    "suggested_action",
-                ]
-                lst_wrap_columns = ["anomaly_description", "suggested_action"]
-                fm.render_excel_export(
-                    df_pa, lst_export_columns, "Hygiene Screen", "{TIMESTAMP}", lst_wrap_columns
-                )
+                if st.button(label=":material/download: Export", help="Download filtered hygiene issues to Excel"):
+                    download_dialog(
+                        dialog_title="Download Excel Report",
+                        file_content_func=get_excel_report_data,
+                        args=(df_pa, run_df["table_groups_name"], run_date),
+                    )
 
             if selected:
                 # Always show details for last selected row
@@ -487,6 +484,32 @@ def get_profiling_anomaly_summary(str_profile_run_id):
         { "label": "Moderate Risk", "value": int(df.at[0, "pii_moderate_ct"]), "color": "orange", "type": "PII" },
         { "label": "Dismissed", "value": int(df.at[0, "pii_dismissed_ct"]), "color": "grey", "type": "PII" },
     ]
+
+
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    data: pd.DataFrame,
+    table_group: str,
+    run_date: str,
+) -> FILE_DATA_TYPE:
+    columns = {
+        "schema_name": {"header": "Schema"},
+        "table_name": {"header": "Table"},
+        "column_name": {"header": "Column"},
+        "anomaly_name": {"header": "Issue name"},
+        "issue_likelihood": {"header": "Likelihood"},
+        "anomaly_description": {"header": "Description", "wrap": True},
+        "action": {},
+        "detail": {},
+        "suggested_action": {"wrap": True},
+    }
+    return get_excel_file_data(
+        data,
+        "Hygiene Issues",
+        details={"Table group": table_group, "Profiling run date": run_date},
+        columns=columns,
+        update_progress=update_progress,
+    )
 
 
 @st.cache_data(show_spinner=False)
