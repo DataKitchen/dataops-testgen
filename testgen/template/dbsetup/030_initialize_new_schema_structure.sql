@@ -622,7 +622,6 @@ CREATE TABLE auth_users (
 	email 			VARCHAR(120),
 	name 			VARCHAR(120),
 	password 		VARCHAR(120),
-	preauthorized 	BOOLEAN default false,
 	role      VARCHAR(20)
 );
 
