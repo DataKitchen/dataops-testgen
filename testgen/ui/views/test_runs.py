@@ -123,19 +123,17 @@ class TestRunScheduleDialog(ScheduleDialog):
         self.test_suites = get_db_test_suite_choices(self.project_code)
 
     def get_arg_value(self, job):
-        return self.test_suites.loc[
-            self.test_suites["id"] == job.kwargs["test_suite_id"], "test_suite"
-        ].iloc[0]
+        return job.kwargs["test_suite_key"]
 
     def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
-        ts_id = testgen.select(
+        ts_name = testgen.select(
             label="Test Suite",
             options=self.test_suites,
-            value_column="id",
+            value_column="test_suite",
             display_column="test_suite",
             required=True,
         )
-        return bool(ts_id), [], {"test_suite_id": ts_id}
+        return bool(ts_name), [], {"project_code": self.project_code, "test_suite_key": ts_name}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
