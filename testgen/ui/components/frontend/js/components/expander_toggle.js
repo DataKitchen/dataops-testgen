@@ -21,7 +21,7 @@ const ExpanderToggle = (/** @type Properties */ props) => {
         Streamlit.setFrameHeight(24);
     }
 
-    const expandedState = van.state(!!props.default);
+    const expandedState = van.state(!!getValue(props.default));
     const expandLabel = getValue(props.expandLabel) || 'Expand';
     const collapseLabel = getValue(props.collapseLabel) || 'Collapse';
 
