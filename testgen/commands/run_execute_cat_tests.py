@@ -71,16 +71,20 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
     ])
     end_time = datetime.now(UTC)
     
-    RunActionQueryList(("DKTG"), [
-        clsCATExecute.CalcPrevalenceTestResultsSQL(),
-        clsCATExecute.TestScoringRollupRunSQL(),
-        clsCATExecute.TestScoringRollupTableGroupSQL(),
-    ])
-    run_refresh_score_cards_results(
-        project_code=clsCATExecute.project_code,
-        add_history_entry=True,
-        refresh_date=date_service.parse_now(clsCATExecute.run_date),
-    )
+    try:
+        RunActionQueryList(("DKTG"), [
+            clsCATExecute.CalcPrevalenceTestResultsSQL(),
+            clsCATExecute.TestScoringRollupRunSQL(),
+            clsCATExecute.TestScoringRollupTableGroupSQL(),
+        ])
+        run_refresh_score_cards_results(
+            project_code=clsCATExecute.project_code,
+            add_history_entry=True,
+            refresh_date=date_service.parse_now(clsCATExecute.run_date),
+        )
+    except Exception:
+        LOG.exception("Error refreshing scores after test run")
+        pass
 
     MixpanelService().send_event(
         "run-tests",
