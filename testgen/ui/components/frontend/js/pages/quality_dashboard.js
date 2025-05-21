@@ -1,18 +1,19 @@
 /**
  * @import { Score } from '../components/score_card.js';
- * 
+ *
  * @typedef ProjectSummary
  * @type {object}
+ * @property {string} project_code
  * @property {number} connections_count
  * @property {string} default_connection_id
  * @property {number} table_groups_count
  * @property {number} profiling_runs_count
- * 
+ *
  * @typedef Category
  * @type {object}
  * @property {string} label
  * @property {number} score
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
@@ -63,6 +64,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                     },
                     filterTerm,
                     sortedBy,
+                    getValue(props.project_summary),
                 ),
                 () =>  div(
                     { class: 'flex-row fx-flex-wrap fx-gap-4' },
@@ -82,7 +84,12 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     );
 };
 
-const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ sortedBy) => {
+const Toolbar = (
+    options,
+    /** @type {string} */ filterBy,
+    /** @type {string} */ sortedBy,
+    /** @type ProjectSummary */ projectSummary
+) => {
     const sortOptions = [
         { label: "Score Name", value: "name" },
         { label: "Lowest Score", value: "score" },
@@ -99,6 +106,7 @@ const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ 
             placeholder: 'Search scores',
             value: filterBy,
             onChange: options?.onsearch,
+            testId: 'scorecards-filter',
         }),
         Select({
             id: 'score-dashboard-sort',
@@ -108,6 +116,7 @@ const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ 
             value: sortedBy,
             options: sortOptions,
             onChange: options?.onsort,
+            testId: 'scorecards-sort',
         }),
         span({ style: 'margin: 0 auto;' }),
         Button({
@@ -116,7 +125,11 @@ const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ 
             label: 'Score Explorer',
             color: 'primary',
             style: 'background: var(--button-generic-background-color); width: unset; margin-right: 16px;',
-            onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer' }),
+            onclick: () => emitEvent('LinkClicked', {
+                href: 'quality-dashboard:explorer',
+                params: { project_code: projectSummary.project_code },
+                testId: 'scorecards-goto-explorer',
+            }),
         }),
         Button({
             type: 'icon',
@@ -125,6 +138,7 @@ const Toolbar = (options, /** @type {string} */ filterBy, /** @type {string} */ 
             tooltipPosition: 'left',
             style: 'border: var(--button-stroked-border); border-radius: 4px;',
             onclick: () => emitEvent('RefreshData', {}),
+            testId: 'scorecards-refresh',
         }),
     );
 };
@@ -135,6 +149,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         link: {
             label: 'Score Explorer',
             href: 'quality-dashboard:explorer',
+            params: { project_code: projectSummary.project_code },
         },
     };
 
@@ -144,6 +159,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
             link: {
                 label: 'Go to Connections',
                 href: 'connections',
+                params: { project_code: projectSummary.project_code },
             },
         };
     } else if (projectSummary.profiling_runs_count <= 0) {

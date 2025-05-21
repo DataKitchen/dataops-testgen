@@ -33,17 +33,20 @@ class Page(abc.ABC):
         self.router.navigate_to_pending()
         for guard in self.can_activate or []:
             can_activate = guard()
-            if type(can_activate) == str:
-                return self.router.navigate(to=can_activate)
+            if can_activate != True:
+                session.sidebar_project = session.sidebar_project or project_service.get_projects()[0]["code"]
 
-            if not can_activate:
+                if type(can_activate) == str:
+                    return self.router.navigate(to=can_activate, with_args={ "project_code": session.sidebar_project })
+
                 session.page_pending_login = self.path
-                return self.router.navigate(to=session.user_default_page or "")
+                session.page_args_pending_login = st.query_params.to_dict()
 
-        session.current_page_args = session.current_page_args or {}
-        self._validate_project_query_param()
+                default_page = session.user_default_page or ""
+                with_args = { "project_code": session.sidebar_project } if default_page else {}
+                return self.router.navigate(to=default_page, with_args=with_args)
 
-        self.render(**self._query_params_to_kwargs(session.current_page_args))
+        self.render(**self._query_params_to_kwargs(st.query_params))
 
     def _query_params_to_kwargs(self, query_params: dict | QueryParamsProxy) -> dict:
         if not isinstance(query_params, QueryParamsProxy):
@@ -54,19 +57,6 @@ class Page(abc.ABC):
             values_list = query_params.get_all(key)
             kwargs[key] = values_list if len(values_list) > 1 else query_params.get(key)
         return kwargs
-
-    def _validate_project_query_param(self) -> None:
-        if self.path != "" and ":" not in self.path:
-            project_param = session.current_page_args.get("project_code")
-            valid_project_codes = [ project["code"] for project in project_service.get_projects() ]
-
-            if project_param not in valid_project_codes: # Ensure top-level pages have valid project_code
-                session.current_page_args.update({ "project_code": session.project})
-                self.router.set_query_params({ "project_code": session.project})
-            elif project_param != session.project: # Sync session state with query param
-                project_service.set_current_project(project_param)
-        else:
-            session.current_page_args.pop("project_code", None)
 
     @abc.abstractmethod
     def render(self, **kwargs) -> None:

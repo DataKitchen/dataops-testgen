@@ -24,6 +24,7 @@
          WHERE test_suite_id = '{TEST_SUITE_ID}'
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
+         AND t.test_type NOT LIKE 'Aggregate_%'
          UNION
          -- FROM: groupby_names (should be referential)
          SELECT cat_test_id,
@@ -60,6 +61,7 @@
          WHERE test_suite_id = '{TEST_SUITE_ID}'
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
+         AND t.test_type NOT LIKE 'Aggregate_%'
          UNION
          -- FROM: match_groupby_names (referential)
          SELECT cat_test_id,

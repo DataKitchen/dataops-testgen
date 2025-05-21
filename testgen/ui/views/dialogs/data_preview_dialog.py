@@ -63,29 +63,35 @@ def get_preview_data(
     connection_df = db.retrieve_data(connection_query).iloc[0]
 
     if not connection_df.empty:
+        use_top = connection_df["sql_flavor"] == "mssql"
         query = f"""
         SELECT
+            {"TOP 100" if use_top else ""}
             {column_name or "*"}
         FROM {schema_name}.{table_name}
-        LIMIT 100
+        {"LIMIT 100" if not use_top else ""}
         """
 
-        df = db.retrieve_target_db_df(
-            connection_df["sql_flavor"],
-            connection_df["project_host"],
-            connection_df["project_port"],
-            connection_df["project_db"],
-            connection_df["project_user"],
-            connection_df["project_pw_encrypted"],
-            query,
-            connection_df["url"],
-            connection_df["connect_by_url"],
-            connection_df["connect_by_key"],
-            connection_df["private_key"],
-            connection_df["private_key_passphrase"],
-            connection_df["http_path"],
-        )
-        df.index = df.index + 1
-        return df
+        try:
+            df = db.retrieve_target_db_df(
+                connection_df["sql_flavor"],
+                connection_df["project_host"],
+                connection_df["project_port"],
+                connection_df["project_db"],
+                connection_df["project_user"],
+                connection_df["project_pw_encrypted"],
+                query,
+                connection_df["url"],
+                connection_df["connect_by_url"],
+                connection_df["connect_by_key"],
+                connection_df["private_key"],
+                connection_df["private_key_passphrase"],
+                connection_df["http_path"],
+            )
+        except:
+            return pd.DataFrame()
+        else:
+            df.index = df.index + 1
+            return df
     else:
         return pd.DataFrame()

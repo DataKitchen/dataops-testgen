@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import profiling_run_queries, project_queries
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, to_int
 
@@ -29,6 +30,7 @@ class DataProfilingPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon=PAGE_ICON,
@@ -38,13 +40,12 @@ class DataProfilingPage(Page):
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
-    def render(self, project_code: str | None = None, table_group_id: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "investigate-profiling",
         )
 
-        project_code = project_code or session.project
         user_can_run = user_session_service.user_can_edit()
         if render_empty_state(project_code, user_can_run):
             return
@@ -64,6 +65,12 @@ class DataProfilingPage(Page):
 
         with actions_column:
             testgen.flex_row_end()
+
+            st.button(
+                ":material/today: Profiling Schedules",
+                help="Manages when profiling should run for a given table group",
+                on_click=partial(ProfilingScheduleDialog().open, project_code)
+            )
 
             if user_can_run:
                 st.button(
@@ -96,6 +103,32 @@ class DataProfilingPage(Page):
             )
 
 
+class ProfilingScheduleDialog(ScheduleDialog):
+
+    title = "Profiling Schedules"
+    arg_label = "Table Group"
+    job_key = "run-profile"
+    table_groups: pd.DataFrame | None = None
+
+    def init(self) -> None:
+        self.table_groups = get_db_table_group_choices(self.project_code)
+
+    def get_arg_value(self, job):
+        return self.table_groups.loc[
+            self.table_groups["id"] == job.kwargs["table_group_id"], "table_groups_name"
+        ].iloc[0]
+
+    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
+        tg_id = testgen.select(
+            label="Table Group",
+            options=self.table_groups,
+            value_column="id",
+            display_column="table_groups_name",
+            required=True,
+        )
+        return bool(tg_id), [], {"table_group_id": tg_id}
+
+
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["profiling_runs_ct"]:
@@ -110,6 +143,7 @@ def render_empty_state(project_code: str, user_can_run: bool) -> bool:
             message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
+            link_params={ "project_code": project_code },
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(

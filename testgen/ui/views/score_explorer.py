@@ -8,6 +8,7 @@ from testgen.commands.run_refresh_score_cards_results import (
     run_recalculate_score_card,
     run_refresh_score_cards_results,
 )
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionFilter, SelectedIssue
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -24,12 +25,14 @@ from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
+PAGE_PATH = "quality-dashboard:explorer"
 
 class ScoreExplorerPage(Page):
-    path = "quality-dashboard:explorer"
+    path = PAGE_PATH
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "definition_id" in st.query_params or "project_code" in st.query_params or "quality-dashboard",
     ]
 
     def render(
@@ -43,13 +46,22 @@ class ScoreExplorerPage(Page):
         breakdown_score_type: str | None = "score",
         drilldown: str | None = None,
         definition_id: str | None = None,
+        project_code: str | None = None,
         **_kwargs
     ):
-        project_code: str = session.project
         page_title: str = "Score Explorer"
         last_breadcrumb: str = page_title
         if definition_id:
             original_score_definition = ScoreDefinition.get(definition_id)
+
+            if not original_score_definition:
+                self.router.navigate_with_warning(
+                    f"Scorecard with ID '{definition_id}' does not exist. Redirecting to Quality Dashboard ...",
+                    "quality-dashboard",
+                )
+                return
+        
+            project_code = original_score_definition.project_code
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
         testgen.page_header(page_title, breadcrumbs=[
@@ -166,6 +178,12 @@ def set_breakdown_drilldown(drilldown: str | None) -> None:
 
 
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
+    MixpanelService().send_event(
+        "download-issue-report",
+        page=PAGE_PATH,
+        issue_count=len(selected_issues),
+    )
+    
     issues_data = get_score_card_issue_reports(selected_issues)
     dialog_title = "Download Issue Reports"
     if len(issues_data) == 1:
@@ -202,6 +220,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
 
 
 def save_score_definition(_) -> None:
+    project_code = st.query_params.get("project_code")
     definition_id = st.query_params.get("definition_id")
     name = st.query_params.get("name")
     total_score = st.query_params.get("total_score")
@@ -221,11 +240,12 @@ def save_score_definition(_) -> None:
     if definition_id:
         is_new = False
         score_definition = ScoreDefinition.get(definition_id)
+        project_code = score_definition.project_code
 
     if is_new:
         latest_run = max(
-            profiling_queries.get_latest_run_date(session.project),
-            test_run_queries.get_latest_run_date(session.project),
+            profiling_queries.get_latest_run_date(project_code),
+            test_run_queries.get_latest_run_date(project_code),
             key=lambda run: getattr(run, "run_time", 0),
         )
 
@@ -234,7 +254,7 @@ def save_score_definition(_) -> None:
             "refresh_date": latest_run.run_time if latest_run else None,
         }
 
-    score_definition.project_code = session.project
+    score_definition.project_code = project_code
     score_definition.name = name
     score_definition.total_score = total_score and total_score.lower() == "true"
     score_definition.cde_score = cde_score and cde_score.lower() == "true"
@@ -248,7 +268,7 @@ def save_score_definition(_) -> None:
     get_all_score_cards.clear()
 
     if not is_new:
-        run_recalculate_score_card(project_code=score_definition.project_code, definition_id=score_definition.id)
+        run_recalculate_score_card(project_code=project_code, definition_id=score_definition.id)
 
     Router().set_query_params({
         "name": None,

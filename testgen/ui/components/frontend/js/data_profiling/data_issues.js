@@ -158,7 +158,10 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
                 `No test results yet for ${item.type}.`,
                 props.noLinks ? null : Link({
                     href: 'test-suites',
-                    params: { table_group_id: item.table_group_id },
+                    params: {
+                        project_code: item.project_code,
+                        table_group_id: item.table_group_id,
+                    },
                     open_new: true,
                     label: 'Go to Test Suites',
                     right_icon: 'chevron_right',

@@ -1,3 +1,4 @@
+import base64
 import datetime
 import logging
 import typing
@@ -6,12 +7,12 @@ import extra_streamlit_components as stx
 import jwt
 import streamlit as st
 
+from testgen import settings
 from testgen.ui.queries import user_queries
 from testgen.ui.session import session
 
 RoleType = typing.Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
-JWT_HASHING_KEY = "dk_signature_key"
 AUTH_TOKEN_COOKIE_NAME = "dk_cookie_name"  # noqa: S105
 AUTH_TOKEN_EXPIRATION_DAYS = 1
 DISABLED_ACTION_TEXT = "You do not have permissions to perform this action. Contact your administrator."
@@ -19,14 +20,28 @@ DISABLED_ACTION_TEXT = "You do not have permissions to perform this action. Cont
 LOG = logging.getLogger("testgen")
 
 
+def _get_jwt_hashing_key() -> bytes:
+    try:
+        return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
+    except Exception as e:
+        st.error(
+            "Error reading the JWT signing key from settings.\n\n Make sure you have a valid "
+            "base64 string assigned to the TG_JWT_HASHING_KEY environment variable."
+        )
+        st.stop()
+
+
 def load_user_session() -> None:
     # Replacing this with st.context.cookies does not work
     # Because it does not update when cookies are deleted on logout
     cookies = stx.CookieManager(key="testgen.cookies.get")
+    if cookies.cookies:
+        session.cookies_ready = True
+
     token = cookies.get(AUTH_TOKEN_COOKIE_NAME)
     if token is not None:
         try:
-            token = jwt.decode(token, JWT_HASHING_KEY, algorithms=["HS256"])
+            token = jwt.decode(token, _get_jwt_hashing_key(), algorithms=["HS256"])
             if token["exp_date"] > datetime.datetime.utcnow().timestamp():
                 start_user_session(token["name"], token["username"])
         except Exception:
@@ -63,7 +78,7 @@ def get_auth_data():
     preauthorized_list = []
 
     for item in auth_data.itertuples():
-        usernames[item.username] = {
+        usernames[item.username.lower()] = {
             "email": item.email,
             "name": item.name,
             "password": item.password,
@@ -74,7 +89,11 @@ def get_auth_data():
 
     return {
         "credentials": {"usernames": usernames},
-        "cookie": {"expiry_days": AUTH_TOKEN_EXPIRATION_DAYS, "key": JWT_HASHING_KEY, "name": AUTH_TOKEN_COOKIE_NAME},
+        "cookie": {
+            "expiry_days": AUTH_TOKEN_EXPIRATION_DAYS,
+            "key": _get_jwt_hashing_key(),
+            "name": AUTH_TOKEN_COOKIE_NAME,
+        },
         "preauthorized": {"emails": preauthorized_list},
     }
 

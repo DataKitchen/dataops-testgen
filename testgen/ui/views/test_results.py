@@ -14,6 +14,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -23,17 +24,18 @@ from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
-from testgen.utils import friendly_score
+from testgen.utils import friendly_score, is_uuid4
 
 ALWAYS_SPIN = False
+PAGE_PATH = "test-runs:results"
 
 
 class TestResultsPage(Page):
-    path = "test-runs:results"
+    path = PAGE_PATH
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "run_id" in session.current_page_args or "test-runs",
+        lambda: "run_id" in st.query_params or "test-runs",
     ]
 
     def render(
@@ -54,7 +56,7 @@ class TestResultsPage(Page):
             return
 
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["test_starttime"])
-        project_service.set_current_project(run_df["project_code"])
+        project_service.set_sidebar_project(run_df["project_code"])
 
         testgen.page_header(
             "Test Results",
@@ -228,6 +230,9 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
 
 @st.cache_data(show_spinner=ALWAYS_SPIN)
 def get_run_by_id(test_run_id: str) -> pd.Series:
+    if not is_uuid4(test_run_id):
+        return pd.Series()
+    
     schema: str = st.session_state["dbschema"]
     sql = f"""
            SELECT tr.test_starttime,
@@ -376,6 +381,10 @@ def get_test_result_history(selected_row):
 
 
 def show_test_def_detail(str_test_def_id):
+    if not str_test_def_id:
+        st.warning("Test definition no longer exists.")
+        return
+    
     df = get_test_definition(str_test_def_id)
 
     specs = []
@@ -563,6 +572,11 @@ def show_result_detail(
                     ":material/visibility: Source Data", help="View current source data for highlighted result",
                     use_container_width=True
             ):
+                MixpanelService().send_event(
+                    "view-source-data",
+                    page=PAGE_PATH,
+                    test_type=selected_row["test_name_short"],
+                )
                 source_data_dialog(selected_row)
 
         with v_col4:
@@ -585,6 +599,11 @@ def show_result_detail(
                 disabled=not report_eligible_rows,
                 help=report_btn_help,
             ):
+                MixpanelService().send_event(
+                    "download-issue-report",
+                    page=PAGE_PATH,
+                    issue_count=len(report_eligible_rows),
+                )
                 dialog_title = "Download Issue Report"
                 if len(report_eligible_rows) == 1:
                     download_dialog(
@@ -743,9 +762,10 @@ def source_data_dialog(selected_row):
 
 
 def view_edit_test(button_container, test_definition_id):
-    with button_container:
-        if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
-            show_test_form_by_id(test_definition_id)
+    if test_definition_id:
+        with button_container:
+            if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
+                show_test_form_by_id(test_definition_id)
 
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:

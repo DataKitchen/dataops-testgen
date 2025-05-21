@@ -103,10 +103,7 @@ def run_execution_steps_in_background(project_code, test_suite):
         empty_cache()
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(
-                project_code,
-                test_suite
-            ),
+            args=(project_code, test_suite),
         )
         background_thread.start()
     else:
@@ -115,7 +112,12 @@ def run_execution_steps_in_background(project_code, test_suite):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_execution_steps(project_code: str, test_suite: str, minutes_offset: int=0, spinner: Spinner=None) -> str:
+def run_execution_steps(
+    project_code: str,
+    test_suite: str,
+    minutes_offset: int=0,
+    spinner: Spinner=None,
+) -> str:
     # Initialize required parms for all steps
     has_errors = False
     error_msg = ""

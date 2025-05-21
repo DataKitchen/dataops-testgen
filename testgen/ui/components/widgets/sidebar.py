@@ -1,10 +1,11 @@
 import logging
+import time
 from typing import Literal
 
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.router import Router
-from testgen.ui.services import javascript_service, project_service, user_session_service
+from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
@@ -49,6 +50,7 @@ def sidebar(
         on_change=on_change,
     )
 
+
 def on_change():
     # We cannot navigate directly here
     # because st.switch_page uses st.rerun under the hood
@@ -56,21 +58,24 @@ def on_change():
     # So we store the path and navigate on the next run
 
     event_data = getattr(session, SIDEBAR_KEY)
-    project = event_data.get("project")
-    path = event_data.get("path")
-    view_logs = event_data.get("view_logs")
 
-    if project:
-        project_service.set_current_project(project)
-        Router().queue_navigation(to="")
+    # Prevent handling the same event multiple times
+    event_id = event_data.get("_id")
+    if event_id == session.sidebar_event_id:
+        return
+    session.sidebar_event_id = event_id
 
-    if path:
-        if path == LOGOUT_PATH:
-            javascript_service.clear_component_states()
-            user_session_service.end_user_session()
-            Router().queue_navigation(to="", with_args={ "project_code": session.project })
-        else:
-            Router().queue_navigation(to=path, with_args={ "project_code": session.project })
-
-    if view_logs:
+    if event_data.get("view_logs"):
         application_logs_dialog()
+    elif event_data.get("path") == LOGOUT_PATH:
+        javascript_service.clear_component_states()
+        user_session_service.end_user_session()
+        Router().queue_navigation(to="")
+        # Without the time.sleep, cookies sometimes don't get cleared on deployed instances 
+        # (even though it works fine locally)
+        time.sleep(0.3)
+    else:
+        Router().queue_navigation(
+            to=event_data.get("path") or session.user_default_page,
+            with_args=event_data.get("params", {}),
+        )

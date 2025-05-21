@@ -69,7 +69,7 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
                 testgen.link(
                     label="Go to Test Runs",
                     href=LINK_HREF,
-                    params={ "test_suite": test_suite_id },
+                    params={ "project_code": project_code, "test_suite": test_suite_id },
                     right_icon="chevron_right",
                     underline=False,
                     height=40,

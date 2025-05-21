@@ -2,7 +2,7 @@ import enum
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, Self, TypedDict
 
 import pandas as pd
@@ -13,6 +13,37 @@ from sqlalchemy.orm import relationship
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, engine, get_current_session
 from testgen.utils import is_uuid4
+
+SCORE_CATEGORIES = [
+    "column_name",
+    "table_name",
+    "dq_dimension",
+    "semantic_data_type",
+    "table_groups_name",
+    "data_location",
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "data_product",
+]
+Categories = Literal[
+    "column_name",
+    "table_name",
+    "dq_dimension",
+    "semantic_data_type",
+    "table_groups_name",
+    "data_location",
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "data_product",
+]
 
 
 class ScoreCategory(enum.Enum):
@@ -206,14 +237,18 @@ class ScoreDefinition(Base):
 
         for entry in self.history[-50:]:
             if entry.category in history_categories:
-                score_card["history"].append({"score": entry.score, "category": entry.category, "time": entry.last_run_time})
+                score_card["history"].append({
+                    "score": entry.score,
+                    "category": entry.category,
+                    "time": entry.last_run_time.replace(tzinfo=UTC),
+                })
 
         return score_card
 
     def get_score_card_breakdown(
         self,
         score_type: Literal["score", "cde_score"],
-        group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        group_by: Categories,
     ) -> list[dict]:
         """
         Executes a raw query to filter and aggregate the score details
@@ -233,7 +268,13 @@ class ScoreDefinition(Base):
             "column_name": ["table_groups_id", "table_name", "column_name"],
         }.get(group_by, [group_by])
         filters = " AND ".join(self._get_raw_query_filters(cde_only=score_type == "cde_score"))
-        join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
+
+        if group_by in ["table_groups_name", "table_name", "column_name"]:
+            join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
+        else:
+            join_condition = f"""(test_records.{group_by} = profiling_records.{group_by}
+                OR (test_records.{group_by} IS NULL 
+                AND profiling_records.{group_by} IS NULL))"""
 
         profile_records_filters = self._get_raw_query_filters(
             cde_only=score_type == "cde_score",
@@ -264,7 +305,7 @@ class ScoreDefinition(Base):
     def get_score_card_issues(
         self,
         score_type: Literal["score", "cde_score"],
-        group_by: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        group_by: Categories,
         value: str,
     ):
         """
@@ -391,6 +432,15 @@ class ScoreDefinitionBreakdownItem(Base):
     column_name: str = Column(String, nullable=True)
     dq_dimension: str = Column(String, nullable=True)
     semantic_data_type: str = Column(String, nullable=True)
+    table_groups_name: str = Column(String, nullable=True)
+    data_location: str = Column(String, nullable=True)
+    data_source: str = Column(String, nullable=True)
+    source_system: str = Column(String, nullable=True)
+    source_process: str = Column(String, nullable=True)
+    business_domain: str = Column(String, nullable=True)
+    stakeholder_group: str = Column(String, nullable=True)
+    transform_level: str = Column(String, nullable=True)
+    data_product: str = Column(String, nullable=True)
     impact: float = Column(Float)
     score: float = Column(Float)
     issue_ct: int = Column(Integer)
@@ -400,7 +450,7 @@ class ScoreDefinitionBreakdownItem(Base):
         cls,
         *,
         definition_id: str,
-        category: Literal["column_name", "table_name", "dq_dimension", "semantic_data_type"],
+        category: Categories,
         score_type: Literal["score", "cde_score"],
     ) -> "Iterable[Self]":
         items = []

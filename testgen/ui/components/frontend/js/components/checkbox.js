@@ -6,11 +6,12 @@
  * @property {boolean?} indeterminate
  * @property {function(boolean, Event)?} onChange
  * @property {number?} width
+ * @property {testId?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
 
-const { input, label } = van.tags;
+const { input, label, span } = van.tags;
 
 const Checkbox = (/** @type Properties */ props) => {
     loadStylesheet('checkbox', stylesheet);
@@ -18,6 +19,7 @@ const Checkbox = (/** @type Properties */ props) => {
     return label(
         {
             class: 'flex-row fx-gap-2 clickable',
+            'data-testid': props.testId ?? '',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
         },
         input({
@@ -30,7 +32,7 @@ const Checkbox = (/** @type Properties */ props) => {
                 return onChange ? (/** @type Event */ event) => onChange(event.target.checked, event) : null;
             }),
         }),
-        props.label,
+        span({'data-testid': 'checkbox-label'}, props.label),
     );
 };
 

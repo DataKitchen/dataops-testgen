@@ -686,6 +686,15 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     column_name          TEXT                DEFAULT NULL,
     dq_dimension         TEXT                DEFAULT NULL,
     semantic_data_type   TEXT                DEFAULT NULL,
+    table_groups_name    TEXT                DEFAULT NULL,
+    data_location        TEXT                DEFAULT NULL,
+    data_source          TEXT                DEFAULT NULL,
+    source_system        TEXT                DEFAULT NULL,
+    source_process       TEXT                DEFAULT NULL,
+    business_domain      TEXT                DEFAULT NULL,
+    stakeholder_group    TEXT                DEFAULT NULL,
+    transform_level      TEXT                DEFAULT NULL,
+    data_product         TEXT                DEFAULT NULL,
     impact               DOUBLE PRECISION    DEFAULT 0.0,
     score                DOUBLE PRECISION    DEFAULT 0.0,
     issue_ct             INTEGER             DEFAULT 0
@@ -861,6 +870,20 @@ CREATE INDEX shlast_runs_pro_run
 
 CREATE INDEX shlast_runs_tst_run
    ON score_history_latest_runs(last_test_run_id);
+
+CREATE TABLE job_schedules (
+    id UUID NOT NULL PRIMARY KEY,
+    project_code VARCHAR(30) NOT NULL,
+    key VARCHAR(100) NOT NULL,
+    args JSONB NOT NULL,
+    kwargs JSONB NOT NULL,
+    cron_expr VARCHAR(50) NOT NULL,
+    cron_tz VARCHAR(30) NOT NULL,
+    UNIQUE (project_code, key, args, kwargs, cron_expr, cron_tz)
+);
+
+CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
+
 
 INSERT INTO tg_revision (component, revision)
 VALUES  ('metadata_db', 0);

@@ -20,7 +20,7 @@ class ProjectSettingsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: user_session_service.user_is_admin(),
-        lambda: session.project is not None,
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon="settings",
@@ -34,7 +34,7 @@ class ProjectSettingsPage(Page):
     existing_names: list[str] | None = None
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
-        self.project = project_service.get_project_by_code(project_code or session.project)
+        self.project = project_service.get_project_by_code(project_code)
 
         testgen.page_header(
             PAGE_TITLE,

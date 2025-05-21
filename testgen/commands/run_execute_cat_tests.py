@@ -1,5 +1,7 @@
 import logging
+from datetime import UTC, datetime
 
+from testgen import settings
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
@@ -9,6 +11,7 @@ from testgen.common import (
     WriteListToDB,
     date_service,
 )
+from testgen.common.mixpanel_service import MixpanelService
 
 LOG = logging.getLogger("testgen")
 
@@ -61,17 +64,35 @@ def ParseCATResults(clsCATExecute):
 
 
 def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
-    lstQueries = [clsCATExecute.FinalizeTestResultsSQL(),
-                  clsCATExecute.PushTestRunStatusUpdateSQL(),
-                  clsCATExecute.FinalizeTestSuiteUpdateSQL(),
-                  clsCATExecute.CalcPrevalenceTestResultsSQL(),
-                  clsCATExecute.TestScoringRollupRunSQL(),
-                  clsCATExecute.TestScoringRollupTableGroupSQL()]
-    RunActionQueryList(("DKTG"), lstQueries)
-    run_refresh_score_cards_results(
-        project_code=clsCATExecute.project_code,
-        add_history_entry=True,
-        refresh_date=date_service.parse_now(clsCATExecute.run_date),
+    _, row_counts = RunActionQueryList(("DKTG"), [
+        clsCATExecute.FinalizeTestResultsSQL(),
+        clsCATExecute.PushTestRunStatusUpdateSQL(),
+        clsCATExecute.FinalizeTestSuiteUpdateSQL(),
+    ])
+    end_time = datetime.now(UTC)
+    
+    try:
+        RunActionQueryList(("DKTG"), [
+            clsCATExecute.CalcPrevalenceTestResultsSQL(),
+            clsCATExecute.TestScoringRollupRunSQL(),
+            clsCATExecute.TestScoringRollupTableGroupSQL(),
+        ])
+        run_refresh_score_cards_results(
+            project_code=clsCATExecute.project_code,
+            add_history_entry=True,
+            refresh_date=date_service.parse_now(clsCATExecute.run_date),
+        )
+    except Exception:
+        LOG.exception("Error refreshing scores after test run")
+        pass
+
+    MixpanelService().send_event(
+        "run-tests",
+        source=settings.ANALYTICS_JOB_SOURCE,
+        sql_flavor=clsCATExecute.flavor,
+        test_count=row_counts[0],
+        run_duration=(end_time - date_service.parse_now(clsCATExecute.run_date)).total_seconds(),
+        scoring_duration=(datetime.now(UTC) - end_time).total_seconds(),
     )
 
 

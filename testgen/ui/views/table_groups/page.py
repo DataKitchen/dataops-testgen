@@ -23,7 +23,7 @@ class TableGroupsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "connection_id" in session.current_page_args or "connections",
+        lambda: "connection_id" in st.query_params or "connections",
     ]
 
     def render(self, connection_id: str, **_kwargs) -> None:
@@ -35,7 +35,7 @@ class TableGroupsPage(Page):
             )
 
         project_code = connection["project_code"]
-        project_service.set_current_project(project_code)
+        project_service.set_sidebar_project(project_code)
         user_can_edit = user_session_service.user_can_edit()
 
         testgen.page_header(
@@ -98,7 +98,7 @@ class TableGroupsPage(Page):
                     testgen.link(
                         label="Test Suites",
                         href="test-suites",
-                        params={"table_group_id": table_group["id"]},
+                        params={ "project_code": project_code, "table_group_id": table_group["id"] },
                         right_icon="chevron_right",
                         key=f"tablegroups:keys:go-to-tsuites:{table_group['id']}",
                     )
@@ -166,9 +166,17 @@ class TableGroupsPage(Page):
         )
 
         if not can_be_deleted:
-            st.markdown(
-                ":orange[This Table Group has related data, which may include profiling, test definitions and test results. If you proceed, all related data will be permanently deleted.<br/>Are you sure you want to proceed?]",
-                unsafe_allow_html=True,
+            st.html(
+                """
+                <div style=\"color: rgb(217, 90, 0);\">
+                    <span>
+                        This Table Group has related data, which may include profiling, test definitions and test results.
+                        If you proceed, all related data will be permanently deleted.
+                    </span>
+                    <br/>
+                    <span>Are you sure you want to proceed?</span>
+                </div>
+                """
             )
             accept_cascade_delete = st.toggle("I accept deletion of this Table Group and all related TestGen data.")
 

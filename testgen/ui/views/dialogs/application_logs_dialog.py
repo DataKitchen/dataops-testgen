@@ -65,7 +65,7 @@ def application_logs_dialog():
         show_data = log_data
 
     # Refresh button
-    col3.markdown("<br>", unsafe_allow_html=True)
+    col3.html("<br>")
     if col3.button("Refresh"):
         # Clear cache to refresh the log data
         st.cache_data.clear()

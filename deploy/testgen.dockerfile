@@ -25,11 +25,10 @@ RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.12/site-packages/s
 ENV TESTGEN_VERSION=${TESTGEN_VERSION}
 ENV TESTGEN_DOCKER_HUB_REPO=${TESTGEN_DOCKER_HUB_REPO}
 ENV TG_RELEASE_CHECK=docker
-ENV STREAMLIT_SERVER_MAX_UPLOAD_SIZE=200
 
 USER testgen
 
 WORKDIR /dk
 
 ENTRYPOINT ["testgen"]
-CMD [ "ui", "run" ]
+CMD [ "run-app" ]

@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import project_queries, test_run_queries
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score, to_int
 
@@ -28,6 +29,7 @@ class TestRunsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon=PAGE_ICON,
@@ -37,13 +39,12 @@ class TestRunsPage(Page):
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
-    def render(self, project_code: str | None = None, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "test-results",
         )
 
-        project_code = project_code or session.project
         user_can_run = user_session_service.user_can_edit()
         if render_empty_state(project_code, user_can_run):
             return
@@ -75,6 +76,12 @@ class TestRunsPage(Page):
         with actions_column:
             testgen.flex_row_end(actions_column)
 
+            st.button(
+                ":material/today: Test Run Schedules",
+                help="Manages when a test suite should run.",
+                on_click=partial(TestRunScheduleDialog().open, project_code)
+            )
+
             if user_can_run:
                 st.button(
                     ":material/play_arrow: Run Tests",
@@ -105,6 +112,30 @@ class TestRunsPage(Page):
             )
 
 
+class TestRunScheduleDialog(ScheduleDialog):
+
+    title = "Test Run Schedules"
+    arg_label = "Test Suite"
+    job_key = "run-tests"
+    test_suites: pd.DataFrame | None = None
+
+    def init(self) -> None:
+        self.test_suites = get_db_test_suite_choices(self.project_code)
+
+    def get_arg_value(self, job):
+        return job.kwargs["test_suite_key"]
+
+    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
+        ts_name = testgen.select(
+            label="Test Suite",
+            options=self.test_suites,
+            value_column="test_suite",
+            display_column="test_suite",
+            required=True,
+        )
+        return bool(ts_name), [], {"project_code": self.project_code, "test_suite_key": ts_name}
+
+
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
     project_summary_df = project_queries.get_summary_by_code(project_code)
     if project_summary_df["test_runs_ct"]:
@@ -119,6 +150,7 @@ def render_empty_state(project_code: str, user_can_run: bool) -> bool:
             message=testgen.EmptyStateMessage.Connection,
             action_label="Go to Connections",
             link_href="connections",
+            link_params={ "project_code": project_code },
         )
     elif not project_summary_df["table_groups_ct"]:
         testgen.empty_state(
@@ -136,6 +168,7 @@ def render_empty_state(project_code: str, user_can_run: bool) -> bool:
             message=testgen.EmptyStateMessage.TestSuite,
             action_label="Go to Test Suites",
             link_href="test-suites",
+            link_params={ "project_code": project_code },
         )
     else:
         testgen.empty_state(

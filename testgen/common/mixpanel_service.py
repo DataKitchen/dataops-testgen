@@ -35,7 +35,7 @@ class MixpanelService(Singleton):
 
     @cached_property
     def distinct_id(self):
-        return self._hash_value(session.username)
+        return self._hash_value(session.username or "")
 
     def _hash_value(self, value: bytes | str, digest_size: int = 8) -> str:
         if isinstance(value, str):

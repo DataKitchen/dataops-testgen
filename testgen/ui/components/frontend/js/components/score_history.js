@@ -34,7 +34,7 @@ const ScoreHistory = (props, ...entries) => {
     };
 
     return div(
-        { ...props, class: `tg-score-trend flex-row ${props?.class ?? ''}` },
+        { ...props, class: `tg-score-trend flex-row ${props?.class ?? ''}`, 'data-testid': 'score-trend' },
         LineChart(
             {
                 width: 600,

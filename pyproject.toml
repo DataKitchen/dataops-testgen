@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "3.7.9"
+version = "4.0.9"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -38,17 +38,12 @@ dependencies = [
     "pycryptodome==3.21",
     "prettytable==3.7.0",
     "requests_extensions==1.1.3",
-    "bz2file==0.98",
-    "trogon==0.4.0",
     "numpy==1.26.4",
     "pandas==2.1.4",
-    "streamlit==1.38.0",
+    "streamlit==1.44.1",
     "streamlit-extras==0.3.0",
     "streamlit-aggrid==0.3.4.post3",
-    "streamlit-antd-components==0.2.2",
-    "streamlit-plotly-events==0.0.6",
     "plotly_express==0.4.1",
-    "streamlit-option-menu==0.3.6",
     "streamlit-authenticator==0.2.3",
     "streamlit-javascript==0.1.5",
     "progress==1.6",
@@ -62,6 +57,7 @@ dependencies = [
     "reportlab==4.2.2",
     "pydantic==1.10.13",
     "streamlit-pydantic==0.6.0",
+    "cron-converter==1.2.1",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",
@@ -245,7 +241,7 @@ ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 "__init__.py" = ["F403"]
 "testgen/__main__.py" = ["ARG001", "S603"]
 "tasks.py" = ["F403"]
-"tests*" = ["S101", "T201"]
+"tests*" = ["S101", "T201", "ARG001"]
 "invocations/**" = ["ARG001", "T201"]
 "testgen/common/encrypt.py" = ["S413"]
 "testgen/ui/pdf/dk_logo.py" = ["T201"]

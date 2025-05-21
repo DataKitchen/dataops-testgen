@@ -3,7 +3,6 @@ from functools import partial
 from io import BytesIO
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
@@ -12,6 +11,7 @@ import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
 from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -28,7 +28,7 @@ class HygieneIssuesPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "run_id" in session.current_page_args or "profiling-runs",
+        lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 
     def render(
@@ -49,7 +49,7 @@ class HygieneIssuesPage(Page):
             return
 
         run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
-        project_service.set_current_project(run_df["project_code"])
+        project_service.set_sidebar_project(run_df["project_code"])
 
         testgen.page_header(
             "Hygiene Issues",
@@ -229,12 +229,22 @@ class HygieneIssuesPage(Page):
                     if st.button(
                         ":material/visibility: Source Data", help="View current source data for highlighted issue", use_container_width=True
                     ):
+                        MixpanelService().send_event(
+                            "view-source-data",
+                            page=self.path,
+                            issue_type=selected_row["anomaly_name"],
+                        )
                         source_data_dialog(selected_row)
                     if st.button(
                             ":material/download: Issue Report",
                             use_container_width=True,
                             help="Generate a PDF report for each selected issue",
                     ):
+                        MixpanelService().send_event(
+                            "download-issue-report",
+                            page=self.path,
+                            issue_count=len(selected),
+                        )
                         dialog_title = "Download Issue Report"
                         if len(selected) == 1:
                             download_dialog(
@@ -461,24 +471,6 @@ def get_profiling_anomaly_summary(str_profile_run_id):
 @st.cache_data(show_spinner=False)
 def get_source_data(hi_data):
     return get_source_data_uncached(hi_data)
-
-
-def write_frequency_graph(df_tests):
-    # Count the frequency of each test_name
-    df_count = df_tests["anomaly_name"].value_counts().reset_index()
-    df_count.columns = ["anomaly_name", "frequency"]
-
-    # Sort the DataFrame by frequency in ascending order for display
-    df_count = df_count.sort_values(by="frequency", ascending=True)
-
-    # Create a horizontal bar chart using Plotly Express
-    fig = px.bar(df_count, x="frequency", y="anomaly_name", orientation="h", title="Issue Frequency")
-    fig.update_layout(title_font={"color": "green"}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    if len(df_count) <= 5:
-        # fig.update_layout(bargap=0.9)
-        fig.update_layout(height=300)
-
-    st.plotly_chart(fig)
 
 
 @st.dialog(title="Source Data")

@@ -135,6 +135,9 @@ export TG_DECRYPT_SALT=<encryption_salt>
 export TESTGEN_USERNAME=<username>
 export TESTGEN_PASSWORD=<password>
 
+# Set an arbitrary base64-encoded string to be used for signing authentication tokens
+export TG_JWT_HASHING_KEY=<base64_key>
+
 # Set an accessible path for storing application logs
 export TESTGEN_LOG_FILE_PATH=<path_for_logs>
 ```
@@ -149,12 +152,12 @@ Make sure the PostgreSQL database server is up and running. Initialize the appli
 testgen setup-system-db --yes
 ```
 
-### Run the TestGen UI
+### Run the application modules
 
-Run the following command to start the TestGen UI. It will open the browser at [http://localhost:8501](http://localhost:8501).
+Run the following command to start TestGen. It will open the browser at [http://localhost:8501](http://localhost:8501).
 
 ```shell
-testgen ui run
+testgen run-app
 ```
 
 Verify that you can login to the UI with the `TESTGEN_USERNAME` and `TESTGEN_PASSWORD` values that you configured in the environment variables.

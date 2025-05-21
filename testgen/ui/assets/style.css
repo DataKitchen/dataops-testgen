@@ -37,24 +37,20 @@ body {
 
 img.dk-logo-img {
     margin: 0 0 30px 0;
-    width:100%;
+    width: 100%;
 }
 
-/* Header bar */
-MainMenu {
-    display: none;
-}
-
+/* Streamlit header */
 header {
-    display: none !important;
-}
-
-footer {
     display: none !important;
 }
 /* ... */
 
 /* Sidebar */
+[data-testid="stSidebarHeader"] {
+    padding: 16px 20px;
+}
+
 section[data-testid="stSidebar"] {
     width: 250px;
     z-index: 999;
@@ -68,11 +64,11 @@ section[data-testid="stSidebar"] {
 /*  */
 
 /* Main content */
-.appview-container > :nth-child(2 of section) {
+div[data-testid="stAppViewContainer"] > :nth-child(2 of section) {
     background-color: #f8f9fa;
 }
 
-section.main > :nth-child(1 of div).block-container {
+div[data-testid="stMainBlockContainer"] {
     padding: 12px 24px 24px;
 }
 
@@ -80,11 +76,15 @@ div[data-testid="stVerticalBlock"] {
     gap: 0.5rem;
 }
 
-.appview-container:has(section[data-testid="stSidebar"]) div[data-testid="stSidebarCollapsedControl"] {
+div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"]) div[data-testid="stSidebarCollapsedControl"] {
     top: 0.5rem;
     border-radius: 4px;
     background-color: var(--border-color);
     padding: 3px 0 0 8px;
+}
+
+div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"]) div[data-testid="stSidebarCollapsedControl"] {
+    display: none;
 }
 /*  */
 
@@ -275,11 +275,13 @@ Use as testgen.text("text", "extra_styles") */
 .tg-header {
     margin: 0;
     padding: 0;
+    font-size: 26px;
     font-weight: 500;
+    line-height: 1.2;
     transition: padding 0.3s;
 }
 
-[data-testid="stSidebarCollapsedControl"] ~ section.main .tg-header {
+[data-testid="stSidebar"][aria-expanded="false"] ~ [data-testid="stMain"] .tg-header {
     padding-left: 80px;
 }
 
@@ -380,7 +382,7 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stV
     }
 
     /* Main content */
-    .appview-container > :nth-child(2 of section) {
+    div[data-testid="stAppViewContainer"] > :nth-child(2 of section) {
         background-color: rgb(14, 17, 23);
     }
     /*  */

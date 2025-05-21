@@ -23,6 +23,7 @@ engine = create_engine(
 )
 
 Base = declarative_base()
+
 Session = sessionmaker(
     engine,
     expire_on_commit=False,

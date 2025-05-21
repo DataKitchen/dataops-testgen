@@ -223,6 +223,7 @@ const LineChart = (
                         tooltipExtraStyle.val = '';
                         showTooltip.val = false;
                     },
+                    testId: lineId,
                 },
                 line,
             )
@@ -263,6 +264,7 @@ const Legend = (options, lines) => {
                     style: 'width: 32px; height: 32px;',
                     tooltip: options?.refreshTooltip || null,
                     onclick: options?.onRefreshClicked,
+                    'data-testid': 'refresh-history',
                 })
                 : null,
             div(

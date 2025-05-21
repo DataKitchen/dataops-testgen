@@ -1,7 +1,9 @@
 import logging
 
+from testgen import settings
 from testgen.commands.queries.generate_tests_query import CDeriveTestsSQL
 from testgen.common import AssignConnectParms, RetrieveDBResultsToDictList, RetrieveTestGenParms, RunActionQueryList
+from testgen.common.mixpanel_service import MixpanelService
 
 LOG = logging.getLogger("testgen")
 
@@ -56,7 +58,8 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
         LOG.info("CurrentStep: Creating new Test Suite")
         strQuery = clsTests.GetInsertTestSuiteSQL(booClean)
         if strQuery:
-            clsTests.test_suite_id, = RunActionQueryList("DKTG", [strQuery])
+            insert_ids, _ = RunActionQueryList("DKTG", [strQuery])
+            clsTests.test_suite_id = insert_ids[0]
         else:
             raise ValueError("Test Suite not found and could not be created")
 
@@ -104,6 +107,15 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     if lstQueries:
         LOG.info("Running Test Generation Template Queries")
         RunActionQueryList("DKTG", lstQueries)
-        return "Test generation completed successfully."
+        message = "Test generation completed successfully."
     else:
-        return "No TestGen Queries were compiled."
+        message = "No TestGen Queries were compiled."
+    
+    MixpanelService().send_event(
+        "generate-tests",
+        source=settings.ANALYTICS_JOB_SOURCE,
+        sql_flavor=clsTests.sql_flavor,
+        generation_set=clsTests.generation_set,
+    )
+
+    return message

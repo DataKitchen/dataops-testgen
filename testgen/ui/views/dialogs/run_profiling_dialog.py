@@ -65,7 +65,7 @@ def run_profiling_dialog(project_code: str, table_group: pd.Series | None = None
                 testgen.link(
                     label="Go to Profiling Runs",
                     href=LINK_HREF,
-                    params={ "table_group": table_group_id },
+                    params={ "project_code": project_code, "table_group": table_group_id },
                     right_icon="chevron_right",
                     underline=False,
                     height=40,

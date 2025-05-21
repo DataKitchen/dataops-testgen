@@ -7,6 +7,7 @@
  * @typedef ScoreDefinition
  * @type {object}
  * @property {string} name
+ * @property {string} project_code
  * @property {boolean} total_score
  * @property {boolean} cde_score
  * @property {string} category
@@ -258,11 +259,13 @@ const Toolbar = (
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
+                        testId: 'include-total-score',
                         onChange: (checked) => displayTotalScore.val = checked,
                     }),
                     Checkbox({
                         label: 'CDE Score',
                         checked: displayCDEScore,
+                        testId: 'include-cde-score',
                         onChange: (checked) => displayCDEScore.val = checked,
                     }),
                     div(
@@ -270,6 +273,7 @@ const Toolbar = (
                         Checkbox({
                             label: 'Category:',
                             checked: displayCategory,
+                            testId: 'include-category',
                             onChange: (checked) => displayCategory.val = checked,
                         }),
                         Select({
@@ -278,6 +282,7 @@ const Toolbar = (
                             value: selectedCategory,
                             options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
                             disabled: van.derive(() => !getValue(displayCategory)),
+                            testId: 'category-selector',
                         }),
                     ),
                 ),
@@ -289,6 +294,7 @@ const Toolbar = (
                     height: 40,
                     style: 'margin-right: 16px;',
                     value: scoreName,
+                    testId: 'scorecard-name-input',
                     onChange: debounce((name) => scoreName.val = name, 300),
                 }),
                 () => {
@@ -306,7 +312,7 @@ const Toolbar = (
                 () => {
                     const isNew_ = getValue(isNew);
                     let href = 'quality-dashboard';
-                    let params = {};
+                    let params = {project_code: definition.project_code};
                     if (!isNew_) {
                         href = 'quality-dashboard:score-details';
                         params = {definition_id: definition.id};
@@ -347,11 +353,11 @@ const Filter = (
     };
 
     return div(
-        { id, class: 'flex-row score-explorer--filter' },
-        span({ class: 'text-secondary mr-1' }, `${TRANSLATIONS[field]} =`),
+        { id, class: 'flex-row score-explorer--filter', 'data-testid': 'explorer-filter' },
+        span({ class: 'text-secondary mr-1', 'data-testid': 'explorer-filter-label' }, `${TRANSLATIONS[field]} =`),
         div(
-            { class: 'flex-row clickable', onclick: () => opened.val = true },
-            () => span({}, getValue(value) ?? '(Empty)'),
+            { class: 'flex-row clickable', 'data-testid': 'explorer-filter-trigger', onclick: () => opened.val = true },
+            () => span({'data-testid': 'explorer-filter-selected'}, getValue(value) ?? '(Empty)'),
             i({class: 'material-symbols-rounded'}, 'arrow_drop_down'),
         ),
         Portal(
@@ -361,6 +367,7 @@ const Filter = (
         i(
             {
                 class: 'material-symbols-rounded clickable text-secondary',
+                'data-testid': 'explorer-filter-remove',
                 onclick: () => onRemove(position),
             },
             'clear',
@@ -370,7 +377,7 @@ const Filter = (
 
 const FilterFieldSelector = (/** @type string[] */ options, /** @type string */ value, /** @type Function */ onSelect) => {
     return div(
-        { class: 'flex-column score-explorer--selector mt-1' },
+        { class: 'flex-column score-explorer--selector mt-1', 'data-testid': 'explorer-filter-field-selector' },
         (options?.length ?? 0) > 0
             ? options.map((v) =>
                 span({ class: () => `pr-4 pl-4 pt-3 pb-3 ${getValue(value) === v ? 'selected' : ''}`, style: 'cursor: pointer;', onclick: () => onSelect(v) }, TRANSLATIONS[v] ?? v)

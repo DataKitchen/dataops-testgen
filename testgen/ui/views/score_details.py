@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
 from testgen.ui.components import widgets as testgen
@@ -14,20 +15,21 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
-from testgen.ui.services import user_session_service
+from testgen.ui.services import project_service, user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 LOG = logging.getLogger("testgen")
+PAGE_PATH = "quality-dashboard:score-details"
 
 
 class ScoreDetailsPage(Page):
-    path = "quality-dashboard:score-details"
+    path = PAGE_PATH
     can_activate: ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
-        lambda: "definition_id" in session.current_page_args or "quality-dashboard",
+        lambda: "definition_id" in st.query_params or "quality-dashboard",
     ]
 
     def render(
@@ -39,7 +41,6 @@ class ScoreDetailsPage(Page):
         drilldown: str | None = None,
         **_kwargs
     ):
-        project_code: str = session.project
         score_definition: ScoreDefinition = ScoreDefinition.get(definition_id)
 
         if not score_definition:
@@ -48,11 +49,13 @@ class ScoreDetailsPage(Page):
                 "quality-dashboard",
             )
             return
+        
+        project_service.set_sidebar_project(score_definition.project_code)
 
         testgen.page_header(
             "Score Details",
             breadcrumbs=[
-                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
+                {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": score_definition.project_code}},
                 {"label": score_definition.name},
             ],
         )
@@ -117,6 +120,12 @@ def select_score_type(score_type: str) -> None:
 
 
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
+    MixpanelService().send_event(
+        "download-issue-report",
+        page=PAGE_PATH,
+        issue_count=len(selected_issues),
+    )
+
     issues_data = get_score_card_issue_reports(selected_issues)
     dialog_title = "Download Issue Reports"
     if len(issues_data) == 1:
@@ -160,10 +169,7 @@ def delete_score_card(definition_id: str) -> None:
     delete_clicked, set_delelte_clicked = temp_value(
         "score-details:confirm-delete-score-val"
     )
-    st.markdown(
-        f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?",
-        unsafe_allow_html=True,
-    )
+    st.html(f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?")
 
     _, button_column = st.columns([.85, .15])
     with button_column:
@@ -178,7 +184,7 @@ def delete_score_card(definition_id: str) -> None:
     if delete_clicked():
         score_definition.delete()
         get_all_score_cards.clear()
-        Router().navigate("quality-dashboard")
+        Router().navigate("quality-dashboard", { "project_code": score_definition.project_code })
 
 
 def recalculate_score_history(definition_id: str) -> None:

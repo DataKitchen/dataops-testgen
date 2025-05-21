@@ -4,6 +4,7 @@ import time
 
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import (
+    SCORE_CATEGORIES,
     ScoreCard,
     ScoreDefinition,
     ScoreDefinitionBreakdownItem,
@@ -122,7 +123,7 @@ def _score_card_to_results(score_card: ScoreCard) -> list[ScoreDefinitionResult]
 
 def _score_definition_to_results_breakdown(score_definition: ScoreDefinition) -> list[ScoreDefinitionBreakdownItem]:
     score_types = ["score", "cde_score"]
-    categories = ["column_name", "table_name", "dq_dimension", "semantic_data_type"]
+    categories = SCORE_CATEGORIES
 
     all_breakdown_items = []
     for category in categories:
