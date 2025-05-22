@@ -5,6 +5,7 @@
  * @type {object}
  * @property {boolean?} border
  * @property {boolean?} dataPreview
+ * @property {boolean?} history
  */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -38,20 +39,32 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
         border: props.border,
         title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
         content: item.profile_run_id && columnFunction ? columnFunction(item) : null,
-        actionContent: item.profile_run_id
-            ? (getValue(props.dataPreview)
+        actionContent: div(
+            { class: 'flex-row fx-gap-3' },
+            item.profile_run_id
+                ? (getValue(props.dataPreview)
+                    ? Button({
+                        type: 'stroked',
+                        label: 'Data Preview',
+                        icon: 'pageview',
+                        width: 'auto',
+                        onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                    })
+                    : null)
+                : span(
+                    { class: 'text-secondary' },
+                    'No profiling data available',
+                ),
+            getValue(props.history)
                 ? Button({
                     type: 'stroked',
-                    label: 'Data Preview',
-                    icon: 'pageview',
+                    label: 'History',
+                    icon: 'history',
                     width: 'auto',
-                    onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                    onclick: () => emitEvent('HistoryClicked', { payload: item }),
                 })
-                : null)
-            : span(
-                { class: 'text-secondary' },
-                'No profiling data available',
-            ),
+                : null,
+        ),
     })
 };
 

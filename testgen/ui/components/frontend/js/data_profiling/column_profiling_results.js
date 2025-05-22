@@ -1,4 +1,6 @@
 /**
+ * @import { Column } from './data_profiling_utils.js';
+ * 
  * @typedef Properties
  * @type {object}
  * @property {Column} column

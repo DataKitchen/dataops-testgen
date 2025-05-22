@@ -298,7 +298,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             ),
             DataCharacteristicsCard({ scores: true }, item),
             item.type === 'column'
-                ? ColumnDistributionCard({ dataPreview: true }, item)
+                ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
                 : TableSizeCard({}, item),
             TagsCard({ tagOptions: getValue(props.tag_values), editable: userCanEdit }, item),
             PotentialPIICard({ noLinks: !userCanNavigate }, item),

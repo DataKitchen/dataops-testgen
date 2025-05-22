@@ -100,6 +100,10 @@ div[data-testid="stDialog"] div[role="dialog"]:has(i.s-dialog) {
     width: calc(35rem);
 }
 
+div[data-testid="stDialog"] div[role="dialog"]:has(i.l-dialog) {
+    width: calc(75rem);
+}
+
 div[data-testid="stDialog"] div[role="dialog"]:has(i.xl-dialog) {
     width: calc(95rem);
 }

@@ -31,6 +31,7 @@ from testgen.ui.queries.profiling_queries import (
 )
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
+from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import format_field, friendly_score, is_uuid4, score
@@ -125,6 +126,13 @@ class DataCatalogPage(Page):
                     item["schema_name"],
                     item["table_name"],
                     item.get("column_name"),
+                ),
+                "HistoryClicked": lambda item: column_history_dialog(
+                    item["table_group_id"],
+                    item["schema_name"],
+                    item["table_name"],
+                    item["column_name"],
+                    item["add_date"],
                 ),
             },
             event_handlers={ "TagsChanged": partial(on_tags_changed, spinner_container) },
