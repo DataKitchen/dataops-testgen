@@ -2,7 +2,7 @@ import datetime
 import logging
 import time
 
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.scores import (
     SCORE_CATEGORIES,
     ScoreCard,
@@ -36,6 +36,7 @@ def run_refresh_score_cards_results(
         LOG.exception("CurrentStep: Stopping scorecards results refresh after unexpected error")
         return
 
+    db_session = get_current_session()
     for definition in definitions:
         LOG.info(
             "CurrentStep: Refreshing results for scorecard %s in project %s",
@@ -45,6 +46,10 @@ def run_refresh_score_cards_results(
 
         try:
             fresh_score_card = definition.as_score_card()
+            definition.results = []
+            definition.breakdown = []
+            db_session.flush([definition])
+
             definition.results = _score_card_to_results(fresh_score_card)
             definition.breakdown = _score_definition_to_results_breakdown(definition)
             if add_history_entry:

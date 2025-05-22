@@ -33,7 +33,7 @@ def configure_logging(
 
             file_handler = ConcurrentTimedRotatingFileHandler(
                 get_log_full_path(),
-                when="D",
+                when="MIDNIGHT",
                 interval=1,
                 backupCount=int(settings.LOG_FILE_MAX_QTY),
             )
