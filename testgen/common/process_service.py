@@ -13,13 +13,13 @@ def get_current_process_id():
 
 
 def kill_profile_run(process_id):
-    keywords = ["run-profile"]
+    keywords = ["/dk/bin/testgen", "run-profile"]
     status, message = kill_process(process_id, keywords)
     return status, message
 
 
 def kill_test_run(process_id):
-    keywords = ["run-tests"]
+    keywords = ["/dk/bin/testgen", "run-tests"]
     status, message = kill_process(process_id, keywords)
     return status, message
 
@@ -31,7 +31,7 @@ def kill_process(process_id, keywords=None):
         return False, msg
     try:
         process = psutil.Process(process_id)
-        if process.name().lower() != "testgen":
+        if process.name().lower() not in ["testgen", "python3"]:
             message = f"The process was not killed because the process_id {process_id} is not a testgen process. Details: {process.name()}"
             LOG.error(f"kill_process: {message}")
             return False, message
