@@ -1,3 +1,4 @@
+from datetime import datetime
 from io import BytesIO
 from typing import ClassVar
 
@@ -246,7 +247,7 @@ def save_score_definition(_) -> None:
         latest_run = max(
             profiling_queries.get_latest_run_date(project_code),
             test_run_queries.get_latest_run_date(project_code),
-            key=lambda run: getattr(run, "run_time", 0),
+            key=lambda run: getattr(run, "run_time", datetime.min),
         )
 
         refresh_kwargs = {
