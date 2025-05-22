@@ -133,7 +133,7 @@ class TestRunScheduleDialog(ScheduleDialog):
             display_column="test_suite",
             required=True,
         )
-        return bool(ts_name), [], {"project_code": self.project_code, "test_suite_key": ts_name}
+        return bool(ts_name), [], {"project_key": self.project_code, "test_suite_key": ts_name}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:
