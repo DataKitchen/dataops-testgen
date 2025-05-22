@@ -361,16 +361,21 @@ class ScoreDefinition(Base):
         )
         overall_scores = get_current_session().execute(query).mappings().all()
         current_history: dict[tuple[datetime, str, str], ScoreDefinitionResultHistoryEntry] = {}
-        for entry in self.history:
-            current_history[(entry.last_run_time, entry.category,)] = entry
-
         renewed_history: dict[tuple[datetime, str, str], float] = {}
+
         for scores in overall_scores:
             renewed_history[(scores["last_run_time"], "score",)] = scores["score"]
             renewed_history[(scores["last_run_time"], "cde_score",)] = scores["cde_score"]
 
+        for entry in self.history:
+            entry_key = (entry.last_run_time, entry.category,)
+            if entry_key in renewed_history:
+                current_history[entry_key] = entry
+
         for key, entry in current_history.items():
             entry.score = renewed_history[key]
+
+        self.history = list(current_history.values())
 
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         values_by_field = defaultdict(list)
