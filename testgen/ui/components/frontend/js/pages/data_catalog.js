@@ -151,8 +151,23 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     };
 
+    const searchOptions = {
+        tableName: van.state(true),
+        columnName: van.state(true),
+    };
     const filters = { criticalDataElement: van.state(false) };
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
+
+    // To hold temporary state within the portals, which might be discarded by clicking outside
+    const tempSearchOptions = {};
+    const tempFilters = {};
+
+    const copyState = (fromObject, toObject) => {
+        Object.entries(fromObject).forEach(([ key, state ]) => {
+            toObject[key] = toObject[key] ?? van.state();
+            toObject[key].val = state.val;
+        });
+    };
 
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
@@ -211,44 +226,76 @@ const DataCatalog = (/** @type Properties */ props) => {
                             onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
                             multiSelect: multiEditMode,
                             multiSelectToggle: userCanEdit,
+                            multiSelectToggleLabel: 'Edit multiple',
                             onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                            isNodeHidden: (/** @type TreeNode */ node) => {
-                                let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
-                                hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
-                                return hidden;
+                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => 
+                                !node.label.toLowerCase().includes(search.toLowerCase())
+                                || (!!node.children && !searchOptions.tableName.val)
+                                || (!node.children && !searchOptions.columnName.val)
+                                || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
+                                || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
+                            onApplySearchOptions: () => {
+                                copyState(tempSearchOptions, searchOptions);
+                                // If both were unselected, reset their values
+                                // Otherwise, nothing will be matched and the user might not realize why 
+                                if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
+                                    searchOptions.tableName.val = true;
+                                    searchOptions.columnName.val = true
+                                }
                             },
                             hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
+                            onApplyFilters: () => copyState(tempFilters, filters),
                             onResetFilters: () => {
-                                filters.criticalDataElement.val = false;
-                                TAG_KEYS.forEach(key => filters[key].val = null);
+                                tempFilters.criticalDataElement.val = false;
+                                TAG_KEYS.forEach(key => tempFilters[key].val = null);
                             },
+                        },
+                        () => {
+                            copyState(searchOptions, tempSearchOptions);
+                            return div(
+                                { class: 'flex-column fx-gap-2' },
+                                span({ class: 'text-caption' }, 'Search by'),
+                                Checkbox({
+                                    label: 'Table name',
+                                    checked: tempSearchOptions.tableName,
+                                    onChange: (checked) => tempSearchOptions.tableName.val = checked,
+                                }),
+                                Checkbox({
+                                    label: 'Column name',
+                                    checked: tempSearchOptions.columnName,
+                                    onChange: (checked) => tempSearchOptions.columnName.val = checked,
+                                }),
+                            );
                         },
                         // Pass as a function that will be called when the filter portal is opened
                         // Otherwise state bindings get garbage collected and Select dropdowns won't open
                         // https://vanjs.org/advanced#gc
-                        () => div(
-                            Checkbox({
-                                label: 'Only critical data elements (CDEs)',
-                                checked: filters.criticalDataElement,
-                                onChange: (checked) => filters.criticalDataElement.val = checked,
-                            }),
-                            div(
-                                {
-                                    class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
-                                    style: 'max-width: 420px;',
-                                },
-                                TAG_KEYS.map(key => Select({
-                                    id: `data-catalog-${key}`,
-                                    label: capitalize(key.replaceAll('_', ' ')),
-                                    height: 32,
-                                    value: filters[key],
-                                    options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
-                                    allowNull: true,
-                                    disabled: !getValue(props.tag_values)?.[key]?.length,
-                                    onChange: v => filters[key].val = v,
-                                })),
-                            ),
-                        ),
+                        () => {
+                            copyState(filters, tempFilters);
+                            return div(
+                                Checkbox({
+                                    label: 'Only critical data elements (CDEs)',
+                                    checked: tempFilters.criticalDataElement,
+                                    onChange: (checked) => tempFilters.criticalDataElement.val = checked,
+                                }),
+                                div(
+                                    {
+                                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
+                                        style: 'max-width: 420px;',
+                                    },
+                                    TAG_KEYS.map(key => Select({
+                                        id: `data-catalog-${key}`,
+                                        label: capitalize(key.replaceAll('_', ' ')),
+                                        height: 32,
+                                        value: tempFilters[key],
+                                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
+                                        allowNull: true,
+                                        disabled: !getValue(props.tag_values)?.[key]?.length,
+                                        onChange: (value) => tempFilters[key].val = value,
+                                    })),
+                                ),
+                            );
+                        },
                     ),
                     div(
                         {
