@@ -23,7 +23,7 @@
  * @property {string} id
  * @property {string} classes
  * @property {TreeNode[]} nodes
- * @property {string} selected
+ * @property {(string|string[])?} selected
  * @property {function(string)?} onSelect
  * @property {boolean?} multiSelect
  * @property {boolean?} multiSelectToggle
@@ -74,7 +74,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
         if (!multiSelect.val) {
             selectTree(treeNodes.val, false);
         }
-        props.onMultiSelect(multiSelect.val ? [] : null);
+        props.onMultiSelect?.(multiSelect.val ? getMultiSelection(treeNodes.val) : null);
     });
 
     return div(
@@ -98,13 +98,13 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
             () => div(
                 {
                     class: 'tg-tree--nodes',
-                    onclick: van.derive(() => multiSelect.val ? () => props.onMultiSelect(getMultiSelection(treeNodes.val)) : null),
+                    onclick: van.derive(() => multiSelect.val ? () => props.onMultiSelect?.(getMultiSelection(treeNodes.val)) : null),
                 },
                 treeNodes.val.map(node => TreeNode(node, selected, multiSelect.val)),
             ),
         ),
         () => noMatches.val
-            ? span({ class: 'tg-tree--empty mt-7 mb-7 text-secondary' }, 'No matching itens found')
+            ? span({ class: 'tg-tree--empty mt-7 mb-7 text-secondary' }, 'No matching items found')
             : '',
     );
 };
@@ -225,8 +225,8 @@ const TreeNode = (
                         node.selected.val = node.children.every(child => child.selected.val);
                     } else {
                         node.selected.val = !node.selected.val;
-                        event.fromChild = true;
                     }
+                    event.fromChild = true;
                 }
                 : null,
         },
@@ -252,7 +252,7 @@ const TreeNode = (
                 ? [
                     Checkbox({
                         checked: () => node.selected.val,
-                        indeterminate: hasChildren ? () => !node.selected.val && node.children.some(({ selected }) => selected.val) : false,
+                        indeterminate: hasChildren ? () => isIndeterminate(node) : false,
                     }),
                     span({ class: 'mr-1' }),
                 ]
@@ -283,7 +283,7 @@ const initTreeState = (
         }
         node.expanded = van.state(expanded);
         node.hidden = van.state(false);
-        node.selected = van.state(false);
+        node.selected = van.state(node.selected ?? false);
         treeExpanded = treeExpanded || expanded;
     });
     return treeExpanded;
@@ -341,7 +341,8 @@ const getMultiSelection = (nodes) => {
             if (selectedChildren.length) {
                 selected.push({
                     id: node.id,
-                    all: selectedChildren.length === node.children.length,
+                    all: selectedChildren.length === node.children.length
+                        && (selectedChildren[0]?.children === undefined || selectedChildren.every(child => child.all)),
                     children: selectedChildren,
                 });
             }
@@ -351,6 +352,35 @@ const getMultiSelection = (nodes) => {
     });
     return selected;
 };
+
+/**
+ * 
+ * @param {TreeNode} node
+ * @returns {boolean}
+ */
+const isIndeterminate = (node) => {
+    return !node.selected.val && isAnyDescendantSelected(node);
+};
+
+
+/**
+ * 
+ * @param {TreeNode} node
+ * @returns {boolean}
+ */
+const isAnyDescendantSelected = (node) => {
+    if ((node.children ?? []).length <= 0) {
+        return false;
+    }
+
+    for (const child of node.children) {
+        if (getValue(child.selected) || isAnyDescendantSelected(child)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

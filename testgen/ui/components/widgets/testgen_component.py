@@ -18,6 +18,7 @@ AvailablePages = typing.Literal[
     "quality_dashboard",
     "score_details",
     "schedule_list",
+    "column_selector",
 ]
 
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from testgen.common.models.scores import ScoreCard
 
+import json
 import urllib.parse
 from typing import Any, TypeVar
 from uuid import UUID
@@ -29,6 +30,13 @@ def is_uuid4(value: str) -> bool:
         return False
 
     return str(uuid) == value
+
+
+def try_json(value: str | None, default: T | None) -> T:
+    try:
+        return json.loads(value)
+    except:
+        return default
 
 
 # https://github.com/streamlit/streamlit/issues/798#issuecomment-1647759949
@@ -106,6 +114,7 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
         "transform_level": "Transform Level",
         "aggregation_level": "Aggregation Level",
         "dq_dimension": "Quality Dimension",
+        "data_product": "Data Product",
     }
     if not score_card:
         return {

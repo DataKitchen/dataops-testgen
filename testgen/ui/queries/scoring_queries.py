@@ -7,7 +7,7 @@ from testgen.common.models import engine
 from testgen.common.models.scores import ScoreCard, ScoreCategory, ScoreDefinition, SelectedIssue
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner="Loading data :gray[:small[(This might take a few minutes)]] ...")
 def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
     return [
         definition.as_cached_score_card()
@@ -146,3 +146,21 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         if row["category"] and row["value"]:
             values[row["category"]].append(row["value"])
     return values
+
+
+@st.cache_data(show_spinner="Loading data :gray[:small[(This might take a few minutes)]] ...")
+def get_column_filters(project_code: str) -> list[dict]:
+    query = f"""
+    SELECT
+        data_column_chars.column_id::text AS column_id,
+        data_column_chars.column_name AS name,
+        data_column_chars.table_id::text AS table_id,
+        data_column_chars.table_name AS table,
+        data_column_chars.table_groups_id::text AS table_group_id,
+        table_groups.table_groups_name AS table_group
+    FROM data_column_chars
+    INNER JOIN table_groups ON (table_groups.id = data_column_chars.table_groups_id)
+    WHERE table_groups.project_code = '{project_code}'
+    ORDER BY table_name, ordinal_position;
+    """
+    return [row.to_dict() for _, row in pd.read_sql_query(query, engine).iterrows()]
