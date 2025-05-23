@@ -478,7 +478,6 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
     const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
 
     const attributes = [
-        'description',
         'critical_data_element',
         ...TAG_KEYS,
     ].map(key => ({
@@ -496,7 +495,6 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
     ];
     const tagOptions = getValue(props.tag_values) ?? {};
     const width = 400;
-    const descriptionWidth = 800;
 
     return div(
         { class: 'tg-dh--details flex-column' },
@@ -529,8 +527,7 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                                     onChange: (value) => valueState.val = value,
                                 })
                                 : Input({
-                                    label, help,
-                                    width: key === 'description' ? descriptionWidth : width,
+                                    label, help, width,
                                     placeholder: () => checkedState.val ? null : '(keep current values)',
                                     autocompleteOptions: tagOptions[key],
                                     onChange: (value) => valueState.val = value || null,
