@@ -68,7 +68,7 @@ def generate_tests_dialog(test_suite: pd.Series) -> None:
 
     if test_generation_button:
         button_container.empty()
-        status_container.info("Starting test generation ...")
+        status_container.info("Generating tests ...")
 
         try:
             run_test_gen_queries(table_group_id, test_suite_name, selected_set)

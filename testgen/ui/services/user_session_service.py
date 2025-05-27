@@ -72,10 +72,9 @@ def end_user_session() -> None:
 
 
 def get_auth_data():
-    auth_data = user_queries.get_users()
+    auth_data = user_queries.get_users(include_password=True)
 
     usernames = {}
-    preauthorized_list = []
 
     for item in auth_data.itertuples():
         usernames[item.username.lower()] = {
@@ -84,8 +83,6 @@ def get_auth_data():
             "password": item.password,
             "role": item.role,
         }
-        if item.preauthorized:
-            preauthorized_list.append(item.email)
 
     return {
         "credentials": {"usernames": usernames},
@@ -94,7 +91,6 @@ def get_auth_data():
             "key": _get_jwt_hashing_key(),
             "name": AUTH_TOKEN_COOKIE_NAME,
         },
-        "preauthorized": {"emails": preauthorized_list},
     }
 
 

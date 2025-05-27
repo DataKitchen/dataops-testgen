@@ -60,6 +60,8 @@ def format_field(field: Any) -> Any:
         return int(field)
     elif isinstance(field, np.floating):
         return float(field)
+    elif isinstance(field, np.bool_):
+        return bool(field)
     return field
 
 

@@ -44,8 +44,8 @@ def build_summary_table(document, hi_data):
             *[
                 (cmd[0], *coords, *cmd[1:])
                 for coords in (
-                    ((2, 2), (2, 4)),
-                    ((0, 0), (0, -1))
+                    ((2, 2), (2, -3)),
+                    ((0, 0), (0, -2))
                 )
                 for cmd in (
                     ("FONT", "Helvetica-Bold"),
@@ -63,10 +63,11 @@ def build_summary_table(document, hi_data):
             ("SPAN", (3, 3), (4, 3)),
             ("SPAN", (3, 4), (4, 4)),
             ("SPAN", (3, 5), (4, 5)),
-            ("SPAN", (2, 5), (4, 5)),
+            ("SPAN", (1, 6), (4, 6)),
+            ("SPAN", (0, 7), (4, 7)),
 
             # Link cell
-            ("BACKGROUND", (2, 5), (4, 5), colors.white),
+            ("BACKGROUND", (0, 7), (4, 7), colors.white),
 
             # Status cell
             *[
@@ -105,12 +106,37 @@ def build_summary_table(document, hi_data):
             ),
         ),
 
-        ("Database/Schema", hi_data["schema_name"], "Profiling Date", profiling_timestamp),
-        ("Table", hi_data["table_name"], "Table Group", hi_data["table_groups_name"]),
-        ("Column", hi_data["column_name"], "Disposition", hi_data["disposition"] or "No Decision"),
+        ("Profiling Date", profiling_timestamp, "Table Group", hi_data["table_groups_name"]),
+        ("Database/Schema", hi_data["schema_name"], "Disposition", hi_data["disposition"] or "No Decision"),
+        ("Table", hi_data["table_name"], "Column Type", hi_data["column_type"]),
+        ("Column", hi_data["column_name"], "Semantic Data Type", hi_data["functional_data_type"]),
         (
-            "Column Type",
-            hi_data["column_type"],
+            "Column Tags",
+            (
+                Paragraph(
+                    "<b>Critical data element</b>: Yes" if hi_data["critical_data_element"] else "<i>Critical data element</i>: No",
+                    style=PARA_STYLE_CELL,
+                ),
+                Paragraph(f"<i>Description</i>: {hi_data['column_description']}", style=PARA_STYLE_CELL)
+                if hi_data["column_description"]
+                else [],
+                [
+                    Paragraph(f"<i>{tag.replace('_', ' ').capitalize()}</i>: {hi_data[tag]}", style=PARA_STYLE_CELL)
+                    for tag in [
+                        "data_source",
+                        "source_system",
+                        "source_process",
+                        "business_domain",
+                        "stakeholder_group",
+                        "transform_level",
+                        "aggregation_level",
+                        "data_product",
+                    ]
+                    if hi_data[tag]
+                ],
+            ),
+        ),
+        (
             Paragraph(
                 f"""<a href="{get_base_url()}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
                     View on TestGen >

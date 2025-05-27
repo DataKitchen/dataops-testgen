@@ -36,7 +36,7 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="run_tests_dialog:keys:show-cli"):
         st.code(
-            f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite['test_suite']}",
+            f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}",
             language="shellSession"
         )
 

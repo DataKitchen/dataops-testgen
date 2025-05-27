@@ -16,7 +16,13 @@ from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
+from testgen.ui.components.widgets.download_dialog import (
+    FILE_DATA_TYPE,
+    PROGRESS_UPDATE_TYPE,
+    download_dialog,
+    get_excel_file_data,
+    zip_multi_file_data,
+)
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
@@ -158,7 +164,16 @@ class TestResultsPage(Page):
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
-            run_id, export_button_column, status, test_type, table_name, column_name, sorting_columns, do_multi_select
+            run_id,
+            run_date,
+            run_df["test_suite"],
+            export_button_column,
+            status,
+            test_type,
+            table_name,
+            column_name,
+            sorting_columns,
+            do_multi_select,
         )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
@@ -458,6 +473,8 @@ def show_test_def_detail(str_test_def_id):
 
 def show_result_detail(
     run_id: str,
+    run_date: str,
+    test_suite: str,
     export_container: DeltaGenerator,
     test_status: str | None = None,
     test_type_id: str | None = None,
@@ -504,42 +521,12 @@ def show_result_detail(
     )
 
     with export_container:
-        lst_export_columns = [
-            "schema_name",
-            "table_name",
-            "column_names",
-            "test_name_short",
-            "test_description",
-            "dq_dimension",
-            "measure_uom",
-            "measure_uom_description",
-            "threshold_value",
-            "severity",
-            "result_measure",
-            "result_status",
-            "result_message",
-            "action",
-        ]
-        lst_wrap_colunns = ["test_description"]
-        lst_export_headers = [
-            "Schema Name",
-            "Table Name",
-            "Columns/Focus",
-            "Test Type",
-            "Test Description",
-            "DQ Dimension",
-            "UOM",
-            "UOM Description",
-            "Threshold Value",
-            "Severity",
-            "Result Measure",
-            "Status",
-            "Message",
-            "Action",
-        ]
-        fm.render_excel_export(
-            df, lst_export_columns, "Test Results", "{TIMESTAMP}", lst_wrap_colunns, lst_export_headers
-        )
+        if st.button(label=":material/download: Export", help="Download filtered test results to Excel"):
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(df, test_suite, run_date),
+            )
 
     # Display history and detail for selected row
     if not selected_rows:
@@ -634,6 +621,37 @@ def show_result_detail(
             with ut_tab2:
                 show_test_def_detail(selected_row["test_definition_id_current"])
         return selected_rows
+
+
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    data: pd.DataFrame,
+    test_suite: str,
+    run_date: str,
+) -> FILE_DATA_TYPE:
+    columns = {
+        "schema_name": {"header": "Schema"},
+        "table_name": {"header": "Table"},
+        "column_names": {"header": "Columns/Focus"},
+        "test_name_short": {"header": "Test type"},
+        "test_description": {"header": "Description", "wrap": True},
+        "dq_dimension": {"header": "Quality dimension"},
+        "measure_uom": {"header": "Unit of measure (UOM)"},
+        "measure_uom_description": {"header": "UOM description"},
+        "threshold_value": {},
+        "severity": {},
+        "result_measure": {},
+        "result_status": {"header": "Status"},
+        "result_message": {"header": "Message"},
+        "action": {},
+    }
+    return get_excel_file_data(
+        data,
+        "Test Results",
+        details={"Test suite": test_suite, "Test run date": run_date},
+        columns=columns,
+        update_progress=update_progress,
+    )
 
 
 def write_history_graph(dfh):

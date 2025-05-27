@@ -4,6 +4,7 @@
  * @property {string} value
  * @property {string} color
  * @property {string} label
+ * @property {boolean?} showPercent
  * 
  * @typedef Properties
  * @type {object}
@@ -13,7 +14,7 @@
  * @property {number?} width
  */
 import van from '../van.min.js';
-import { getValue, loadStylesheet } from '../utils.js';
+import { friendlyPercent, getValue, loadStylesheet } from '../utils.js';
 import { colorMap } from '../display_utils.js';
 
 const { div, span } = van.tags;
@@ -42,14 +43,17 @@ const SummaryBar = (/** @type Properties */ props) => {
         ),
         () => total.val ? div(
             { class: 'tg-summary-bar--caption flex-row fx-flex-wrap text-caption mt-1' },
-            getValue(props.items).map(item => div(
-                { class: 'tg-summary-bar--legend flex-row' },
-                span({
-                    class: 'dot',
-                    style: `color: ${colorMap[item.color] || item.color};`,
-                }),
-                `${item.label}: ${item.value || 0}`,
-            )),
+            getValue(props.items).map(item => item.label
+                ? div(
+                    { class: 'tg-summary-bar--legend flex-row' },
+                    span({
+                        class: 'dot',
+                        style: `color: ${colorMap[item.color] || item.color};`,
+                    }),
+                    `${item.label}: ${item.value || 0}` + (item.showPercent ? ` (${friendlyPercent(item.value * 100 / total.val)}%)` : '')
+                )
+                : null,
+            ),
         ) : '',
     );
 };

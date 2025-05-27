@@ -43,7 +43,18 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             results.profile_run_id::VARCHAR,
             types.suggested_action,
             results.table_groups_id::VARCHAR,
-            results.anomaly_id::VARCHAR
+            results.anomaly_id::VARCHAR,
+            column_chars.functional_data_type,
+            column_chars.description as column_description,
+            COALESCE(column_chars.critical_data_element, table_chars.critical_data_element) as critical_data_element,
+            COALESCE(column_chars.data_source, table_chars.data_source, groups.data_source) as data_source,
+            COALESCE(column_chars.source_system, table_chars.source_system, groups.source_system) as source_system,
+            COALESCE(column_chars.source_process, table_chars.source_process, groups.source_process) as source_process,
+            COALESCE(column_chars.business_domain, table_chars.business_domain, groups.business_domain) as business_domain,
+            COALESCE(column_chars.stakeholder_group, table_chars.stakeholder_group, groups.stakeholder_group) as stakeholder_group,
+            COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
+            COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
+            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product
         FROM {schema}.profile_anomaly_results results
         INNER JOIN {schema}.profile_anomaly_types types
             ON results.anomaly_id = types.id
@@ -51,6 +62,13 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             ON results.profile_run_id = runs.id
         INNER JOIN {schema}.table_groups groups
             ON results.table_groups_id = groups.id
+        LEFT JOIN {schema}.data_column_chars column_chars
+            ON (groups.id = column_chars.table_groups_id
+            AND results.schema_name = column_chars.schema_name
+            AND results.table_name = column_chars.table_name
+            AND results.column_name = column_chars.column_name)
+        LEFT JOIN {schema}.data_table_chars table_chars
+            ON column_chars.table_id = table_chars.table_id
         WHERE results.id IN ({",".join([f"'{issue_id}'" for issue_id in profile_ids])});
         """
         profile_results = pd.read_sql_query(profile_query, engine)
@@ -87,7 +105,17 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             results.test_suite_id,
             results.test_definition_id::VARCHAR as test_definition_id_runtime,
             results.table_groups_id::VARCHAR,
-            types.id::VARCHAR AS test_type_id
+            types.id::VARCHAR AS test_type_id,
+            column_chars.description as column_description,
+            COALESCE(column_chars.critical_data_element, table_chars.critical_data_element) as critical_data_element,
+            COALESCE(column_chars.data_source, table_chars.data_source, groups.data_source) as data_source,
+            COALESCE(column_chars.source_system, table_chars.source_system, groups.source_system) as source_system,
+            COALESCE(column_chars.source_process, table_chars.source_process, groups.source_process) as source_process,
+            COALESCE(column_chars.business_domain, table_chars.business_domain, groups.business_domain) as business_domain,
+            COALESCE(column_chars.stakeholder_group, table_chars.stakeholder_group, groups.stakeholder_group) as stakeholder_group,
+            COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
+            COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
+            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product
         FROM {schema}.test_results results
         INNER JOIN {schema}.test_types types
             ON (results.test_type = types.test_type)
@@ -95,6 +123,13 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]):
             ON (results.test_suite_id = suites.id)
         INNER JOIN {schema}.table_groups groups
             ON (results.table_groups_id = groups.id)
+        LEFT JOIN {schema}.data_column_chars column_chars
+            ON (groups.id = column_chars.table_groups_id
+            AND results.schema_name = column_chars.schema_name
+            AND results.table_name = column_chars.table_name
+            AND results.column_names = column_chars.column_name)
+        LEFT JOIN {schema}.data_table_chars table_chars
+            ON column_chars.table_id = table_chars.table_id
         WHERE results.id IN ({",".join([f"'{issue_id}'" for issue_id in test_ids])});
         """
         test_results = pd.read_sql_query(test_query, engine)

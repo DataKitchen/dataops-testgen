@@ -2,6 +2,13 @@
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
  * @import { TreeNode } from '../components/tree.js';
  *
+ * @typedef ProjectSummary
+ * @type {object}
+ * @property {string} project_code
+ * @property {number} connections_ct
+ * @property {number} table_groups_ct
+ * @property {string} default_connection_id
+ * 
  * @typedef ColumnPath
  * @type {object}
  * @property {string} column_id
@@ -22,8 +29,9 @@
  *
  * @typedef Properties
  * @type {object}
+ * @property {ProjectSummary} project_summary
  * @property {ColumnPath[]} columns
- * @property {Table | Column} selected
+ * @property {Table | Column} selected_item
  * @property {Object.<string, string[]>} tag_values
  * @property {string} last_saved_timestamp
  * @property {Permissions} permissions
@@ -48,6 +56,7 @@ import { capitalize } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -80,14 +89,14 @@ const TAG_HELP = {
 const DataCatalog = (/** @type Properties */ props) => {
     loadStylesheet('data-catalog', stylesheet);
     Streamlit.setFrameHeight(1); // Non-zero value is needed to render
-    window.frameElement.style.setProperty('height', 'calc(100vh - 175px)');
+    window.frameElement.style.setProperty('height', 'calc(100vh - 85px)');
     window.testgen.isPage = true;
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
         let columns = [];
         try {
-            columns = JSON.parse(getValue(props.columns));
+            columns = JSON.parse(getValue(props.columns) ?? []);
         } catch { }
 
         const tables = {};
@@ -119,7 +128,7 @@ const DataCatalog = (/** @type Properties */ props) => {
 
     const selectedItem = van.derive(() => {
         try {
-            return JSON.parse(getValue(props.selected));
+            return JSON.parse(getValue(props.selected_item));
         } catch (e) {
             console.error(e)
             return null;
@@ -142,85 +151,175 @@ const DataCatalog = (/** @type Properties */ props) => {
         }
     };
 
+    const searchOptions = {
+        tableName: van.state(true),
+        columnName: van.state(true),
+    };
     const filters = { criticalDataElement: van.state(false) };
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
 
-    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    // To hold temporary state within the portals, which might be discarded by clicking outside
+    const tempSearchOptions = {};
+    const tempFilters = {};
 
-    return div(
-        {
-            class: 'flex-row tg-dh',
-            ondragover: (event) => event.preventDefault(),
-        },
-        Tree(
-            {
-                id: treeDomId,
-                classes: 'tg-dh--tree',
-                nodes: treeNodes,
-                // Use .rawVal, so only initial value from query params is passed to tree
-                selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
-                multiSelect: multiEditMode,
-                multiSelectToggle: userCanEdit,
-                onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                isNodeHidden: (/** @type TreeNode */ node) => {
-                    let hidden = ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val);
-                    hidden = hidden || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val));
-                    return hidden;
-                },
-                hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
-                onResetFilters: () => {
-                    filters.criticalDataElement.val = false;
-                    TAG_KEYS.forEach(key => filters[key].val = null);
-                },
-            },
-            // Pass as a function that will be called when the filter portal is opened
-            // Otherwise state bindings get garbage collected and Select dropdowns won't open
-            // https://vanjs.org/advanced#gc
+    const copyState = (fromObject, toObject) => {
+        Object.entries(fromObject).forEach(([ key, state ]) => {
+            toObject[key] = toObject[key] ?? van.state();
+            toObject[key].val = state.val;
+        });
+    };
+
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
+    const projectSummary = getValue(props.project_summary);
+
+    return projectSummary.table_groups_ct > 0
+        ? div(
+            { class: 'flex-column tg-dh' },
             () => div(
-                Checkbox({
-                    label: 'Only critical data elements (CDEs)',
-                    checked: filters.criticalDataElement,
-                    onChange: (checked) => filters.criticalDataElement.val = checked,
+                { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-2' },
+                Select({
+                    label: 'Table Group',
+                    value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
+                    options: getValue(props.table_group_filter_options) ?? [],
+                    height: 38,
+                    style: 'font-size: 14px;',
+                    testId: 'table-group-filter',
+                    onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                div(
-                    {
-                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
-                        style: 'max-width: 420px;',
+                Button({
+                    icon: 'download',
+                    type: 'stroked',
+                    label: 'Export',
+                    tooltip: 'Download filtered columns to Excel',
+                    tooltipPosition: 'left',
+                    width: 'fit-content',
+                    style: 'background: var(--dk-card-background);',
+                    onclick: () => {
+                        const columnIds = treeNodes.val.reduce((ids, table) => {
+                            if (!table.hidden.val) {
+                                table.children.forEach(column => {
+                                    if (!column.hidden.val) {
+                                        ids.push(column.id);
+                                    }
+                                });
+                            }
+                            return ids;
+                        }, []);
+                        emitEvent('ExportClicked', { payload: columnIds });
                     },
-                    TAG_KEYS.map(key => Select({
-                        id: `data-catalog-${key}`,
-                        label: capitalize(key.replaceAll('_', ' ')),
-                        height: 32,
-                        value: filters[key],
-                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
-                        allowNull: true,
-                        disabled: !getValue(props.tag_values)?.[key]?.length,
-                        onChange: v => filters[key].val = v,
-                    })),
-                ),
+                }),
             ),
-        ),
-        div(
-            {
-                class: 'tg-dh--dragger',
-                draggable: true,
-                ondragstart: (event) => {
-                    event.dataTransfer.effectAllowed = 'move';
-                    event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
-                    dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
-                },
-                ondragend: (event) => {
-                    dragResize(event);
-                    dragState.val = null;
-                },
-                ondrag: van.derive(() => dragState.val ? dragResize : null),
-            },
-        ),
-        () => multiEditMode.val
-            ? MultiEdit(props, multiSelectedItems, multiEditMode)
-            : SelectedDetails(props, selectedItem.val),
-    );
+            () => treeNodes.val.length
+                ? div(
+                    {
+                        class: 'flex-row tg-dh--content',
+                        ondragover: (event) => event.preventDefault(),
+                    },
+                    Tree(
+                        {
+                            id: treeDomId,
+                            classes: 'tg-dh--tree',
+                            nodes: treeNodes,
+                            // Use .rawVal, so only initial value from query params is passed to tree
+                            selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
+                            onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
+                            multiSelect: multiEditMode,
+                            multiSelectToggle: userCanEdit,
+                            multiSelectToggleLabel: 'Edit multiple',
+                            onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
+                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => 
+                                !node.label.toLowerCase().includes(search.toLowerCase())
+                                || (!!node.children && !searchOptions.tableName.val)
+                                || (!node.children && !searchOptions.columnName.val)
+                                || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
+                                || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
+                            onApplySearchOptions: () => {
+                                copyState(tempSearchOptions, searchOptions);
+                                // If both were unselected, reset their values
+                                // Otherwise, nothing will be matched and the user might not realize why 
+                                if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
+                                    searchOptions.tableName.val = true;
+                                    searchOptions.columnName.val = true
+                                }
+                            },
+                            hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
+                            onApplyFilters: () => copyState(tempFilters, filters),
+                            onResetFilters: () => {
+                                tempFilters.criticalDataElement.val = false;
+                                TAG_KEYS.forEach(key => tempFilters[key].val = null);
+                            },
+                        },
+                        () => {
+                            copyState(searchOptions, tempSearchOptions);
+                            return div(
+                                { class: 'flex-column fx-gap-2' },
+                                span({ class: 'text-caption' }, 'Search by'),
+                                Checkbox({
+                                    label: 'Table name',
+                                    checked: tempSearchOptions.tableName,
+                                    onChange: (checked) => tempSearchOptions.tableName.val = checked,
+                                }),
+                                Checkbox({
+                                    label: 'Column name',
+                                    checked: tempSearchOptions.columnName,
+                                    onChange: (checked) => tempSearchOptions.columnName.val = checked,
+                                }),
+                            );
+                        },
+                        // Pass as a function that will be called when the filter portal is opened
+                        // Otherwise state bindings get garbage collected and Select dropdowns won't open
+                        // https://vanjs.org/advanced#gc
+                        () => {
+                            copyState(filters, tempFilters);
+                            return div(
+                                Checkbox({
+                                    label: 'Only critical data elements (CDEs)',
+                                    checked: tempFilters.criticalDataElement,
+                                    onChange: (checked) => tempFilters.criticalDataElement.val = checked,
+                                }),
+                                div(
+                                    {
+                                        class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
+                                        style: 'max-width: 420px;',
+                                    },
+                                    TAG_KEYS.map(key => Select({
+                                        id: `data-catalog-${key}`,
+                                        label: capitalize(key.replaceAll('_', ' ')),
+                                        height: 32,
+                                        value: tempFilters[key],
+                                        options: getValue(props.tag_values)?.[key]?.map(key => ({ label: key, value: key })),
+                                        allowNull: true,
+                                        disabled: !getValue(props.tag_values)?.[key]?.length,
+                                        onChange: (value) => tempFilters[key].val = value,
+                                    })),
+                                ),
+                            );
+                        },
+                    ),
+                    div(
+                        {
+                            class: 'tg-dh--dragger',
+                            draggable: true,
+                            ondragstart: (event) => {
+                                event.dataTransfer.effectAllowed = 'move';
+                                event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
+                                dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
+                            },
+                            ondragend: (event) => {
+                                dragResize(event);
+                                dragState.val = null;
+                            },
+                            ondrag: van.derive(() => dragState.val ? dragResize : null),
+                        },
+                    ),
+                    () => multiEditMode.val
+                        ? MultiEdit(props, multiSelectedItems, multiEditMode)
+                        : SelectedDetails(props, selectedItem.val),
+                )
+                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
+        )
+        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
@@ -246,14 +345,14 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             ),
             DataCharacteristicsCard({ scores: true }, item),
             item.type === 'column'
-                ? ColumnDistributionCard({ dataPreview: true }, item)
+                ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
                 : TableSizeCard({}, item),
             TagsCard({ tagOptions: getValue(props.tag_values), editable: userCanEdit }, item),
             PotentialPIICard({ noLinks: !userCanNavigate }, item),
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
         )
-        : EmptyState(
+        : ItemEmptyState(
             'Select a table or column on the left to view its details.',
             'quick_reference_all',
         );
@@ -300,8 +399,10 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
                         value ? 'check_circle' : 'cancel',
                     ),
                     span(
-                        { class: value ? 'text-capitalize' : 'text-secondary' },
-                        value ? label : `Not a ${label}`,
+                        { class: value ? '' : 'text-secondary' },
+                        item.type === 'column'
+                            ? (value ? 'Critical data element' : 'Not a critical data element')
+                            : (value ? 'All critical data elements' : 'Not all critical data elements'),
                     ),
                     (item.type === 'column' && state.rawVal === null) ? InheritedIcon('table') : null,
                 );
@@ -377,7 +478,6 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
     const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
 
     const attributes = [
-        'description',
         'critical_data_element',
         ...TAG_KEYS,
     ].map(key => ({
@@ -395,7 +495,6 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
     ];
     const tagOptions = getValue(props.tag_values) ?? {};
     const width = 400;
-    const descriptionWidth = 800;
 
     return div(
         { class: 'tg-dh--details flex-column' },
@@ -428,8 +527,7 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                                     onChange: (value) => valueState.val = value,
                                 })
                                 : Input({
-                                    label, help,
-                                    width: key === 'description' ? descriptionWidth : width,
+                                    label, help, width,
                                     placeholder: () => checkedState.val ? null : '(keep current values)',
                                     autocompleteOptions: tagOptions[key],
                                     onChange: (value) => valueState.val = value || null,
@@ -481,14 +579,14 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                     ),
                 ),
             })
-            : EmptyState(
+            : ItemEmptyState(
                 'Select tables or columns on the left to edit their tags.',
                 'edit_document',
             ),
     );
 };
 
-const EmptyState = (/** @type string */ message, /** @type string */ icon) => {
+const ItemEmptyState = (/** @type string */ message, /** @type string */ icon) => {
     return div(
         { class: 'flex-column fx-align-flex-center fx-justify-center tg-dh--no-selection' },
         Icon({ size: 80, classes: 'text-disabled mb-5' }, icon),
@@ -496,10 +594,66 @@ const EmptyState = (/** @type string */ message, /** @type string */ icon) => {
     );
 };
 
+const ConditionalEmptyState = (
+    /** @type ProjectSummary */ projectSummary,
+    /** @type boolean */ userCanEdit,
+    /** @type boolean */ userCanNavigate,
+) => {
+    let args = {
+        label: 'No profiling data yet',
+        message: EMPTY_STATE_MESSAGE.profiling,
+        button: Button({
+            icon: 'play_arrow',
+            type: 'stroked',
+            color: 'primary',
+            label: 'Run Profiling',
+            width: 'fit-content',
+            style: 'margin: auto; background: background: var(--dk-card-background);',
+            disabled: !userCanEdit,
+            tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
+            tooltipPosition: 'bottom',
+            onclick: () => emitEvent('RunProfilingClicked', {}),
+        }),
+    }
+    if (projectSummary.connections_ct <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.connection,
+            link: {
+                label: 'Go to Connections',
+                href: 'connections',
+                params: { project_code: projectSummary.project_code },
+                disabled: !userCanNavigate,
+            },
+        };
+    } else if (projectSummary.table_groups_ct <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.tableGroup,
+            link: {
+                label: 'Go to Table Groups',
+                href: 'connections:table-groups',
+                params: { connection_id: projectSummary.default_connection_id },
+                disabled: !userCanNavigate,
+            },
+        };
+    }
+    
+    return EmptyState({
+        icon: 'dataset',
+        ...args,
+    });
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-dh {
     height: 100%;
+}
+
+.tg-dh--content {
+    min-height: 0;
+    flex: auto;
     align-items: stretch;
 }
 

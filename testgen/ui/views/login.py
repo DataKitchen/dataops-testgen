@@ -27,7 +27,6 @@ class LoginPage(Page):
             auth_data["cookie"]["name"],
             auth_data["cookie"]["key"],
             auth_data["cookie"]["expiry_days"],
-            auth_data["preauthorized"],
         )
 
         _, login_column, links_column = st.columns([0.25, 0.5, 0.25])

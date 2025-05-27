@@ -5,6 +5,7 @@
  * @type {object}
  * @property {boolean?} border
  * @property {boolean?} dataPreview
+ * @property {boolean?} history
  */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -14,7 +15,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { PercentBar } from '../components/percent_bar.js';
 import { FrequencyBars } from '../components/frequency_bars.js';
 import { BoxPlot } from '../components/box_plot.js';
-import { loadStylesheet, emitEvent, getValue } from '../utils.js';
+import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '../utils.js';
 import { formatTimestamp, roundDigits } from '../display_utils.js';
 
 const { div, span } = van.tags;
@@ -38,20 +39,32 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
         border: props.border,
         title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
         content: item.profile_run_id && columnFunction ? columnFunction(item) : null,
-        actionContent: item.profile_run_id
-            ? (getValue(props.dataPreview)
+        actionContent: div(
+            { class: 'flex-row fx-gap-3' },
+            item.profile_run_id
+                ? (getValue(props.dataPreview)
+                    ? Button({
+                        type: 'stroked',
+                        label: 'Data Preview',
+                        icon: 'pageview',
+                        width: 'auto',
+                        onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                    })
+                    : null)
+                : span(
+                    { class: 'text-secondary' },
+                    'No profiling data available',
+                ),
+            getValue(props.history)
                 ? Button({
                     type: 'stroked',
-                    label: 'Data Preview',
-                    icon: 'pageview',
+                    label: 'History',
+                    icon: 'history',
                     width: 'auto',
-                    onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                    onclick: () => emitEvent('HistoryClicked', { payload: item }),
                 })
-                : null)
-            : span(
-                { class: 'text-secondary' },
-                'No profiling data available',
-            ),
+                : null,
+        ),
     })
 };
 
@@ -75,6 +88,9 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
     }
 
     const total = item.record_ct;
+    const missing = item.null_value_ct + item.zero_length_ct + item.filled_value_ct;
+    const duplicates = item.value_ct - item.distinct_value_ct;
+    const duplicatesStandardized = item.value_ct - item.distinct_std_value_ct;
 
     return div(
         { class: 'flex-column fx-gap-5' },
@@ -84,14 +100,36 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Missing Values: ${item.null_value_ct + item.filled_value_ct + item.filled_value_ct}`,
+                label: `Missing Values: ${missing} (${friendlyPercent(missing * 100 / total)}%)`,
                 items: [
-                    { label: 'Actual Values', value: item.value_ct - item.filled_value_ct, color: 'green' },
-                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                    { label: 'Actual Values', value: item.value_ct - item.zero_length_ct - item.filled_value_ct, color: 'green' },
+                    { label: 'Null', value: item.null_value_ct, color: 'brownLight', showPercent: true },
                     { label: 'Zero Length', value: item.zero_length_ct, color: 'yellow' },
                     { label: 'Dummy Values', value: item.filled_value_ct, color: 'orange' },
                 ],
             }),
+            SummaryBar({
+                height: summaryHeight,
+                width: summaryWidth,
+                label: `Duplicate Values: ${duplicates} (${friendlyPercent(duplicates * 100 / item.value_ct)}%)`,
+                items: [
+                    { label: 'Distinct', value: item.distinct_value_ct, color: 'indigo' },
+                    { label: 'Duplicates', value: duplicates, color: 'orange' },
+                    { value: item.null_value_ct, color: 'empty' },
+                ],
+            }),
+            item.distinct_std_value_ct != item.distinct_value_ct
+                ? SummaryBar({
+                    height: summaryHeight,
+                    width: summaryWidth,
+                    label: `Duplicate Values, Standardized: ${duplicatesStandardized} (${friendlyPercent(duplicatesStandardized * 100 / item.value_ct)}%)`,
+                    items: [
+                        { label: 'Distinct', value: item.distinct_std_value_ct, color: 'indigo' },
+                        { label: 'Duplicates', value: duplicatesStandardized, color: 'orange' },
+                        { value: item.null_value_ct, color: 'empty' },
+                    ],
+                })
+                : null,
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
@@ -101,7 +139,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
                     { label: 'Lower Case', value: item.lower_case_ct, color: 'blueLight' },
                     { label: 'Upper Case', value: item.upper_case_ct, color: 'blue' },
                     { label: 'Non-Alpha', value: item.non_alpha_ct, color: 'brown' },
-                    { label: 'Null', value: item.null_value_ct, color: 'brownLight' },
+                    { value: item.null_value_ct, color: 'empty' },
                 ],
             }),
         ),
@@ -146,15 +184,19 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             ),
         ),
         div(
-            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             Attribute({ label: 'Minimum Length', value: item.min_length, width: attributeWidth }),
             Attribute({ label: 'Maximum Length', value: item.max_length, width: attributeWidth }),
             Attribute({ label: 'Average Length', value: roundDigits(item.avg_length), width: attributeWidth }),
+        ),
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             Attribute({ label: 'Minimum Text', value: item.min_text, width: attributeWidth }),
             Attribute({ label: 'Maximum Text', value: item.max_text, width: attributeWidth }),
+        ),
+        div(
+            { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
-            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
-            Attribute({ label: 'Distinct Standard Values', value: item.distinct_std_value_ct, width: attributeWidth }),
             Attribute({ label: 'Distinct Patterns', value: item.distinct_pattern_ct, width: attributeWidth }),
         ),
     );
@@ -196,8 +238,8 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },
                 PercentBar({ label: 'Before 1 Year', value: item.before_1yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 5 Year', value: item.before_5yr_date_ct, total, width: percentWidth }),
-                PercentBar({ label: 'Before 20 Year', value: item.before_20yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Before 5 Years', value: item.before_5yr_date_ct, total, width: percentWidth }),
+                PercentBar({ label: 'Before 20 Years', value: item.before_20yr_date_ct, total, width: percentWidth }),
             ),
             div(
                 { class: 'flex-column fx-gap-3 tg-profile--percent-column' },

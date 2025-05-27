@@ -5,12 +5,16 @@ from testgen.common.encrypt import encrypt_ui_password
 
 
 @st.cache_data(show_spinner=False)
-def get_users():
+def get_users(include_password: bool=False):
     schema: str = st.session_state["dbschema"]
-    sql = f"""SELECT
-                    id::VARCHAR(50),
-                    username, email, "name", "password", preauthorized, role
-                FROM {schema}.auth_users"""
+    sql = f"""
+    SELECT
+        id::VARCHAR(50),
+        username, email, "name",
+        {"password," if include_password else ""}
+        role
+    FROM {schema}.auth_users
+    """
     return db.retrieve_data(sql)
 
 
@@ -42,12 +46,11 @@ SELECT
 
 def edit_user(user):
     schema: str = st.session_state["dbschema"]
-    encrypted_password = encrypt_ui_password(user["password"])
     sql = f"""UPDATE {schema}.auth_users SET
         username = '{user["username"]}',
         email = '{user["email"]}',
         name = '{user["name"]}',
-        password = '{encrypted_password}',
+        {f"password = '{encrypt_ui_password(user["password"])}'," if user["password"] else ""}
         role = '{user["role"]}'
     WHERE id  = '{user["user_id"]}';"""
     db.execute_sql(sql)

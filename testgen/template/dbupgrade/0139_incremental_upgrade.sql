@@ -1,0 +1,3 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE auth_users DROP COLUMN preauthorized;

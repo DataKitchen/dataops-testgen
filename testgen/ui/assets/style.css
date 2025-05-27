@@ -100,6 +100,10 @@ div[data-testid="stDialog"] div[role="dialog"]:has(i.s-dialog) {
     width: calc(35rem);
 }
 
+div[data-testid="stDialog"] div[role="dialog"]:has(i.l-dialog) {
+    width: calc(75rem);
+}
+
 div[data-testid="stDialog"] div[role="dialog"]:has(i.xl-dialog) {
     width: calc(95rem);
 }
@@ -110,6 +114,10 @@ div[data-testid="stSpinner"] {
 
 div[data-testid="stSpinner"] > div > i {
     border-color: var(--primary-color) rgba(49, 51, 63, 0.2) rgba(49, 51, 63, 0.2);
+}
+
+div.st-key-data_catalog-spinner {
+    position: absolute;
 }
 
 /* Theming for buttons, tabs and form inputs */

@@ -105,6 +105,9 @@ function getParents(/** @type HTMLElement*/ element) {
 }
 
 function friendlyPercent(/** @type number */ value) {
+    if (Number.isNaN(value)) {
+        return 0;
+    }
     const rounded = Math.round(value);
     if (rounded === 0 && value > 0) {
         return '< 0';

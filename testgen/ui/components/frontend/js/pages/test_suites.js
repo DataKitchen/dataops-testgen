@@ -6,6 +6,7 @@
  * @property {number} connections_ct
  * @property {number} table_groups_ct
  * @property {string} default_connection_id
+ * @property {boolean} can_export_to_observability
  *
  * @typedef TableGroupOption
  * @type {object}
@@ -70,8 +71,9 @@ const TestSuites = (/** @type Properties */ props) => {
 
     return div(
         { id: wrapperId, style: 'overflow-y: auto;' },
-        () =>
-            getValue(props.project_summary).test_suites_ct > 0
+        () => {
+            const projectSummary = getValue(props.project_summary);
+            return projectSummary.test_suites_ct > 0
             ? div(
                 { class: 'tg-test-suites'},
                 () => div(
@@ -111,9 +113,29 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-row' },
                             userCanEdit
                                 ? [
-                                    Button({ type: 'icon', icon: 'output', tooltip: 'Export results to Observability', onclick: () => emitEvent('ExportActionClicked', {payload: testSuite.id}) }),
-                                    Button({ type: 'icon', icon: 'edit', tooltip: 'Edit test suite', onclick: () => emitEvent('EditActionClicked', {payload: testSuite.id}) }),
-                                    Button({ type: 'icon', icon: 'delete', tooltip: 'Delete test suite', tooltipPosition: 'left', onclick: () => emitEvent('DeleteActionClicked', {payload: testSuite.id}) }),
+                                    Button({
+                                        type: 'icon',
+                                        icon: 'output',
+                                        tooltip: projectSummary.can_export_to_observability
+                                            ? 'Export results to Observability'
+                                            : 'Observability export not configured in Project Settings',
+                                        tooltipPosition: 'left',
+                                        disabled: !projectSummary.can_export_to_observability,
+                                        onclick: () => emitEvent('ExportActionClicked', {payload: testSuite.id}),
+                                    }),
+                                    Button({
+                                        type: 'icon',
+                                        icon: 'edit',
+                                        tooltip: 'Edit test suite',
+                                        onclick: () => emitEvent('EditActionClicked', {payload: testSuite.id}),
+                                    }),
+                                    Button({
+                                        type: 'icon',
+                                        icon: 'delete',
+                                        tooltip: 'Delete test suite',
+                                        tooltipPosition: 'left',
+                                        onclick: () => emitEvent('DeleteActionClicked', {payload: testSuite.id}),
+                                    }),
                                 ]
                                 : ''
                         ),
@@ -170,7 +192,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         onclick: () => emitEvent('RunTestsClicked', {payload: testSuite.id}),
                                     }),
                                     Button({
-                                        label: 'Generate Tests',
+                                        label: parseInt(testSuite.test_ct) ? 'Regenerate Tests' : 'Generate Tests',
                                         color: 'primary',
                                         type: 'stroked',
                                         style: 'margin-top: 16px; min-width: 180px;',
@@ -184,7 +206,8 @@ const TestSuites = (/** @type Properties */ props) => {
                     })),
                 ),
             )
-            : ConditionalEmptyState(getValue(props.project_summary), userCanEdit),
+            : ConditionalEmptyState(projectSummary, userCanEdit);
+        },
     );
 };
 
@@ -200,7 +223,7 @@ const ConditionalEmptyState = (
             color: 'primary',
             label: 'Add Test Suite',
             width: 'fit-content',
-            style: 'margin: auto; background: white;',
+            style: 'margin: auto; background: var(--dk-card-background);',
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
