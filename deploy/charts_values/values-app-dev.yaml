@@ -10,4 +10,4 @@ testgen:
 
 image:
   # DataOps TestGen version to be installed / upgraded
-  tag: v3
+  tag: v4

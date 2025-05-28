@@ -57,7 +57,7 @@ testgen:
 image:
 
   # DataOps TestGen version to be installed / upgraded
-  tag: v3.0
+  tag: v4.0
 ```
 
 # Installing
