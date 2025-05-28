@@ -55,15 +55,18 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         column_selector: ColumnSelector,
     };
 
-    if (Object.keys(componentById).includes(id)) {
+    if (Object.keys(window.testgen.plugins).includes(id)) {
+        return window.testgen.plugins[id](props);
+    } else if (Object.keys(componentById).includes(id)) {
         return componentById[id](props);
     }
-
     return '';
 };
 
-window.addEventListener('message', (event) => {
+window.addEventListener('message', async (event) => {
     if (event.data.type === 'streamlit:render') {
+        await loadPlugins();
+
         const componentId = event.data.args.id;
         const componentKey = event.data.args.key;
 
@@ -134,8 +137,32 @@ function shouldRenderOutsideFrame(componentId) {
     return 'sidebar' === componentId;
 }
 
+async function loadPlugins() {
+    if (!window.testgen.pluginsLoaded) {
+        try {
+            const modules = await fetch('./plugins.json')
+                .then(response => response.json())
+                .then(plugins => Promise.all(Object.values(plugins).map(plugin => import(plugin.entrypoint))));
+
+            for (const pluginModule of modules) {
+                if (pluginModule && pluginModule.components) {
+                    Object.assign(window.testgen.plugins, pluginModule.components)
+                } else if (pluginModule) {
+                    console.warn(`Plugin '${pluginModule}' does not export a member 'components'.`);
+                }
+            }
+        } catch (error) {
+            console.warn('Error loading plugins:', error);
+        }
+    }
+
+    window.testgen.pluginsLoaded = true;
+}
+
 window.testgen = {
     states: {},
     loadedStylesheets: {},
     portals: {},
+    plugins: {},
+    pluginsLoaded: false,
 };
