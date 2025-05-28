@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   testgen:
   - apiVersion: v2
+    appVersion: v4
+    created: "2025-05-28T21:56:32.01200902Z"
+    description: A Helm chart for Kubernetes
+    digest: 611b62af4d1dec7509625f5436b269618d1abb7dcddc69d7cc13bf3fa8d17306
+    name: testgen
+    type: application
+    urls:
+    - testgen-1.0.0.tgz
+    version: 1.0.0
+  - apiVersion: v2
     appVersion: v3
     created: "2025-03-07T02:18:13.444890184Z"
     description: A Helm chart for Kubernetes
@@ -36,4 +46,4 @@ entries:
     urls:
     - testgen-services-0.1.0.tgz
     version: 0.1.0
-generated: "2025-03-07T02:18:13.444903609Z"
+generated: "2025-05-28T21:56:32.012041951Z"
