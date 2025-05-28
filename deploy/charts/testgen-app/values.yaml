@@ -31,7 +31,7 @@ replicaCount: 1
 image:
   repository: "datakitchen/dataops-testgen"
   pullPolicy: IfNotPresent
-  tag: "v3"
+  tag: "v4"
 
 imagePullSecrets:
 nameOverride: ""
