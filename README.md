@@ -9,9 +9,10 @@
 
 [DataOps TestGen Documentation](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help)
 
-[DataOps TestGen Case Study](https://datakitchen.io/datakitchens-data-quality-testgen-found-18-quality-issues-in-a-few-minutes-including-install-time-on-data-boston-gov-building-permit-data/)
 
 ## Features
+
+[Interactive Product Tour](https://datakitchen.storylane.io/share/byag8vimd5tn)
 
 What does DataKitchen's DataOps Data Quality TestGen do? It helps you understand and <b>find data issues in new data</b>.
 <p align="center">
