@@ -50,7 +50,7 @@ stylesheet.replace(`
     border-radius: 4px;
     background-color: var(--tooltip-color);
     padding: 4px 8px;
-    color: white;
+    color: var(--tooltip-text-color);
     font-size: 13px;
     font-family: 'Roboto', 'Helvetica Neue', sans-serif;
     text-align: center;

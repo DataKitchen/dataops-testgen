@@ -6,6 +6,8 @@
  * @property {string?} classes
  * @property {string?} icon
  * @property {number?} iconSize
+ * @property {'red'?} iconColor
+ * @property {string?} iconTooltip
  * @property {TreeNode[]?} children
  * @property {number?} level
  * @property {boolean?} expanded
@@ -43,6 +45,7 @@ import { Portal } from './portal.js';
 import { Icon } from './icon.js';
 import { Checkbox } from './checkbox.js';
 import { Toggle } from './toggle.js';
+import { withTooltip } from './tooltip.js';
 
 const { div, h3, span } = van.tags;
 const levelOffset = 14;
@@ -307,7 +310,13 @@ const TreeNode = (
                     span({ class: 'mr-1' }),
                 ]
                 : null,
-            node.icon ? Icon({ size: 24, classes: 'tg-tree--row-icon' }, node.icon) : null,
+            () => {
+                if (node.icon) {
+                    const icon = Icon({ size: node.iconSize, classes: `tg-tree--row-icon ${node.iconColor}` }, node.icon);
+                    return node.iconTooltip ? withTooltip(icon, { text: node.iconTooltip, position: 'right' }) : icon;
+                }
+                return null;
+            },
             node.label,
         ),
         hasChildren ? div(
@@ -506,6 +515,10 @@ stylesheet.replace(`
     width: 24px;
     color: #B0BEC5;
     text-align: center;
+}
+
+.tg-tree--row-icon.red {
+    color: var(--red);
 }
 `);
 

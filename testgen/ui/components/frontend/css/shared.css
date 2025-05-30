@@ -30,6 +30,7 @@ body {
     --form-field-color: rgb(240, 242, 246); /* Match Streamlit's form field color */
     --border-color: rgba(0, 0, 0, .12);
     --tooltip-color: #333d;
+    --tooltip-text-color: #fff;
     --dk-card-background: #fff;
 
     --sidebar-background-color: white;
@@ -89,6 +90,8 @@ body {
         --caption-text-color: rgba(250, 250, 250, .6); /* Match Streamlit's caption color */
         --form-field-color: rgb(38, 39, 48); /* Match Streamlit's form field color */
         --border-color: rgba(255, 255, 255, .25);
+        --tooltip-color: #eee;
+        --tooltip-text-color: #000;
         --dk-card-background: #14181f;
 
         --sidebar-background-color: #14181f;

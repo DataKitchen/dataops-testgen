@@ -365,6 +365,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         table_chars.table_name,
         column_chars.general_type,
         column_chars.functional_data_type,
+        table_chars.record_ct,
         column_chars.drop_date,
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,

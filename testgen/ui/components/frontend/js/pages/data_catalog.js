@@ -17,6 +17,7 @@
  * @property {string} table_name
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
  * @property {string} functional_data_type
+ * @property {number} record_ct
  * @property {number} drop_date
  * @property {number} table_drop_date
  * @property {boolean} critical_data_element
@@ -102,13 +103,15 @@ const DataCatalog = (/** @type Properties */ props) => {
 
         const tables = {};
         columns.forEach((item) => {
-            const { column_id, table_id, column_name, table_name, drop_date, table_drop_date } = item;
+            const { column_id, table_id, column_name, table_name, record_ct, drop_date, table_drop_date } = item;
             if (!tables[table_id]) {
                 tables[table_id] = {
                     id: table_id,
                     label: table_name,
                     classes: table_drop_date ? 'text-disabled' : '',
                     ...TABLE_ICON,
+                    iconColor: record_ct === 0 ? 'red' : null,
+                    iconTooltip: record_ct === 0 ? 'No records detected' : null,
                     criticalDataElement: !!item.table_critical_data_element,
                     children: [],
                 };

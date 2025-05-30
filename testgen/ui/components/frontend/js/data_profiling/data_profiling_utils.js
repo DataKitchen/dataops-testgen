@@ -193,13 +193,13 @@ import { formatTimestamp } from '../display_utils.js';
 
 const { span, b } = van.tags;
 
-const TABLE_ICON = { icon: 'table', iconSize: 20 };
+const TABLE_ICON = { icon: 'table' };
 const COLUMN_ICONS = {
-    A: { icon: 'abc' },
-    B: { icon: 'toggle_off', iconSize: 20 },
-    D: { icon: 'calendar_clock', iconSize: 20 },
-    N: { icon: '123' },
-    T: { icon: 'calendar_clock', iconSize: 20 },
+    A: { icon: 'abc', iconSize: 24 },
+    B: { icon: 'toggle_off' },
+    D: { icon: 'calendar_clock' },
+    N: { icon: '123', iconSize: 24 },
+    T: { icon: 'calendar_clock' },
     X: { icon: 'question_mark', iconSize: 18 },
 };
 const BOOLEAN_TYPE = 'Boolean';
