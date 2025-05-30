@@ -344,7 +344,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                 ),
                 LatestProfilingTime({ noLinks: !userCanNavigate }, item),
             ),
-            DataCharacteristicsCard({ scores: true }, item),
+            DataCharacteristicsCard({ scores: true, allowRemove: true }, item),
             item.type === 'column'
                 ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
                 : TableSizeCard({}, item),
