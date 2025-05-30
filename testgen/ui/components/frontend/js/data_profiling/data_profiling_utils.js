@@ -17,6 +17,12 @@
  * @property {string} test_suite
  * @property {string} test_run_id
  * @property {number} test_run_date
+ * 
+ * @typedef TestSuite
+ * @type {object}
+ * @property {string} id
+ * @property {string} name
+ * @property {string} test_count
  *
  * @typedef Column
  * @type {object}
@@ -127,6 +133,8 @@
  * * Issues
  * @property {HygieneIssue[]?} hygiene_issues
  * @property {TestIssue[]?} test_issues
+ * * Test Suites
+ * @property {TestSuite[]?} test_suites
  *
  * @typedef Table
  * @type {object}
@@ -175,6 +183,8 @@
  * * Issues
  * @property {HygieneIssue[]?} hygiene_issues
  * @property {TestIssue[]?} test_issues
+ * * Test Suites
+ * @property {TestSuite[]?} test_suites
  */
 import van from '../van.min.js';
 import { Link } from '../components/link.js';

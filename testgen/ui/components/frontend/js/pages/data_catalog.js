@@ -56,6 +56,7 @@ import { capitalize } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
+import { Link } from '../components/link.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 
 const { div, h2, span, i } = van.tags;
@@ -351,6 +352,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             PotentialPIICard({ noLinks: !userCanNavigate }, item),
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
+            TestSuitesCard(item),
         )
         : ItemEmptyState(
             'Select a table or column on the left to view its details.',
@@ -470,6 +472,47 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
         // Reset states to original values on cancel
         onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),
         hasChanges: () => attributes.some(({ key, state }) => state.val !== item[key]),
+    });
+};
+
+const TestSuitesCard = (/** @type Table | Column */ item) => {
+    return Card({
+        title: 'Related Test Suites',
+        content: div(
+            { class: 'flex-column fx-gap-2' },
+            item.test_suites.map(({ id, name, test_count }) => div(
+                { class: 'flex-row fx-gap-1' },
+                Link({
+                    href: 'test-suites:definitions',
+                    params: {
+                        test_suite_id: id,
+                        table_name: item.table_name,
+                        column_name: item.column_name,
+                    },
+                    open_new: true,
+                    label: name,
+                }),
+                span({ class: 'text-caption' }, `(${test_count} test definitions)`),
+            ))
+        ),
+        actionContent: item.test_suites.length
+            ? null 
+            : item.drop_date
+            ? span({ class: 'text-secondary' }, `No test definitions for ${item.type}`)
+            : span(
+                { class: 'text-secondary flex-row fx-gap-1 fx-justify-content-flex-end' },
+                `No test definitions yet for ${item.type}.`,
+                Link({
+                    href: 'test-suites',
+                    params: {
+                        project_code: item.project_code,
+                        table_group_id: item.table_group_id,
+                    },
+                    open_new: true,
+                    label: 'Go to Test Suites',
+                    right_icon: 'chevron_right',
+                }),
+            ),
     });
 };
 

@@ -363,6 +363,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["hygiene_issues"] = get_hygiene_issues(item["profile_run_id"], item["table_name"], item.get("column_name"))
         item["test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
+        item["test_suites"] = get_related_test_suites(item["table_group_id"], item["table_name"], item.get("column_name"))
         return item
 
 
@@ -405,6 +406,34 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             ELSE 3
         END,
         column_name;
+    """
+
+    df = db.retrieve_data(sql)
+    return [row.to_dict() for _, row in df.iterrows()]
+
+
+@st.cache_data(show_spinner=False)
+def get_related_test_suites(table_group_id: str, table_name: str, column_name: str | None = None) -> dict | None:
+    schema = st.session_state["dbschema"]
+
+    column_condition = ""
+    if column_name:
+        column_condition = f"AND column_name = '{column_name}'"
+
+    sql = f"""
+    SELECT
+        test_suites.id::VARCHAR,
+        test_suite AS name,
+        COUNT(*) AS test_count
+    FROM {schema}.test_definitions
+        LEFT JOIN {schema}.test_suites ON (
+            test_definitions.test_suite_id = test_suites.id
+        )
+    WHERE test_suites.table_groups_id = '{table_group_id}'
+        AND table_name = '{table_name}'
+        {column_condition}
+    GROUP BY test_suites.id
+    ORDER BY test_suite;
     """
 
     df = db.retrieve_data(sql)
