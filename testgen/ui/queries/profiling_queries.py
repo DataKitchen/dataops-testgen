@@ -158,6 +158,7 @@ def get_table_by_id(table_id: str) -> dict | None:
         table_chars.column_ct,
         data_point_ct,
         add_date,
+        last_refresh_date,
         drop_date,
         -- Table Tags
         table_chars.description,

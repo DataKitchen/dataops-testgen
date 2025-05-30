@@ -151,6 +151,7 @@
  * @property {number} column_ct
  * @property {number} data_point_ct
  * @property {number} add_date
+ * @property {number} last_refresh_date
  * @property {number} drop_date
  * * Table Tags
  * @property {string} description

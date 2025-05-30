@@ -23,9 +23,13 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
     if (item.type === 'column') {
         attributes.push(
             { key: 'column_type', label: 'Data Type' },
-            { key: 'datatype_suggestion', label: `Suggested Data Type ${item.is_latest_profile ? '*' : ''}` },
             { key: 'functional_data_type', label: `Semantic Data Type ${item.is_latest_profile ? '*' : ''}` },
         );
+        if (item.datatype_suggestion && item.datatype_suggestion.toLowerCase() !== item.column_type.toLowerCase()) {
+            attributes.push(
+                { key: 'datatype_suggestion', label: `Suggested Data Type ${item.is_latest_profile ? '*' : ''}` },
+            );
+        }
     } else {
         attributes.push(
             { key: 'functional_table_type', label: `Semantic Table Type ${item.is_latest_profile ? '*' : ''}` },
@@ -34,7 +38,7 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
     if (item.add_date) {
         attributes.push({ key: 'add_date', label: 'First Detected' });
     }
-    if (item.last_mod_date !== item.add_date) {
+    if (item.last_mod_date && item.last_mod_date !== item.add_date) {
         attributes.push({ key: 'last_mod_date', label: 'Modification Detected' });
     }
     if (item.drop_date) {

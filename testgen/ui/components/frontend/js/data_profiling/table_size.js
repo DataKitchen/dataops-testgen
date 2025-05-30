@@ -9,8 +9,9 @@ import { Card } from '../components/card.js';
 import { Attribute } from '../components/attribute.js';
 import { Button } from '../components/button.js';
 import { emitEvent } from '../utils.js';
+import { formatTimestamp } from '../display_utils.js';
 
-const { div } = van.tags;
+const { div, span } = van.tags;
 
 const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) => {
     const attributes = [
@@ -20,10 +21,13 @@ const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) 
     ]
 
     return Card({
-        title: 'Table Size',
+        title: 'Table Size **',
         content: div(
-            { class: 'flex-row fx-flex-wrap fx-gap-4' },
-            attributes.map(({ key, label }) => Attribute({ label, value: item[key], width: 250 })),
+            div(
+                { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                attributes.map(({ key, label }) => Attribute({ label, value: item[key], width: 250 })),
+            ),
+            span({ class: 'text-caption flex-row fx-justify-content-flex-end mt-2' }, `** as of ${formatTimestamp(item.last_refresh_date)}`),
         ),
         actionContent: Button({
             type: 'stroked',
