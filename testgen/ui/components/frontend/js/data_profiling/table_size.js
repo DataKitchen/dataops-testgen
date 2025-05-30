@@ -18,14 +18,18 @@ const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) 
         { key: 'column_ct', label: 'Column Count' },
         { key: 'record_ct', label: 'Row Count' },
         { key: 'data_point_ct', label: 'Data Point Count' },
-    ]
+    ];
 
     return Card({
         title: 'Table Size **',
         content: div(
             div(
                 { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                attributes.map(({ key, label }) => Attribute({ label, value: item[key], width: 250 })),
+                attributes.map(({ key, label }) => Attribute({ 
+                    label: item[key] === 0 ? span({ class: 'text-error' }, label) : label, 
+                    value: item[key],
+                    width: 250,
+                })),
             ),
             span({ class: 'text-caption flex-row fx-justify-content-flex-end mt-2' }, `** as of ${formatTimestamp(item.last_refresh_date)}`),
         ),
