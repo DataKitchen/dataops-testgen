@@ -146,7 +146,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 Link({
                                     href: 'test-suites:definitions',
                                     params: { test_suite_id: testSuite.id },
-                                    label: `${testSuite.test_ct ?? 0} test definitions`,
+                                    label: `View ${testSuite.test_ct ?? 0} test definitions`,
                                     right_icon: 'chevron_right',
                                     right_icon_size: 20,
                                     class: 'mb-4',

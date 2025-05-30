@@ -24,7 +24,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
-from testgen.ui.session import session
+from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 LOG = logging.getLogger("testgen")
@@ -134,71 +134,48 @@ class TestDefinitionsPage(Page):
         if user_can_edit:
             if actions_column.button(
                 ":material/edit: Edit",
-                help="Edit the Test Definition",
                 disabled=not selected,
             ):
                 edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
             if actions_column.button(
                 ":material/file_copy: Copy/Move",
-                help="Copy or Move the Test Definition",
                 disabled=not selected,
             ):
                 copy_move_test_dialog(project_code, table_group, test_suite, selected)
 
             if actions_column.button(
                 ":material/delete: Delete",
-                help="Delete the selected Test Definition",
                 disabled=not selected,
             ):
-                delete_test_dialog(selected_test_def)
+                delete_test_dialog(selected)
 
 
-@st.dialog("Delete Test")
-def delete_test_dialog(selected_test_definition):
-    test_definition_id = selected_test_definition["id"]
-    test_name_short = selected_test_definition["test_name_short"]
+@st.dialog("Delete Tests")
+def delete_test_dialog(test_definitions: list[dict]):
+    delete_clicked, set_delete_clicked = temp_value("test-definitions:confirm-delete-tests-val")
+    st.html(f"""
+        Are you sure you want to delete
+        {f"<b>{len(test_definitions)}</b> selected test definitions?"
+        if len(test_definitions) > 1
+        else "the selected test definition?"}
+    """)
 
-    can_be_deleted = test_definition_service.delete([test_definition_id], dry_run=True)
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Delete",
+            type_="flat",
+            color="warn",
+            key="test-definitions:confirm-delete-tests-btn",
+            on_click=lambda: set_delete_clicked(True),
+        )
 
-    fm.render_html_list(
-        selected_test_definition,
-        [
-            "id",
-            "project_code",
-            "schema_name",
-            "table_name",
-            "column_name",
-            "test_name_short",
-            "table_groups_id",
-            "test_suite",
-            "test_active_display",
-            "test_description",
-            "last_manual_update",
-        ],
-        "Test Definition Information",
-        int_data_width=700,
-    )
-
-    with st.form("Delete Test Definition", clear_on_submit=True, border=False):
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            delete = st.form_submit_button(
-                "Delete",
-                disabled=not can_be_deleted,
-                type="primary",
-                use_container_width=True,
-            )
-
-        if delete:
-            test_definition_service.delete([test_definition_id])
-            success_message = f"Test Definition {test_name_short} has been deleted. "
-            st.success(success_message)
-            time.sleep(1)
-            st.rerun()
-
-    if not can_be_deleted:
-        st.markdown(":orange[This Test Definition cannot be deleted because it is being used in existing tests.]")
+    if delete_clicked():
+        test_definition_service.delete([ item["id"] for item in test_definitions ])
+        st.success("Test definitions have been deleted.")
+        time.sleep(1)
+        st.rerun()
 
 
 def show_test_form_by_id(test_definition_id):

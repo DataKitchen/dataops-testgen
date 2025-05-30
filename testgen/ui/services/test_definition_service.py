@@ -43,13 +43,9 @@ def get_test_definition(db_schema, test_def_id):
     return database_service.retrieve_data(str_sql)
 
 
-def delete(test_definition_ids, dry_run=False):
+def delete(test_definition_ids):
     schema = st.session_state["dbschema"]
-    usage_result = test_definition_queries.get_test_definition_usage(schema, test_definition_ids)
-    can_be_deleted = usage_result.empty
-    if not dry_run and can_be_deleted:
-        test_definition_queries.delete(schema, test_definition_ids)
-    return can_be_deleted
+    test_definition_queries.delete(schema, test_definition_ids)
 
 
 def cascade_delete(test_suite_ids: list[str]):
