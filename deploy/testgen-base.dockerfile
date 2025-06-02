@@ -23,7 +23,9 @@ RUN apk update && apk upgrade && apk add --no-cache \
     openblas=0.3.28-r0 \
     openblas-dev=0.3.28-r0 \
     unixodbc=2.3.12-r0 \
-    unixodbc-dev=2.3.12-r0
+    unixodbc-dev=2.3.12-r0 \
+    # Pinned versions for security
+    xz=5.6.2-r1
 
 RUN apk add --no-cache \
     --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/community \
