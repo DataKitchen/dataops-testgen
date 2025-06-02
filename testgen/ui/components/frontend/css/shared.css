@@ -22,6 +22,7 @@ body {
     --grey: #BDBDBD;
     --empty: #EEEEEE;
     --empty-light: #FAFAFA;
+    --empty-teal: #E7F1F0;
 
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
@@ -83,6 +84,7 @@ body {
     body {
         --empty: #424242;
         --empty-light: #212121;
+        --empty-teal: #242E2D;
 
         --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);

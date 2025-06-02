@@ -154,6 +154,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             item.top_freq_values ? FrequencyBars({
                 title: 'Frequent Values',
                 total: item.record_ct,
+                nullCount: item.null_value_ct,
                 items: item.top_freq_values.substring(2).split('\n| ').map(parts => {
                     const [value, count] = parts.split(' | ');
                     return { value, count: Number(count) };
@@ -162,6 +163,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             item.top_patterns ? FrequencyBars({
                 title: 'Frequent Patterns',
                 total: item.record_ct,
+                nullCount: item.null_value_ct,
                 items: item.top_patterns.split(' | ').reduce((array, item, index) => {
                     if (index % 2) {
                         array[(index - 1) / 2].value = item;
