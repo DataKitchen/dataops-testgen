@@ -1,4 +1,5 @@
 import json
+import time
 import typing
 from collections import defaultdict
 from datetime import datetime
@@ -30,7 +31,7 @@ from testgen.ui.queries.profiling_queries import (
     get_table_by_id,
 )
 from testgen.ui.services import user_session_service
-from testgen.ui.session import session
+from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
@@ -121,6 +122,7 @@ class DataCatalogPage(Page):
                     file_content_func=get_excel_report_data,
                     args=(selected_table_group["table_groups_name"], columns),
                 ),
+                "RemoveTableClicked": remove_table_dialog,
                 "DataPreviewClicked": lambda item: data_preview_dialog(
                     item["table_group_id"],
                     item["schema_name"],
@@ -264,7 +266,42 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
         update_progress=update_progress,
     )
 
-    
+
+@st.dialog(title="Remove Table from Catalog")
+def remove_table_dialog(item: dict) -> None:
+    remove_clicked, set_remove_clicked = temp_value("data-catalog:confirm-remove-table-val")
+    st.html(f"Are you sure you want to remove the table <b>{item['table_name']}</b> from the data catalog?")
+    st.warning("This action cannot be undone.")
+
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Remove",
+            type_="flat",
+            color="warn",
+            key="data-catalog:confirm-remove-table-btn",
+            on_click=lambda: set_remove_clicked(True),
+        )
+
+    if remove_clicked():
+        schema = st.session_state["dbschema"]
+        db.execute_sql(f"""
+        DELETE FROM {schema}.data_column_chars
+        WHERE table_id = '{item["id"]}';
+        """)
+        db.execute_sql(f"""
+        DELETE FROM {schema}.data_table_chars
+        WHERE table_id = '{item["id"]}';
+        """)
+
+        st.success("Table has been removed.")
+        time.sleep(1)
+        for func in [ get_table_group_columns, get_tag_values ]:
+            func.clear()
+        st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
+        st.rerun()
+
+
 def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
@@ -328,6 +365,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         table_chars.table_name,
         column_chars.general_type,
         column_chars.functional_data_type,
+        table_chars.record_ct,
         column_chars.drop_date,
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
@@ -363,6 +401,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["hygiene_issues"] = get_hygiene_issues(item["profile_run_id"], item["table_name"], item.get("column_name"))
         item["test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
+        item["test_suites"] = get_related_test_suites(item["table_group_id"], item["table_name"], item.get("column_name"))
         return item
 
 
@@ -405,6 +444,34 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             ELSE 3
         END,
         column_name;
+    """
+
+    df = db.retrieve_data(sql)
+    return [row.to_dict() for _, row in df.iterrows()]
+
+
+@st.cache_data(show_spinner=False)
+def get_related_test_suites(table_group_id: str, table_name: str, column_name: str | None = None) -> dict | None:
+    schema = st.session_state["dbschema"]
+
+    column_condition = ""
+    if column_name:
+        column_condition = f"AND column_name = '{column_name}'"
+
+    sql = f"""
+    SELECT
+        test_suites.id::VARCHAR,
+        test_suite AS name,
+        COUNT(*) AS test_count
+    FROM {schema}.test_definitions
+        LEFT JOIN {schema}.test_suites ON (
+            test_definitions.test_suite_id = test_suites.id
+        )
+    WHERE test_suites.table_groups_id = '{table_group_id}'
+        AND table_name = '{table_name}'
+        {column_condition}
+    GROUP BY test_suites.id
+    ORDER BY test_suite;
     """
 
     df = db.retrieve_data(sql)

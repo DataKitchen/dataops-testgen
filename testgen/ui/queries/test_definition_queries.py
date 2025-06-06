@@ -237,14 +237,6 @@ def add(schema, test_definition):
     st.cache_data.clear()
 
 
-def get_test_definition_usage(schema, test_definition_ids):
-    ids_str = ",".join([f"'{item}'" for item in test_definition_ids])
-    sql = f"""
-            select distinct test_definition_id from {schema}.test_results where test_definition_id in ({ids_str});
-    """
-    return db.retrieve_data(sql)
-
-
 def delete(schema, test_definition_ids):
     if test_definition_ids is None or len(test_definition_ids) == 0:
         raise ValueError("No Test Definition is specified.")

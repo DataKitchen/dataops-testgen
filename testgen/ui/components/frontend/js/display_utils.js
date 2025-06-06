@@ -63,6 +63,7 @@ const colorMap = {
     grey: '#BDBDBD', // Gray 400
     empty: 'var(--empty)', // Light: Gray 200, Dark: Gray 800
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
+    emptyTeal: 'var(--empty-teal)',
 }
 
 const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';

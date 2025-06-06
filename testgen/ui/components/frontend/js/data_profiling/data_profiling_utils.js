@@ -17,6 +17,12 @@
  * @property {string} test_suite
  * @property {string} test_run_id
  * @property {number} test_run_date
+ * 
+ * @typedef TestSuite
+ * @type {object}
+ * @property {string} id
+ * @property {string} name
+ * @property {string} test_count
  *
  * @typedef Column
  * @type {object}
@@ -127,6 +133,8 @@
  * * Issues
  * @property {HygieneIssue[]?} hygiene_issues
  * @property {TestIssue[]?} test_issues
+ * * Test Suites
+ * @property {TestSuite[]?} test_suites
  *
  * @typedef Table
  * @type {object}
@@ -143,6 +151,7 @@
  * @property {number} column_ct
  * @property {number} data_point_ct
  * @property {number} add_date
+ * @property {number} last_refresh_date
  * @property {number} drop_date
  * * Table Tags
  * @property {string} description
@@ -175,6 +184,8 @@
  * * Issues
  * @property {HygieneIssue[]?} hygiene_issues
  * @property {TestIssue[]?} test_issues
+ * * Test Suites
+ * @property {TestSuite[]?} test_suites
  */
 import van from '../van.min.js';
 import { Link } from '../components/link.js';
@@ -182,13 +193,13 @@ import { formatTimestamp } from '../display_utils.js';
 
 const { span, b } = van.tags;
 
-const TABLE_ICON = { icon: 'table', iconSize: 20 };
+const TABLE_ICON = { icon: 'table' };
 const COLUMN_ICONS = {
-    A: { icon: 'abc' },
-    B: { icon: 'toggle_off', iconSize: 20 },
-    D: { icon: 'calendar_clock', iconSize: 20 },
-    N: { icon: '123' },
-    T: { icon: 'calendar_clock', iconSize: 20 },
+    A: { icon: 'abc', iconSize: 24 },
+    B: { icon: 'toggle_off' },
+    D: { icon: 'calendar_clock' },
+    N: { icon: '123', iconSize: 24 },
+    T: { icon: 'calendar_clock' },
     X: { icon: 'question_mark', iconSize: 18 },
 };
 const BOOLEAN_TYPE = 'Boolean';

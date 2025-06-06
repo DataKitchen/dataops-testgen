@@ -38,32 +38,38 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
     return Card({
         border: props.border,
         title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
-        content: item.profile_run_id && columnFunction ? columnFunction(item) : null,
+        content: item.profile_run_id
+            ? (item.record_ct === 0
+            ? BaseCounts(item)
+            : columnFunction?.(item))
+            : null,
         actionContent: div(
             { class: 'flex-row fx-gap-3' },
             item.profile_run_id
-                ? (getValue(props.dataPreview)
-                    ? Button({
-                        type: 'stroked',
-                        label: 'Data Preview',
-                        icon: 'pageview',
-                        width: 'auto',
-                        onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
-                    })
-                    : null)
+                ? ([
+                    getValue(props.dataPreview)
+                        ? Button({
+                            type: 'stroked',
+                            label: 'Data Preview',
+                            icon: 'pageview',
+                            width: 'auto',
+                            onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                        })
+                        : null,
+                    getValue(props.history)
+                        ? Button({
+                            type: 'stroked',
+                            label: 'History',
+                            icon: 'history',
+                            width: 'auto',
+                            onclick: () => emitEvent('HistoryClicked', { payload: item }),
+                        })
+                        : null,
+                ])
                 : span(
                     { class: 'text-secondary' },
                     'No profiling data available',
                 ),
-            getValue(props.history)
-                ? Button({
-                    type: 'stroked',
-                    label: 'History',
-                    icon: 'history',
-                    width: 'auto',
-                    onclick: () => emitEvent('HistoryClicked', { payload: item }),
-                })
-                : null,
         ),
     })
 };
@@ -148,6 +154,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             item.top_freq_values ? FrequencyBars({
                 title: 'Frequent Values',
                 total: item.record_ct,
+                nullCount: item.null_value_ct,
                 items: item.top_freq_values.substring(2).split('\n| ').map(parts => {
                     const [value, count] = parts.split(' | ');
                     return { value, count: Number(count) };
@@ -156,6 +163,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             item.top_patterns ? FrequencyBars({
                 title: 'Frequent Patterns',
                 total: item.record_ct,
+                nullCount: item.null_value_ct,
                 items: item.top_patterns.split(' | ').reduce((array, item, index) => {
                     if (index % 2) {
                         array[(index - 1) / 2].value = item;
@@ -302,10 +310,17 @@ function NumericColumn(/** @type ColumnProfile */ item) {
 }
 
 const BaseCounts = (/** @type ColumnProfile */ item) => {
+    const attributes = [
+        { key: 'record_ct', label: 'Record Count' },
+        { key: 'value_ct', label: 'Value Count' },
+    ];
     return div(
         { class: 'flex-row fx-gap-4' },
-        Attribute({ label: 'Record Count', value: item.record_ct, width: attributeWidth }),
-        Attribute({ label: 'Value Count', value: item.value_ct, width: attributeWidth }),
+        attributes.map(({ key, label }) => Attribute({ 
+            label: item[key] === 0 ? span({ class: 'text-error' }, label) : label, 
+            value: item[key],
+            width: attributeWidth,
+        })),
     );
 };
 
