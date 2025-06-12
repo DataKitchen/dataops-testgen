@@ -128,5 +128,5 @@ cython_debug/
 .pytest_cache/
 .ruff_cache/
 
-testgen/ui/components/frontend/plugins.json
+testgen/ui/components/frontend/js/plugins.js
 testgen/ui/components/frontend/js/plugin_pages/

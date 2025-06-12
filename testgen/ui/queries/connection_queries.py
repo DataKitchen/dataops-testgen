@@ -10,7 +10,7 @@ def get_by_id(connection_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, project_host, project_port, project_user,
+                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, url, connect_by_url, connect_by_key, private_key,
                   private_key_passphrase, http_path
@@ -24,7 +24,7 @@ def get_connections(project_code):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, project_host, project_port, project_user,
+                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, connect_by_url, url, connect_by_key, private_key,
                   private_key_passphrase, http_path
@@ -45,6 +45,7 @@ def edit_connection(schema, connection, encrypted_password, encrypted_private_ke
     sql = f"""UPDATE  {schema}.connections SET
         project_code = '{connection["project_code"]}',
         sql_flavor = '{connection["sql_flavor"]}',
+        sql_flavor_code = '{connection["sql_flavor_code"]}',
         project_host = '{connection["project_host"]}',
         project_port = '{connection["project_port"]}',
         project_user = '{connection["project_user"]}',
@@ -79,13 +80,14 @@ def add_connection(
     encrypted_private_key_passphrase: str | None,
 ) -> int:
     sql_header = f"""INSERT INTO {schema}.connections
-        (project_code, sql_flavor, url, connect_by_url, connect_by_key,
+        (project_code, sql_flavor, sql_flavor_code, url, connect_by_url, connect_by_key,
         project_host, project_port, project_user, project_db,
         connection_name, http_path, """
 
     sql_footer = f""" SELECT
         '{connection["project_code"]}' as project_code,
         '{connection["sql_flavor"]}' as sql_flavor,
+        '{connection["sql_flavor_code"]}' as sql_flavor_code,
         '{connection["url"]}' as url,
         {connection["connect_by_url"]} as connect_by_url,
         {connection["connect_by_key"]} as connect_by_key,

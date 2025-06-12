@@ -14,11 +14,12 @@ PLUGIN_PREFIX = "testgen_"
 ui_plugins_components_directory = (
     Path(__file__).parent.parent / "ui" / "components" / "frontend" / "js" / "plugin_pages"
 )
-ui_plugins_provision_file = Path(__file__).parent.parent / "ui" / "components" / "frontend" / "plugins.json"
+ui_plugins_provision_file = Path(__file__).parent.parent / "ui" / "components" / "frontend" / "js" / "plugins.js"
 ui_plugins_entrypoint_prefix = "./plugin_pages"
 
 
 def discover() -> Generator["Plugin", None, None]:
+    ui_plugins_provision_file.touch(exist_ok=True)
     for package_path, distribution_names in importlib.metadata.packages_distributions().items():
         if package_path.startswith(PLUGIN_PREFIX):
             yield Plugin(package=package_path, version=importlib.metadata.version(distribution_names[0]))
@@ -32,8 +33,12 @@ def cleanup() -> None:
                     item.unlink()
                 except OSError as e:
                     ...
-    if ui_plugins_provision_file.exists():
-        ui_plugins_provision_file.write_text("{}")
+    _reset_ui_plugin_spec()
+
+
+def _reset_ui_plugin_spec() -> None:
+    ui_plugins_provision_file.touch(exist_ok=True)
+    ui_plugins_provision_file.write_text("export default {};")
 
 
 class Logo:
@@ -56,7 +61,6 @@ class ComponentSpec:
     entrypoint: str
 
     def provide(self) -> None:
-        ui_plugins_provision_file.touch(exist_ok=True)
         ui_plugins_components_directory.mkdir(exist_ok=True)
 
         target  = ui_plugins_components_directory / self.name
@@ -67,12 +71,17 @@ class ComponentSpec:
         except OSError as e:
             ...
 
-        plugins_provision: dict = json.loads(ui_plugins_provision_file.read_text() or "{}")
+        plugins_provision: dict = _read_ui_plugin_spec()
         plugins_provision[self.name] = {
             "name": self.name,
             "entrypoint": f"{ui_plugins_entrypoint_prefix}/{self.name}/{self.entrypoint}",
         }
-        ui_plugins_provision_file.write_text(json.dumps(plugins_provision, indent=2))
+        ui_plugins_provision_file.write_text(f"""export default {json.dumps(plugins_provision, indent=2)};""")
+
+
+def _read_ui_plugin_spec() -> dict:
+    contents = ui_plugins_provision_file.read_text() or "export default {};"
+    return json.loads(contents.replace("export default ", "")[:-1])
 
 
 class PluginSpec:

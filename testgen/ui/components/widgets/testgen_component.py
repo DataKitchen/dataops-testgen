@@ -8,7 +8,6 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
 
 AvailablePages = typing.Literal[
-    "database_flavor_selector",
     "data_catalog",
     "column_profiling_results",
     "project_dashboard",
@@ -19,6 +18,8 @@ AvailablePages = typing.Literal[
     "score_details",
     "schedule_list",
     "column_selector",
+    "connections",
+    "table_group_wizard",
 ]
 
 

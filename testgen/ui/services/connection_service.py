@@ -165,7 +165,7 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     return clsProfiling
 
 
-def form_overwritten_connection_url(connection):
+def form_overwritten_connection_url(connection) -> str:
     flavor = connection["sql_flavor"]
 
     connection_credentials = {

@@ -1,28 +1,34 @@
+import base64
 import logging
-import time
 import typing
-from functools import partial
+from dataclasses import asdict, dataclass
 
 import streamlit as st
-import streamlit_pydantic as sp
-from pydantic import ValidationError
-from streamlit.delta_generator import DeltaGenerator
+from sqlalchemy.exc import DatabaseError
 
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache
 from testgen.common.models import with_database_session
+from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import connection_service, table_group_service, user_session_service
 from testgen.ui.session import session, temp_value
-from testgen.ui.views.connections.forms import BaseConnectionForm
 from testgen.ui.views.connections.models import ConnectionStatus
-from testgen.ui.views.table_groups import TableGroupForm
+from testgen.utils import format_field
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Connection"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConnectionFlavor:
+    value: str
+    label: str
+    icon: str
+    flavor: str
 
 
 class ConnectionsPage(Page):
@@ -39,167 +45,192 @@ class ConnectionsPage(Page):
         order=0,
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
+    flavor_options: typing.ClassVar[list[ConnectionFlavor]] = [
+        ConnectionFlavor(
+            label="Amazon Redshift",
+            value="redshift",
+            flavor="redshift",
+            icon=get_asset_data_url("flavors/redshift.svg"),
+        ),
+        ConnectionFlavor(
+            label="Azure SQL Database",
+            value="azure_mssql",
+            flavor="mssql",
+            icon=get_asset_data_url("flavors/azure_sql.svg"),
+        ),
+        ConnectionFlavor(
+            label="Azure Synapse Analytics",
+            value="synapse_mssql",
+            flavor="mssql",
+            icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
+        ),
+        ConnectionFlavor(
+            label="Microsoft SQL Server",
+            value="mssql",
+            flavor="mssql",
+            icon=get_asset_data_url("flavors/mssql.svg"),
+        ),
+        ConnectionFlavor(
+            label="PostgreSQL",
+            value="postgresql",
+            flavor="postgresql",
+            icon=get_asset_data_url("flavors/postgresql.svg"),
+        ),
+        ConnectionFlavor(
+            label="Snowflake",
+            value="snowflake",
+            flavor="snowflake",
+            icon=get_asset_data_url("flavors/snowflake.svg"),
+        ),
+        ConnectionFlavor(
+            label="Databricks",
+            value="databricks",
+            flavor="databricks",
+            icon=get_asset_data_url("flavors/databricks.svg"),
+        ),
+    ]
 
     def render(self, project_code: str, **_kwargs) -> None:
-        dataframe = connection_service.get_connections(project_code)
-        connection = dataframe.iloc[0]
-        has_table_groups = (
-            len(connection_service.get_table_group_names_by_connection([connection["connection_id"]]) or []) > 0
-        )
-
         testgen.page_header(
             PAGE_TITLE,
             "connect-your-database",
         )
 
-        testgen.whitespace(0.3)
-        _, actions_column = st.columns([.1, .9])
-        testgen.whitespace(0.3)
-        testgen.flex_row_end(actions_column)
-
-        with st.container(border=True):
-            self.show_connection_form(connection.to_dict(), "edit", project_code)
-
-        if has_table_groups:
-            with actions_column:
-                testgen.link(
-                    label="Manage Table Groups",
-                    href="connections:table-groups",
-                    params={"connection_id": str(connection["connection_id"])},
-                    right_icon="chevron_right",
-                    underline=False,
-                    height=40,
-                    style="margin-left: auto; border-radius: 4px; background: var(--dk-card-background);"
-                        " border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
-                )
-        else:
-            user_can_edit = user_session_service.user_can_edit()
-            with actions_column:
-                testgen.button(
-                    type_="stroked",
-                    color="primary",
-                    icon="table_view",
-                    label="Setup Table Groups",
-                    style="var(--dk-card-background)",
-                    width=200,
-                    disabled=not user_can_edit,
-                    tooltip=None if user_can_edit else user_session_service.DISABLED_ACTION_TEXT,
-                    on_click=lambda: self.setup_data_configuration(project_code, connection.to_dict()),
-                )
-
-    def show_connection_form(self, selected_connection: dict, _mode: str, project_code) -> None:
-        connection = selected_connection or {}
-        connection_id = connection.get("connection_id", 1)
-        connection_name = connection.get("connection_name", "default")
-        sql_flavor = connection.get("sql_flavor", "postgresql")
-        data = {}
-
-        try:
-            FlavorForm = BaseConnectionForm.for_flavor(sql_flavor)
-            if connection:
-                connection["password"] = connection["password"] or ""
-                connection["private_key"] = connection["private_key"] or ""
-
-            form_kwargs = connection or {"sql_flavor": sql_flavor, "connection_id": connection_id, "connection_name": connection_name}
-            form = FlavorForm(**form_kwargs)
-
-            BaseConnectionForm.set_default_port(sql_flavor, form)
-
-            sql_flavor = form.get_field_value("sql_flavor", latest=True) or sql_flavor
-            if form.sql_flavor != sql_flavor:
-                form = BaseConnectionForm.for_flavor(sql_flavor)(sql_flavor=sql_flavor, connection_id=connection_id)
-
-            form.disable("connection_name")
-
-            form_errors_container = st.empty()
-            data = sp.pydantic_input(
-                key=f"connection_form:{connection_id}",
-                model=form,  # type: ignore
-            )
-            data.update({
-                "project_code": project_code,
-            })
-            if "private_key" not in data:
-                data.update({
-                    "connect_by_key": False,
-                    "private_key_passphrase": None,
-                    "private_key": None,
-                })
-
-            data.setdefault("http_path", "")
-
-            try:
-                FlavorForm(**data)
-            except ValidationError as error:
-                form_errors_container.warning("\n".join([
-                    f"- {field_label}: {err['msg']}" for err in error.errors()
-                    if (field_label := FlavorForm.get_field_label(str(err["loc"][0])))
-                ]))
-        except Exception:
-            LOG.exception("unexpected form validation error")
-            st.error("Unexpected error displaying the form. Try again")
-
-        test_button_column, _, save_button_column = st.columns([.2, .6, .2])
-        is_submitted, set_submitted = temp_value(f"connection_form-{connection_id}:submit")
-        is_connecting, set_connecting = temp_value(
-            f"connection_form-{connection_id}:test_conn"
+        dataframe = connection_service.get_connections(project_code)
+        connection = dataframe.iloc[0]
+        has_table_groups = (
+            len(connection_service.get_table_group_names_by_connection([connection["connection_id"]]) or []) > 0
+        )
+        user_is_admin = user_session_service.user_is_admin()
+        should_check_status, set_check_status = temp_value(
+            "connections:status_check",
+            default=False,
+        )
+        get_updated_connection, set_updated_connection = temp_value(
+            "connections:partial_value",
+            default={},
+        )
+        should_save, set_save = temp_value(
+            "connections:update_connection",
+            default=False,
         )
 
-        if user_session_service.user_is_admin():
-            with save_button_column:
-                testgen.button(
-                    type_="flat",
-                    label="Save",
-                    key=f"connection_form:{connection_id}:submit",
-                    on_click=lambda: set_submitted(True),
-                )
+        def on_save_connection_clicked(updated_connection):
+            if updated_connection.get("connect_by_url", False):
+                url_parts = updated_connection.get("url", "").split("@")
+                if len(url_parts) > 1:
+                    updated_connection["url"] = url_parts[1]
+            updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
+            if updated_connection["private_key"]:
+                updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
-            with test_button_column:
-                testgen.button(
-                    type_="stroked",
-                    color="basic",
-                    label="Test Connection",
-                    key=f"connection_form:{connection_id}:test",
-                    on_click=lambda: set_connecting(True),
-                )
+            set_save(True)
+            set_updated_connection(updated_connection)
 
-        if is_connecting():
-            single_element_container = st.empty()
-            single_element_container.info("Connecting ...")
-            connection_status = self.test_connection(data)
 
-            with single_element_container.container():
-                renderer = {
-                    True: st.success,
-                    False: st.error,
-                }[connection_status.successful]
+        def on_test_connection_clicked(updated_connection: dict) -> None:
+            password = updated_connection.get("password")
+            private_key = updated_connection.get("private_key")
+            private_key_passphrase = updated_connection.get("private_key_passphrase")
+            is_pristine = lambda value: value in ["", "***"]
 
-                renderer(connection_status.message)
-                if not connection_status.successful and connection_status.details:
-                    st.caption("Connection Error Details")
+            if is_pristine(password):
+                del updated_connection["password"]
 
-                    with st.container(border=True):
-                        st.markdown(connection_status.details)
-
-            connection_status = None
-        else:
-            # This is needed to fix a strange bug in Streamlit when using dialog + input fields + button
-            # If an input field is changed and the button is clicked immediately (without unfocusing the input first),
-            # two fragment reruns happen successively, one for unfocusing the input and the other for clicking the button
-            # Some or all (it seems random) of the input fields disappear when this happens
-            time.sleep(0.1)
-
-        if is_submitted():
-            if not data.get("password") and not data.get("connect_by_key"):
-                st.error("Enter a valid password.")
+            if is_pristine(private_key):
+                del updated_connection["private_key"]
             else:
-                if data.get("private_key"):
-                    data["private_key"] = data["private_key"].getvalue().decode("utf-8")
+                updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
-                connection_service.edit_connection(data)
-                st.success("Changes have been saved successfully.")
-                time.sleep(1)
-                st.rerun()
+            if is_pristine(private_key_passphrase):
+                del updated_connection["private_key_passphrase"]
+
+            updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
+
+            set_check_status(True)
+            set_updated_connection(updated_connection)
+
+        results = None
+        connection = {**connection.to_dict(), **get_updated_connection()}
+        if should_save():
+            success = True
+            try:
+                connection_service.edit_connection(connection)
+                message = "Changes have been saved successfully."
+            except Exception as error:
+                message = "Error creating connection"
+                success = False
+                LOG.exception(message)
+            
+            results = {
+                "success": success,
+                "message": message,
+            }
+
+        return testgen.testgen_component(
+            "connections",
+            props={
+                "connection": self._format_connection(connection, should_test=should_check_status()),
+                "has_table_groups": has_table_groups,
+                "flavors": [asdict(flavor) for flavor in self.flavor_options],
+                "permissions": {
+                    "is_admin": user_is_admin,
+                },
+                "results": results,
+            },
+            on_change_handlers={
+                "TestConnectionClicked": on_test_connection_clicked,
+                "SaveConnectionClicked": on_save_connection_clicked,
+                "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection["connection_id"]),
+            },
+        )
+
+    def _get_sql_flavor_from_value(self, value: str) -> ConnectionFlavor | None:
+        match = [f for f in self.flavor_options if f.value == value]
+        if match:
+            return match[0]
+        return None
+
+    def _format_connection(self, connection: dict, should_test: bool = False) -> dict:
+        fields = [
+            "project_code",
+            "connection_id",
+            "connection_name",
+            "sql_flavor",
+            "sql_flavor_code",
+            "project_host",
+            "project_port",
+            "project_db",
+            "project_user",
+            "password",
+            "max_threads",
+            "max_query_chars",
+            "connect_by_url",
+            "connect_by_key",
+            "private_key",
+            "private_key_passphrase",
+            "http_path",
+        ]
+        formatted_connection = {
+            "url": connection_service.form_overwritten_connection_url(connection)
+                .replace("%3E", ">").replace("%3C", "<"),
+        }
+
+        for fieldname in fields:
+            formatted_connection[fieldname] = format_field(connection[fieldname])
+
+        if should_test:
+            formatted_connection["status"] = asdict(self.test_connection(connection))
+
+        formatted_connection["password"] = "***"  # noqa S105
+        formatted_connection["private_key"] = "***"  # S105
+        formatted_connection["private_key_passphrase"] = "***"  # noqa S105
+
+        flavors = [f for f in self.flavor_options if f.value == connection["sql_flavor_code"]]
+        if flavors and (flavor := flavors[0]):
+            formatted_connection["flavor"] = asdict(flavor)
+
+        return formatted_connection
 
     def test_connection(self, connection: dict) -> "ConnectionStatus":
         if connection["connect_by_key"] and connection["connection_id"] is None:
@@ -221,9 +252,9 @@ class ConnectionsPage(Page):
                 connection["url"],
                 connection["connect_by_url"],
                 connection["connect_by_key"],
-                connection["private_key"],
-                connection["private_key_passphrase"],
-                connection["http_path"],
+                connection.get("private_key", ""),
+                connection.get("private_key_passphrase", ""),
+                connection.get("http_path", ""),
                 sql_query,
             )
             connection_successful = len(results) == 1 and results[0][0] == 1
@@ -231,123 +262,94 @@ class ConnectionsPage(Page):
             if not connection_successful:
                 return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
             return ConnectionStatus(message="The connection was successful.", successful=True)
+        except KeyError:
+            return ConnectionStatus(
+                message="Error attempting the connection. ",
+                details="Complete all the required fields.",
+                successful=False,
+            )
+        except DatabaseError as error:
+            LOG.exception("Error testing database connection")
+            return ConnectionStatus(message="Error attempting the connection.", details=str(error.orig), successful=False)
         except Exception as error:
-            return ConnectionStatus(message="Error attempting the connection.", details=error.args[0], successful=False)
+            LOG.exception("Error testing database connection")
+            return ConnectionStatus(message="Error attempting the connection.", details="Try again", successful=False)
 
     @st.dialog(title="Data Configuration Setup")
     @with_database_session
-    def setup_data_configuration(self, project_code: str, connection: dict) -> None:
-        will_run_profiling = st.session_state.get("connection_form-new:run-profiling-toggle", True)
-        testgen.wizard(
-            key="connections:setup-wizard",
-            steps=[
-                testgen.WizardStep(
-                    title="Create a Table Group",
-                    body=partial(self.create_table_group_step, project_code, connection),
-                ),
-                testgen.WizardStep(
-                    title="Run Profiling",
-                    body=self.run_data_profiling_step,
-                ),
-            ],
-            on_complete=self.execute_setup,
-            complete_label="Save & Run Profiling" if will_run_profiling else "Finish Setup",
-            navigate_to=st.session_state.pop("setup_data_config:navigate-to", None),
-            navigate_to_args=st.session_state.pop("setup_data_config:navigate-to-args", {}),
+    def setup_data_configuration(self, project_code: str, connection_id: str) -> None:
+        def on_save_table_group_clicked(payload: dict) -> None:
+            table_group: dict = payload["table_group"]
+            run_profiling: bool = payload.get("run_profiling", False)
+
+            set_new_table_group(table_group)
+            set_run_profiling(run_profiling)
+
+        def on_go_to_profiling_runs(params: dict) -> None:
+            set_navigation_params({ **params, "project_code": project_code })
+
+        get_navigation_params, set_navigation_params = temp_value(
+            "connections:new_table_group:go_to_profiling_run",
+            default=None,
+        )
+        if (params := get_navigation_params()):
+            self.router.navigate(to="profiling-runs", with_args=params)
+
+        get_new_table_group, set_new_table_group = temp_value(
+            "connections:new_connection:table_group",
+            default={},
+        )
+        get_run_profiling, set_run_profiling = temp_value(
+            "connections:new_connection:run_profiling",
+            default=False,
         )
 
-    def create_table_group_step(self, project_code: str, connection: dict) -> tuple[dict | None, bool]:
-        is_valid: bool = True
-        data: dict = {}
-
-        try:
-            form = TableGroupForm.construct()
-            form_errors_container = st.empty()
-            data = sp.pydantic_input(key="table_form:new", model=form)  # type: ignore
-
-            try:
-                TableGroupForm(**data)
-                form_errors_container.empty()
-                data.update({"project_code": project_code, "connection_id": connection["connection_id"]})
-            except ValidationError as error:
-                form_errors_container.warning("\n".join([
-                    f"- {field_label}: {err['msg']}" for err in error.errors()
-                    if (field_label := TableGroupForm.get_field_label(str(err["loc"][0])))
-                ]))
-                is_valid = False
-        except Exception:
-            LOG.exception("unexpected form validation error")
-            st.error("Unexpected error displaying the form. Try again")
-            is_valid = False
-
-        return data, is_valid
-
-    def run_data_profiling_step(self, step_0: testgen.WizardStep | None = None) -> tuple[bool, bool]:
-        if not step_0 or not step_0.results:
-            st.error("A table group is required to complete this step.")
-            return False, False
-
-        run_profiling = True
-        profiling_message = "Profiling will be performed in a background process."
-        table_group = step_0.results
-
-        with st.container():
-            run_profiling = st.checkbox(
-                label=f"Execute profiling for the table group **{table_group['table_groups_name']}**?",
-                key="connection_form-new:run-profiling-toggle",
-                value=True,
-            )
-            if not run_profiling:
-                profiling_message = (
-                    "Profiling will be skipped. You can run this step later from the Profiling Runs page."
-                )
-            st.markdown(f":material/info: _{profiling_message}_")
-
-        return run_profiling, True
-
-    def execute_setup(
-        self,
-        container: DeltaGenerator,
-        step_0: testgen.WizardStep[dict],
-        step_1: testgen.WizardStep[bool],
-    ) -> bool:
-        table_group = step_0.results
-        table_group_name: str = table_group["table_groups_name"]
-        should_run_profiling: bool = step_1.results
-
-        with container.container():
-            status_container = st.empty()
+        results = None
+        table_group = get_new_table_group()
+        should_run_profiling = get_run_profiling()
+        if table_group:
+            success = True
+            message = None
+            table_group_id = None
 
             try:
-                status_container.info(f"Creating table group **{table_group_name.strip()}**.")
-                table_group_id = table_group_service.add(table_group)
-                TableGroupForm.construct().reset_cache()
-            except Exception as err:
-                status_container.error(f"Error creating table group: {err!s}.")
+                table_group_id = table_group_service.add({
+                    **table_group,
+                    "project_code": project_code,
+                    "connection_id": connection_id,
+                })
 
-            if should_run_profiling:
-                try:
-                    status_container.info("Starting profiling run ...")
-                    run_profiling_in_background(table_group_id)
-                    status_container.success(f"Profiling run started for table group **{table_group_name.strip()}**.")
-                except Exception as err:
-                    status_container.error(f"Profiling run encountered errors: {err!s}.")
+                if should_run_profiling:
+                    try:
+                        run_profiling_in_background(table_group_id)
+                        message = f"Profiling run started for table group {table_group['table_groups_name']}."
+                    except Exception as error:
+                        message = "Profiling run encountered errors"
+                        success = False
+                        LOG.exception(message)
+                else:
+                    LOG.info("Table group %s created", table_group_id)
+                    st.rerun()
+            except Exception as error:
+                message = "Error creating table group"
+                success = False
+                LOG.exception(message)
 
-                _, link_column = st.columns([.7, .3])
-                with link_column:
-                    testgen.button(
-                        type_="stroked",
-                        color="primary",
-                        label="Go to Profiling Runs",
-                        icon="chevron_right",
-                        key="setup_data_config:keys:go-to-runs",
-                        on_click=lambda: (
-                            st.session_state.__setattr__("setup_data_config:navigate-to", "profiling-runs")
-                            or st.session_state.__setattr__("setup_data_config:navigate-to-args", {
-                                "project_code": table_group["project_code"],
-                                "table_group": table_group_id,
-                            })
-                        ),
-                    )
+            results = {
+                "success": success,
+                "message": message,
+                "table_group_id": table_group_id,
+            }
 
-        return not should_run_profiling
+        testgen.testgen_component(
+            "table_group_wizard",
+            props={
+                "project_code": project_code,
+                "connection_id": connection_id,
+                "results": results,
+            },
+            on_change_handlers={
+                "SaveTableGroupClicked": on_save_table_group_clicked,
+                "GoToProfilingRunsClicked": on_go_to_profiling_runs,
+            },
+        )

@@ -1,7 +1,9 @@
 /**
  * @typedef Properties
  * @type {object}
+ * @property {string?} name
  * @property {string} label
+ * @property {string?} help
  * @property {boolean?} checked
  * @property {boolean?} indeterminate
  * @property {function(boolean, Event)?} onChange
@@ -10,6 +12,8 @@
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
+import { withTooltip } from './tooltip.js';
+import { Icon } from './icon.js';
 
 const { input, label, span } = van.tags;
 
@@ -19,11 +23,12 @@ const Checkbox = (/** @type Properties */ props) => {
     return label(
         {
             class: 'flex-row fx-gap-2 clickable',
-            'data-testid': props.testId ?? '',
+            'data-testid': props.testId ?? props.name ?? '',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
         },
         input({
             type: 'checkbox',
+            name: props.name ?? '',
             class: 'tg-checkbox--input clickable',
             checked: props.checked,
             indeterminate: props.indeterminate,
@@ -33,6 +38,12 @@ const Checkbox = (/** @type Properties */ props) => {
             }),
         }),
         span({'data-testid': 'checkbox-label'}, props.label),
+        () => getValue(props.help)
+            ? withTooltip(
+                Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                { text: props.help, position: 'top', width: 200 }
+            )
+            : null,
     );
 };
 

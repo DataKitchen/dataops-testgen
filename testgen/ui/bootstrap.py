@@ -70,7 +70,16 @@ class Application(singleton.Singleton):
 def run(log_level: int = logging.INFO) -> Application:
     pages = [*BUILTIN_PAGES]
     installed_plugins = plugins.discover()
-    plugins.cleanup()
+
+    if not settings.IS_DEBUG:
+        """
+        This cleanup is called so that TestGen can remove uninstalled
+        plugins without having to be reinstalled.
+
+        The check for DEBUG mode is because multithreading for Streamlit
+        fragments loads before the plugins can be re-loaded.
+        """
+        plugins.cleanup()
 
     configure_logging(level=log_level)
     logo_class = plugins.Logo

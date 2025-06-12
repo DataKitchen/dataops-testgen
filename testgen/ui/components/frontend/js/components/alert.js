@@ -1,19 +1,15 @@
 /**
- * @typedef Alert
- * @type {object}
- * @property {string} value
- * @property {string} color
- * @property {string} label
- * 
  * @typedef Properties
  * @type {object}
  * @property {string?} icon
+ * @property {number?} timeout
+ * @property {boolean?} closeable
  * @property {'info'|'success'|'error'} type
- * @property {string?} message
  */
 import van from '../van.min.js';
-import { getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet, getRandomId } from '../utils.js';
 import { Icon } from './icon.js';
+import { Button } from './button.js';
 
 const { div } = van.tags;
 const alertTypeColors = {
@@ -25,9 +21,19 @@ const alertTypeColors = {
 const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ...children) => {
     loadStylesheet('alert', stylesheet);
 
+    const elementId = getValue(props.id) ?? 'tg-alert-' + getRandomId();
+    const close = () => {
+        document.getElementById(elementId)?.remove();
+    };
+    const timeout = getValue(props.timeout);
+    if (timeout && timeout > 0) {
+        setTimeout(close, timeout);
+    }
+
     return div(
         {
             ...props,
+            id: elementId,
             class: () => (getValue(props.class) ?? '') + ` tg-alert flex-row`,
             style: () => {
                 const colors = alertTypeColors[getValue(props.type)];
@@ -43,6 +49,19 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
             {class: 'flex-column'},
             ...children,
         ),
+        () => {
+            const isCloseable = getValue(props.closeable) ?? false;
+            if (!isCloseable) {
+                return '';
+            }
+
+            const colors = alertTypeColors[getValue(props.type)];
+            return Button({
+                type: 'icon',
+                icon: 'close',
+                style: `margin-left: auto; color: ${colors.color};`,
+            });
+        },
     );
 };
 

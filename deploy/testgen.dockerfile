@@ -20,7 +20,7 @@ RUN addgroup -S testgen && adduser -S testgen -G testgen
 
 # Streamlit has to be able to write to these dirs
 RUN mkdir /var/lib/testgen
-RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.12/site-packages/streamlit/static
+RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.12/site-packages/streamlit/static /dk/lib/python3.12/site-packages/testgen/ui/components/frontend
 
 ENV TESTGEN_VERSION=${TESTGEN_VERSION}
 ENV TESTGEN_DOCKER_HUB_REPO=${TESTGEN_DOCKER_HUB_REPO}
