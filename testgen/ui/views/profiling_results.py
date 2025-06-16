@@ -100,7 +100,10 @@ class ProfilingResultsPage(Page):
             column_name = "%%"
 
         # Display main results grid
-        df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+        with st.container():
+            with st.spinner("Loading data ..."):
+                df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+                
         show_columns = [
             "schema_name",
             "table_name",
@@ -160,10 +163,10 @@ def get_excel_report_data(
     data = data.copy()
 
     for key in ["column_type", "datatype_suggestion"]:
-        data[key] = data[key].apply(lambda val: val.lower())
+        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
-        data[key] = data[key].apply(lambda val: round(val, 2))
+        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(

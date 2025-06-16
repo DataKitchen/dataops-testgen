@@ -157,10 +157,10 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
     data = pd.DataFrame(data)
 
     for key in ["column_type", "datatype_suggestion"]:
-        data[key] = data[key].apply(lambda val: val.lower())
+        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
-        data[key] = data[key].apply(lambda val: round(val, 2))
+        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
@@ -327,18 +327,29 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
     with spinner_container:
         with st.spinner("Saving tags"):
             if tables:
-                db.execute_sql(f"""
+                db.execute_sql_raw(f"""
+                WITH selected as (
+                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in tables ])}]) AS table_id
+                )
                 UPDATE {schema}.data_table_chars
                 SET {', '.join(set_attributes)}
-                WHERE table_id IN ({", ".join([ f"'{item}'" for item in tables ])});
+                FROM {schema}.data_table_chars dtc
+                    INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
+                WHERE dtc.table_id = data_table_chars.table_id;
                 """)
+                
 
             if columns:
-                db.execute_sql(f"""
+                db.execute_sql_raw(f"""
+                WITH selected as (
+                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in columns ])}]) AS column_id
+                )
                 UPDATE {schema}.data_column_chars
                 SET {', '.join(set_attributes)}
-                WHERE column_id IN ({", ".join([ f"'{item}'" for item in columns ])});
-                """)
+                FROM {schema}.data_column_chars dcc
+                    INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
+                WHERE dcc.column_id = data_column_chars.column_id;
+                """) 
 
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
         func.clear()
@@ -366,6 +377,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         column_chars.general_type,
         column_chars.functional_data_type,
         table_chars.record_ct,
+        profile_results.value_ct,
         column_chars.drop_date,
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
@@ -375,6 +387,11 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
     FROM {schema}.data_column_chars column_chars
         LEFT JOIN {schema}.data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
+        )
+        LEFT JOIN {schema}.profile_results ON (
+            column_chars.last_complete_profile_run_id = profile_results.profile_run_id
+            AND column_chars.table_name = profile_results.table_name
+            AND column_chars.column_name = profile_results.column_name
         )
     WHERE column_chars.table_groups_id = '{table_group_id}'
     ORDER BY table_name, ordinal_position;

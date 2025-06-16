@@ -181,7 +181,7 @@ def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
     return dq.run_table_groups_lookup_query(schema, project_code)
 
 
-@st.cache_data(show_spinner="Retrieving Data")
+@st.cache_data(show_spinner="Loading data ...")
 def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) -> pd.DataFrame:
     schema = st.session_state["dbschema"]
     table_group_condition = f" AND v_profiling_runs.table_groups_id = '{table_group_id}' " if table_group_id else ""

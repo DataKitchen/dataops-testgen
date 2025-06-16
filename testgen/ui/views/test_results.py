@@ -274,7 +274,7 @@ def get_test_types():
     return df
 
 
-@st.cache_data(show_spinner="False")
+@st.cache_data(show_spinner=False)
 def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
@@ -286,7 +286,7 @@ def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
     return db.retrieve_data(sql)
 
 
-@st.cache_data(show_spinner="Retrieving Results")
+@st.cache_data(show_spinner=False)
 def get_test_results(
     run_id: str,
     test_status: str | None = None,
@@ -299,7 +299,7 @@ def get_test_results(
     return test_results_service.get_test_results(schema, run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
 
 
-@st.cache_data(show_spinner="Retrieving Status")
+@st.cache_data(show_spinner=False)
 def get_test_disposition(str_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
@@ -483,13 +483,16 @@ def show_result_detail(
     sorting_columns: list[str] | None = None,
     do_multi_select: bool = False,
 ):
-    # Retrieve test results (always cached, action as null)
-    df = get_test_results(run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
-    # Retrieve disposition action (cache refreshed)
-    df_action = get_test_disposition(run_id)
-    # Update action from disposition df
-    action_map = df_action.set_index("id")["action"].to_dict()
-    df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
+    with st.container():
+        with st.spinner("Loading data ..."):
+            # Retrieve test results (always cached, action as null)
+            df = get_test_results(run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
+            # Retrieve disposition action (cache refreshed)
+            df_action = get_test_disposition(run_id)
+
+            # Update action from disposition df
+            action_map = df_action.set_index("id")["action"].to_dict()
+            df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
 
     lst_show_columns = [
         "table_name",
@@ -774,7 +777,9 @@ def source_data_dialog(selected_row):
             st.info(bad_data_msg)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-        df_bad.fillna("[NULL]", inplace=True)
+        df_bad.fillna("<null>", inplace=True)
+        if len(df_bad) == 500:
+            testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 
