@@ -130,15 +130,17 @@ class HygieneIssuesPage(Page):
             str_help = "Toggle on to perform actions on multiple Hygiene Issues"
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
+        with st.container():
+            with st.spinner("Loading data ..."):
+                # Get hygiene issue list
+                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
 
-        # Get hygiene issue list
-        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
+                # Retrieve disposition action (cache refreshed)
+                df_action = get_anomaly_disposition(run_id)
 
-        # Retrieve disposition action (cache refreshed)
-        df_action = get_anomaly_disposition(run_id)
-        # Update action from disposition df
-        action_map = df_action.set_index("id")["action"].to_dict()
-        df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
+                # Update action from disposition df
+                action_map = df_action.set_index("id")["action"].to_dict()
+                df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
 
         if not df_pa.empty:
             summaries = get_profiling_anomaly_summary(run_id)
@@ -324,7 +326,7 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
     st.cache_data.clear()
 
 
-@st.cache_data(show_spinner="False")
+@st.cache_data(show_spinner=False)
 def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
@@ -336,7 +338,7 @@ def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     return db.retrieve_data(sql)
 
 
-@st.cache_data(show_spinner="Retrieving Data")
+@st.cache_data(show_spinner=False)
 def get_profiling_anomalies(
     profile_run_id: str,
     likelihood: str | None,
@@ -423,7 +425,7 @@ def get_profiling_anomalies(
     return df
 
 
-@st.cache_data(show_spinner="Retrieving Status")
+@st.cache_data(show_spinner=False)
 def get_anomaly_disposition(str_profile_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
@@ -540,6 +542,8 @@ def source_data_dialog(selected_row):
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
         df_bad.fillna("[NULL]", inplace=True)
+        if len(df_bad) == 500:
+            testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 

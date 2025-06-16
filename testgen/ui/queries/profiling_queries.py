@@ -93,7 +93,7 @@ def get_run_by_id(profile_run_id: str) -> pd.Series:
         return pd.Series()
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_profiling_results(profiling_run_id: str, table_name: str, column_name: str, sorting_columns = None):
     order_by = ""
     if sorting_columns is None:

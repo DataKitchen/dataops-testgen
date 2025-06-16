@@ -218,7 +218,7 @@ def get_db_test_suite_choices(project_code: str, table_groups_id: str | None = N
     return run_test_suite_lookup_query(schema, project_code, table_groups_id)
 
 
-# @st.cache_data(show_spinner="Retrieving Data")
+@st.cache_data(show_spinner="Loading data ...")
 def get_db_test_runs(project_code: str, table_groups_id: str | None = None, test_suite_id: str | None = None) -> pd.DataFrame:
     schema = st.session_state["dbschema"]
     table_group_condition = f" AND test_suites.table_groups_id = '{table_groups_id}' " if table_groups_id else ""

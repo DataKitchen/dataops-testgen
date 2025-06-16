@@ -752,13 +752,15 @@ def show_test_defs_grid(
     str_project_code, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
         str_table_groups_id
 ):
-    df = test_definition_service.get_test_definitions(
-        str_project_code, str_test_suite, str_table_name, str_column_name
-    )
-    date_service.accommodate_dataframe_to_timezone(df, st.session_state)
+    with st.container():
+        with st.spinner("Loading data ..."):
+            df = test_definition_service.get_test_definitions(
+                str_project_code, str_test_suite, str_table_name, str_column_name
+            )
+            date_service.accommodate_dataframe_to_timezone(df, st.session_state)
 
-    for col in df.select_dtypes(include=["datetime"]).columns:
-        df[col] = df[col].astype(str).replace("NaT", "")
+            for col in df.select_dtypes(include=["datetime"]).columns:
+                df[col] = df[col].astype(str).replace("NaT", "")
 
     lst_show_columns = [
         "schema_name",

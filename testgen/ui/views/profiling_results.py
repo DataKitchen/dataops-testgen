@@ -100,7 +100,10 @@ class ProfilingResultsPage(Page):
             column_name = "%%"
 
         # Display main results grid
-        df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+        with st.container():
+            with st.spinner("Loading data ..."):
+                df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+                
         show_columns = [
             "schema_name",
             "table_name",
