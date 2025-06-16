@@ -327,18 +327,29 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
     with spinner_container:
         with st.spinner("Saving tags"):
             if tables:
-                db.execute_sql(f"""
+                db.execute_sql_raw(f"""
+                WITH selected as (
+                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in tables ])}]) AS table_id
+                )
                 UPDATE {schema}.data_table_chars
                 SET {', '.join(set_attributes)}
-                WHERE table_id IN ({", ".join([ f"'{item}'" for item in tables ])});
+                FROM {schema}.data_table_chars dtc
+                    INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
+                WHERE dtc.table_id = data_table_chars.table_id;
                 """)
+                
 
             if columns:
-                db.execute_sql(f"""
+                db.execute_sql_raw(f"""
+                WITH selected as (
+                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in columns ])}]) AS column_id
+                )
                 UPDATE {schema}.data_column_chars
                 SET {', '.join(set_attributes)}
-                WHERE column_id IN ({", ".join([ f"'{item}'" for item in columns ])});
-                """)
+                FROM {schema}.data_column_chars dcc
+                    INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
+                WHERE dcc.column_id = data_column_chars.column_id;
+                """) 
 
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
         func.clear()

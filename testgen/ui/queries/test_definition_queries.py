@@ -4,14 +4,17 @@ import testgen.ui.services.database_service as db
 
 
 def update_attribute(schema, test_definition_ids, attribute, value):
-    sql = f"""UPDATE {schema}.test_definitions
-                SET
-                    {attribute}='{value}'
-                where
-                    id in ({"'" + "','".join(test_definition_ids) + "'"})
-                ;
-                """
-    db.execute_sql(sql)
+    sql = f"""
+    WITH selected as (
+        SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in test_definition_ids ])}]) AS id
+    )
+    UPDATE {schema}.test_definitions
+    SET {attribute}='{value}'
+    FROM {schema}.test_definitions td
+        INNER JOIN selected ON (td.id = selected.id::UUID)
+    WHERE td.id = test_definitions.id;
+    """
+    db.execute_sql_raw(sql)
     st.cache_data.clear()
 
 
@@ -260,17 +263,19 @@ def cascade_delete(schema, test_suite_ids):
 
 
 def move(schema, test_definitions, target_table_group, target_test_suite):
-    test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
     sql = f"""
-        UPDATE {schema}.test_definitions
-        SET 
-            table_groups_id = '{target_table_group}'::UUID,
-            test_suite_id = '{target_test_suite}'::UUID
-        WHERE 
-            id in ({",".join(test_definition_ids)})
-        ;
+    WITH selected as (
+        SELECT UNNEST(ARRAY [{", ".join([ f"'{td['id']}'" for td in test_definitions ])}]) AS id
+    )
+    UPDATE {schema}.test_definitions
+    SET 
+        table_groups_id = '{target_table_group}'::UUID,
+        test_suite_id = '{target_test_suite}'::UUID
+    FROM {schema}.test_definitions td
+        INNER JOIN selected ON (td.id = selected.id::UUID)
+    WHERE td.id = test_definitions.id;
     """
-    db.execute_sql(sql)
+    db.execute_sql_raw(sql)
     st.cache_data.clear()
 
 
