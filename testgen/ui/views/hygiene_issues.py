@@ -541,7 +541,7 @@ def source_data_dialog(selected_row):
             st.info(bad_data_msg)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-        df_bad.fillna("[NULL]", inplace=True)
+        df_bad.fillna("<null>", inplace=True)
         if len(df_bad) == 500:
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe

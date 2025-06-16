@@ -92,6 +92,7 @@ def get_preview_data(
             return pd.DataFrame()
         else:
             df.index = df.index + 1
+            df.fillna("<null>", inplace=True)
             return df
     else:
         return pd.DataFrame()
