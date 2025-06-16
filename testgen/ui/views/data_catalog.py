@@ -377,6 +377,7 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         column_chars.general_type,
         column_chars.functional_data_type,
         table_chars.record_ct,
+        profile_results.value_ct,
         column_chars.drop_date,
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
@@ -386,6 +387,11 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
     FROM {schema}.data_column_chars column_chars
         LEFT JOIN {schema}.data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
+        )
+        LEFT JOIN {schema}.profile_results ON (
+            column_chars.last_complete_profile_run_id = profile_results.profile_run_id
+            AND column_chars.table_name = profile_results.table_name
+            AND column_chars.column_name = profile_results.column_name
         )
     WHERE column_chars.table_groups_id = '{table_group_id}'
     ORDER BY table_name, ordinal_position;

@@ -45,8 +45,8 @@ const SortingSelector = (/** @type {Properties} */ props) => {
     );
 
     const directionIcons = {
-        ASC: `arrow_downward`,
-        DESC: `arrow_upward`,
+        ASC: `arrow_upward`,
+        DESC: `arrow_downward`,
     }
 
     const activeColumnItem = (colId) => {
