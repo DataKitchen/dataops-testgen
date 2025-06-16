@@ -157,10 +157,10 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
     data = pd.DataFrame(data)
 
     for key in ["column_type", "datatype_suggestion"]:
-        data[key] = data[key].apply(lambda val: val.lower())
+        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
-        data[key] = data[key].apply(lambda val: round(val, 2))
+        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
