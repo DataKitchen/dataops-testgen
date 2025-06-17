@@ -14,6 +14,7 @@ import { ExpanderToggle } from './components/expander_toggle.js';
 import { Link } from './components/link.js';
 import { Paginator } from './components/paginator.js';
 import { SortingSelector } from './components/sorting_selector.js';
+import { ColumnSelector } from './components/explorer_column_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
 import { DatabaseFlavorSelector } from './components/flavor_selector.js';
@@ -24,6 +25,7 @@ import { QualityDashboard } from './pages/quality_dashboard.js';
 import { ScoreDetails } from './pages/score_details.js';
 import { ScoreExplorer } from './pages/score_explorer.js';
 import { ColumnProfilingResults } from './data_profiling/column_profiling_results.js';
+import { ColumnProfilingHistory } from './data_profiling/column_profiling_history.js';
 import { ScheduleList } from './pages/schedule_list.js';
 
 let currentWindowVan = van;
@@ -43,12 +45,14 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
         column_profiling_results: ColumnProfilingResults,
+        column_profiling_history: ColumnProfilingHistory,
         project_dashboard: ProjectDashboard,
         test_suites: TestSuites,
         quality_dashboard: QualityDashboard,
         score_details: ScoreDetails,
         score_explorer: ScoreExplorer,
         schedule_list: ScheduleList,
+        column_selector: ColumnSelector,
     };
 
     if (Object.keys(componentById).includes(id)) {

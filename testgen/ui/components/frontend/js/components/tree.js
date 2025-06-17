@@ -6,6 +6,8 @@
  * @property {string?} classes
  * @property {string?} icon
  * @property {number?} iconSize
+ * @property {'red'?} iconColor
+ * @property {string?} iconTooltip
  * @property {TreeNode[]?} children
  * @property {number?} level
  * @property {boolean?} expanded
@@ -23,13 +25,16 @@
  * @property {string} id
  * @property {string} classes
  * @property {TreeNode[]} nodes
- * @property {string} selected
+ * @property {(string|string[])?} selected
  * @property {function(string)?} onSelect
  * @property {boolean?} multiSelect
  * @property {boolean?} multiSelectToggle
+ * @property {string?} multiSelectToggleLabel
  * @property {function(SelectedNode[] | null)?} onMultiSelect
- * @property {(function(TreeNode): boolean) | null} isNodeHidden
+ * @property {(function(TreeNode, string): boolean) | null} isNodeHidden
+ * @property {function()?} onApplySearchOptions
  * @property {(function(): boolean) | null} hasActiveFilters
+ * @property {function()?} onApplyFilters
  * @property {function()?} onResetFilters
  */
 import van from '../van.min.js';
@@ -40,11 +45,12 @@ import { Portal } from './portal.js';
 import { Icon } from './icon.js';
 import { Checkbox } from './checkbox.js';
 import { Toggle } from './toggle.js';
+import { withTooltip } from './tooltip.js';
 
 const { div, h3, span } = van.tags;
 const levelOffset = 14;
 
-const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) => {
+const Tree = (/** @type Properties */ props, /** @type any? */ searchOptionsContent, /** @type any? */ filtersContent) => {
     loadStylesheet('tree', stylesheet);
 
     // Use only initial prop value as default and maintain internal state
@@ -74,7 +80,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
         if (!multiSelect.val) {
             selectTree(treeNodes.val, false);
         }
-        props.onMultiSelect(multiSelect.val ? [] : null);
+        props.onMultiSelect?.(multiSelect.val ? getMultiSelection(treeNodes.val) : null);
     });
 
     return div(
@@ -82,124 +88,171 @@ const Tree = (/** @type Properties */ props, /** @type any? */ filtersContent) =
             id: props.id,
             class: () => `flex-column ${getValue(props.classes)}`,
         },
-        Toolbar(treeNodes, props, filtersContent),
-        props.multiSelectToggle
-            ? div(
-                { class: 'mt-1 mb-2 ml-1 text-secondary' },
-                Toggle({
-                    label: 'Select multiple',
-                    checked: multiSelect,
-                    onChange: (/** @type boolean */ checked) => multiSelect.val = checked,
-                }),
-            )
-            : null,
+        Toolbar(treeNodes, multiSelect, props, searchOptionsContent, filtersContent),
         div(
             { class: 'tg-tree' },
             () => div(
                 {
                     class: 'tg-tree--nodes',
-                    onclick: van.derive(() => multiSelect.val ? () => props.onMultiSelect(getMultiSelection(treeNodes.val)) : null),
+                    onclick: van.derive(() => multiSelect.val ? () => props.onMultiSelect?.(getMultiSelection(treeNodes.val)) : null),
                 },
                 treeNodes.val.map(node => TreeNode(node, selected, multiSelect.val)),
             ),
         ),
         () => noMatches.val
-            ? span({ class: 'tg-tree--empty mt-7 mb-7 text-secondary' }, 'No matching itens found')
+            ? span({ class: 'tg-tree--empty mt-7 mb-7 text-secondary' }, 'No matching items found')
             : '',
     );
 };
 
 const Toolbar = (
     /** @type { val: TreeNode[] } */ nodes,
+    /** @type object */ multiSelect,
     /** @type Properties */ props,
+    /** @type any? */ searchOptionsContent,
     /** @type any? */ filtersContent,
 ) => {
     const search = van.state('');
+    const searchOptionsDomId = `tree-search-options-${getRandomId()}`;
+    const searchOptionsOpened = van.state(false);
+
     const filterDomId = `tree-filters-${getRandomId()}`;
     const filtersOpened = van.state(false);
     const filtersActive = van.state(false);
-    const isNodeHidden = (/** @type TreeNode */ node) => !node.label.includes(search.val) || props.isNodeHidden?.(node);
+    const isNodeHidden = (/** @type TreeNode */ node) => props.isNodeHidden
+        ? props.isNodeHidden?.(node, search.val)
+        : !node.label.toLowerCase().includes(search.val.toLowerCase());
 
     return div(
-        { class: 'flex-row fx-gap-1 tg-tree--actions' },
-        Input({
-            icon: 'search',
-            clearable: true,
-            onChange: (/** @type string */ value) => {
-                search.val = value;
-                filterTree(nodes.val, isNodeHidden);
-                if (value) {
-                    expandOrCollapseTree(nodes.val, true);
-                }
-            },
-        }),
-        filtersContent ? [
-            div(
-                { class: () => `tg-tree--filter-button ${filtersActive.val ? 'active' : ''}` },
-                Button({
-                    id: filterDomId,
-                    type: 'icon',
-                    icon: 'filter_list',
-                    style: 'width: 24px; height: 24px; padding: 4px;',
-                    tooltip: () => filtersActive.val ? 'Filters active' : 'Filters',
-                    tooltipPosition: 'bottom',
-                    onclick: () => filtersOpened.val = !filtersOpened.val,
-                }),
-            ),
-            Portal(
-                { target: filterDomId, opened: filtersOpened },
-                () => div(
-                    { class: 'tg-tree--filters' },
-                    h3(
-                        { class: 'flex-row fx-justify-space-between'},
-                        'Filters',
-                        Button({
-                            type: 'icon',
-                            icon: 'close',
-                            iconSize: 22,
-                            onclick: () => filtersOpened.val = false,
-                        }),
-                    ),
-                    filtersContent,
-                    div(
-                        { class: 'flex-row fx-justify-space-between mt-4' },
-                        Button({
-                            label: 'Reset filters',
-                            width: '110px',
-                            disabled: () => !props.hasActiveFilters(),
-                            onclick: props.onResetFilters,
-                        }),
+        { class: 'tg-tree--actions' },
+        div(
+            { class: 'flex-row fx-gap-1 mb-1' },
+            Input({
+                icon: 'search',
+                clearable: true,
+                onChange: (/** @type string */ value) => {
+                    search.val = value;
+                    filterTree(nodes.val, isNodeHidden);
+                    if (value) {
+                        expandOrCollapseTree(nodes.val, true);
+                    }
+                },
+            }),
+            searchOptionsContent ? [
+                div(
+                    { class: 'tg-tree--search-options' },
+                    Button({
+                        id: searchOptionsDomId,
+                        type: 'icon',
+                        icon: 'settings',
+                        style: 'width: 24px; height: 24px; padding: 4px;',
+                        tooltip: 'Search options',
+                        tooltipPosition: 'bottom',
+                        onclick: () => searchOptionsOpened.val = !searchOptionsOpened.val,
+                    }),
+                ),
+                Portal(
+                    { target: searchOptionsDomId, opened: searchOptionsOpened },
+                    () => div(
+                        { class: 'tg-tree--portal' },
+                        searchOptionsContent,
                         Button({
                             type: 'stroked',
                             color: 'primary',
                             label: 'Apply',
-                            width: '80px',
+                            style: 'width: 80px; margin-top: 12px; margin-left: auto;',
                             onclick: () => {
+                                props.onApplySearchOptions?.();
                                 filterTree(nodes.val, isNodeHidden);
-                                filtersActive.val = props.hasActiveFilters();
-                                filtersOpened.val = false;
+                                searchOptionsOpened.val = false;
                             },
                         }),
                     ),
+                )
+            ] : null,
+            Button({
+                type: 'icon',
+                icon: 'expand_all',
+                style: 'width: 24px; height: 24px; padding: 4px;',
+                tooltip: 'Expand All',
+                tooltipPosition: 'bottom',
+                onclick: () => expandOrCollapseTree(nodes.val, true),
+            }),
+            Button({
+                type: 'icon',
+                icon: 'collapse_all',
+                style: 'width: 24px; height: 24px; padding: 4px;',
+                tooltip: 'Collapse All',
+                tooltipPosition: 'bottom',
+                onclick: () => expandOrCollapseTree(nodes.val, false),
+            }),
+        ),
+        div(
+            { class: 'flex-row fx-justify-space-between mb-1' },
+            div(
+                { class: 'text-secondary' },
+                props.multiSelectToggle
+                    ? Toggle({
+                        label: props.multiSelectToggleLabel ?? 'Select multiple',
+                        checked: multiSelect,
+                        onChange: (/** @type boolean */ checked) => multiSelect.val = checked,
+                    })
+                    : null,
+            ),
+            filtersContent ? [
+                div(
+                    { class: () => `tg-tree--filter-button ${filtersActive.val ? 'active' : ''}` },
+                    Button({
+                        id: filterDomId,
+                        type: 'basic',
+                        label: 'Filters',
+                        icon: 'filter_list',
+                        style: 'height: 24px; padding: 4px;',
+                        tooltip: () => filtersActive.val ? 'Filters active' : null,
+                        tooltipPosition: 'bottom',
+                        onclick: () => filtersOpened.val = !filtersOpened.val,
+                    }),
                 ),
-            )
-        ] : null,
-        Button({
-            type: 'icon',
-            icon: 'expand_all',
-            style: 'width: 24px; height: 24px; padding: 4px;',
-            tooltip: 'Expand All',
-            tooltipPosition: 'bottom',
-            onclick: () => expandOrCollapseTree(nodes.val, true),
-        }),
-        Button({
-            type: 'icon',
-            icon: 'collapse_all',
-            style: 'width: 24px; height: 24px; padding: 4px;',
-            tooltip: 'Collapse All',
-            tooltipPosition: 'bottom',
-            onclick: () => expandOrCollapseTree(nodes.val, false),
-        }),
+                Portal(
+                    { target: filterDomId, opened: filtersOpened },
+                    () => div(
+                        { class: 'tg-tree--portal' },
+                        h3(
+                            { class: 'flex-row fx-justify-space-between'},
+                            'Filters',
+                            Button({
+                                type: 'icon',
+                                icon: 'close',
+                                iconSize: 22,
+                                onclick: () => filtersOpened.val = false,
+                            }),
+                        ),
+                        filtersContent,
+                        div(
+                            { class: 'flex-row fx-justify-space-between mt-4' },
+                            Button({
+                                label: 'Reset filters',
+                                width: '110px',
+                                disabled: () => !props.hasActiveFilters(),
+                                onclick: props.onResetFilters,
+                            }),
+                            Button({
+                                type: 'stroked',
+                                color: 'primary',
+                                label: 'Apply',
+                                width: '80px',
+                                onclick: () => {
+                                    props.onApplyFilters?.();
+                                    filterTree(nodes.val, isNodeHidden);
+                                    filtersActive.val = props.hasActiveFilters();
+                                    filtersOpened.val = false;
+                                },
+                            }),
+                        ),
+                    ),
+                )
+            ] : null,
+        )
     );
 };
 
@@ -225,8 +278,8 @@ const TreeNode = (
                         node.selected.val = node.children.every(child => child.selected.val);
                     } else {
                         node.selected.val = !node.selected.val;
-                        event.fromChild = true;
                     }
+                    event.fromChild = true;
                 }
                 : null,
         },
@@ -252,12 +305,18 @@ const TreeNode = (
                 ? [
                     Checkbox({
                         checked: () => node.selected.val,
-                        indeterminate: hasChildren ? () => !node.selected.val && node.children.some(({ selected }) => selected.val) : false,
+                        indeterminate: hasChildren ? () => isIndeterminate(node) : false,
                     }),
                     span({ class: 'mr-1' }),
                 ]
                 : null,
-            node.icon ? Icon({ size: 24, classes: 'tg-tree--row-icon' }, node.icon) : null,
+            () => {
+                if (node.icon) {
+                    const icon = Icon({ size: node.iconSize, classes: `tg-tree--row-icon ${node.iconColor}` }, node.icon);
+                    return node.iconTooltip ? withTooltip(icon, { text: node.iconTooltip, position: 'right' }) : icon;
+                }
+                return null;
+            },
             node.label,
         ),
         hasChildren ? div(
@@ -283,7 +342,7 @@ const initTreeState = (
         }
         node.expanded = van.state(expanded);
         node.hidden = van.state(false);
-        node.selected = van.state(false);
+        node.selected = van.state(node.selected ?? false);
         treeExpanded = treeExpanded || expanded;
     });
     return treeExpanded;
@@ -341,7 +400,8 @@ const getMultiSelection = (nodes) => {
             if (selectedChildren.length) {
                 selected.push({
                     id: node.id,
-                    all: selectedChildren.length === node.children.length,
+                    all: selectedChildren.length === node.children.length
+                        && (selectedChildren[0]?.children === undefined || selectedChildren.every(child => child.all)),
                     children: selectedChildren,
                 });
             }
@@ -351,6 +411,35 @@ const getMultiSelection = (nodes) => {
     });
     return selected;
 };
+
+/**
+ * 
+ * @param {TreeNode} node
+ * @returns {boolean}
+ */
+const isIndeterminate = (node) => {
+    return !node.selected.val && isAnyDescendantSelected(node);
+};
+
+
+/**
+ * 
+ * @param {TreeNode} node
+ * @returns {boolean}
+ */
+const isAnyDescendantSelected = (node) => {
+    if ((node.children ?? []).length <= 0) {
+        return false;
+    }
+
+    for (const child of node.children) {
+        if (getValue(child.selected) || isAnyDescendantSelected(child)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
@@ -364,9 +453,10 @@ stylesheet.replace(`
 
 .tg-tree--actions {
     margin: 4px;
+    border-bottom: 1px solid var(--border-color);
 }
 
-.tg-tree--actions > label {
+.tg-tree--actions > div > label {
     flex: auto;
 }
 
@@ -381,7 +471,7 @@ stylesheet.replace(`
     border-color: var(--primary-color);
 }
 
-.tg-tree--filters {
+.tg-tree--portal {
     border-radius: 8px;
     background: var(--dk-card-background);
     box-shadow: var(--portal-box-shadow);
@@ -390,7 +480,7 @@ stylesheet.replace(`
     z-index: 99;
 }
 
-.tg-tree--filters > h3 {
+.tg-tree--portal > h3 {
     margin: 0 0 12px;
     font-size: 18px;
     font-weight: 500;
@@ -425,6 +515,10 @@ stylesheet.replace(`
     width: 24px;
     color: #B0BEC5;
     text-align: center;
+}
+
+.tg-tree--row-icon.red {
+    color: var(--red);
 }
 `);
 

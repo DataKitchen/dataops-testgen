@@ -105,6 +105,9 @@ function getParents(/** @type HTMLElement*/ element) {
 }
 
 function friendlyPercent(/** @type number */ value) {
+    if (Number.isNaN(value)) {
+        return 0;
+    }
     const rounded = Math.round(value);
     if (rounded === 0 && value > 0) {
         return '< 0';
@@ -177,4 +180,11 @@ function afterMount(/** @ype Function */ callback) {
     trigger.val = true;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent };
+function slugify(/** @type string */ str) {
+    return str
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify };

@@ -53,6 +53,12 @@ def get_summary_by_code(project_code: str) -> pd.Series:
             FROM {schema}.test_runs
                 LEFT JOIN {schema}.test_suites ON test_runs.test_suite_id = test_suites.id
             WHERE test_suites.project_code = '{project_code}'
-        ) AS test_runs_ct;
+        ) AS test_runs_ct,
+        (
+            SELECT COALESCE(observability_api_key, '') <> ''
+                AND COALESCE(observability_api_url, '') <> ''
+            FROM {schema}.projects
+            WHERE project_code = '{project_code}'
+        ) AS can_export_to_observability;
     """
     return db.retrieve_data(sql).iloc[0]

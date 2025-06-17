@@ -8,6 +8,7 @@
  * @type {object}
  * @property {FrequencyItem[]} items
  * @property {number} total
+ * @property {number} nullCount
  * @property {string} title
  * @property {string?} color
  */
@@ -17,11 +18,14 @@ import { colorMap } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const defaultColor = 'teal';
+const otherColor = colorMap['emptyTeal'];
+const nullColor = colorMap['emptyLight'];
 
 const FrequencyBars = (/** @type Properties */ props) => {
     loadStylesheet('frequencyBars', stylesheet);
 
     const total = van.derive(() => getValue(props.total));
+    const nullCount = van.derive(() => getValue(props.nullCount));
     const color = van.derive(() => {
         const colorValue = getValue(props.color) || defaultColor;
         return colorMap[colorValue] || colorValue;
@@ -41,7 +45,16 @@ const FrequencyBars = (/** @type Properties */ props) => {
                 { class: 'flex-row fx-gap-2' },
                 div(
                     { class: 'tg-frequency-bars' },
-                    span({ class: 'tg-frequency-bars--empty' }),
+                    span({
+                        class: 'tg-frequency-bars--fill',
+                        style: `width: 100%; background-color: ${nullColor};`,
+                    }),
+                    span({
+                        class: 'tg-frequency-bars--fill',
+                        style: () => `width: ${(total.val - nullCount.val) * 100 / total.val}%;
+                            ${(total.val - nullCount.val) ? 'min-width: 1px;' : ''}
+                            background-color: ${otherColor};`,
+                    }),
                     span({
                         class: 'tg-frequency-bars--fill',
                         style: () => `width: ${count * 100 / total.val}%;
@@ -59,6 +72,15 @@ const FrequencyBars = (/** @type Properties */ props) => {
                 div(value),
             );
         }),
+        div(
+            { class: 'tg-frequency-bars--legend flex-row fx-flex-wrap text-caption mt-1' },
+            span({ class: 'dot', style: `color: ${color.val};` }),
+            'Value',
+            span({ class: 'dot', style: `color: ${otherColor};` }),
+            'Other',
+            span({ class: 'dot', style: `color: ${nullColor};` }),
+            'Null',
+        ),
     );
 };
 
@@ -71,14 +93,6 @@ stylesheet.replace(`
     position: relative;
 }
 
-.tg-frequency-bars--empty {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    border-radius: 4px;
-    background-color: ${colorMap['emptyLight']}
-}
-
 .tg-frequency-bars--fill {
     position: absolute;
     border-radius: 4px;
@@ -88,6 +102,19 @@ stylesheet.replace(`
 .tg-frequency-bars--count {
     flex-shrink: 0;
     text-align: right;
+}
+
+.tg-frequency-bars--legend {
+    font-style: italic;
+}
+
+.tg-frequency-bars--legend span {
+    margin-right: 2px;
+    font-size: 4px;
+}
+
+.tg-frequency-bars--legend span:not(:first-child) {
+    margin-left: 8px;
 }
 `);
 

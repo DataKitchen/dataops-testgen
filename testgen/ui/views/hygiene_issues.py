@@ -13,7 +13,13 @@ from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_querie
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
+from testgen.ui.components.widgets.download_dialog import (
+    FILE_DATA_TYPE,
+    PROGRESS_UPDATE_TYPE,
+    download_dialog,
+    get_excel_file_data,
+    zip_multi_file_data,
+)
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.services import project_service, user_session_service
@@ -124,15 +130,17 @@ class HygieneIssuesPage(Page):
             str_help = "Toggle on to perform actions on multiple Hygiene Issues"
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
+        with st.container():
+            with st.spinner("Loading data ..."):
+                # Get hygiene issue list
+                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
 
-        # Get hygiene issue list
-        df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
+                # Retrieve disposition action (cache refreshed)
+                df_action = get_anomaly_disposition(run_id)
 
-        # Retrieve disposition action (cache refreshed)
-        df_action = get_anomaly_disposition(run_id)
-        # Update action from disposition df
-        action_map = df_action.set_index("id")["action"].to_dict()
-        df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
+                # Update action from disposition df
+                action_map = df_action.set_index("id")["action"].to_dict()
+                df_pa["action"] = df_pa["id"].map(action_map).fillna(df_pa["action"])
 
         if not df_pa.empty:
             summaries = get_profiling_anomaly_summary(run_id)
@@ -178,21 +186,12 @@ class HygieneIssuesPage(Page):
             )
 
             with export_button_column:
-                lst_export_columns = [
-                    "schema_name",
-                    "table_name",
-                    "column_name",
-                    "anomaly_name",
-                    "issue_likelihood",
-                    "anomaly_description",
-                    "action",
-                    "detail",
-                    "suggested_action",
-                ]
-                lst_wrap_columns = ["anomaly_description", "suggested_action"]
-                fm.render_excel_export(
-                    df_pa, lst_export_columns, "Hygiene Screen", "{TIMESTAMP}", lst_wrap_columns
-                )
+                if st.button(label=":material/download: Export", help="Download filtered hygiene issues to Excel"):
+                    download_dialog(
+                        dialog_title="Download Excel Report",
+                        file_content_func=get_excel_report_data,
+                        args=(df_pa, run_df["table_groups_name"], run_date),
+                    )
 
             if selected:
                 # Always show details for last selected row
@@ -327,7 +326,7 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
     st.cache_data.clear()
 
 
-@st.cache_data(show_spinner="False")
+@st.cache_data(show_spinner=False)
 def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
@@ -339,7 +338,7 @@ def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     return db.retrieve_data(sql)
 
 
-@st.cache_data(show_spinner="Retrieving Data")
+@st.cache_data(show_spinner=False)
 def get_profiling_anomalies(
     profile_run_id: str,
     likelihood: str | None,
@@ -384,7 +383,21 @@ def get_profiling_anomalies(
                    END AS likelihood_order,
                    t.anomaly_description, r.detail, t.suggested_action,
                    r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-                   tg.table_groups_name
+                   tg.table_groups_name,
+
+                   -- These are used in the PDF report
+                   dcc.functional_data_type,
+                   dcc.description as column_description,
+                   COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+                   COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+                   COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+                   COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+                   COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+                   COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+                   COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+                   COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
+                   COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+
               FROM {schema}.profile_anomaly_results r
             INNER JOIN {schema}.profile_anomaly_types t
                ON r.anomaly_id = t.id
@@ -392,6 +405,13 @@ def get_profiling_anomalies(
                 ON r.profile_run_id = p.id
             INNER JOIN {schema}.table_groups tg
                 ON r.table_groups_id = tg.id
+            LEFT JOIN {schema}.data_column_chars dcc
+               ON (tg.id = dcc.table_groups_id
+              AND  r.schema_name = dcc.schema_name
+              AND  r.table_name = dcc.table_name
+              AND  r.column_name = dcc.column_name)
+            LEFT JOIN {schema}.data_table_chars dtc
+               ON dcc.table_id = dtc.table_id
              WHERE r.profile_run_id = '{profile_run_id}'
                {criteria}
             {order_by}
@@ -405,7 +425,7 @@ def get_profiling_anomalies(
     return df
 
 
-@st.cache_data(show_spinner="Retrieving Status")
+@st.cache_data(show_spinner=False)
 def get_anomaly_disposition(str_profile_run_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
@@ -468,6 +488,32 @@ def get_profiling_anomaly_summary(str_profile_run_id):
     ]
 
 
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    data: pd.DataFrame,
+    table_group: str,
+    run_date: str,
+) -> FILE_DATA_TYPE:
+    columns = {
+        "schema_name": {"header": "Schema"},
+        "table_name": {"header": "Table"},
+        "column_name": {"header": "Column"},
+        "anomaly_name": {"header": "Issue name"},
+        "issue_likelihood": {"header": "Likelihood"},
+        "anomaly_description": {"header": "Description", "wrap": True},
+        "action": {},
+        "detail": {},
+        "suggested_action": {"wrap": True},
+    }
+    return get_excel_file_data(
+        data,
+        "Hygiene Issues",
+        details={"Table group": table_group, "Profiling run date": run_date},
+        columns=columns,
+        update_progress=update_progress,
+    )
+
+
 @st.cache_data(show_spinner=False)
 def get_source_data(hi_data):
     return get_source_data_uncached(hi_data)
@@ -495,7 +541,9 @@ def source_data_dialog(selected_row):
             st.info(bad_data_msg)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
-        df_bad.fillna("[NULL]", inplace=True)
+        df_bad.fillna("<null>", inplace=True)
+        if len(df_bad) == 500:
+            testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, height=500, width=1050, hide_index=True)
 

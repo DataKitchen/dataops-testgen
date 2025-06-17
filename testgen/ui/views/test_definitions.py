@@ -1,6 +1,7 @@
 import logging
 import time
 import typing
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
@@ -14,10 +15,16 @@ import testgen.ui.services.test_definition_service as test_definition_service
 import testgen.ui.services.test_suite_service as test_suite_service
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.download_dialog import (
+    FILE_DATA_TYPE,
+    PROGRESS_UPDATE_TYPE,
+    download_dialog,
+    get_excel_file_data,
+)
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
-from testgen.ui.session import session
+from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 
 LOG = logging.getLogger("testgen")
@@ -127,71 +134,48 @@ class TestDefinitionsPage(Page):
         if user_can_edit:
             if actions_column.button(
                 ":material/edit: Edit",
-                help="Edit the Test Definition",
                 disabled=not selected,
             ):
                 edit_test_dialog(project_code, table_group, test_suite, table_name, column_name, selected_test_def)
 
             if actions_column.button(
                 ":material/file_copy: Copy/Move",
-                help="Copy or Move the Test Definition",
                 disabled=not selected,
             ):
                 copy_move_test_dialog(project_code, table_group, test_suite, selected)
 
             if actions_column.button(
                 ":material/delete: Delete",
-                help="Delete the selected Test Definition",
                 disabled=not selected,
             ):
-                delete_test_dialog(selected_test_def)
+                delete_test_dialog(selected)
 
 
-@st.dialog("Delete Test")
-def delete_test_dialog(selected_test_definition):
-    test_definition_id = selected_test_definition["id"]
-    test_name_short = selected_test_definition["test_name_short"]
+@st.dialog("Delete Tests")
+def delete_test_dialog(test_definitions: list[dict]):
+    delete_clicked, set_delete_clicked = temp_value("test-definitions:confirm-delete-tests-val")
+    st.html(f"""
+        Are you sure you want to delete
+        {f"<b>{len(test_definitions)}</b> selected test definitions?"
+        if len(test_definitions) > 1
+        else "the selected test definition?"}
+    """)
 
-    can_be_deleted = test_definition_service.delete([test_definition_id], dry_run=True)
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Delete",
+            type_="flat",
+            color="warn",
+            key="test-definitions:confirm-delete-tests-btn",
+            on_click=lambda: set_delete_clicked(True),
+        )
 
-    fm.render_html_list(
-        selected_test_definition,
-        [
-            "id",
-            "project_code",
-            "schema_name",
-            "table_name",
-            "column_name",
-            "test_name_short",
-            "table_groups_id",
-            "test_suite",
-            "test_active_display",
-            "test_description",
-            "last_manual_update",
-        ],
-        "Test Definition Information",
-        int_data_width=700,
-    )
-
-    with st.form("Delete Test Definition", clear_on_submit=True, border=False):
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            delete = st.form_submit_button(
-                "Delete",
-                disabled=not can_be_deleted,
-                type="primary",
-                use_container_width=True,
-            )
-
-        if delete:
-            test_definition_service.delete([test_definition_id])
-            success_message = f"Test Definition {test_name_short} has been deleted. "
-            st.success(success_message)
-            time.sleep(1)
-            st.rerun()
-
-    if not can_be_deleted:
-        st.markdown(":orange[This Test Definition cannot be deleted because it is being used in existing tests.]")
+    if delete_clicked():
+        test_definition_service.delete([ item["id"] for item in test_definitions ])
+        st.success("Test definitions have been deleted.")
+        time.sleep(1)
+        st.rerun()
 
 
 def show_test_form_by_id(test_definition_id):
@@ -768,13 +752,15 @@ def show_test_defs_grid(
     str_project_code, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
         str_table_groups_id
 ):
-    df = test_definition_service.get_test_definitions(
-        str_project_code, str_test_suite, str_table_name, str_column_name
-    )
-    date_service.accommodate_dataframe_to_timezone(df, st.session_state)
+    with st.container():
+        with st.spinner("Loading data ..."):
+            df = test_definition_service.get_test_definitions(
+                str_project_code, str_test_suite, str_table_name, str_column_name
+            )
+            date_service.accommodate_dataframe_to_timezone(df, st.session_state)
 
-    for col in df.select_dtypes(include=["datetime"]).columns:
-        df[col] = df[col].astype(str).replace("NaT", "")
+            for col in df.select_dtypes(include=["datetime"]).columns:
+                df[col] = df[col].astype(str).replace("NaT", "")
 
     lst_show_columns = [
         "schema_name",
@@ -814,43 +800,12 @@ def show_test_defs_grid(
     )
 
     with export_container:
-        lst_export_columns = [
-            "schema_name",
-            "table_name",
-            "column_name",
-            "test_name_short",
-            "final_test_description",
-            "threshold_value",
-            "export_uom",
-            "test_active_display",
-            "lock_refresh_display",
-            "urgency",
-            "profiling_as_of_date",
-            "last_manual_update",
-        ]
-        lst_wrap_columns = ["final_test_description"]
-        lst_export_headers = [
-            "Schema",
-            "Table Name",
-            "Column/Test Focus",
-            "Test Type",
-            "Description",
-            "Test Threshold",
-            "Unit of Measure",
-            "Active",
-            "Locked",
-            "Urgency",
-            "From Profiling As-Of",
-            "Last Manual Update",
-        ]
-        fm.render_excel_export(
-            df,
-            lst_export_columns,
-            f"Test Definitions for Test Suite {str_test_suite}",
-            "{TIMESTAMP}",
-            lst_wrap_columns,
-            lst_export_headers,
-        )
+        if st.button(label=":material/download: Export", help="Download filtered test definitions to Excel"):
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(df, str_test_suite),
+            )
 
     if dct_selected_row:
         st.html("</p>&nbsp;</br>")
@@ -915,6 +870,40 @@ def show_test_defs_grid(
             st.write(generate_test_defs_help(row_selected["test_type"]))
 
     return dct_selected_row
+
+
+def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, data: pd.DataFrame, test_suite: str) -> FILE_DATA_TYPE:
+    data = data.copy()
+
+    for key in ["test_active_display", "lock_refresh_display"]:
+        data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
+
+    for key in ["profiling_as_of_date", "last_manual_update"]:
+        data[key] = data[key].apply(
+            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
+        )
+
+    columns = {
+        "schema_name": {"header": "Schema"},
+        "table_name": {"header": "Table"},
+        "column_name": {"header": "Column/Focus"},
+        "test_name_short": {"header": "Test type"},
+        "final_test_description": {"header": "Description", "wrap": True},
+        "threshold_value": {},
+        "export_uom": {"header": "Unit of measure"},
+        "test_active_display": {"header": "Active"},
+        "lock_refresh_display": {"header": "Locked"},
+        "urgency": {"header": "Severity"},
+        "profiling_as_of_date": {"header": "From profiling as-of (UTC)"},
+        "last_manual_update": {"header": "Last manual update (UTC)"},
+    }
+    return get_excel_file_data(
+        data,
+        "Test Definitions",
+        details={"Test suite": test_suite},
+        columns=columns,
+        update_progress=update_progress,
+    )
 
 
 def generate_test_defs_help(str_test_type):

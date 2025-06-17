@@ -93,7 +93,7 @@ def get_run_by_id(profile_run_id: str) -> pd.Series:
         return pd.Series()
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_profiling_results(profiling_run_id: str, table_name: str, column_name: str, sorting_columns = None):
     order_by = ""
     if sorting_columns is None:
@@ -129,12 +129,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str, column_name: s
             WHERE profile_run_id = profile_results.profile_run_id
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
-        ) THEN 'Yes' END AS hygiene_issues,
-        distinct_value_hash,
-        fractional_sum,
-        date_days_present,
-        date_weeks_present,
-        date_months_present
+        ) THEN 'Yes' END AS hygiene_issues
     FROM {schema}.profile_results
     WHERE profile_run_id = '{profiling_run_id}'
         AND table_name ILIKE '{table_name}'
@@ -144,8 +139,8 @@ def get_profiling_results(profiling_run_id: str, table_name: str, column_name: s
     return db.retrieve_data(query)
 
 
-@st.cache_data(show_spinner="Loading data ...")
-def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
+@st.cache_data(show_spinner=False)
+def get_table_by_id(table_id: str) -> dict | None:
     if not is_uuid4(table_id):
         return None
 
@@ -163,6 +158,7 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         table_chars.column_ct,
         data_point_ct,
         add_date,
+        last_refresh_date,
         drop_date,
         -- Table Tags
         table_chars.description,
@@ -190,8 +186,7 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         LEFT JOIN {schema}.table_groups ON (
             table_chars.table_groups_id = table_groups.id
         )
-    WHERE table_id = '{table_id}'
-        AND table_chars.table_groups_id = '{table_group_id}';
+    WHERE table_id = '{table_id}';
     """
 
     results = db.retrieve_data(query)
@@ -200,23 +195,18 @@ def get_table_by_id(table_id: str, table_group_id: str) -> dict | None:
         return json.loads(results.to_json(orient="records"))[0]
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_column_by_id(
     column_id: str,
-    table_group_id: str,
     include_tags: bool = False,
     include_has_test_runs: bool = False,
     include_scores: bool = False,
 ) -> dict | None:
-
     if not is_uuid4(column_id):
         return None
 
-    condition = f"""
-        column_chars.column_id = '{column_id}'
-    AND column_chars.table_groups_id = '{table_group_id}'
-    """
-    return get_column_by_condition(condition, include_tags, include_has_test_runs, include_scores)
+    condition = f"column_chars.column_id = '{column_id}'"
+    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_scores)[0]
 
 
 @st.cache_data(show_spinner="Loading data ...")
@@ -234,10 +224,20 @@ def get_column_by_name(
     AND column_chars.table_name = '{table_name}'
     AND column_chars.table_groups_id = '{table_group_id}'
     """
-    return get_column_by_condition(condition, include_tags, include_has_test_runs, include_scores)
+    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_scores)[0]
 
 
-def get_column_by_condition(
+def get_columns_by_id(
+    column_ids: list[str],
+    include_tags: bool = False,
+    include_has_test_runs: bool = False,
+    include_scores: bool = False,
+) -> dict | None:
+    condition = f"column_chars.column_id IN ('{"', '".join([ col for col in column_ids if is_uuid4(col) ])}')"
+    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_scores)
+
+
+def get_columns_by_condition(
     filter_condition: str,
     include_tags: bool = False,
     include_has_test_runs: bool = False,
@@ -253,6 +253,7 @@ def get_column_by_condition(
         column_chars.table_name,
         column_chars.schema_name,
         column_chars.table_groups_id::VARCHAR AS table_group_id,
+        column_chars.ordinal_position,
         -- Characteristics
         column_chars.general_type,
         column_chars.column_type,
@@ -311,7 +312,7 @@ def get_column_by_condition(
     results = db.retrieve_data(query)
     if not results.empty:
         # to_json converts datetimes, NaN, etc, to JSON-safe values (Note: to_dict does not)
-        return json.loads(results.to_json(orient="records"))[0]
+        return json.loads(results.to_json(orient="records"))
 
 
 @st.cache_data(show_spinner=False)

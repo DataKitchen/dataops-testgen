@@ -65,7 +65,7 @@ def get_preview_data(
     if not connection_df.empty:
         use_top = connection_df["sql_flavor"] == "mssql"
         query = f"""
-        SELECT
+        SELECT DISTINCT
             {"TOP 100" if use_top else ""}
             {column_name or "*"}
         FROM {schema_name}.{table_name}
@@ -92,6 +92,7 @@ def get_preview_data(
             return pd.DataFrame()
         else:
             df.index = df.index + 1
+            df.fillna("<null>", inplace=True)
             return df
     else:
         return pd.DataFrame()

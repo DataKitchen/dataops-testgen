@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "4.0.12"
+version = "4.1.2"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -64,7 +64,6 @@ dependencies = [
     "snowflake-connector-python==3.13.1",
     "matplotlib==3.9.2",
     "scipy==1.14.1",
-    "tornado==6.4.2",
     "jinja2==3.1.6",
 ]
 

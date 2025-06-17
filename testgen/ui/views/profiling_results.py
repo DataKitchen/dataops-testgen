@@ -1,6 +1,8 @@
 import json
 import typing
+from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
@@ -8,6 +10,12 @@ import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.ui.components import widgets as testgen
+from testgen.ui.components.widgets.download_dialog import (
+    FILE_DATA_TYPE,
+    PROGRESS_UPDATE_TYPE,
+    download_dialog,
+    get_excel_file_data,
+)
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
@@ -92,7 +100,10 @@ class ProfilingResultsPage(Page):
             column_name = "%%"
 
         # Display main results grid
-        df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+        with st.container():
+            with st.spinner("Loading data ..."):
+                df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+                
         show_columns = [
             "schema_name",
             "table_name",
@@ -116,7 +127,12 @@ class ProfilingResultsPage(Page):
 
         with export_button_column:
             testgen.flex_row_end()
-            render_export_button(df)
+            if st.button(label=":material/download: Export", help="Download filtered profiling results to Excel"):
+                download_dialog(
+                    dialog_title="Download Excel Report",
+                    file_content_func=get_excel_report_data,
+                    args=(df, run_df["table_groups_name"], run_date),
+                )
 
         # Display profiling for selected row
         if not selected_row:
@@ -138,75 +154,102 @@ class ProfilingResultsPage(Page):
             )
 
 
-def render_export_button(df):
-    export_columns = [
-        "schema_name",
-        "table_name",
-        "column_name",
-        "position",
-        "hygiene_issues",
-        # Characteristics
-        "general_type",
-        "column_type",
-        "semantic_table_type",
-        "semantic_data_type",
-        "datatype_suggestion",
-        # Value Counts
-        "record_ct",
-        "value_ct",
-        "distinct_value_ct",
-        "null_value_ct",
-        "zero_value_ct",
-        # Alpha
-        "zero_length_ct",
-        "filled_value_ct",
-        "includes_digit_ct",
-        "numeric_ct",
-        "date_ct",
-        "quoted_value_ct",
-        "lead_space_ct",
-        "embedded_space_ct",
-        "avg_embedded_spaces",
-        "min_length",
-        "max_length",
-        "avg_length",
-        "min_text",
-        "max_text",
-        "distinct_std_value_ct",
-        "distinct_pattern_ct",
-        "std_pattern_match",
-        "top_freq_values",
-        "top_patterns",
-        # Numeric
-        "min_value",
-        "min_value_over_0",
-        "max_value",
-        "avg_value",
-        "stdev_value",
-        "percentile_25",
-        "percentile_50",
-        "percentile_75",
-        # Date
-        "min_date",
-        "max_date",
-        "before_1yr_date_ct",
-        "before_5yr_date_ct",
-        "before_20yr_date_ct",
-        "within_1yr_date_ct",
-        "within_1mo_date_ct",
-        "future_date_ct",
-        # Boolean
-        "boolean_true_ct",
-        # Extra
-        "distinct_value_hash",
-        "fractional_sum",
-        "date_days_present",
-        "date_weeks_present",
-        "date_months_present",
-    ]
-    wrap_columns = ["top_freq_values", "top_patterns"]
-    caption = "{TIMESTAMP}"
-    fm.render_excel_export(df, export_columns, "Profiling Results", caption, wrap_columns)
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    data: pd.DataFrame,
+    table_group: str,
+    run_date: str,
+) -> FILE_DATA_TYPE:
+    data = data.copy()
+
+    for key in ["column_type", "datatype_suggestion"]:
+        data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
+
+    for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
+        data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
+
+    for key in ["min_date", "max_date"]:
+        data[key] = data[key].apply(
+            lambda val: datetime.strptime(val, "%Y-%m-%dT%H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if val != "NaT" else None
+        )
+
+    data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)
+
+    type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
+    data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
+
+    data["top_freq_values"] = data["top_freq_values"].apply(
+        lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
+        if val
+        else None
+    )
+    data["top_patterns"] = data["top_patterns"].apply(
+        lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
+        if val
+        else None
+    )
+
+    columns = {
+        "schema_name": {"header": "Schema"},
+        "table_name": {"header": "Table"},
+        "column_name": {"header": "Column"},
+        "position": {},
+        "general_type": {},
+        "column_type": {"header": "Data type"},
+        "datatype_suggestion": {"header": "Suggested data type"},
+        "semantic_data_type": {},
+        "record_ct": {"header": "Record count"},
+        "value_ct": {"header": "Value count"},
+        "distinct_value_ct": {"header": "Distinct values"},
+        "null_value_ct": {"header": "Null values"},
+        "zero_value_ct": {"header": "Zero values"},
+        "zero_length_ct": {"header": "Zero length"},
+        "filled_value_ct": {"header": "Dummy values"},
+        "mixed_case_ct": {"header": "Mixed case"},
+        "lower_case_ct": {"header": "Lower case"},
+        "non_alpha_ct": {"header": "Non-alpha"},
+        "includes_digit_ct": {"header": "Includes digits"},
+        "numeric_ct": {"header": "Numeric values"},
+        "date_ct": {"header": "Date values"},
+        "quoted_value_ct": {"header": "Quoted values"},
+        "lead_space_ct": {"header": "Leading spaces"},
+        "embedded_space_ct": {"header": "Embedded spaces"},
+        "avg_embedded_spaces": {"header": "Average embedded spaces"},
+        "min_length": {"header": "Minimum length"},
+        "max_length": {"header": "Maximum length"},
+        "avg_length": {"header": "Average length"},
+        "min_text": {"header": "Minimum text", "wrap": True},
+        "max_text": {"header": "Maximum text", "wrap": True},
+        "distinct_std_value_ct": {"header": "Distinct standard values"},
+        "distinct_pattern_ct": {"header": "Distinct patterns"},
+        "std_pattern_match": {"header": "Standard pattern match"},
+        "top_freq_values": {"header": "Frequent values", "wrap": True},
+        "top_patterns": {"header": "Frequent patterns", "wrap": True},
+        "min_value": {"header": "Minimum value"},
+        "min_value_over_0": {"header": "Minimum value > 0"},
+        "max_value": {"header": "Maximum value"},
+        "avg_value": {"header": "Average value"},
+        "stdev_value": {"header": "Standard deviation"},
+        "percentile_25": {"header": "25th percentile"},
+        "percentile_50": {"header": "Median value"},
+        "percentile_75": {"header": "75th percentile"},
+        "min_date": {"header": "Minimum date (UTC)"},
+        "max_date": {"header": "Maximum date (UTC)"},
+        "before_1yr_date_ct": {"header": "Before 1 year"},
+        "before_5yr_date_ct": {"header": "Before 5 years"},
+        "before_20yr_date_ct": {"header": "Before 20 years"},
+        "within_1yr_date_ct": {"header": "Within 1 year"},
+        "within_1mo_date_ct": {"header": "Within 1 month"},
+        "future_date_ct": {"header": "Future dates"},
+        "boolean_true_ct": {"header": "Boolean true values"},
+    }
+    return get_excel_file_data(
+        data,
+        "Profiling Results",
+        details={"Table group": table_group, "Profiling run date": run_date},
+        columns=columns,
+        update_progress=update_progress,
+    )
 
 
 def generate_create_script(df):
