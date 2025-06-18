@@ -1,10 +1,13 @@
 /**
+ * @import { FileValue } from './file_input.js';
+ * 
  * @typedef Flavor
  * @type {object}
  * @property {string} label
  * @property {string} value
  * @property {string} icon
  * @property {string} flavor
+ * @property {string} connection_string
  * 
  * @typedef ConnectionStatus
  * @type {object}
@@ -36,17 +39,22 @@
  * @property {boolean} dirty
  * @property {boolean} valid
  * 
+ * @typedef FieldsCache
+ * @type {object}
+ * @property {FileValue} privateKey
+ * 
  * @typedef Properties
  * @type {object}
  * @property {Connection} connection
  * @property {Array.<Flavor>} flavors
  * @property {boolean} disableFlavor
- * @property {(c: Connection, state: FormState) => void} onChange
+ * @property {FileValue?} cachedPrivateKeyFile
+ * @property {(c: Connection, state: FormState, cache?: FieldsCache) => void} onChange
  */
 import van from '../van.min.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
-import { getValue, emitEvent, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, isEqual } from '../utils.js';
+import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
 import { Checkbox } from './checkbox.js';
@@ -55,7 +63,8 @@ import { maxLength, minLength, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
 import { FileInput } from './file_input.js';
 
-const { div, hr, span } = van.tags;
+const { div, hr, i, span } = van.tags;
+const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
     redshift: '5439',
@@ -76,8 +85,6 @@ const defaultPorts = {
 const ConnectionForm = (props, saveButton) => {
     loadStylesheet('connectionform', stylesheet);
 
-    window.connectionFormConnection = props.connection;
-
     const connection = getValue(props.connection);
     const isEditMode = !!connection?.connection_id;
     const defaultPort = defaultPorts[connection?.sql_flavor];
@@ -97,27 +104,32 @@ const ConnectionForm = (props, saveButton) => {
     const privateKeyPhrase = van.state(connection?.private_key_passphrase);
     const httpPath = van.state(connection?.http_path);
 
+    const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
+    van.derive(() => {
+        const fileInputValue = privateKeyFile.val;
+        if (fileInputValue?.content) {
+            privateKey.val = fileInputValue.content.split(',')?.[1] ?? '';
+        }
+    });
+    const clearPrivateKeyPhrase = van.state(false);
+
     if (isEditMode) {
         connectionPassword.val = '';
         privateKey.val = '';
         privateKeyPhrase.val = '';
     }
 
-    const connectionUrl = connection?.url ?? '';
-    let connectionStringPrefix = van.state('');
-    let connectionStringSuffix = van.state(connectionUrl);
-    if (connectionUrl.includes('@')) {
-        const [prefixPart, sufixPart] = connectionUrl.split('@');
-        connectionStringPrefix = van.state(prefixPart);
-        connectionStringSuffix = van.state(sufixPart ?? '');
+    const flavor = getValue(props.flavors).find(f => f.value === connectionFlavor.val);
+    const originalURLTemplate = van.state(flavor.connection_string);
+    const [prefixPart, sufixPart] = originalURLTemplate.val.split('@');
+
+    const connectionStringPrefix = van.state(prefixPart);
+    const connectionStringSuffix = van.state(connection?.url ?? '');
+    if (!connectionStringSuffix.val) {
+        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.val, connectionPort.val, connectionDatabase.val);
     }
 
     const updatedConnection = van.derive(() => {
-        let privateKeyValue = privateKey.val ?? '';
-        if (privateKeyValue) {
-            privateKeyValue = privateKeyValue.content?.split(',')?.[1] ?? '';
-        }
-
         return {
             project_code: connection.project_code,
             connection_id: connection.connection_id,
@@ -134,8 +146,8 @@ const ConnectionForm = (props, saveButton) => {
             connect_by_url: connectByUrl.val ?? false,
             url: connectionStringSuffix.val,
             connect_by_key: connectByKey.val ?? false,
-            private_key: privateKeyValue,
-            private_key_passphrase: privateKeyPhrase.val ?? '',
+            private_key: privateKey.val ?? '',
+            private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : (privateKeyPhrase.val ?? ''),
             http_path: httpPath.val ?? '',
         };
     });
@@ -146,7 +158,7 @@ const ConnectionForm = (props, saveButton) => {
         const fieldsValidity = validityPerField.val;
         const isValid = Object.keys(fieldsValidity).length > 0 &&
             Object.values(fieldsValidity).every(v => v);
-        props.onChange?.(updatedConnection.val, { dirty: dirty.val, valid: isValid });
+        props.onChange?.(updatedConnection.val, { dirty: dirty.val, valid: isValid }, { privateKey: privateKeyFile.rawVal });
     });
 
     const setFieldValidity = (field, validity) => {
@@ -185,12 +197,13 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             connectByKey,
             connectionPassword,
-            privateKey,
+            privateKeyFile,
             privateKeyPhrase,
+            clearPrivateKeyPhrase,
             (value, state) => {
                 connectByKey.val = value.connect_by_key;
                 connectionPassword.val = value.password;
-                privateKey.val = value.private_key;
+                privateKeyFile.val = value.private_key;
                 privateKeyPhrase.val = value.private_key_passphrase;
                 setFieldValidity('key_pair_form', state.valid);
             },
@@ -223,6 +236,20 @@ const ConnectionForm = (props, saveButton) => {
         }
     });
 
+    van.derive(() => {
+        const connectionHost_ = connectionHost.val;
+        const connectionPort_ = connectionPort.val;
+        const connectionDatabase_ = connectionDatabase.val;
+        const connectionHttpPath_ = httpPath.val;
+        const urlTemplate = originalURLTemplate.val;
+
+        if (!connectByUrl.rawVal && urlTemplate.includes('@')) {
+            const [originalURLPrefix, originalURLSuffix] = urlTemplate.split('@');
+            connectionStringPrefix.val = originalURLPrefix;
+            connectionStringSuffix.val = formatURL(originalURLSuffix, connectionHost_, connectionPort_, connectionDatabase_, connectionHttpPath_);
+        }
+    });
+
     return div(
         { class: 'flex-column fx-gap-3 fx-align-stretch', style: 'overflow-y: auto;' },
         div(
@@ -237,7 +264,10 @@ const ConnectionForm = (props, saveButton) => {
                     height: 38,
                     help: 'Type of database server to connect to. This determines the database driver and SQL dialect that will be used by TestGen.',
                     testId: 'sql_flavor',
-                    onChange: (value) => connectionFlavor.val = value,
+                    onChange: (value) => {
+                        const flavor = getValue(props.flavors).find(f => f.value === value);
+                        originalURLTemplate.val = flavor.connection_string;
+                    },
                 }),
                 Input({
                     name: 'connection_name',
@@ -338,10 +368,6 @@ const ConnectionForm = (props, saveButton) => {
 
             if (!connectByUrl_) {
                 return '';
-            }
-
-            if (connectionStringPrefix.val === '') {
-                connectionStringPrefix.val = `${connectionFlavor.rawVal}://<username>:<password>`;
             }
 
             return div(
@@ -466,6 +492,7 @@ const KeyPairConnectionForm = (
     password,
     privateKey,
     privateKeyPhrase,
+    clearPrivateKeyPhrase,
     onValueChange,
     useSecretsPlaceholder,
 ) => {
@@ -512,16 +539,41 @@ const KeyPairConnectionForm = (
             if (connectByKey.val) {
                 return div(
                     { class: 'flex-column fx-gap-3' },
-                    Input({
-                        name: 'private_key_passphrase',
-                        label: 'Private Key Passphrase',
-                        value: privateKeyPhrase,
-                        height: 38,
-                        type: 'password',
-                        help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
-                        placeholder: (useSecretsPlaceholder && connection.private_key_passphrase) ? secretsPlaceholder : '',
-                        onChange: (value, state) => privateKeyPhraseFieldState.val = {value, valid: state.valid},
-                    }),
+                    div(
+                        { class: 'key-pair-passphrase-field'},
+                        Input({
+                            name: 'private_key_passphrase',
+                            label: 'Private Key Passphrase',
+                            value: privateKeyPhrase,
+                            height: 38,
+                            type: 'password',
+                            help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
+                            placeholder: () => (useSecretsPlaceholder && connection.private_key_passphrase && !clearPrivateKeyPhrase.val) ? secretsPlaceholder : '',
+                            onChange: (value, state) => {
+                                if (value) {
+                                    clearPrivateKeyPhrase.val = false;
+                                }
+                                privateKeyPhraseFieldState.val = {value, valid: state.valid};
+                            },
+                        }),
+                        () => {
+                            const hasPrivateKeyPhrase = connection.private_key_passphrase || privateKeyPhraseFieldState.val?.value;
+                            if (!hasPrivateKeyPhrase) {
+                                return '';
+                            }
+
+                            return i(
+                                {
+                                    class: 'material-symbols-rounded clickable text-secondary',
+                                    onclick: () => {
+                                        clearPrivateKeyPhrase.val = true;
+                                        privateKeyPhraseFieldState.val = {value: '', valid: true};
+                                    },
+                                },
+                                'clear',
+                            );
+                        },
+                    ),
                     FileInput({
                         name: 'private_key',
                         label: 'Upload private key (rsa_key.p8)',
@@ -548,8 +600,25 @@ const KeyPairConnectionForm = (
     );
 };
 
+function formatURL(url, host, port, database, httpPath) {
+    return url.replace('<host>', host)
+        .replace('<port>', port)
+        .replace('<db_name>', database)
+        .replace('<http_path>', httpPath);
+}
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.key-pair-passphrase-field {
+    position: relative;
+}
+
+.key-pair-passphrase-field > i {
+    position: absolute;
+    top: 26px;
+    right: 8px;
+}
+
 `);
 
 export { ConnectionForm };

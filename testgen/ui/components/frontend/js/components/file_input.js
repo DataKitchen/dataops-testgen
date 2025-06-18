@@ -118,7 +118,11 @@ const FileInput = (options) => {
                         event.preventDefault();
                         fileOver.val = true;
                     },
-                    ondragleave: () => fileOver.val = false,
+                    ondragleave: (event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                            fileOver.val = false;
+                        }
+                    },
                     ondragover: (event) => event.preventDefault(),
                     ondrop: (/** @type {DragEvent} */event) => {
                         event.preventDefault();

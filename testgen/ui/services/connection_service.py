@@ -190,25 +190,23 @@ def form_overwritten_connection_url(connection) -> str:
     return connection_string
 
 
-def get_connection_string_by_flavor(flavors: list[str]) -> str:
-    result = {}
-    for flavor in flavors:
-        db_type = get_db_type(flavor)
-        flavor_service = get_flavor_service(db_type)
-        flavor_service.init({
-            "flavor": flavor,
-            "user": "<username>",
-            "host": "<host>",
-            "port": "<port>",
-            "dbname": "<db_name>",
-            "url": None,
-            "connect_by_url": None,
-            "connect_by_key": False,
-            "private_key": None,
-            "private_key_passphrase": "",
-            "dbschema": "",
-        })
-        result[flavor] = flavor_service.get_connection_string(
-            "<password>"
-        ).replace("%3E", ">").replace("%3C", "<")
-    return result
+def get_connection_string(flavor: str) -> str:
+    db_type = get_db_type(flavor)
+    flavor_service = get_flavor_service(db_type)
+    flavor_service.init({
+        "flavor": flavor,
+        "user": "<username>",
+        "host": "<host>",
+        "port": "<port>",
+        "dbname": "<db_name>",
+        "url": None,
+        "connect_by_url": None,
+        "connect_by_key": False,
+        "private_key": None,
+        "private_key_passphrase": "",
+        "dbschema": "",
+        "http_path": "<http_path>",
+    })
+    return flavor_service.get_connection_string(
+        "<password>"
+    ).replace("%3E", ">").replace("%3C", "<")

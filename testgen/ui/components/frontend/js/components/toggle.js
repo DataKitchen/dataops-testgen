@@ -2,6 +2,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string} label
+ * @property {string?} name
  * @property {boolean?} checked
  * @property {function(boolean)?} onChange
  */
@@ -14,11 +15,12 @@ const Toggle = (/** @type Properties */ props) => {
     loadStylesheet('toggle', stylesheet);
 
     return label(
-        { class: 'flex-row fx-gap-2 clickable' },
+        { class: 'flex-row fx-gap-2 clickable', 'data-testid': props.name ?? '' },
         input({
             type: 'checkbox',
             role: 'switch',
             class: 'tg-toggle--input clickable',
+            name: props.name ?? '',
             checked: props.checked,
             onchange: van.derive(() => {
                 const onChange = props.onChange?.val ?? props.onChange;

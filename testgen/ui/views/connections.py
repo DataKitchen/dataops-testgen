@@ -4,7 +4,12 @@ import typing
 from dataclasses import asdict, dataclass, field
 
 import streamlit as st
-from sqlalchemy.exc import DatabaseError
+
+try:
+    from pyodbc import Error as PyODBCError
+except ImportError:
+    PyODBCError = None
+from sqlalchemy.exc import DatabaseError, DBAPIError
 
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
@@ -20,6 +25,7 @@ from testgen.utils import format_field
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Connection"
+CLEAR_SENTINEL = "<clear>"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -28,6 +34,7 @@ class ConnectionFlavor:
     label: str
     icon: str
     flavor: str
+    connection_string: str
 
 
 class ConnectionsPage(Page):
@@ -50,42 +57,49 @@ class ConnectionsPage(Page):
             value="redshift",
             flavor="redshift",
             icon=get_asset_data_url("flavors/redshift.svg"),
+            connection_string=connection_service.get_connection_string("redshift"),
         ),
         ConnectionFlavor(
             label="Azure SQL Database",
             value="azure_mssql",
             flavor="mssql",
             icon=get_asset_data_url("flavors/azure_sql.svg"),
+            connection_string=connection_service.get_connection_string("mssql"),
         ),
         ConnectionFlavor(
             label="Azure Synapse Analytics",
             value="synapse_mssql",
             flavor="mssql",
             icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
+            connection_string=connection_service.get_connection_string("mssql"),
         ),
         ConnectionFlavor(
             label="Microsoft SQL Server",
             value="mssql",
             flavor="mssql",
             icon=get_asset_data_url("flavors/mssql.svg"),
+            connection_string=connection_service.get_connection_string("mssql"),
         ),
         ConnectionFlavor(
             label="PostgreSQL",
             value="postgresql",
             flavor="postgresql",
             icon=get_asset_data_url("flavors/postgresql.svg"),
+            connection_string=connection_service.get_connection_string("postgresql"),
         ),
         ConnectionFlavor(
             label="Snowflake",
             value="snowflake",
             flavor="snowflake",
             icon=get_asset_data_url("flavors/snowflake.svg"),
+            connection_string=connection_service.get_connection_string("snowflake"),
         ),
         ConnectionFlavor(
             label="Databricks",
             value="databricks",
             flavor="databricks",
             icon=get_asset_data_url("flavors/databricks.svg"),
+            connection_string=connection_service.get_connection_string("databricks"),
         ),
     ]
 
@@ -115,17 +129,33 @@ class ConnectionsPage(Page):
         )
 
         def on_save_connection_clicked(updated_connection):
+            is_pristine = lambda value: value in ["", "***"]
+
             if updated_connection.get("connect_by_url", False):
                 url_parts = updated_connection.get("url", "").split("@")
                 if len(url_parts) > 1:
                     updated_connection["url"] = url_parts[1]
-            updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
-            if updated_connection["private_key"]:
+
+            if updated_connection.get("connect_by_key"):
+                updated_connection["password"] = ""
+                if is_pristine(updated_connection["private_key_passphrase"]):
+                    del updated_connection["private_key_passphrase"]
+            else:
+                updated_connection["private_key"] = ""
+                updated_connection["private_key_passphrase"] = ""
+
+            if updated_connection.get("private_key_passphrase") == CLEAR_SENTINEL:
+                updated_connection["private_key_passphrase"] = ""
+
+            if is_pristine(updated_connection.get("private_key")):
+                del updated_connection["private_key"]
+            else:
                 updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
+
+            updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)
             set_updated_connection(updated_connection)
-
 
         def on_test_connection_clicked(updated_connection: dict) -> None:
             password = updated_connection.get("password")
@@ -143,6 +173,8 @@ class ConnectionsPage(Page):
 
             if is_pristine(private_key_passphrase):
                 del updated_connection["private_key_passphrase"]
+            elif updated_connection.get("private_key_passphrase") == CLEAR_SENTINEL:
+                updated_connection["private_key_passphrase"] = ""
 
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
@@ -209,11 +241,9 @@ class ConnectionsPage(Page):
             "private_key",
             "private_key_passphrase",
             "http_path",
+            "url",
         ]
-        formatted_connection = {
-            "url": connection_service.form_overwritten_connection_url(connection)
-                .replace("%3E", ">").replace("%3C", "<"),
-        }
+        formatted_connection = {}
 
         for fieldname in fields:
             formatted_connection[fieldname] = format_field(connection[fieldname])
@@ -239,12 +269,6 @@ class ConnectionsPage(Page):
         return formatted_connection
 
     def test_connection(self, connection: dict) -> "ConnectionStatus":
-        if connection["connect_by_key"] and connection["connection_id"] is None:
-            return ConnectionStatus(
-                message="Please add the connection before testing it (so that we can get your private key file).",
-                successful=False,
-            )
-
         empty_cache()
         try:
             sql_query = "select 1;"
@@ -277,9 +301,24 @@ class ConnectionsPage(Page):
         except DatabaseError as error:
             LOG.exception("Error testing database connection")
             return ConnectionStatus(message="Error attempting the connection.", details=str(error.orig), successful=False)
-        except Exception as error:
+        except DBAPIError as error:
             LOG.exception("Error testing database connection")
-            return ConnectionStatus(message="Error attempting the connection.", details="Try again", successful=False)
+            details = str(error.orig)
+            if PyODBCError and isinstance(error.orig, PyODBCError) and error.orig.args:
+                details = error.orig.args[1]
+            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
+        except (TypeError, ValueError) as error:
+            LOG.exception("Error testing database connection")
+            details = str(error)
+            if is_open_ssl_error(error):
+                details = error.args[0]
+            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
+        except Exception as error:
+            details = "Try again"
+            if connection["connect_by_key"] and not connection.get("private_key", ""):
+                details = "The private key is missing."
+            LOG.exception("Error testing database connection")
+            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
 
     @st.dialog(title="Data Configuration Setup")
     @with_database_session
@@ -366,3 +405,13 @@ class ConnectionStatus:
     message: str
     successful: bool
     details: str | None = field(default=None)
+
+
+def is_open_ssl_error(error: Exception):
+    return (
+        error.args
+        and len(error.args) > 1
+        and isinstance(error.args[1], list)
+        and len(error.args[1]) > 0
+        and type(error.args[1][0]).__name__ == "OpenSSLError"
+    )
