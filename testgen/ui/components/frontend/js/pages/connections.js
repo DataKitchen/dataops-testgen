@@ -34,7 +34,7 @@ const { div, span } = van.tags;
  * @returns 
  */
 const Connections = (props) => {
-    loadStylesheet('testsuites', stylesheet);
+    loadStylesheet('connections', stylesheet);
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
