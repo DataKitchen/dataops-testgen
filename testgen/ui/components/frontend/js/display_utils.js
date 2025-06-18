@@ -58,7 +58,7 @@ function humanReadableSize(bytes) {
 
     for (const [unit, startsAt] of Object.entries(thresholds)) {
         if (bytes > startsAt) {
-            return `${(bytes / startsAt).toFixed(2)}${unit}`;
+            return `${(bytes / startsAt).toFixed()}${unit}`;
         }
     }
 

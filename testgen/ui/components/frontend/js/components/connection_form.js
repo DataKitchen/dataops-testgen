@@ -58,8 +58,10 @@ import { FileInput } from './file_input.js';
 const { div, hr, span } = van.tags;
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
-    mssql: '1433',
     redshift: '5439',
+    azure_mssql: '1433',
+    synapse_mssql: '1433',
+    mssql: '1433',
     postgresql: '5432',
     snowflake: '443',
     databricks: '443',
@@ -153,6 +155,7 @@ const ConnectionForm = (props, saveButton) => {
 
     const authenticationForms = {
         redshift: () => PasswordConnectionForm(
+            connection,
             connectionPassword,
             (value, state) => {
                 connectionPassword.val = value;
@@ -161,6 +164,7 @@ const ConnectionForm = (props, saveButton) => {
             isEditMode,
         ),
         mssql: () => PasswordConnectionForm(
+            connection,
             connectionPassword,
             (value, state) => {
                 connectionPassword.val = value;
@@ -169,6 +173,7 @@ const ConnectionForm = (props, saveButton) => {
             isEditMode,
         ),
         postgresql: () => PasswordConnectionForm(
+            connection,
             connectionPassword,
             (value, state) => {
                 connectionPassword.val = value;
@@ -177,6 +182,7 @@ const ConnectionForm = (props, saveButton) => {
             isEditMode,
         ),
         snowflake: () => KeyPairConnectionForm(
+            connection,
             connectByKey,
             connectionPassword,
             privateKey,
@@ -191,6 +197,7 @@ const ConnectionForm = (props, saveButton) => {
             isEditMode,
         ),
         databricks: () => HttpPathConnectionForm(
+            connection,
             connectionPassword,
             httpPath,
             (value, state) => {
@@ -204,10 +211,16 @@ const ConnectionForm = (props, saveButton) => {
     const authenticationForm = van.derive(() => {
         const selectedFlavorCode = connectionFlavor.val;
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
-
-        connectionPort.val = defaultPorts[flavor.flavor];
-
         return authenticationForms[flavor.flavor]();
+    });
+
+    van.derive(() => {
+        const selectedFlavorCode = connectionFlavor.val;
+        const previousFlavorCode = connectionFlavor.oldVal;
+        const isCustomPort = connectionPort.rawVal !== defaultPorts[previousFlavorCode];
+        if (selectedFlavorCode !== previousFlavorCode && (!isCustomPort || !connectionPort.rawVal)) {
+            connectionPort.val = defaultPorts[selectedFlavorCode];
+        }
     });
 
     return div(
@@ -338,6 +351,7 @@ const ConnectionForm = (props, saveButton) => {
                     disabled: true,
                     value: connectionStringPrefix,
                     height: 38,
+                    width: 255,
                     name: 'url_prefix',
                 }),
                 Input({
@@ -378,7 +392,7 @@ const ConnectionForm = (props, saveButton) => {
     );
 };
 
-const PasswordConnectionForm = (password, onValueChange, useSecretsPlaceholder) => {
+const PasswordConnectionForm = (connection, password, onValueChange, useSecretsPlaceholder) => {
     return div(
         { class: 'flex-row fx-gap-3 fx-align-stretch' },
         div(
@@ -389,7 +403,7 @@ const PasswordConnectionForm = (password, onValueChange, useSecretsPlaceholder) 
                 value: password,
                 height: 38,
                 type: 'password',
-                placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
+                placeholder: (useSecretsPlaceholder && connection.password) ? secretsPlaceholder : '',
                 onChange: onValueChange,
             }),
         ),
@@ -401,6 +415,7 @@ const PasswordConnectionForm = (password, onValueChange, useSecretsPlaceholder) 
 };
 
 const HttpPathConnectionForm = (
+    connection,
     password,
     httpPath,
     onValueChange,
@@ -425,7 +440,7 @@ const HttpPathConnectionForm = (
                 value: password,
                 height: 38,
                 type: 'password',
-                placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
+                placeholder: (useSecretsPlaceholder && connection.password) ? secretsPlaceholder : '',
                 onChange: (value, state) => passwordFieldState.val = {value, valid: state.valid},
             }),
             Input({
@@ -446,6 +461,7 @@ const HttpPathConnectionForm = (
 };
 
 const KeyPairConnectionForm = (
+    connection,
     connectByKey,
     password,
     privateKey,
@@ -503,12 +519,13 @@ const KeyPairConnectionForm = (
                         height: 38,
                         type: 'password',
                         help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
-                        placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
+                        placeholder: (useSecretsPlaceholder && connection.private_key_passphrase) ? secretsPlaceholder : '',
                         onChange: (value, state) => privateKeyPhraseFieldState.val = {value, valid: state.valid},
                     }),
                     FileInput({
                         name: 'private_key',
                         label: 'Upload private key (rsa_key.p8)',
+                        placeholder: connection.private_key ? 'Drop file here or browse files to replace existing key' : undefined,
                         value: privateKey,
                         onChange: (value, state) => privateKeyFieldState.val = {value, valid: state.valid},
                         validators: [
@@ -524,7 +541,7 @@ const KeyPairConnectionForm = (
                 value: password,
                 height: 38,
                 type: 'password',
-                placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
+                placeholder: (useSecretsPlaceholder && connection.password) ? secretsPlaceholder : '',
                 onChange: (value, state) => passwordFieldState.val = {value, valid: state.valid},
             });
         },

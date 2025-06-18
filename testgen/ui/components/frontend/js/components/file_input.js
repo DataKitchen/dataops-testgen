@@ -11,6 +11,7 @@
  * @typedef Options
  * @type {object}
  * @property {string} label
+ * @property {string?} placeholder
  * @property {string} name
  * @property {string} value
  * @property {string?} class
@@ -38,6 +39,7 @@ const FileInput = (options) => {
 
     const value = van.state(getValue(options.value));
     const inputId = `file-uploader-${getRandomId()}`;
+    const fileOver = van.state(false);
     const cssClass = van.derive(() => `tg-file-uploader flex-column fx-gap-2 ${getValue(options.class) ?? ''}`)
     const showLoading = van.state(false);
     const loadingIndicatorProgress = van.state(0);
@@ -108,10 +110,27 @@ const FileInput = (options) => {
             options.label,
         ),
         div(
-            { class: 'tg-file-uploader--dropzone flex-column clickable' },
+            { class: () => `tg-file-uploader--dropzone flex-column clickable ${fileOver.val ? 'on-dragover' : ''}` },
             div(
                 {
                     onclick: browseFile,
+                    ondragenter: (event) => {
+                        event.preventDefault();
+                        fileOver.val = true;
+                    },
+                    ondragleave: () => fileOver.val = false,
+                    ondragover: (event) => event.preventDefault(),
+                    ondrop: (/** @type {DragEvent} */event) => {
+                        event.preventDefault();
+                        fileOver.val = false;
+
+                        let files = [...(event.dataTransfer.items ?? [])].filter((item) => item.kind === 'file').map((item) => item.getAsFile());
+                        if (!event.dataTransfer.items) {
+                            files = [...(event.dataTransfer.files ?? [])];
+                        }
+
+                        loadFile({ target: { files }});
+                    },
                 },
                 input({
                     id: inputId,
@@ -122,7 +141,7 @@ const FileInput = (options) => {
                 }),
                 () => value.val
                     ? FileSummary(value.val, unloadFile)
-                    : FileSelectionDropZone(sizeLimit)
+                    : FileSelectionDropZone(options.placeholder ?? 'Drop file here or browse files', sizeLimit)
             ),
             () => showLoading.val
                 ? div({ class: 'tg-file-uploader--loading', style: loadingIndicatorStyle }, '')
@@ -133,16 +152,17 @@ const FileInput = (options) => {
 
 /**
  * 
+ * @param {string} placeholder
  * @param {number} sizeLimit
  * @returns 
  */
-const FileSelectionDropZone = (sizeLimit) => {
+const FileSelectionDropZone = (placeholder, sizeLimit) => {
     return div(
         { class: 'flex-row fx-gap-4' },
         Icon({size: 48}, 'cloud_upload'),
         div(
             { class: 'flex-column fx-gap-1' },
-            span({}, 'Drop file here or Browse files'),
+            span({}, placeholder),
             span({ class: 'text-secondary text-caption' }, `Limit ${humanReadableSize(sizeLimit)} per file`),
         ),
     );
@@ -180,6 +200,11 @@ stylesheet.replace(`
     background: var(--form-field-color);
     padding: 16px;
     position: relative;
+    border: 1px transparent dashed;
+}
+
+.tg-file-uploader--dropzone.on-dragover {
+    border-color: var(--primary-color);
 }
 
 .tg-file-uploader--dropzone input[type="file"] {

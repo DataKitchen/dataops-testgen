@@ -1,7 +1,7 @@
 import base64
 import logging
 import typing
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 from sqlalchemy.exc import DatabaseError
@@ -16,7 +16,6 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import connection_service, table_group_service, user_session_service
 from testgen.ui.session import session, temp_value
-from testgen.ui.views.connections.models import ConnectionStatus
 from testgen.utils import format_field
 
 LOG = logging.getLogger("testgen")
@@ -222,11 +221,18 @@ class ConnectionsPage(Page):
         if should_test:
             formatted_connection["status"] = asdict(self.test_connection(connection))
 
-        formatted_connection["password"] = "***"  # noqa S105
-        formatted_connection["private_key"] = "***"  # S105
-        formatted_connection["private_key_passphrase"] = "***"  # noqa S105
+        if formatted_connection["password"]:
+            formatted_connection["password"] = "***"  # noqa S105
+        if formatted_connection["private_key"]:
+            formatted_connection["private_key"] = "***"  # S105
+        if formatted_connection["private_key_passphrase"]:
+            formatted_connection["private_key_passphrase"] = "***"  # noqa S105
 
-        flavors = [f for f in self.flavor_options if f.value == connection["sql_flavor_code"]]
+        first_match = [f for f in self.flavor_options if f.flavor == formatted_connection.get("sql_flavor")]
+        if formatted_connection["sql_flavor"] and not formatted_connection.get("sql_flavor_code") and first_match:
+            formatted_connection["sql_flavor_code"] = first_match[0].flavor
+
+        flavors = [f for f in self.flavor_options if f.value == formatted_connection["sql_flavor_code"]]
         if flavors and (flavor := flavors[0]):
             formatted_connection["flavor"] = asdict(flavor)
 
@@ -353,3 +359,10 @@ class ConnectionsPage(Page):
                 "GoToProfilingRunsClicked": on_go_to_profiling_runs,
             },
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionStatus:
+    message: str
+    successful: bool
+    details: str | None = field(default=None)
