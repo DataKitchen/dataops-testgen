@@ -217,12 +217,12 @@ const ConnectionForm = (props, saveButton) => {
             div(
                 { class: 'flex-column fx-gap-3', style: 'flex: 2' },
                 Select({
-                    label: 'SQL Flavor',
+                    label: 'Database Type',
                     value: connectionFlavor,
                     options: props.flavors,
                     disabled: props.disableFlavor,
                     height: 38,
-                    help: 'The type of database server that you will connect to. This determines TestGen\'s drivers and SQL dialect.',
+                    help: 'Type of database server to connect to. This determines the database driver and SQL dialect that will be used by TestGen.',
                     testId: 'sql_flavor',
                     onChange: (value) => connectionFlavor.val = value,
                 }),
@@ -231,7 +231,7 @@ const ConnectionForm = (props, saveButton) => {
                     label: 'Connection Name',
                     value: connectionName,
                     height: 38,
-                    help: 'Your name for this connection. Can be any text.',
+                    help: 'Unique name to describe the connection',
                     onChange: (value, state) => {
                         connectionName.val = value;
                         setFieldValidity('connection_name', state.valid);
@@ -272,7 +272,6 @@ const ConnectionForm = (props, saveButton) => {
                     label: 'Database',
                     value: connectionDatabase,
                     height: 38,
-                    help: 'The name of the database defined on your host where your schemas and tables is present.',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionDatabase.val = value;
@@ -282,10 +281,9 @@ const ConnectionForm = (props, saveButton) => {
                 }),
                 Input({
                     name: 'db_user',
-                    label: 'User',
+                    label: 'Username',
                     value: connectionUsername,
                     height: 38,
-                    help: 'Username to connect to your database.',
                     onChange: (value, state) => {
                         connectionUsername.val = value;
                         setFieldValidity('db_user', state.valid);
@@ -318,7 +316,7 @@ const ConnectionForm = (props, saveButton) => {
         Checkbox({
             name: 'connect_by_url',
             label: 'URL Override',
-            help: 'If this switch is set to on, the connection string will be driven by the field below. Only user name and password will be passed per the relevant fields above.',
+            help: 'When checked, the connection string will be driven by the field below, along with the username and password from the fields above',
             checked: connectByUrl.val,
             onChange: (checked) => connectByUrl.val = checked,
         }),
@@ -344,7 +342,6 @@ const ConnectionForm = (props, saveButton) => {
                 }),
                 Input({
                     label: 'URL Suffix',
-                    help: `Provide a connection string directly. This will override connection parameters if the 'Connect by URL' switch is set.`,
                     value: connectionStringSuffix,
                     class: 'fx-flex',
                     height: 38,
@@ -392,7 +389,6 @@ const PasswordConnectionForm = (password, onValueChange, useSecretsPlaceholder) 
                 value: password,
                 height: 38,
                 type: 'password',
-                help: 'Password to connect to your database.',
                 placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
                 onChange: onValueChange,
             }),
@@ -429,7 +425,6 @@ const HttpPathConnectionForm = (
                 value: password,
                 height: 38,
                 type: 'password',
-                help: 'Password to connect to your database.',
                 placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
                 onChange: (value, state) => passwordFieldState.val = {value, valid: state.valid},
             }),
@@ -507,7 +502,7 @@ const KeyPairConnectionForm = (
                         value: privateKeyPhrase,
                         height: 38,
                         type: 'password',
-                        help: 'Passphrase used while creating the private Key (leave empty if not applicable)',
+                        help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
                         placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
                         onChange: (value, state) => privateKeyPhraseFieldState.val = {value, valid: state.valid},
                     }),
@@ -529,7 +524,6 @@ const KeyPairConnectionForm = (
                 value: password,
                 height: 38,
                 type: 'password',
-                help: 'Password to connect to your database.',
                 placeholder: useSecretsPlaceholder ? secretsPlaceholder : '',
                 onChange: (value, state) => passwordFieldState.val = {value, valid: state.valid},
             });

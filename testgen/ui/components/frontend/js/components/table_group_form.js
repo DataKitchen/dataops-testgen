@@ -173,7 +173,7 @@ const MainForm = (
             label: 'Name',
             value: tableGroupsName,
             height: 38,
-            help: 'A unique name to describe the table group',
+            help: 'Unique name to describe the table group',
             helpPlacement: 'bottom-right',
             onChange: (value, state) => {
                 tableGroupsName.val = value;
@@ -186,7 +186,7 @@ const MainForm = (
             label: 'Tables to Include Mask',
             value: profilingIncludeMask,
             height: 38,
-            help: 'A SQL filter supported by your database\'s LIKE operator for table names to include',
+            help: 'SQL filter supported by your database\'s LIKE operator for table names to include',
             onChange: (value, state) => {
                 profilingIncludeMask.val = value;
                 options.setValidity?.('profiling_include_mask', state.valid);
@@ -197,7 +197,7 @@ const MainForm = (
             label: 'Tables to Exclude Mask',
             value: profilingExcludeMask,
             height: 38,
-            help: 'A SQL filter supported by your database\'s LIKE operator for table names to exclude',
+            help: 'SQL filter supported by your database\'s LIKE operator for table names to exclude',
             onChange: (value, state) => {
                 profilingExcludeMask.val = value;
                 options.setValidity?.('profiling_exclude_mask', state.valid);
@@ -208,7 +208,7 @@ const MainForm = (
             label: 'Explicit Table List',
             value: profilingTableSet,
             height: 38,
-            help: 'A list of specific table names to include, separated by commas',
+            help: 'List of specific table names to include, separated by commas',
             onChange: (value, state) => {
                 profilingTableSet.val = value;
                 options.setValidity?.('profiling_table_set', state.valid);
@@ -225,7 +225,7 @@ const MainForm = (
             label: 'Schema',
             value: tableGroupSchema,
             height: 38,
-            help: 'The database schema containing the tables in the Table Group',
+            help: 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
             onChange: (value, state) => {
                 tableGroupSchema.val = value;
@@ -235,10 +235,10 @@ const MainForm = (
         }),
         Input({
             name: 'profile_id_column_mask',
-            label: 'Profiling ID column mask',
+            label: 'Profiling ID Column Mask',
             value: profileIdColumnMask,
             height: 38,
-            help: 'A SQL filter supported by your database\'s LIKE operator representing ID columns (optional)',
+            help: 'SQL filter supported by your database\'s LIKE operator representing ID columns (optional)',
             onChange: (value, state) => {
                 profileIdColumnMask.val = value;
                 options.setValidity?.('profile_id_column_mask', state.valid);
@@ -246,10 +246,10 @@ const MainForm = (
         }),
         Input({
             name: 'profile_sk_column_mask',
-            label: 'Profiling Surrogate Key column mask',
+            label: 'Profiling Surrogate Key Column Mask',
             value: profileSkColumnMask,
             height: 38,
-            help: 'A SQL filter supported by your database\'s LIKE operator representing surrogate key columns (optional)',
+            help: 'SQL filter supported by your database\'s LIKE operator representing surrogate key columns (optional)',
             onChange: (value, state) => {
                 profileSkColumnMask.val = value
                 options.setValidity?.('profile_sk_column_mask', state.valid);
@@ -258,10 +258,10 @@ const MainForm = (
         Input({
             name: 'profiling_delay_days',
             type: 'number',
-            label: 'Min Profiling Age, Days',
+            label: 'Min Profiling Age (in days)',
             value: profilingDelayDays,
             height: 38,
-            help: 'The number of days to wait before new profiling will be available to generate tests',
+            help: 'Number of days to wait before new profiling will be available to generate tests',
             onChange: (value, state) => {
                 profilingDelayDays.val = value;
                 options.setValidity?.('profiling_delay_days', state.valid);
@@ -288,7 +288,7 @@ const SamplingForm = (
         Checkbox({
             name: 'profile_use_sampling',
             label: 'Use profile sampling',
-            help: 'Toggle on to base profiling on a sample of records instead of the full table',
+            help: 'When checked, profiling will be based on a sample of records instead of the full table',
             checked: profileUseSampling,
             onChange: (value) => profileUseSampling.val = value,
         }),
@@ -303,7 +303,7 @@ const SamplingForm = (
                     label: 'Sample percent',
                     value: profileSamplePercent,
                     height: 38,
-                    help: 'Percent of records to include in the sample, unless the calculated count falls below the specified minimum.',
+                    help: 'Percent of records to include in the sample, unless the calculated count falls below the specified minimum',
                     onChange: (value, state) => {
                         profileSamplePercent.val = value;
                         options.setValidity?.('profile_sample_percent', state.valid);
@@ -316,7 +316,7 @@ const SamplingForm = (
                     label: 'Min Sample Record Count',
                     value: profileSampleMinCount,
                     height: 38,
-                    help: 'The minimum number of records to be included in any sample (if available)',
+                    help: 'Minimum number of records to be included in any sample (if available)',
                     onChange: (value, state) => {
                         profileSampleMinCount.val = value;
                         options.setValidity?.('profile_sample_min_count', state.valid);

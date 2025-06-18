@@ -15,6 +15,7 @@ const { div } = van.tags;
 const alertTypeColors = {
     info: {backgroundColor: 'rgba(28, 131, 225, 0.1)', color: 'rgb(0, 66, 128)'},
     success: {backgroundColor: 'rgba(33, 195, 84, 0.1)', color: 'rgb(23, 114, 51)'},
+    warn: {backgroundColor: 'rgba(255, 227, 18, 0.2)', color: 'rgb(255, 255, 194)'},
     error: {backgroundColor: 'rgba(255, 43, 43, 0.09)', color: 'rgb(125, 53, 59)'},
 };
 
