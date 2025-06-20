@@ -4,9 +4,6 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class DatabricksFlavorService(FlavorService):
-    def __init__(self):
-        self.http_path = None
-
     def get_connection_string_head(self, strPW):
         strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@"
         return strConnect
@@ -17,9 +14,3 @@ class DatabricksFlavorService(FlavorService):
             f"?http_path={self.http_path}"
         )
         return strConnect
-
-    def get_pre_connection_queries(self):
-        return []
-
-    def get_connect_args(self, is_password_overwritten: bool = False):  # NOQA ARG002
-        return {}

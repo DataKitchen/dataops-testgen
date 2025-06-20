@@ -12,18 +12,18 @@ INSERT INTO connections
 (project_code, sql_flavor, sql_flavor_code,
  project_host, project_port, project_user, project_db,
  connection_name, project_pw_encrypted, http_path, max_threads, max_query_chars)
-SELECT '{PROJECT_CODE}'                       as project_code,
-       '{SQL_FLAVOR}'                         as sql_flavor,
-       '{SQL_FLAVOR}'                         as sql_flavor_code,
-       '{PROJECT_HOST}'                       as project_host,
-       '{PROJECT_PORT}'                       as project_port,
-       '{PROJECT_USER}'                       as project_user,
-       '{PROJECT_DB}'                         as project_db,
-       '{CONNECTION_NAME}'                    as connection_name,
-       '{PROJECT_PW_ENCRYPTED}'               as project_pw_encrypted,
-       '{PROJECT_HTTP_PATH}'                  as http_path,
-       '{MAX_THREADS}'::INTEGER               as max_threads,
-       '{MAX_QUERY_CHARS}'::INTEGER           as max_query_chars;
+SELECT '{PROJECT_CODE}'                            as project_code,
+       '{SQL_FLAVOR}'                              as sql_flavor,
+       '{SQL_FLAVOR}'                              as sql_flavor_code,
+       NULLIF('{PROJECT_HOST}', '')                as project_host,
+       NULLIF('{PROJECT_PORT}', '')                as project_port,
+       NULLIF('{PROJECT_USER}', '')                as project_user,
+       NULLIF('{PROJECT_DB}', '')                  as project_db,
+       '{CONNECTION_NAME}'                         as connection_name,
+       NULLIF('{PROJECT_PW_ENCRYPTED}', ''::BYTEA) as project_pw_encrypted,
+       NULLIF('{PROJECT_HTTP_PATH}', '')           as http_path,
+       '{MAX_THREADS}'::INTEGER                    as max_threads,
+       '{MAX_QUERY_CHARS}'::INTEGER                as max_query_chars;
 
 INSERT INTO table_groups
 (id, project_code, connection_id, table_groups_name, table_group_schema, profiling_table_set, profiling_include_mask, profiling_exclude_mask,

@@ -51,13 +51,14 @@ class FlavorService:
 
     def is_connect_by_key(self) -> str:
         return self.connect_by_key
+    
+    def get_pre_connection_queries(self) -> list[str]:
+        return []
+    
+    def get_connect_args(self, _is_password_overwritten: bool = False) -> dict:
+        return {"connect_timeout": 3600}
 
-    def get_connect_args(self, is_password_overwritten: bool = False):  # NOQA ARG002
-        if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
-            return {"TrustServerCertificate": "yes"}
-        return {}
-
-    def get_concat_operator(self):
+    def get_concat_operator(self) -> str:
         return "||"
 
     def get_connection_string(self, strPW, is_password_overwritten: bool = False):
