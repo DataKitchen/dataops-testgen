@@ -1,19 +1,33 @@
 /**
+ * @import { Properties as TooltipProperties } from './tooltip.js';
+ * @import { Validator } from '../form_validators.js';
+ * 
+ * @typedef InputState
+ * @type {object}
+ * @property {boolean} valid
+ * @property {string[]} errors
+ * 
  * @typedef Properties
  * @type {object}
  * @property {string?} id
+ * @property {string?} name
  * @property {string?} label
  * @property {string?} help
+ * @property {TooltipProperties['position']} helpPlacement
  * @property {(string | number)?} value
  * @property {string?} placeholder
  * @property {string[]?} autocompleteOptions
  * @property {string?} icon
  * @property {boolean?} clearable
- * @property {function(string)?} onChange
+ * @property {boolean?} disabled
+ * @property {function(string, InputState)?} onChange
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
+ * @property {string?} type
+ * @property {string?} class
  * @property {string?} testId
+ * @property {Array<Validator>?} validators
  */
 import van from '../van.min.js';
 import { debounce, getValue, loadStylesheet, getRandomId } from '../utils.js';
@@ -21,7 +35,7 @@ import { Icon } from './icon.js';
 import { withTooltip } from './tooltip.js';
 import { Portal } from './portal.js';
 
-const { div,input, label, i } = van.tags;
+const { div,input, label, i, small } = van.tags;
 const defaultHeight = 32;
 const iconSize = 22;
 const clearIconSize = 20;
@@ -31,10 +45,22 @@ const Input = (/** @type Properties */ props) => {
 
     const domId = van.derive(() => getValue(props.id) ?? getRandomId());
     const value = van.derive(() => getValue(props.value) ?? '');
+    const errors = van.derive(() => {
+        const validators = getValue(props.validators) ?? [];
+        return validators.map(v => v(value.val)).filter(error => error);
+    });
+    const firstError = van.derive(() => {
+        return errors.val[0] ?? '';
+    });
+
+    const onChange = props.onChange?.val ?? props.onChange;
+    if (onChange) {
+        onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
+    }
     van.derive(() => {
         const onChange = props.onChange?.val ?? props.onChange;
-        if (value.val !== value.oldVal) {
-            onChange(value.val);
+        if (onChange && (value.val !== value.oldVal || errors.val.length !== errors.oldVal.length)) {
+            onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
         }
     });
 
@@ -54,9 +80,9 @@ const Input = (/** @type Properties */ props) => {
     return label(
         {
             id: domId,
-            class: 'flex-column fx-gap-1 tg-input--label',
+            class: () => `flex-column fx-gap-1 tg-input--label ${getValue(props.class) ?? ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            'data-testid': props.testId ?? '',
+            'data-testid': props.testId ?? props.name ?? '',
         },
         div(
             { class: 'flex-row fx-gap-1 text-caption' },
@@ -64,7 +90,7 @@ const Input = (/** @type Properties */ props) => {
             () => getValue(props.help)
                 ? withTooltip(
                     Icon({ size: 16, classes: 'text-disabled' }, 'help'),
-                    { text: props.help, position: 'top', width: 200 }
+                    { text: props.help, position: getValue(props.helpPlacement) ?? 'top', width: 200 }
                 )
                 : null,
         ),
@@ -84,9 +110,12 @@ const Input = (/** @type Properties */ props) => {
             'clear',
         ) : '',
         input({
-            class: 'tg-input--field',
+            class: () => `tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''}`,
             style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             value,
+            name: props.name ?? '',
+            type: props.type ?? 'text',
+            disabled: props.disabled,
             placeholder: () => getValue(props.placeholder) ?? '',
             oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
             onclick: van.derive(() => autocompleteOptions.val?.length
@@ -94,6 +123,10 @@ const Input = (/** @type Properties */ props) => {
                 : null
             ),
         }),
+        () => 
+            getValue(props.validators)?.length > 0
+                ? small({ class: 'tg-input--error' }, firstError)
+                : '',
         Portal(
             { target: domId.val, targetRelative: true, opened: autocompleteOpened },
             () => div(
@@ -197,6 +230,16 @@ stylesheet.replace(`
 }
 .tg-input--option:hover {
     background: var(--select-hover-background);
+}
+
+.tg-input--disabled {
+    cursor: not-allowed;
+    color: var(--disabled-text-color);
+}
+
+.tg-input--label > .tg-input--error {
+    height: 12px;
+    color: var(--error-color);
 }
 `);
 

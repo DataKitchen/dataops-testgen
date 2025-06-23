@@ -6,6 +6,7 @@
  * @property {object} props - object with the props to pass to the rendered component
  */
 import van from './van.min.js';
+import pluginSpec from './plugins.js';
 import { Streamlit } from './streamlit.js';
 import { isEqual, getParents } from './utils.js';
 import { Button } from './components/button.js'
@@ -17,7 +18,6 @@ import { SortingSelector } from './components/sorting_selector.js';
 import { ColumnSelector } from './components/explorer_column_selector.js';
 import { TestRuns } from './pages/test_runs.js';
 import { ProfilingRuns } from './pages/profiling_runs.js';
-import { DatabaseFlavorSelector } from './components/flavor_selector.js';
 import { DataCatalog } from './pages/data_catalog.js';
 import { ProjectDashboard } from './pages/project_dashboard.js';
 import { TestSuites } from './pages/test_suites.js';
@@ -27,6 +27,8 @@ import { ScoreExplorer } from './pages/score_explorer.js';
 import { ColumnProfilingResults } from './data_profiling/column_profiling_results.js';
 import { ColumnProfilingHistory } from './data_profiling/column_profiling_history.js';
 import { ScheduleList } from './pages/schedule_list.js';
+import { Connections } from './pages/connections.js';
+import { TableGroupWizard } from './pages/table_group_wizard.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -42,7 +44,6 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         sidebar: window.top.testgen.components.Sidebar,
         test_runs: TestRuns,
         profiling_runs: ProfilingRuns,
-        database_flavor_selector: DatabaseFlavorSelector,
         data_catalog: DataCatalog,
         column_profiling_results: ColumnProfilingResults,
         column_profiling_history: ColumnProfilingHistory,
@@ -53,17 +54,22 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         score_explorer: ScoreExplorer,
         schedule_list: ScheduleList,
         column_selector: ColumnSelector,
+        connections: Connections,
+        table_group_wizard: TableGroupWizard,
     };
 
-    if (Object.keys(componentById).includes(id)) {
+    if (Object.keys(window.testgen.plugins).includes(id)) {
+        return window.testgen.plugins[id](props);
+    } else if (Object.keys(componentById).includes(id)) {
         return componentById[id](props);
     }
-
     return '';
 };
 
-window.addEventListener('message', (event) => {
+window.addEventListener('message', async (event) => {
     if (event.data.type === 'streamlit:render') {
+        await loadPlugins();
+
         const componentId = event.data.args.id;
         const componentKey = event.data.args.key;
 
@@ -134,8 +140,29 @@ function shouldRenderOutsideFrame(componentId) {
     return 'sidebar' === componentId;
 }
 
+async function loadPlugins() {
+    if (!window.testgen.pluginsLoaded) {
+        try {
+            const modules = await Promise.all(Object.values(pluginSpec).map(plugin => import(plugin.entrypoint)))
+            for (const pluginModule of modules) {
+                if (pluginModule && pluginModule.components) {
+                    Object.assign(window.testgen.plugins, pluginModule.components)
+                } else if (pluginModule) {
+                    console.warn(`Plugin '${pluginModule}' does not export a member 'components'.`);
+                }
+            }
+        } catch (error) {
+            console.warn('Error loading plugins:', error);
+        }
+    }
+
+    window.testgen.pluginsLoaded = true;
+}
+
 window.testgen = {
     states: {},
     loadedStylesheets: {},
     portals: {},
+    plugins: {},
+    pluginsLoaded: false,
 };

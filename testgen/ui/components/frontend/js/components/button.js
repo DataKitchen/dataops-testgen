@@ -214,6 +214,10 @@ button.tg-button.tg-warn-button.tg-stroked-button {
     color: var(--button-warn-stroked-text-color);
     background: var(--button-warn-stroked-background);
 }
+
+button.tg-button.tg-warn-button[disabled] {
+    color: rgba(255, 255, 255, .5) !important;
+}
 /* ... */
 `);
 

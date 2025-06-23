@@ -10,7 +10,7 @@ def get_by_id(connection_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, project_host, project_port, project_user,
+                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, url, connect_by_url, connect_by_key, private_key,
                   private_key_passphrase, http_path
@@ -24,7 +24,7 @@ def get_connections(project_code):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, project_host, project_port, project_user,
+                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, connect_by_url, url, connect_by_key, private_key,
                   private_key_passphrase, http_path
@@ -42,31 +42,32 @@ def get_table_group_names_by_connection(schema: str, connection_ids: list[str]) 
 
 
 def edit_connection(schema, connection, encrypted_password, encrypted_private_key, encrypted_private_key_passphrase):
-    sql = f"""UPDATE  {schema}.connections SET
-        project_code = '{connection["project_code"]}',
-        sql_flavor = '{connection["sql_flavor"]}',
-        project_host = '{connection["project_host"]}',
-        project_port = '{connection["project_port"]}',
-        project_user = '{connection["project_user"]}',
-        project_db = '{connection["project_db"]}',
-        connection_name = '{connection["connection_name"]}',
-        max_threads = '{connection["max_threads"]}',
-        max_query_chars = '{connection["max_query_chars"]}',
-        url = '{connection["url"]}',
-        connect_by_key = '{connection["connect_by_key"]}',
-        connect_by_url = '{connection["connect_by_url"]}',
-        http_path = '{connection["http_path"]}'"""
+    encrypted_password_value = f"'{encrypted_password}'" if encrypted_password is not None else "null"
+    encrypted_private_key_value = f"'{encrypted_private_key}'" if encrypted_private_key is not None else "null"
+    encrypted_passphrase_value = f"'{encrypted_private_key_passphrase}'" if encrypted_private_key_passphrase is not None else "null"
 
-    if encrypted_password:
-        sql += f""", project_pw_encrypted = '{encrypted_password}' """
-
-    if encrypted_private_key:
-        sql += f""", private_key = '{encrypted_private_key}' """
-
-    if encrypted_private_key_passphrase:
-        sql += f""", private_key_passphrase = '{encrypted_private_key_passphrase}' """
-
-    sql += f""" WHERE connection_id = '{connection["connection_id"]}';"""
+    sql = f"""
+        UPDATE {schema}.connections
+        SET
+            project_code = '{connection["project_code"]}',
+            sql_flavor = '{connection["sql_flavor"]}',
+            sql_flavor_code = '{connection["sql_flavor_code"]}',
+            project_host = '{connection["project_host"]}',
+            project_port = '{connection["project_port"]}',
+            project_user = '{connection["project_user"]}',
+            project_db = '{connection["project_db"]}',
+            connection_name = '{connection["connection_name"]}',
+            max_threads = '{connection["max_threads"]}',
+            max_query_chars = '{connection["max_query_chars"]}',
+            url = '{connection["url"]}',
+            connect_by_key = '{connection["connect_by_key"]}',
+            connect_by_url = '{connection["connect_by_url"]}',
+            http_path = '{connection["http_path"]}',
+            project_pw_encrypted = {encrypted_password_value},
+            private_key = {encrypted_private_key_value},
+            private_key_passphrase = {encrypted_passphrase_value}
+        WHERE connection_id = '{connection["connection_id"]}';
+    """
     db.execute_sql(sql)
     st.cache_data.clear()
 
@@ -79,13 +80,14 @@ def add_connection(
     encrypted_private_key_passphrase: str | None,
 ) -> int:
     sql_header = f"""INSERT INTO {schema}.connections
-        (project_code, sql_flavor, url, connect_by_url, connect_by_key,
+        (project_code, sql_flavor, sql_flavor_code, url, connect_by_url, connect_by_key,
         project_host, project_port, project_user, project_db,
         connection_name, http_path, """
 
     sql_footer = f""" SELECT
         '{connection["project_code"]}' as project_code,
         '{connection["sql_flavor"]}' as sql_flavor,
+        '{connection["sql_flavor_code"]}' as sql_flavor_code,
         '{connection["url"]}' as url,
         {connection["connect_by_url"]} as connect_by_url,
         {connection["connect_by_key"]} as connect_by_key,

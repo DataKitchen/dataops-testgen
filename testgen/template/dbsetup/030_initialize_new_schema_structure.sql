@@ -65,6 +65,7 @@ CREATE TABLE connections (
       CONSTRAINT connections_connection_id_pk
          PRIMARY KEY,
    sql_flavor             VARCHAR(30),
+   sql_flavor_code        VARCHAR(30),
    project_host           VARCHAR(250),
    project_port           VARCHAR(5),
    project_user           VARCHAR(50),
