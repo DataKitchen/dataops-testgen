@@ -1,6 +1,5 @@
 from abc import abstractmethod
 
-from testgen import settings
 from testgen.common.encrypt import DecryptText
 
 
