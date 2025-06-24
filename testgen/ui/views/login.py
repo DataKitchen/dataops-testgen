@@ -32,7 +32,7 @@ class LoginPage(Page):
         _, login_column, links_column = st.columns([0.25, 0.5, 0.25])
 
         with links_column:
-            testgen.page_links()
+            testgen.help_menu()
 
         with login_column:
             st.html("""

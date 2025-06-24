@@ -2,33 +2,36 @@ from unittest import mock
 
 import pytest
 
-from testgen.common.version_service import get_latest_version
+from testgen.common.version_service import get_version
 
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
+@mock.patch("testgen.common.version_service.session.version", None)
 def test_calls_pypi_api(requests: mock.Mock, settings: mock.Mock):
     settings.CHECK_FOR_LATEST_VERSION = "pypi"
-    get_latest_version()
+    get_version()
     requests.get.assert_called_with("https://pypi.org/pypi/dataops-testgen/json", timeout=3)
 
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
-def test_return_unknown_when_pypi_request_fails(requests: mock.Mock, settings: mock.Mock):
+@mock.patch("testgen.common.version_service.session.version", None)
+def test_return_none_when_pypi_request_fails(requests: mock.Mock, settings: mock.Mock):
     response = mock.Mock()
     response.status_code = 400
     requests.get.return_value = response
     settings.CHECK_FOR_LATEST_VERSION = "pypi"
 
-    assert get_latest_version() == "unknown"
+    assert get_version().latest == None
 
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
+@mock.patch("testgen.common.version_service.session.version", None)
 def test_get_the_latest_version_from_pypi(requests: mock.Mock, settings: mock.Mock):
     response = mock.Mock()
     response.status_code = 200
@@ -45,18 +48,19 @@ def test_get_the_latest_version_from_pypi(requests: mock.Mock, settings: mock.Mo
     }
     settings.CHECK_FOR_LATEST_VERSION = "pypi"
 
-    assert get_latest_version() == "1.2.3"
+    assert get_version().latest == "1.2.3"
 
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
+@mock.patch("testgen.common.version_service.session.version", None)
 def test_calls_docker_tags_api(requests: mock.Mock, settings: mock.Mock):
     settings.DOCKER_HUB_USERNAME = None
     settings.DOCKER_HUB_PASSWORD = None
     settings.DOCKER_HUB_REPOSITORY = "datakitchen/testgen-a"
     settings.CHECK_FOR_LATEST_VERSION = "docker"
-    get_latest_version()
+    get_version()
 
     requests.get.assert_called_with(
         "https://hub.docker.com/v2/repositories/datakitchen/testgen-a/tags",
@@ -69,7 +73,8 @@ def test_calls_docker_tags_api(requests: mock.Mock, settings: mock.Mock):
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
-def test_return_unknown_when_docker_request_fails(requests: mock.Mock, settings: mock.Mock):
+@mock.patch("testgen.common.version_service.session.version", None)
+def test_return_none_when_docker_request_fails(requests: mock.Mock, settings: mock.Mock):
     response = mock.Mock()
     response.status_code = 400
     requests.get.return_value = response
@@ -77,12 +82,13 @@ def test_return_unknown_when_docker_request_fails(requests: mock.Mock, settings:
     settings.DOCKER_HUB_PASSWORD = None
     settings.CHECK_FOR_LATEST_VERSION = "docker"
 
-    assert get_latest_version() == "unknown"
+    assert get_version().latest == None
 
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
+@mock.patch("testgen.common.version_service.session.version", None)
 def test_get_the_latest_version_from_dockerhub(requests: mock.Mock, settings: mock.Mock):
     settings.DOCKER_HUB_USERNAME = None
     settings.DOCKER_HUB_PASSWORD = None
@@ -102,11 +108,12 @@ def test_get_the_latest_version_from_dockerhub(requests: mock.Mock, settings: mo
         ],
     }
 
-    assert get_latest_version() == "1.2.0"
+    assert get_version().latest == "1.2.0"
 
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
+@mock.patch("testgen.common.version_service.session.version", None)
 def test_authenticates_docker_request(requests: mock.Mock, settings: mock.Mock):
     username = settings.DOCKER_HUB_USERNAME = "docker-username"
     password = settings.DOCKER_HUB_PASSWORD = "docker-password"  # noqa: S105
@@ -119,7 +126,7 @@ def test_authenticates_docker_request(requests: mock.Mock, settings: mock.Mock):
     response.json.return_value = {"token": docker_auth_token}
     requests.post.return_value = response
 
-    get_latest_version()
+    get_version()
 
     requests.post.assert_called_with(
         "https://hub.docker.com/v2/users/login",
@@ -137,7 +144,8 @@ def test_authenticates_docker_request(requests: mock.Mock, settings: mock.Mock):
 @pytest.mark.unit
 @mock.patch("testgen.common.version_service.settings")
 @mock.patch("testgen.common.version_service.requests")
-def test_return_unknown_when_docker_auth_request_fails(requests: mock.Mock, settings: mock.Mock):
+@mock.patch("testgen.common.version_service.session.version", None)
+def test_return_none_when_docker_auth_request_fails(requests: mock.Mock, settings: mock.Mock):
     settings.DOCKER_HUB_USERNAME = "docker-username"
     settings.DOCKER_HUB_PASSWORD = "docker-password"  # noqa: S105
     settings.CHECK_FOR_LATEST_VERSION = "docker"
@@ -147,4 +155,4 @@ def test_return_unknown_when_docker_auth_request_fails(requests: mock.Mock, sett
     response.status_code = 400
     requests.post.return_value = response
 
-    assert get_latest_version() == "unknown"
+    assert get_version().latest == None

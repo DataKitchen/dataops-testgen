@@ -125,6 +125,8 @@ div.st-key-data_catalog-spinner {
 }
 
 /* Theming for buttons, tabs and form inputs */
+button[data-testid="stPopoverButton"]:hover,
+button[data-testid="stPopoverButton"]:focus:not(:active),
 button[data-testid="stBaseButton-secondary"]:hover,
 button[data-testid="stBaseButton-secondary"]:focus:not(:active),
 button[data-testid="stBaseButton-secondaryFormSubmit"]:hover,
@@ -133,6 +135,7 @@ button[data-testid="stBaseButton-secondaryFormSubmit"]:focus:not(:active) {
     color: var(--primary-color);
 }
 
+button[data-testid="stPopoverButton"]:active,
 button[data-testid="stBaseButton-secondary"]:active,
 button[data-testid="stBaseButton-secondaryFormSubmit"]:active,
 label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > span {
@@ -305,17 +308,53 @@ Use as testgen.text("text", "extra_styles") */
     background-color: var(--disabled-text-color);
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.tg-header--links) [data-testid="stLinkButton"] a {
-    border: none;
-    background: none;
-    padding: 6px;
-    min-height: 24px;
-    color: var(--primary-text-color);
+/* Help menu */
+.st-key-tg-header--help [data-testid="stPageLink"] {
+    position: absolute;
+    top: -7px;
+    right: 0;
+    z-index: 5;
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.tg-header--links) [data-testid="stLinkButton"] a p {
-    font-size: 20px;
+.st-key-tg-header--help [data-testid="stPageLink"] [data-testid="stPageLink-NavLink"] {
     line-height: 1;
+}
+
+.st-key-tg-header--help [data-testid="stPopover"] {
+    width: auto;
+}
+
+.st-key-tg-header--help button[data-testid="stPopoverButton"] {
+    border: none;
+    background: none;
+    padding: 0;
+    margin-top: 8px;
+    min-height: fit-content;
+}
+
+.st-key-tg-header--help button[data-testid="stPopoverButton"]:focus:not(:hover) {
+    color: inherit;
+}
+
+.st-key-tg-header--help-dummy [data-testid="stMarkdownContainer"] p {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+    min-height: fit-content;
+}
+
+.st-key-tg-header--help-dummy p span {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 1.25rem;
+    line-height: 1.25rem;
+    margin-top: 0.125rem;
+    margin-left: 0.125rem;
+    margin-right: -0.3125rem;
+}
+
+div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
+    padding: 0;
 }
 /*  */
 

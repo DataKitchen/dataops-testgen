@@ -4,12 +4,16 @@ variable "TESTGEN_VERSION" {}
 variable "TESTGEN_DOCKER_HUB_REPO" {
   default = "datakitchen/dataops-testgen"
 }
+variable "TESTGEN_SUPPORT_EMAIL" {
+  default = "open-source-support@datakitchen.io"
+}
 
 target "testgen-release" {
   args = {
     TESTGEN_VERSION = "${TESTGEN_VERSION}"
     TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
     TESTGEN_DOCKER_HUB_REPO = "${TESTGEN_DOCKER_HUB_REPO}"
+    TESTGEN_SUPPORT_EMAIL = "${TESTGEN_SUPPORT_EMAIL}"
   }
   context = "."
   dockerfile = "deploy/testgen.dockerfile"
@@ -31,6 +35,7 @@ target "testgen-qa" {
     TESTGEN_VERSION = "${TESTGEN_VERSION}"
     TESTGEN_BASE_LABEL = "${TESTGEN_BASE_LABEL}"
     TESTGEN_DOCKER_HUB_REPO = "${TESTGEN_DOCKER_HUB_REPO}"
+    TESTGEN_SUPPORT_EMAIL = "${TESTGEN_SUPPORT_EMAIL}"
   }
   context = "."
   dockerfile = "deploy/testgen.dockerfile"

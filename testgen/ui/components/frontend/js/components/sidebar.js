@@ -9,38 +9,35 @@
  *
  * @typedef Version
  * @type {object}
+ * @property {string} edition
  * @property {string} current
  * @property {string} latest
- * @property {string} schema
  *
  * @typedef Menu
  * @type {object}
  * @property {Array.<MenuItem>} items
- * @property {Version} version
  *
  * @typedef Project
  * @type {object}
  * @property {string} code
  * @property {string} name
  *
- * @typedef Permissions
- * @type {object}
- * @property {boolean} can_edit
- *
  * @typedef Properties
  * @type {object}
  * @property {Menu} menu
  * @property {Project[]} projects
- * @property {string} username
- * @property {string} current_page
  * @property {string} current_project
+ * @property {string} current_page
+ * @property {string} username
+ * @property {string} role
  * @property {string} logout_path
- * @property {Permissions} permissions
+ * @property {Version} version
+ * @property {string} support_email
  */
 const van = window.top.van;
 const { a, button, div, i, img, label, option, select, span } = van.tags;
 
-const PROJECT_CODE_QUERY_PARAM = "project_code"
+const PROJECT_CODE_QUERY_PARAM = 'project_code';
 
 const Sidebar = (/** @type {Properties} */ props) => {
     if (Sidebar.StreamlitInstance) {
@@ -76,7 +73,11 @@ const Sidebar = (/** @type {Properties} */ props) => {
             },
         ),
         div(
-            span({class: 'menu--username'}, props.username),
+            div(
+                { class: 'menu--user' },
+                span({class: 'menu--username', title: props.username}, props.username),
+                span({class: 'menu--role'}, props.role.val?.replace('_', ' ')),
+            ),
             div(
                 { class: 'menu--buttons' },
                 button(
@@ -87,15 +88,16 @@ const Sidebar = (/** @type {Properties} */ props) => {
                     i({class: 'material-symbols-rounded'}, 'logout'),
                     span('Logout'),
                 ),
-                props.permissions.val?.can_edit ? button(
+                props.support_email?.val ? a(
                     {
-                        class: 'tg-button',
-                        onclick: () => emitEvent({ view_logs: true }),
+                        href: `mailto:${props.support_email?.val}
+                            ?subject=${props.version.val?.edition}: Contact Us
+                            &body=%0D%0D%0DVersion: ${props.version.val?.edition} ${props.version.val?.current}`,
+                        target: '_blank',
                     },
-                    'App Logs',
+                    'Contact Us',
                 ) : null,
             ),
-            () => Version(props.menu?.val.version),
         ),
     );
 };
@@ -178,36 +180,6 @@ const MenuItem = (
         },
         i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
         span({class: 'menu--item--label'}, item.label),
-    );
-};
-
-const Version = (/** @type {Version} */ version) => {
-    const expanded = van.state(false);
-
-    const icon = van.derive(() => expanded.val ? 'expand_less' : 'expand_more');
-    const classes = van.derive(() => expanded.val ? ' version expanded' : 'version');
-
-    return div(
-        {class: classes, onclick: () => { expanded.val = !expanded.val; }},
-        VersionRow(
-            'Version',
-            version.current,
-            i({class: 'material-symbols-rounded version--dropdown-icon'}, icon),
-        ),
-        div(
-            {class: 'version--details'},
-            VersionRow('latest version', version.latest),
-            VersionRow('schema revision', version.schema),
-        ),
-    );
-};
-
-const VersionRow = (/** @type string */ label, /** @type string */ version, iconEl = undefined) => {
-    return div(
-        {class: 'version--row'},
-        span({class: 'version--row--label'}, `${label}:`),
-        span({class: 'version--row--value'}, version),
-        iconEl,
     );
 };
 
@@ -298,20 +270,22 @@ stylesheet.replace(`
     color: var(--primary-color);
 }
 
-.menu .menu--username {
-    padding-left: 16px;
-    padding-bottom: 8px;
+.menu .menu--user {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+}
 
-    max-width: 35%;
+.menu .menu--username {
     overflow-x: hidden;
     text-overflow: ellipsis;
     text-wrap: nowrap;
-
-    color: var(--secondary-text-color);
 }
 
-.menu .menu--username:before {
-    content: 'User: ';
+.menu .menu--role {
+    text-transform: uppercase;
+    font-size: 12px;
+    color: var(--secondary-text-color);
 }
 
 .menu .content > .menu--section > .menu--section--label {
@@ -354,64 +328,12 @@ stylesheet.replace(`
 .menu .menu--buttons {
     display: flex;
     justify-content: space-between;
+    margin-bottom: 16px;
 }
 
-.menu .version {
-    color: var(--secondary-text-color);
-    display: flex;
-    flex-direction: column;
+.menu--buttons a {
     padding: 8px 16px;
-    cursor: pointer;
-}
-
-.menu .version .version--dropdown-icon {
-    font-size: 19px;
-}
-
-.menu .version .version--row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-}
-
-.menu .version .version--row .version--row--label {
-    font-weight: 500;
-    margin-right: 4px;
-}
-
-.menu .version .version--details {
-    display: none;
-    flex-direction: column;
-}
-
-.menu .version .version--details {
-    display: none;
-    margin-top: 4px;
-}
-
-.menu .version.expanded .version--details {
-    display: block;
-}
-
-.version--row + .version--row {
-    margin-top: 4px;
-}
-
-.menu > :nth-child(1 of button) {
-    margin-top: auto !important;
-}
-
-.menu > button {
-    margin: 16px;
-    color: var(--secondary-text-color) !important;
-}
-
-.menu > button.logout {
-    margin-top: 8px;
-}
-
-.menu > button.users {
-    margin-bottom: 0px;
+    font-size: 14px;
 }
 
 /* Intentionally duplicate from button.js */

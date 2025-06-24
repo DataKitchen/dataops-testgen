@@ -2,12 +2,12 @@ import logging
 import time
 from typing import Literal
 
+from testgen.common.version_service import Version
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.router import Router
 from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
 LOG = logging.getLogger("testgen")
 
@@ -19,9 +19,12 @@ def sidebar(
     key: str = SIDEBAR_KEY,
     projects: list[dict[Literal["name", "codde"], str]] | None = None,
     current_project: str | None = None,
-    username: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
+    username: str | None = None,
+    role: str | None = None,
+    version: Version | None = None,
+    support_email: str | None = None,
 ) -> None:
     """
     Testgen custom component to display a styled menu over streamlit's
@@ -38,13 +41,13 @@ def sidebar(
         props={
             "projects": projects,
             "current_project": current_project,
-            "username": username,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
+            "username": username,
+            "role": role,
             "logout_path": LOGOUT_PATH,
-            "permissions": {
-                "can_edit": user_session_service.user_can_edit(),
-            },
+            "version": version.__dict__,
+            "support_email": support_email,
         },
         key=key,
         on_change=on_change,
@@ -65,9 +68,7 @@ def on_change():
         return
     session.sidebar_event_id = event_id
 
-    if event_data.get("view_logs"):
-        application_logs_dialog()
-    elif event_data.get("path") == LOGOUT_PATH:
+    if event_data.get("path") == LOGOUT_PATH:
         javascript_service.clear_component_states()
         user_session_service.end_user_session()
         Router().queue_navigation(to="")

@@ -118,7 +118,7 @@ body {
 
         --portal-background: #14181f;
         --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
-        --select-hover-background: rgba(255, 255, 255, .32);
+        --select-hover-background: rgb(38, 39, 48);
     }
 }
 

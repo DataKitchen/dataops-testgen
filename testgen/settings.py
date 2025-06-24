@@ -452,12 +452,17 @@ from env variable: `TESTGEN_DOCKER_HUB_PASSWORD`
 defaults to: None
 """
 
-VERSION: str = os.getenv("TESTGEN_VERSION", "unknown")
+VERSION: str = os.getenv("TESTGEN_VERSION", None)
 """
 Current deployed version. The value is displayed in the UI menu.
 
 from env variable: `TESTGEN_VERSION`
-defaults to: `unknown`
+defaults to: None
+"""
+
+SUPPORT_EMAIL: str = os.getenv("TESTGEN_SUPPORT_EMAIL", "open-source-support@datakitchen.io")
+"""
+Email for contacting DataKitchen support.
 """
 
 SSL_CERT_FILE: str = os.getenv("SSL_CERT_FILE", "")

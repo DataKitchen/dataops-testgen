@@ -2,12 +2,10 @@ import dataclasses
 import logging
 
 from testgen import settings
-from testgen.commands.run_upgrade_db_config import get_schema_revision
-from testgen.common import configure_logging, version_service
-from testgen.ui.navigation.menu import Menu, Version
+from testgen.common import configure_logging
+from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.session import session
 from testgen.ui.views.connections import ConnectionsPage
 from testgen.ui.views.data_catalog import DataCatalogPage
 from testgen.ui.views.hygiene_issues import HygieneIssuesPage
@@ -55,17 +53,6 @@ class Application(singleton.Singleton):
         self.menu = menu
         self.logger = logger
 
-    def get_version(self) -> Version:
-        latest_version = self.menu.version.latest
-        if not session.latest_version:
-            latest_version = version_service.get_latest_version()
-
-        return Version(
-            current=settings.VERSION,
-            latest=latest_version,
-            schema=get_schema_revision(),
-        )
-
 
 def run(log_level: int = logging.INFO) -> Application:
     pages = [*BUILTIN_PAGES]
@@ -105,11 +92,6 @@ def run(log_level: int = logging.INFO) -> Application:
                     page.path: dataclasses.replace(page.menu_item, page=page.path)
                     for page in pages if page.menu_item
                 }.values()
-            ),
-            version=Version(
-                current=settings.VERSION,
-                latest="...",
-                schema=get_schema_revision(),
             ),
         ),
         logger=LOG,
