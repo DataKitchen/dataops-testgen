@@ -158,8 +158,11 @@ def render_empty_state(project_code: str, user_can_run: bool) -> bool:
             icon=PAGE_ICON,
             message=testgen.EmptyStateMessage.TableGroup,
             action_label="Go to Table Groups",
-            link_href="connections:table-groups",
-            link_params={ "connection_id": str(project_summary_df["default_connection_id"]) }
+            link_href="table-groups",
+            link_params={
+                "project_code": project_code,
+                "connection_id": str(project_summary_df["default_connection_id"]),
+            }
         )
     elif not project_summary_df["test_suites_ct"] or not project_summary_df["test_definitions_ct"]:
         testgen.empty_state(

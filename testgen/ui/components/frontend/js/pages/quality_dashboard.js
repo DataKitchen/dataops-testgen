@@ -167,8 +167,8 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
             message: projectSummary.table_groups_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
             link: {
                 label: 'Go to Table Groups',
-                href: 'connections:table-groups',
-                params: { connection_id: projectSummary.default_connection_id },
+                href: 'table-groups',
+                params: { project_code: projectSummary.project_code, connection_id: projectSummary.default_connection_id },
             },
         };
     }

@@ -236,8 +236,8 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
         } else {
             text = 'No profiling results yet for table group.';
             link = Link({
-                href: 'connections:table-groups',
-                params: { connection_id: item.connection_id },
+                href: 'table-groups',
+                params: { project_code: item.project_code, connection_id: item.connection_id },
                 open_new: true,
                 label: 'Go to Table Groups',
                 right_icon: 'chevron_right',
