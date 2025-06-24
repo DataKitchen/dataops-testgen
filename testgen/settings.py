@@ -494,3 +494,8 @@ JWT_HASHING_KEY_B64: str = os.getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token
 """
+
+ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT: int = os.getenv("TG_ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT", 20)
+"""
+Limit the number of records used to generate the PDF with test results issue report.
+"""
