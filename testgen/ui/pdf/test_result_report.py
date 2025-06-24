@@ -165,7 +165,7 @@ def build_summary_table(document, tr_data):
 
 
 def build_history_table(document, tr_data):
-    history_data = get_test_result_history(get_schema(), tr_data)
+    history_data = get_test_result_history(get_schema(), tr_data, limit=15)
 
     history_table_style = TableStyle(
         (
