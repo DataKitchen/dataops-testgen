@@ -45,8 +45,10 @@ class MixpanelService(Singleton):
     @safe_method
     def send_event(self, event_name, **properties):
         properties.setdefault("instance_id", self.instance_id)
+        properties.setdefault("edition", settings.DOCKER_HUB_REPOSITORY)
         properties.setdefault("version", settings.VERSION)
         properties.setdefault("distinct_id", self.distinct_id)
+        properties.setdefault("username", session.username)
 
         track_payload = {
             "event": event_name,

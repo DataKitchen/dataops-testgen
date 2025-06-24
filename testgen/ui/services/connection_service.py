@@ -165,12 +165,12 @@ def init_profiling_sql(project_code, connection, table_group_schema=None):
     return clsProfiling
 
 
-def form_overwritten_connection_url(connection):
+def form_overwritten_connection_url(connection) -> str:
     flavor = connection["sql_flavor"]
 
     connection_credentials = {
         "flavor": flavor,
-        "user": "<user>",
+        "user": "<username>",
         "host": connection["project_host"],
         "port": connection["project_port"],
         "dbname": connection["project_db"],
@@ -188,3 +188,25 @@ def form_overwritten_connection_url(connection):
     connection_string = flavor_service.get_connection_string("<password>")
 
     return connection_string
+
+
+def get_connection_string(flavor: str) -> str:
+    db_type = get_db_type(flavor)
+    flavor_service = get_flavor_service(db_type)
+    flavor_service.init({
+        "flavor": flavor,
+        "user": "<username>",
+        "host": "<host>",
+        "port": "<port>",
+        "dbname": "<db_name>",
+        "url": None,
+        "connect_by_url": None,
+        "connect_by_key": False,
+        "private_key": None,
+        "private_key_passphrase": "",
+        "dbschema": "",
+        "http_path": "<http_path>",
+    })
+    return flavor_service.get_connection_string(
+        "<password>"
+    ).replace("%3E", ">").replace("%3C", "<")

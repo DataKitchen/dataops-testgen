@@ -1,14 +1,9 @@
 import dataclasses
-import importlib
-import inspect
 import logging
-
-import streamlit as st
 
 from testgen import settings
 from testgen.commands.run_upgrade_db_config import get_schema_revision
 from testgen.common import configure_logging, version_service
-from testgen.ui.assets import get_asset_path
 from testgen.ui.navigation.menu import Menu, Version
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
@@ -53,19 +48,8 @@ BUILTIN_PAGES: list[type[Page]] = [
 LOG = logging.getLogger("testgen")
 
 
-class Logo:
-    image_path: str = get_asset_path("dk_logo.svg")
-    icon_path: str = get_asset_path("dk_icon.svg")
-
-    def render(self):
-        st.logo(
-            image=self.image_path,
-            icon_image=self.icon_path,
-        )
-
-
 class Application(singleton.Singleton):
-    def __init__(self, logo: Logo, router: Router, menu: Menu, logger: logging.Logger) -> None:
+    def __init__(self, logo: plugins.Logo, router: Router, menu: Menu, logger: logging.Logger) -> None:
         self.logo = logo
         self.router = router
         self.menu = menu
@@ -87,20 +71,30 @@ def run(log_level: int = logging.INFO) -> Application:
     pages = [*BUILTIN_PAGES]
     installed_plugins = plugins.discover()
 
+    if not settings.IS_DEBUG:
+        """
+        This cleanup is called so that TestGen can remove uninstalled
+        plugins without having to be reinstalled.
+
+        The check for DEBUG mode is because multithreading for Streamlit
+        fragments loads before the plugins can be re-loaded.
+        """
+        plugins.cleanup()
+
     configure_logging(level=log_level)
-    logo_class = Logo
+    logo_class = plugins.Logo
 
     for plugin in installed_plugins:
-        module = importlib.import_module(plugin.package)
-        for property_name in dir(module):
-            if (
-                (maybe_class := getattr(module, property_name, None))
-                and inspect.isclass(maybe_class)
-            ):
-                if issubclass(maybe_class, Page):
-                    pages.append(maybe_class)
-                elif issubclass(maybe_class, Logo):
-                    logo_class = maybe_class
+        spec = plugin.load()
+
+        if spec.page:
+            pages.append(spec.page)
+
+        if spec.logo:
+            logo_class = spec.logo
+
+        if spec.component:
+            spec.component.provide()
 
     return Application(
         logo=logo_class(),

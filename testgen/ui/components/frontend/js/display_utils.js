@@ -44,6 +44,27 @@ function capitalize(/** @type string */ text) {
         .join(' ');
 }
 
+/**
+ * Display bytes in the closest unit with an integer part.
+ * 
+ * @param {number} bytes 
+ * @returns {string}
+ */
+function humanReadableSize(bytes) {
+    const thresholds = {
+        MB: 1024 * 1024,
+        KB: 1024,
+    };
+
+    for (const [unit, startsAt] of Object.entries(thresholds)) {
+        if (bytes > startsAt) {
+            return `${(bytes / startsAt).toFixed()}${unit}`;
+        }
+    }
+
+    return `${bytes}B`;
+}
+
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 const colorMap = {
     red: '#EF5350', // Red 400
@@ -68,4 +89,4 @@ const colorMap = {
 
 const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
 
-export { formatTimestamp, formatDuration, roundDigits, capitalize, colorMap, DISABLED_ACTION_TEXT };
+export { formatTimestamp, formatDuration, roundDigits, capitalize, humanReadableSize, colorMap, DISABLED_ACTION_TEXT };

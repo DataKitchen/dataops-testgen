@@ -14,9 +14,12 @@ function enforceElementWidth(
 
 function resizeFrameHeightToElement(/** @type string */elementId) {
     const observer = new ResizeObserver(() => {
-        const height = document.getElementById(elementId).offsetHeight;
-        if (height) {
-            Streamlit.setFrameHeight(height);
+        const element = document.getElementById(elementId);
+        if (element) {
+            const height = element.offsetHeight;
+            if (height) {
+                Streamlit.setFrameHeight(height);
+            }
         }
     });
     observer.observe(window.frameElement);
@@ -24,9 +27,12 @@ function resizeFrameHeightToElement(/** @type string */elementId) {
 
 function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
     const observer = new MutationObserver(() => {
-        const height = document.getElementById(elementId).offsetHeight;
-        if (height) {
-            Streamlit.setFrameHeight(height);
+        const element = document.getElementById(elementId);
+        if (element) {
+            const height = element.offsetHeight;
+            if (height) {
+                Streamlit.setFrameHeight(height);
+            }
         }
     });
     observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});

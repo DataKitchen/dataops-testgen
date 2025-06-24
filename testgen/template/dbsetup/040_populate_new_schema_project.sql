@@ -9,11 +9,12 @@ SELECT '{PROJECT_CODE}' as project_code,
        '{OBSERVABILITY_API_URL}' as observability_api_url;
 
 INSERT INTO connections
-(project_code, sql_flavor,
+(project_code, sql_flavor, sql_flavor_code,
  project_host, project_port, project_user, project_db,
  connection_name, project_pw_encrypted, http_path, max_threads, max_query_chars)
 SELECT '{PROJECT_CODE}'                       as project_code,
        '{SQL_FLAVOR}'                         as sql_flavor,
+       '{SQL_FLAVOR}'                         as sql_flavor_code,
        '{PROJECT_HOST}'                       as project_host,
        '{PROJECT_PORT}'                       as project_port,
        '{PROJECT_USER}'                       as project_user,
