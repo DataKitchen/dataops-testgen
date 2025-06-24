@@ -124,7 +124,7 @@ def get_test_results(
     return df
 
 
-def get_test_result_history(db_schema, tr_data):
+def get_test_result_history(db_schema, tr_data, limit: int | None = None):
     if tr_data["auto_gen"]:
         str_where = f"""
             WHERE test_suite_id = '{tr_data["test_suite_id"]}'
@@ -143,7 +143,8 @@ def get_test_result_history(db_schema, tr_data):
                   test_name_short, test_name_long, measure_uom, test_operator,
                   threshold_value::NUMERIC, result_measure, result_status
              FROM {db_schema}.v_test_results {str_where}
-           ORDER BY test_date DESC;
+           ORDER BY test_date DESC
+           {'LIMIT ' + str(limit) if limit else ''};
     """
 
     df = db.retrieve_data(str_sql)
@@ -153,7 +154,7 @@ def get_test_result_history(db_schema, tr_data):
     return df
 
 
-def do_source_data_lookup_custom(db_schema, tr_data):
+def do_source_data_lookup_custom(db_schema, tr_data, limit: int | None = None):
     # Define the query
     str_sql = f"""
             SELECT d.custom_query as lookup_query, tg.table_group_schema,
@@ -193,6 +194,8 @@ def do_source_data_lookup_custom(db_schema, tr_data):
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
+                if limit:
+                    df = df.sample(n=limit)
                 return "OK", None, str_sql, df
         else:
             return "NA", "Source data lookup is not available for this test.", None, None
@@ -201,7 +204,7 @@ def do_source_data_lookup_custom(db_schema, tr_data):
         return "ERR", f"Source data lookup query caused an error:\n\n{e.args[0]}", str_sql, None
 
 
-def do_source_data_lookup(db_schema, tr_data, sql_only=False):
+def do_source_data_lookup(db_schema, tr_data, sql_only=False, limit: int | None = None):
     # Define the query
     str_sql = f"""
             SELECT t.lookup_query, tg.table_group_schema,
@@ -298,6 +301,8 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False):
             if df.empty:
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
+                if limit:
+                    df = df.sample(n=limit)
                 return "OK", None, str_sql, df
         else:
             return "NA", "A source data lookup for this Test is not available.", None, None
