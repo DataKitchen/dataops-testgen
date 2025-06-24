@@ -47,8 +47,12 @@ header {
 /* ... */
 
 /* Sidebar */
-[data-testid="stSidebarHeader"] {
+[data-testid="stSidebarContent"] [data-testid="stSidebarHeader"] {
     padding: 16px 20px;
+}
+
+[data-testid="stSidebarHeader"] [data-testid="stLogo"] {
+    max-width: fit-content;
 }
 
 section[data-testid="stSidebar"] {
