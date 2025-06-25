@@ -84,7 +84,7 @@ def get_source_data(hi_data, limit: int | None = None):
                 return "ND", "Data that violates Hygiene Issue criteria is not present in the current dataset.", str_sql, None
             else:
                 if limit:
-                    df = df.sample(n=limit)
+                    df = df.sample(n=min(len(df), limit))
                 return "OK", None, str_sql, df
         else:
             return "NA", "Source data lookup is not available for this Issue.", None, None

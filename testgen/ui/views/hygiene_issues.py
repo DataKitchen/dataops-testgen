@@ -515,8 +515,8 @@ def get_excel_report_data(
 
 
 @st.cache_data(show_spinner=False)
-def get_source_data(hi_data):
-    return get_source_data_uncached(hi_data)
+def get_source_data(hi_data, limit):
+    return get_source_data_uncached(hi_data, limit)
 
 
 @st.dialog(title="Source Data")

@@ -195,7 +195,7 @@ def do_source_data_lookup_custom(db_schema, tr_data, limit: int | None = None):
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
                 if limit:
-                    df = df.sample(n=limit)
+                    df = df.sample(n=min(len(df), limit))
                 return "OK", None, str_sql, df
         else:
             return "NA", "Source data lookup is not available for this test.", None, None
@@ -302,7 +302,7 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False, limit: int | None 
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
                 if limit:
-                    df = df.sample(n=limit)
+                    df = df.sample(n=min(len(df), limit))
                 return "OK", None, str_sql, df
         else:
             return "NA", "A source data lookup for this Test is not available.", None, None
