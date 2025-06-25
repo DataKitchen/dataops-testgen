@@ -529,7 +529,7 @@ def source_data_dialog(selected_row):
     fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
 
     with st.spinner("Retrieving source data..."):
-        bad_data_status, bad_data_msg, _, df_bad = get_source_data(selected_row)
+        bad_data_status, bad_data_msg, _, df_bad = get_source_data(selected_row, limit=500)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":

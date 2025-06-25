@@ -380,13 +380,13 @@ def get_test_definition(str_test_def_id):
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup(selected_row):
     schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup(schema, selected_row)
+    return test_results_service.do_source_data_lookup(schema, selected_row, limit=500)
 
 
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup_custom(selected_row):
     schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup_custom(schema, selected_row)
+    return test_results_service.do_source_data_lookup_custom(schema, selected_row, limit=500)
 
 
 @st.cache_data(show_spinner=False)

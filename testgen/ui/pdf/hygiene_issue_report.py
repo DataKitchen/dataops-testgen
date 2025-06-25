@@ -4,6 +4,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
+from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
     COLOR_GRAY_BG,
@@ -185,7 +186,7 @@ def get_report_content(document, hi_data):
     yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
-    sample_data_tuple = get_source_data(hi_data)
+    sample_data_tuple = get_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)
