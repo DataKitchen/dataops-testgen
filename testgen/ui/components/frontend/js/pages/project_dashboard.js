@@ -2,9 +2,6 @@
  * @typedef ProjectSummary
  * @type {object}
  * @property {string} project_code
- * @property {number} table_groups_count
- * @property {number} test_suites_count
- * @property {number} test_definitions_count
  * @property {number} test_runs_count
  * @property {number} profiling_runs_count
  * @property {number} connections_count
@@ -15,9 +12,8 @@
  * @property {string} id
  * @property {string} test_suite
  * @property {number} test_ct
- * @property {string} latest_auto_gen_date
- * @property {string} latest_run_start
- * @property {string} latest_run_id
+ * @property {number?} latest_run_start
+ * @property {string?} latest_run_id
  * @property {number} last_run_test_ct
  * @property {number} last_run_passed_ct
  * @property {number} last_run_warning_ct
@@ -29,12 +25,11 @@
  * @type {object}
  * @property {string} id
  * @property {string} table_groups_name
- * @property {string} table_groups_name
- * @property {number?} dq_score
- * @property {number?} dq_score_profiling
- * @property {number?} dq_score_testing
- * @property {string} latest_profile_id
- * @property {string} latest_profile_start
+ * @property {string?} dq_score
+ * @property {string?} dq_score_profiling
+ * @property {string?} dq_score_testing
+ * @property {string?} latest_profile_id
+ * @property {number?} latest_profile_start
  * @property {number} latest_profile_table_ct
  * @property {number} latest_profile_column_ct
  * @property {number} latest_anomalies_ct
@@ -42,16 +37,8 @@
  * @property {number} latest_anomalies_likely_ct
  * @property {number} latest_anomalies_possible_ct
  * @property {number} latest_anomalies_dismissed_ct
- * @property {string} latest_tests_start
- * @property {number} latest_tests_suite_ct
- * @property {number} latest_tests_ct
- * @property {number} latest_tests_passed_ct
- * @property {number} latest_tests_warning_ct
- * @property {number} latest_tests_failed_ct
- * @property {number} latest_tests_error_ct
- * @property {number} latest_tests_dismissed_ct
+ * @property {number?} latest_tests_start
  * @property {TestSuiteSummary[]} test_suites
- * @property {boolean} expanded
  *
  * @typedef SortOption
  * @type {object}
@@ -67,11 +54,9 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, friendlyPercent, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
+import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp } from '../display_utils.js';
 import { Card } from '../components/card.js';
-import { Caption } from '../components/caption.js';
-import { ExpanderToggle } from '../components/expander_toggle.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
 import { Link } from '../components/link.js';
@@ -79,7 +64,9 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { ScoreMetric } from '../components/score_metric.js';
 
-const { div, h3, hr, span, strong } = van.tags;
+const { div, h3, hr, span } = van.tags;
+
+const staleProfileDays = 60;
 
 const ProjectDashboard = (/** @type Properties */ props) => {
     loadStylesheet('project-dashboard', stylesheet);
@@ -124,43 +111,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
         { id: wrapperId, class: 'flex-column tg-overview' },
         () => !getValue(isEmpty)
             ? div(
-                { class: 'flex-row fx-align-stretch fx-gap-4' },
-                Card({
-                    id: 'overview-project-summary',
-                    class: 'tg-overview--project',
-                    testId: 'project-summary',
-                    border: true,
-                    content: [
-                        () => div(
-                            { class: 'flex-row fx-align-flex-start' },
-                            () => {
-                                return div(
-                                    { class: 'flex-column fx-gap-2 tg-overview--project--summary' },
-                                    Caption({content: 'Project Summary', style: 'margin-bottom: 8px;' }),
-                                    div(
-                                        strong({ style: 'margin-right: 4px;' }, props.project.val.table_groups_count),
-                                        span('table groups'),
-                                    ),
-                                    div(
-                                        strong({ style: 'margin-right: 4px;' }, props.project.val.test_suites_count),
-                                        span('test suites'),
-                                    ),
-                                    div(
-                                        strong({ style: 'margin-right: 4px;' }, props.project.val.test_definitions_count),
-                                        span('test definitions'),
-                                    ),
-                                );
-                            }
-                        ),
-                    ],
-                }),
-            )
-            : ConditionalEmptyState(getValue(props.project)),
-        () => !getValue(isEmpty)
-            ? div(
-                { class: 'flex-row fx-align-flex-end' },
-                h3(() => `Table Groups (${tableGroups?.val?.length ?? 0})`),
-                span({ style: 'margin-right: auto;' }),
+                { class: 'flex-row fx-align-flex-end fx-gap-4' },
                 Input({
                     width: 230,
                     height: 38,
@@ -171,7 +122,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     testId: 'table-groups-filter',
                     onChange: (value) => tableGroupsSearchTerm.val = value,
                 }),
-                span({ style: 'margin-right: 1rem;' }),
                 Select({
                     label: 'Sort by',
                     value: tableGroupsSortOption,
@@ -184,10 +134,10 @@ const ProjectDashboard = (/** @type Properties */ props) => {
             : '',
         () => !getValue(isEmpty)
             ? div(
-                { class: 'flex-column mt-2' },
+                { class: 'flex-column mt-4' },
                 getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
             )
-            : '',
+            : ConditionalEmptyState(getValue(props.project)),
     );
 }
 
@@ -195,153 +145,112 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     return Card({
         testId: 'table-group-summary-card',
         border: true,
-        title: tableGroup.table_groups_name,
-        actionContent: () => ExpanderToggle({
-            default: tableGroup.expanded,
-            style: 'font-size: 14px !important; font-weight: 400;',
-            onExpand: () => {
-                emitEvent('TableGroupExpanded', {payload: tableGroup.id});
-            },
-            onCollapse: () => {
-                emitEvent('TableGroupCollapsed', {payload: tableGroup.id});
-            },
-        }),
         content: () => div(
             { class: 'flex-column' },
             div(
-                { class: 'flex-row fx-align-flex-start' },
+                { class: 'flex-row fx-align-flex-start fx-justify-space-between' },
                 div(
-                    { class: 'flex-column fx-flex' },
-                    TableGroupLatestProfile(tableGroup),
-                ),
-                div(
-                    { class: 'flex-column fx-flex' },
-                    TableGroupLatestTestResults(tableGroup),
+                    { class: 'flex-column', style: 'flex: auto;' },
+                    h3(
+                        { class: 'tg-overview--title' },
+                        tableGroup.table_groups_name,
+                    ),
+                    span(
+                        { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
+                        `${tableGroup.latest_profile_table_ct} tables | ${tableGroup.latest_profile_column_ct} columns`,
+                    ),
+                    TableGroupTestSuiteSummary(tableGroup.test_suites),
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
-            tableGroup.expanded
-                ? hr({ class: 'tg-overview--table-group-divider' })
-                : undefined,
-            tableGroup.expanded
-                ? TableGroupTestSuiteSummary(tableGroup.test_suites)
-                : undefined,
+            hr({ class: 'tg-overview--table-group-divider' }),
+            TableGroupLatestProfile(tableGroup),
         )
     });
 };
 
 const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
-    return [
-        Caption({ content: 'Latest profile' }),
-        () => tableGroup.latest_profile_start ? div(
-            div(
-                { class: 'flex-row mb-3' },
-                Link({
-                    label: formatTimestamp(tableGroup.latest_profile_start),
-                    href: 'profiling-runs:results',
-                    params: { run_id: tableGroup.latest_profile_id },
-                }),
-            ),
-            div(
-                { class: 'flex-row mb-3' },
-                strong({ class: 'mr-1' }, tableGroup.latest_profile_table_ct),
-                span('tables'),
-                span({ class: 'mr-1 ml-1' }, '|'),
-                strong({ class: 'mr-1' }, tableGroup.latest_profile_column_ct),
-                span('columns'),
-                span({ class: 'mr-1 ml-1' }, '|'),
-                Link({
-                    label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
-                    href: 'profiling-runs:hygiene',
-                    params: {
-                        run_id: tableGroup.latest_profile_id,
-                    },
-                    width: 150,
-                })
-            ),
-            () => tableGroup.latest_anomalies_ct
-                ? SummaryBar({
-                    items: [
-                        { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
-                        { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
-                        { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
-                        { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
-                    ],
-                    height: 12,
-                    width: 280,
-                })
-                : '',
-        )
-        : span('--'),
-    ];
-};
+    if (!tableGroup.latest_profile_start) {
+        return div(
+            { class: 'mt-1 mb-1 text-secondary' },
+            'No profiling data yet',
+        );
+    }
 
-const TableGroupLatestTestResults = (/** @type TableGroupSummary */ tableGroup) => {
-    return [
-        Caption({ content: 'Latest test results' }),
-        () => tableGroup.latest_tests_ct
-            ? div(
-                { class: 'flex-column' },
-                span(
-                    { class: 'mb-3' },
-                    `${friendlyPercent(tableGroup.latest_tests_passed_ct * 100 / tableGroup.latest_tests_ct)}% passed`,
-                ),
-                div(
-                    { class: 'flex-row mb-3' },
-                    strong({ class: 'mr-1' }, tableGroup.latest_tests_ct),
-                    span({ class: 'mr-1' }, 'tests in'),
-                    strong({ class: 'mr-1' }, tableGroup.latest_tests_suite_ct),
-                    span('test suites'),
-                ),
-                SummaryBar({
-                    items: [
-                        { label: 'Passed', value: parseInt(tableGroup.latest_tests_passed_ct), color: 'green' },
-                        { label: 'Warning', value: parseInt(tableGroup.latest_tests_warning_ct), color: 'yellow' },
-                        { label: 'Failed', value: parseInt(tableGroup.latest_tests_failed_ct), color: 'red' },
-                        { label: 'Error', value: parseInt(tableGroup.latest_tests_error_ct), color: 'brown' },
-                        { label: 'Dismissed', value: parseInt(tableGroup.latest_tests_dismissed_ct), color: 'grey' },
-                    ],
-                    height: 12,
-                    width: 350,
-                })
-            )
-            : span('--'),
-    ];
+    const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start)) / (1000 * 60 * 60 * 24));
+
+    return div(
+        div(
+            { class: 'flex-row fx-gap-1 mb-2' },
+            span('Latest profile:'),
+            Link({
+                label: formatTimestamp(tableGroup.latest_profile_start),
+                href: 'profiling-runs:results',
+                params: { run_id: tableGroup.latest_profile_id },
+            }),
+            daysAgo > staleProfileDays
+                ? span({ class: 'text-error' }, `(${daysAgo} days ago)`)
+                : null,
+            span('|'),
+            Link({
+                label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
+                href: 'profiling-runs:hygiene',
+                params: {
+                    run_id: tableGroup.latest_profile_id,
+                },
+                width: 150,
+            }),
+        ),
+        tableGroup.latest_anomalies_ct
+            ? SummaryBar({
+                items: [
+                    { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
+                    { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
+                    { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
+                    { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
+                ],
+                height: 3,
+                width: 350,
+            })
+            : '',
+    );
 };
 
 const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) => {
+    if (!testSuites?.length) {
+        return div(
+            { class: 'mt-1 mb-1 text-secondary' },
+            'No test suites yet',
+        );
+    }
+
     return div(
         { class: 'flex-column' },
         div(
-            { class: 'flex-row mb-4' },
-            Caption({ content: 'Test Suite', style: 'flex: 1 1 20%;' }),
-            Caption({ content: 'Latest Generation', style: 'flex: 1 1 15%;' }),
-            Caption({ content: 'Latest Run', style: 'flex: 1 1 15%;' }),
-            Caption({ content: 'Latest Results', style: 'flex: 1 1 50%;' }),
+            { class: 'flex-row mb-1 tg-overview--row' },
+            span({ style: 'flex: 1 1 25%;' }, 'Test Suite'),
+            span({ style: 'flex: 1 1 25%;' }, 'Latest Run'),
+            span({ style: 'flex: 1 1 50%;' }, 'Latest Results'),
         ),
         testSuites.map(suite => div(
-            { class: 'flex-row mb-2' },
+            { class: 'flex-row fx-align-flex-start mt-2 tg-overview--row' },
             div(
-                { class: 'flex-column', style: 'flex: 1 1 20%;' },
+                { class: 'flex-column', style: 'flex: 1 1 25%; word-break: break-word;' },
                 Link({
                     label: suite.test_suite,
                     href: 'test-suites:definitions',
                     params: { test_suite_id: suite.id },
                 }),
-                Caption({ content: `${suite.test_ct ?? 0} tests`}),
-            ),
-            span(
-                { style: 'flex: 1 1 15%;' },
-                suite.latest_auto_gen_date ? formatTimestamp(suite.latest_auto_gen_date) : '--',
+                span({ class: 'text-caption' }, `${suite.test_ct ?? 0} tests`),
             ),
             suite.latest_run_id
                 ? Link({
                     label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
                     params: { run_id: suite.latest_run_id },
-                    style: 'flex: 1 1 15%;',
+                    style: 'flex: 1 1 25%;',
                 })
-                : span({ style: 'flex: 1 1 15%;' }, '--'),
+                : span({ style: 'flex: 1 1 25%;' }, '--'),
             div(
                 { style: 'flex: 1 1 50%;' },
                 suite.last_run_test_ct ? SummaryBar({
@@ -352,7 +261,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                         { label: 'Error', 'value': parseInt(suite.last_run_error_ct), color: 'brown' },
                         { label: 'Dismissed', 'value': parseInt(suite.last_run_dismissed_ct), color: 'grey' },
                     ],
-                    width: 200,
+                    width: 350,
                     height: 8,
                 }) : '--',
             ),
@@ -393,22 +302,20 @@ stylesheet.replace(`
     width: 100%;
 }
 
-.tg-overview--project {
-    margin: 8px 0;
-    width: 50%;
+.tg-overview--title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 500;
 }
 
-.tg-overview--project--score {
-    margin-right: auto;
-}
-
-.tg-overview--project--summary {
-    margin-right: auto;
+.tg-overview--subtitle {
+    text-transform: none;
+    font-weight: 400;
 }
 
 hr.tg-overview--table-group-divider {
     height: 1px;
-    margin: 8px 0 12px;
+    margin: 12px 0;
     padding: 0px;
     color: inherit;
     background-color: transparent;
@@ -416,7 +323,11 @@ hr.tg-overview--table-group-divider {
     border-right: none;
     border-left: none;
     border-image: initial;
-    border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tg-overview--row > * {
+    padding: 0 4px;
 }
 `);
 
