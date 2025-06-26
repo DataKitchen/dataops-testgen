@@ -3,6 +3,7 @@ import logging
 import streamlit as st
 
 from testgen import settings
+from testgen.common import version_service
 from testgen.common.docker_service import check_basic_configuration
 from testgen.common.models import with_database_session
 from testgen.ui import bootstrap
@@ -51,9 +52,12 @@ def render(log_level: int = logging.INFO):
             testgen.sidebar(
                 projects=project_service.get_projects(),
                 current_project=session.sidebar_project,
-                menu=application.menu.update_version(application.get_version()),
-                username=session.username,
+                menu=application.menu,
                 current_page=session.current_page,
+                username=session.username,
+                role=session.auth_role,
+                version=version_service.get_version(),
+                support_email=settings.SUPPORT_EMAIL,
             )
 
     application.router.run()

@@ -18,16 +18,8 @@ class MenuItem:
 
 
 @dataclasses.dataclass
-class Version:
-    current: str
-    latest: str
-    schema: str
-
-
-@dataclasses.dataclass
 class Menu:
     items: list[MenuItem]
-    version: Version
 
     def filter_for_current_user(self) -> "Menu":
         filtered_items = []
@@ -52,9 +44,6 @@ class Menu:
             if items:
                 unflattened_items.append(MenuItem(label=label, items=items))
         return dataclasses.replace(self, items=unflattened_items)
-
-    def update_version(self, version: Version) -> "Menu":
-        return dataclasses.replace(self, version=version)
 
     def asdict(self):
         return dataclasses.asdict(self)

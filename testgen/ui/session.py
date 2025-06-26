@@ -1,5 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
+
+if TYPE_CHECKING:
+    from testgen.common.version_service import Version
+
 from collections.abc import Callable
-from typing import Any, Literal, TypeVar
 
 import streamlit as st
 from streamlit.runtime.state import SessionStateProxy
@@ -31,7 +37,7 @@ class TestgenSession(Singleton):
 
     sidebar_project: str
     add_project: bool
-    latest_version: str | None
+    version: Version | None
 
     testgen_event_id: str | None
     sidebar_event_id: str | None

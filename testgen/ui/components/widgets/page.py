@@ -1,13 +1,16 @@
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from testgen import settings
+from testgen.common import version_service
 from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
+from testgen.ui.components.widgets.testgen_component import testgen_component
+from testgen.ui.services import user_session_service
+from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
-BASE_HELP_URL = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/"
-DEFAULT_HELP_TOPIC = "dataops-testgen-help"
-SLACK_URL = "https://data-observability-slack.datakitchen.io/join"
-TRAINING_URL = "https://info.datakitchen.io/data-quality-training-and-certifications"
+UPGRADE_URL = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/upgrade-testgen"
+
 
 def page_header(
     title: str,
@@ -16,7 +19,7 @@ def page_header(
 ):
     with st.container():
         no_flex_gap()
-        title_column, links_column = st.columns([0.95, 0.05], vertical_alignment="bottom")
+        title_column, links_column = st.columns([0.75, 0.25], vertical_alignment="bottom")
 
         with title_column:
             no_flex_gap()
@@ -25,17 +28,52 @@ def page_header(
                 tg_breadcrumbs(breadcrumbs=breadcrumbs)
 
         with links_column:
-            page_links(help_topic)
+            help_menu(help_topic)
 
         st.html('<hr size="3" class="tg-header--line">')
 
 
-def page_links(help_topic: str | None = None):
-    css_class("tg-header--links")
-    flex_row_end()
-    st.link_button(":material/question_mark:", f"{BASE_HELP_URL}{help_topic or DEFAULT_HELP_TOPIC}", help="Help Center")
-    st.link_button(":material/group:", SLACK_URL, help="Slack Community")
-    st.link_button(":material/school:", TRAINING_URL, help="Training Portal")
+def help_menu(help_topic: str | None = None) -> None:
+    with st.container(key="tg-header--help"):
+        version = version_service.get_version()
+        if version.latest != version.current:
+            st.page_link(UPGRADE_URL, label=f":small[:red[New version available! {version.latest}]]")
+
+        help_container = st.empty()
+
+        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+        def close_help(rerun: bool = False) -> None:
+            with help_container.container(key="tg-header--help-dummy"):
+                flex_row_end()
+                st.markdown("Help :material/keyboard_arrow_down:")
+            if rerun:
+                st.rerun()
+
+        def open_app_logs():
+            close_help()
+            application_logs_dialog()
+            
+        with help_container.container():
+            flex_row_end()
+            with st.popover("Help"):
+                css_class("tg-header--help-wrapper")
+                testgen_component(
+                    "help_menu",   
+                    props={
+                        "help_topic": help_topic,
+                        "support_email": settings.SUPPORT_EMAIL,
+                        "version": version.__dict__,
+                        "permissions": {
+                            "can_edit": user_session_service.user_can_edit(),
+                        },
+                    },
+                    on_change_handlers={
+                        "AppLogsClicked": lambda _: open_app_logs(),
+                    },
+                    event_handlers={
+                        "ExternalLinkClicked": lambda _: close_help(rerun=True),
+                    },
+                )
 
 
 def whitespace(size: float, unit: str = "rem", container: DeltaGenerator | None = None):

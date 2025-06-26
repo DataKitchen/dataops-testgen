@@ -34,7 +34,6 @@ class ProjectDashboardPage(Page):
     def render(self, project_code: str, **_kwargs):
         testgen.page_header(
             PAGE_TITLE,
-            "introduction-to-dataops-testgen",
         )
 
         table_groups = get_table_groups_summary(project_code)

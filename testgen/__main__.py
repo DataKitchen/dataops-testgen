@@ -48,6 +48,7 @@ from testgen.utils import plugins
 LOG = logging.getLogger("testgen")
 
 APP_MODULES = ["ui", "scheduler"]
+VERSION_DATA = version_service.get_version()
 
 
 @dataclass
@@ -69,7 +70,13 @@ class CliGroup(click.Group):
 
 @click.group(
     cls=CliGroup,
-    help=f"This version: {settings.VERSION} \n\nLatest version: {version_service.get_latest_version()} \n\nSchema revision: {get_schema_revision()}"
+    help=f"""
+    {VERSION_DATA.edition} {VERSION_DATA.current or ""}
+    
+    {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
+    
+    Schema revision: {get_schema_revision()}
+    """
 )
 @click.option(
     "-v",

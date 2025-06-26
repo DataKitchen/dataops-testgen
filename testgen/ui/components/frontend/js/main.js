@@ -29,6 +29,7 @@ import { ColumnProfilingHistory } from './data_profiling/column_profiling_histor
 import { ScheduleList } from './pages/schedule_list.js';
 import { Connections } from './pages/connections.js';
 import { TableGroupWizard } from './pages/table_group_wizard.js';
+import { HelpMenu } from './components/help_menu.js'
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -56,6 +57,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         column_selector: ColumnSelector,
         connections: Connections,
         table_group_wizard: TableGroupWizard,
+        help_menu: HelpMenu,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {

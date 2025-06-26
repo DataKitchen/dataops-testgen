@@ -1,28 +1,59 @@
 import logging
+from dataclasses import dataclass
 
 import requests
 
 from testgen import settings
+from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
 
-def get_latest_version() -> str:
+@dataclass
+class Version:
+    edition: str
+    current: str
+    latest: str
+
+
+def get_version() -> Version:
+    if not session.version:
+        session.version = Version(
+            edition=_get_app_edition(),
+            current=settings.VERSION,
+            latest=_get_latest_version(),
+        )
+    return session.version
+
+
+def _get_app_edition() -> str:
+    edition = (
+        settings.DOCKER_HUB_REPOSITORY
+        .replace("datakitchen/dataops-testgen", "")
+        .replace("-", " ")
+        .strip()
+        .title()
+        .replace("Qa", "QA")        
+    )
+    return f"TestGen{' ' + edition if edition else ''}"
+
+
+def _get_latest_version() -> str | None:
     try:
         return {
             "pypi": _get_last_pypi_release,
             "docker": _get_last_docker_release,
             "yes": _get_last_docker_release,  # NOTE: kept for retrocompatibility
-        }.get(settings.CHECK_FOR_LATEST_VERSION, lambda: "unknown")()
+        }.get(settings.CHECK_FOR_LATEST_VERSION, lambda: None)()
     except:
-        return "unknown"
+        return None
 
 
-def _get_last_pypi_release() -> str:
+def _get_last_pypi_release() -> str | None:
     response = requests.get("https://pypi.org/pypi/dataops-testgen/json", timeout=3)
     if response.status_code != 200:
         LOG.warning(f"version_service: Failed to fetch PyPi releases. Status code: {response.status_code}")
-        return "unknown"
+        return None
 
     package_data = response.json()
     package_releases = list((package_data.get("releases") or {}).keys())
@@ -30,7 +61,7 @@ def _get_last_pypi_release() -> str:
     return _sorted_tags(package_releases)[0]
 
 
-def _get_last_docker_release() -> str:
+def _get_last_docker_release() -> str | None:
     headers = {}
     if settings.DOCKER_HUB_USERNAME and settings.DOCKER_HUB_PASSWORD:
         auth_response = requests.post(
@@ -43,7 +74,7 @@ def _get_last_docker_release() -> str:
                 "version_service: unable to login against https://hub.docker.com."
                 f" Status code: {auth_response.status_code}"
             )
-            return "unknown"
+            return None
         headers["Authorization"] = f"Bearer {auth_response.json()['token']}"
 
     response = requests.get(
@@ -55,7 +86,7 @@ def _get_last_docker_release() -> str:
 
     if response.status_code != 200:
         LOG.debug(f"version_service: Failed to fetch docker tags. Status code: {response.status_code}")
-        return "unknown"
+        return None
 
     tags_to_return = []
     tags_data = response.json()
@@ -66,7 +97,7 @@ def _get_last_docker_release() -> str:
             tags_to_return.append(tag_name)
 
     if len(tags_to_return) <= 0:
-        return "unkown"
+        return None
 
     return _sorted_tags(tags_to_return)[0]
 
