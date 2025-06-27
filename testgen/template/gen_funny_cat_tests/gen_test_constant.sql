@@ -55,6 +55,8 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                   INNER JOIN profile_results p
                      ON (rr.table_groups_id = p.table_groups_id
                     AND  rr.run_date = p.run_date)
+                    -- No Dates as constants
+                  WHERE NOT (p.general_type = 'D' AND rr.run_rank = 1)
                   GROUP BY p.schema_name, p.table_name, p.column_name
                   HAVING SUM(CASE WHEN distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
                      AND SUM(CASE WHEN max_length < 100 THEN 0 ELSE 1 END) = 0
@@ -67,7 +69,9 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                                            WHEN p.general_type = 'B'
                                             AND p.boolean_true_ct = 0
                                             AND p.distinct_value_ct = 1     THEN 'FALSE'
-                                         END ) = 1 ),
+                                         END ) = 1
+                     -- Only constant if more than one profiling result
+                     AND COUNT(*) > 1),
 newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
                      '{TEST_SUITE_ID}'::UUID AS test_suite_id,
                      c.profile_run_id,

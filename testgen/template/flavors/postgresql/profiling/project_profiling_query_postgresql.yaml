@@ -65,6 +65,7 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
         WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
         ELSE 0
       END) AS non_alpha_ct,
+  COUNT( CASE WHEN TRANSLATE("{COL_NAME}", E'\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> "{COL_NAME}" THEN 1 END) as non_printing_ct,
   SUM(<%IS_NUM;LEFT("{COL_NAME}", 31)%>)  AS numeric_ct,
   SUM(<%IS_DATE;LEFT("{COL_NAME}", 26)%>)  AS date_ct,
   CASE
@@ -101,6 +102,7 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as upper_case_ct,
   NULL as lower_case_ct,
   NULL as non_alpha_ct,
+  NULL as non_printing_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
@@ -149,7 +151,7 @@ strTemplate08_else: NULL as min_value,
   NULL as percentile_25,
   NULL as percentile_50,
   NULL as percentile_75,
-strTemplate10_N_dec: SUM(ROUND(MOD("{COL_NAME}", 1), 5)) as fractional_sum,
+strTemplate10_N_dec: SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) as fractional_sum,
 
 strTemplate10_else: NULL as fractional_sum,
 

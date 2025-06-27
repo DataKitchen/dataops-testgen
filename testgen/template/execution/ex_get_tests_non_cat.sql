@@ -20,7 +20,7 @@ SELECT tt.test_type,
        coalesce(groupby_names, '')                     as groupby_names,
        case
            when having_condition is null then ''
-           else concat('WHERE ', having_condition) end as having_condition,
+           else concat('HAVING ', having_condition) end as having_condition,
        coalesce(window_date_column, '')                as window_date_column,
        cast(coalesce(window_days, '0') as varchar(50)) as window_days,
        coalesce(match_schema_name, '')                 as match_schema_name,
@@ -30,7 +30,10 @@ SELECT tt.test_type,
            when nullif(match_subset_condition, '') is null then '1=1'
            else match_subset_condition end             as match_subset_condition,
        coalesce(match_groupby_names, '')               as match_groupby_names,
-       coalesce(match_having_condition, '')            as match_having_condition,
+       case
+           when match_having_condition is null then ''
+           else concat('HAVING ', match_having_condition)
+       END                                             as match_having_condition,
        coalesce(custom_query, '')                      as custom_query,
        coalesce(tm.template_name, '')                  as template_name
 FROM test_definitions td

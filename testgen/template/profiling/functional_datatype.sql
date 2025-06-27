@@ -126,7 +126,8 @@ SET functional_data_type = 'DateTime Stamp'
 WHERE profile_run_id = '{PROFILE_RUN_ID}'
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
-  AND TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN';
+  AND (TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN'
+   OR  TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NNANN:NN:NN+NN:NN');
 
 -- Process Timestamp
 UPDATE profile_results
@@ -306,7 +307,7 @@ INNER JOIN profile_results s
    AND LOWER(c.column_name) SIMILAR TO '%c(|i)ty%'
    AND c.functional_data_type NOT IN ('State', 'Zip')
    AND profile_results.id = c.id;
-  
+
 -- Assign Name
 UPDATE profile_results
    SET functional_data_type = 'Person Full Name'
@@ -476,6 +477,17 @@ SET functional_data_type =
                                  WHEN ROUND(100.0 * value_ct::FLOAT/NULLIF(record_ct, 0)) > 70 THEN 'ID'
                                                                                                ELSE 'Attribute-Numeric'
                             END
+            WHEN general_type='N'
+             AND ( -- Sparsity condition: mostly zero
+                   (percentile_25 = 0 AND percentile_75 = 0 AND percentile_50 = 0)
+                   OR
+                   -- Sparsity condition: mostly NULL
+                   (value_ct > 0 AND record_ct > 0
+                    AND (value_ct::FLOAT / record_ct::FLOAT) < 0.05)  )
+             AND ( -- Evidence of extreme non-zero values
+                   (percentile_75 - percentile_25) > 2 * ABS(avg_value)
+                   OR ABS(avg_value) > 5 * ABS(percentile_50)  )                   THEN 'Measurement Spike'
+
             WHEN general_type='N'
              AND (  column_type ILIKE '%int%'
                       OR
