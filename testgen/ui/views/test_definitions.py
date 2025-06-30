@@ -274,6 +274,8 @@ def show_test_form(
     baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
     baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
     baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
+    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else 0
+    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else 0
     subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
     groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
     having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
@@ -379,6 +381,8 @@ def show_test_form(
         "baseline_sum": baseline_sum,
         "baseline_avg": baseline_avg,
         "baseline_sd": baseline_sd,
+        "lower_tolerance": lower_tolerance,
+        "upper_tolerance": upper_tolerance,
         "subset_condition": subset_condition,
         "groupby_names": groupby_names,
         "having_condition": having_condition,
@@ -510,7 +514,9 @@ def show_test_form(
         if not attribute in dynamic_attributes:
             return
         
-        default_value = "" if attribute != "threshold_value" else 0
+        numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+
+        default_value = 0 if attribute in numeric_attributes else ""
         value = empty_if_null(selected_test_def[attribute]) if mode == "edit" else default_value
 
         index = dynamic_attributes.index(attribute)
@@ -541,7 +547,7 @@ def show_test_form(
                 height=150 if test_type == "CUSTOM" else 75,
                 help=help_text,
             )
-        elif attribute in ["threshold_value"]:
+        elif attribute in numeric_attributes:
             test_definition[attribute] = container.number_input(
                 label=label_text,
                 value=float(value),

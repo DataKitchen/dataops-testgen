@@ -28,6 +28,7 @@ def get_test_definition(db_schema, test_def_id):
                   tt.test_description as description, tt.usage_notes,
                   d.column_name,
                   d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
+                  d.lower_tolerance, d.upper_tolerance,
                   d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
                   d.match_table_name, d.match_column_names, d.match_subset_condition,
                   d.match_groupby_names, d.match_having_condition,

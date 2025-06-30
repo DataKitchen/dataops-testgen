@@ -243,6 +243,8 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False, limit: int | None 
         str_query = str_query.replace("{BASELINE_AVG}", empty_if_null(df_test.at[0, "baseline_avg"]))
         str_query = str_query.replace("{BASELINE_SD}", empty_if_null(df_test.at[0, "baseline_sd"]))
         str_query = str_query.replace("{THRESHOLD_VALUE}", empty_if_null(df_test.at[0, "threshold_value"]))
+        str_query = str_query.replace("{LOWER_TOLERANCE}", empty_if_null(df_test.at[0, "lower_tolerance"]))
+        str_query = str_query.replace("{UPPER_TOLERANCE}", empty_if_null(df_test.at[0, "upper_tolerance"]))
 
         str_substitute = empty_if_null(df_test.at[0, "subset_condition"])
         str_substitute = "1=1" if str_substitute == "" else str_substitute

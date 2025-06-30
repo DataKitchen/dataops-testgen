@@ -146,13 +146,11 @@ VALUES  ('1004', 'Alpha_Trunc', 'Alpha Truncation', 'Maximum character count con
         ('1501', 'Aggregate_Minimum', 'Aggregate Minimum', 'Aggregate values per group are at or above reference', 'Tests that aggregate values for each set of column values are at least the same as reference dataset', 'Aggregate measure per set of column values is not at least the same as reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_schema_name,match_table_name,match_column_names,match_subset_condition,match_groupby_names,match_having_condition', NULL, 'Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition', 'Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of reference table|Reference table name|Aggregate column expression in reference table (e.g. `SUM(sales)`)|Condition defining a subset of records in reference table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in reference table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in reference table (e.g. HAVING clause) - OPTIONAL', 'Fail', 'QUERY', 'referential', 'Accuracy', 'Data Drift', 'Expected count of group totals below aggregate value', 'This test compares sums or counts of a column rolled up to one or more category combinations, but requires a match or increase in the aggregate value, rather than an exact match, across two different tables. Both tables must be accessible at the same time. Use this to confirm that aggregate values have not dropped for any set of categories, even if some values may rise. This test is useful to compare an older and newer version of a cumulative dataset. An error here means that one or more values per category set fail to match or exceed the prior dataset. New categories or combinations are allowed (but can be restricted independently with a Combo_Match test). Both tables must be present to run this test.', 'Y'),
         ('1502', 'Combo_Match', 'Reference Match', 'Column values or combinations found in reference', 'Tests for the presence of one or a set of column values in a reference table', 'Column value combinations are not found in reference table values.', 'Missing values', NULL, NULL, '({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)', '1.0', 'Categorical Column List', 'Specify one or more Categorical columns, separated by commas. \n\nDo not use continuous mesurements here. Do not use numeric values unless they represent discrete categories.', 'subset_condition,having_condition,match_schema_name,match_table_name,match_groupby_names,match_subset_condition,match_having_condition', NULL, 'Record Subset Condition,Group Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns,Matching Record Subset Condition,Matching Group Subset Condition', 'Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in source table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to validate source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in reference table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL', 'Fail', 'QUERY', 'referential', 'Validity', 'Schema Drift', 'Expected count of non-matching value combinations', 'This test verifies that values, or combinations of values, that are present in the main table are also found in a reference table. This is a useful test for referential integrity between fact and dimension tables. You can also use it to confirm the validity of a code or category, or of combinations of values that should only be found together within each record, such as product/size/color.  An error here means that one  or more category combinations in the main table are not found in the reference table. Both tables must be present to run this test.', 'Y'),
         ('1503', 'Distribution_Shift', 'Distribution Shift', 'Probability distribution consistent with reference', 'Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test', 'Divergence between two distributions exceeds specified threshold.', 'Divergence level (0-1)', 'Jensen-Shannon Divergence, from 0 (identical distributions), to 1.0 (max divergence)', NULL, '1', '0.75', 'Categorical Column List', 'Specify one or more Categorical columns, separated by commas. Do not use continuous mesurements here. Do not use numeric values unless they represent discrete categories.', 'subset_condition,match_schema_name,match_table_name,match_groupby_names,match_subset_condition', NULL, 'Record Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns to Compare,Matching Record Subset Condition', 'Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to compare counts with source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL', 'Warning', 'QUERY', 'referential', 'Consistency', 'Data Drift', 'Expected maximum divergence level between 0 and 1', 'This test measures the similarity of two sets of counts per categories, by using their proportional counts as probability distributions.  Using Jensen-Shannon divergence, a measure of relative entropy or difference between two distributions, the test assigns a score ranging from 0, meaning that the distributions are identical, to 1, meaning that the distributions are completely unrelated. This test can be used to compare datasets that may not match exactly, but should have similar distributions.  For example, it is a useful sanity check for data from different sources that you would expect to have a consistent spread, such as shipment of building materials per state and construction projects by state. Scores can be compared over time even if the distributions are not identical -- a dataset can be expected to maintain a comparable divergence score with a reference dataset over time. Both tables must be present to run this test.', 'Y'),
+        ('1504', 'Aggregate_Balance_Percent', 'Aggregate Balance Percent', 'Aggregate measure per group within percent of reference', 'Tests that aggregate measure for each set of column values fall within a percent range above or below the measure for reference dataset', 'Aggregate measure per set of column values is outside percent range of reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_schema_name,match_table_name,match_column_names,match_subset_condition,match_groupby_names,match_having_condition,lower_tolerance,upper_tolerance', NULL, 'Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Lower Tolerance Percent,Upper Tolerance Percent', 'Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of matching table|Matching table name|Agregate column expression in matching table: one of `SUM([column_name])` or `COUNT([column_name])`|Condition defining a subset of records in matching table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in matching table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in matching table (e.g. HAVING clause) - OPTIONAL|Allowable tolerance below the reference measure expressed as a percent|Allowable tolerance above the reference measure expressed as a percent', 'Fail', 'QUERY', 'referential', 'Consistency', 'Data Drift', 'Expected count of group totals not matching aggregate value', 'This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerance you set -- that the sum of a measure or count of a value remains sufficiently consistent between categories. You could use this test compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range defined as 5% below to 10% above the prior month. An error here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.', 'Y'),
+        ('1505', 'Aggregate_Balance_Range', 'Aggregate Balance Range', 'Aggregate measure per group within hard range of reference', 'Tests that aggregate measure for each set of column values fall within a hard range above or below the measure for reference dataset', 'Aggregate measure per set of column values is outside expected range of reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_schema_name,match_table_name,match_column_names,match_subset_condition,match_groupby_names,match_having_condition,lower_tolerance,upper_tolerance', NULL, 'Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Lower Tolerance Constant,Upper Tolerance Constant', 'Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of matching table|Matching table name|Agregate column expression in matching table: one of `SUM([column_name])` or `COUNT([column_name])`|Condition defining a subset of records in matching table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in matching table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in matching table (e.g. HAVING clause) - OPTIONAL|Allowable tolerance below the reference measure expressed as a constant value|Allowable tolerance above the reference measure expressed as a constant value', 'Fail', 'QUERY', 'referential', 'Consistency', 'Data Drift', 'Expected count of group totals not matching aggregate value', 'This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerances you define as specific values above or below the aggregate measure for the same categories in the reference dataset -- that the sum of a measure or count of a value remains sufficiently consistent between categories. For instance, you can use this test to compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range defined as 10000 dollars above or below the prior week. An error here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.', 'Y'),
         ('1508', 'Timeframe_Combo_Gain', 'Timeframe No Drops', 'Latest timeframe has at least all value combinations from prior period', 'Tests that column values in most recent time-window include at least same as prior time window', 'Column values in most recent time-window don''t include all values in prior window.', 'Mismatched values', NULL, NULL, '({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)', '1.0', 'Categorical Column List', 'Specify one or more Categorical columns, separated by commas. Make sure not to use continuous measurements here. Do not use numeric values unless they represent discrete categories.', 'window_date_column,window_days,subset_condition', NULL, 'Date Column for Time Windows,Time Window in Days,Record Subset Condition', 'The date column used to define the time windows. This must be a DATE or DATETIME type.|Length in days of the time window. The test will compare the most recent period of days to the prior period of the same duration.|Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL', 'Fail', 'QUERY', 'referential', 'Consistency', 'Data Drift', 'Expected count of missing value combinations', 'This test checks a single transactional table to verify that categorical values or combinations that are present in the most recent time window you define include at least all those found in the prior time window of the same duration. Missing values in the latest time window will trigger the test to fail. New values are permitted. Use this test to confirm that codes or categories are not lost across successive time periods in a transactional table.', 'Y'),
         ('1509', 'Timeframe_Combo_Match', 'Timeframe Match', 'Column value combinations from latest timeframe same as prior period', 'Tests for presence of same column values in most recent time-window vs. prior time window', 'Column values don''t match in most recent time-windows.', 'Mismatched values', NULL, NULL, '({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)', '1.0', 'Categorical Column List', 'Specify one or more Categorical columns, separated by commas. Do not use continuous measurements here. Do not use numeric values unless they represent discrete categories.', 'window_date_column,window_days,subset_condition', NULL, 'Date Column for Time Windows,Time Window in Days,Record Subset Condition', NULL, 'Fail', 'QUERY', 'referential', 'Consistency', 'Data Drift', 'Expected count of non-matching value combinations', 'This test checks a single transactional table (such as a fact table) to verify that categorical values or combinations that are present in the most recent time window you define match those found in the prior time window of the same duration. New or missing values in the latest time window will trigger the test to fail. Use this test to confirm the consistency in the occurrence of codes or categories across successive time periods in a transactional table.', 'Y'),
-        ('1510', 'Dupe_Rows', 'Duplicate Rows', 'Rows are not duplicated in table', 'Tests for the absence of duplicate rows based on unique combination of column values', 'Column value combinations are duplicated in the table.', 'Duplicate records', NULL, NULL, '(({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)', '1.0', 'null', 'null', 'groupby_names', NULL, 'Columns to Compare', 'List of columns in the table that define a duplicate record when the combination of values is repeated on multiple rows', 'Fail', 'QUERY', 'table', 'Uniqueness', 'Schema Drift', 'Expected count of duplicate value combinations', 'This test verifies that combinations of values are not repeated within the table. By default when auto-generated, the test considers all columns to protect against duplication of entire rows. If you know the minimum columns that should constitute a unique record, such as a set of ID''s, you should use those to make the test as sensitive as possible. Alternatively, if you know of columns you can always exclude, such as file_date or refresh_snapshot_id, remove them to tighten the test somewhat.', 'Y'),
-
-        ('1504', 'Aggregate_Pct_Above', 'Aggregate Pct Above', 'Aggregate values per group exceed reference', 'Tests that aggregate values for each set of column values exceed values for reference dataset', 'Aggregate measure per set of column values fails to exceed the reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_column_names,match_schema_name,match_table_name,match_subset_condition,match_groupby_names,match_having_condition', NULL, 'TODO Fill in default_parm_prompts match_schema_name,TODO Fill in default_parm_prompts match_table_name,TODO Fill in default_parm_prompts match_column_names,TODO Fill in default_parm_prompts match_subset_condition,TODO Fill in default_parm_prompts match_groupby_names,TODO Fill in default_parm_prompts match_having_condition,TODO Fill in default_parm_prompts subset_condition,TODO Fill in default_parm_prompts groupby_names,TODO Fill in default_parm_prompts having_condition', NULL, 'Fail', 'QUERY', 'referential', 'Accuracy', 'Data Drift', 'Expected count of group totals with not exceeding aggregate measure', NULL, 'N'),
-        ('1505', 'Aggregate_Pct_Within', 'Aggregate Pct Within', 'Aggregate values per group exceed reference', 'Tests that aggregate values for each set of column values exceed values for reference dataset', 'Aggregate measure per set of column values fails to exceed the reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_column_names,match_schema_name,match_table_name,match_subset_condition,match_groupby_names,match_having_condition', NULL, 'TODO Fill in default_parm_prompts match_schema_name,TODO Fill in default_parm_prompts match_table_name,TODO Fill in default_parm_prompts match_column_names,TODO Fill in default_parm_prompts match_subset_condition,TODO Fill in default_parm_prompts match_groupby_names,TODO Fill in default_parm_prompts match_having_condition,TODO Fill in default_parm_prompts subset_condition,TODO Fill in default_parm_prompts groupby_names,TODO Fill in default_parm_prompts having_condition', NULL, 'Fail', 'QUERY', 'referential', 'Accuracy', 'Data Drift', 'Expected count of group totals with not exceeding aggregate measure', NULL, 'N'),
-        ('1506', 'Aggregate_Increase', 'Aggregate Increase', 'Aggregate values per group exceed reference', 'Tests that aggregate values for each set of column values exceed values for reference dataset', 'Aggregate measure per set of column values fails to exceed the reference dataset.', 'Mismatched measures', NULL, NULL, '1', '1.0', 'Aggregate Expression', 'Specify an aggregate column expression: one of `SUM([column_name])` or `COUNT([column_name])`', 'subset_condition,groupby_names,having_condition,match_column_names,match_schema_name,match_table_name,match_subset_condition,match_groupby_names,match_having_condition', NULL, 'TODO Fill in default_parm_prompts match_schema_name,TODO Fill in default_parm_prompts match_table_name,TODO Fill in default_parm_prompts match_column_names,TODO Fill in default_parm_prompts match_subset_condition,TODO Fill in default_parm_prompts match_groupby_names,TODO Fill in default_parm_prompts match_having_condition,TODO Fill in default_parm_prompts subset_condition,TODO Fill in default_parm_prompts groupby_names,TODO Fill in default_parm_prompts having_condition', NULL, 'Fail', 'QUERY', 'referential', 'Accuracy', 'Data Drift', 'Expected count of group totals below reference value', NULL, 'N')
+        ('1510', 'Dupe_Rows', 'Duplicate Rows', 'Rows are not duplicated in table', 'Tests for the absence of duplicate rows based on unique combination of column values', 'Column value combinations are duplicated in the table.', 'Duplicate records', NULL, NULL, '(({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)', '1.0', 'null', 'null', 'groupby_names', NULL, 'Columns to Compare', 'List of columns in the table that define a duplicate record when the combination of values is repeated on multiple rows', 'Fail', 'QUERY', 'table', 'Uniqueness', 'Schema Drift', 'Expected count of duplicate value combinations', 'This test verifies that combinations of values are not repeated within the table. By default when auto-generated, the test considers all columns to protect against duplication of entire rows. If you know the minimum columns that should constitute a unique record, such as a set of ID''s, you should use those to make the test as sensitive as possible. Alternatively, if you know of columns you can always exclude, such as file_date or refresh_snapshot_id, remove them to tighten the test somewhat.', 'Y')
 ;
 
 
@@ -177,7 +175,9 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2006', 'Aggregate_Balance', 'redshift', 'ex_aggregate_match_same_generic.sql'),
         ('2007', 'Timeframe_Combo_Gain', 'redshift', 'ex_window_match_no_drops_generic.sql'),
         ('2008', 'Timeframe_Combo_Match', 'redshift', 'ex_window_match_same_generic.sql'),
-        ('2009', 'Aggregate_Increase', 'redshift', 'ex_aggregate_match_num_incr_generic.sql'),
+        ('2009', 'Aggregate_Balance_Percent', 'redshift', 'ex_aggregate_match_percent_generic.sql'),
+        ('2010', 'Aggregate_Balance_Range', 'redshift', 'ex_aggregate_match_range_generic.sql'),
+        ('2011', 'Dupe_Rows', 'redshift', 'ex_dupe_rows_generic.sql'),
 
         ('2101', 'Combo_Match', 'snowflake', 'ex_data_match_generic.sql'),
         ('2102', 'Aggregate_Minimum', 'snowflake', 'ex_aggregate_match_no_drops_generic.sql'),
@@ -186,7 +186,9 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2106', 'Aggregate_Balance', 'snowflake', 'ex_aggregate_match_same_generic.sql'),
         ('2107', 'Timeframe_Combo_Gain', 'snowflake', 'ex_window_match_no_drops_generic.sql'),
         ('2108', 'Timeframe_Combo_Match', 'snowflake', 'ex_window_match_same_generic.sql'),
-        ('2109', 'Aggregate_Increase', 'snowflake', 'ex_aggregate_match_num_incr_generic.sql'),
+        ('2109', 'Aggregate_Balance_Percent', 'snowflake', 'ex_aggregate_match_percent_generic.sql'),
+        ('2110', 'Aggregate_Balance_Range', 'snowflake', 'ex_aggregate_match_range_generic.sql'),
+        ('2111', 'Dupe_Rows', 'snowflake', 'ex_dupe_rows_generic.sql'),
 
         ('2201', 'Combo_Match', 'mssql', 'ex_data_match_generic.sql'),
         ('2202', 'Aggregate_Minimum', 'mssql', 'ex_aggregate_match_no_drops_generic.sql'),
@@ -195,7 +197,9 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2206', 'Aggregate_Balance', 'mssql', 'ex_aggregate_match_same_generic.sql'),
         ('2207', 'Timeframe_Combo_Gain', 'mssql', 'ex_window_match_no_drops_generic.sql'),
         ('2208', 'Timeframe_Combo_Match', 'mssql', 'ex_window_match_same_generic.sql'),
-        ('2209', 'Aggregate_Increase', 'mssql', 'ex_aggregate_match_num_incr_generic.sql'),
+        ('2209', 'Aggregate_Balance_Percent', 'mssql', 'ex_aggregate_match_percent_generic.sql'),
+        ('2210', 'Aggregate_Balance_Range', 'mssql', 'ex_aggregate_match_range_generic.sql'),
+        ('2211', 'Dupe_Rows', 'mssql', 'ex_dupe_rows_generic.sql'),
 
         ('2301', 'Combo_Match', 'postgresql', 'ex_data_match_generic.sql'),
         ('2302', 'Aggregate_Minimum', 'postgresql', 'ex_aggregate_match_no_drops_generic.sql'),
@@ -204,7 +208,9 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2306', 'Aggregate_Balance', 'postgresql', 'ex_aggregate_match_same_generic.sql'),
         ('2307', 'Timeframe_Combo_Gain', 'postgresql', 'ex_window_match_no_drops_postgresql.sql'),
         ('2308', 'Timeframe_Combo_Match', 'postgresql', 'ex_window_match_same_postgresql.sql'),
-        ('2309', 'Aggregate_Increase', 'postgresql', 'ex_aggregate_match_num_incr_generic.sql'),
+        ('2309', 'Aggregate_Balance_Percent', 'postgresql', 'ex_aggregate_match_percent_generic.sql'),
+        ('2310', 'Aggregate_Balance_Range', 'postgresql', 'ex_aggregate_match_range_generic.sql'),
+        ('2311', 'Dupe_Rows', 'postgresql', 'ex_dupe_rows_generic.sql'),
 
         ('2401', 'Combo_Match', 'databricks', 'ex_data_match_generic.sql'),
         ('2402', 'Aggregate_Minimum', 'databricks', 'ex_aggregate_match_no_drops_generic.sql'),
@@ -213,12 +219,9 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2406', 'Aggregate_Balance', 'databricks', 'ex_aggregate_match_same_generic.sql'),
         ('2407', 'Timeframe_Combo_Gain', 'databricks', 'ex_window_match_no_drops_databricks.sql'),
         ('2408', 'Timeframe_Combo_Match', 'databricks', 'ex_window_match_same_databricks.sql'),
-        ('2409', 'Aggregate_Increase', 'databricks', 'ex_aggregate_match_num_incr_generic.sql'),
-        ('2010', 'Dupe_Rows', 'redshift', 'ex_dupe_rows_generic.sql'),
-        ('2110', 'Dupe_Rows', 'snowflake', 'ex_dupe_rows_generic.sql'),
-        ('2210', 'Dupe_Rows', 'mssql', 'ex_dupe_rows_generic.sql'),
-        ('2310', 'Dupe_Rows', 'postgresql', 'ex_dupe_rows_generic.sql'),
-        ('2410', 'Dupe_Rows', 'databricks', 'ex_dupe_rows_generic.sql')
+        ('2409', 'Aggregate_Balance_Percent', 'databricks', 'ex_aggregate_match_percent_generic.sql'),
+        ('2410', 'Aggregate_Balance_Range', 'databricks', 'ex_aggregate_match_range_generic.sql'),
+        ('2411', 'Dupe_Rows', 'databricks', 'ex_dupe_rows_generic.sql')
 ;
 
 TRUNCATE TABLE cat_test_conditions;
@@ -1099,6 +1102,160 @@ FULL JOIN older_ver o
   ON (l.category = o.category)
 ORDER BY COALESCE(l.category, o.category)'),
 
+    ('1245', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'redshift', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1246', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'snowflake', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1247', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'mssql', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1248', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'postgresql', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+  ORDER BY {GROUPBY_NAMES};'),
+
+    ('1245', '1505', 'Test Results', 'Aggregate_Balance_Range', 'redshift', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1246', '1505', 'Test Results', 'Aggregate_Balance_Range', 'snowflake', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1247', '1505', 'Test Results', 'Aggregate_Balance_Range', 'mssql', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1248', '1505', 'Test Results', 'Aggregate_Balance_Range', 'postgresql', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+  ORDER BY {GROUPBY_NAMES};'),
+
     ('1261', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'redshift', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
   FROM {TARGET_SCHEMA}.{TABLE_NAME}
  WHERE {SUBSET_CONDITION}
@@ -1383,6 +1540,44 @@ SELECT COALESCE(l.category, o.category) AS category,
 FULL JOIN older_ver o
   ON (l.category = o.category)
 ORDER BY COALESCE(l.category, o.category)'),
+    ('1248', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'databricks', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+  ORDER BY {GROUPBY_NAMES};'),
+    ('1245', '1505', 'Test Results', 'Aggregate_Balance_Range', 'databricks', NULL, 'SELECT *
+  FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+    FROM
+      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {GROUPBY_NAMES}
+        {HAVING_CONDITION}
+          UNION ALL
+        SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION} ) a
+    GROUP BY {GROUPBY_NAMES} ) s
+  WHERE (total IS NOT NULL AND match_total IS NULL)
+    OR (total IS NULL AND match_total IS NOT NULL)
+    OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+  ORDER BY {GROUPBY_NAMES};'),
     ('1337', '1509', 'Test Results', 'Timeframe_Combo_Match', 'databricks', NULL, '        (
 SELECT ''Prior Timeframe'' as missing_from, {COLUMN_NAME}
 FROM {TARGET_SCHEMA}.{TABLE_NAME}
