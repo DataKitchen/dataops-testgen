@@ -134,7 +134,9 @@ const TestRunItem = (
         ),
         div(
             { style: `flex: ${columns[3]}; font-size: 16px;` },
-            item.dq_score_testing ?? '--',
+            item.test_ct && item.dq_score_testing
+                ? item.dq_score_testing
+                : '--',
         )
     );
 }
