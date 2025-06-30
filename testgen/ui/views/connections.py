@@ -28,15 +28,6 @@ PAGE_TITLE = "Connection"
 CLEAR_SENTINEL = "<clear>"
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ConnectionFlavor:
-    value: str
-    label: str
-    icon: str
-    flavor: str
-    connection_string: str
-
-
 class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
@@ -48,60 +39,9 @@ class ConnectionsPage(Page):
         icon="database",
         label=PAGE_TITLE,
         section="Data Configuration",
-        order=0,
+        order=1,
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
-    flavor_options: typing.ClassVar[list[ConnectionFlavor]] = [
-        ConnectionFlavor(
-            label="Amazon Redshift",
-            value="redshift",
-            flavor="redshift",
-            icon=get_asset_data_url("flavors/redshift.svg"),
-            connection_string=connection_service.get_connection_string("redshift"),
-        ),
-        ConnectionFlavor(
-            label="Azure SQL Database",
-            value="azure_mssql",
-            flavor="mssql",
-            icon=get_asset_data_url("flavors/azure_sql.svg"),
-            connection_string=connection_service.get_connection_string("mssql"),
-        ),
-        ConnectionFlavor(
-            label="Azure Synapse Analytics",
-            value="synapse_mssql",
-            flavor="mssql",
-            icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
-            connection_string=connection_service.get_connection_string("mssql"),
-        ),
-        ConnectionFlavor(
-            label="Microsoft SQL Server",
-            value="mssql",
-            flavor="mssql",
-            icon=get_asset_data_url("flavors/mssql.svg"),
-            connection_string=connection_service.get_connection_string("mssql"),
-        ),
-        ConnectionFlavor(
-            label="PostgreSQL",
-            value="postgresql",
-            flavor="postgresql",
-            icon=get_asset_data_url("flavors/postgresql.svg"),
-            connection_string=connection_service.get_connection_string("postgresql"),
-        ),
-        ConnectionFlavor(
-            label="Snowflake",
-            value="snowflake",
-            flavor="snowflake",
-            icon=get_asset_data_url("flavors/snowflake.svg"),
-            connection_string=connection_service.get_connection_string("snowflake"),
-        ),
-        ConnectionFlavor(
-            label="Databricks",
-            value="databricks",
-            flavor="databricks",
-            icon=get_asset_data_url("flavors/databricks.svg"),
-            connection_string=connection_service.get_connection_string("databricks"),
-        ),
-    ]
 
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
@@ -201,9 +141,10 @@ class ConnectionsPage(Page):
         return testgen.testgen_component(
             "connections",
             props={
+                "project_code": project_code,
                 "connection": self._format_connection(connection, should_test=should_check_status()),
                 "has_table_groups": has_table_groups,
-                "flavors": [asdict(flavor) for flavor in self.flavor_options],
+                "flavors": [asdict(flavor) for flavor in FLAVOR_OPTIONS],
                 "permissions": {
                     "is_admin": user_is_admin,
                 },
@@ -216,56 +157,16 @@ class ConnectionsPage(Page):
             },
         )
 
-    def _get_sql_flavor_from_value(self, value: str) -> ConnectionFlavor | None:
-        match = [f for f in self.flavor_options if f.value == value]
+    def _get_sql_flavor_from_value(self, value: str) -> "ConnectionFlavor | None":
+        match = [f for f in FLAVOR_OPTIONS if f.value == value]
         if match:
             return match[0]
         return None
 
     def _format_connection(self, connection: dict, should_test: bool = False) -> dict:
-        fields = [
-            "project_code",
-            "connection_id",
-            "connection_name",
-            "sql_flavor",
-            "sql_flavor_code",
-            "project_host",
-            "project_port",
-            "project_db",
-            "project_user",
-            "password",
-            "max_threads",
-            "max_query_chars",
-            "connect_by_url",
-            "connect_by_key",
-            "private_key",
-            "private_key_passphrase",
-            "http_path",
-            "url",
-        ]
-        formatted_connection = {}
-
-        for fieldname in fields:
-            formatted_connection[fieldname] = format_field(connection[fieldname])
-
+        formatted_connection = format_connection(connection)
         if should_test:
             formatted_connection["status"] = asdict(self.test_connection(connection))
-
-        if formatted_connection["password"]:
-            formatted_connection["password"] = "***"  # noqa S105
-        if formatted_connection["private_key"]:
-            formatted_connection["private_key"] = "***"  # S105
-        if formatted_connection["private_key_passphrase"]:
-            formatted_connection["private_key_passphrase"] = "***"  # noqa S105
-
-        first_match = [f for f in self.flavor_options if f.flavor == formatted_connection.get("sql_flavor")]
-        if formatted_connection["sql_flavor"] and not formatted_connection.get("sql_flavor_code") and first_match:
-            formatted_connection["sql_flavor_code"] = first_match[0].flavor
-
-        flavors = [f for f in self.flavor_options if f.value == formatted_connection["sql_flavor_code"]]
-        if flavors and (flavor := flavors[0]):
-            formatted_connection["flavor"] = asdict(flavor)
-
         return formatted_connection
 
     def test_connection(self, connection: dict) -> "ConnectionStatus":
@@ -415,3 +316,109 @@ def is_open_ssl_error(error: Exception):
         and len(error.args[1]) > 0
         and type(error.args[1][0]).__name__ == "OpenSSLError"
     )
+
+
+def format_connection(connection: dict) -> dict:
+    fields = [
+        "project_code",
+        "connection_id",
+        "connection_name",
+        "sql_flavor",
+        "sql_flavor_code",
+        "project_host",
+        "project_port",
+        "project_db",
+        "project_user",
+        "password",
+        "max_threads",
+        "max_query_chars",
+        "connect_by_url",
+        "connect_by_key",
+        "private_key",
+        "private_key_passphrase",
+        "http_path",
+        "url",
+    ]
+    formatted_connection = {}
+
+    for fieldname in fields:
+        formatted_connection[fieldname] = format_field(connection[fieldname])
+
+    if formatted_connection["password"]:
+        formatted_connection["password"] = "***"  # noqa S105
+    if formatted_connection["private_key"]:
+        formatted_connection["private_key"] = "***"  # S105
+    if formatted_connection["private_key_passphrase"]:
+        formatted_connection["private_key_passphrase"] = "***"  # noqa S105
+
+    first_match = [f for f in FLAVOR_OPTIONS if f.flavor == formatted_connection.get("sql_flavor")]
+    if formatted_connection["sql_flavor"] and not formatted_connection.get("sql_flavor_code") and first_match:
+        formatted_connection["sql_flavor_code"] = first_match[0].flavor
+
+    flavors = [f for f in FLAVOR_OPTIONS if f.value == formatted_connection["sql_flavor_code"]]
+    if flavors and (flavor := flavors[0]):
+        formatted_connection["flavor"] = asdict(flavor)
+
+    return formatted_connection
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConnectionFlavor:
+    value: str
+    label: str
+    icon: str
+    flavor: str
+    connection_string: str
+
+
+FLAVOR_OPTIONS = [
+    ConnectionFlavor(
+        label="Amazon Redshift",
+        value="redshift",
+        flavor="redshift",
+        icon=get_asset_data_url("flavors/redshift.svg"),
+        connection_string=connection_service.get_connection_string("redshift"),
+    ),
+    ConnectionFlavor(
+        label="Azure SQL Database",
+        value="azure_mssql",
+        flavor="mssql",
+        icon=get_asset_data_url("flavors/azure_sql.svg"),
+        connection_string=connection_service.get_connection_string("mssql"),
+    ),
+    ConnectionFlavor(
+        label="Azure Synapse Analytics",
+        value="synapse_mssql",
+        flavor="mssql",
+        icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
+        connection_string=connection_service.get_connection_string("mssql"),
+    ),
+    ConnectionFlavor(
+        label="Microsoft SQL Server",
+        value="mssql",
+        flavor="mssql",
+        icon=get_asset_data_url("flavors/mssql.svg"),
+        connection_string=connection_service.get_connection_string("mssql"),
+    ),
+    ConnectionFlavor(
+        label="PostgreSQL",
+        value="postgresql",
+        flavor="postgresql",
+        icon=get_asset_data_url("flavors/postgresql.svg"),
+        connection_string=connection_service.get_connection_string("postgresql"),
+    ),
+    ConnectionFlavor(
+        label="Snowflake",
+        value="snowflake",
+        flavor="snowflake",
+        icon=get_asset_data_url("flavors/snowflake.svg"),
+        connection_string=connection_service.get_connection_string("snowflake"),
+    ),
+    ConnectionFlavor(
+        label="Databricks",
+        value="databricks",
+        flavor="databricks",
+        icon=get_asset_data_url("flavors/databricks.svg"),
+        connection_string=connection_service.get_connection_string("databricks"),
+    ),
+]

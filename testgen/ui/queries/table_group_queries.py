@@ -7,17 +7,22 @@ import testgen.ui.services.database_service as db
 
 def _get_select_statement(schema):
     return f"""
-               SELECT id::VARCHAR(50), project_code, connection_id, table_groups_name,
-                      table_group_schema,
-                      profiling_include_mask, profiling_exclude_mask,
-                      profiling_table_set,
-                      profile_id_column_mask, profile_sk_column_mask,
-                      description, data_source, source_system, source_process, data_location,
-                      business_domain, stakeholder_group, transform_level, data_product,
-                      profile_use_sampling, profile_sample_percent, profile_sample_min_count,
-                      profiling_delay_days, profile_flag_cdes
-               FROM {schema}.table_groups
-               """
+        WITH table_groups AS (
+            SELECT table_groups.*, connections.connection_name, connections.sql_flavor_code
+            FROM {schema}.table_groups
+            INNER JOIN {schema}.connections ON connections.connection_id = table_groups.connection_id
+        )
+        SELECT id::VARCHAR(50), project_code, connection_id, connection_name, sql_flavor_code,
+                table_groups_name, table_group_schema,
+                profiling_include_mask, profiling_exclude_mask,
+                profiling_table_set,
+                profile_id_column_mask, profile_sk_column_mask,
+                description, data_source, source_system, source_process, data_location,
+                business_domain, stakeholder_group, transform_level, data_product,
+                profile_use_sampling, profile_sample_percent, profile_sample_min_count,
+                profiling_delay_days, profile_flag_cdes
+        FROM table_groups
+        """
 
 
 @st.cache_data(show_spinner=False)
@@ -79,6 +84,15 @@ def get_table_group_usage(schema, table_group_names):
     sql = f"""select distinct pr.id from {schema}.profiling_runs pr
 INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id
 where tg.table_groups_name in ({",".join(items)}) and pr.status = 'Running'"""
+    return db.retrieve_data(sql)
+
+
+@st.cache_data(show_spinner=False)
+def get_all(schema, project_code):
+    sql = _get_select_statement(schema)
+    sql += f"""WHERE project_code = '{project_code}'
+            ORDER BY table_groups_name
+     """
     return db.retrieve_data(sql)
 
 
