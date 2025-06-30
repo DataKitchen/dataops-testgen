@@ -122,12 +122,16 @@ class TestDefinitionsPage(Page):
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:
                 if action["button"]:
-                    fm.reset_post_updates(
-                        update_test_definition(selected, action["attribute"], action["value"], action["message"]),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
+                    is_unlocking = action["attribute"] == "lock_refresh" and not action["value"]
+                    if is_unlocking:
+                        confirm_unlocking_test_definition(selected)
+                    else:
+                        fm.reset_post_updates(
+                            update_test_definition(selected, action["attribute"], action["value"], action["message"]),
+                            as_toast=True,
+                            clear_cache=True,
+                            lst_cached_functions=[],
+                        )
 
         if selected:
             selected_test_def = selected[0]
@@ -769,6 +773,37 @@ def prompt_for_test_type():
         str_value = None
         row_selected = None
     return str_value, row_selected
+
+
+@st.dialog(title="Unlock Test Definition")
+def confirm_unlocking_test_definition(test_definitions: list[dict]):
+    unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
+
+    st.warning(
+        f"""Unlocked tests subject to auto-genration will be overwritten during the next test generation run."""
+    )
+
+    st.html(f"""
+        Are you sure you want to unlock
+        {f"<b>{len(test_definitions)}</b> selected test definitions?"
+        if len(test_definitions) > 1
+        else "the selected test definition?"}
+    """)
+
+    if unlock_confirmed():
+        update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
+        time.sleep(1)
+        st.rerun()
+
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Unlock",
+            type_="stroked",
+            color="basic",
+            key="test-definitions:confirm-unlock-tests-btn",
+            on_click=lambda: set_unlock_confirmed(True),
+        )
 
 
 def update_test_definition(selected, attribute, value, message):
