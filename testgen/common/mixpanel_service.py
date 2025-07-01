@@ -87,9 +87,9 @@ class MixpanelService(Singleton):
         schema: str = st.session_state["dbschema"]            
         query = f"""
         SELECT 
-            (SELECT COUNT(*) AS count FROM {schema}.auth_users) AS user_count,
-            (SELECT COUNT(*) AS count FROM {schema}.projects) AS project_count,
-            (SELECT COUNT(*) AS count FROM {schema}.connections) AS connection_count,
+            (SELECT COUNT(*) FROM {schema}.auth_users) AS user_count,
+            (SELECT COUNT(*) FROM {schema}.projects) AS project_count,
+            (SELECT COUNT(*) FROM {schema}.connections) AS connection_count,
             (SELECT COUNT(*) FROM {schema}.table_groups) AS table_group_count,
             (SELECT COUNT(*) FROM {schema}.test_suites) AS test_suite_count;
         """
