@@ -45,23 +45,17 @@ const ConfirmationDialog = (props) => {
     const buttonColor = van.derive(() => (actionDisabled.val ? 'basic' : getValue(props.button_color)) ?? 'basic');
     const buttonType = van.derive(() => (actionDisabled.val ? 'stroked' : getValue(props.button_type)) ?? 'flat');
 
+    const message = getValue(props.message);
+    const constraint = getValue(props.constraint);
+
     resizeFrameHeightToElement(wrapperId);
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId, class: 'flex-column' },
-        div(
-            { class: 'flex-column fx-gap-4' },
-            span(props.message),
-        ),
-        () => {
-            const constraint = getValue(props.constraint);
-
-            if (!constraint) {
-                return '';
-            }
-
-            return div(
+        div({ class: 'flex-column fx-gap-4' }, message),
+        constraint
+            ? div(
                 { class: 'flex-column fx-gap-4 mt-4' },
                 Alert({ type: 'warn' }, span(constraint.warning)),
                 Toggle({
@@ -70,8 +64,8 @@ const ConfirmationDialog = (props) => {
                     checked: confirmed,
                     onChange: (value) => confirmed.val = value,
                 }),
-            );
-        },
+            )
+            : '',
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             Button({
@@ -80,7 +74,7 @@ const ConfirmationDialog = (props) => {
                 label: buttonLabel,
                 style: 'width: auto;',
                 disabled: actionDisabled,
-                onclick: () => emitEvent('ActionConfirmed'),
+                onclick: () => emitEvent('ActionConfirmed', {}),
             }),
         ),
         () => {

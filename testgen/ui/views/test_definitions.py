@@ -433,18 +433,27 @@ def show_test_form(
     if mode == "edit":
         columns = st.columns([0.5, 0.5])
         if profiling_as_of_date and profile_run_id and (container := columns.pop()):
+            if isinstance(profiling_as_of_date, str):
+                formatted_time = datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = profiling_as_of_date.strftime("%b %d, %I:%M %p")
             testgen.caption("Based on Profiling", container=container)
             with container:
                 testgen.link(
                     href="profiling-runs:results",
                     params={"run_id": profile_run_id},
-                    label=datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p"),
+                    label=formatted_time,
+                    open_new=True,
                 )
 
         if last_auto_gen_date and (container := columns.pop()):
+            if isinstance(last_auto_gen_date, str):
+                formatted_time = datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = last_auto_gen_date.strftime("%b %d, %I:%M %p")
             testgen.caption("Auto-generated at", container=container)
             testgen.text(
-                datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p"),
+                formatted_time,
                 container=container,
             )
 
@@ -801,7 +810,7 @@ def confirm_unlocking_test_definition(test_definitions: list[dict]):
     unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
 
     st.warning(
-        """Unlocked tests subject to auto-genration will be overwritten during the next test generation run."""
+        """Unlocked tests subject to auto-generation will be overwritten during the next test generation run."""
     )
 
     st.html(f"""

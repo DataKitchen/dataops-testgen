@@ -35,8 +35,9 @@ import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
+import { Checkbox } from '../components/checkbox.js';
 
-const { div, i, input, span } = van.tags;
+const { div, i, span, strong } = van.tags;
 
 const TestRuns = (/** @type Properties */ props) => {
     window.testgen.isPage = true;
@@ -77,35 +78,53 @@ const TestRuns = (/** @type Properties */ props) => {
         () => {
             const items = testRunItems.val;
             const selectedItems = items.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
-            const allSelected = selectedItems.length === items.length;
-            const partiallySelected = selectedItems.length > 0 && selectedItems.length < items.length;
+            const someRunSelected = selectedItems.length > 0;
+            const tooltipText = !someRunSelected ? 'No runs selected' : undefined;
+
+            if (!userCanEdit) {
+                return '';
+            }
 
             return div(
-                { class: 'flex-row pb-2' },
-                div(
-                    { class: 'flex-row mr-2' },
-                    input({
-                        type: 'checkbox',
-                        class: 'clickable accent-primary',
-                        'data-testid': 'select-all-test-run',
-                        checked: allSelected,
-                        indeterminate: partiallySelected,
-                        onchange: (event) => items.forEach(item => selectedRuns[item.test_run_id].val = event.target.checked),
-                    }),
-                ),
+                { class: 'flex-row fx-justify-content-flex-end pb-2' },
+                someRunSelected ? strong({class: 'mr-1'}, selectedItems.length) : '',
+                someRunSelected ? span({class: 'mr-4'}, 'runs selected') : '',
                 Button({
-                    type: 'icon',
+                    type: 'stroked',
                     icon: 'delete',
-                    tooltip: 'Delete',
-                    tooltipPosition: 'bottom-right',
-                    disabled: !allSelected && !partiallySelected,
+                    label: 'Delete Runs',
+                    tooltip: tooltipText,
+                    tooltipPosition: 'bottom-left',
+                    disabled: !someRunSelected,
+                    width: 'auto',
                     onclick: () => emitEvent('RunsDeleted', { payload: selectedItems.map(i => i.test_run_id) }),
                 }),
             );
         },
         div(
             { class: 'table-header flex-row' },
-            span({ style: `flex: ${columns[0]}` }, ''),
+            () => {
+                const items = testRunItems.val;
+                const selectedItems = items.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
+                const allSelected = selectedItems.length === items.length;
+                const partiallySelected = selectedItems.length > 0 && selectedItems.length < items.length;
+
+                if (!userCanEdit) {
+                    return '';
+                }
+
+                return span(
+                    { style: `flex: ${columns[0]}` }, 
+                    userCanEdit
+                        ? Checkbox({
+                            checked: allSelected,
+                            indeterminate: partiallySelected,
+                            onChange: (checked) => items.forEach(item => selectedRuns[item.test_run_id].val = checked),
+                            testId: 'select-all-test-run',
+                        })
+                        : '',
+                );
+            },
             span(
                 { style: `flex: ${columns[1]}` },
                 'Start Time | Table Group | Test Suite',
@@ -141,13 +160,11 @@ const TestRunItem = (
         userCanEdit
             ? div(
                 { style: `flex: ${columns[0]}; font-size: 16px;` },
-                input({
-                    type: 'checkbox',
-                    class: 'clickable accent-primary',
-                    'data-testid': 'select-test-run',
+                Checkbox({
                     checked: selected,
-                    onchange: (event) => selected.val = event.target.checked,
-                })
+                    onChange: (checked) => selected.val = checked,
+                    testId: 'select-test-run',
+                }),
             )
             : '',
         div(

@@ -200,7 +200,7 @@ def on_cancel_run(test_run: pd.Series) -> None:
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
 
-@st.dialog(title="Delete Test Run")
+@st.dialog(title="Delete Test Runs")
 @with_database_session
 def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, test_run_ids: list[str]) -> None:
     def on_delete_confirmed(*_args) -> None:
@@ -220,21 +220,6 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
 
     result = None
     delete_confirmed, set_delete_confirmed = temp_value("test-runs:confirm-delete", default=False)
-    if delete_confirmed():
-        try:
-            test_runs = get_db_test_runs(project_code, table_group_id, test_suite_id, test_runs_ids=test_run_ids)
-            for _, test_run in test_runs.iterrows():
-                test_run_id = test_run["test_run_id"]
-                if test_run["status"] == "Running":
-                    process_status, _ = process_service.kill_test_run(to_int(test_run["process_id"]))
-                    if process_status:
-                        test_run_queries.update_status(test_run_id, "Cancelled")
-                test_run_queries.cascade_delete_test_run(test_run_id)
-            st.rerun()
-        except Exception:
-            LOG.exception("Failed to delete test run")
-            result = {"success": False, "message": "Unable to delete the test run, try again."}
-
     testgen.testgen_component(
         "confirm_dialog",
         props={
@@ -249,6 +234,22 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
             "ActionConfirmed": on_delete_confirmed,
         },
     )
+
+    if delete_confirmed():
+        try:
+            with st.spinner("Deleting runs ..."):
+                test_runs = _get_db_test_runs(project_code, table_group_id, test_suite_id, test_runs_ids=test_run_ids)
+                for _, test_run in test_runs.iterrows():
+                    test_run_id = test_run["test_run_id"]
+                    if test_run["status"] == "Running":
+                        process_status, _ = process_service.kill_test_run(to_int(test_run["process_id"]))
+                        if process_status:
+                            test_run_queries.update_status(test_run_id, "Cancelled")
+                test_run_queries.cascade_delete_multiple_test_runs(test_run_ids)
+            st.rerun()
+        except Exception:
+            LOG.exception("Failed to delete test run")
+            result = {"success": False, "message": "Unable to delete the test run, try again."}
 
 
 @st.cache_data(show_spinner=False)
@@ -280,6 +281,17 @@ def get_db_test_suite_choices(project_code: str, table_groups_id: str | None = N
 
 @st.cache_data(show_spinner="Loading data ...")
 def get_db_test_runs(
+    project_code: str,
+    table_groups_id: str | None = None,
+    test_suite_id: str | None = None,
+    test_runs_ids: list[str] | None = None,
+) -> pd.DataFrame:
+    return _get_db_test_runs(
+        project_code, table_groups_id=table_groups_id, test_suite_id=test_suite_id, test_runs_ids=test_runs_ids
+    )
+
+
+def _get_db_test_runs(
     project_code: str,
     table_groups_id: str | None = None,
     test_suite_id: str | None = None,

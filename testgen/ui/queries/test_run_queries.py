@@ -64,6 +64,26 @@ def cascade_delete_test_run(test_run_id: str) -> None:
     st.cache_data.clear()
 
 
+def cascade_delete_multiple_test_runs(test_run_ids: list[str]) -> None:
+    if not test_run_ids:
+        raise ValueError("No Test Run is specified.")
+
+    test_run_ids_str = ", ".join([f"'{run_id}'" for run_id in test_run_ids])
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+        DELETE
+            FROM {schema}.working_agg_cat_results
+            WHERE test_run_id IN ({test_run_ids_str});
+        DELETE
+            FROM {schema}.working_agg_cat_tests
+            WHERE test_run_id IN ({test_run_ids_str});
+        DELETE FROM {schema}.test_runs WHERE id IN ({test_run_ids_str});
+        DELETE FROM {schema}.test_results WHERE test_run_id IN ({test_run_ids_str});
+    """
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
 def update_status(test_run_id: str, status: str) -> None:
     if not all([test_run_id, status]):
         raise ValueError("Missing query parameters.")
