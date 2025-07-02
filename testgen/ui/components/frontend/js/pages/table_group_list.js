@@ -24,8 +24,9 @@ import { getValue, emitEvent, loadStylesheet, resizeFrameHeightToElement, resize
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 import { Select } from '../components/select.js';
 import { Icon } from '../components/icon.js';
+import { withTooltip } from '../components/tooltip.js';
 
-const { div, h4, img, small, span } = van.tags;
+const { div, h4, i, span } = van.tags;
 
 /**
  * @param {Properties} props
@@ -104,7 +105,12 @@ const TableGroupList = (props) => {
                                             div(
                                                 { class: 'flex-column fx-flex' },
                                                 Caption({content: 'Explicit Table List', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profiling_table_set || '--'),
+                                                tableGroup.profiling_table_set
+                                                    ? TruncatedText(
+                                                        {max: 3},
+                                                        ...tableGroup.profiling_table_set.split(',').map(t => t.trim())
+                                                    )
+                                                    : '--',
                                             ),
                                         ),
                                         div(
@@ -230,6 +236,34 @@ const Toolbar = (permissions, connections, selectedConnection) => {
             : '',
     );
 }
+
+/**
+ * @typedef TruncatedTextOptions
+ * @type {object}
+ * @property {number} max
+ * @property {string?} class
+ * 
+ * @param {TruncatedTextOptions} options
+ * @param {string[]} children
+ */
+const TruncatedText = ({ max, ...options }, ...children) => {
+    const sortedChildren = [...children.sort((a, b) => a.length - b.length)];
+    const tooltipText = children.sort((a, b) => a.localeCompare(b)).join(', ');
+
+    return div(
+        { class: () => `${options.class ?? ''}`, style: 'position: relative;' },
+        span(sortedChildren.slice(0, max).join(', ')),
+        sortedChildren.length > max
+            ? withTooltip(
+                i({class: 'text-caption'}, ` + ${sortedChildren.length - max} more`),
+                {
+                    text: tooltipText,
+                    position: 'top-right',
+                }
+            )
+            : '',
+    );
+};
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

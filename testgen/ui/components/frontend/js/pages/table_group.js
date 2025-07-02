@@ -20,6 +20,7 @@
  * @property {string} project_code
  * @property {TableGroup} table_group
  * @property {Connection[]} connections
+ * @property {boolean?} in_used
  * @property {TableGroupPreview?} table_group_preview
  * @property {Result?} result
  */
@@ -45,6 +46,7 @@ const TableGroup = (props) => {
     const connections = getValue(props.connections) ?? [];
     const enableConnectionSelector = getValue(props.table_group)?.connection_id === undefined;
     const updatedTableGroup = van.state(getValue(props.table_group) ?? {});
+    const disableSchemaField = getValue(props.in_used ?? false);
     const disableSave = van.state(true);
     const wrapperId = 'tablegroup-change-wrapper';
 
@@ -65,6 +67,7 @@ const TableGroup = (props) => {
                         tableGroup,
                         connections,
                         enableConnectionSelector,
+                        disableSchemaField,
                         showConnectionSelector: connections.length > 1,
                         onChange: (newTableGroup, state) => {
                             updatedTableGroup.val = newTableGroup;
