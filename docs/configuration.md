@@ -282,9 +282,3 @@ default: `dataset`
 
 When exporting to your instance of Observabilty, the key sent to the events API to identify the components.
 default: `default`
-
-#### `TG_DOCKER_RELEASE_CHECK_ENABLED`
-
-Enables calling Docker Hub API to fetch the latest released image tag. The fetched tag is displayed in the UI menu.
-
-default: `yes`

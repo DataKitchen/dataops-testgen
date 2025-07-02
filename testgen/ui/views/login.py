@@ -52,4 +52,4 @@ class LoginPage(Page):
             if authentication_status:
                 user_session_service.start_user_session(name, username)
                 session.logging_in = True
-                MixpanelService().send_event("login")
+                MixpanelService().send_event("login", include_usage=True)
