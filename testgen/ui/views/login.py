@@ -43,6 +43,7 @@ class LoginPage(Page):
 
             if authentication_status is False:
                 st.error("Username or password is incorrect.")
+                MixpanelService().send_event("login-denied", username=username)
 
             if authentication_status is None:
                 javascript_service.clear_component_states()

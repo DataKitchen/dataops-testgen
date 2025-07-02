@@ -894,6 +894,10 @@ CREATE TABLE job_schedules (
 
 CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
 
+CREATE TABLE settings (
+    key VARCHAR(50) NOT NULL PRIMARY KEY,
+    value JSONB NOT NULL
+);
 
 INSERT INTO tg_revision (component, revision)
 VALUES  ('metadata_db', 0);
