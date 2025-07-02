@@ -20,6 +20,7 @@
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_run
+ * @property {boolean} can_edit
  *
  * @typedef Properties
  * @type {object}
@@ -35,7 +36,7 @@ import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 
-const { div, span, i } = van.tags;
+const { div, i, input, span } = van.tags;
 
 const TestRuns = (/** @type Properties */ props) => {
     window.testgen.isPage = true;
@@ -48,36 +49,82 @@ const TestRuns = (/** @type Properties */ props) => {
         Streamlit.setFrameHeight(100 * items.length);
         return items;
     });
-    const columns = ['30%', '20%', '40%', '10%'];
+    const columns = ['5%', '28%', '17%', '40%', '10%'];
 
     const userCanRun = getValue(props.permissions)?.can_run ?? false;
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const selectedRuns = {};
 
     const tableId = 'test-runs-table';
     resizeFrameHeightToElement(tableId);
 
+    const initializeSelectedStates = (items) => {
+        for (const testRun of items) {
+            if (selectedRuns[testRun.test_run_id] == undefined) {
+                selectedRuns[testRun.test_run_id] = van.state(false);
+            }
+        }
+    };
+
+    initializeSelectedStates(testRunItems.val);
+
+    van.derive(() => {
+        initializeSelectedStates(testRunItems.val);
+    });
+
     return div(
         { class: 'table', id: tableId },
+        () => {
+            const items = testRunItems.val;
+            const selectedItems = items.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
+            const allSelected = selectedItems.length === items.length;
+            const partiallySelected = selectedItems.length > 0 && selectedItems.length < items.length;
+
+            return div(
+                { class: 'flex-row pb-2' },
+                div(
+                    { class: 'flex-row mr-2' },
+                    input({
+                        type: 'checkbox',
+                        class: 'clickable accent-primary',
+                        'data-testid': 'select-all-test-run',
+                        checked: allSelected,
+                        indeterminate: partiallySelected,
+                        onchange: (event) => items.forEach(item => selectedRuns[item.test_run_id].val = event.target.checked),
+                    }),
+                ),
+                Button({
+                    type: 'icon',
+                    icon: 'delete',
+                    tooltip: 'Delete',
+                    tooltipPosition: 'bottom-right',
+                    disabled: !allSelected && !partiallySelected,
+                    onclick: () => emitEvent('RunsDeleted', { payload: selectedItems.map(i => i.test_run_id) }),
+                }),
+            );
+        },
         div(
             { class: 'table-header flex-row' },
+            span({ style: `flex: ${columns[0]}` }, ''),
             span(
-                { style: `flex: ${columns[0]}` },
+                { style: `flex: ${columns[1]}` },
                 'Start Time | Table Group | Test Suite',
             ),
             span(
-                { style: `flex: ${columns[1]}` },
+                { style: `flex: ${columns[2]}` },
                 'Status | Duration',
             ),
             span(
-                { style: `flex: ${columns[2]}` },
+                { style: `flex: ${columns[3]}` },
                 'Results Summary',
             ),
             span(
-                { style: `flex: ${columns[3]}` },
+                { style: `flex: ${columns[4]}` },
                 'Testing Score',
             ),
         ),
         () => div(
-            testRunItems.val.map(item => TestRunItem(item, columns, userCanRun)),
+            testRunItems.val.map(item => TestRunItem(item, columns, selectedRuns[item.test_run_id], userCanRun, userCanEdit)),
         ),
     );
 }
@@ -85,12 +132,26 @@ const TestRuns = (/** @type Properties */ props) => {
 const TestRunItem = (
     /** @type TestRun */ item,
     /** @type string[] */ columns,
+    /** @type boolean */ selected,
     /** @type boolean */ userCanRun,
+    /** @type boolean */ userCanEdit,
 ) => {
     return div(
         { class: 'table-row flex-row' },
+        userCanEdit
+            ? div(
+                { style: `flex: ${columns[0]}; font-size: 16px;` },
+                input({
+                    type: 'checkbox',
+                    class: 'clickable accent-primary',
+                    'data-testid': 'select-test-run',
+                    checked: selected,
+                    onchange: (event) => selected.val = event.target.checked,
+                })
+            )
+            : '',
         div(
-            { style: `flex: ${columns[0]}` },
+            { style: `flex: ${columns[1]}` },
             Link({
                 label: formatTimestamp(item.test_starttime),
                 href: 'test-runs:results',
@@ -103,7 +164,7 @@ const TestRunItem = (
             ),
         ),
         div(
-            { class: 'flex-row', style: `flex: ${columns[1]}` },
+            { class: 'flex-row', style: `flex: ${columns[2]}` },
             div(
                 TestRunStatus(item),
                 div(
@@ -119,7 +180,7 @@ const TestRunItem = (
             }) : null,
         ),
         div(
-            { class: 'pr-3', style: `flex: ${columns[2]}` },
+            { class: 'pr-3', style: `flex: ${columns[3]}` },
             item.test_ct ? SummaryBar({
                 items: [
                     { label: 'Passed', value: item.passed_ct, color: 'green' },
@@ -133,11 +194,11 @@ const TestRunItem = (
             }) : '--',
         ),
         div(
-            { style: `flex: ${columns[3]}; font-size: 16px;` },
+            { style: `flex: ${columns[4]}; font-size: 16px;` },
             item.test_ct && item.dq_score_testing
                 ? item.dq_score_testing
                 : '--',
-        )
+        ),
     );
 }
 
