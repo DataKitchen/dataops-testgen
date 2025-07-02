@@ -267,6 +267,9 @@ def show_test_form(
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     check_result = selected_test_def["check_result"] if mode == "edit" else None
     column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else ""
+    last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
+    profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
+    profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
 
     # dynamic attributes
     custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
@@ -427,6 +430,24 @@ def show_test_form(
         help=severity_help,
     )
 
+    if mode == "edit":
+        columns = st.columns([0.5, 0.5])
+        if profiling_as_of_date and profile_run_id and (container := columns.pop()):
+            testgen.caption("Based on Profiling", container=container)
+            with container:
+                testgen.link(
+                    href="profiling-runs:results",
+                    params={"run_id": profile_run_id},
+                    label=datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p"),
+                )
+
+        if last_auto_gen_date and (container := columns.pop()):
+            testgen.caption("Auto-generated at", container=container)
+            testgen.text(
+                datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p"),
+                container=container,
+            )
+
     st.divider()
 
     has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
@@ -529,12 +550,12 @@ def show_test_form(
         label_text = (
             dynamic_attributes_labels[index]
             if dynamic_attributes_labels and len(dynamic_attributes_labels) > index
-            else "Help text is not available."
+            else snake_case_to_title_case(attribute)
         )
         help_text = (
             dynamic_attributes_help[index]
             if dynamic_attributes_help and len(dynamic_attributes_help) > index
-            else snake_case_to_title_case(attribute)
+            else "Help text is not available."
         )
 
         if attribute == "custom_query":
@@ -780,7 +801,7 @@ def confirm_unlocking_test_definition(test_definitions: list[dict]):
     unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
 
     st.warning(
-        f"""Unlocked tests subject to auto-genration will be overwritten during the next test generation run."""
+        """Unlocked tests subject to auto-genration will be overwritten during the next test generation run."""
     )
 
     st.html(f"""
