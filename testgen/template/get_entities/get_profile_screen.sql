@@ -37,7 +37,7 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Non-Standard Blank Values'   AS qualification_test,
-                      (((('Filled Values: ' || p.filled_value_ct::VARCHAR(10)) || ', Null: ') ||
+                      (((('Dummy Values: ' || p.filled_value_ct::VARCHAR(10)) || ', Null: ') ||
                         p.null_value_ct::VARCHAR(10)) || ', Empty String: ') ||
                       p.zero_length_ct::VARCHAR(10) AS detail
                  FROM profiling p
@@ -50,7 +50,7 @@ WITH
                       p.column_type,
                       'Invalid Zip Code Format'      AS qualification_test,
                       (((('Min Length: ' || p.min_length::VARCHAR(10)) || ', Max Length: ') ||
-                        p.max_length::VARCHAR(10)) || ', Filled Values: ') ||
+                        p.max_length::VARCHAR(10)) || ', Dummy Values: ') ||
                       p.filled_value_ct::VARCHAR(10) AS detail
                  FROM profiling p
                 WHERE p.column_name ILIKE '%zip%'
@@ -95,7 +95,7 @@ WITH
                       p.column_name,
                       p.column_type,
                       'No column values present'    AS qualification_test,
-                      (((('Null: ' || p.null_value_ct::VARCHAR(10)) || ', Filled: ') ||
+                      (((('Null: ' || p.null_value_ct::VARCHAR(10)) || ', Dummy: ') ||
                         p.filled_value_ct::VARCHAR(10)) || ', Zero Len: ') ||
                       p.zero_length_ct::VARCHAR(10) AS detail
                  FROM profiling p
