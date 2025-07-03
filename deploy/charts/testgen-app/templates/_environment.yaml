@@ -31,8 +31,6 @@
   value: {{ .Values.testgen.trustTargetDatabaseCertificate | ternary "yes" "no" | quote }}
 - name: TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL
   value: {{ .Values.testgen.observabilityVerifySsl | ternary "yes" "no" | quote }}
-- name: TG_DOCKER_RELEASE_CHECK_ENABLED
-  value: {{ .Values.testgen.releaseCheck | ternary "yes" "no" | quote }}
 {{- end -}}
 
 {{- define "testgen.hookEnvironment" -}}

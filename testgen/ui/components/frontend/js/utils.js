@@ -193,4 +193,8 @@ function slugify(/** @type string */ str) {
         .replace(/^-|-$/g, '');
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify };
+function isDataURL(/** @type string */ url) {
+    return url.startsWith('data:');
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL };

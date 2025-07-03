@@ -681,8 +681,11 @@ const ConditionalEmptyState = (
             message: EMPTY_STATE_MESSAGE.tableGroup,
             link: {
                 label: 'Go to Table Groups',
-                href: 'connections:table-groups',
-                params: { connection_id: projectSummary.default_connection_id },
+                href: 'table-groups',
+                params: {
+                    project_code: projectSummary.project_code,
+                    connection_id: projectSummary.default_connection_id,
+                },
                 disabled: !userCanNavigate,
             },
         };

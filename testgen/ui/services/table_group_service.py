@@ -17,6 +17,11 @@ def get_by_connection(project_code, connection_id):
     return table_group_queries.get_by_connection(schema, project_code, connection_id)
 
 
+def get_all(project_code: str):
+    schema = st.session_state["dbschema"]
+    return table_group_queries.get_all(schema, project_code)
+
+
 def edit(table_group):
     schema = st.session_state["dbschema"]
     table_group_queries.edit(schema, table_group)

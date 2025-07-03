@@ -155,6 +155,10 @@ body {
     padding: 12px 0;
 }
 
+.table.hoverable .table-row:hover {
+    background-color: var(--select-hover-background);
+}
+
 .table-row:not(:last-child) {
     border-bottom: var(--button-stroked-border);
 }
@@ -586,3 +590,27 @@ body {
     padding-left: 40px;
 }
 /*  */
+
+code {
+    position: relative;
+    border-radius: 0.5rem;
+    display: block;
+    margin: 0px;
+    overflow: auto;
+    padding: 24px 16px;
+    color: var(--primary-text-color);
+    background-color: var(--empty-light);
+}
+
+code > .tg-icon {
+    position: absolute;
+    top: 21px;
+    right: 16px;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    opacity: 0;
+}
+
+code > .tg-icon:hover {
+    opacity: 1;
+}

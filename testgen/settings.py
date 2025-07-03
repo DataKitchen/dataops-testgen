@@ -408,17 +408,12 @@ from env variable: `OBSERVABILITY_DEFAULT_COMPONENT_KEY`
 defaults to: `default`
 """
 
-CHECK_FOR_LATEST_VERSION: typing.Literal["pypi", "docker", "no"] = typing.cast(
-    typing.Literal["pypi", "docker", "no"],
-    os.getenv("TG_RELEASE_CHECK", os.getenv("TG_DOCKER_RELEASE_CHECK_ENABLED", "pypi")).lower(),
+CHECK_FOR_LATEST_VERSION: typing.Literal["pypi", "docker"] = typing.cast(
+    typing.Literal["pypi", "docker"],
+    os.getenv("TG_RELEASE_CHECK", "pypi").lower(),
 )
 """
-When set to, enables calling Docker Hub API to fetch the latest released
-image tag. The fetched tag is displayed in the UI menu.
-
-from env variable: `TG_DOCKER_RELEASE_CHECK_ENABLED`
-choices: `pypi`, `docker`, `no`
-defaults to: `pypi`
+Specifies whether the latest version check should be based on PyPI or DockerHub.
 """
 
 DOCKER_HUB_REPOSITORY: str = os.getenv(
@@ -429,35 +424,11 @@ DOCKER_HUB_REPOSITORY: str = os.getenv(
 URL to the docker hub repository containing the dataops testgen image.
 Used to check for new releases when `CHECK_FOR_LATEST_VERSION` is set to
 `docker`.
-
-from env variable: `TESTGEN_DOCKER_HUB_URL`
-defaults to: datakitchen/dataops-testgen
-"""
-
-DOCKER_HUB_USERNAME: str | None = os.getenv("TESTGEN_DOCKER_HUB_USERNAME", None)
-"""
-Username to authenticate against Docker Hub API before fetching the list
-of tags. Required if `DOCKER_HUB_REPOSITORY` is a private repository.
-
-from env variable: `TESTGEN_DOCKER_HUB_USERNAME`
-defaults to: None
-"""
-
-DOCKER_HUB_PASSWORD: str | None = os.getenv("TESTGEN_DOCKER_HUB_PASSWORD", None)
-"""
-Password to authenticate against Docker Hub API before fetching the list
-of tags. Required if `DOCKER_HUB_REPOSITORY` is a private repository.
-
-from env variable: `TESTGEN_DOCKER_HUB_PASSWORD`
-defaults to: None
 """
 
 VERSION: str = os.getenv("TESTGEN_VERSION", None)
 """
 Current deployed version. The value is displayed in the UI menu.
-
-from env variable: `TESTGEN_VERSION`
-defaults to: None
 """
 
 SUPPORT_EMAIL: str = os.getenv("TESTGEN_SUPPORT_EMAIL", "open-source-support@datakitchen.io")
