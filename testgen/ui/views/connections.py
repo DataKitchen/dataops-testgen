@@ -351,10 +351,6 @@ def format_connection(connection: dict) -> dict:
     if formatted_connection["private_key_passphrase"]:
         formatted_connection["private_key_passphrase"] = "***"  # noqa S105
 
-    first_match = [f for f in FLAVOR_OPTIONS if f.flavor == formatted_connection.get("sql_flavor")]
-    if formatted_connection["sql_flavor"] and not formatted_connection.get("sql_flavor_code") and first_match:
-        formatted_connection["sql_flavor_code"] = first_match[0].flavor
-
     flavors = [f for f in FLAVOR_OPTIONS if f.value == formatted_connection["sql_flavor_code"]]
     if flavors and (flavor := flavors[0]):
         formatted_connection["flavor"] = asdict(flavor)

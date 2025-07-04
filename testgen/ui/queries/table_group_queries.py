@@ -8,11 +8,12 @@ import testgen.ui.services.database_service as db
 def _get_select_statement(schema):
     return f"""
         WITH table_groups AS (
-            SELECT table_groups.*, connections.connection_name, connections.sql_flavor_code
+            SELECT table_groups.*, connections.connection_name, connections.sql_flavor,
+                COALESCE(connections.sql_flavor_code, connections.sql_flavor) AS sql_flavor_code
             FROM {schema}.table_groups
             INNER JOIN {schema}.connections ON connections.connection_id = table_groups.connection_id
         )
-        SELECT id::VARCHAR(50), project_code, connection_id, connection_name, sql_flavor_code,
+        SELECT id::VARCHAR(50), project_code, connection_id, connection_name, sql_flavor, sql_flavor_code,
                 table_groups_name, table_group_schema,
                 profiling_include_mask, profiling_exclude_mask,
                 profiling_table_set,
