@@ -5,6 +5,7 @@ FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
 # Args have to be set in current build stage: https://github.com/moby/moby/issues/37345
 ARG TESTGEN_VERSION
 ARG TESTGEN_DOCKER_HUB_REPO
+ARG TESTGEN_SUPPORT_EMAIL
 
 ENV PYTHONPATH=/dk/lib/python3.12/site-packages
 ENV PATH=$PATH:/dk/bin
