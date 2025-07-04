@@ -61,7 +61,6 @@ dependencies = [
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",
-    "snowflake-connector-python==3.13.1",
     "matplotlib==3.9.2",
     "scipy==1.14.1",
     "jinja2==3.1.6",
