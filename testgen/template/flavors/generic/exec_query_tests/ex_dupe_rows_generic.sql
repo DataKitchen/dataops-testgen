@@ -15,7 +15,7 @@ SELECT '{TEST_TYPE}'   as test_type,
        CASE
         WHEN COUNT(*) > 0 THEN
                CONCAT(
-                      CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                      CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' duplicate row(s) identified, ' ),
                       CONCAT(
                              CASE
                                WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
@@ -26,23 +26,12 @@ SELECT '{TEST_TYPE}'   as test_type,
                       )
         ELSE 'No errors found.'
        END AS result_message,
-       COUNT(*) as result_measure,
+       COALESCE(SUM(record_ct), 0) as result_measure,
        '{SUBSET_DISPLAY}' as subset_condition,
        NULL as result_query
-FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
-         FROM
-              ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
-       FROM {SCHEMA_NAME}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-       GROUP BY {GROUPBY_NAMES}
-       {HAVING_CONDITION}
-              UNION ALL
-                SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
-       FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-       WHERE {MATCH_SUBSET_CONDITION}
-       GROUP BY {MATCH_GROUPBY_NAMES}
-       {MATCH_HAVING_CONDITION} ) a
-         GROUP BY {GROUPBY_NAMES} ) s
-         WHERE total <> match_total
-             OR (total IS NOT NULL AND match_total IS NULL)
-             OR (total IS NULL AND match_total IS NOT NULL);
+  FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+           FROM {SCHEMA_NAME}.{TABLE_NAME}
+           WHERE {SUBSET_CONDITION}
+         GROUP BY {GROUPBY_NAMES}
+         HAVING COUNT(*) > 1
+       ) test;

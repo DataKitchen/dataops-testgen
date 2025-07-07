@@ -60,11 +60,11 @@ class CDeriveTestsSQL:
 
         return strQuery
 
-    def GetTestDerivationQueriesAsList(self, booClean):
+    def GetTestDerivationQueriesAsList(self, template_directory, booClean):
         # This assumes the queries run in no particular order,
         # and will order them alphabetically by file name
         lstQueries = sorted(
-            get_template_files(mask=r"^.*sql$", sub_directory="gen_funny_cat_tests"), key=lambda key: str(key)
+            get_template_files(mask=r"^.*sql$", sub_directory=template_directory), key=lambda key: str(key)
         )
         lstTemplate = []
 
