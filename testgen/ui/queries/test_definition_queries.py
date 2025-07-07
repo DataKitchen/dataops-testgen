@@ -269,13 +269,21 @@ def cascade_delete(schema, test_suite_ids):
     st.cache_data.clear()
 
 
-def move(schema, test_definitions, target_table_group, target_test_suite):
+def move(schema, test_definitions, target_table_group, target_test_suite, target_table_column=None):
+    if target_table_column is not None:
+        update_target_table_column = f"""
+        column_name = '{target_table_column['column_name']}', 
+        table_name = '{target_table_column['table_name']}', 
+        """
+    else:
+        update_target_table_column = "" 
     sql = f"""
     WITH selected as (
         SELECT UNNEST(ARRAY [{", ".join([ f"'{td['id']}'" for td in test_definitions ])}]) AS id
     )
     UPDATE {schema}.test_definitions
     SET 
+        {update_target_table_column}
         table_groups_id = '{target_table_group}'::UUID,
         test_suite_id = '{target_test_suite}'::UUID
     FROM {schema}.test_definitions td
@@ -286,7 +294,13 @@ def move(schema, test_definitions, target_table_group, target_test_suite):
     st.cache_data.clear()
 
 
-def copy(schema, test_definitions, target_table_group, target_test_suite):
+def copy(schema, test_definitions, target_table_group, target_test_suite, target_table_column=None):
+    if target_table_column is not None:
+        update_target_column = f"'{target_table_column['column_name']}' as column_name"
+        update_target_table = f"'{target_table_column['table_name']}' as table_name"
+    else:
+        update_target_column = "td.colum_name"
+        update_target_table = "td.table_name"
     test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
     sql = f"""
         INSERT INTO {schema}.test_definitions
@@ -342,7 +356,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.custom_query,
             td.test_definition_status,
             td.export_to_observability,
-            td.column_name,
+            {update_target_column},
             td.watch_level,
             '{target_table_group}'::UUID AS table_groups_id,
             CASE WHEN td.table_groups_id = '{target_table_group}' THEN td.profile_run_id ELSE NULL END AS profile_run_id,
@@ -354,7 +368,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.lock_refresh,
             td.last_auto_gen_date,
             td.schema_name,
-            td.table_name,
+            {update_target_table},
             td.test_active,
             td.severity,
             td.check_result,

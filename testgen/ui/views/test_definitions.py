@@ -679,7 +679,7 @@ def edit_test_dialog(project_code, table_group, test_suite, str_table_name, str_
 def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, selected_test_definitions):
     st.text(f"Selected tests: {len(selected_test_definitions)}")
 
-    group_filter_column, suite_filter_column = st.columns([.5, .5], vertical_alignment="bottom")
+    group_filter_column, suite_filter_column, table_filter_column = st.columns([.33, .33, .33], vertical_alignment="bottom")
 
     with group_filter_column:
         table_groups_df = run_table_groups_lookup_query(project_code)
@@ -693,11 +693,6 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
 
     with suite_filter_column:
         test_suites_df = run_test_suite_lookup_query(target_table_group_id)
-        try:
-            origin_index = test_suites_df[test_suites_df["id"] == origin_test_suite["id"]].index
-            test_suites_df.drop(origin_index, inplace=True)
-        except KeyError:
-            pass
         target_test_suite_id = testgen.select(
             options=test_suites_df,
             value_column="id",
@@ -705,6 +700,30 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             default_value=None,
             label="Target Test Suite",
         )
+
+    target_table_column = None
+    if target_test_suite_id == origin_test_suite["id"]:
+        with table_filter_column:
+            columns_df = get_test_suite_columns(origin_test_suite["id"])
+            table_name = testgen.select(
+                options=list(columns_df["table_name"].unique()),
+                value_column="table_name",
+                default_value=None,
+                required=True,
+                label="Target Table Name",
+            )
+            column_options = list(columns_df.loc[columns_df["table_name"] == table_name]["column_name"].unique())
+            column_name = testgen.select(
+                options=column_options,
+                default_value=None,
+                required=True,
+                label="Column Name",
+                disabled=not table_name,
+            )
+        target_table_column = {
+            "table_name": table_name,
+            "column_name":column_name
+        }
 
     movable_test_definitions = []
     if target_table_group_id and target_test_suite_id:
@@ -738,13 +757,13 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
     )
 
     if move:
-        test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        test_definition_service.move(movable_test_definitions, target_table_group_id, target_test_suite_id, target_table_column)
         success_message = "Test Definitions have been moved."
         st.success(success_message)
         time.sleep(1)
         st.rerun()
     elif copy:
-        test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id)
+        test_definition_service.copy(movable_test_definitions, target_table_group_id, target_test_suite_id, target_table_column)
         success_message = "Test Definitions have been copied."
         st.success(success_message)
         time.sleep(1)
