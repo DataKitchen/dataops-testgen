@@ -56,7 +56,6 @@ def get_test_suite_ids_by_table_group_names(schema, table_group_names):
     return db.retrieve_data(sql)
 
 
-
 def get_table_group_dependencies(schema, table_group_names):
     if table_group_names is None or len(table_group_names) == 0:
         raise ValueError("No Table Group is specified.")
@@ -225,3 +224,21 @@ delete from {schema}.data_column_chars dcs USING {schema}.table_groups tg where 
 delete from {schema}.table_groups where table_groups_name in ({",".join(table_group_items)});"""
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def get_test_suite_ids_by_table_group_id(schema, table_group_id: str) -> list[str]:
+    sql = f"""
+        SELECT ts.id::VARCHAR
+        FROM {schema}.test_suites ts
+        WHERE ts.table_groups_id = '{table_group_id}'
+    """
+    return db.retrieve_data(sql)
+
+
+def get_profiling_run_ids_by_table_group_id(schema, table_group_id: str) -> list[str]:
+    sql = f"""
+        SELECT pr.id::VARCHAR
+        FROM {schema}.profiling_runs pr
+        WHERE pr.table_groups_id = '{table_group_id}'
+    """
+    return db.retrieve_data(sql)
