@@ -14,6 +14,8 @@ SELECT tt.test_type,
        coalesce(baseline_sum, '')                      as baseline_sum,
        coalesce(baseline_avg, '')                      as baseline_avg,
        coalesce(baseline_sd, '')                       as baseline_sd,
+       coalesce(lower_tolerance, '')                   as lower_tolerance,
+       coalesce(upper_tolerance, '')                   as upper_tolerance,
        case
            when nullif(subset_condition, '') is null then '1=1'
            else subset_condition end                   as subset_condition,

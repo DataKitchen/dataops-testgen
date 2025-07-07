@@ -1,9 +1,10 @@
 from urllib.parse import quote_plus
 
+from testgen import settings
 from testgen.common.database.flavor.flavor_service import FlavorService
 
 
-class MssqlFlavorService(FlavorService):
+class MssqlFlavorService(FlavorService):    
     def get_connection_string_head(self, strPW):
         username = self.username
         password = quote_plus(strPW)
@@ -29,6 +30,12 @@ class MssqlFlavorService(FlavorService):
             "SET ANSI_DEFAULTS ON;",
             "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;",
         ]
+    
+    def get_connect_args(self, is_password_overwritten: bool = False):
+        connect_args = super().get_connect_args(is_password_overwritten)
+        if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
+            connect_args["TrustServerCertificate"] = "yes"
+        return connect_args
 
     def get_concat_operator(self):
         return "+"
