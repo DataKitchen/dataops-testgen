@@ -39,6 +39,7 @@
  * @property {Connection[]} connections
  * @property {boolean?} showConnectionSelector
  * @property {boolean?} enableConnectionSelector
+ * @property {boolean?} disableSchemaField
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
@@ -94,6 +95,7 @@ const TableGroupForm = (props) => {
     });
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
     const disableConnectionSelector = van.derive(() => !getValue(props.enableConnectionSelector) || (getValue(props.connections) ?? []).length <= 0);
+    const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
 
     const updatedTableGroup = van.derive(() => {
         return {
@@ -157,7 +159,7 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { setValidity: setFieldValidity },
+            { disableSchemaField, setValidity: setFieldValidity },
             tableGroupsName,
             profilingIncludeMask,
             profilingExcludeMask,
@@ -264,6 +266,7 @@ const MainForm = (
             height: 38,
             help: 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
+            disabled: options.disableSchemaField,
             onChange: (value, state) => {
                 tableGroupSchema.val = value;
                 options.setValidity?.('table_group_schema', state.valid);

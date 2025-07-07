@@ -141,10 +141,15 @@ class TableGroupsPage(Page):
             default={},
         )
 
+        original_table_group = table_group_service.get_by_id(table_group_id=table_group_id).to_dict()
+        is_table_group_used = table_group_service.is_table_group_used(table_group_id)
         table_group = {
-            **table_group_service.get_by_id(table_group_id=table_group_id).to_dict(),
+            **original_table_group,
             **get_updated_table_group(),
         }
+        if is_table_group_used:
+            table_group["table_group_schema"] = original_table_group["table_group_schema"]
+
         table_group_preview = {
             "schema": table_group["table_group_schema"],
         }
@@ -166,6 +171,7 @@ class TableGroupsPage(Page):
                 "project_code": project_code,
                 "connections": self._get_connections(project_code, connection_id=table_group["connection_id"]),
                 "table_group": table_group,
+                "in_used": is_table_group_used,
                 "table_group_preview": table_group_preview,
                 "result": result,
             },
