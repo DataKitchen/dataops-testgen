@@ -29,6 +29,8 @@ Optional: last_auto_run_date (==test-gen-run-id==), schema-name, table-name, col
            td.baseline_sum,
            td.baseline_avg,
            td.baseline_sd,
+           td.lower_tolerance,
+           td.upper_tolerance,
            td.subset_condition,
            td.check_result,
            td.last_auto_gen_date,

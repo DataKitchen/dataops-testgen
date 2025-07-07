@@ -34,6 +34,8 @@ import { TableGroup } from './pages/table_group.js';
 import { TableGroupList } from './pages/table_group_list.js';
 import { TableGroupDeleteConfirmation } from './pages/table_group_delete_confirmation.js';
 import { RunProfilingDialog } from './pages/run_profiling_dialog.js';
+import { ConfirmationDialog } from './pages/confirmation_dialog.js';
+import { TestDefinitionSummary } from './pages/test_definition_summary.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -66,6 +68,8 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         table_group_list: TableGroupList,
         table_group_delete: TableGroupDeleteConfirmation,
         run_profiling_dialog: RunProfilingDialog,
+        confirm_dialog: ConfirmationDialog,
+        test_definition_summary: TestDefinitionSummary,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {

@@ -1,6 +1,5 @@
 import typing
 from builtins import float
-from enum import Enum
 from pathlib import Path
 from time import sleep
 
@@ -8,9 +7,7 @@ import pandas as pd
 import streamlit as st
 from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
-from streamlit_extras.no_default_selectbox import selectbox
 
-import testgen.ui.services.database_service as db
 from testgen.ui.navigation.router import Router
 
 """
@@ -19,153 +16,6 @@ Shared rendering of UI elements
 
 logo_file = (Path(__file__).parent.parent / "assets/dk_logo.svg").as_posix()
 help_icon = (Path(__file__).parent.parent / "assets/question_mark.png").as_posix()
-
-
-class FormWidget(Enum):
-    text_md = 1
-    text_input = 2
-    text_area = 3
-    number_input = 4
-    selectbox = 5
-    date_input = 6
-    radio = 7
-    checkbox = 8
-    multiselect = 9  # TODO: implement
-    hidden = 99
-
-
-class FieldSpec:
-    field_label = None
-    column_name = None
-    widget = None
-    value_original = None
-    init_value = None
-    display_only = False
-    required = False
-    key_order = 0
-
-    # Entry Options
-    max_chars = None
-    num_min = None
-    num_max = None
-    text_multi_lines = 3
-
-    # Selectbox Options
-    df_options = None
-    show_column_name = None
-    return_column_name = None
-
-    # Radio options
-    lst_option_text: typing.ClassVar = []
-    lst_option_values: typing.ClassVar = []
-    show_horizontal = True
-
-    value = None
-
-    def __init__(
-        self,
-        str_label,
-        str_column_name,
-        form_widget,
-        orig_val=None,
-        init_val=None,
-        read_only=False,
-        required=False,
-        int_key=0,
-        max_chars=None,
-        num_min=None,
-        num_max=None,
-        text_multi_lines=3,
-    ):
-        self.field_label = str_label
-        self.column_name = str_column_name
-        self.value_original = orig_val
-        self.init_value = init_val if init_val else orig_val
-        self.widget = form_widget
-        self.display_only = read_only
-        self.required = required
-        self.key_order = int_key
-        self.max_chars = max_chars
-        self.num_min = num_min
-        self.num_max = num_max
-        self.text_multi_lines = text_multi_lines
-
-    def set_select_choices(self, df_options, str_show_column_name, str_return_column_name):
-        if self.widget in [FormWidget.selectbox, FormWidget.multiselect]:
-            self.df_options = df_options
-            self.show_column_name = str_show_column_name
-            self.return_column_name = str_return_column_name
-        else:
-            raise ValueError(f"Can't set Select Choices for widget {self.widget}")
-
-    def render_widget(self, boo_form_display_only=False):
-        # if either form-level or field-level display-only is true, then widget is display-only
-        boo_display_only = boo_form_display_only or self.display_only
-
-        match self.widget:
-            case FormWidget.text_md:
-                st.markdown(f"**{self.field_label}**")
-                st.markdown(self.init_value)
-
-            case FormWidget.text_input:
-                self.value = st.text_input(
-                    label=self.field_label, value=self.init_value, disabled=boo_display_only, max_chars=self.max_chars
-                )
-
-            case FormWidget.text_area:
-                box_height = 26 * self.text_multi_lines
-                self.value = st.text_area(
-                    label=self.field_label,
-                    value=self.init_value,
-                    disabled=boo_display_only,
-                    max_chars=self.max_chars,
-                    height=box_height,
-                )
-
-            case FormWidget.number_input:
-                self.value = st.number_input(
-                    label=self.field_label,
-                    value=self.init_value,
-                    min_value=self.num_min,
-                    max_value=self.num_max,
-                    disabled=boo_display_only,
-                )
-
-            case FormWidget.selectbox:
-                self.value = render_select(
-                    self.field_label,
-                    self.df_options,
-                    self.show_column_name,
-                    not self.return_column_name,
-                    self.required,
-                    self.init_value,
-                    self.display_only,
-                )
-
-            case FormWidget.date_input:
-                self.value = render_select_date(self.field_label, boo_disabled=boo_display_only)
-
-            case FormWidget.radio:
-                # If no init_value, or if init_value is None (NULL), the first value will be selected by default
-                self.value = render_radio(
-                    self.field_label,
-                    self.lst_option_text,
-                    self.lst_option_values if self.lst_option_values else self.lst_option_text,
-                    self.init_value,
-                    boo_display_only,
-                    self.show_horizontal,
-                )
-
-            case FormWidget.checkbox:
-                self.value = render_checkbox(
-                    self.field_label, self.lst_option_values, self.init_value, boo_display_only
-                )
-
-            case FormWidget.hidden:
-                self.value = self.init_value
-
-            case _:
-                raise ValueError(f"Widget {self.widget} is not supported.")
 
 
 def render_refresh_button(button_container):
@@ -180,11 +30,6 @@ def show_prompt(str_prompt=None):
         st.markdown(f":blue[{str_prompt}]")
 
 
-def show_header(str_header=None):
-    if str_header:
-        st.header(f":green[{str_header}]")
-
-
 def show_subheader(str_text=None):
     if str_text:
         st.subheader(f":green[{str_text}]")
@@ -193,61 +38,6 @@ def show_subheader(str_text=None):
 def _show_section_header(str_section_header=None):
     if str_section_header:
         st.markdown(f":green[**{str_section_header}**]")
-
-
-def render_form_by_field_specs(
-    str_form_name, str_table_name, lst_field_specs, str_text_display=None, boo_display_only=False, str_caption=None
-):
-    show_header(str_form_name)
-
-    if str_text_display:
-        layout_column_1, layout_column_2 = st.columns([0.7, 0.3])
-    else:
-        layout_column_1, layout_column_2 = st.columns([0.95, 0.05])
-
-    if str_text_display:
-        with layout_column_2:
-            st.markdown(str_text_display)
-
-    with layout_column_1:
-        # Render form
-        layout_container = st.container() if boo_display_only else st.form(str_form_name, clear_on_submit=True)
-        with layout_container:
-            if str_caption:
-                st.caption(f":green[{str_caption}]")
-
-            # Render all widgets
-            for field in lst_field_specs:
-                field.render_widget(boo_display_only)
-
-            submit = (
-                False
-                if boo_display_only
-                else st.form_submit_button("Save Changes")
-            )
-
-            if submit and not boo_display_only:
-                # Process Results
-                changes = []
-                keys = []
-
-                # Construct SQL UPDATE statement based on the changed values
-                lst_field_specs_by_key = sorted(lst_field_specs, key=lambda x: x.key_order)
-                for field in lst_field_specs_by_key:
-                    if field.key_order > 0:
-                        keys.append(f"{field.column_name} = '{field.value}'")
-                    elif not field.display_only and field.value is None and field.value_original is not None:
-                        changes.append(f"{field.column_name} = NULL")
-                    elif not field.display_only and field.value != field.value_original:
-                        changes.append(f"{field.column_name} = '{field.value}'")
-                # If there are any changes, construct and run the SQL statement
-                if changes:
-                    str_schema = st.session_state["dbschema"]
-                    str_sql = (
-                        f"UPDATE {str_schema}.{str_table_name} SET {', '.join(changes)} WHERE {' AND '.join(keys)};"
-                    )
-                    db.execute_sql(str_sql)
-                    reset_post_updates("Changes have been saved.")
 
 
 def ut_prettify_header(str_header, expand=False):
@@ -286,64 +76,6 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
         else:
             st.cache_data.clear()
     st.rerun()
-
-
-def render_select(
-    str_label, df_options, str_show_column, str_return_column, boo_required=True, str_default=None, boo_disabled=False
-):
-    # Assemble conditional arguments for selectbox
-    kwargs = {"label": str_label, "options": df_options[str_show_column], "disabled": boo_disabled}
-    if str_default:
-        # Conditionally select index based on index of default value
-        if str_default not in df_options[str_show_column].values:
-            message = f"Label: {str_label} - Option: {str_default} not available. Click the refresh button."
-            st.markdown(f":orange[{message}]")
-        else:
-            kwargs["index"] = int(df_options[df_options[str_show_column] == str_default].index[0])
-    str_choice_name = st.selectbox(**kwargs) if boo_required else selectbox(**kwargs)
-    # Assign return-value from selected show-value
-    if str_choice_name:
-        return df_options.loc[df_options[str_show_column] == str_choice_name, str_return_column].iloc[0]
-
-
-def render_select_date(str_label, dt_min_date=None, dt_max_date=None, boo_disabled=False, dt_default=None):
-    dt_select = st.date_input(
-        label=str_label,
-        value=dt_default,
-        min_value=dt_min_date,
-        max_value=dt_max_date,
-        format="YYYY-MM-DD",
-        disabled=boo_disabled,
-    )
-    return dt_select
-
-
-def render_radio(
-    str_label, lst_option_text, lst_option_values=None, init_value=None, boo_disabled=False, boo_horizontal=True
-):
-    if init_value:
-        # Lookup index for init value
-        i = next((i for i, x in enumerate(lst_option_values) if x == init_value), -1)
-        i = i if i > 0 else 0
-    else:
-        # If no init_value, or if init_value is None (NULL), the first value will be selected by default
-        i = 0
-    str_choice_text = st.radio(
-        str_label, options=lst_option_text, index=i, disabled=boo_disabled, horizontal=boo_horizontal
-    )
-    if lst_option_values:
-        # Lookup choice -- get value
-        i = next((i for i, x in enumerate(lst_option_text) if x == str_choice_text), -1)
-        val_select = lst_option_values[i]
-    else:
-        val_select = str_choice_text
-
-    return val_select
-
-
-def render_checkbox(str_label, lst_true_false_values, boo_init_state=False, boo_disabled=False):
-    boo_value = st.checkbox(str_label, boo_init_state, disabled=boo_disabled)
-    return lst_true_false_values[0] if boo_value else lst_true_false_values[1]
 
 
 def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_width=300, lst_labels=None):

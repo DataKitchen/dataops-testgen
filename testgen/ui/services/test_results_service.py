@@ -200,7 +200,7 @@ def do_source_data_lookup_custom(db_schema, tr_data, limit: int | None = None):
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
                 if limit:
-                    df = df.sample(n=min(len(df), limit))
+                    df = df.sample(n=min(len(df), limit)).sort_index()
                 return "OK", None, str_sql, df
         else:
             return "NA", "Source data lookup is not available for this test.", None, None
@@ -243,6 +243,8 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False, limit: int | None 
         str_query = str_query.replace("{BASELINE_AVG}", empty_if_null(df_test.at[0, "baseline_avg"]))
         str_query = str_query.replace("{BASELINE_SD}", empty_if_null(df_test.at[0, "baseline_sd"]))
         str_query = str_query.replace("{THRESHOLD_VALUE}", empty_if_null(df_test.at[0, "threshold_value"]))
+        str_query = str_query.replace("{LOWER_TOLERANCE}", empty_if_null(df_test.at[0, "lower_tolerance"]))
+        str_query = str_query.replace("{UPPER_TOLERANCE}", empty_if_null(df_test.at[0, "upper_tolerance"]))
 
         str_substitute = empty_if_null(df_test.at[0, "subset_condition"])
         str_substitute = "1=1" if str_substitute == "" else str_substitute
@@ -307,7 +309,7 @@ def do_source_data_lookup(db_schema, tr_data, sql_only=False, limit: int | None 
                 return "ND", "Data that violates Test criteria is not present in the current dataset.", str_sql, None
             else:
                 if limit:
-                    df = df.sample(n=min(len(df), limit))
+                    df = df.sample(n=min(len(df), limit)).sort_index()
                 return "OK", None, str_sql, df
         else:
             return "NA", "A source data lookup for this Test is not available.", None, None

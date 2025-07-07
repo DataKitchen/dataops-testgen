@@ -1,7 +1,8 @@
 import typing
-from datetime import date
 from functools import partial
 from io import BytesIO
+from itertools import zip_longest
+from operator import itemgetter
 
 import pandas as pd
 import plotly.express as px
@@ -26,7 +27,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
-from testgen.ui.services.string_service import empty_if_null
+from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
@@ -395,79 +396,73 @@ def get_test_result_history(selected_row):
     return test_results_service.get_test_result_history(schema, selected_row)
 
 
-def show_test_def_detail(str_test_def_id):
-    if not str_test_def_id:
+def show_test_def_detail(test_def_id: str):
+    def readable_boolean(v: typing.Literal["Y", "N"]):
+        return "Yes" if v == "Y" else "No"
+
+    if not test_def_id:
         st.warning("Test definition no longer exists.")
         return
     
-    df = get_test_definition(str_test_def_id)
+    df = get_test_definition(test_def_id)
 
     specs = []
     if not df.empty:
-        # Get First Row
-        row = df.iloc[0]
+        test_definition = df.iloc[0]
+        row = test_definition
 
-        specs.append(
-            fm.FieldSpec(
-                "Usage Notes",
-                "usage_notes",
-                fm.FormWidget.text_area,
-                row["usage_notes"],
-                read_only=True,
-                text_multi_lines=7,
-            )
-        )
-        specs.append(
-            fm.FieldSpec(
-                "Threshold Value",
-                "threshold_value",
-                fm.FormWidget.number_input,
-                float(row["threshold_value"]) if row["threshold_value"] else None,
-                required=True,
-            )
-        )
+        dynamic_attributes_labels_raw: str = test_definition["default_parm_prompts"]
+        if not dynamic_attributes_labels_raw:
+            dynamic_attributes_labels_raw = ""
+        dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
-        default_severity_choice = f"Test Default ({row['default_severity']})"
+        dynamic_attributes_raw: str = test_definition["default_parm_columns"]
+        dynamic_attributes_fields = dynamic_attributes_raw.split(",")
+        dynamic_attributes_values = itemgetter(*dynamic_attributes_fields)(test_definition)\
+            if len(dynamic_attributes_fields) > 1\
+            else (test_definition[dynamic_attributes_fields[0]],)
 
-        spec = fm.FieldSpec("Test Result Urgency", "severity", fm.FormWidget.radio, row["severity"], required=True)
-        spec.lst_option_text = [default_severity_choice, "Warning", "Fail", "Log"]
-        spec.lst_option_values = [None, "Warning", "Fail", "Ignore"]
-        spec.show_horizontal = True
-        specs.append(spec)
+        for field_name in dynamic_attributes_fields[len(dynamic_attributes_labels):]:
+            dynamic_attributes_labels.append(snake_case_to_title_case(field_name))
 
-        spec = fm.FieldSpec(
-            "Perform Test in Future Runs", "test_active", fm.FormWidget.radio, row["test_active"], required=True
-        )
-        spec.lst_option_text = ["Yes", "No"]
-        spec.lst_option_values = ["Y", "N"]
-        spec.show_horizontal = True
-        specs.append(spec)
+        dynamic_attributes_help_raw: str = test_definition["default_parm_help"]
+        if not dynamic_attributes_help_raw:
+            dynamic_attributes_help_raw = ""
+        dynamic_attributes_help = dynamic_attributes_help_raw.split("|")
 
-        spec = fm.FieldSpec(
-            "Lock from Refresh", "lock_refresh", fm.FormWidget.radio, row["lock_refresh"], required=True
-        )
-        spec.lst_option_text = ["Unlocked", "Locked"]
-        spec.lst_option_values = ["N", "Y"]
-        spec.show_horizontal = True
-        specs.append(spec)
-
-        specs.append(fm.FieldSpec("", "id", form_widget=fm.FormWidget.hidden, int_key=1, init_val=row["id"]))
-
-        specs.append(
-            fm.FieldSpec(
-                "Last Manual Update",
-                "last_manual_update",
-                fm.FormWidget.date_input,
-                row["last_manual_update"],
-                date.today().strftime("%Y-%m-%d hh:mm:ss"),
-                read_only=True,
-            )
-        )
-        fm.render_form_by_field_specs(
-            None,
-            "test_definitions",
-            specs,
-            boo_display_only=True,
+        testgen.testgen_component(
+            "test_definition_summary",
+            props={
+                "test_definition": {
+                    "schema": test_definition["schema_name"],
+                    "test_suite_name": test_definition["test_suite_name"],
+                    "table_name": test_definition["table_name"],
+                    "test_focus": test_definition["column_name"],
+                    "export_to_observability": readable_boolean(test_definition["export_to_observability"])
+                        if test_definition["export_to_observability"]
+                        else f"Inherited ({readable_boolean(test_definition["default_export_to_observability"])})",
+                    "severity": test_definition["severity"] or f"Test Default ({test_definition['default_severity']})",
+                    "locked": readable_boolean(test_definition["lock_refresh"]),
+                    "active": readable_boolean(test_definition["test_active"]),
+                    "status": test_definition["status"],
+                    "usage_notes": test_definition["usage_notes"],
+                    "last_manual_update": test_definition["last_manual_update"].isoformat()
+                        if test_definition["last_manual_update"]
+                        else None,
+                    "custom_query": test_definition["custom_query"]
+                        if "custom_query" in dynamic_attributes_fields
+                        else None,
+                    "attributes": [
+                        {"label": label, "value": value, "help": help_}
+                        for label, value, help_ in zip_longest(
+                            dynamic_attributes_labels,
+                            dynamic_attributes_values,
+                            dynamic_attributes_help,
+                        )
+                        if label and value
+                    ],
+                },
+            },
         )
 
 

@@ -10,7 +10,8 @@ def get_by_id(connection_id):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
+                  sql_flavor, COALESCE(sql_flavor_code, sql_flavor) AS sql_flavor_code, 
+                  project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, url, connect_by_url, connect_by_key, private_key,
                   private_key_passphrase, http_path
@@ -24,7 +25,8 @@ def get_connections(project_code):
     str_schema = st.session_state["dbschema"]
     str_sql = f"""
            SELECT id::VARCHAR(50), project_code, connection_id, connection_name,
-                  sql_flavor, sql_flavor_code, project_host, project_port, project_user,
+                  sql_flavor, COALESCE(sql_flavor_code, sql_flavor) AS sql_flavor_code,
+                  project_host, project_port, project_user,
                   project_db, project_pw_encrypted, NULL as password,
                   max_threads, max_query_chars, connect_by_url, url, connect_by_key, private_key,
                   private_key_passphrase, http_path

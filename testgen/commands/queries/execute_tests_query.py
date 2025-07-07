@@ -29,12 +29,30 @@ class CTestExecutionSQL:
 
     def _AssembleDisplayParameters(self):
 
-        lst_parms = ["column_name", "skip_errors", "baseline_ct", "baseline_unique_ct", "baseline_value",
-                     "baseline_value_ct", "baseline_sum", "baseline_avg", "baseline_sd", "subset_condition",
-                     "groupby_names", "having_condition", "window_date_column", "window_days",
-                     "match_column_names", "match_subset_condition", "match_schema_name", "match_table_name",
-                     "match_groupby_names", "match_having_condition",
-                     ]
+        lst_parms = [
+            "column_name",
+            "skip_errors",
+            "baseline_ct",
+            "baseline_unique_ct",
+            "baseline_value",
+            "baseline_value_ct",
+            "baseline_sum",
+            "baseline_avg",
+            "baseline_sd",
+            "lower_tolerance",
+            "upper_tolerance",
+            "subset_condition",
+            "groupby_names",
+            "having_condition",
+            "window_date_column",
+            "window_days",
+            "match_column_names",
+            "match_subset_condition",
+            "match_schema_name",
+            "match_table_name",
+            "match_groupby_names",
+            "match_having_condition",
+        ]
         str_parms = "; ".join(f"{key}={self.dctTestParms[key]}"
                              for key in lst_parms
                              if key.lower() in self.dctTestParms and self.dctTestParms[key] not in [None, ""])

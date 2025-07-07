@@ -8,7 +8,7 @@
  * @property {boolean?} indeterminate
  * @property {function(boolean, Event)?} onChange
  * @property {number?} width
- * @property {testId?} testId
+ * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';

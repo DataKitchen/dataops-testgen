@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.ui.services.database_service as db
@@ -121,12 +122,16 @@ class TestDefinitionsPage(Page):
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:
                 if action["button"]:
-                    fm.reset_post_updates(
-                        update_test_definition(selected, action["attribute"], action["value"], action["message"]),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
+                    is_unlocking = action["attribute"] == "lock_refresh" and not action["value"]
+                    if is_unlocking:
+                        confirm_unlocking_test_definition(selected)
+                    else:
+                        fm.reset_post_updates(
+                            update_test_definition(selected, action["attribute"], action["value"], action["message"]),
+                            as_toast=True,
+                            clear_cache=True,
+                            lst_cached_functions=[],
+                        )
 
         if selected:
             selected_test_def = selected[0]
@@ -262,6 +267,9 @@ def show_test_form(
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     check_result = selected_test_def["check_result"] if mode == "edit" else None
     column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else ""
+    last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
+    profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
+    profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
 
     # dynamic attributes
     custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
@@ -273,6 +281,8 @@ def show_test_form(
     baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
     baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
     baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
+    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else 0
+    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else 0
     subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
     groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
     having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
@@ -367,9 +377,6 @@ def show_test_form(
             value=lock_refresh,
             help="Protects test parameters from being overwritten when tests in this Test Suite are regenerated.",
         ),
-        "schema_name": right_column.text_input(
-            label="Schema Name", max_chars=100, value=schema_name, disabled=True
-        ),
         "test_active": left_column.toggle(label="Test Active", value=test_active),
         "check_result": check_result,
         "custom_query": custom_query,
@@ -381,6 +388,8 @@ def show_test_form(
         "baseline_sum": baseline_sum,
         "baseline_avg": baseline_avg,
         "baseline_sd": baseline_sd,
+        "lower_tolerance": lower_tolerance,
+        "upper_tolerance": upper_tolerance,
         "subset_condition": subset_condition,
         "groupby_names": groupby_names,
         "having_condition": having_condition,
@@ -421,10 +430,45 @@ def show_test_form(
         help=severity_help,
     )
 
+    if mode == "edit":
+        columns = st.columns([0.5, 0.5])
+        if profiling_as_of_date and profile_run_id and (container := columns.pop()):
+            if isinstance(profiling_as_of_date, str):
+                formatted_time = datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = profiling_as_of_date.strftime("%b %d, %I:%M %p")
+            testgen.caption("Based on Profiling", container=container)
+            with container:
+                testgen.link(
+                    href="profiling-runs:results",
+                    params={"run_id": profile_run_id},
+                    label=formatted_time,
+                    open_new=True,
+                )
+
+        if last_auto_gen_date and (container := columns.pop()):
+            if isinstance(last_auto_gen_date, str):
+                formatted_time = datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = last_auto_gen_date.strftime("%b %d, %I:%M %p")
+            testgen.caption("Auto-generated at", container=container)
+            testgen.text(
+                formatted_time,
+                container=container,
+            )
+
     st.divider()
 
+    has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
+    left_column, right_column = st.columns([0.5, 0.5]) if has_match_attributes else (st.container(), None)
+
+    # schema_name
+    test_definition["schema_name"] = left_column.text_input(
+        label="Schema Name", max_chars=100, value=schema_name, disabled=True
+    )
+
     # table_name
-    test_definition["table_name"] = st.text_input(
+    test_definition["table_name"] = left_column.text_input(
         label="Table Name", max_chars=100, value=table_name, disabled=False
     )
 
@@ -443,7 +487,7 @@ def show_test_form(
         column_name_label = None
     elif test_scope == "referential":
         column_name_disabled = False
-        test_definition["column_name"] = st.text_input(
+        test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=500,
@@ -464,7 +508,7 @@ def show_test_form(
             else:  # query edit not-present
                 column_name_disabled = False
 
-        test_definition["column_name"] = st.text_input(
+        test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=100,
@@ -498,72 +542,93 @@ def show_test_form(
             disabled=column_name_disabled,
         )
 
-    st.divider()
+    leftover_attributes = dynamic_attributes.copy()
 
-    # dynamic attributes
-    mid_left_column, mid_right_column = st.columns([0.5, 0.5])
+    def render_dynamic_attribute(attribute: str, container: DeltaGenerator):
+        if not attribute in dynamic_attributes:
+            return
+        
+        numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
 
-    current_column = mid_left_column
-    show_custom_query = False
-    dynamic_attributes_length = len(dynamic_attributes)
-    dynamic_attributes_half_length = max(round((dynamic_attributes_length + 0.5) / 2), 1)
-    for i, dynamic_attribute in enumerate(dynamic_attributes):
-        if i >= dynamic_attributes_half_length:
-            current_column = mid_right_column
+        default_value = 0 if attribute in numeric_attributes else ""
+        value = empty_if_null(selected_test_def[attribute]) if mode == "edit" else default_value
 
-        default_value = "" if dynamic_attribute != "threshold_value" else 0
-        value = empty_if_null(selected_test_def[dynamic_attribute]) if mode == "edit" else default_value
+        index = dynamic_attributes.index(attribute)
+        leftover_attributes.remove(attribute)
 
-        actual_dynamic_attributes_labels = (
-            dynamic_attributes_labels[i]
-            if dynamic_attributes_labels and len(dynamic_attributes_labels) > i
+        label_text = (
+            dynamic_attributes_labels[index]
+            if dynamic_attributes_labels and len(dynamic_attributes_labels) > index
+            else snake_case_to_title_case(attribute)
+        )
+        help_text = (
+            dynamic_attributes_help[index]
+            if dynamic_attributes_help and len(dynamic_attributes_help) > index
             else "Help text is not available."
         )
 
-        actual_dynamic_attributes_help = (
-            dynamic_attributes_help[i]
-            if dynamic_attributes_help and len(dynamic_attributes_help) > i
-            else snake_case_to_title_case(dynamic_attribute)
-        )
-
-        if dynamic_attribute in ["custom_query"]:
-            show_custom_query = True
-        elif dynamic_attribute in ["threshold_value"]:
-            test_definition[dynamic_attribute] = current_column.number_input(
-                label=actual_dynamic_attributes_labels,
+        if attribute == "custom_query":
+            custom_query_placeholder = None
+            if test_type == "Condition_Flag":
+                custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
+            elif test_type == "CUSTOM":
+                custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
+                
+            test_definition[attribute] = st.text_area(
+                label=label_text,
+                value=custom_query,
+                placeholder=custom_query_placeholder,
+                height=150 if test_type == "CUSTOM" else 75,
+                help=help_text,
+            )
+        elif attribute in numeric_attributes:
+            test_definition[attribute] = container.number_input(
+                label=label_text,
                 value=float(value),
-                help=actual_dynamic_attributes_help,
+                step=1.0,
+                help=help_text,
             )
         else:
-            test_definition[dynamic_attribute] = current_column.text_input(
-                label=actual_dynamic_attributes_labels,
-                max_chars=4000 if dynamic_attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
+            test_definition[attribute] = container.text_input(
+                label=label_text,
+                max_chars=4000 if attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
                 value=value,
-                help=actual_dynamic_attributes_help,
+                help=help_text,
             )
 
-    # Custom Query
-    if show_custom_query:
-        if test_type == "Condition_Flag":
-            custom_query_default = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
-            custom_query_height = 75
-        elif test_type == "CUSTOM":
-            custom_query_default = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
-            custom_query_height = 150
-        else:
-            custom_query_default = None
-            custom_query_height = 75
-        test_definition["custom_query"] = st.text_area(
-            label=actual_dynamic_attributes_labels,
-            value=custom_query,
-            placeholder=custom_query_default,
-            height=custom_query_height,
-            help=actual_dynamic_attributes_help,
+    if has_match_attributes:
+        for attribute in ["match_schema_name", "match_table_name", "match_column_names"]:
+            render_dynamic_attribute(attribute, right_column)
+
+    st.divider()
+
+    mid_left_column, mid_right_column = st.columns([0.5, 0.5])
+
+    if has_match_attributes:
+        for attribute in ["subset_condition", "groupby_names", "having_condition"]:
+            if attribute in dynamic_attributes and f"match_{attribute}" in dynamic_attributes:
+                render_dynamic_attribute(attribute, mid_left_column)
+                render_dynamic_attribute(f"match_{attribute}", mid_right_column)
+
+    if "custom_query" in dynamic_attributes:
+        render_dynamic_attribute("custom_query", mid_left_column)
+
+    total_length = len(leftover_attributes)
+    half_length = round(total_length / 2)
+    for index, attribute in enumerate(leftover_attributes.copy()):
+        render_dynamic_attribute(
+            attribute,
+            mid_left_column if index == 0 or index < half_length else mid_right_column,
         )
 
     # skip_errors
     if run_type == "QUERY":
-        test_definition["skip_errors"] = left_column.number_input(label="Threshold Error Count", value=skip_errors)
+        container = mid_right_column if total_length % 2 else mid_left_column
+        test_definition["skip_errors"] = container.number_input(
+            label="Threshold Error Count",
+            value=skip_errors,
+            step=1,
+        )
     else:
         test_definition["skip_errors"] = skip_errors
 
@@ -738,6 +803,37 @@ def prompt_for_test_type():
         str_value = None
         row_selected = None
     return str_value, row_selected
+
+
+@st.dialog(title="Unlock Test Definition")
+def confirm_unlocking_test_definition(test_definitions: list[dict]):
+    unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
+
+    st.warning(
+        """Unlocked tests subject to auto-generation will be overwritten during the next test generation run."""
+    )
+
+    st.html(f"""
+        Are you sure you want to unlock
+        {f"<b>{len(test_definitions)}</b> selected test definitions?"
+        if len(test_definitions) > 1
+        else "the selected test definition?"}
+    """)
+
+    if unlock_confirmed():
+        update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
+        time.sleep(1)
+        st.rerun()
+
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Unlock",
+            type_="stroked",
+            color="basic",
+            key="test-definitions:confirm-unlock-tests-btn",
+            on_click=lambda: set_unlock_confirmed(True),
+        )
 
 
 def update_test_definition(selected, attribute, value, message):

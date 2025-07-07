@@ -4,6 +4,7 @@
  * @property {string?} icon
  * @property {number?} timeout
  * @property {boolean?} closeable
+ * @property {string?} class
  * @property {'info'|'success'|'warn'|'error'} type
  */
 import van from '../van.min.js';
@@ -12,12 +13,6 @@ import { Icon } from './icon.js';
 import { Button } from './button.js';
 
 const { div } = van.tags;
-const alertTypeColors = {
-    info: {backgroundColor: 'rgba(28, 131, 225, 0.1)', color: 'rgb(0, 66, 128)'},
-    success: {backgroundColor: 'rgba(33, 195, 84, 0.1)', color: 'rgb(23, 114, 51)'},
-    warn: {backgroundColor: 'rgba(255, 227, 18, 0.2)', color: 'rgb(255, 255, 194)'},
-    error: {backgroundColor: 'rgba(255, 43, 43, 0.09)', color: 'rgb(125, 53, 59)'},
-};
 
 const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ...children) => {
     loadStylesheet('alert', stylesheet);
@@ -40,6 +35,10 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
         },
         () => {
             const icon = getValue(props.icon);
+            if (!icon) {
+                return '';
+            }
+
             return Icon({size: 20, classes: 'mr-2'}, icon);
         },
         div(
@@ -52,11 +51,10 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
                 return '';
             }
 
-            const colors = alertTypeColors[getValue(props.type)];
             return Button({
                 type: 'icon',
                 icon: 'close',
-                style: `margin-left: auto; color: ${colors.color};`,
+                style: `margin-left: auto;`,
             });
         },
     );
@@ -81,24 +79,43 @@ stylesheet.replace(`
     color: rgb(23, 114, 51);
 }
 
-.tg-alert-error {
-    background-color: rgba(255, 43, 43, 0.09);
-    color: rgb(125, 53, 59);
-}
-
 .tg-alert-warn {
     background-color: rgba(255, 227, 18, 0.1);
     color: rgb(146, 108, 5);
 }
 
+.tg-alert-error {
+    background-color: rgba(255, 43, 43, 0.09);
+    color: rgb(125, 53, 59);
+}
+
 @media (prefers-color-scheme: dark) {
+    .tg-alert-info {
+        background-color: rgba(61, 157, 243, 0.2);
+        color: rgb(199, 235, 255);
+    }
+
+    .tg-alert-success {
+        background-color: rgba(61, 213, 109, 0.2);
+        color: rgb(223, 253, 233);
+    }
+
     .tg-alert-warn {
         background-color: rgba(255, 227, 18, 0.2);
         color: rgb(255, 255, 194);
     }
+
+    .tg-alert-error {
+        background-color: rgba(255, 108, 108, 0.2);
+        color: rgb(255, 222, 222);
+    }
 }
 
 .tg-alert > .tg-icon {
+    color: inherit !important;
+}
+
+.tg-alert > .tg-button {
     color: inherit !important;
 }
 `);

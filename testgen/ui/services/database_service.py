@@ -263,8 +263,7 @@ def _start_target_db_engine(flavor, host, port, db_name, user, password, url, co
     flavor_service = get_flavor_service(flavor)
     flavor_service.init(connection_params)
     connection_string = flavor_service.get_connection_string(password)
-    connect_args = {"connect_timeout": 3600}
-    connect_args.update(flavor_service.get_connect_args())
+    connect_args = flavor_service.get_connect_args()
     return create_engine(connection_string, connect_args=connect_args)
 
 

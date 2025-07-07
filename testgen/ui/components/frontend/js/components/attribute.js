@@ -5,6 +5,7 @@
  * @property {string?} help
  * @property {string | number} value
  * @property {number?} width
+ * @property {string?} class
  */
 import { getValue, loadStylesheet } from '../utils.js';
 import { Icon } from './icon.js';
@@ -17,7 +18,7 @@ const Attribute = (/** @type Properties */ props) => {
     loadStylesheet('attribute', stylesheet);
 
     return div(
-        { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
+        { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`, class: props.class },
         div(
             { class: 'flex-row fx-gap-1 text-caption mb-1' },
             props.label,

@@ -186,6 +186,8 @@ CREATE TABLE test_definitions (
    baseline_sum           VARCHAR(1000),
    baseline_avg           VARCHAR(1000),
    baseline_sd            VARCHAR(1000),
+   lower_tolerance        VARCHAR(1000),
+   upper_tolerance        VARCHAR(1000),
    subset_condition       VARCHAR(500),
    groupby_names          VARCHAR,
    having_condition       VARCHAR(500),

@@ -16,6 +16,3 @@ class TrinoFlavorService(FlavorService):
         return [
             "USE " + self.catalog + "." + self.dbschema,
         ]
-
-    def get_connect_args(self, is_password_overwritten: bool = False):  # NOQA ARG002
-        return {}

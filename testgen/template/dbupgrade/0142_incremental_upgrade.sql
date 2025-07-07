@@ -1,6 +1,5 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
-CREATE TABLE settings (
-    key VARCHAR(50) NOT NULL PRIMARY KEY,
-    value JSONB NOT NULL
-);
+ALTER TABLE test_definitions
+  ADD COLUMN lower_tolerance VARCHAR(1000),
+  ADD COLUMN upper_tolerance VARCHAR(1000);

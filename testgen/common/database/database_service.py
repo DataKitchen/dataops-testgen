@@ -313,8 +313,7 @@ def _InitDBConnection_target_db(flavor_service, strCredentialSet, strRaw="N", us
         is_password_overwritten = pwd_override is not None
         strConnect = flavor_service.get_connection_string(strPW, is_password_overwritten)
 
-        connect_args = {"connect_timeout": 3600}
-        connect_args.update(flavor_service.get_connect_args(is_password_overwritten))
+        connect_args = flavor_service.get_connect_args(is_password_overwritten)
 
         try:
             # Timeout in seconds:  1 hour = 60 * 60 second = 3600
