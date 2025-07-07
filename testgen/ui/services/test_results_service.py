@@ -92,7 +92,7 @@ def get_test_results(
             LEFT JOIN {schema}.test_definitions d
                ON (r.test_suite_id = d.test_suite_id
               AND  r.table_name = d.table_name
-              AND  r.column_names = COALESCE(d.column_name, 'N/A')
+              AND  COALESCE(r.column_names, 'N/A') = COALESCE(d.column_name, 'N/A')
               AND  r.test_type = d.test_type
               AND  r.auto_gen = TRUE
               AND  d.last_auto_gen_date IS NOT NULL)
@@ -126,10 +126,15 @@ def get_test_results(
 
 def get_test_result_history(db_schema, tr_data, limit: int | None = None):
     if tr_data["auto_gen"]:
+        if tr_data["column_names"]:
+            col_name_cond = f"column_names = '{tr_data["column_names"]}'"
+        else:
+            col_name_cond = "column_names IS NULL"
+
         str_where = f"""
             WHERE test_suite_id = '{tr_data["test_suite_id"]}'
               AND table_name = '{tr_data["table_name"]}'
-              AND column_names = '{tr_data["column_names"]}'
+              AND {col_name_cond}
               AND test_type = '{tr_data["test_type"]}'
               AND auto_gen = TRUE
         """

@@ -65,7 +65,8 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
 
     LOG.info("CurrentStep: Compiling Test Gen Queries")
 
-    lstFunnyTemplateQueries = clsTests.GetTestDerivationQueriesAsList(booClean)
+    lstFunnyTemplateQueries = clsTests.GetTestDerivationQueriesAsList("gen_funny_cat_tests", booClean)
+    lstQueryTemplateQueries = clsTests.GetTestDerivationQueriesAsList("gen_query_tests", booClean)
     lstGenericTemplateQueries = []
 
     # Delete old Tests
@@ -102,7 +103,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
     LOG.info("TestGen CAT Queries were compiled")
 
     # Make sure delete, then generic templates run before the funny templates
-    lstQueries = [strDeleteQuery, *lstGenericTemplateQueries, *lstFunnyTemplateQueries]
+    lstQueries = [strDeleteQuery, *lstGenericTemplateQueries, *lstFunnyTemplateQueries, *lstQueryTemplateQueries]
 
     if lstQueries:
         LOG.info("Running Test Generation Template Queries")
@@ -110,7 +111,7 @@ def run_test_gen_queries(strTableGroupsID, strTestSuite, strGenerationSet=None):
         message = "Test generation completed successfully."
     else:
         message = "No TestGen Queries were compiled."
-    
+
     MixpanelService().send_event(
         "generate-tests",
         source=settings.ANALYTICS_JOB_SOURCE,
