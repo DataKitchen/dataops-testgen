@@ -122,12 +122,16 @@ class TestDefinitionsPage(Page):
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:
                 if action["button"]:
-                    fm.reset_post_updates(
-                        update_test_definition(selected, action["attribute"], action["value"], action["message"]),
-                        as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=[],
-                    )
+                    is_unlocking = action["attribute"] == "lock_refresh" and not action["value"]
+                    if is_unlocking:
+                        confirm_unlocking_test_definition(selected)
+                    else:
+                        fm.reset_post_updates(
+                            update_test_definition(selected, action["attribute"], action["value"], action["message"]),
+                            as_toast=True,
+                            clear_cache=True,
+                            lst_cached_functions=[],
+                        )
 
         if selected:
             selected_test_def = selected[0]
@@ -263,6 +267,9 @@ def show_test_form(
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     check_result = selected_test_def["check_result"] if mode == "edit" else None
     column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else ""
+    last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
+    profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
+    profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
 
     # dynamic attributes
     custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
@@ -423,6 +430,33 @@ def show_test_form(
         help=severity_help,
     )
 
+    if mode == "edit":
+        columns = st.columns([0.5, 0.5])
+        if profiling_as_of_date and profile_run_id and (container := columns.pop()):
+            if isinstance(profiling_as_of_date, str):
+                formatted_time = datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = profiling_as_of_date.strftime("%b %d, %I:%M %p")
+            testgen.caption("Based on Profiling", container=container)
+            with container:
+                testgen.link(
+                    href="profiling-runs:results",
+                    params={"run_id": profile_run_id},
+                    label=formatted_time,
+                    open_new=True,
+                )
+
+        if last_auto_gen_date and (container := columns.pop()):
+            if isinstance(last_auto_gen_date, str):
+                formatted_time = datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
+            else:
+                formatted_time = last_auto_gen_date.strftime("%b %d, %I:%M %p")
+            testgen.caption("Auto-generated at", container=container)
+            testgen.text(
+                formatted_time,
+                container=container,
+            )
+
     st.divider()
 
     has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
@@ -525,12 +559,12 @@ def show_test_form(
         label_text = (
             dynamic_attributes_labels[index]
             if dynamic_attributes_labels and len(dynamic_attributes_labels) > index
-            else "Help text is not available."
+            else snake_case_to_title_case(attribute)
         )
         help_text = (
             dynamic_attributes_help[index]
             if dynamic_attributes_help and len(dynamic_attributes_help) > index
-            else snake_case_to_title_case(attribute)
+            else "Help text is not available."
         )
 
         if attribute == "custom_query":
@@ -769,6 +803,37 @@ def prompt_for_test_type():
         str_value = None
         row_selected = None
     return str_value, row_selected
+
+
+@st.dialog(title="Unlock Test Definition")
+def confirm_unlocking_test_definition(test_definitions: list[dict]):
+    unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
+
+    st.warning(
+        """Unlocked tests subject to auto-generation will be overwritten during the next test generation run."""
+    )
+
+    st.html(f"""
+        Are you sure you want to unlock
+        {f"<b>{len(test_definitions)}</b> selected test definitions?"
+        if len(test_definitions) > 1
+        else "the selected test definition?"}
+    """)
+
+    if unlock_confirmed():
+        update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
+        time.sleep(1)
+        st.rerun()
+
+    _, button_column = st.columns([.85, .15])
+    with button_column:
+        testgen.button(
+            label="Unlock",
+            type_="stroked",
+            color="basic",
+            key="test-definitions:confirm-unlock-tests-btn",
+            on_click=lambda: set_unlock_confirmed(True),
+        )
 
 
 def update_test_definition(selected, attribute, value, message):

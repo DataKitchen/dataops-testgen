@@ -614,3 +614,7 @@ code > .tg-icon {
 code > .tg-icon:hover {
     opacity: 1;
 }
+
+.accent-primary {
+    accent-color: var(--primary-color);
+}
