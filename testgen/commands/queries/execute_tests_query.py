@@ -125,11 +125,6 @@ class CTestExecutionSQL:
 
         return strQ
 
-    def AddTestRecordtoTestRunTable(self):
-        strQ = self._ReplaceParms(read_template_sql_file("ex_write_test_record_to_testrun_table.sql", "execution"))
-
-        return strQ
-
     def PushTestRunStatusUpdateSQL(self):
         # Runs on DK DB
         strQ = self._ReplaceParms(read_template_sql_file("ex_update_test_record_in_testrun_table.sql", "execution"))

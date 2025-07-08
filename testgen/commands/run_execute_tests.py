@@ -17,13 +17,24 @@ from testgen.common import (
     WriteListToDB,
     date_service,
 )
-from testgen.common.database.database_service import empty_cache
+from testgen.common.database.database_service import ExecuteDBQuery, empty_cache
 
 from .run_execute_cat_tests import run_cat_test_queries
 from .run_refresh_data_chars import run_refresh_data_chars_queries
 from .run_test_parameter_validation import run_parameter_validation_queries
 
 LOG = logging.getLogger("testgen")
+
+
+def add_test_run_record(test_run_id, test_suite_id, test_time, process_id):
+    query = f"""
+        INSERT INTO test_runs(id, test_suite_id, test_starttime, process_id)
+        (SELECT '{test_run_id}':: UUID as id,
+                '{test_suite_id}' as test_suite_id,
+                '{test_time}' as test_starttime,
+                '{process_id}' as process_id);
+    """
+    ExecuteDBQuery("DKTG", query)
 
 
 def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
@@ -37,11 +48,6 @@ def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTes
     clsExecute.test_run_id = strTestRunID
     clsExecute.process_id = process_service.get_current_process_id()
     booClean = False
-
-    # Add a record in Test Run table for the new Test Run
-    strTestRunQuery = clsExecute.AddTestRecordtoTestRunTable()
-    lstTestRunQuery = [strTestRunQuery]
-    RunActionQueryList("DKTG", lstTestRunQuery)
 
     try:
         # Retrieve non-CAT Queries
@@ -130,6 +136,11 @@ def run_execution_steps(
 
     LOG.info("CurrentStep: Retrieving TestExec Parameters")
     test_exec_params = RetrieveTestExecParms(project_code, test_suite)
+
+    # Add a record in Test Run table for the new Test Run
+    add_test_run_record(
+        test_run_id, test_exec_params["test_suite_id"], test_time, process_service.get_current_process_id()
+    )
 
     LOG.info("CurrentStep: Assigning Connection Parms")
     AssignConnectParms(
