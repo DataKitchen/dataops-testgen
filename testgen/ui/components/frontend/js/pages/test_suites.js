@@ -77,7 +77,7 @@ const TestSuites = (/** @type Properties */ props) => {
             ? div(
                 { class: 'tg-test-suites'},
                 () => div(
-                    { class: 'tg-test-suites--toolbar flex-row fx-align-flex-end mb-4' },
+                    { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
                     Select({
                         label: 'Table Group',
                         value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
@@ -88,16 +88,29 @@ const TestSuites = (/** @type Properties */ props) => {
                         testId: 'table-group-filter',
                         onChange: (value) => emitEvent('FilterApplied', {payload: value}),
                     }),
-                    userCanEdit
-                        ? Button({
-                            icon: 'add',
+                    div(
+                        { class: 'flex-row fx-gap-4' },
+                        Button({
+                            icon: 'today',
                             type: 'stroked',
-                            label: 'Add Test Suite',
+                            label: 'Test Run Schedules',
+                            tooltip: 'Manage when test suites should run',
+                            tooltipPosition: 'bottom',
                             width: 'fit-content',
-                            style: 'margin-left: auto; background: var(--dk-card-background);',
-                            onclick: () => emitEvent('AddTestSuiteClicked', {}),
-                        })
-                        : '',
+                            style: 'background: var(--dk-card-background);',
+                            onclick: () => emitEvent('RunSchedulesClicked', {}),
+                        }),
+                        userCanEdit
+                            ? Button({
+                                icon: 'add',
+                                type: 'stroked',
+                                label: 'Add Test Suite',
+                                width: 'fit-content',
+                                style: 'background: var(--dk-card-background);',
+                                onclick: () => emitEvent('AddTestSuiteClicked', {}),
+                            })
+                            : '',
+                    ),
                 ),
                 () => div(
                     { class: 'flex-column' },

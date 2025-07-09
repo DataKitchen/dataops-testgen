@@ -15,6 +15,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
+from testgen.ui.views.profiling_runs import ProfilingScheduleDialog
 
 PAGE_TITLE = "Table Groups"
 
@@ -56,6 +57,7 @@ class TableGroupsPage(Page):
                 ]),
             },
             on_change_handlers={
+                "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
                 "AddTableGroupClicked": partial(self.add_table_group_dialog, project_code),
                 "EditTableGroupClicked": partial(self.edit_table_group_dialog, project_code),
                 "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
