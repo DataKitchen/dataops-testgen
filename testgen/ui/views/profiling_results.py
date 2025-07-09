@@ -81,6 +81,7 @@ class ProfilingResultsPage(Page):
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=bool(table_name),
             )
 
         with sort_column:
@@ -95,16 +96,15 @@ class ProfilingResultsPage(Page):
             default_sorting = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default_sorting)
 
-        # Use SQL wildcard to match all values
-        if not table_name:
-            table_name = "%%"
-        if not column_name:
-            column_name = "%%"
-
         # Display main results grid
         with st.container():
             with st.spinner("Loading data ..."):
-                df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+                df = profiling_queries.get_profiling_results(
+                    run_id,
+                    table_name=table_name,
+                    column_name=column_name,
+                    sorting_columns=sorting_columns,
+                )
                 
         show_columns = [
             "schema_name",

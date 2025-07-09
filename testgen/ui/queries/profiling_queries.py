@@ -94,14 +94,20 @@ def get_run_by_id(profile_run_id: str) -> pd.Series:
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_results(profiling_run_id: str, table_name: str = "%%", column_name: str = "%%", sorting_columns = None):
+def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None):
+    db_session = get_current_session()
+    params = {
+        "profiling_run_id": profiling_run_id,
+        "table_name": table_name if table_name else "%%",
+        "column_name": column_name if column_name else "%%",
+    }
+
     order_by = ""
     if sorting_columns is None:
         order_by = "ORDER BY schema_name, table_name, position"
     elif len(sorting_columns):
         order_by = "ORDER BY " + ", ".join(" ".join(col) for col in sorting_columns)
 
-    schema: str = st.session_state["dbschema"]
     query = f"""
     SELECT
         id::VARCHAR,
@@ -125,18 +131,22 @@ def get_profiling_results(profiling_run_id: str, table_name: str = "%%", column_
         functional_table_type AS semantic_table_type,
         CASE WHEN EXISTS(
             SELECT 1
-            FROM {schema}.profile_anomaly_results
+            FROM profile_anomaly_results
             WHERE profile_run_id = profile_results.profile_run_id
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
         ) THEN 'Yes' END AS hygiene_issues
-    FROM {schema}.profile_results
-    WHERE profile_run_id = '{profiling_run_id}'
-        AND table_name ILIKE '{table_name}'
-        AND column_name ILIKE '{column_name}'
+    FROM profile_results
+    WHERE profile_run_id = :profiling_run_id
+        AND table_name ILIKE :table_name
+        AND column_name ILIKE :column_name
     {order_by};
     """
-    return db.retrieve_data(query)
+
+    results = db_session.execute(query, params=params)
+    columns = [column.name for column in results.cursor.description]
+
+    return pd.DataFrame(list(results), columns=columns)
 
 
 @st.cache_data(show_spinner=False)

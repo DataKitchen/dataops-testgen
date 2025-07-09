@@ -67,6 +67,10 @@ img.dk-logo-img {
 .stApp:has(.stSidebar[aria-expanded="true"]) .stAppHeader {
     display: none;
 }
+
+.stStatusWidget {
+    display: none !important;
+}
 /* End Header */
 
 #stDecoration {
