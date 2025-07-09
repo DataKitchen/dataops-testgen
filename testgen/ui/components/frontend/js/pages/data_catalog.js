@@ -599,16 +599,14 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                             disabled: () => attributes.every(({ checkedState }) => !checkedState.val),
                             onclick: () => {
                                 const items = selectedItems.val.reduce((array, table) => {
-                                    if (table.all) {
-                                        const [ type, id ] = table.id.split('_');
+                                    const [ type, id ] = table.id.split('_');
+                                    array.push({ type, id });
+
+                                    table.children.forEach(column => {
+                                        const [ type, id ] = column.id.split('_');
                                         array.push({ type, id });
-                                    } else {
-                                        const columns = table.children.map(column => {
-                                            const [ type, id ] = column.id.split('_');
-                                            return { type, id };
-                                        });
-                                        array.push(...columns);
-                                    }
+                                    });
+
                                     return array;
                                 }, []);
 
