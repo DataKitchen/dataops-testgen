@@ -94,7 +94,7 @@ def get_run_by_id(profile_run_id: str) -> pd.Series:
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_results(profiling_run_id: str, table_name: str, column_name: str, sorting_columns = None):
+def get_profiling_results(profiling_run_id: str, table_name: str = "%%", column_name: str = "%%", sorting_columns = None):
     order_by = ""
     if sorting_columns is None:
         order_by = "ORDER BY schema_name, table_name, position"

@@ -20,6 +20,7 @@ from testgen.ui.components.widgets.download_dialog import (
     get_excel_file_data,
     zip_multi_file_data,
 )
+from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.services import project_service, user_session_service
@@ -68,7 +69,7 @@ class HygieneIssuesPage(Page):
 
         others_summary_column, pii_summary_column, score_column, actions_column = st.columns([.25, .25, .2, .3], vertical_alignment="bottom")
         (liklihood_filter_column, issue_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column) = (
-            st.columns([.15, .25, .2, .2, .1, .1], vertical_alignment="bottom")
+            st.columns([.15, .2, .2, .2, .1, .15], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
@@ -185,13 +186,28 @@ class HygieneIssuesPage(Page):
                 bind_to_query_prop="id",
             )
 
-            with export_button_column:
-                if st.button(label=":material/download: Export", help="Download filtered hygiene issues to Excel"):
-                    download_dialog(
-                        dialog_title="Download Excel Report",
-                        file_content_func=get_excel_report_data,
-                        args=(df_pa, run_df["table_groups_name"], run_date),
-                    )
+            popover_container = export_button_column.empty()
+
+            def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+                # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+                with popover_container.container():
+                    flex_row_end()
+                    st.button(label="Export", icon=":material/download:", disabled=True)
+
+                download_dialog(
+                    dialog_title="Download Excel Report",
+                    file_content_func=get_excel_report_data,
+                    args=(run_df["table_groups_name"], run_date, run_id, data),
+                )
+
+            with popover_container.container(key="tg--export-popover"):
+                flex_row_end()
+                with st.popover(label="Export", icon=":material/download:", help="Download hygiene issues to Excel"):
+                    css_class("tg--export-wrapper")
+                    st.button(label="All issues", type="tertiary", on_click=open_download_dialog)
+                    st.button(label="Filtered issues", type="tertiary", on_click=partial(open_download_dialog, df_pa))
+                    if selected:
+                        st.button(label="Selected issues", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
 
             if selected:
                 # Always show details for last selected row
@@ -341,11 +357,11 @@ def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def get_profiling_anomalies(
     profile_run_id: str,
-    likelihood: str | None,
-    issue_type_id: str | None,
-    table_name: str | None,
-    column_name: str | None,
-    sorting_columns: list[str] | None,
+    likelihood: str | None = None,
+    issue_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    sorting_columns: list[str] | None = None,
 ):
     schema: str = st.session_state["dbschema"]
     criteria = ""
@@ -490,10 +506,14 @@ def get_profiling_anomaly_summary(str_profile_run_id):
 
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
-    data: pd.DataFrame,
     table_group: str,
     run_date: str,
+    run_id: str,
+    data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
+    if data is None:
+        data = get_profiling_anomalies(run_id)
+
     columns = {
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},

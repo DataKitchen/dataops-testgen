@@ -24,6 +24,7 @@ from testgen.ui.components.widgets.download_dialog import (
     get_excel_file_data,
     zip_multi_file_data,
 )
+from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
@@ -76,7 +77,7 @@ class TestResultsPage(Page):
 
         summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
         status_filter_column, test_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
-            [.2, .2, .2, .2, .1, .1], vertical_alignment="bottom"
+            [.175, .175, .2, .2, .1, .15], vertical_alignment="bottom"
         )
 
         testgen.flex_row_end(actions_column)
@@ -518,13 +519,28 @@ def show_result_detail(
         bind_to_query_prop="test_result_id",
     )
 
-    with export_container:
-        if st.button(label=":material/download: Export", help="Download filtered test results to Excel"):
-            download_dialog(
-                dialog_title="Download Excel Report",
-                file_content_func=get_excel_report_data,
-                args=(df, test_suite, run_date),
-            )
+    popover_container = export_container.empty()
+
+    def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+        with popover_container.container():
+            flex_row_end()
+            st.button(label="Export", icon=":material/download:", disabled=True)
+
+        download_dialog(
+            dialog_title="Download Excel Report",
+            file_content_func=get_excel_report_data,
+            args=(test_suite, run_date, run_id, data),
+        )
+
+    with popover_container.container(key="tg--export-popover"):
+        flex_row_end()
+        with st.popover(label="Export", icon=":material/download:", help="Download test results to Excel"):
+            css_class("tg--export-wrapper")
+            st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
+            st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
+            if selected_rows:
+                st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_rows)))
 
     # Display history and detail for selected row
     if not selected_rows:
@@ -623,10 +639,14 @@ def show_result_detail(
 
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
-    data: pd.DataFrame,
     test_suite: str,
     run_date: str,
+    run_id: str,
+    data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
+    if data is None:
+        data = get_test_results(run_id)
+
     columns = {
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
