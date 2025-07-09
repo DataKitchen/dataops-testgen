@@ -146,7 +146,7 @@ const ProfilingRunItem = (
                     { label: 'Possible', value: item.anomalies_possible_ct, color: 'yellow' },
                     { label: 'Dismissed', value: item.anomalies_dismissed_ct, color: 'grey' },
                 ],
-                height: 10,
+                height: 3,
                 width: 350,
             }) : '--',
             item.anomaly_ct ? Link({

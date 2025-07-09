@@ -20,7 +20,8 @@ def data_preview_dialog(
         f"Table: <b>{table_name}</b>"
     )
 
-    data = get_preview_data(table_group_id, schema_name, table_name, column_name)
+    with st.spinner("Loading data ..."):
+        data = get_preview_data(table_group_id, schema_name, table_name, column_name)
 
     if data.empty:
         st.warning("The preview data could not be loaded.")
@@ -32,7 +33,7 @@ def data_preview_dialog(
         )
 
 
-@st.cache_data(show_spinner="Loading data ...")
+@st.cache_data(show_spinner=False)
 def get_preview_data(
     table_group_id: str,
     schema_name: str,

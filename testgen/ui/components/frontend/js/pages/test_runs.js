@@ -206,8 +206,8 @@ const TestRunItem = (
                     { label: 'Error', value: item.error_ct, color: 'brown' },
                     { label: 'Dismissed', value: item.dismissed_ct, color: 'grey' },
                 ],
-                height: 10,
-                width: 400,
+                height: 8,
+                width: 350,
             }) : '--',
         ),
         div(
