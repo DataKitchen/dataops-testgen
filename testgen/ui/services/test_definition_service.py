@@ -152,15 +152,15 @@ def validate_test(test_definition):
     )
 
 
-def move(test_definitions, target_table_group, target_test_suite):
+def move(test_definitions, target_table_group, target_test_suite, target_table_column=None):
     schema = st.session_state["dbschema"]
-    test_definition_queries.move(schema, test_definitions, target_table_group, target_test_suite)
+    test_definition_queries.move(schema, test_definitions, target_table_group, target_test_suite, target_table_column)
 
 
 
-def copy(test_definitions, target_table_group, target_test_suite):
+def copy(test_definitions, target_table_group, target_test_suite, target_table_column=None):
     schema = st.session_state["dbschema"]
-    test_definition_queries.copy(schema, test_definitions, target_table_group, target_test_suite)
+    test_definition_queries.copy(schema, test_definitions, target_table_group, target_test_suite, target_table_column)
 
 
 def get_test_definitions_collision(test_definitions, target_table_group, target_test_suite):
