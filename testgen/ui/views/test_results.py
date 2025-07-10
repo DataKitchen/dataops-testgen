@@ -96,6 +96,7 @@ class TestResultsPage(Page):
                 "Failed",
                 "Warning",
                 "Passed",
+                "Error",
             ]
             status = testgen.select(
                 options=status_options,
@@ -163,6 +164,8 @@ class TestResultsPage(Page):
                 status = "'Warning'"
             case "Passed":
                 status = "'Passed'"
+            case "Error":
+                status = "'Error'"
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
@@ -498,6 +501,7 @@ def show_result_detail(
         "measure_uom",
         "result_status",
         "action",
+        "result_message",
     ]
 
     lst_show_headers = [
@@ -508,6 +512,7 @@ def show_result_detail(
         "UOM",
         "Status",
         "Action",
+        "Details",
     ]
 
     selected_rows = fm.render_grid_select(
