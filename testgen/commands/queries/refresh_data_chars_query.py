@@ -43,10 +43,21 @@ class CRefreshDataCharsSQL:
         if mask:
             sub_query += " AND (" if is_include else " AND NOT ("
             is_first = True
+            escape = ""
+            if self.sql_flavor.startswith("mssql"):
+                escaped_underscore = "[_]"
+            elif self.sql_flavor == "snowflake":
+                escaped_underscore = "\\\\_"
+                escape = "ESCAPE '\\\\'"
+            elif self.sql_flavor == "redshift":
+                escaped_underscore = "\\\\_"
+            else:
+                escaped_underscore = "\\_"
             for item in mask.split(","):
                 if not is_first:
                     sub_query += " OR "
-                sub_query += "(c.table_name LIKE '" + item.strip().replace("_", r"\_") + r"' ESCAPE '\')"
+                item = item.strip().replace("_", escaped_underscore)
+                sub_query += f"(c.table_name LIKE '{item}' {escape})"
                 is_first = False
             sub_query += ")"
         return sub_query
