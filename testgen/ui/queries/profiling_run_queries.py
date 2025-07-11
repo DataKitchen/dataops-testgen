@@ -2,6 +2,7 @@ import streamlit as st
 
 import testgen.ui.services.database_service as db
 from testgen.common import date_service
+from testgen.common.models import get_current_session
 
 
 def update_status(profile_run_id: str, status: str) -> None:
@@ -25,3 +26,22 @@ def cancel_all_running() -> None:
         SET status = 'Cancelled'
         WHERE status = 'Running';
     """)
+
+
+def cascade_delete_multiple_profiling_runs(profiling_run_ids: list[str]) -> None:
+    session = get_current_session()
+
+    if not profiling_run_ids:
+        raise ValueError("No profiling run is specified.")
+
+    params = {f"id_{idx}": value for idx, value in enumerate(profiling_run_ids)}
+    param_keys = [f":{slot}" for slot in params.keys()]
+
+    with session.begin():
+        session.execute(f"DELETE FROM profile_pair_rules WHERE profile_run_id IN ({', '.join(param_keys)})", params=params)
+        session.execute(f"DELETE FROM profile_anomaly_results WHERE profile_run_id IN ({', '.join(param_keys)})", params=params)
+        session.execute(f"DELETE FROM profile_results WHERE profile_run_id IN ({', '.join(param_keys)})", params=params)
+        session.execute(f"DELETE FROM profiling_runs WHERE id IN ({', '.join(param_keys)})", params=params)
+        session.commit()
+
+    st.cache_data.clear()
