@@ -18,6 +18,7 @@ from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
+from testgen.ui.views.test_runs import TestRunScheduleDialog
 from testgen.utils import format_field
 
 PAGE_ICON = "rule"
@@ -96,6 +97,7 @@ class TestSuitesPage(Page):
             },
             on_change_handlers={
                 "FilterApplied": on_test_suites_filtered,
+                "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
                 "AddTestSuiteClicked": lambda *_: add_test_suite_dialog(project_code, table_groups),
                 "ExportActionClicked": observability_export_dialog,
                 "EditActionClicked": partial(edit_test_suite_dialog, project_code, table_groups),

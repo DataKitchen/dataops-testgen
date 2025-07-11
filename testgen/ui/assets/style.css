@@ -410,6 +410,48 @@ div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
 }
 /*  */
 
+/* Export Menu */
+.st-key-tg--export-popover [data-testid="stPopoverButton"] > div:last-child {
+    display: none;
+}
+
+.st-key-tg--export-popover [data-testid="stPopover"] {
+    width: auto;
+}
+
+div[data-testid="stPopoverBody"]:has(i.tg--export-wrapper) {
+    min-width: 150px;
+    border-radius: 8px;
+    padding: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) {
+    gap: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) button {
+    width: 100%;
+    padding: 4px 16px;
+    justify-content: flex-start;
+    border-radius: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"]:nth-child(2) button {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"]:last-child button {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) button:hover {
+    color: unset;
+    background: var(--select-hover-background);
+}
+/*  */
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     body {

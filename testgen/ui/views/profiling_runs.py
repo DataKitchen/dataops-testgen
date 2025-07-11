@@ -68,7 +68,7 @@ class DataProfilingPage(Page):
 
             st.button(
                 ":material/today: Profiling Schedules",
-                help="Manages when profiling should run for a given table group",
+                help="Manage when profiling should run for table groups",
                 on_click=partial(ProfilingScheduleDialog().open, project_code)
             )
 

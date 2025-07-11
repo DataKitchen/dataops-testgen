@@ -235,6 +235,7 @@ function(params) {
     rendering_counter = st.session_state.get(f"{key}_counter") or 0
     previous_dataframe = st.session_state.get(f"{key}_dataframe")
 
+    df = df.copy()
     if previous_dataframe is not None:
         data_changed = not df.equals(previous_dataframe)
 

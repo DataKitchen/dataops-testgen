@@ -1,6 +1,6 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
- * @import { TreeNode } from '../components/tree.js';
+ * @import { TreeNode, SelectedNode } from '../components/tree.js';
  *
  * @typedef ProjectSummary
  * @type {object}
@@ -46,7 +46,7 @@ import { Input } from '../components/input.js';
 import { Icon } from '../components/icon.js';
 import { withTooltip } from '../components/tooltip.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { emitEvent, getRandomId, getValue, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
@@ -60,6 +60,7 @@ import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
 import { Link } from '../components/link.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
+import { Portal } from '../components/portal.js';
 
 const { div, h2, span, i } = van.tags;
 
@@ -183,9 +184,9 @@ const DataCatalog = (/** @type Properties */ props) => {
     return projectSummary.table_groups_ct > 0
         ? div(
             { class: 'flex-column tg-dh' },
-            () => div(
+            div(
                 { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-2' },
-                Select({
+                () => Select({
                     label: 'Table Group',
                     value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
                     options: getValue(props.table_group_filter_options) ?? [],
@@ -194,28 +195,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                Button({
-                    icon: 'download',
-                    type: 'stroked',
-                    label: 'Export',
-                    tooltip: 'Download filtered columns to Excel',
-                    tooltipPosition: 'left',
-                    width: 'fit-content',
-                    style: 'background: var(--dk-card-background);',
-                    onclick: () => {
-                        const columnIds = treeNodes.val.reduce((ids, table) => {
-                            if (!table.hidden.val) {
-                                table.children.forEach(column => {
-                                    if (!column.hidden.val) {
-                                        ids.push(column.id);
-                                    }
-                                });
-                            }
-                            return ids;
-                        }, []);
-                        emitEvent('ExportClicked', { payload: columnIds });
-                    },
-                }),
+                ExportOptions(treeNodes, multiSelectedItems),
             ),
             () => treeNodes.val.length
                 ? div(
@@ -327,6 +307,88 @@ const DataCatalog = (/** @type Properties */ props) => {
                 : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
         )
         : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
+};
+
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes) => {
+    const exportOptionsDomId = `data-catalog-export-${getRandomId()}`;
+    const exportOptionsOpened = van.state(false);
+
+    return [
+        Button({
+            id: exportOptionsDomId,
+            icon: 'download',
+            type: 'stroked',
+            label: 'Export',
+            tooltip: 'Download columns to Excel',
+            tooltipPosition: 'left',
+            width: 'fit-content',
+            style: 'background: var(--dk-card-background);',
+            onclick: () => exportOptionsOpened.val = !exportOptionsOpened.val,
+        }),
+        Portal(
+            { target: exportOptionsDomId, opened: exportOptionsOpened, align: 'right' },
+            () => div(
+                { class: 'tg-dh--export-portal' },
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        onclick: () => {
+                            emitEvent('ExportClicked', { payload: null });
+                            exportOptionsOpened.val = false;
+                        },
+                    },
+                    'All columns',
+                ),
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        onclick: () => {
+                            const payload = treeNodes.val.reduce((array, table) => {
+                                if (!table.hidden.val) {
+                                    const [ type, id ] = table.id.split('_');
+                                    array.push({ type, id, selected: table.selected.val });
+
+                                    table.children.forEach(column => {
+                                        if (!column.hidden.val) {
+                                            const [ type, id ] = column.id.split('_');
+                                            array.push({ type, id, selected: column.selected.val });
+                                        }
+                                    });
+                                }
+                                return array;
+                            }, []);
+                            emitEvent('ExportClicked', { payload });
+                            exportOptionsOpened.val = false;
+                        },
+                    },
+                    'Filtered columns',
+                ),
+                selectedNodes.val?.length
+                    ? div(
+                        {
+                            class: 'tg-dh--export-option',
+                            onclick: () => {
+                                const payload = selectedNodes.val.reduce((array, table) => {
+                                    const [ type, id ] = table.id.split('_');
+                                    array.push({ type, id });
+
+                                    table.children.forEach(column => {
+                                        const [ type, id ] = column.id.split('_');
+                                        array.push({ type, id });
+                                    });
+
+                                    return array;
+                                }, []);
+                                emitEvent('ExportClicked', { payload });
+                                exportOptionsOpened.val = false;
+                            },
+                        },
+                        'Selected columns',
+                    )
+                    : null,
+            ),
+        ),
+    ];
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
@@ -599,16 +661,14 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                             disabled: () => attributes.every(({ checkedState }) => !checkedState.val),
                             onclick: () => {
                                 const items = selectedItems.val.reduce((array, table) => {
-                                    if (table.all) {
-                                        const [ type, id ] = table.id.split('_');
+                                    const [ type, id ] = table.id.split('_');
+                                    array.push({ type, id });
+
+                                    table.children.forEach(column => {
+                                        const [ type, id ] = column.id.split('_');
                                         array.push({ type, id });
-                                    } else {
-                                        const columns = table.children.map(column => {
-                                            const [ type, id ] = column.id.split('_');
-                                            return { type, id };
-                                        });
-                                        array.push(...columns);
-                                    }
+                                    });
+
                                     return array;
                                 }, []);
 
@@ -747,6 +807,34 @@ stylesheet.replace(`
 .tg-dh--no-selection > span {
     font-size: 18px;
     text-align: center;
+}
+
+.tg-dh--export-portal {
+    border-radius: 8px;
+    background: var(--dk-card-background);
+    box-shadow: var(--portal-box-shadow);
+    overflow: visible;
+    z-index: 99;
+}
+
+.tg-dh--export-option {
+    padding: 12px 16px;
+    cursor: pointer;
+    color: var(--primary-text-color);
+}
+
+.tg-dh--export-option:first-child {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.tg-dh--export-option:last-child {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.tg-dh--export-option:hover {
+    background: var(--select-hover-background);
 }
 `);
 

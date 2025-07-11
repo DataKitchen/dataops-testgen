@@ -16,7 +16,7 @@ import { PercentBar } from '../components/percent_bar.js';
 import { FrequencyBars } from '../components/frequency_bars.js';
 import { BoxPlot } from '../components/box_plot.js';
 import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '../utils.js';
-import { formatTimestamp, roundDigits } from '../display_utils.js';
+import { formatNumber, formatTimestamp } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const columnTypeFunctionMap = {
@@ -106,7 +106,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Missing Values: ${missing} (${friendlyPercent(missing * 100 / total)}%)`,
+                label: `Missing Values: ${formatNumber(missing)} (${friendlyPercent(missing * 100 / total)}%)`,
                 items: [
                     { label: 'Actual Values', value: item.value_ct - item.zero_length_ct - item.filled_value_ct, color: 'green' },
                     { label: 'Null', value: item.null_value_ct, color: 'brownLight', showPercent: true },
@@ -117,7 +117,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
             SummaryBar({
                 height: summaryHeight,
                 width: summaryWidth,
-                label: `Duplicate Values: ${duplicates} (${friendlyPercent(duplicates * 100 / item.value_ct)}%)`,
+                label: `Duplicate Values: ${formatNumber(duplicates)} (${friendlyPercent(duplicates * 100 / item.value_ct)}%)`,
                 items: [
                     { label: 'Distinct', value: item.distinct_value_ct, color: 'indigo' },
                     { label: 'Duplicates', value: duplicates, color: 'orange' },
@@ -128,7 +128,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
                 ? SummaryBar({
                     height: summaryHeight,
                     width: summaryWidth,
-                    label: `Duplicate Values, Standardized: ${duplicatesStandardized} (${friendlyPercent(duplicatesStandardized * 100 / item.value_ct)}%)`,
+                    label: `Duplicate Values, Standardized: ${formatNumber(duplicatesStandardized)} (${friendlyPercent(duplicatesStandardized * 100 / item.value_ct)}%)`,
                     items: [
                         { label: 'Distinct', value: item.distinct_std_value_ct, color: 'indigo' },
                         { label: 'Duplicates', value: duplicatesStandardized, color: 'orange' },
@@ -188,14 +188,14 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
                 PercentBar({ label: 'Quoted Values', value: item.quoted_value_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Leading Spaces', value: item.lead_space_ct, total, width: percentWidth }),
                 PercentBar({ label: 'Embedded Spaces', value: item.embedded_space_ct ?? 0, total, width: percentWidth }),
-                Attribute({ label: 'Average Embedded Spaces', value: roundDigits(item.avg_embedded_spaces), width: attributeWidth }),
+                Attribute({ label: 'Average Embedded Spaces', value: formatNumber(item.avg_embedded_spaces), width: attributeWidth }),
             ),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
-            Attribute({ label: 'Minimum Length', value: item.min_length, width: attributeWidth }),
-            Attribute({ label: 'Maximum Length', value: item.max_length, width: attributeWidth }),
-            Attribute({ label: 'Average Length', value: roundDigits(item.avg_length), width: attributeWidth }),
+            Attribute({ label: 'Minimum Length', value: formatNumber(item.min_length), width: attributeWidth }),
+            Attribute({ label: 'Maximum Length', value: formatNumber(item.max_length), width: attributeWidth }),
+            Attribute({ label: 'Average Length', value: formatNumber(item.avg_length), width: attributeWidth }),
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
@@ -205,7 +205,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             Attribute({ label: 'Standard Pattern Match', value: standardPattern, width: attributeWidth }),
-            Attribute({ label: 'Distinct Patterns', value: item.distinct_pattern_ct, width: attributeWidth }),
+            Attribute({ label: 'Distinct Patterns', value: formatNumber(item.distinct_pattern_ct), width: attributeWidth }),
         ),
     );
 }
@@ -260,7 +260,7 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4' },
             Attribute({ label: 'Minimum Date', value: formatTimestamp(item.min_date, true), width: attributeWidth }),
             Attribute({ label: 'Maximum Date', value: formatTimestamp(item.max_date, true), width: attributeWidth }),
-            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
+            Attribute({ label: 'Distinct Values', value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
         ),
     );
 }
@@ -283,15 +283,15 @@ function NumericColumn(/** @type ColumnProfile */ item) {
         ),
         div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-4 tg-profile--attribute-block' },
-            Attribute({ label: 'Distinct Values', value: item.distinct_value_ct, width: attributeWidth }),
-            Attribute({ label: 'Average Value', value: roundDigits(item.avg_value), width: attributeWidth }),
-            Attribute({ label: 'Standard Deviation', value: roundDigits(item.stdev_value), width: attributeWidth }),
-            Attribute({ label: 'Minimum Value', value: item.min_value, width: attributeWidth }),
-            Attribute({ label: 'Minimum Value > 0', value: item.min_value_over_0, width: attributeWidth }),
-            Attribute({ label: 'Maximum Value', value: item.max_value, width: attributeWidth }),
-            Attribute({ label: '25th Percentile', value: roundDigits(item.percentile_25), width: attributeWidth }),
-            Attribute({ label: 'Median Value', value: roundDigits(item.percentile_50), width: attributeWidth }),
-            Attribute({ label: '75th Percentile', value: roundDigits(item.percentile_75), width: attributeWidth }),
+            Attribute({ label: 'Distinct Values', value: formatNumber(item.distinct_value_ct), width: attributeWidth }),
+            Attribute({ label: 'Average Value', value: formatNumber(item.avg_value), width: attributeWidth }),
+            Attribute({ label: 'Standard Deviation', value: formatNumber(item.stdev_value), width: attributeWidth }),
+            Attribute({ label: 'Minimum Value', value: formatNumber(item.min_value), width: attributeWidth }),
+            Attribute({ label: 'Minimum Value > 0', value: formatNumber(item.min_value_over_0), width: attributeWidth }),
+            Attribute({ label: 'Maximum Value', value: formatNumber(item.max_value), width: attributeWidth }),
+            Attribute({ label: '25th Percentile', value: formatNumber(item.percentile_25), width: attributeWidth }),
+            Attribute({ label: 'Median Value', value: formatNumber(item.percentile_50), width: attributeWidth }),
+            Attribute({ label: '75th Percentile', value: formatNumber(item.percentile_75), width: attributeWidth }),
         ),
         div(
             { class: 'flex-row fx-justify-center tg-profile--plot-block' },
@@ -318,7 +318,7 @@ const BaseCounts = (/** @type ColumnProfile */ item) => {
         { class: 'flex-row fx-gap-4' },
         attributes.map(({ key, label }) => Attribute({ 
             label: item[key] === 0 ? span({ class: 'text-error' }, label) : label, 
-            value: item[key],
+            value: formatNumber(item[key]),
             width: attributeWidth,
         })),
     );

@@ -29,6 +29,10 @@ def run_parameter_validation_queries(
     strColumnList = clsExecute.GetTestValidationColumns(booClean)
     test_columns, _ = RetrieveDBResultsToList("DKTG", strColumnList)
 
+    invalid_tests = [ test_ids for col, test_ids in test_columns if not col ]
+    invalid_tests = { item for sublist in invalid_tests for item in sublist }
+    test_columns = [ item for item in test_columns if item[0] ]
+
     if not test_columns:
         LOG.warning(f"No test columns are present to validate in Test Suite {strTestSuite}")
         missing_columns = []
@@ -71,7 +75,7 @@ def run_parameter_validation_queries(
         if missing_tables:
             LOG.info("Missing tables: %s", ", ".join(missing_tables))
 
-    if missing_columns or missing_tables:
+    if missing_columns or missing_tables or invalid_tests:
         # Flag test_definitions tests with missing tables or columns
         LOG.info("CurrentStep: Flagging Tests That Failed Validation")
 
@@ -86,7 +90,7 @@ def run_parameter_validation_queries(
                 tests_missing_columns[column_name].extend(test_ids)
 
         clsExecute.flag_val = "D"
-        clsExecute.test_ids = list(set(chain(*tests_missing_tables.values(), *tests_missing_columns.values())))
+        clsExecute.test_ids = list(set(chain(*tests_missing_tables.values(), *tests_missing_columns.values(), invalid_tests)))
         strPrepFlagTests = clsExecute.PrepFlagTestsWithFailedValidation()
         RunActionQueryList("DKTG", [strPrepFlagTests])
 
@@ -99,6 +103,12 @@ def run_parameter_validation_queries(
         for table_name, test_ids in tests_missing_tables.items():
             clsExecute.message = f"Missing table: {table_name}"
             clsExecute.test_ids = test_ids
+            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
+            RunActionQueryList("DKTG", [strFlagTests])
+        
+        if invalid_tests:
+            clsExecute.message = "Invalid test: schema, table, or column not defined"
+            clsExecute.test_ids = invalid_tests
             strFlagTests = clsExecute.FlagTestsWithFailedValidation()
             RunActionQueryList("DKTG", [strFlagTests])
 
