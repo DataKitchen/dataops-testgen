@@ -27,10 +27,10 @@ from testgen.utils import get_base_url
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
 CLASS_COLORS =  {
-    "Definite": HexColor(0xE94D4A),
-    "Likely": HexColor(0xFC8F2A),
-    "Possible": HexColor(0xFCD349),
-    "Potential PII": HexColor(0xFC8F2A),
+    "Definite": HexColor(0xEF5350),
+    "Likely": HexColor(0xFF9800),
+    "Possible": HexColor(0xFBC02D),
+    "Potential PII": HexColor(0x8D6E63),
 }
 
 def build_summary_table(document, hi_data):
