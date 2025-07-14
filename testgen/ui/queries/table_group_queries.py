@@ -20,7 +20,8 @@ def _get_select_statement(schema):
                 profile_id_column_mask, profile_sk_column_mask,
                 description, data_source, source_system, source_process, data_location,
                 business_domain, stakeholder_group, transform_level, data_product,
-                profile_use_sampling, profile_sample_percent, profile_sample_min_count,
+                CASE WHEN profile_use_sampling = 'Y' THEN true ELSE false END AS profile_use_sampling,
+                profile_sample_percent, profile_sample_min_count,
                 profiling_delay_days, profile_flag_cdes
         FROM table_groups
         """
@@ -176,7 +177,7 @@ def add(schema, table_group) -> str:
         '{table_group["profiling_exclude_mask"]}',
         '{table_group["profile_id_column_mask"]}'::character varying(2000),
         '{table_group["profile_sk_column_mask"]}'::character varying,
-        '{'Y' if table_group["profile_use_sampling"]=='True' else 'N' }'::character varying,
+        '{'Y' if table_group["profile_use_sampling"] else 'N' }'::character varying,
         '{table_group["profile_sample_percent"]}'::character varying,
         {table_group["profile_sample_min_count"]},
         '{table_group["profiling_delay_days"]}'::character varying,
