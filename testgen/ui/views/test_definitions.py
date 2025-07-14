@@ -73,10 +73,11 @@ class TestDefinitionsPage(Page):
 
         with table_filter_column:
             columns_df = get_test_suite_columns(test_suite_id)
+            table_options = list(columns_df["table_name"].unique())
             table_name = testgen.select(
-                options=list(columns_df["table_name"].unique()),
+                options=table_options,
                 value_column="table_name",
-                default_value=table_name,
+                default_value=table_name or (table_options[0] if table_options else None),
                 bind_to_query="table_name",
                 required=True,
                 label="Table Name",
@@ -691,6 +692,7 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             value_column="id",
             display_column="table_groups_name",
             default_value=origin_table_group["id"],
+            required=True,
             label="Target Table Group",
         )
 
@@ -701,6 +703,7 @@ def copy_move_test_dialog(project_code, origin_table_group, origin_test_suite, s
             value_column="id",
             display_column="test_suite",
             default_value=None,
+            required=True,
             label="Target Test Suite",
         )
 

@@ -26,16 +26,19 @@ def run_profiling_dialog(project_code: str, table_group: pd.Series | None = None
             display_column="table_groups_name",
             default_value=default_table_group_id,
             required=True,
+            placeholder="Select table group to profile",
         )
-        table_group_name: str = table_groups_df.loc[table_groups_df["id"] == table_group_id, "table_groups_name"].iloc[0]
+        if table_group_id:
+            table_group_name: str = table_groups_df.loc[table_groups_df["id"] == table_group_id, "table_groups_name"].iloc[0]
         testgen.whitespace(1)
 
-    with st.container():
-        st.markdown(f"Execute profiling for the table group **{table_group_name}**?")
-        st.markdown(":material/info: _Profiling will be performed in a background process._")
+    if table_group_id:        
+        with st.container():
+            st.markdown(f"Execute profiling for the table group **{table_group_name}**?")
+            st.markdown(":material/info: _Profiling will be performed in a background process._")
 
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
-        st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
+        if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
+            st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
 
     button_container = st.empty()
     status_container = st.empty()

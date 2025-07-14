@@ -63,6 +63,7 @@ class TestRunsPage(Page):
                 default_value=table_group_id,
                 bind_to_query="table_group_id",
                 label="Table Group",
+                placeholder="---",
             )
 
         with suite_filter_column:
@@ -74,6 +75,7 @@ class TestRunsPage(Page):
                 default_value=test_suite_id,
                 bind_to_query="test_suite_id",
                 label="Test Suite",
+                placeholder="---",
             )
 
         with actions_column:
@@ -139,6 +141,7 @@ class TestRunScheduleDialog(ScheduleDialog):
             value_column="test_suite",
             display_column="test_suite",
             required=True,
+            placeholder="Select test suite",
         )
         return bool(ts_name), [], {"project_key": self.project_code, "test_suite_key": ts_name}
 
