@@ -312,7 +312,7 @@ function(params) {
         enable_enterprise_modules=False,
         allow_unsafe_jscode=True,
         update_mode=GridUpdateMode.NO_UPDATE,
-        update_on=["selectionChanged"],
+        update_on=["selectionChanged", "modelUpdated"],
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         height=int_height,
