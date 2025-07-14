@@ -82,13 +82,14 @@ class TestDefinitionsPage(Page):
                 label="Table Name",
             )
         with column_filter_column:
-            column_options = list(columns_df.loc[columns_df["table_name"] == table_name]["column_name"].unique())
+            column_options = columns_df.loc[columns_df["table_name"] == table_name]["column_name"].dropna().unique().tolist()
             column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=True,
             )
 
         with disposition_column:

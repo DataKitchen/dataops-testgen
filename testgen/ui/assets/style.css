@@ -33,6 +33,8 @@ body {
     --portal-background: white;
     --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     --select-hover-background: rgb(240, 242, 246);
+
+    --app-background-color: #f8f9fa;
 }
 
 img.dk-logo-img {
@@ -40,22 +42,51 @@ img.dk-logo-img {
     width: 100%;
 }
 
-/* Streamlit header */
-header {
+/* Header */
+.stAppHeader {
+    width: 85px !important; /* allows clicking on the breadcrumbs */
+    left: calc(24px - 1rem) !important;
+    background: transparent !important;
+    min-height: unset !important;
+    overflow: hidden !important; /* hides the running man animation */
+}
+
+/* - with breadcrumbs */
+.stAppHeader:has(~ .stMain .st-key-testgen-breadcrumbs) {
+    height: 65px !important;
+    top: 5px !important;
+}
+
+/* - without breadcrumbs */
+.stAppHeader:not(:has(~ .stMain .st-key-testgen-breadcrumbs)) {
+    top: 7px !important;
+    height: 39.59px !important;
+}
+
+/* hide while sidebar expanded */
+.stApp:has(.stSidebar[aria-expanded="true"]) .stAppHeader {
+    display: none;
+}
+
+.stStatusWidget {
     display: none !important;
 }
-/* ... */
+/* End Header */
+
+#stDecoration {
+    visibility: hidden;
+}
 
 /* Sidebar */
 [data-testid="stSidebarContent"] [data-testid="stSidebarHeader"] {
     padding: 16px 20px;
 }
 
-[data-testid="stSidebarHeader"] [data-testid="stLogo"] {
+[data-testid="stSidebarHeader"] .stLogo {
     max-width: fit-content;
 }
 
-section[data-testid="stSidebar"] {
+section.stSidebar {
     width: 250px;
     z-index: 999;
     background-color: var(--sidebar-background-color);
@@ -68,29 +99,17 @@ section[data-testid="stSidebar"] {
 /*  */
 
 /* Main content */
-div[data-testid="stAppViewContainer"] > :nth-child(2 of section) {
-    background-color: #f8f9fa;
+.stMain {
+    background-color: var(--app-background-color);
 }
 
-div[data-testid="stMainBlockContainer"] {
+.stMain > .stMainBlockContainer {
     padding: 12px 24px 24px;
 }
 
-div[data-testid="stVerticalBlock"] {
+.stVerticalBlock[data-testid="stVerticalBlock"] {
     gap: 0.5rem;
 }
-
-div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"]) div[data-testid="stSidebarCollapsedControl"] {
-    top: 0.5rem;
-    border-radius: 4px;
-    background-color: var(--border-color);
-    padding: 3px 0 0 8px;
-}
-
-div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="true"]) div[data-testid="stSidebarCollapsedControl"] {
-    display: none;
-}
-/*  */
 
 /* Dialog - sets the width of all st.dialog */
 /* There is no way to target "large" and "small" dialogs reliably */
@@ -203,11 +222,12 @@ button[title="Show password text"] {
 }
 /* ... */
 
-[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.bg-white) {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.bg-white),
+[data-testid="stVerticalBlockBorderWrapper"]:has(> .stVerticalBlock > .stElementContainer > div.stHtml > i.bg-white) {
     background-color: var(--dk-card-background);
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) > div > [data-testid="stVerticalBlock"] {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-row) {
     width: 100%;
     flex-direction: row;
 }
@@ -218,19 +238,19 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="st
     max-height: 40px;
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-start) [data-testid="stVerticalBlock"] {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-start) {
     justify-content: flex-start;
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-end) [data-testid="stVerticalBlock"] {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-end) {
     justify-content: flex-end;
 }
 
-div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-center) [data-testid="stVerticalBlock"] {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-center) {
     justify-content: center;
 }
 
-[data-testid="stVerticalBlock"]:has(> div.element-container > div.stHtml > i.no-flex-gap) {
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.no-flex-gap) {
     gap: unset;
 }
 
@@ -296,8 +316,13 @@ Use as testgen.text("text", "extra_styles") */
     transition: padding 0.3s;
 }
 
-[data-testid="stSidebar"][aria-expanded="false"] ~ [data-testid="stMain"] .tg-header {
-    padding-left: 80px;
+.st-key-testgen-breadcrumbs {
+    transition: padding 0.3s;
+}
+
+[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .tg-header,
+[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .st-key-testgen-breadcrumbs {
+    padding-left: 85px;
 }
 
 .tg-header--line {
@@ -321,7 +346,8 @@ Use as testgen.text("text", "extra_styles") */
 }
 
 .st-key-tg-header--help [data-testid="stPopover"] {
-    width: auto;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .st-key-tg-header--help button[data-testid="stPopoverButton"] {
@@ -472,20 +498,16 @@ div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--expor
         --portal-background: #14181f;
         --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
         --select-hover-background: rgba(255, 255, 255, .32);
-    }
 
-    /* Main content */
-    div[data-testid="stAppViewContainer"] > :nth-child(2 of section) {
-        background-color: rgb(14, 17, 23);
+        --app-background-color: rgb(14, 17, 23);
     }
-    /*  */
 
     div[data-modal-container='true']::before {
         background-color: rgba(100, 100, 100, 0.5) !important;
     }
 
     div[data-modal-container='true'] > div:first-child > div:first-child {
-        background-color: rgb(14, 17, 23) !important;
+        background-color: var(--app-background-color) !important;
     }
 }
 /* ... */

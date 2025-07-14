@@ -2,10 +2,6 @@ import van from './static/js/van.min.js';
 
 window.van = van;
 
-window.addEventListener('load', function() {
-    removeElements([ 'header[data-testid="stHeader"]' ]);
-});
-
 window.addEventListener('message', async function(event) {
     if (event.data.type === 'TestgenCopyToClipboard') {
         await copyToClipboard(event.data.text || '');

@@ -128,7 +128,9 @@ class TestResultsPage(Page):
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
+            column_options = run_columns_df.loc[
+                run_columns_df["table_name"] == table_name
+            ]["column_name"].dropna().unique().tolist()
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -136,6 +138,7 @@ class TestResultsPage(Page):
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=True,
             )
 
         with sort_column:
@@ -157,15 +160,15 @@ class TestResultsPage(Page):
 
         match status:
             case "Failed + Warning":
-                status = "'Failed','Warning'"
+                status = ["Failed", "Warning"]
             case "Failed":
-                status = "'Failed'"
+                status = "Failed"
             case "Warning":
-                status = "'Warning'"
+                status = "Warning"
             case "Passed":
-                status = "'Passed'"
+                status = "Passed"
             case "Error":
-                status = "'Error'"
+                status = "Error"
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
@@ -294,7 +297,7 @@ def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def get_test_results(
     run_id: str,
-    test_status: str | None = None,
+    test_status: str | list[str] | None = None,
     test_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
