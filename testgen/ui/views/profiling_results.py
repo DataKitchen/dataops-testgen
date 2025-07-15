@@ -10,6 +10,7 @@ import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -171,6 +172,7 @@ class ProfilingResultsPage(Page):
             )
 
 
+@with_database_session
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
@@ -192,7 +194,7 @@ def get_excel_report_data(
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(
-            lambda val: datetime.fromtimestamp(val / 1000).strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
+            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and val != "NaT" else None
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)

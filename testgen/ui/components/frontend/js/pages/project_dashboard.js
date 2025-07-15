@@ -157,7 +157,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     ),
                     span(
                         { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
-                        `${tableGroup.latest_profile_table_ct} tables | ${tableGroup.latest_profile_column_ct} columns`,
+                        `${tableGroup.latest_profile_table_ct ?? 0} tables | ${tableGroup.latest_profile_column_ct ?? 0} columns`,
                     ),
                     TableGroupTestSuiteSummary(tableGroup.test_suites),
                 ),

@@ -1,3 +1,4 @@
+import json
 import typing
 from builtins import float
 from pathlib import Path
@@ -312,7 +313,7 @@ function(params) {
         enable_enterprise_modules=False,
         allow_unsafe_jscode=True,
         update_mode=GridUpdateMode.NO_UPDATE,
-        update_on=["selectionChanged", "modelUpdated"],
+        update_on=["selectionChanged"],
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         height=int_height,
@@ -332,4 +333,13 @@ function(params) {
     if len(selected_rows) > 0:
         if bind_to_query_name and bind_to_query_prop:
             Router().set_query_params({bind_to_query_name: selected_rows[0][bind_to_query_prop]})
+            
+            # We need to get the data from the original dataframe
+            # Otherwise changes to the dataframe (e.g., editing the current selection) do not get reflected in the returned rows
+            # Adding "modelUpdated" to AgGrid(update_on=...) does not work
+            # because it causes unnecessary reruns that cause dialogs to close abruptly
+            selected_props = [row[bind_to_query_prop] for row in selected_rows]
+            selected_df = df[df[bind_to_query_prop].isin(selected_props)]
+            selected_rows = json.loads(selected_df.to_json(orient="records"))
+
         return selected_rows

@@ -19,7 +19,7 @@
 import van from '../van.min.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { withTooltip } from '../components/tooltip.js';
 
 
@@ -42,6 +42,7 @@ const ScheduleList = (/** @type Properties */ props) => {
 
     const tableId = 'profiling-schedules-table';
     resizeFrameHeightToElement(tableId);
+    resizeFrameHeightOnDOMChange(tableId);
 
     return div(
         { class: 'table', id: tableId },
