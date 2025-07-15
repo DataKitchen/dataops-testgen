@@ -1635,86 +1635,86 @@ ORDER BY {GROUPBY_NAMES}'),
          GROUP BY {GROUPBY_NAMES}
          HAVING COUNT(*) > 1
 ORDER BY {GROUPBY_NAMES}'),
-        ('1258', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'redshift', NULL, 'SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        ('1258', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'redshift', NULL, '(SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" LIMIT 20
-UNION ALL ;
-SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY "{COLUMN_NAME}" LIMIT 20)
+UNION ALL
+(SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-GROUP BY "{COLUMN_NAME}" LIMIT 20'),
-        ('1259', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'postgresql', NULL, 'SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY "{COLUMN_NAME}" LIMIT 20)'),
+        ('1259', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'postgresql', NULL, '(SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" LIMIT 20
-UNION ALL ;
-SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY "{COLUMN_NAME}" LIMIT 20)
+UNION ALL
+(SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-GROUP BY "{COLUMN_NAME}" LIMIT 20'),
+GROUP BY "{COLUMN_NAME}" LIMIT 20)'),
         ('1260', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'mssql', NULL, 'SELECT TOP 20 ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
 GROUP BY "{COLUMN_NAME}"
-UNION ALL ;
+UNION
 SELECT TOP 20 ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
 GROUP BY "{COLUMN_NAME}"'),
-        ('1261', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'snowflake', NULL, 'SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        ('1261', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'snowflake', NULL, '(SELECT ''Upper Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" LIMIT 20
-UNION ALL ;
-SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY "{COLUMN_NAME}" LIMIT 20)
+UNION ALL
+(SELECT ''Mixed Case'' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-GROUP BY "{COLUMN_NAME}" LIMIT 20'),
-        ('1262', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'databricks', NULL, 'SELECT ''Upper Case'' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY "{COLUMN_NAME}" LIMIT 20)'),
+        ('1262', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'databricks', NULL, '(SELECT ''Upper Case'' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE UPPER(`{COLUMN_NAME}`) = `{COLUMN_NAME}`
-GROUP BY `{COLUMN_NAME}` LIMIT 20
-UNION ALL ;
-SELECT ''Mixed Case'' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}` LIMIT 20)
+UNION ALL
+(SELECT ''Mixed Case'' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
 WHERE `{COLUMN_NAME}` <> UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` <> LOWER(`{COLUMN_NAME}`)
-GROUP BY `{COLUMN_NAME}` LIMIT 20'),
-        ('1263', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+GROUP BY `{COLUMN_NAME}` LIMIT 20)'),
+        ('1263', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''''
 GROUP BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1264', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1264', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''''
 GROUP BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1265', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'mssql', NULL, 'SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1265', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'mssql', NULL, 'SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''''
 GROUP BY "{COLUMN_NAME}"'),
-        ('1266', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1266', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''''
 GROUP BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1267', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'databricks', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
- WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''''
+        ('1267', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'databricks', NULL, 'SELECT any_value(`{COLUMN_NAME}`), COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+ WHERE `{COLUMN_NAME}` = UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` = LOWER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` > ''''
 GROUP BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1268', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1268', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" < ''A'' AND LEFT("{COLUMN_NAME}", 1) NOT IN (''"'', '' '') AND RIGHT("{COLUMN_NAME}", 1) <> ''''''''
 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1269', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1269', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" < ''A'' AND LEFT("{COLUMN_NAME}", 1) NOT IN (''"'', '' '') AND RIGHT("{COLUMN_NAME}", 1) <> ''''''''
 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1270', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'mssql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1270', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'mssql', NULL, 'SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE "{COLUMN_NAME}" < ''A'' AND LEFT("{COLUMN_NAME}", 1) NOT IN (''"'', '' '') AND RIGHT("{COLUMN_NAME}", 1) <> ''''''''
-GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1271', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
- WHERE "{COLUMN_NAME}" < ''A'' AND LEFT("{COLUMN_NAME}", 1) NOT IN (''"'', '' '') AND RIGHT("{COLUMN_NAME}", 1) <> ''''''''
-GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1272', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'databricks', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) as record_ct
- WHERE `{COLUMN_NAME}` < ''A'' AND LEFT(`{COLUMN_NAME}`, 1) NOT IN (''"'', '' '') AND RIGHT(`{COLUMN_NAME}`, 1) <> ''''''''
-GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500'),
-        ('1273', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
- WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1274', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
- WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1275', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'mssql', NULL, 'SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct
- WHERE TRANSLATE("{COLUMN_NAME}", NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}"'),
-        ('1276', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1271', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+WHERE "{COLUMN_NAME}" < ''A'' AND LEFT("{COLUMN_NAME}", 1) NOT IN (''"'', '' '') AND RIGHT("{COLUMN_NAME}", 1) <> ''''''''
+GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
+        ('1272', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'databricks', NULL, 'SELECT any_value(`{COLUMN_NAME}`), COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+WHERE `{COLUMN_NAME}` < ''A'' AND LEFT(`{COLUMN_NAME}`, 1) NOT IN (''"'', '' '') AND RIGHT(`{COLUMN_NAME}`, 1) <> ''''''''
+GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500'),
+        ('1273', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'redshift', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
-        ('1277', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'databricks', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct
+        ('1274', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'postgresql', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
  WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
-GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500')
+GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
+        ('1275', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'mssql', NULL, 'SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+ WHERE TRANSLATE("{COLUMN_NAME}", NCHAR(160), ''X'') <> "{COLUMN_NAME}"
+GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}"'),
+        ('1276', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'snowflake', NULL, 'SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+ WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), ''XXXXXXXXXX'') <> "{COLUMN_NAME}"
+GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
+        ('1277', '1031', 'Profile Anomaly', 'Non_Printing_Chars', 'databricks', NULL, 'SELECT any_value(`{COLUMN_NAME}`), COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+ WHERE TRANSLATE(`{COLUMN_NAME}`, ''\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff'', ''XXXXXXXXXX'') <> `{COLUMN_NAME}`
+GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500')
 ;
 
 
