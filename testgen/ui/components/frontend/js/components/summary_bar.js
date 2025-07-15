@@ -15,7 +15,7 @@
  */
 import van from '../van.min.js';
 import { friendlyPercent, getValue, loadStylesheet } from '../utils.js';
-import { colorMap } from '../display_utils.js';
+import { colorMap, formatNumber } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const defaultHeight = 24;
@@ -50,7 +50,7 @@ const SummaryBar = (/** @type Properties */ props) => {
                         class: 'dot',
                         style: `color: ${colorMap[item.color] || item.color};`,
                     }),
-                    `${item.label}: ${item.value || 0}` + (item.showPercent ? ` (${friendlyPercent(item.value * 100 / total.val)}%)` : '')
+                    `${item.label}: ${formatNumber(item.value || 0)}` + (item.showPercent ? ` (${friendlyPercent(item.value * 100 / total.val)}%)` : '')
                 )
                 : null,
             ),

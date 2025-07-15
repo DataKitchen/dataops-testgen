@@ -35,7 +35,7 @@ const ScheduleList = (/** @type Properties */ props) => {
         } catch (e) {
             console.log(e)
         }
-        Streamlit.setFrameHeight(100 * items.length);
+        Streamlit.setFrameHeight(100 * items.length || 150);
         return items;
     });
     const columns = ['40%', '50%', '10%'];
@@ -60,9 +60,11 @@ const ScheduleList = (/** @type Properties */ props) => {
                 'Actions',
             ),
         ),
-        () => div(
-            scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions))),
-        ),
+        () => scheduleItems.val?.length 
+            ? div(
+                scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions))),
+            ) 
+            : div({ class: 'mt-5 mb-3 ml-3 text-secondary' }, 'No schedules defined yet.'),
     );
 }
 

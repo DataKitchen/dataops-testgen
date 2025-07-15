@@ -235,6 +235,7 @@ function(params) {
     rendering_counter = st.session_state.get(f"{key}_counter") or 0
     previous_dataframe = st.session_state.get(f"{key}_dataframe")
 
+    df = df.copy()
     if previous_dataframe is not None:
         data_changed = not df.equals(previous_dataframe)
 
@@ -311,7 +312,7 @@ function(params) {
         enable_enterprise_modules=False,
         allow_unsafe_jscode=True,
         update_mode=GridUpdateMode.NO_UPDATE,
-        update_on=["selectionChanged"],
+        update_on=["selectionChanged", "modelUpdated"],
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
         height=int_height,

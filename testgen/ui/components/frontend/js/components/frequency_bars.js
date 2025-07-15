@@ -14,7 +14,7 @@
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
-import { colorMap } from '../display_utils.js';
+import { colorMap, formatNumber } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const defaultColor = 'teal';
@@ -67,7 +67,7 @@ const FrequencyBars = (/** @type Properties */ props) => {
                         class: 'text-caption tg-frequency-bars--count',
                         style: () => `width: ${width.val}px;`,
                     },
-                    count,
+                    formatNumber(count),
                 ),
                 div(value),
             );

@@ -1,3 +1,4 @@
+import logging
 import typing
 from functools import partial
 
@@ -8,17 +9,19 @@ import testgen.common.process_service as process_service
 import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 import testgen.ui.services.query_service as dq
+from testgen.common.models import with_database_session
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import profiling_run_queries, project_queries
 from testgen.ui.services import user_session_service
-from testgen.ui.session import session
+from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, to_int
 
+LOG = logging.getLogger("testgen")
 FORM_DATA_WIDTH = 400
 PAGE_SIZE = 50
 PAGE_ICON = "data_thresholding"
@@ -68,7 +71,7 @@ class DataProfilingPage(Page):
 
             st.button(
                 ":material/today: Profiling Schedules",
-                help="Manages when profiling should run for a given table group",
+                help="Manage when profiling should run for table groups",
                 on_click=partial(ProfilingScheduleDialog().open, project_code)
             )
 
@@ -97,9 +100,13 @@ class DataProfilingPage(Page):
                     "items": paginated_df.to_json(orient="records"),
                     "permissions": {
                         "can_run": user_can_run,
+                        "can_edit": user_can_run,
                     },
                 },
-                event_handlers={ "RunCanceled": on_cancel_run }
+                event_handlers={
+                    "RunCanceled": on_cancel_run,
+                    "RunsDeleted": partial(on_delete_runs, project_code, table_group_id),
+                }
             )
 
 
@@ -178,6 +185,60 @@ def on_cancel_run(profiling_run: pd.Series) -> None:
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
 
+@st.dialog(title="Delete Profiling Runs")
+@with_database_session
+def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: list[str]) -> None:
+    def on_delete_confirmed(*_args) -> None:
+        set_delete_confirmed(True)
+
+    message = f"Are you sure you want to delete the {len(profiling_run_ids)} selected profiling runs?"
+    constraint = {
+        "warning": "Any running processes will be canceled.",
+        "confirmation": "Yes, cancel and delete the profiling runs.",
+    }
+    if len(profiling_run_ids) == 1:
+        message = "Are you sure you want to delete the selected profiling run?"
+        constraint["confirmation"] = "Yes, cancel and delete the profiling run."
+
+    result, set_result = temp_value("profiling-runs:result-value", default=None)
+    delete_confirmed, set_delete_confirmed = temp_value("profiling-runs:confirm-delete", default=False)
+
+    testgen.testgen_component(
+        "confirm_dialog",
+        props={
+            "project_code": project_code,
+            "message": message,
+            "constraint": constraint,
+            "button_label": "Delete",
+            "button_color": "warn",
+            "result": result(),
+        },
+        on_change_handlers={
+            "ActionConfirmed": on_delete_confirmed,
+        },
+    )
+
+    if delete_confirmed():
+        try:
+            with st.spinner("Deleting runs ..."):
+                profiling_runs = get_db_profiling_runs(project_code, table_group_id, profiling_run_ids=profiling_run_ids)
+                for _, profiling_run in profiling_runs.iterrows():
+                    profiling_run_id = profiling_run["profiling_run_id"]
+                    if profiling_run["status"] == "Running":
+                        process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
+                        if process_status:
+                            profiling_run_queries.update_status(profiling_run_id, "Cancelled")
+                profiling_run_queries.cascade_delete_multiple_profiling_runs(profiling_run_ids)
+            st.rerun()
+        except Exception:
+            LOG.exception("Failed to delete profiling runs")
+            set_result({
+                "success": False,
+                "message": "Unable to delete the selected profiling runs, try again.",
+            })
+            st.rerun(scope="fragment")
+
+
 @st.cache_data(show_spinner=False)
 def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
     schema = st.session_state["dbschema"]
@@ -185,9 +246,19 @@ def get_db_table_group_choices(project_code: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner="Loading data ...")
-def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) -> pd.DataFrame:
+def get_db_profiling_runs(
+    project_code: str,
+    table_group_id: str | None = None,
+    profiling_run_ids: list[str] | None = None,
+) -> pd.DataFrame:
     schema = st.session_state["dbschema"]
     table_group_condition = f" AND v_profiling_runs.table_groups_id = '{table_group_id}' " if table_group_id else ""
+
+    profling_runs_condition = ""
+    if profiling_run_ids and len(profiling_run_ids) > 0:
+        profiling_run_ids_ = [f"'{run_id}'" for run_id in profiling_run_ids]
+        profling_runs_condition = f" AND v_profiling_runs.profiling_run_id::VARCHAR IN ({', '.join(profiling_run_ids_)})"
+
     sql = f"""
     WITH profile_anomalies AS (
         SELECT profile_anomaly_results.profile_run_id,
@@ -245,6 +316,7 @@ def get_db_profiling_runs(project_code: str, table_group_id: str | None = None) 
         LEFT JOIN profile_anomalies ON (v_profiling_runs.profiling_run_id = profile_anomalies.profile_run_id)
     WHERE project_code = '{project_code}'
     {table_group_condition}
+    {profling_runs_condition}
     ORDER BY start_time DESC;
     """
 

@@ -2,6 +2,7 @@ import logging
 import time
 import typing
 from datetime import datetime
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +23,7 @@ from testgen.ui.components.widgets.download_dialog import (
     download_dialog,
     get_excel_file_data,
 )
+from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
@@ -80,13 +82,14 @@ class TestDefinitionsPage(Page):
                 label="Table Name",
             )
         with column_filter_column:
-            column_options = list(columns_df.loc[columns_df["table_name"] == table_name]["column_name"].unique())
+            column_options = columns_df.loc[columns_df["table_name"] == table_name]["column_name"].dropna().unique().tolist()
             column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=True,
             )
 
         with disposition_column:
@@ -914,13 +917,28 @@ def show_test_defs_grid(
         bind_to_query_prop="id",
     )
 
-    with export_container:
-        if st.button(label=":material/download: Export", help="Download filtered test definitions to Excel"):
-            download_dialog(
-                dialog_title="Download Excel Report",
-                file_content_func=get_excel_report_data,
-                args=(df, str_test_suite),
-            )
+    popover_container = export_container.empty()
+
+    def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+        with popover_container.container():
+            flex_row_end()
+            st.button(label="Export", icon=":material/download:", disabled=True)
+
+        download_dialog(
+            dialog_title="Download Excel Report",
+            file_content_func=get_excel_report_data,
+            args=(str_project_code, str_test_suite, data),
+        )
+
+    with popover_container.container(key="tg--export-popover"):
+        flex_row_end()
+        with st.popover(label="Export", icon=":material/download:", help="Download test definitions to Excel"):
+            css_class("tg--export-wrapper")
+            st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
+            st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
+            if dct_selected_row:
+                st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(dct_selected_row)))
 
     if dct_selected_row:
         st.html("</p>&nbsp;</br>")
@@ -987,8 +1005,17 @@ def show_test_defs_grid(
     return dct_selected_row
 
 
-def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, data: pd.DataFrame, test_suite: str) -> FILE_DATA_TYPE:
-    data = data.copy()
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    project_code: str,
+    test_suite: str,
+    data: pd.DataFrame | None = None,
+) -> FILE_DATA_TYPE:
+    if data is not None:
+        data = data.copy()
+    else:
+        data = test_definition_service.get_test_definitions(project_code, test_suite)
+        date_service.accommodate_dataframe_to_timezone(data, st.session_state)
 
     for key in ["test_active_display", "lock_refresh_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)

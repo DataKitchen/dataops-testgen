@@ -81,7 +81,7 @@ class TestRunsPage(Page):
 
             st.button(
                 ":material/today: Test Run Schedules",
-                help="Manages when a test suite should run.",
+                help="Manage when test suites should run",
                 on_click=partial(TestRunScheduleDialog().open, project_code)
             )
 

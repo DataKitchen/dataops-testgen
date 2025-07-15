@@ -73,14 +73,25 @@ def sorting_selector(
     if state is None:
         state = default
 
-    with st.popover(popover_label):
-        new_state = component(
-            id_="sorting_selector",
-            key=key,
-            default=state,
-            on_change=on_change,
-            props={"columns": columns, "state": state},
-        )
+    popover_container = st.empty()
+
+    def handle_change() -> None:
+        if on_change:
+            on_change()
+
+        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+        with popover_container.container():
+            st.button(label=f"{popover_label} :material/keyboard_arrow_up:", disabled=True)
+
+    with popover_container.container():
+        with st.popover(popover_label):
+            new_state = component(
+                id_="sorting_selector",
+                key=key,
+                default=state,
+                on_change=handle_change,
+                props={"columns": columns, "state": state},
+            )
 
     # For some unknown reason, sometimes, streamlit returns None as the component state
     new_state = [] if new_state is None else new_state

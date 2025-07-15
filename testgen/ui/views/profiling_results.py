@@ -1,6 +1,7 @@
 import json
 import typing
 from datetime import datetime
+from functools import partial
 
 import pandas as pd
 import streamlit as st
@@ -16,6 +17,7 @@ from testgen.ui.components.widgets.download_dialog import (
     download_dialog,
     get_excel_file_data,
 )
+from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
 from testgen.ui.services import project_service, user_session_service
@@ -79,6 +81,7 @@ class ProfilingResultsPage(Page):
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=bool(table_name),
             )
 
         with sort_column:
@@ -93,16 +96,15 @@ class ProfilingResultsPage(Page):
             default_sorting = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default_sorting)
 
-        # Use SQL wildcard to match all values
-        if not table_name:
-            table_name = "%%"
-        if not column_name:
-            column_name = "%%"
-
         # Display main results grid
         with st.container():
             with st.spinner("Loading data ..."):
-                df = profiling_queries.get_profiling_results(run_id, table_name, column_name, sorting_columns)
+                df = profiling_queries.get_profiling_results(
+                    run_id,
+                    table_name=table_name,
+                    column_name=column_name,
+                    sorting_columns=sorting_columns,
+                )
                 
         show_columns = [
             "schema_name",
@@ -125,14 +127,29 @@ class ProfilingResultsPage(Page):
             bind_to_query_prop="id",
         )
 
-        with export_button_column:
-            testgen.flex_row_end()
-            if st.button(label=":material/download: Export", help="Download filtered profiling results to Excel"):
-                download_dialog(
-                    dialog_title="Download Excel Report",
-                    file_content_func=get_excel_report_data,
-                    args=(df, run_df["table_groups_name"], run_date),
-                )
+        popover_container = export_button_column.empty()
+
+        def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+            # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+            with popover_container.container():
+                flex_row_end()
+                st.button(label="Export", icon=":material/download:", disabled=True)
+
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(run_df["table_groups_name"], run_date, run_id, data),
+            )
+
+        with popover_container.container(key="tg--export-popover"):
+            flex_row_end()
+            with st.popover(label="Export", icon=":material/download:", help="Download profiling results to Excel"):
+                css_class("tg--export-wrapper")
+                st.button(label="All results", type="tertiary", on_click=open_download_dialog)
+                st.button(label="Filtered results", type="tertiary", on_click=partial(open_download_dialog, df))
+                if selected_row:
+                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_row)))
+
 
         # Display profiling for selected row
         if not selected_row:
@@ -156,11 +173,16 @@ class ProfilingResultsPage(Page):
 
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
-    data: pd.DataFrame,
     table_group: str,
     run_date: str,
+    run_id: str,
+    data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
-    data = data.copy()
+    if data is not None:
+        data = data.copy()
+    else:
+        data = profiling_queries.get_profiling_results(run_id)
+    date_service.accommodate_dataframe_to_timezone(data, st.session_state)
 
     for key in ["column_type", "datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
@@ -170,7 +192,7 @@ def get_excel_report_data(
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(
-            lambda val: datetime.strptime(val, "%Y-%m-%dT%H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if val != "NaT" else None
+            lambda val: datetime.fromtimestamp(val / 1000).strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)

@@ -208,7 +208,7 @@ const TableGroupList = (props) => {
  */
 const Toolbar = (permissions, connections, selectedConnection) => {
     return div(
-        { class: 'flex-row fx-align-flex-end mb-4' },
+        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
         (getValue(connections) ?? [])?.length > 1
             ? Select({
                 testId: 'connection-select',
@@ -223,17 +223,29 @@ const Toolbar = (permissions, connections, selectedConnection) => {
                 onChange: (value) => emitEvent('ConnectionSelected', { payload: value }),
             })
             : undefined,
-        span({ style: 'margin: 0 auto;' }),
-        permissions.can_edit
-            ? Button({
+        div(
+            { class: 'flex-row fx-gap-4' },
+            Button({
+                icon: 'today',
                 type: 'stroked',
-                icon: 'add',
-                label: 'Add Table Group',
-                color: 'basic',
-                style: 'background: var(--button-generic-background-color); width: unset;',
-                onclick: () => emitEvent('AddTableGroupClicked', {}),
-            })
-            : '',
+                label: 'Profiling Schedules',
+                tooltip: 'Manage when profiling should run for table groups',
+                tooltipPosition: 'bottom',
+                width: 'fit-content',
+                style: 'background: var(--dk-card-background);',
+                onclick: () => emitEvent('RunSchedulesClicked', {}),
+            }),
+            permissions.can_edit
+                ? Button({
+                    type: 'stroked',
+                    icon: 'add',
+                    label: 'Add Table Group',
+                    color: 'basic',
+                    style: 'background: var(--button-generic-background-color); width: unset;',
+                    onclick: () => emitEvent('AddTableGroupClicked', {}),
+                })
+                : '',
+        )
     );
 }
 

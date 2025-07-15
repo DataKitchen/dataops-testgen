@@ -38,9 +38,10 @@ from testgen.utils import get_base_url
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
 RESULT_STATUS_COLORS = {
-    "Passed": HexColor(0x94C465),
-    "Warning": HexColor(0xFCD349),
-    "Failed": HexColor(0xE94D4A),
+    "Passed": HexColor(0x8BC34A),
+    "Warning": HexColor(0xFBC02D),
+    "Failed": HexColor(0xEF5350),
+    "Error": HexColor(0x8D6E63),
 }
 
 
