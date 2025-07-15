@@ -222,7 +222,7 @@ const Toolbar = (permissions, connections, selectedConnection) => {
                 })) ?? [],
                 onChange: (value) => emitEvent('ConnectionSelected', { payload: value }),
             })
-            : undefined,
+            : span(''),
         div(
             { class: 'flex-row fx-gap-4' },
             Button({

@@ -149,6 +149,7 @@ body {
     border: var(--button-stroked-border);
     border-radius: 8px;
     padding: 16px;
+    box-sizing: border-box;
 }
 
 .table-row {
