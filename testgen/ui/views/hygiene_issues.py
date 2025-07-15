@@ -79,7 +79,6 @@ class HygieneIssuesPage(Page):
             issue_class = testgen.select(
                 options=["Definite", "Likely", "Possible", "Potential PII"],
                 default_value=issue_class,
-                required=False,
                 bind_to_query="issue_class",
                 label="Issue Class",
             )
@@ -91,7 +90,6 @@ class HygieneIssuesPage(Page):
                 default_value=None if issue_class == "Potential PII" else issue_type,
                 value_column="id",
                 display_column="anomaly_name",
-                required=False,
                 bind_to_query="issue_type",
                 label="Issue Type",
                 disabled=issue_class == "Potential PII",

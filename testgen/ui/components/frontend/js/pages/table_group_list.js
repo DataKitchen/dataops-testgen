@@ -123,7 +123,7 @@ const TableGroupList = (props) => {
                                             div(
                                                 { class: 'flex-column fx-flex' },
                                                 Caption({content: 'Uses Record Sampling', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profile_use_sampling || '--'),
+                                                span(tableGroup.profile_use_sampling ? 'Yes' : 'No'),
                                             ),
                                         ),
                                         div(

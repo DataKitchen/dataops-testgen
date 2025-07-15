@@ -64,6 +64,7 @@ class DataProfilingPage(Page):
                 default_value=table_group_id,
                 bind_to_query="table_group_id",
                 label="Table Group",
+                placeholder="---",
             )
 
         with actions_column:
@@ -132,6 +133,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
             value_column="id",
             display_column="table_groups_name",
             required=True,
+            placeholder="Select table group",
         )
         return bool(tg_id), [], {"table_group_id": tg_id}
 

@@ -101,7 +101,6 @@ class TestResultsPage(Page):
             status = testgen.select(
                 options=status_options,
                 default_value=status or "Failed + Warning",
-                required=False,
                 bind_to_query="status",
                 bind_empty_value=True,
                 label="Result Status",
@@ -113,7 +112,6 @@ class TestResultsPage(Page):
                 value_column="test_type",
                 display_column="test_name_short",
                 default_value=test_type,
-                required=False,
                 bind_to_query="test_type",
                 label="Test Type",
             )
