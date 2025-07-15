@@ -14,11 +14,11 @@ def update_attribute(test_definition_ids, attribute, value):
 
 
 def get_test_definitions(
-    project_code=None, test_suite=None, table_name=None, column_name=None, test_definition_ids=None
+    project_code=None, test_suite=None, table_name=None, column_name=None, test_type=None, test_definition_ids=None,
 ):
     schema = st.session_state["dbschema"]
     return test_definition_queries.get_test_definitions(
-        schema, project_code, test_suite, table_name, column_name, test_definition_ids
+        schema, project_code, test_suite, table_name, column_name, test_type, test_definition_ids,
     )
 
 

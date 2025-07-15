@@ -76,7 +76,7 @@ class TestResultsPage(Page):
         )
 
         summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
-        status_filter_column, test_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
+        table_filter_column, column_filter_column, test_type_filter_column, status_filter_column, sort_column, export_button_column = st.columns(
             [.175, .175, .2, .2, .1, .15], vertical_alignment="bottom"
         )
 
@@ -89,6 +89,42 @@ class TestResultsPage(Page):
 
         with score_column:
             render_score(run_df["project_code"], run_id)
+
+        run_columns_df = get_test_run_columns(run_id)
+        with table_filter_column:
+            table_name = testgen.select(
+                options=list(run_columns_df["table_name"].unique()),
+                default_value=table_name,
+                bind_to_query="table_name",
+                label="Table",
+            )
+
+        with column_filter_column:
+            if table_name:
+                column_options = run_columns_df.loc[
+                    run_columns_df["table_name"] == table_name
+                    ]["column_name"].dropna().unique().tolist()
+            else:
+                column_options = run_columns_df.groupby("column_name").first().reset_index().sort_values("column_name")
+            column_name = testgen.select(
+                options=column_options,
+                value_column="column_name",
+                default_value=column_name,
+                bind_to_query="column_name",
+                label="Column",
+                accept_new_options=True,
+            )
+
+        with test_type_filter_column:
+            test_type = testgen.select(
+                options=run_columns_df.groupby("test_type").first().reset_index().sort_values("test_name_short"),
+                value_column="test_type",
+                display_column="test_name_short",
+                default_value=test_type,
+                required=False,
+                bind_to_query="test_type",
+                label="Test Type",
+            )
 
         with status_filter_column:
             status_options = [
@@ -103,48 +139,15 @@ class TestResultsPage(Page):
                 default_value=status or "Failed + Warning",
                 bind_to_query="status",
                 bind_empty_value=True,
-                label="Result Status",
-            )
-
-        with test_type_filter_column:
-            test_type = testgen.select(
-                options=get_test_types(),
-                value_column="test_type",
-                display_column="test_name_short",
-                default_value=test_type,
-                bind_to_query="test_type",
-                label="Test Type",
-            )
-
-        run_columns_df = get_test_run_columns(run_id)
-        with table_filter_column:
-            table_name = testgen.select(
-                options=list(run_columns_df["table_name"].unique()),
-                default_value=table_name,
-                bind_to_query="table_name",
-                label="Table Name",
-            )
-
-        with column_filter_column:
-            column_options = run_columns_df.loc[
-                run_columns_df["table_name"] == table_name
-            ]["column_name"].dropna().unique().tolist()
-            column_name = testgen.select(
-                options=column_options,
-                value_column="column_name",
-                default_value=column_name,
-                bind_to_query="column_name",
-                label="Column Name",
-                disabled=not table_name,
-                accept_new_options=True,
+                label="Status",
             )
 
         with sort_column:
             sortable_columns = (
-                ("Table Name", "r.table_name"),
+                ("Table", "r.table_name"),
                 ("Columns/Focus", "r.column_names"),
                 ("Test Type", "r.test_type"),
-                ("UOM", "tt.measure_uom"),
+                ("Unit of Measure", "tt.measure_uom"),
                 ("Result Measure", "result_measure"),
                 ("Status", "result_status"),
                 ("Action", "r.disposition"),
@@ -253,7 +256,7 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
 def get_run_by_id(test_run_id: str) -> pd.Series:
     if not is_uuid4(test_run_id):
         return pd.Series()
-    
+
     schema: str = st.session_state["dbschema"]
     sql = f"""
            SELECT tr.test_starttime,
@@ -274,18 +277,12 @@ def get_run_by_id(test_run_id: str) -> pd.Series:
 
 
 @st.cache_data(show_spinner=False)
-def get_test_types():
-    schema = st.session_state["dbschema"]
-    df = db.retrieve_data(f"SELECT test_type, test_name_short FROM {schema}.test_types")
-    return df
-
-
-@st.cache_data(show_spinner=False)
 def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-    SELECT table_name, column_names AS column_name
-    FROM {schema}.test_results
+    SELECT r.table_name as table_name, r.column_names AS column_name, t.test_name_short as test_name_short, t.test_type as test_type
+    FROM {schema}.test_results r
+    LEFT JOIN {schema}.test_types t ON t.test_type = r.test_type
     WHERE test_run_id = '{test_run_id}'
     ORDER BY table_name, column_names;
     """
@@ -408,7 +405,7 @@ def show_test_def_detail(test_def_id: str):
     if not test_def_id:
         st.warning("Test definition no longer exists.")
         return
-    
+
     df = get_test_definition(test_def_id)
 
     specs = []
@@ -506,11 +503,11 @@ def show_result_detail(
     ]
 
     lst_show_headers = [
-        "Table Name",
+        "Table",
         "Columns/Focus",
         "Test Type",
         "Result Measure",
-        "UOM",
+        "Unit of Measure",
         "Status",
         "Action",
         "Details",

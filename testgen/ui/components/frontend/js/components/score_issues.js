@@ -31,7 +31,7 @@ import { colorMap, formatTimestamp } from '../display_utils.js';
 
 const { div, i, span } = van.tags;
 const PAGE_SIZE = 100;
-const SCROLL_CONTAINER = window.top.document.querySelector('.stAppViewMain');
+const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
 
 const IssuesTable = (
     /** @type Issue[] */ issues,
@@ -116,7 +116,7 @@ const IssuesTable = (
                 }),
             ),
         ),
-        Toolbar(filters, issues, category),
+        () => Toolbar(filters, issues, category),
         div(
             { class: 'table-header issues-columns flex-row' },
             Checkbox({
@@ -157,8 +157,10 @@ const IssuesTable = (
             count: filteredIssues.val.length,
             pageSize: PAGE_SIZE,
             onChange: (newIndex) => {
-                pageIndex.val = newIndex;
-                SCROLL_CONTAINER.scrollTop = 0;
+                if (newIndex !== pageIndex.val) {
+                    pageIndex.val = newIndex;
+                    SCROLL_CONTAINER.scrollTop = 0;
+                }
             },
         }),
     );
@@ -320,7 +322,7 @@ const TimeCell = (value, row) => {
 const SCORE_LABEL = {
     table: 'Table',
     column: 'Column',
-    type: 'Issue Name',
+    type: 'Issue Type',
     status: 'Likelihood / Status',
 };
 
@@ -333,7 +335,7 @@ const COLUMN_LABEL = {
 
 const ISSUES_COLUMN_LABEL = {
     column: 'Table | Column',
-    type: 'Issue Type | Name',
+    type: 'Issue Type',
     status: 'Likelihood / Status',
     detail: 'Detail',
     time: 'Test Suite | Start Time',

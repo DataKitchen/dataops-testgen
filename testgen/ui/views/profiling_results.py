@@ -69,7 +69,7 @@ class ProfilingResultsPage(Page):
                 value_column="table_name",
                 default_value=table_name,
                 bind_to_query="table_name",
-                label="Table Name",
+                label="Table",
             )
 
         with column_filter_column:
@@ -80,17 +80,17 @@ class ProfilingResultsPage(Page):
                 value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
-                label="Column Name",
+                label="Column",
                 disabled=not table_name,
                 accept_new_options=bool(table_name),
             )
 
         with sort_column:
             sortable_columns = (
-                ("Schema Name", "schema_name"),
-                ("Table Name", "table_name"),
-                ("Column Name", "column_name"),
-                ("Column Type", "column_type"),
+                ("Schema", "schema_name"),
+                ("Table", "table_name"),
+                ("Column", "column_name"),
+                ("Data Type", "column_type"),
                 ("Semantic Data Type", "semantic_data_type"),
                 ("Hygiene Issues", "hygiene_issues"),
             )
@@ -106,7 +106,7 @@ class ProfilingResultsPage(Page):
                     column_name=column_name,
                     sorting_columns=sorting_columns,
                 )
-                
+
         show_columns = [
             "schema_name",
             "table_name",
@@ -114,6 +114,14 @@ class ProfilingResultsPage(Page):
             "column_type",
             "semantic_data_type",
             "hygiene_issues",
+        ]
+        show_column_headers = [
+            "Schema",
+            "Table",
+            "Column",
+            "Data Type",
+            "Semantic Data Type",
+            "Hygiene Issues",
         ]
 
         # Show CREATE script button
@@ -126,6 +134,7 @@ class ProfilingResultsPage(Page):
             show_columns,
             bind_to_query_name="selected",
             bind_to_query_prop="id",
+            show_column_headers=show_column_headers,
         )
 
         popover_container = export_button_column.empty()
