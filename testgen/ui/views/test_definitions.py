@@ -29,6 +29,7 @@ from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
+from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 
 LOG = logging.getLogger("testgen")
 
@@ -101,6 +102,12 @@ class TestDefinitionsPage(Page):
             ":material/add: Add", help="Add a new Test Definition"
         ):
             add_test_dialog(project_code, table_group, test_suite, table_name, column_name)
+
+        if user_can_edit and table_actions_column.button(
+            ":material/play_arrow: Run Tests",
+            help="Run test suite's tests",
+        ):
+            run_tests_dialog(project_code, test_suite)
 
         selected = show_test_defs_grid(
             project_code, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
@@ -551,7 +558,7 @@ def show_test_form(
     def render_dynamic_attribute(attribute: str, container: DeltaGenerator):
         if not attribute in dynamic_attributes:
             return
-        
+
         numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
 
         default_value = 0 if attribute in numeric_attributes else ""
@@ -577,7 +584,7 @@ def show_test_form(
                 custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
             elif test_type == "CUSTOM":
                 custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
-                
+
             test_definition[attribute] = st.text_area(
                 label=label_text,
                 value=custom_query,
