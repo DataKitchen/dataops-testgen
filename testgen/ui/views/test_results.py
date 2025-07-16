@@ -1,7 +1,8 @@
 import typing
-from datetime import date
 from functools import partial
 from io import BytesIO
+from itertools import zip_longest
+from operator import itemgetter
 
 import pandas as pd
 import plotly.express as px
@@ -23,10 +24,11 @@ from testgen.ui.components.widgets.download_dialog import (
     get_excel_file_data,
     zip_multi_file_data,
 )
+from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
-from testgen.ui.services.string_service import empty_if_null
+from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
@@ -75,7 +77,7 @@ class TestResultsPage(Page):
 
         summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
         status_filter_column, test_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
-            [.2, .2, .2, .2, .1, .1], vertical_alignment="bottom"
+            [.175, .175, .2, .2, .1, .15], vertical_alignment="bottom"
         )
 
         testgen.flex_row_end(actions_column)
@@ -94,11 +96,11 @@ class TestResultsPage(Page):
                 "Failed",
                 "Warning",
                 "Passed",
+                "Error",
             ]
             status = testgen.select(
                 options=status_options,
                 default_value=status or "Failed + Warning",
-                required=False,
                 bind_to_query="status",
                 bind_empty_value=True,
                 label="Result Status",
@@ -110,7 +112,6 @@ class TestResultsPage(Page):
                 value_column="test_type",
                 display_column="test_name_short",
                 default_value=test_type,
-                required=False,
                 bind_to_query="test_type",
                 label="Test Type",
             )
@@ -125,7 +126,9 @@ class TestResultsPage(Page):
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
+            column_options = run_columns_df.loc[
+                run_columns_df["table_name"] == table_name
+            ]["column_name"].dropna().unique().tolist()
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -133,6 +136,7 @@ class TestResultsPage(Page):
                 bind_to_query="column_name",
                 label="Column Name",
                 disabled=not table_name,
+                accept_new_options=True,
             )
 
         with sort_column:
@@ -154,13 +158,15 @@ class TestResultsPage(Page):
 
         match status:
             case "Failed + Warning":
-                status = "'Failed','Warning'"
+                status = ["Failed", "Warning"]
             case "Failed":
-                status = "'Failed'"
+                status = "Failed"
             case "Warning":
-                status = "'Warning'"
+                status = "Warning"
             case "Passed":
-                status = "'Passed'"
+                status = "Passed"
+            case "Error":
+                status = "Error"
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
@@ -289,7 +295,7 @@ def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
 @st.cache_data(show_spinner=False)
 def get_test_results(
     run_id: str,
-    test_status: str | None = None,
+    test_status: str | list[str] | None = None,
     test_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
@@ -380,13 +386,13 @@ def get_test_definition(str_test_def_id):
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup(selected_row):
     schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup(schema, selected_row)
+    return test_results_service.do_source_data_lookup(schema, selected_row, limit=500)
 
 
 @st.cache_data(show_spinner=False)
 def do_source_data_lookup_custom(selected_row):
     schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup_custom(schema, selected_row)
+    return test_results_service.do_source_data_lookup_custom(schema, selected_row, limit=500)
 
 
 @st.cache_data(show_spinner=False)
@@ -395,79 +401,73 @@ def get_test_result_history(selected_row):
     return test_results_service.get_test_result_history(schema, selected_row)
 
 
-def show_test_def_detail(str_test_def_id):
-    if not str_test_def_id:
+def show_test_def_detail(test_def_id: str):
+    def readable_boolean(v: typing.Literal["Y", "N"]):
+        return "Yes" if v == "Y" else "No"
+
+    if not test_def_id:
         st.warning("Test definition no longer exists.")
         return
     
-    df = get_test_definition(str_test_def_id)
+    df = get_test_definition(test_def_id)
 
     specs = []
     if not df.empty:
-        # Get First Row
-        row = df.iloc[0]
+        test_definition = df.iloc[0]
+        row = test_definition
 
-        specs.append(
-            fm.FieldSpec(
-                "Usage Notes",
-                "usage_notes",
-                fm.FormWidget.text_area,
-                row["usage_notes"],
-                read_only=True,
-                text_multi_lines=7,
-            )
-        )
-        specs.append(
-            fm.FieldSpec(
-                "Threshold Value",
-                "threshold_value",
-                fm.FormWidget.number_input,
-                float(row["threshold_value"]) if row["threshold_value"] else None,
-                required=True,
-            )
-        )
+        dynamic_attributes_labels_raw: str = test_definition["default_parm_prompts"]
+        if not dynamic_attributes_labels_raw:
+            dynamic_attributes_labels_raw = ""
+        dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
-        default_severity_choice = f"Test Default ({row['default_severity']})"
+        dynamic_attributes_raw: str = test_definition["default_parm_columns"]
+        dynamic_attributes_fields = dynamic_attributes_raw.split(",")
+        dynamic_attributes_values = itemgetter(*dynamic_attributes_fields)(test_definition)\
+            if len(dynamic_attributes_fields) > 1\
+            else (test_definition[dynamic_attributes_fields[0]],)
 
-        spec = fm.FieldSpec("Test Result Urgency", "severity", fm.FormWidget.radio, row["severity"], required=True)
-        spec.lst_option_text = [default_severity_choice, "Warning", "Fail", "Log"]
-        spec.lst_option_values = [None, "Warning", "Fail", "Ignore"]
-        spec.show_horizontal = True
-        specs.append(spec)
+        for field_name in dynamic_attributes_fields[len(dynamic_attributes_labels):]:
+            dynamic_attributes_labels.append(snake_case_to_title_case(field_name))
 
-        spec = fm.FieldSpec(
-            "Perform Test in Future Runs", "test_active", fm.FormWidget.radio, row["test_active"], required=True
-        )
-        spec.lst_option_text = ["Yes", "No"]
-        spec.lst_option_values = ["Y", "N"]
-        spec.show_horizontal = True
-        specs.append(spec)
+        dynamic_attributes_help_raw: str = test_definition["default_parm_help"]
+        if not dynamic_attributes_help_raw:
+            dynamic_attributes_help_raw = ""
+        dynamic_attributes_help = dynamic_attributes_help_raw.split("|")
 
-        spec = fm.FieldSpec(
-            "Lock from Refresh", "lock_refresh", fm.FormWidget.radio, row["lock_refresh"], required=True
-        )
-        spec.lst_option_text = ["Unlocked", "Locked"]
-        spec.lst_option_values = ["N", "Y"]
-        spec.show_horizontal = True
-        specs.append(spec)
-
-        specs.append(fm.FieldSpec("", "id", form_widget=fm.FormWidget.hidden, int_key=1, init_val=row["id"]))
-
-        specs.append(
-            fm.FieldSpec(
-                "Last Manual Update",
-                "last_manual_update",
-                fm.FormWidget.date_input,
-                row["last_manual_update"],
-                date.today().strftime("%Y-%m-%d hh:mm:ss"),
-                read_only=True,
-            )
-        )
-        fm.render_form_by_field_specs(
-            None,
-            "test_definitions",
-            specs,
-            boo_display_only=True,
+        testgen.testgen_component(
+            "test_definition_summary",
+            props={
+                "test_definition": {
+                    "schema": test_definition["schema_name"],
+                    "test_suite_name": test_definition["test_suite_name"],
+                    "table_name": test_definition["table_name"],
+                    "test_focus": test_definition["column_name"],
+                    "export_to_observability": readable_boolean(test_definition["export_to_observability"])
+                        if test_definition["export_to_observability"]
+                        else f"Inherited ({readable_boolean(test_definition["default_export_to_observability"])})",
+                    "severity": test_definition["severity"] or f"Test Default ({test_definition['default_severity']})",
+                    "locked": readable_boolean(test_definition["lock_refresh"]),
+                    "active": readable_boolean(test_definition["test_active"]),
+                    "status": test_definition["status"],
+                    "usage_notes": test_definition["usage_notes"],
+                    "last_manual_update": test_definition["last_manual_update"].isoformat()
+                        if test_definition["last_manual_update"]
+                        else None,
+                    "custom_query": test_definition["custom_query"]
+                        if "custom_query" in dynamic_attributes_fields
+                        else None,
+                    "attributes": [
+                        {"label": label, "value": value, "help": help_}
+                        for label, value, help_ in zip_longest(
+                            dynamic_attributes_labels,
+                            dynamic_attributes_values,
+                            dynamic_attributes_help,
+                        )
+                        if label and value
+                    ],
+                },
+            },
         )
 
 
@@ -502,6 +502,7 @@ def show_result_detail(
         "measure_uom",
         "result_status",
         "action",
+        "result_message",
     ]
 
     lst_show_headers = [
@@ -512,6 +513,7 @@ def show_result_detail(
         "UOM",
         "Status",
         "Action",
+        "Details",
     ]
 
     selected_rows = fm.render_grid_select(
@@ -523,13 +525,28 @@ def show_result_detail(
         bind_to_query_prop="test_result_id",
     )
 
-    with export_container:
-        if st.button(label=":material/download: Export", help="Download filtered test results to Excel"):
-            download_dialog(
-                dialog_title="Download Excel Report",
-                file_content_func=get_excel_report_data,
-                args=(df, test_suite, run_date),
-            )
+    popover_container = export_container.empty()
+
+    def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+        with popover_container.container():
+            flex_row_end()
+            st.button(label="Export", icon=":material/download:", disabled=True)
+
+        download_dialog(
+            dialog_title="Download Excel Report",
+            file_content_func=get_excel_report_data,
+            args=(test_suite, run_date, run_id, data),
+        )
+
+    with popover_container.container(key="tg--export-popover"):
+        flex_row_end()
+        with st.popover(label="Export", icon=":material/download:", help="Download test results to Excel"):
+            css_class("tg--export-wrapper")
+            st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
+            st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
+            if selected_rows:
+                st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_rows)))
 
     # Display history and detail for selected row
     if not selected_rows:
@@ -628,10 +645,14 @@ def show_result_detail(
 
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
-    data: pd.DataFrame,
     test_suite: str,
     run_date: str,
+    run_id: str,
+    data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
+    if data is None:
+        data = get_test_results(run_id)
+
     columns = {
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},

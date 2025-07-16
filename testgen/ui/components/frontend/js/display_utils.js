@@ -30,11 +30,11 @@ function formatDuration(/** @type string */ duration) {
     return formatted.trim() || '< 1s';
 }
 
-function roundDigits(/** @type number | string */ number, /** @type number */ precision = 3) {
+function formatNumber(/** @type number | string */ number, /** @type number */ precision = 3) {
     if (!['number', 'string'].includes(typeof number) || isNaN(number)) {
         return '--';
     }
-    return parseFloat(Number(number).toPrecision(precision));
+    return parseFloat(Number(number).toPrecision(precision)).toLocaleString();
 }
 
 function capitalize(/** @type string */ text) {
@@ -89,4 +89,4 @@ const colorMap = {
 
 const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
 
-export { formatTimestamp, formatDuration, roundDigits, capitalize, humanReadableSize, colorMap, DISABLED_ACTION_TEXT };
+export { formatTimestamp, formatDuration, formatNumber, capitalize, humanReadableSize, colorMap, DISABLED_ACTION_TEXT };

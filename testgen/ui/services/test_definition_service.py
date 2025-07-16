@@ -24,21 +24,38 @@ def get_test_definitions(
 
 def get_test_definition(db_schema, test_def_id):
     str_sql = f"""
-           SELECT d.id::VARCHAR, tt.test_name_short as test_name, tt.test_name_long as full_name,
-                  tt.test_description as description, tt.usage_notes,
-                  d.column_name,
-                  d.baseline_value, d.baseline_ct, d.baseline_avg, d.baseline_sd, d.threshold_value,
-                  d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
-                  d.match_table_name, d.match_column_names, d.match_subset_condition,
-                  d.match_groupby_names, d.match_having_condition,
-                  d.window_date_column, d.window_days::VARCHAR as window_days,
-                  d.custom_query,
-                  d.severity, tt.default_severity,
-                  d.test_active, d.lock_refresh, d.last_manual_update
-             FROM {db_schema}.test_definitions d
-           INNER JOIN {db_schema}.test_types tt
-              ON (d.test_type = tt.test_type)
-            WHERE d.id = '{test_def_id}';
+        SELECT
+            d.id::VARCHAR,
+            tg.table_group_schema as schema_name,
+            ts.test_suite as test_suite_name,
+            d.export_to_observability as export_to_observability,
+            ts.export_to_observability as default_export_to_observability,
+            tt.test_name_short as test_name,
+            tt.test_name_long as full_name,
+            tt.test_description as description,
+            d.test_definition_status as status,
+            tt.usage_notes,
+            d.table_name,
+            d.column_name,
+            d.baseline_value, d.baseline_ct, d.baseline_unique_ct, d.baseline_value_ct,
+            d.baseline_avg, d.baseline_sd, d.threshold_value, d.baseline_sum,
+            d.lower_tolerance, d.upper_tolerance,
+            d.subset_condition, d.groupby_names, d.having_condition, d.match_schema_name,
+            d.match_table_name, d.match_column_names, d.match_subset_condition,
+            d.match_groupby_names, d.match_having_condition,
+            d.window_date_column, d.window_days::VARCHAR as window_days,
+            d.custom_query, d.test_mode, 
+            d.severity, tt.default_severity,
+            d.test_active, d.lock_refresh, d.last_manual_update,
+            tt.default_parm_prompts, tt.default_parm_columns, tt.default_parm_help
+        FROM {db_schema}.test_definitions d
+        INNER JOIN {db_schema}.test_types tt
+            ON (d.test_type = tt.test_type)
+        INNER JOIN {db_schema}.test_suites ts
+            ON (ts.id = d.test_suite_id)
+        INNER JOIN {db_schema}.table_groups tg
+            ON (tg.id = d.table_groups_id)
+        WHERE d.id = '{test_def_id}';
     """
     return database_service.retrieve_data(str_sql)
 
@@ -135,15 +152,15 @@ def validate_test(test_definition):
     )
 
 
-def move(test_definitions, target_table_group, target_test_suite):
+def move(test_definitions, target_table_group, target_test_suite, target_table_column=None):
     schema = st.session_state["dbschema"]
-    test_definition_queries.move(schema, test_definitions, target_table_group, target_test_suite)
+    test_definition_queries.move(schema, test_definitions, target_table_group, target_test_suite, target_table_column)
 
 
 
-def copy(test_definitions, target_table_group, target_test_suite):
+def copy(test_definitions, target_table_group, target_test_suite, target_table_column=None):
     schema = st.session_state["dbschema"]
-    test_definition_queries.copy(schema, test_definitions, target_table_group, target_test_suite)
+    test_definition_queries.copy(schema, test_definitions, target_table_group, target_test_suite, target_table_column)
 
 
 def get_test_definitions_collision(test_definitions, target_table_group, target_test_suite):

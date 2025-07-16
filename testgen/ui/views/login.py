@@ -32,7 +32,7 @@ class LoginPage(Page):
         _, login_column, links_column = st.columns([0.25, 0.5, 0.25])
 
         with links_column:
-            testgen.page_links()
+            testgen.help_menu()
 
         with login_column:
             st.html("""
@@ -43,6 +43,7 @@ class LoginPage(Page):
 
             if authentication_status is False:
                 st.error("Username or password is incorrect.")
+                MixpanelService().send_event("login-denied", username=username)
 
             if authentication_status is None:
                 javascript_service.clear_component_states()
@@ -52,4 +53,4 @@ class LoginPage(Page):
             if authentication_status:
                 user_session_service.start_user_session(name, username)
                 session.logging_in = True
-                MixpanelService().send_event("login")
+                MixpanelService().send_event("login", include_usage=True)

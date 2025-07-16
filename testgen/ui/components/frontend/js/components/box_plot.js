@@ -12,7 +12,7 @@
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
-import { colorMap } from '../display_utils.js';
+import { colorMap, formatNumber } from '../display_utils.js';
 import { niceBounds } from '../axis_utils.js';
 
 const { div } = van.tags;
@@ -83,7 +83,7 @@ const BoxPlot = (/** @type Properties */ props) => {
                             class: 'tg-box-plot--axis-tick',
                             style: `left: ${(position - min) * 100 / range}%;`
                         },
-                        position,
+                        formatNumber(position),
                     )),
                 );
             },

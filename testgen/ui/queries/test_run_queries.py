@@ -8,6 +8,23 @@ import testgen.ui.services.database_service as db
 from testgen.common.models import get_current_session
 
 
+def is_running(test_run_id: str | tuple[str]) -> bool:
+    session = get_current_session()
+
+    test_run_ids: tuple[str] = tuple(test_run_id)
+    if isinstance(test_run_id, str):
+        test_run_ids = (test_run_id,)
+
+    query = """
+    SELECT id
+    FROM test_runs
+    WHERE id::text IN :test_run_ids
+        AND status = 'Running'
+    """
+    result = session.execute(query, params={"test_run_ids": test_run_ids})
+    return result and len(result.all()) > 0
+
+
 def cascade_delete(test_suite_ids: list[str]) -> None:
     if not test_suite_ids:
         raise ValueError("No Test Suite is specified.")
@@ -23,6 +40,45 @@ def cascade_delete(test_suite_ids: list[str]) -> None:
             WHERE test_run_id in (select id from {schema}.test_runs where test_suite_id in ({ids_str}));
         DELETE FROM {schema}.test_runs WHERE test_suite_id in ({ids_str});
         DELETE FROM {schema}.test_results WHERE test_suite_id in ({ids_str});
+    """
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def cascade_delete_test_run(test_run_id: str) -> None:
+    if not test_run_id:
+        raise ValueError("No Test Run is specified.")
+
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+        DELETE
+            FROM {schema}.working_agg_cat_results
+            WHERE test_run_id = '{test_run_id}';
+        DELETE
+            FROM {schema}.working_agg_cat_tests
+            WHERE test_run_id = '{test_run_id}';
+        DELETE FROM {schema}.test_runs WHERE id = '{test_run_id}';
+        DELETE FROM {schema}.test_results WHERE test_run_id = '{test_run_id}';
+    """
+    db.execute_sql(sql)
+    st.cache_data.clear()
+
+
+def cascade_delete_multiple_test_runs(test_run_ids: list[str]) -> None:
+    if not test_run_ids:
+        raise ValueError("No Test Run is specified.")
+
+    test_run_ids_str = ", ".join([f"'{run_id}'" for run_id in test_run_ids])
+    schema: str = st.session_state["dbschema"]
+    sql = f"""
+        DELETE
+            FROM {schema}.working_agg_cat_results
+            WHERE test_run_id IN ({test_run_ids_str});
+        DELETE
+            FROM {schema}.working_agg_cat_tests
+            WHERE test_run_id IN ({test_run_ids_str});
+        DELETE FROM {schema}.test_runs WHERE id IN ({test_run_ids_str});
+        DELETE FROM {schema}.test_results WHERE test_run_id IN ({test_run_ids_str});
     """
     db.execute_sql(sql)
     st.cache_data.clear()

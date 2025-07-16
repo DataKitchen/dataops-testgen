@@ -4,6 +4,7 @@
  * @property {string} label
  * @property {string} value
  * @property {boolean} selected
+ * @property {string?} icon
  *
  * @typedef Properties
  * @type {object}
@@ -22,6 +23,7 @@
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../utils.js';
 import { Portal } from './portal.js';
+import { Icon } from './icon.js';
 
 const { div, i, label, span } = van.tags;
 
@@ -44,11 +46,9 @@ const Select = (/** @type {Properties} */ props) => {
         return options;
     });
     const value = isState(props.value) ? props.value : van.state(props.value ?? null);
-    const valueLabel = van.derive(() => {
-        const currentOptions = getValue(options);
-        const currentValue = getValue(value);
-        return currentOptions?.find((op) => op.value === currentValue)?.label ?? '';
-    });
+    const initialSelection = options.val?.find((op) => op.value === value.val);
+    const valueLabel = van.state(initialSelection?.label ?? '');
+    const valueIcon = van.state(initialSelection?.icon ?? undefined);
 
     const changeSelection = (/** @type Option */ option) => {
         opened.val = false;
@@ -57,14 +57,19 @@ const Select = (/** @type {Properties} */ props) => {
 
     van.derive(() => {
         const currentOptions = getValue(options);
-
+        const previousValue = value.oldVal;
         let currentValue = getValue(value);
-        let previousValue = value.oldVal;
-        if (currentOptions.find((op) => op.value === currentValue) === undefined) {
-            currentValue = value.val = null;
+        const selectedOption = currentOptions.find((op) => op.value === currentValue);
+
+        if (selectedOption === undefined) {
+            currentValue = null;
+            setTimeout(() => value.val = null, 0.1);
         }
 
         if (!isEqual(currentValue, previousValue)) {
+            valueLabel.val = selectedOption?.label ?? '';
+            valueIcon.val = selectedOption?.icon ?? undefined;
+
             props.onChange?.(currentValue);
         }
     });
@@ -84,9 +89,12 @@ const Select = (/** @type {Properties} */ props) => {
                 style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
                 'data-testid': 'select-input',
             },
-            div(
+            () => div(
                 { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
-                valueLabel,
+                valueIcon.val
+                    ? Icon({ classes: 'mr-2' }, valueIcon.val)
+                    : undefined,
+                valueLabel.val,
             ),
             div(
                 { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
@@ -110,6 +118,9 @@ const Select = (/** @type {Properties} */ props) => {
                             },
                             'data-testid': 'select-options-item',
                         },
+                        option.icon
+                            ? Icon({ classes: 'mr-2' }, option.icon)
+                            : undefined,
                         span(option.label),
                     )
                 ),
@@ -117,7 +128,6 @@ const Select = (/** @type {Properties} */ props) => {
         ),
     );
 };
-
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

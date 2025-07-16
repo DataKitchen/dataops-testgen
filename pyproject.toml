@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "4.1.3"
+version = "4.12.6"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -40,7 +40,7 @@ dependencies = [
     "requests_extensions==1.1.3",
     "numpy==1.26.4",
     "pandas==2.1.4",
-    "streamlit==1.44.1",
+    "streamlit==1.46.1",
     "streamlit-extras==0.3.0",
     "streamlit-aggrid==0.3.4.post3",
     "plotly_express==0.4.1",
@@ -61,7 +61,6 @@ dependencies = [
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",
-    "snowflake-connector-python==3.13.1",
     "matplotlib==3.9.2",
     "scipy==1.14.1",
     "jinja2==3.1.6",

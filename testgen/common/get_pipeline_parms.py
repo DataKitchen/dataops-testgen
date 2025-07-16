@@ -13,20 +13,6 @@ def RetrieveProfilingParms(strTableGroupsID):
     if lstParms is None:
         raise ValueError("Project Connection Parameters not found")
 
-    required_params = (
-        "project_code",
-        "connection_id",
-        "sql_flavor",
-        "project_user",
-        "profile_use_sampling",
-        "profile_sample_percent",
-        "profile_sample_min_count",
-        "table_group_schema",
-    )
-
-    if missing := [param for param in required_params if not lstParms[0][param]]:
-        raise ValueError(f"Project Connection parameters are missing: {', '.join(missing)}.")
-
     return lstParms[0]
 
 

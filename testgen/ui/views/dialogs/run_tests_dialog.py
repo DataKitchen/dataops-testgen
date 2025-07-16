@@ -26,19 +26,22 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
             display_column="test_suite",
             default_value=default_test_suite_id,
             required=True,
+            placeholder="Select test suite to run",
         )
-        test_suite_name: str = test_suites_df.loc[test_suites_df["id"] == test_suite_id, "test_suite"].iloc[0]
+        if test_suite_id:
+            test_suite_name: str = test_suites_df.loc[test_suites_df["id"] == test_suite_id, "test_suite"].iloc[0]
         testgen.whitespace(1)
 
-    with st.container():
-        st.markdown(f"Run tests for the test suite **{test_suite_name}**?")
-        st.markdown(":material/info: _Test execution will be performed in a background process._")
+    if test_suite_id:
+        with st.container():
+            st.markdown(f"Run tests for the test suite **{test_suite_name}**?")
+            st.markdown(":material/info: _Test execution will be performed in a background process._")
 
-    if testgen.expander_toggle(expand_label="Show CLI command", key="run_tests_dialog:keys:show-cli"):
-        st.code(
-            f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}",
-            language="shellSession"
-        )
+        if testgen.expander_toggle(expand_label="Show CLI command", key="run_tests_dialog:keys:show-cli"):
+            st.code(
+                f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}",
+                language="shellSession"
+            )
 
     button_container = st.empty()
     status_container = st.empty()
@@ -47,7 +50,7 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
     with button_container:
         _, button_column = st.columns([.8, .2])
         with button_column:
-            run_test_button = st.button("Run Tests", use_container_width=True)
+            run_test_button = st.button("Run Tests", use_container_width=True, disabled=not test_suite_id)
 
     if run_test_button:
         button_container.empty()

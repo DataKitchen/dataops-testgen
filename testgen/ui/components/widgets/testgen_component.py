@@ -20,6 +20,7 @@ AvailablePages = typing.Literal[
     "column_selector",
     "connections",
     "table_group_wizard",
+    "help_menu",
 ]
 
 

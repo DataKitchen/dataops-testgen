@@ -10,7 +10,7 @@ class CRefreshDataCharsSQL:
     sql_flavor: str
     table_group_schema: str
     table_group_id: str
-    
+
     max_query_chars: int
     profiling_table_set: str
     profiling_include_mask: str
@@ -37,20 +37,31 @@ class CRefreshDataCharsSQL:
         sql_query = sql_query.replace("{RUN_DATE}", self.run_date)
         sql_query = sql_query.replace("{SOURCE_TABLE}", self.source_table)
         return sql_query
-    
+
     def _get_mask_query(self, mask: str, is_include: bool) -> str:
         sub_query = ""
         if mask:
             sub_query += " AND (" if is_include else " AND NOT ("
             is_first = True
+            escape = ""
+            if self.sql_flavor.startswith("mssql"):
+                escaped_underscore = "[_]"
+            elif self.sql_flavor == "snowflake":
+                escaped_underscore = "\\\\_"
+                escape = "ESCAPE '\\\\'"
+            elif self.sql_flavor == "redshift":
+                escaped_underscore = "\\\\_"
+            else:
+                escaped_underscore = "\\_"
             for item in mask.split(","):
                 if not is_first:
                     sub_query += " OR "
-                sub_query += "(c.table_name LIKE '" + item.strip() + "')"
+                item = item.strip().replace("_", escaped_underscore)
+                sub_query += f"(c.table_name LIKE '{item}' {escape})"
                 is_first = False
             sub_query += ")"
         return sub_query
-    
+
     def GetDDFQuery(self) -> str:
         # Runs on Project DB
         sql_query = self._replace_params(
@@ -67,18 +78,18 @@ class CRefreshDataCharsSQL:
         sql_query = sql_query.replace("{TABLE_CRITERIA}", table_criteria)
 
         return sql_query
-    
+
     def GetRecordCountQueries(self, schema_tables: list[str]) -> list[str]:
         count_queries = [
             f"SELECT '{item}', COUNT(*) FROM {item}"
             for item in schema_tables
         ]
         return chunk_queries(count_queries, " UNION ALL ", self.max_query_chars)
-    
+
     def GetDataCharsUpdateQuery(self) -> str:
         # Runs on DK Postgres Server
         return self._replace_params(read_template_sql_file("data_chars_update.sql", sub_directory="data_chars"))
-    
+
     def GetStagingDeleteQuery(self) -> str:
         # Runs on DK Postgres Server
         return self._replace_params(read_template_sql_file("data_chars_staging_delete.sql", sub_directory="data_chars"))

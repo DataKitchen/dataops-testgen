@@ -4,7 +4,7 @@ from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services import database_service as db
 
 
-def get_source_data(hi_data):
+def get_source_data(hi_data, limit: int | None = None):
     str_schema = st.session_state["dbschema"]
     # Define the query
     str_sql = f"""
@@ -83,6 +83,8 @@ def get_source_data(hi_data):
             if df.empty:
                 return "ND", "Data that violates Hygiene Issue criteria is not present in the current dataset.", str_sql, None
             else:
+                if limit:
+                    df = df.sample(n=min(len(df), limit)).sort_index()
                 return "OK", None, str_sql, df
         else:
             return "NA", "Source data lookup is not available for this Issue.", None, None

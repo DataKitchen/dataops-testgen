@@ -12,6 +12,7 @@
  * 
  * @typedef Properties
  * @type {object}
+ * @property {string} project_code
  * @property {Connection} connection
  * @property {boolean} has_table_groups
  * @property {Array<Flavor>} flavors
@@ -39,6 +40,7 @@ const Connections = (props) => {
     window.testgen.isPage = true;
 
     const wrapperId = 'connections-list-wrapper';
+    const projectCode = getValue(props.project_code);
     const connection = getValue(props.connection);
     const connectionId = connection.connection_id;
     const updatedConnection = van.state(connection);
@@ -53,8 +55,8 @@ const Connections = (props) => {
             { class: 'flex-row fx-justify-content-flex-end' },
             () => getValue(props.has_table_groups)
                 ? Link({
-                    href: 'connections:table-groups',
-                    params: {"connection_id": connectionId},
+                    href: 'table-groups',
+                    params: {'project_code': projectCode, "connection_id": connectionId},
                     label: 'Manage Table Groups',
                     right_icon: 'chevron_right',
                     class: 'tg-connections--link',

@@ -10,6 +10,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
     COLOR_GRAY_BG,
@@ -37,9 +38,10 @@ from testgen.utils import get_base_url
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
 RESULT_STATUS_COLORS = {
-    "Passed": HexColor(0x94C465),
-    "Warning": HexColor(0xFCD349),
-    "Failed": HexColor(0xE94D4A),
+    "Passed": HexColor(0x8BC34A),
+    "Warning": HexColor(0xFBC02D),
+    "Failed": HexColor(0xEF5350),
+    "Error": HexColor(0x8D6E63),
 }
 
 
@@ -164,7 +166,7 @@ def build_summary_table(document, tr_data):
 
 
 def build_history_table(document, tr_data):
-    history_data = get_test_result_history(get_schema(), tr_data)
+    history_data = get_test_result_history(get_schema(), tr_data, limit=15)
 
     history_table_style = TableStyle(
         (
@@ -241,9 +243,17 @@ def get_report_content(document, tr_data):
     yield build_history_table(document, tr_data)
 
     if tr_data["test_type"] == "CUSTOM":
-        sample_data_tuple = do_source_data_lookup_custom(get_schema(), tr_data)
+        sample_data_tuple = do_source_data_lookup_custom(
+            get_schema(),
+            tr_data,
+            limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT,
+        )
     else:
-        sample_data_tuple = do_source_data_lookup(get_schema(), tr_data)
+        sample_data_tuple = do_source_data_lookup(
+            get_schema(),
+            tr_data,
+            limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT,
+        )
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)

@@ -10,7 +10,7 @@
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
-import { colorMap } from '../display_utils.js';
+import { colorMap, formatNumber } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const defaultHeight = 10;
@@ -25,7 +25,7 @@ const PercentBar = (/** @type Properties */ props) => {
         { style: () => `max-width: ${props.width ? getValue(props.width) + 'px' : '100%'};` },
         div(
             { class: () => `tg-percent-bar--label ${value.val ? '' : 'text-secondary'}` },
-            () => `${getValue(props.label)}: ${value.val}`,
+            () => `${getValue(props.label)}: ${formatNumber(value.val)}`,
         ),
         div(
             {

@@ -16,7 +16,7 @@ const ScoreMetric = function(
         { class: 'flex-column fx-align-flex-center score-metric' },
         Caption({ content: 'Score' }),
         span(
-            { style: 'font-size: 36px;' },
+            { style: 'font-size: 28px;' },
             score ?? '--',
         ),
         (profilingScore || testingScore) ? div(

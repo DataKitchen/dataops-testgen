@@ -119,14 +119,14 @@ const ConnectionForm = (props, saveButton) => {
         privateKeyPhrase.val = '';
     }
 
-    const flavor = getValue(props.flavors).find(f => f.value === connectionFlavor.val);
+    const flavor = getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal);
     const originalURLTemplate = van.state(flavor.connection_string);
-    const [prefixPart, sufixPart] = originalURLTemplate.val.split('@');
+    const [prefixPart, sufixPart] = originalURLTemplate.rawVal.split('@');
 
     const connectionStringPrefix = van.state(prefixPart);
     const connectionStringSuffix = van.state(connection?.url ?? '');
-    if (!connectionStringSuffix.val) {
-        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.val, connectionPort.val, connectionDatabase.val);
+    if (!connectionStringSuffix.rawVal) {
+        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal);
     }
 
     const updatedConnection = van.derive(() => {

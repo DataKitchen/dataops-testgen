@@ -1,7 +1,10 @@
 /**
+ * @import { Connection } from './connection_form.js';
+ * 
  * @typedef TableGroup
  * @type {object}
- * @property {string?} table_group_id
+ * @property {string?} id
+ * @property {string?} connection_id
  * @property {string?} table_groups_name
  * @property {string?} profiling_include_mask
  * @property {string?} profiling_exclude_mask
@@ -33,6 +36,10 @@
  * @typedef Properties
  * @type {object}
  * @property {TableGroup} tableGroup
+ * @property {Connection[]} connections
+ * @property {boolean?} showConnectionSelector
+ * @property {boolean?} enableConnectionSelector
+ * @property {boolean?} disableSchemaField
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
@@ -41,6 +48,7 @@ import { Input } from './input.js';
 import { Checkbox } from './checkbox.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { required } from '../form_validators.js';
+import { Select } from './select.js';
 
 const { div, span } = van.tags;
 
@@ -53,6 +61,7 @@ const TableGroupForm = (props) => {
     loadStylesheet('table-group-form', stylesheet);
 
     const tableGroup = getValue(props.tableGroup);
+    const tableGroupConnectionId = van.state(tableGroup.connection_id);
     const tableGroupsName = van.state(tableGroup.table_groups_name);
     const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
     const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
@@ -76,9 +85,22 @@ const TableGroupForm = (props) => {
     const transformLevel = van.state(tableGroup.transform_level);
     const dataProduct = van.state(tableGroup.data_product);
 
+    const connectionOptions = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        return connections.map(c => ({
+            label: c.connection_name,
+            value: c.connection_id,
+            icon: c.flavor.icon,
+        }));
+    });
+    const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
+    const disableConnectionSelector = van.derive(() => !getValue(props.enableConnectionSelector) || (getValue(props.connections) ?? []).length <= 0);
+    const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
+
     const updatedTableGroup = van.derive(() => {
         return {
-            table_group_id: tableGroup.table_group_id,
+            id: tableGroup.id,
+            connection_id: tableGroupConnectionId.val,
             table_groups_name: tableGroupsName.val,
             profiling_include_mask: profilingIncludeMask.val,
             profiling_exclude_mask: profilingExcludeMask.val,
@@ -105,6 +127,9 @@ const TableGroupForm = (props) => {
     });
     const dirty = van.derive(() => !isEqual(updatedTableGroup.val, tableGroup));
     const validityPerField = van.state({});
+    if (showConnectionSelector) {
+        validityPerField.val.connection_id = !!tableGroupConnectionId.val;
+    }
 
     van.derive(() => {
         const fieldsValidity = validityPerField.val;
@@ -114,13 +139,27 @@ const TableGroupForm = (props) => {
     });
 
     const setFieldValidity = (field, validity) => {
-        validityPerField.val = {...validityPerField.val, [field]: validity};
+        validityPerField.val = {...validityPerField.rawVal, [field]: validity};
     }
 
     return div(
         { class: 'flex-column fx-gap-3' },
+        showConnectionSelector
+            ? Select({
+                name: 'connection_id',
+                label: 'Connection',
+                value: tableGroupConnectionId.rawVal,
+                options: connectionOptions,
+                height: 38,
+                disabled: disableConnectionSelector,
+                onChange: (value) => {
+                    tableGroupConnectionId.val = value;
+                    setFieldValidity('connection_id', !!value);
+                },
+            })
+            : undefined,
         MainForm(
-            { setValidity: setFieldValidity },
+            { disableSchemaField, setValidity: setFieldValidity },
             tableGroupsName,
             profilingIncludeMask,
             profilingExcludeMask,
@@ -227,6 +266,7 @@ const MainForm = (
             height: 38,
             help: 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
+            disabled: options.disableSchemaField,
             onChange: (value, state) => {
                 tableGroupSchema.val = value;
                 options.setValidity?.('table_group_schema', state.valid);

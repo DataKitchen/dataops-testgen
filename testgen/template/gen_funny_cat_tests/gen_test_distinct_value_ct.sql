@@ -56,7 +56,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     AND  rr.run_date = p.run_date)
                   GROUP BY p.schema_name, p.table_name, p.column_name
                   HAVING SUM(CASE WHEN distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
-                     AND COUNT(DISTINCT CASE
+                     AND (COUNT(DISTINCT CASE
                                            WHEN p.general_type = 'A' THEN min_text
                                            WHEN p.general_type = 'N' THEN min_value::VARCHAR
                                            WHEN p.general_type IN ('D','T') THEN min_date::VARCHAR
@@ -65,7 +65,9 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                                            WHEN p.general_type = 'B'
                                             AND p.boolean_true_ct = 0
                                             AND p.distinct_value_ct = 1     THEN 'FALSE'
-                                         END ) > 1 ),
+                                         END ) > 1
+                     -- include cases with only single profiling result -- can't yet assume constant
+                     OR COUNT(*) = 1)),
 newtests AS ( SELECT 'Distinct_Value_Ct'::VARCHAR AS test_type,
                      '{TEST_SUITE_ID}'::UUID AS test_suite_id,
                      c.table_groups_id, c.profile_run_id,

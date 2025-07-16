@@ -118,7 +118,7 @@ body {
 
         --portal-background: #14181f;
         --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
-        --select-hover-background: rgba(255, 255, 255, .32);
+        --select-hover-background: rgb(38, 39, 48);
     }
 }
 
@@ -149,10 +149,15 @@ body {
     border: var(--button-stroked-border);
     border-radius: 8px;
     padding: 16px;
+    box-sizing: border-box;
 }
 
 .table-row {
     padding: 12px 0;
+}
+
+.table.hoverable .table-row:hover {
+    background-color: var(--select-hover-background);
 }
 
 .table-row:not(:last-child) {
@@ -586,3 +591,31 @@ body {
     padding-left: 40px;
 }
 /*  */
+
+code {
+    position: relative;
+    border-radius: 0.5rem;
+    display: block;
+    margin: 0px;
+    overflow: auto;
+    padding: 24px 16px;
+    color: var(--primary-text-color);
+    background-color: var(--empty-light);
+}
+
+code > .tg-icon {
+    position: absolute;
+    top: 21px;
+    right: 16px;
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    opacity: 0;
+}
+
+code > .tg-icon:hover {
+    opacity: 1;
+}
+
+.accent-primary {
+    accent-color: var(--primary-color);
+}

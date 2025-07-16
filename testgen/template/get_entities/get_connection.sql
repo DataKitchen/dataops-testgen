@@ -15,6 +15,7 @@ SELECT
     connect_by_url,
     connect_by_key,
     private_key,
-    private_key_passphrase
+    private_key_passphrase,
+	http_path
 FROM connections
 WHERE connection_id = {CONNECTION_ID};

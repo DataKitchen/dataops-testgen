@@ -17,6 +17,11 @@ def get_by_connection(project_code, connection_id):
     return table_group_queries.get_by_connection(schema, project_code, connection_id)
 
 
+def get_all(project_code: str):
+    schema = st.session_state["dbschema"]
+    return table_group_queries.get_all(schema, project_code)
+
+
 def edit(table_group):
     schema = st.session_state["dbschema"]
     table_group_queries.edit(schema, table_group)
@@ -54,7 +59,7 @@ def table_group_has_dependencies(table_group_names):
     return not table_group_queries.get_table_group_dependencies(schema, table_group_names).empty
 
 
-def are_table_groups_in_use(table_group_names):
+def are_table_groups_in_use(table_group_names: list[str]):
     if not table_group_names:
         return False
 
@@ -67,6 +72,14 @@ def are_table_groups_in_use(table_group_names):
     table_groups_in_use = not table_groups_in_use_result.empty
 
     return test_suites_in_use or table_groups_in_use
+
+
+def is_table_group_used(table_group_id: str) -> bool:
+    schema = st.session_state["dbschema"]
+    test_suite_ids = table_group_queries.get_test_suite_ids_by_table_group_id(schema, table_group_id)
+    proling_run_ids = table_group_queries.get_profiling_run_ids_by_table_group_id(schema, table_group_id)
+
+    return len(test_suite_ids) + len(proling_run_ids) > 0
 
 
 def get_test_suite_ids_by_table_group_names(table_group_names):

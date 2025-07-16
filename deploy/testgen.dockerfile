@@ -1,10 +1,11 @@
-ARG TESTGEN_BASE_LABEL=v6
+ARG TESTGEN_BASE_LABEL=v7
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
 
 # Args have to be set in current build stage: https://github.com/moby/moby/issues/37345
 ARG TESTGEN_VERSION
 ARG TESTGEN_DOCKER_HUB_REPO
+ARG TESTGEN_SUPPORT_EMAIL
 
 ENV PYTHONPATH=/dk/lib/python3.12/site-packages
 ENV PATH=$PATH:/dk/bin
@@ -24,6 +25,7 @@ RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.12/site-packages/s
 
 ENV TESTGEN_VERSION=${TESTGEN_VERSION}
 ENV TESTGEN_DOCKER_HUB_REPO=${TESTGEN_DOCKER_HUB_REPO}
+ENV TESTGEN_SUPPORT_EMAIL=${TESTGEN_SUPPORT_EMAIL}
 ENV TG_RELEASE_CHECK=docker
 
 USER testgen

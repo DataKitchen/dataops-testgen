@@ -7,17 +7,24 @@ import testgen.ui.services.database_service as db
 
 def _get_select_statement(schema):
     return f"""
-               SELECT id::VARCHAR(50), project_code, connection_id, table_groups_name,
-                      table_group_schema,
-                      profiling_include_mask, profiling_exclude_mask,
-                      profiling_table_set,
-                      profile_id_column_mask, profile_sk_column_mask,
-                      description, data_source, source_system, source_process, data_location,
-                      business_domain, stakeholder_group, transform_level, data_product,
-                      profile_use_sampling, profile_sample_percent, profile_sample_min_count,
-                      profiling_delay_days, profile_flag_cdes
-               FROM {schema}.table_groups
-               """
+        WITH table_groups AS (
+            SELECT table_groups.*, connections.connection_name, connections.sql_flavor,
+                COALESCE(connections.sql_flavor_code, connections.sql_flavor) AS sql_flavor_code
+            FROM {schema}.table_groups
+            INNER JOIN {schema}.connections ON connections.connection_id = table_groups.connection_id
+        )
+        SELECT id::VARCHAR(50), project_code, connection_id, connection_name, sql_flavor, sql_flavor_code,
+                table_groups_name, table_group_schema,
+                profiling_include_mask, profiling_exclude_mask,
+                profiling_table_set,
+                profile_id_column_mask, profile_sk_column_mask,
+                description, data_source, source_system, source_process, data_location,
+                business_domain, stakeholder_group, transform_level, data_product,
+                CASE WHEN profile_use_sampling = 'Y' THEN true ELSE false END AS profile_use_sampling,
+                profile_sample_percent, profile_sample_min_count,
+                profiling_delay_days, profile_flag_cdes
+        FROM table_groups
+        """
 
 
 @st.cache_data(show_spinner=False)
@@ -51,7 +58,6 @@ def get_test_suite_ids_by_table_group_names(schema, table_group_names):
     return db.retrieve_data(sql)
 
 
-
 def get_table_group_dependencies(schema, table_group_names):
     if table_group_names is None or len(table_group_names) == 0:
         raise ValueError("No Table Group is specified.")
@@ -79,6 +85,15 @@ def get_table_group_usage(schema, table_group_names):
     sql = f"""select distinct pr.id from {schema}.profiling_runs pr
 INNER JOIN {schema}.table_groups tg ON tg.id = pr.table_groups_id
 where tg.table_groups_name in ({",".join(items)}) and pr.status = 'Running'"""
+    return db.retrieve_data(sql)
+
+
+@st.cache_data(show_spinner=False)
+def get_all(schema, project_code):
+    sql = _get_select_statement(schema)
+    sql += f"""WHERE project_code = '{project_code}'
+            ORDER BY table_groups_name
+     """
     return db.retrieve_data(sql)
 
 
@@ -162,7 +177,7 @@ def add(schema, table_group) -> str:
         '{table_group["profiling_exclude_mask"]}',
         '{table_group["profile_id_column_mask"]}'::character varying(2000),
         '{table_group["profile_sk_column_mask"]}'::character varying,
-        '{'Y' if table_group["profile_use_sampling"]=='True' else 'N' }'::character varying,
+        '{'Y' if table_group["profile_use_sampling"] else 'N' }'::character varying,
         '{table_group["profile_sample_percent"]}'::character varying,
         {table_group["profile_sample_min_count"]},
         '{table_group["profiling_delay_days"]}'::character varying,
@@ -211,3 +226,21 @@ delete from {schema}.data_column_chars dcs USING {schema}.table_groups tg where 
 delete from {schema}.table_groups where table_groups_name in ({",".join(table_group_items)});"""
     db.execute_sql(sql)
     st.cache_data.clear()
+
+
+def get_test_suite_ids_by_table_group_id(schema, table_group_id: str) -> list[str]:
+    sql = f"""
+        SELECT ts.id::VARCHAR
+        FROM {schema}.test_suites ts
+        WHERE ts.table_groups_id = '{table_group_id}'
+    """
+    return db.retrieve_data(sql)
+
+
+def get_profiling_run_ids_by_table_group_id(schema, table_group_id: str) -> list[str]:
+    sql = f"""
+        SELECT pr.id::VARCHAR
+        FROM {schema}.profiling_runs pr
+        WHERE pr.table_groups_id = '{table_group_id}'
+    """
+    return db.retrieve_data(sql)

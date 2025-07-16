@@ -4,6 +4,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
+from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
     COLOR_GRAY_BG,
@@ -26,10 +27,10 @@ from testgen.utils import get_base_url
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
 CLASS_COLORS =  {
-    "Definite": HexColor(0xE94D4A),
-    "Likely": HexColor(0xFC8F2A),
-    "Possible": HexColor(0xFCD349),
-    "Potential PII": HexColor(0xFC8F2A),
+    "Definite": HexColor(0xEF5350),
+    "Likely": HexColor(0xFF9800),
+    "Possible": HexColor(0xFBC02D),
+    "Potential PII": HexColor(0x8D6E63),
 }
 
 def build_summary_table(document, hi_data):
@@ -185,7 +186,7 @@ def get_report_content(document, hi_data):
     yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
-    sample_data_tuple = get_source_data(hi_data)
+    sample_data_tuple = get_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)

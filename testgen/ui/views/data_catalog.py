@@ -27,8 +27,11 @@ from testgen.ui.queries.profiling_queries import (
     TAG_FIELDS,
     get_column_by_id,
     get_columns_by_id,
+    get_columns_by_table_group,
     get_hygiene_issues,
     get_table_by_id,
+    get_tables_by_id,
+    get_tables_by_table_group,
 )
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
@@ -117,10 +120,10 @@ class DataCatalogPage(Page):
                 ),
                 "TableGroupSelected": on_table_group_selected,
                 "ItemSelected": on_item_selected,
-                "ExportClicked": lambda columns: download_dialog(
+                "ExportClicked": lambda items: download_dialog(
                     dialog_title="Download Excel Report",
                     file_content_func=get_excel_report_data,
-                    args=(selected_table_group["table_groups_name"], columns),
+                    args=(selected_table_group, items),
                 ),
                 "RemoveTableClicked": remove_table_dialog,
                 "DataPreviewClicked": lambda item: data_preview_dialog(
@@ -149,12 +152,37 @@ def on_item_selected(item_id: str | None) -> None:
     Router().set_query_params({ "selected": item_id })
 
 
-def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: str, columns: list[str]) -> None:
-    data = get_columns_by_id(
-        [ col.split("_")[1] for col in columns ],
-        include_tags=True,
-    )
-    data = pd.DataFrame(data)
+class ExportItem(typing.TypedDict):
+    id: str
+    type: typing.Literal["table", "column"]
+
+def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: dict, items: list[ExportItem] | None) -> None:
+    if items:
+        table_data = get_tables_by_id(
+            table_ids=[ item["id"] for item in items if item["type"] == "table" ],
+            include_tags=True,
+            include_active_tests=True,
+        )
+        column_data = get_columns_by_id(
+            column_ids=[ item["id"] for item in items if item["type"] == "column" ],
+            include_tags=True,
+            include_active_tests=True,
+        )
+    else:
+        table_data = get_tables_by_table_group(
+            table_group["id"],
+            include_tags=True,
+            include_active_tests=True,
+        )
+        column_data = get_columns_by_table_group(
+            table_group["id"],
+            include_tags=True,
+            include_active_tests=True,
+        )
+        
+
+    data = pd.DataFrame(table_data + column_data)
+    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first")
 
     for key in ["column_type", "datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
@@ -169,7 +197,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
 
     for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
         data[key] = data.apply(
-            lambda col: col[key] or col[f"table_{key}"] or col.get(f"table_group_{key}"),
+            lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
             axis=1,
         )
 
@@ -177,17 +205,17 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
 
     data["critical_data_element"] = data.apply(
-        lambda col: "Yes" if col["critical_data_element"] or col["table_critical_data_element"] else None,
+        lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
         axis=1,
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
         lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
-        if val
+        if not pd.isna(val)
         else None
     )
     data["top_patterns"] = data["top_patterns"].apply(
         lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
-        if val
+        if not pd.isna(val)
         else None
     )
 
@@ -196,6 +224,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "critical_data_element": {},
+        "active_test_count": {"header": "Active tests"},
         "ordinal_position": {"header": "Position"},
         "general_type": {},
         "column_type": {"header": "Data type"},
@@ -261,7 +290,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: st
     return get_excel_file_data(
         data,
         "Data Catalog Columns",
-        details={"Table group": table_group},
+        details={"Table group": table_group["table_groups_name"]},
         columns=file_columns,
         update_progress=update_progress,
     )
@@ -406,7 +435,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
     item_type, item_id = selected.split("_", 2)
 
     if item_type == "table":
-        item = get_table_by_id(item_id)
+        item = get_table_by_id(item_id, include_tags=True, include_has_test_runs=True, include_scores=True)
     elif item_type == "column":
         item = get_column_by_id(item_id, include_tags=True, include_has_test_runs=True, include_scores=True)
     else:

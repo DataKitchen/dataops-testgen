@@ -7,7 +7,7 @@ from testgen.commands.queries.profiling_query import CProfilingSQL
 def test_include_exclude_mask_basic():
     # test configuration
     project_code = "dummy_project_code"
-    flavor = "redshift"
+    flavor = "postgresql"
     profiling_query = CProfilingSQL(project_code, flavor)
     profiling_query.parm_table_set = ""
     profiling_query.parm_table_include_mask = "important%, %useful%"
@@ -18,9 +18,9 @@ def test_include_exclude_mask_basic():
 
     # test assertions
     assert "SELECT 'dummy_project_code'" in query
-    assert "AND ((c.table_name LIKE 'important%') OR (c.table_name LIKE '%useful%'))" in query
+    assert r"AND ((c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful%' ))" in query
     assert (
-        "AND NOT ((c.table_name LIKE 'temp%') OR (c.table_name LIKE 'tmp%') OR (c.table_name LIKE 'raw_slot_utilization%') OR (c.table_name LIKE 'gps_product_step_change_log'))"
+        r"AND NOT ((c.table_name LIKE 'temp%' ) OR (c.table_name LIKE 'tmp%' ) OR (c.table_name LIKE 'raw\_slot\_utilization%' ) OR (c.table_name LIKE 'gps\_product\_step\_change\_log' ))"
         in query
     )
 
@@ -30,7 +30,7 @@ def test_include_exclude_mask_basic():
 def test_include_empty_exclude_mask(mask):
     # test configuration
     project_code = "dummy_project_code"
-    flavor = "redshift"
+    flavor = "snowflake"
     profiling_query = CProfilingSQL(project_code, flavor)
     profiling_query.parm_table_set = ""
     profiling_query.parm_table_include_mask = mask
@@ -41,7 +41,7 @@ def test_include_empty_exclude_mask(mask):
 
     # test assertions
     assert (
-        "AND NOT ((c.table_name LIKE 'temp%') OR (c.table_name LIKE 'tmp%') OR (c.table_name LIKE 'raw_slot_utilization%') OR (c.table_name LIKE 'gps_product_step_change_log'))"
+        r"AND NOT ((c.table_name LIKE 'temp%' ESCAPE '\\') OR (c.table_name LIKE 'tmp%' ESCAPE '\\') OR (c.table_name LIKE 'raw\\_slot\\_utilization%' ESCAPE '\\') OR (c.table_name LIKE 'gps\\_product\\_step\\_change\\_log' ESCAPE '\\')"
         in query
     )
 
@@ -51,14 +51,14 @@ def test_include_empty_exclude_mask(mask):
 def test_include_empty_include_mask(mask):
     # test configuration
     project_code = "dummy_project_code"
-    flavor = "redshift"
+    flavor = "mssql"
     profiling_query = CProfilingSQL(project_code, flavor)
     profiling_query.parm_table_set = ""
-    profiling_query.parm_table_include_mask = "important%, %useful%"
+    profiling_query.parm_table_include_mask = "important%, %useful_%"
     profiling_query.parm_table_exclude_mask = mask
 
     # test run
     query = profiling_query.GetDDFQuery()
 
     # test assertions
-    assert "AND ((c.table_name LIKE 'important%') OR (c.table_name LIKE '%useful%'))" in query
+    assert r"AND ((c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful[_]%' ))" in query

@@ -14,9 +14,9 @@ from testgen.ui.components.widgets.page import (
     flex_row_center,
     flex_row_end,
     flex_row_start,
+    help_menu,
     no_flex_gap,
     page_header,
-    page_links,
     text,
     whitespace,
 )

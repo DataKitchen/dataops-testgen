@@ -41,7 +41,7 @@ FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TO
        FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
        WHERE {MATCH_SUBSET_CONDITION}
        GROUP BY {MATCH_GROUPBY_NAMES}
-                {MATCH_HAVING_CONDITION} ) a
+       {MATCH_HAVING_CONDITION} ) a
          GROUP BY {GROUPBY_NAMES} ) s
          WHERE total <> match_total
              OR (total IS NOT NULL AND match_total IS NULL)

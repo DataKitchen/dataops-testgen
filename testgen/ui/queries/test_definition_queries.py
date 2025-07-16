@@ -1,6 +1,8 @@
+import pandas as pd
 import streamlit as st
 
 import testgen.ui.services.database_service as db
+from testgen.common.models import get_current_session, with_database_session
 
 
 def update_attribute(schema, test_definition_ids, attribute, value):
@@ -19,72 +21,83 @@ def update_attribute(schema, test_definition_ids, attribute, value):
 
 
 @st.cache_data(show_spinner=False)
-def get_test_definitions(schema, project_code, test_suite, table_name, column_name, test_definition_ids):
-    if table_name:
-        table_condition = f" AND d.table_name = '{table_name}'"
-    else:
-        table_condition = ""
-    if column_name:
-        column_condition = f" AND d.column_name = '{column_name}'"
-    else:
-        column_condition = ""
-    sql = f"""
-            SELECT
-                   d.schema_name, d.table_name, d.column_name, t.test_name_short, t.test_name_long,
-                   d.id::VARCHAR(50),
-                   s.project_code, d.table_groups_id::VARCHAR(50), s.test_suite, d.test_suite_id::VARCHAR,
-                   d.test_type, d.cat_test_id::VARCHAR(50),
-                   d.test_active,
-                   CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
-                   d.lock_refresh,
-                   CASE WHEN d.lock_refresh = 'Y' THEN 'Yes' ELSE 'No' END as lock_refresh_display,
-                   t.test_scope,
-                   d.test_description,
-                   d.profiling_as_of_date,
-                   d.last_manual_update,
-                   d.severity, COALESCE(d.severity, s.severity, t.default_severity) as urgency,
-                   d.export_to_observability as export_to_observability_raw,
-                   CASE
-                        WHEN d.export_to_observability = 'Y' THEN 'Yes'
-                        WHEN d.export_to_observability = 'N' THEN 'No'
-                        WHEN d.export_to_observability IS NULL AND s.export_to_observability = 'Y' THEN 'Inherited (Yes)'
-                        ELSE 'Inherited (No)'
-                    END as export_to_observability,
-                   -- test_action,
-                   d.threshold_value, COALESCE(t.measure_uom_description, t.measure_uom) as export_uom,
-                   d.baseline_ct, d.baseline_unique_ct, d.baseline_value,
-                   d.baseline_value_ct, d.baseline_sum, d.baseline_avg, d.baseline_sd,
-                   d.subset_condition,
-                   d.groupby_names, d.having_condition, d.window_date_column, d.window_days,
-                   d.match_schema_name, d.match_table_name, d.match_column_names,
-                   d.match_subset_condition, d.match_groupby_names, d.match_having_condition,
-                   d.skip_errors, d.custom_query,
-                   COALESCE(d.test_description, t.test_description) as final_test_description,
-                   t.default_parm_columns, t.selection_criteria,
-                   d.profile_run_id::VARCHAR(50), d.test_action, d.test_definition_status,
-                   d.watch_level, d.check_result, d.last_auto_gen_date,
-                   d.test_mode
-              FROM {schema}.test_definitions d
-            INNER JOIN {schema}.test_types t ON (d.test_type = t.test_type)
-            INNER JOIN {schema}.test_suites s ON (d.test_suite_id = s.id)
-            WHERE True
-    """
+@with_database_session
+def get_test_definitions(_, project_code, test_suite, table_name, column_name, test_definition_ids: list[str] | None):
+    db_session = get_current_session()
+    params = {}
+    order_by = "ORDER BY d.schema_name, d.table_name, d.column_name, d.test_type"
+    filters = ""
 
     if project_code:
-        sql += f"""             AND s.project_code = '{project_code}'
-        """
+        filters += " AND s.project_code = :project_code"
+        params["project_code"] = project_code
 
     if test_suite:
-        sql += f""" AND s.test_suite = '{test_suite}' {table_condition} {column_condition}
-        """
-    if test_definition_ids:
-        sql += f""" AND d.id in ({"'" + "','".join(test_definition_ids) + "'"})
-        """
+        filters += " AND s.test_suite = :test_suite"
+        params["test_suite"] = test_suite
 
-    sql += """ORDER BY d.schema_name, d.table_name, d.column_name, d.test_type;
+    if test_definition_ids:
+        test_definition_params = {f"test_definition_id_{idx}": status for idx, status in enumerate(test_definition_ids)}
+        filters += f" AND d.id IN ({', '.join([f':{p}' for p in test_definition_params.keys()])})"
+        params.update(test_definition_params)
+
+    if table_name:
+        filters += " AND d.table_name = :table_name"
+        params["table_name"] = table_name
+
+    if column_name:
+        filters += " AND d.column_name ILIKE :column_name"
+        params["column_name"] = column_name
+
+    sql = f"""
+    SELECT
+        d.schema_name, d.table_name, d.column_name, t.test_name_short, t.test_name_long,
+        d.id::VARCHAR(50),
+        s.project_code, d.table_groups_id::VARCHAR(50), s.test_suite, d.test_suite_id::VARCHAR,
+        d.test_type, d.cat_test_id::VARCHAR(50),
+        d.test_active,
+        CASE WHEN d.test_active = 'Y' THEN 'Yes' ELSE 'No' END as test_active_display,
+        d.lock_refresh,
+        CASE WHEN d.lock_refresh = 'Y' THEN 'Yes' ELSE 'No' END as lock_refresh_display,
+        t.test_scope,
+        d.test_description,
+        d.profiling_as_of_date,
+        d.last_manual_update,
+        d.severity, COALESCE(d.severity, s.severity, t.default_severity) as urgency,
+        d.export_to_observability as export_to_observability_raw,
+        CASE
+            WHEN d.export_to_observability = 'Y' THEN 'Yes'
+            WHEN d.export_to_observability = 'N' THEN 'No'
+            WHEN d.export_to_observability IS NULL AND s.export_to_observability = 'Y' THEN 'Inherited (Yes)'
+            ELSE 'Inherited (No)'
+        END as export_to_observability,
+        -- test_action,
+        d.threshold_value, COALESCE(t.measure_uom_description, t.measure_uom) as export_uom,
+        d.baseline_ct, d.baseline_unique_ct, d.baseline_value,
+        d.baseline_value_ct, d.baseline_sum, d.baseline_avg, d.baseline_sd,
+        d.lower_tolerance, d.upper_tolerance,
+        d.subset_condition,
+        d.groupby_names, d.having_condition, d.window_date_column, d.window_days,
+        d.match_schema_name, d.match_table_name, d.match_column_names,
+        d.match_subset_condition, d.match_groupby_names, d.match_having_condition,
+        d.skip_errors, d.custom_query,
+        COALESCE(d.test_description, t.test_description) as final_test_description,
+        t.default_parm_columns, t.selection_criteria,
+        d.profile_run_id::VARCHAR(50), d.test_action, d.test_definition_status,
+        d.watch_level, d.check_result, d.last_auto_gen_date,
+        d.test_mode
+    FROM test_definitions d
+    INNER JOIN test_types t ON (d.test_type = t.test_type)
+    INNER JOIN test_suites s ON (d.test_suite_id = s.id)
+    WHERE True
+    {filters}
+    {order_by}
     """
 
-    return db.retrieve_data(sql)
+    results = db_session.execute(sql, params=params)
+    columns = [column.name for column in results.cursor.description]
+
+    return pd.DataFrame(list(results), columns=columns)
 
 
 def update(schema, test_definition):
@@ -126,6 +139,8 @@ def update(schema, test_definition):
                     baseline_sum = NULLIF('{test_definition["baseline_sum"]}', ''),
                     baseline_avg = NULLIF('{test_definition["baseline_avg"]}', ''),
                     baseline_sd = NULLIF('{test_definition["baseline_sd"]}', ''),
+                    lower_tolerance = NULLIF('{test_definition["lower_tolerance"]}', ''),
+                    upper_tolerance = NULLIF('{test_definition["upper_tolerance"]}', ''),
                     subset_condition = NULLIF($${test_definition["subset_condition"]}$$, ''),
                     groupby_names = NULLIF($${test_definition["groupby_names"]}$$, ''),
                     having_condition = NULLIF($${test_definition["having_condition"]}$$, ''),
@@ -179,6 +194,8 @@ def add(schema, test_definition):
                     baseline_sum,
                     baseline_avg,
                     baseline_sd,
+                    lower_tolerance,
+                    upper_tolerance,
                     subset_condition,
                     groupby_names,
                     having_condition,
@@ -223,6 +240,8 @@ def add(schema, test_definition):
                     NULLIF($${test_definition["baseline_sum"]}$$, '') as baseline_sum,
                     NULLIF('{test_definition["baseline_avg"]}', '') as baseline_avg,
                     NULLIF('{test_definition["baseline_sd"]}', '') as baseline_sd,
+                    NULLIF('{test_definition["lower_tolerance"]}', '') as lower_tolerance,
+                    NULLIF('{test_definition["upper_tolerance"]}', '') as upper_tolerance,
                     NULLIF($${test_definition["subset_condition"]}$$, '') as subset_condition,
                     NULLIF($${test_definition["groupby_names"]}$$, '') as groupby_names,
                     NULLIF($${test_definition["having_condition"]}$$, '') as having_condition,
@@ -262,13 +281,21 @@ def cascade_delete(schema, test_suite_ids):
     st.cache_data.clear()
 
 
-def move(schema, test_definitions, target_table_group, target_test_suite):
+def move(schema, test_definitions, target_table_group, target_test_suite, target_table_column=None):
+    if target_table_column is not None:
+        update_target_table_column = f"""
+        column_name = '{target_table_column['column_name']}', 
+        table_name = '{target_table_column['table_name']}', 
+        """
+    else:
+        update_target_table_column = "" 
     sql = f"""
     WITH selected as (
         SELECT UNNEST(ARRAY [{", ".join([ f"'{td['id']}'" for td in test_definitions ])}]) AS id
     )
     UPDATE {schema}.test_definitions
     SET 
+        {update_target_table_column}
         table_groups_id = '{target_table_group}'::UUID,
         test_suite_id = '{target_test_suite}'::UUID
     FROM {schema}.test_definitions td
@@ -279,7 +306,13 @@ def move(schema, test_definitions, target_table_group, target_test_suite):
     st.cache_data.clear()
 
 
-def copy(schema, test_definitions, target_table_group, target_test_suite):
+def copy(schema, test_definitions, target_table_group, target_test_suite, target_table_column=None):
+    if target_table_column is not None:
+        update_target_column = f"'{target_table_column['column_name']}' as column_name"
+        update_target_table = f"'{target_table_column['table_name']}' as table_name"
+    else:
+        update_target_column = "td.colum_name"
+        update_target_table = "td.table_name"
     test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
     sql = f"""
         INSERT INTO {schema}.test_definitions
@@ -314,6 +347,8 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             baseline_sum,
             baseline_avg,
             baseline_sd,
+            lower_tolerance,
+            upper_tolerance,
             subset_condition,
             groupby_names,
             having_condition,
@@ -333,7 +368,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.custom_query,
             td.test_definition_status,
             td.export_to_observability,
-            td.column_name,
+            {update_target_column},
             td.watch_level,
             '{target_table_group}'::UUID AS table_groups_id,
             CASE WHEN td.table_groups_id = '{target_table_group}' THEN td.profile_run_id ELSE NULL END AS profile_run_id,
@@ -345,7 +380,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.lock_refresh,
             td.last_auto_gen_date,
             td.schema_name,
-            td.table_name,
+            {update_target_table},
             td.test_active,
             td.severity,
             td.check_result,
@@ -357,6 +392,8 @@ def copy(schema, test_definitions, target_table_group, target_test_suite):
             td.baseline_sum,
             td.baseline_avg,
             td.baseline_sd,
+            td.lower_tolerance,
+            td.upper_tolerance,
             td.subset_condition,
             td.groupby_names,
             td.having_condition,
