@@ -1,3 +1,4 @@
+import logging
 import typing
 from dataclasses import asdict
 from functools import partial
@@ -17,6 +18,7 @@ from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
 from testgen.ui.views.profiling_runs import ProfilingScheduleDialog
 
+LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Table Groups"
 
 
@@ -58,7 +60,7 @@ class TableGroupsPage(Page):
             },
             on_change_handlers={
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
-                "AddTableGroupClicked": partial(self.add_table_group_dialog, project_code),
+                "AddTableGroupClicked": partial(self.add_table_group_dialog, project_code, connection_id),
                 "EditTableGroupClicked": partial(self.edit_table_group_dialog, project_code),
                 "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
                 "RunProfilingClicked": partial(self.run_profiling_dialog, project_code),
@@ -71,115 +73,157 @@ class TableGroupsPage(Page):
 
     @st.dialog(title="Add Table Group")
     @with_database_session
-    def add_table_group_dialog(self, project_code, *_args):
-        def on_preview_table_group_clicked(table_group: dict):
-            mark_for_preview(True)
-            set_table_group(table_group)
-
-        def on_save_table_group_clicked(table_group: dict):
-            set_save(True)
-            set_table_group(table_group)
-
-        should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
-        should_save, set_save = temp_value("table_groups:save:new", default=False)
-        get_table_group, set_table_group = temp_value("table_groups:updated:new", default={})
-
-        connections = self._get_connections(project_code)
-        table_group = {
-            "project_code": project_code,
-            **get_table_group(),
-        }
-        table_group_preview = {}
-        result = None
-
-        if len(connections) == 1:
-            table_group["connection_id"] = connections[0]["connection_id"]
-
-        if should_save():
-            try:
-                table_group_service.add(table_group)
-                st.rerun()
-            except IntegrityError:
-                result = {"success": False, "message": "A Table Group with the same name already exists."}
-
-        if should_preview():
-            table_group_preview = self._get_table_group_preview(project_code, table_group["connection_id"], {"id": "temp", **table_group})
-
-        return testgen.testgen_component(
-            "table_group",
-            props={
-                "project_code": project_code,
-                "connections": connections,
-                "table_group": table_group,
-                "table_group_preview": table_group_preview,
-                "result": result,
-            },
-            on_change_handlers={
-                "PreviewTableGroupClicked": on_preview_table_group_clicked,
-                "TableGroupSaveClicked": on_save_table_group_clicked,
-            },
+    def add_table_group_dialog(self, project_code: str, connection_id: str | None, *_args):
+        return self._table_group_wizard(
+            project_code,
+            save_table_group_fn=table_group_service.add,
+            connection_id=connection_id,
+            steps=[
+                "tableGroup",
+                "testTableGroup",
+                "runProfiling",
+            ],
         )
 
     @st.dialog(title="Edit Table Group")
     def edit_table_group_dialog(self, project_code: str, table_group_id: str):
+        return self._table_group_wizard(
+            project_code,
+            save_table_group_fn=table_group_service.edit,
+            table_group_id=table_group_id,
+            steps=[
+                "tableGroup",
+                "testTableGroup",
+            ],
+        )
+
+    def _table_group_wizard(
+        self,
+        project_code: str,
+        *,
+        save_table_group_fn: typing.Callable[[dict], str],
+        steps: list[str] | None = None,
+        connection_id: str | None = None,
+        table_group_id: str | None = None,
+    ):
         def on_preview_table_group_clicked(table_group: dict):
             mark_for_preview(True)
-            set_updated_table_group(table_group)
+            set_table_group(table_group)
 
-        def on_save_table_group_clicked(table_group: dict):
-            set_update(True)
-            set_updated_table_group(table_group)
+        def on_save_table_group_clicked(payload: dict):
+            table_group: dict = payload["table_group"]
+            table_group_verified: bool = payload.get("table_group_verified", False)
+            run_profiling: bool = payload.get("run_profiling", False)
 
-        should_preview, mark_for_preview = temp_value(
-            f"table_groups:preview:{table_group_id}",
+            set_save(True)
+            set_table_group(table_group)
+            set_table_group_verified(table_group_verified)
+            set_run_profiling(run_profiling)
+
+        def on_go_to_profiling_runs(params: dict) -> None:
+            set_navigation_params({ **params, "project_code": project_code })
+
+        get_navigation_params, set_navigation_params = temp_value(
+            "connections:new_table_group:go_to_profiling_run",
+            default=None,
+        )
+        if (params := get_navigation_params()):
+            self.router.navigate(to="profiling-runs", with_args=params)
+
+        should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
+        should_save, set_save = temp_value("table_groups:save:new", default=False)
+        get_table_group, set_table_group = temp_value("table_groups:updated:new", default={})
+        is_table_group_verified, set_table_group_verified = temp_value(
+            "table_groups:new:verified",
             default=False,
         )
-        should_update, set_update = temp_value(
-            f"table_groups:save:{table_group_id}",
+        should_run_profiling, set_run_profiling = temp_value(
+            "table_groups:new:run_profiling",
             default=False,
         )
-        get_updated_table_group, set_updated_table_group = temp_value(
-            f"table_groups:updated:{table_group_id}",
-            default={},
-        )
 
-        original_table_group = table_group_service.get_by_id(table_group_id=table_group_id).to_dict()
-        is_table_group_used = table_group_service.is_table_group_used(table_group_id)
+        is_table_group_used = False
+        connections = self._get_connections(project_code)
+        original_table_group = {"project_code": project_code}
+        if table_group_id:
+            original_table_group = table_group_service.get_by_id(table_group_id=table_group_id).to_dict()
+            is_table_group_used = table_group_service.is_table_group_used(table_group_id)
+
         table_group = {
             **original_table_group,
-            **get_updated_table_group(),
+            **get_table_group(),
         }
+        table_group_preview = None
+
         if is_table_group_used:
             table_group["table_group_schema"] = original_table_group["table_group_schema"]
 
-        table_group_preview = {
-            "schema": table_group["table_group_schema"],
-        }
-        result = None
+        if len(connections) == 1:
+            table_group["connection_id"] = connections[0]["connection_id"]
 
-        if should_update():
-            try:
-                table_group_service.edit(table_group)
-                st.rerun()
-            except IntegrityError:
-                result = {"success": False, "message": "A Table Group with the same name already exists."}
+        if not table_group.get("connection_id"):
+            if connection_id:
+                table_group["connection_id"] = int(connection_id)
+            elif len(connections) == 1:
+                table_group["connection_id"] = connections[0]["connection_id"]
+        elif table_group.get("id"):
+            connections = [
+                conn for conn in connections
+                if int(conn["connection_id"]) == int(table_group.get("connection_id"))
+            ]
 
         if should_preview():
-            table_group_preview = self._get_table_group_preview(project_code, table_group["connection_id"], table_group)
+            connection = connection_service.get_by_id(table_group["connection_id"], hide_passwords=False)
+            table_group_preview = table_group_service.get_table_group_preview(
+                project_code,
+                connection,
+                {"id": table_group.get("id") or "temp", **table_group},
+            )
+
+        success = None
+        message = ""
+        table_group_id = None
+        if should_save():
+            success = True
+            if is_table_group_verified():
+                try:
+                    table_group_id = save_table_group_fn(table_group)
+                    if should_run_profiling():
+                        try:
+                            run_profiling_in_background(table_group_id)
+                            message = f"Profiling run started for table group {table_group['table_groups_name']}."
+                        except Exception:
+                            success = False
+                            message = "Profiling run encountered errors"
+                            LOG.exception(message)
+                    else:
+                        st.rerun()
+                except IntegrityError:
+                    success = False
+                    message = "A Table Group with the same name already exists."
+            else:
+                success = False
+                message = "Verify the table group before saving"
 
         return testgen.testgen_component(
-            "table_group",
+            "table_group_wizard",
             props={
                 "project_code": project_code,
-                "connections": self._get_connections(project_code, connection_id=table_group["connection_id"]),
+                "connections": connections,
                 "table_group": table_group,
-                "in_used": is_table_group_used,
+                "is_in_use": is_table_group_used,
                 "table_group_preview": table_group_preview,
-                "result": result,
+                "steps": steps,
+                "results": {
+                    "success": success,
+                    "message": message,
+                    "table_group_id": table_group_id,
+                } if success is not None else None,
             },
             on_change_handlers={
                 "PreviewTableGroupClicked": on_preview_table_group_clicked,
-                "TableGroupSaveClicked": on_save_table_group_clicked,
+                "SaveTableGroupClicked": on_save_table_group_clicked,
+                "GoToProfilingRunsClicked": on_go_to_profiling_runs,
             },
         )
 
@@ -203,38 +247,6 @@ class TableGroupsPage(Page):
                     "flavor": asdict(flavor),
                 }
         return table_groups
-
-    def _get_table_group_preview(self, project_code: str, connection_id: str | None, table_group: dict) -> dict:
-        table_group_preview = {
-            "schema": table_group["table_group_schema"],
-            "tables": set(),
-            "column_count": 0,
-            "success": True,
-            "message": None,
-        }
-        if connection_id:
-            try:
-                table_group_results = table_group_service.test_table_group(table_group, connection_id, project_code)
-
-                for column in table_group_results:
-                    table_group_preview["schema"] = column["table_schema"]
-                    table_group_preview["tables"].add(column["table_name"])
-                    table_group_preview["column_count"] += 1
-
-                if len(table_group_results) <= 0:
-                    table_group_preview["success"] = False
-                    table_group_preview["message"] = (
-                        "No tables found matching the criteria. Please check the Table Group configuration."
-                    )
-            except Exception as error:
-                table_group_preview["success"] = False
-                table_group_preview["message"] = error.args[0]
-        else:
-            table_group_preview["success"] = False
-            table_group_preview["message"] = "No connection selected. Please select a connection to preview the Table Group."
-
-        table_group_preview["tables"] = list(table_group_preview["tables"])
-        return table_group_preview
 
     @st.dialog(title="Run Profiling")
     def run_profiling_dialog(self, project_code: str, table_group_id: str) -> None:
