@@ -46,6 +46,7 @@ class HygieneIssuesPage(Page):
         issue_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        action: str | None = None,
         **_kwargs,
     ) -> None:
         run_df = profiling_queries.get_run_by_id(run_id)
@@ -68,32 +69,12 @@ class HygieneIssuesPage(Page):
             ],
         )
 
-        others_summary_column, pii_summary_column, score_column, actions_column = st.columns([.25, .25, .2, .3], vertical_alignment="bottom")
-        (liklihood_filter_column, issue_type_filter_column, table_filter_column, column_filter_column, sort_column, export_button_column) = (
-            st.columns([.15, .2, .2, .2, .1, .15], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.2, .2, .15, .3, .15], vertical_alignment="bottom")
+        (table_filter_column, column_filter_column, issue_type_filter_column, liklihood_filter_column, action_filter_column, sort_column) = (
+            st.columns([.15, .2, .2, .2, .15, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
-
-        with liklihood_filter_column:
-            issue_class = testgen.select(
-                options=["Definite", "Likely", "Possible", "Potential PII"],
-                default_value=issue_class,
-                bind_to_query="issue_class",
-                label="Issue Class",
-            )
-
-        with issue_type_filter_column:
-            issue_type_options = get_issue_types()
-            issue_type_id = testgen.select(
-                options=issue_type_options,
-                default_value=None if issue_class == "Potential PII" else issue_type,
-                value_column="id",
-                display_column="anomaly_name",
-                bind_to_query="issue_type",
-                label="Issue Type",
-                disabled=issue_class == "Potential PII",
-            )
 
         run_columns_df = get_profiling_run_columns(run_id)
         with table_filter_column:
@@ -101,26 +82,75 @@ class HygieneIssuesPage(Page):
                 options=list(run_columns_df["table_name"].unique()),
                 default_value=table_name,
                 bind_to_query="table_name",
-                label="Table Name",
+                label="Table",
             )
 
         with column_filter_column:
-            column_options = list(run_columns_df.loc[run_columns_df["table_name"] == table_name]["column_name"].unique())
+            if table_name:
+                column_options = (
+                    run_columns_df
+                    .loc[run_columns_df["table_name"] == table_name]
+                    ["column_name"]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+            else:
+                column_options = (
+                    run_columns_df
+                    .groupby("column_name")
+                    .first()
+                    .reset_index()
+                    .sort_values("column_name")
+                )
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
-                label="Column Name",
-                disabled=not table_name,
+                label="Column",
                 accept_new_options=True,
+            )
+
+        with issue_type_filter_column:
+            issue_type_options  = (
+                run_columns_df
+                .groupby("anomaly_name")
+                .first()
+                .reset_index()
+                .sort_values("anomaly_name")
+            )
+            issue_type_id = testgen.select(
+                options=issue_type_options,
+                default_value=None if issue_class == "Potential PII" else issue_type,
+                value_column="anomaly_id",
+                display_column="anomaly_name",
+                bind_to_query="issue_type",
+                label="Issue Type",
+                disabled=issue_class == "Potential PII",
+            )
+
+        with liklihood_filter_column:
+            issue_class = testgen.select(
+                options=["Definite", "Likely", "Possible", "Potential PII"],
+                default_value=issue_class,
+                bind_to_query="issue_class",
+                label="Likelihood",
+            )
+
+        with action_filter_column:
+            action = testgen.select(
+                options=["Confirmed", "Dismissed", "Muted", "No Action" ],
+                default_value=action,
+                bind_to_query="action",
+                label="Action",
             )
 
         with sort_column:
             sortable_columns = (
                 ("Table", "r.table_name"),
                 ("Column", "r.column_name"),
-                ("Anomaly", "t.anomaly_name"),
+                ("Issue Type", "t.anomaly_name"),
                 ("Likelihood", "likelihood_order"),
                 ("Action", "r.disposition"),
             )
@@ -134,7 +164,7 @@ class HygieneIssuesPage(Page):
         with st.container():
             with st.spinner("Loading data ..."):
                 # Get hygiene issue list
-                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, sorting_columns)
+                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, action, sorting_columns)
 
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_anomaly_disposition(run_id)
@@ -183,6 +213,14 @@ class HygieneIssuesPage(Page):
             do_multi_select=do_multi_select,
             bind_to_query_name="selected",
             bind_to_query_prop="id",
+            show_column_headers=[
+                    "Table",
+                    "Column",
+                    "Likelihood",
+                    "Action",
+                    "Issue Type",
+                    "Detail"
+            ]
         )
 
         popover_container = export_button_column.empty()
@@ -275,10 +313,7 @@ class HygieneIssuesPage(Page):
                             )
                             download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
-            cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary]
-            # Clear the list cache if the list is sorted by disposition/action
-            if "r.disposition" in dict(sorting_columns):
-                cached_functions.append(get_profiling_anomalies)
+            cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
 
             disposition_actions = [
                 { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
@@ -289,14 +324,14 @@ class HygieneIssuesPage(Page):
 
             if user_session_service.user_can_disposition():
                 # Need to render toolbar buttons after grid, so selection status is maintained
-                for action in disposition_actions:
-                    action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=not selected)
+                for d_action in disposition_actions:
+                    d_action["button"] = actions_column.button(d_action["icon"], help=d_action["help"], disabled=not selected)
 
                 # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-                for action in disposition_actions:
-                    if action["button"]:
+                for d_action in disposition_actions:
+                    if d_action["button"]:
                         fm.reset_post_updates(
-                            do_disposition_update(selected, action["status"]),
+                            do_disposition_update(selected, d_action["status"]),
                             as_toast=True,
                             clear_cache=True,
                             lst_cached_functions=cached_functions,
@@ -346,10 +381,11 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
 def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-    SELECT table_name, column_name
-    FROM {schema}.profile_anomaly_results
-    WHERE profile_run_id = '{profiling_run_id}'
-    ORDER BY table_name, column_name;
+    SELECT r.table_name table_name, r.column_name column_name, r.anomaly_id anomaly_id, t.anomaly_name anomaly_name
+    FROM {schema}.profile_anomaly_results r
+    LEFT JOIN {schema}.profile_anomaly_types t on t.id = r.anomaly_id
+    WHERE r.profile_run_id = '{profiling_run_id}'
+    ORDER BY r.table_name, r.column_name;
     """
     return db.retrieve_data(sql)
 
@@ -361,6 +397,7 @@ def get_profiling_anomalies(
     issue_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
+    action: str | None = None,
     sorting_columns: list[str] | None = None,
 ):
     db_session = get_current_session()
@@ -380,6 +417,13 @@ def get_profiling_anomalies(
     if column_name:
         criteria += " AND r.column_name ILIKE :column_name"
         params["column_name"] = column_name
+    if action:
+        if action == "No Action":
+            criteria += " AND r.disposition IS NULL"
+        else:
+            action_disposition_converter = {"Muted": "Inactive"}
+            criteria += " AND r.disposition = :disposition_name"
+            params["disposition_name"] = action_disposition_converter.get(action, action)
 
     if sorting_columns:
         order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
@@ -477,13 +521,6 @@ def get_anomaly_disposition(str_profile_run_id):
 
 
 @st.cache_data(show_spinner=False)
-def get_issue_types():
-    schema = st.session_state["dbschema"]
-    df = db.retrieve_data(f"SELECT id, anomaly_name FROM {schema}.profile_anomaly_types")
-    return df
-
-
-@st.cache_data(show_spinner=False)
 def get_profiling_anomaly_summary(str_profile_run_id):
     str_schema = st.session_state["dbschema"]
     # Define the query
@@ -537,7 +574,7 @@ def get_excel_report_data(
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
-        "anomaly_name": {"header": "Issue name"},
+        "anomaly_name": {"header": "Issue Type"},
         "issue_likelihood": {"header": "Likelihood"},
         "anomaly_description": {"header": "Description", "wrap": True},
         "action": {},

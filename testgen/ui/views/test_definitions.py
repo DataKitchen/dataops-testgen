@@ -65,7 +65,7 @@ class TestDefinitionsPage(Page):
             ],
         )
 
-        table_filter_column, column_filter_column, table_actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+        table_filter_column, column_filter_column, test_filter_column, table_actions_column = st.columns([.3, .3, .3, .4], vertical_alignment="bottom")
         testgen.flex_row_end(table_actions_column)
 
         actions_column, disposition_column = st.columns([.5, .5])
@@ -81,7 +81,7 @@ class TestDefinitionsPage(Page):
                 default_value=table_name or (table_options[0] if table_options else None),
                 bind_to_query="table_name",
                 required=True,
-                label="Table Name",
+                label="Table",
             )
         with column_filter_column:
             column_options = columns_df.loc[columns_df["table_name"] == table_name]["column_name"].dropna().unique().tolist()
@@ -89,9 +89,19 @@ class TestDefinitionsPage(Page):
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
-                label="Column Name",
+                label="Column",
                 disabled=not table_name,
                 accept_new_options=True,
+            )
+        with test_filter_column:
+            test_options = columns_df.groupby("test_type").first().reset_index().sort_values("test_name_short")
+            test_type = testgen.select(
+                options=test_options,
+                value_column="test_type",
+                display_column="test_name_short",
+                default_value=None,
+                bind_to_query="test_type",
+                label="Test Type",
             )
 
         with disposition_column:
@@ -110,7 +120,7 @@ class TestDefinitionsPage(Page):
             run_tests_dialog(project_code, test_suite)
 
         selected = show_test_defs_grid(
-            project_code, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
+            project_code, test_suite["test_suite"], table_name, column_name, test_type, do_multi_select, table_actions_column,
             table_group["id"]
         )
         fm.render_refresh_button(table_actions_column)
@@ -877,13 +887,13 @@ def update_test_definition(selected, attribute, value, message):
 
 
 def show_test_defs_grid(
-    str_project_code, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
+    str_project_code, str_test_suite, str_table_name, str_column_name, str_test_type, do_multi_select, export_container,
         str_table_groups_id
 ):
     with st.container():
         with st.spinner("Loading data ..."):
             df = test_definition_service.get_test_definitions(
-                str_project_code, str_test_suite, str_table_name, str_column_name
+                str_project_code, str_test_suite, str_table_name, str_column_name, str_test_type
             )
             date_service.accommodate_dataframe_to_timezone(df, st.session_state)
 
@@ -906,7 +916,7 @@ def show_test_defs_grid(
         "Schema",
         "Table",
         "Columns / Focus",
-        "Test Name",
+        "Test Type",
         "Active",
         "Locked",
         "Urgency",
@@ -1104,8 +1114,9 @@ def run_table_groups_lookup_query(str_project_code, str_connection_id=None, tabl
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-    SELECT table_name, column_name
-    FROM {schema}.test_definitions
+    SELECT d.table_name, d.column_name, t.test_name_short, d.test_type
+    FROM {schema}.test_definitions d
+    LEFT JOIN {schema}.test_types as t on t.test_type = d.test_type
     WHERE test_suite_id = '{test_suite_id}'
     ORDER BY table_name, column_name;
     """
