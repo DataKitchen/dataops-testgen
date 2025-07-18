@@ -144,10 +144,10 @@ class CTestExecutionSQL:
         return query, params
 
     def GetHistoricThresholdUpdate(self) -> tuple[str, dict]:
-        query = self._get_query("ex_update_history_threshold_last_n.sql")
+        query, params = self._get_query("ex_update_history_threshold_last_n.sql")
         if self._use_clean:
             query = CleanSQL(query)
-        return query
+        return query, params
 
     def PushTestRunStatusUpdateSQL(self) -> tuple[str, dict]:
         # Runs on App database

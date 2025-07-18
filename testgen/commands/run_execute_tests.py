@@ -70,8 +70,7 @@ def run_test_queries(
     try:
         # Update Historic Test Thresholds
         LOG.info("CurrentStep: Updating Historic Test Thresholds")
-        strQuery = clsExecute.GetHistoricThresholdUpdate(booClean)
-        ExecuteDBQuery("DKTG", strQuery)
+        execute_db_queries([clsExecute.GetHistoricThresholdUpdate()])
 
         # Retrieve non-CAT Queries
         LOG.info("CurrentStep: Retrieve Non-CAT Queries")
