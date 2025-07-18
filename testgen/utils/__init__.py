@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,6 +26,9 @@ def to_int(value: float | int) -> int:
 
 
 def is_uuid4(value: str) -> bool:
+    if isinstance(value, UUID): 
+        return True
+    
     try:
         uuid = UUID(value, version=4)
     except Exception:
@@ -63,6 +68,20 @@ def format_field(field: Any) -> Any:
     elif isinstance(field, np.bool_):
         return bool(field)
     return field
+
+
+def make_json_safe(value: Any) -> str | bool | int | float | None:
+    if isinstance(value, UUID):
+        return str(value)
+    elif isinstance(value, datetime):
+        return int(value.replace(tzinfo=UTC).timestamp())
+    elif isinstance(value, Decimal):
+        return float(value)
+    elif isinstance(value, list):
+        return [ make_json_safe(item) for item in value ]
+    elif isinstance(value, dict):
+        return { key: make_json_safe(value) for key, value in value.items() }
+    return value
 
 
 def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -> list[str]:

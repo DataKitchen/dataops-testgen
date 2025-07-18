@@ -50,8 +50,6 @@ CREATE TABLE projects (
       CONSTRAINT projects_project_code_pk
          PRIMARY KEY,
    project_name          VARCHAR(50),
-   effective_from_date   DATE,
-   effective_thru_date   DATE,
    observability_api_key TEXT,
    observability_api_url TEXT DEFAULT ''
 );
@@ -84,7 +82,9 @@ CREATE TABLE connections (
 
 CREATE TABLE table_groups
 (
-    id                       UUID DEFAULT gen_random_uuid(),
+    id                       UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_tg_id
+         PRIMARY KEY,
     project_code             VARCHAR(30)
       CONSTRAINT table_groups_projects_project_code_fk
            REFERENCES projects,
@@ -622,12 +622,14 @@ CREATE TABLE functional_test_results
 );
 
 CREATE TABLE auth_users (
-	id UUID 		DEFAULT gen_random_uuid(),
-	username 		VARCHAR(20),
-	email 			VARCHAR(120),
+	id UUID 		DEFAULT gen_random_uuid()
+    CONSTRAINT pk_au_id
+         PRIMARY KEY,
+	username 	VARCHAR(20),
+	email 		VARCHAR(120),
 	name 			VARCHAR(120),
-	password 		VARCHAR(120),
-	role      VARCHAR(20)
+	password 	VARCHAR(120),
+	role        VARCHAR(20)
 );
 
 ALTER TABLE auth_users

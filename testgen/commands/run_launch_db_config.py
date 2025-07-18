@@ -8,6 +8,7 @@ from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition
+from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import get_template_files
 
 LOG = logging.getLogger("testgen")
@@ -85,7 +86,9 @@ def run_launch_db_config(delete_db: bool) -> None:
         user_type="schema_admin",
     )
 
-    ScoreDefinition.from_table_group({
-        "project_code": settings.PROJECT_KEY,
-        "table_groups_name": settings.DEFAULT_TABLE_GROUPS_NAME,
-    }).save()
+    ScoreDefinition.from_table_group(
+        TableGroup(
+            project_code=settings.PROJECT_KEY,
+            table_groups_name=settings.DEFAULT_TABLE_GROUPS_NAME,
+        )
+    ).save()
