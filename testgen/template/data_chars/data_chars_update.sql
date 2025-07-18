@@ -12,7 +12,7 @@ WITH new_chars AS (
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -43,7 +43,7 @@ WITH new_chars AS (
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -82,7 +82,7 @@ WITH new_chars AS (
       schema_name,
       table_name
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name
@@ -91,7 +91,7 @@ last_run AS (
    SELECT table_groups_id,
       MAX(run_date) as last_run_date
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
 )
 UPDATE data_table_chars
@@ -123,7 +123,7 @@ WITH new_chars AS (
       functional_data_type,
       run_date
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
 )
 UPDATE data_column_chars
 SET ordinal_position = n.position,
@@ -154,7 +154,7 @@ WITH new_chars AS (
       functional_data_type,
       run_date
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
 )
 INSERT INTO data_column_chars (
       table_groups_id,
@@ -201,13 +201,13 @@ WITH new_chars AS (
       table_name,
       column_name
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
 ),
 last_run AS (
    SELECT table_groups_id,
       MAX(run_date) as last_run_date
    FROM {SOURCE_TABLE}
-   WHERE table_groups_id = '{TABLE_GROUPS_ID}'
+   WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
 )
 UPDATE data_column_chars

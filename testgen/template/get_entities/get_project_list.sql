@@ -3,4 +3,4 @@ SELECT id,
        project_name,
        observability_api_key
 FROM projects
-ORDER BY effective_from_date desc;
+ORDER BY project_name;

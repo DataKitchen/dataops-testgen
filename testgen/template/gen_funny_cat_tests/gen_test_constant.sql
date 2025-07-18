@@ -12,10 +12,10 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     INNER JOIN test_suites ts
                        ON p.project_code = ts.project_code
                       AND p.connection_id = ts.connection_id
-                   WHERE p.project_code = '{PROJECT_CODE}'
-                     AND r.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                     AND ts.id = '{TEST_SUITE_ID}'
-                     AND p.run_date::DATE <= '{AS_OF_DATE}'
+                   WHERE p.project_code = :PROJECT_CODE
+                     AND r.table_groups_id = :TABLE_GROUPS_ID
+                     AND ts.id = :TEST_SUITE_ID
+                     AND p.run_date::DATE <= :AS_OF_DATE
                   GROUP BY r.table_groups_id),
      curprof AS (SELECT p.*
                    FROM last_run lr
@@ -24,8 +24,8 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     AND lr.last_run_date = p.run_date) ),
      locked AS (SELECT schema_name, table_name, column_name, test_type
                   FROM test_definitions
-				     WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                   AND test_suite_id = '{TEST_SUITE_ID}'
+				     WHERE table_groups_id = :TABLE_GROUPS_ID
+                   AND test_suite_id = :TEST_SUITE_ID
                    AND lock_refresh = 'Y'),
      all_runs AS ( SELECT DISTINCT p.table_groups_id, p.schema_name, p.run_date,
                           DENSE_RANK() OVER (PARTITION BY p.table_groups_id ORDER BY p.run_date DESC) as run_rank
@@ -33,9 +33,9 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                    INNER JOIN test_suites ts
                       ON p.connection_id = ts.connection_id
                      AND p.project_code = ts.project_code
-                   WHERE p.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                     AND ts.id = '{TEST_SUITE_ID}'
-                     AND p.run_date::DATE <= '{AS_OF_DATE}'),
+                   WHERE p.table_groups_id = :TABLE_GROUPS_ID
+                     AND ts.id = :TEST_SUITE_ID
+                     AND p.run_date::DATE <= :AS_OF_DATE),
      recent_runs AS (SELECT table_groups_id, schema_name, run_date, run_rank
                        FROM all_runs
                       WHERE run_rank <= 5),
@@ -73,12 +73,12 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                      -- Only constant if more than one profiling result
                      AND COUNT(*) > 1),
 newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
-                     '{TEST_SUITE_ID}'::UUID AS test_suite_id,
+                     :TEST_SUITE_ID ::UUID AS test_suite_id,
                      c.profile_run_id,
                      c.schema_name, c.table_name, c.column_name,
                      c.run_date AS last_run_date,
-                   case when general_type='A' then fn_quote_literal_escape(min_text, '{SQL_FLAVOR}')::VARCHAR
-                        when general_type='D' then fn_quote_literal_escape(min_date :: VARCHAR, '{SQL_FLAVOR}')::VARCHAR
+                   case when general_type='A' then fn_quote_literal_escape(min_text, :SQL_FLAVOR)::VARCHAR
+                        when general_type='D' then fn_quote_literal_escape(min_date :: VARCHAR, :SQL_FLAVOR)::VARCHAR
                         when general_type='N' then min_value::VARCHAR
                         when general_type='B' and boolean_true_ct = 0 then 'FALSE'::VARCHAR
                         when general_type='B' and boolean_true_ct > 0 then 'TRUE'::VARCHAR
@@ -90,14 +90,14 @@ newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
                      AND c.column_name = r.column_name)
                LEFT JOIN generation_sets s
                   ON ('Constant' = s.test_type
-                 AND  '{GENERATION_SET}' = s.generation_set)
+                 AND  :GENERATION_SET = s.generation_set)
                WHERE (s.generation_set IS NOT NULL
-                  OR  '{GENERATION_SET}' = '')  )
-SELECT '{TABLE_GROUPS_ID}'::UUID as table_groups_id, n.profile_run_id,
+                  OR  :GENERATION_SET = '')  )
+SELECT :TABLE_GROUPS_ID as table_groups_id, n.profile_run_id,
        n.test_type, n.test_suite_id, n.schema_name, n.table_name, n.column_name,
-       0 as skip_errors, '{RUN_DATE}'::TIMESTAMP as auto_gen_date,
+       0 as skip_errors, :RUN_DATE ::TIMESTAMP as auto_gen_date,
        'Y' as test_active, COALESCE(baseline_value, '') as baseline_value,
-       '0' as threshold_value, '{AS_OF_DATE}'::TIMESTAMP
+       '0' as threshold_value, :AS_OF_DATE ::TIMESTAMP
   FROM newtests n
 LEFT JOIN locked l
   ON (n.schema_name = l.schema_name

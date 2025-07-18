@@ -35,6 +35,6 @@ SELECT
 	measure_uom,
 	measure_uom_description
 FROM v_queued_observability_results
-where test_suite_id = '{TEST_SUITE_ID}'
+where test_suite_id = :TEST_SUITE_ID
 order by start_time asc
-limit {MAX_QTY_EVENTS}
+limit :MAX_QTY_EVENTS;

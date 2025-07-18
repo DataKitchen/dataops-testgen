@@ -2,7 +2,7 @@
 UPDATE profile_results
 SET functional_data_type  = NULL,
     functional_table_type = NULL
-WHERE profile_run_id = '{PROFILE_RUN_ID}';
+WHERE profile_run_id = :PROFILE_RUN_ID;
 
 
 -- 1. Assign CONSTANT and TBD - this is the first step of elimination
@@ -18,7 +18,7 @@ SET functional_data_type =
                     THEN 'TBD (Not enough data)'
             ELSE functional_data_type
         END
-WHERE profile_run_id = '{PROFILE_RUN_ID}';
+WHERE profile_run_id = :PROFILE_RUN_ID;
 
 
 UPDATE profile_results
@@ -28,21 +28,21 @@ SET functional_data_type =
                     -- this tells us how much actual values we have filled in; threshold -> if there is only 1 value and it's 75% of the records -> then it's a constant
             THEN 'Constant'
         ELSE functional_data_type END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
 -- 1A.  Assign ID's based on masks
 UPDATE profile_results
 SET functional_data_type = 'ID-SK'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
-  AND column_name ILIKE '{PROFILE_SK_COLUMN_MASK}';
+  AND column_name ILIKE :PROFILE_SK_COLUMN_MASK;
 
 UPDATE profile_results
 SET functional_data_type = 'ID'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
-  AND column_name ILIKE '{PROFILE_ID_COLUMN_MASK}';
+  AND column_name ILIKE :PROFILE_ID_COLUMN_MASK;
 
 -- 2. Assign DATE
 /*
@@ -107,14 +107,14 @@ SET functional_data_type =
                 THEN 'DateTime Stamp'
             ELSE functional_data_type
       END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND (general_type = 'D' OR (value_ct = date_ct + zero_length_ct AND value_ct > 0));
 
 -- Character Date
 UPDATE profile_results
 SET functional_data_type = 'Date Stamp'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
   AND min_text >= '1900' AND max_text <= '2200'
@@ -123,7 +123,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Character Timestamp
 UPDATE profile_results
 SET functional_data_type = 'DateTime Stamp'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
   AND (TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN'
@@ -132,7 +132,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Process Timestamp
 UPDATE profile_results
 SET functional_data_type = 'Process ' || functional_data_type
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND general_type IN ('A', 'D')
   AND ( column_name ~ '^(last_?|system_?|)(add|create|insert|inrt|update|updt|mod|modif|modf|del|delete|refresh)(.{0,3}d?_?(time|tm|date|day|dt|stamp|timestamp|datestamp))$'
    OR   column_name ~ '^(last_?|)(change|chg|update|updt|mod|modify|modf|modified|refresh|refreshed)$' );
@@ -141,7 +141,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Assign PERIODS:  Period Year, Period Qtr, Period Month, Period Week, Period DOW
 UPDATE profile_results
 SET functional_data_type = 'Period Year'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND (column_name ILIKE '%year%' OR column_name ILIKE '%yr%')
   AND ( (min_value >= 1900
@@ -156,7 +156,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Quarter'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND (column_name ILIKE '%qtr%' or column_name ILIKE '%quarter%')
   AND ( (min_value = 1 AND max_value = 4
@@ -169,7 +169,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Year-Mon'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND column_name ILIKE '%mo%'
   AND min_text >= '1900' AND max_text <= '2200'
@@ -182,7 +182,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Month'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND column_name ILIKE '%mo%'
    AND (
@@ -194,7 +194,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Mon-NN'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
    AND min_text ~ '(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s-]?\d{1,2}$'
    AND max_text ~ '(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s-]?\d{1,2}$'
@@ -203,7 +203,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Week'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND ( column_name ILIKE '%wk%' OR column_name ILIKE '%week%' )
    AND distinct_value_ct BETWEEN 10 AND 53
@@ -212,7 +212,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period DOW'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND ( column_name ILIKE '%day%' OR column_name ILIKE '%dow%')
    AND distinct_value_ct = 7
@@ -225,7 +225,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Month'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND (min_date = DATE_TRUNC('month', min_date)::DATE
          AND max_date = DATE_TRUNC('month', max_date)::DATE
         OR
@@ -237,7 +237,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Period Week'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND ( EXTRACT(DOW FROM min_date) IN (0, 1, 5, 6)
           AND EXTRACT(DOW FROM min_date) = EXTRACT(DOW FROM max_date)
        )
@@ -254,7 +254,7 @@ SET functional_data_type =
           AND NOT functional_data_type ILIKE 'Period%' THEN 'Period'
          ELSE functional_data_type
       END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND LOWER(column_name) IN ('period', 'month', 'week');
 
 -- 3. Assign ADDRESS RELATED FIELDS, PHONE AND EMAIL
@@ -286,7 +286,7 @@ SET functional_data_type =
                 THEN 'State'
             ELSE functional_data_type
         END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
 -- Update City based on position of State and Zip
@@ -303,7 +303,7 @@ INNER JOIN profile_results s
   AND  c.table_name = s.table_name
   AND  c.position + 1 = s.position
   AND  'State' = s.functional_data_type)
- WHERE c.profile_run_id = '{PROFILE_RUN_ID}'
+ WHERE c.profile_run_id = :PROFILE_RUN_ID
    AND LOWER(c.column_name) SIMILAR TO '%c(|i)ty%'
    AND c.functional_data_type NOT IN ('State', 'Zip')
    AND profile_results.id = c.id;
@@ -311,7 +311,7 @@ INNER JOIN profile_results s
 -- Assign Name
 UPDATE profile_results
    SET functional_data_type = 'Person Full Name'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND avg_length <= 20
   AND avg_embedded_spaces BETWEEN 0.9 AND 2.0
@@ -321,7 +321,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Assign First Name
 UPDATE profile_results
    SET functional_data_type = 'Person Given Name'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
    AND avg_length <= 8
    AND avg_embedded_spaces < 0.2
    AND (LOWER(column_name) SIMILAR TO '%f(|i)rst(_| |)n(|a)m%%'
@@ -331,7 +331,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Assign Last Name
 UPDATE profile_results
    SET functional_data_type = 'Person Last Name'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
    AND avg_length BETWEEN 5 and 8
    AND avg_embedded_spaces < 0.2
    AND (LOWER(column_name) SIMILAR TO '%l(|a)st(_| |)n(|a)m%'
@@ -340,7 +340,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
    SET functional_data_type = 'Entity Name'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND general_type = 'A'
   AND column_name ~ '(acct|account|affiliation|branch|business|co|comp|company|corp|corporate|cust|customer|distributor|employer|entity|firm|franchise|hco|org|organization|site|supplier|vendor|hospital|practice|clinic)(_| |)(name|nm)$';
@@ -348,13 +348,13 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 -- Process User:  tracks data process
 UPDATE profile_results
    SET functional_data_type = 'Process User'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND column_name ~ '^(last_?|)(create|update|modif|delete|refresh)(.*?(by|id|name|nm|user|usr))$';
 
 -- System User:  SW system
 UPDATE profile_results
    SET functional_data_type = 'System User'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND column_name ~ '(user|usr)_?(name|nm)?$';
 
 
@@ -383,7 +383,7 @@ SET functional_data_type =
                 THEN 'Boolean'
           ELSE   functional_data_type
         END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
 
@@ -434,7 +434,7 @@ SET functional_data_type =
                         END
               ELSE functional_data_type
         END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND general_type='A'
   AND LOWER(datatype_suggestion) SIMILAR TO '(%varchar%)';
@@ -455,7 +455,7 @@ SET functional_data_type =
                     AND fn_charcount(top_patterns, 'A') > 0
                 THEN 'Flag'
         END
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
 
@@ -502,7 +502,7 @@ SET functional_data_type =
             ELSE 'UNKNOWN'
         END
 
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL;
 
 -- Assign City
@@ -514,7 +514,7 @@ UPDATE profile_results
            ON p.profile_run_id = pn.profile_run_id
           AND p.table_name = pn.table_name
           AND p.position = pn.position - 1
-         WHERE p.profile_run_id = '{PROFILE_RUN_ID}'
+         WHERE p.profile_run_id = :PROFILE_RUN_ID
            AND p.includes_digit_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
            AND p.numeric_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
            AND p.date_ct::FLOAT/NULLIF(p.value_ct,0)::FLOAT < 0.05
@@ -534,21 +534,21 @@ SET functional_data_type = CASE
                               AND ROUND(100.0 * distinct_value_ct::FLOAT/NULLIF(value_ct, 0)) < 75 THEN 'ID-Group'
                              ELSE functional_data_type
                            END
- WHERE profile_run_id = '{PROFILE_RUN_ID}'
+ WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type = 'ID';
 
 -- Assign 'ID-Unique' functional data type to the columns that are identity columns
 
 UPDATE profile_results
 SET functional_data_type = 'ID-Unique'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IN ('ID', 'ID-Secondary')
   AND record_ct = distinct_value_ct
   AND record_ct > 50;
 
 UPDATE profile_results
 SET functional_data_type = 'ID-Unique-SK'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type = 'ID-SK'
   AND record_ct = distinct_value_ct
   AND record_ct > 50;
@@ -560,8 +560,8 @@ SET functional_data_type = 'ID-FK'
 FROM (Select table_groups_id, table_name, column_name
       from profile_results
       where functional_data_type IN ('ID-Unique', 'ID-Unique-SK')
-        and profile_run_id = '{PROFILE_RUN_ID}') ui
-WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
+        and profile_run_id = :PROFILE_RUN_ID) ui
+WHERE profile_results.profile_run_id = :PROFILE_RUN_ID
   and profile_results.column_name = ui.column_name
   and profile_results.table_groups_id = ui.table_groups_id
   and profile_results.table_name <> ui.table_name
@@ -571,7 +571,7 @@ WHERE profile_results.profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Measurement Pct'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
    AND functional_data_type IN ('Measurement', 'Measurement Discrete', 'UNKNOWN')
    AND general_type = 'N'
    AND min_value >= -200
@@ -580,7 +580,7 @@ WHERE profile_run_id = '{PROFILE_RUN_ID}'
 
 UPDATE profile_results
 SET functional_data_type = 'Measurement Pct'
-WHERE profile_run_id = '{PROFILE_RUN_ID}'
+WHERE profile_run_id = :PROFILE_RUN_ID
    AND functional_data_type = 'Code'
    AND distinct_pattern_ct between 1 and 3
    AND value_ct = includes_digit_ct

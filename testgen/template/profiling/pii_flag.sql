@@ -65,7 +65,7 @@ WITH screen
                END AS pii_flag
           
           FROM profile_results p
-         WHERE profile_run_id = '{PROFILE_RUN_ID}'
+         WHERE profile_run_id = :PROFILE_RUN_ID
            AND general_type = 'A' )
 UPDATE profile_results
    SET pii_flag = screen.pii_flag
@@ -77,7 +77,7 @@ UPDATE profile_results
   WITH table_pii_counts
           AS ( SELECT table_name, COUNT(pii_flag) AS pii_ct
                  FROM profile_results
-                WHERE profile_run_id = '{PROFILE_RUN_ID}'
+                WHERE profile_run_id = :PROFILE_RUN_ID
                 GROUP BY table_name ),
        screen
           AS ( SELECT id  AS profile_results_id,
@@ -122,7 +122,7 @@ UPDATE profile_results
                  FROM profile_results p
                       INNER JOIN table_pii_counts t
                                  ON (p.table_name = t.table_name)
-                WHERE p.profile_run_id = '{PROFILE_RUN_ID}'
+                WHERE p.profile_run_id = :PROFILE_RUN_ID
                   AND p.general_type = 'A'
                   AND p.pii_flag IS NULL
                   AND t.pii_ct > 1 )

@@ -14,7 +14,7 @@ score_calc
       INNER JOIN last_test_date lp
          ON (run.test_suite_id = lp.test_suite_id
         AND  run.test_starttime = lp.last_test_run_date)
-      WHERE ts.table_groups_id = '{TABLE_GROUPS_ID}'
+      WHERE ts.table_groups_id = :TABLE_GROUPS_ID
         AND ts.dq_score_exclude = FALSE
       GROUP BY ts.table_groups_id)
 UPDATE table_groups
@@ -26,7 +26,7 @@ UPDATE table_groups
 UPDATE data_column_chars
    SET valid_test_issue_ct = 0,
        dq_score_testing = 1
- WHERE table_groups_id = '{TABLE_GROUPS_ID}';
+ WHERE table_groups_id = :TABLE_GROUPS_ID;
 
 -- Roll up latest scores to data_column_chars -- excludes multi-column tests
 WITH score_calc
@@ -44,7 +44,7 @@ WITH score_calc
          ON (dcc.table_groups_id = ts.table_groups_id
         AND  dcc.table_name = r.table_name
         AND  dcc.column_name = r.column_names)
-       WHERE dcc.table_groups_id = '{TABLE_GROUPS_ID}'
+       WHERE dcc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dcc.column_id )
@@ -57,7 +57,7 @@ UPDATE data_column_chars
 -- Reset scoring in data_table_chars
 UPDATE data_table_chars
    SET dq_score_testing = 1
- WHERE table_groups_id = '{TABLE_GROUPS_ID}';
+ WHERE table_groups_id = :TABLE_GROUPS_ID;
 
 -- Roll up latest scores to data_table_chars -- includes multi-column tests
 WITH score_detail
@@ -73,7 +73,7 @@ WITH score_detail
                     AND  r.test_run_id = ts.last_complete_test_run_id))
          ON (dtc.table_groups_id = ts.table_groups_id
         AND  dtc.table_name = r.table_name)
-       WHERE dtc.table_groups_id = '{TABLE_GROUPS_ID}'
+       WHERE dtc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dtc.table_id, r.column_names),

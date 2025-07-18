@@ -12,14 +12,14 @@ INSERT INTO test_results
             result_status,
             result_message,
             result_measure )
-     SELECT '{TEST_SUITE_ID}'::UUID,
+     SELECT :TEST_SUITE_ID,
             test_type,
             id,
             schema_name,
             table_name,
             column_name,
-            '{RUN_DATE}'    as test_time,
-            '{TEST_RUN_ID}' as test_run_id,
+            :RUN_DATE    as test_time,
+            :TEST_RUN_ID as test_run_id,
             NULL as input_parameters,
             NULL as result_code,
             'Error' as result_status,
@@ -27,4 +27,4 @@ INSERT INTO test_results
             NULL as result_measure
        FROM test_definitions
       WHERE test_active = 'D'
-        AND test_suite_id = '{TEST_SUITE_ID}';
+        AND test_suite_id = :TEST_SUITE_ID;

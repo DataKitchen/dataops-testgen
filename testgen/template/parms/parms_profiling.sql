@@ -9,6 +9,7 @@ SELECT cc.project_code,
        cc.project_host,
        cc.project_port,
        cc.project_user,
+       cc.project_pw_encrypted,
        cc.project_db,
        cc.http_path,
        tg.id::VARCHAR(50) as table_groups_id,
@@ -32,4 +33,4 @@ SELECT cc.project_code,
   INNER JOIN connections cc
          on cc.project_code = tg.project_code
         and cc.connection_id = tg.connection_id
- WHERE tg.id = '{TABLE_GROUPS_ID}'::UUID;
+ WHERE tg.id = :TABLE_GROUP_ID;

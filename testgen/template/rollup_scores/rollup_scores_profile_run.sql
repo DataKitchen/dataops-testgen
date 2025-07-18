@@ -3,7 +3,7 @@ UPDATE profiling_runs
    SET dq_affected_data_points = 0,
        dq_total_data_points = 0,
        dq_score_profiling = 1
- WHERE id = '{RUN_ID}';
+ WHERE id = :RUN_ID;
 
 -- Roll up scoring to profiling run
 WITH score_detail
@@ -17,7 +17,7 @@ WITH score_detail
         ON (pr.profile_run_id = p.profile_run_id
        AND  pr.column_name = p.column_name
        AND  pr.table_name = p.table_name)
-      WHERE pr.profile_run_id = '{RUN_ID}'
+      WHERE pr.profile_run_id = :RUN_ID
         AND COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY 1, 2, 3 ),
 score_calc

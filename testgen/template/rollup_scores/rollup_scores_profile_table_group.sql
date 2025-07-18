@@ -12,7 +12,7 @@ score_calc
       INNER JOIN last_profile_date lp
          ON (run.table_groups_id = lp.table_groups_id
         AND  run.profiling_starttime = lp.last_profile_run_date)
-      WHERE run.table_groups_id = '{TABLE_GROUPS_ID}' )
+      WHERE run.table_groups_id = :TABLE_GROUPS_ID )
 UPDATE table_groups
    SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
        last_complete_profile_run_id = s.profile_run_id
@@ -26,7 +26,7 @@ UPDATE data_column_chars
        last_complete_profile_run_id = tg.last_complete_profile_run_id
   FROM table_groups tg
  WHERE data_column_chars.table_groups_id = tg.id
-   AND data_column_chars.table_groups_id = '{TABLE_GROUPS_ID}';
+   AND data_column_chars.table_groups_id = :TABLE_GROUPS_ID;
 
 -- Roll up latest scores to data_column_chars
 WITH score_detail
@@ -47,7 +47,7 @@ WITH score_detail
         ON (pr.profile_run_id = p.profile_run_id
        AND  pr.column_name = p.column_name
        AND  pr.table_name = p.table_name)
-      WHERE tg.id = '{TABLE_GROUPS_ID}'
+      WHERE tg.id = :TABLE_GROUPS_ID
         AND COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dcc.column_id )
 UPDATE data_column_chars
@@ -63,7 +63,7 @@ UPDATE data_table_chars
        last_complete_profile_run_id = tg.last_complete_profile_run_id
   FROM table_groups tg
  WHERE data_table_chars.table_groups_id = tg.id
-   AND data_table_chars.table_groups_id = '{TABLE_GROUPS_ID}';
+   AND data_table_chars.table_groups_id = :TABLE_GROUPS_ID;
 
 -- Roll up latest scores to data_table_chars
 WITH score_detail
@@ -83,7 +83,7 @@ WITH score_detail
         ON (pr.profile_run_id = p.profile_run_id
        AND  pr.column_name = p.column_name
        AND  pr.table_name = p.table_name)
-      WHERE tg.id = '{TABLE_GROUPS_ID}'
+      WHERE tg.id = :TABLE_GROUPS_ID
         AND COALESCE(p.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY dcc.column_id, dcc.table_id ),
 score_calc

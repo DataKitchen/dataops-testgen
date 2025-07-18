@@ -9,7 +9,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'column'
          UNION
@@ -21,7 +21,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          AND t.test_type NOT LIKE 'Aggregate_%'
@@ -34,7 +34,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope IN ('column', 'referential')
          UNION
@@ -46,7 +46,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          UNION
@@ -58,7 +58,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          AND t.test_type NOT LIKE 'Aggregate_%'
@@ -71,7 +71,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'referential'
          UNION
@@ -82,7 +82,7 @@
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
-         WHERE test_suite_id = '{TEST_SUITE_ID}'
+         WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
          AND t.test_scope = 'table' ) cols
 GROUP BY columns;

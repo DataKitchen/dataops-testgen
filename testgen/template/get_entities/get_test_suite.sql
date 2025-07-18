@@ -9,5 +9,5 @@ SELECT
 	component_key,
 	component_type
  FROM test_suites
-WHERE project_code = '{PROJECT_CODE}'
-AND test_suite = '{TEST_SUITE}';
+WHERE project_code = :PROJECT_CODE
+AND test_suite = :TEST_SUITE;

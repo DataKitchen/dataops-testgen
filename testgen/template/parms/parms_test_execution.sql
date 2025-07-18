@@ -14,6 +14,7 @@ SELECT ts.project_code,
        cc.project_port,
        cc.project_user,
        cc.project_db,
+       cc.project_pw_encrypted,
        cc.connect_by_key,
        cc.private_key,
        cc.private_key_passphrase,
@@ -25,5 +26,5 @@ SELECT ts.project_code,
   FROM test_suites ts
   JOIN connections cc ON (ts.connection_id = cc.connection_id)
   JOIN table_groups tg ON (ts.table_groups_id = tg.id)
- WHERE ts.project_code = '{PROJECT_CODE}'
-   AND ts.test_suite = '{TEST_SUITE}';
+ WHERE ts.project_code = :PROJECT_CODE
+   AND ts.test_suite = :TEST_SUITE;

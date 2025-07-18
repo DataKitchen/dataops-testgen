@@ -12,6 +12,6 @@ SELECT profile_run_id,
        column_type,
        functional_data_type
   FROM profile_results
- WHERE table_name ILIKE '{TABLE_NAME}'
-   AND profile_run_id = '{PROFILE_RUN}'::UUID
+ WHERE table_name ILIKE :TABLE_NAME
+   AND profile_run_id = :PROFILING_RUN_ID
  ORDER BY table_name, position;

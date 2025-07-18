@@ -4,7 +4,7 @@ WITH score_profiling_runs AS (
         table_name,
         column_name
     FROM v_dq_profile_scoring_latest_by_column
-    WHERE {filters} AND {group_by} = '{value}'
+    WHERE {filters} AND {group_by} = :value
 ),
 anomalies AS (
     SELECT results.id::VARCHAR AS id,
@@ -17,7 +17,7 @@ anomalies AS (
         EXTRACT(
             EPOCH
             FROM runs.profiling_starttime
-        ) * 1000 AS time,
+        )::INT AS time,
         '' AS name,
         runs.id::text AS run_id,
         'hygiene' AS issue_type
@@ -37,7 +37,7 @@ score_test_runs AS (
         column_name
     FROM v_dq_test_scoring_latest_by_column
     WHERE {filters}
-        AND {group_by} = '{value}'
+        AND {group_by} = :value
 ),
 tests AS (
     SELECT test_results.id::VARCHAR AS id,
@@ -50,7 +50,7 @@ tests AS (
         EXTRACT(
             EPOCH
             FROM test_time
-        ) * 1000 AS time,
+        )::INT AS time,
         test_suites.test_suite AS name,
         test_results.test_run_id::text AS run_id,
         'test' AS issue_type
