@@ -66,6 +66,7 @@ class TableGroup(Entity):
     profile_flag_cdes: bool = Column(Boolean, default=True)
     profile_do_pair_rules: bool = Column(YNString, default="N")
     profile_pair_rule_pct: int = Column(Integer, default=95)
+    include_in_dashboard: bool = Column(Boolean, default=True)
     description: str = Column(NullIfEmptyString)
     data_source: str = Column(NullIfEmptyString)
     source_system: str = Column(NullIfEmptyString)
@@ -108,8 +109,8 @@ class TableGroup(Entity):
 
     @classmethod
     @st.cache_data(show_spinner=False)
-    def select_summary(cls, project_code: str) -> Iterable[TableGroupSummary]:
-        query = """
+    def select_summary(cls, project_code: str, for_dashboard: bool = False) -> Iterable[TableGroupSummary]:
+        query = f"""
         WITH latest_profile AS (
             SELECT latest_run.table_groups_id,
                 latest_run.id,
@@ -172,7 +173,8 @@ class TableGroup(Entity):
             latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct
         FROM table_groups AS groups
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
-        WHERE groups.project_code = :project_code;
+        WHERE groups.project_code = :project_code
+            {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
         """
         params = {"project_code": project_code}
         db_session = get_current_session()

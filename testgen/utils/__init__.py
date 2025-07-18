@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -12,7 +13,6 @@ import urllib.parse
 from typing import Any, TypeVar
 from uuid import UUID
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -23,6 +23,22 @@ def to_int(value: float | int) -> int:
     if pd.notnull(value):
         return int(value)
     return 0
+
+
+def to_dataframe(
+    data: Iterable[Any],
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    records = []
+    for item in data:
+        if hasattr(item, "to_dict") and callable(item.to_dict):
+            row = item.to_dict()
+        elif hasattr(item, "__dict__"):
+            row = item.__dict__
+        else:
+            row = dict(item)
+        records.append(row)
+    return pd.DataFrame.from_records(records, columns=columns)
 
 
 def is_uuid4(value: str) -> bool:
@@ -48,26 +64,6 @@ def try_json(value: str | None, default: T | None) -> T:
 def get_base_url() -> str:
     session = st.runtime.get_instance()._session_mgr.list_active_sessions()[0]
     return urllib.parse.urlunparse([session.client.request.protocol, session.client.request.host, "", "", "", ""])
-
-
-def format_field(field: Any) -> Any:
-    defaults = {
-        float: 0.0,
-        int: 0,
-    }
-    if isinstance(field, UUID):
-        return str(field)
-    elif isinstance(field, pd.Timestamp):
-        return field.value / 1_000_000
-    elif pd.isnull(field):
-        return defaults.get(type(field), None)
-    elif isinstance(field, np.integer):
-        return int(field)
-    elif isinstance(field, np.floating):
-        return float(field)
-    elif isinstance(field, np.bool_):
-        return bool(field)
-    return field
 
 
 def make_json_safe(value: Any) -> str | bool | int | float | None:
@@ -184,6 +180,7 @@ def format_score_card_breakdown(breakdown: list[dict], category: str) -> dict:
             "table_groups_id": str(row["table_groups_id"]) if row.get("table_groups_id") else None,
             "score": friendly_score(row["score"]),
             "impact": friendly_score_impact(row["impact"]),
+            "issue_ct": int(row["issue_ct"]),
         } for row in breakdown],
     }
 
@@ -194,7 +191,10 @@ def format_score_card_issues(issues: list[dict], category: str) -> dict:
         columns.insert(0, "column")
     return {
         "columns": columns,
-        "items": issues,
+        "items": [{
+            **row,
+            "time": int(row["time"]),
+        } for row in issues],
     }
 
 

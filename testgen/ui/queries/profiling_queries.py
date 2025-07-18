@@ -1,12 +1,7 @@
-import json
-from datetime import datetime
-from typing import NamedTuple
-
 import pandas as pd
 import streamlit as st
 
-import testgen.ui.services.database_service as db
-from testgen.common.models import get_current_session
+from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db
 from testgen.utils import is_uuid4
 
 TAG_FIELDS = [
@@ -72,36 +67,9 @@ future_date_ct,
 boolean_true_ct
 """
 
-@st.cache_data(show_spinner="Loading data ...")
-def get_run_by_id(profile_run_id: str) -> pd.Series:
-    if not is_uuid4(profile_run_id):
-        return pd.Series()
-    
-    schema: str = st.session_state["dbschema"]
-    sql = f"""
-    SELECT profiling_starttime, table_groups_id::VARCHAR, table_groups_name, pr.project_code, pr.dq_score_profiling,
-        CASE WHEN pr.id = tg.last_complete_profile_run_id THEN true ELSE false END AS is_latest_run
-        FROM {schema}.profiling_runs pr
-    INNER JOIN {schema}.table_groups tg
-        ON pr.table_groups_id = tg.id
-    WHERE pr.id = '{profile_run_id}'
-    """
-    df = db.retrieve_data(sql)
-    if not df.empty:
-        return df.iloc[0]
-    else:
-        return pd.Series()
-
 
 @st.cache_data(show_spinner=False)
-def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None):
-    db_session = get_current_session()
-    params = {
-        "profiling_run_id": profiling_run_id,
-        "table_name": table_name if table_name else "%%",
-        "column_name": column_name if column_name else "%%",
-    }
-
+def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None) -> pd.DataFrame:
     order_by = ""
     if sorting_columns is None:
         order_by = "ORDER BY schema_name, table_name, position"
@@ -142,11 +110,13 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
         AND column_name ILIKE :column_name
     {order_by};
     """
+    params = {
+        "profiling_run_id": profiling_run_id,
+        "table_name": table_name or "%%",
+        "column_name": column_name or "%%",
+    }
 
-    results = db_session.execute(query, params=params)
-    columns = [column.name for column in results.cursor.description]
-
-    return pd.DataFrame(list(results), columns=columns)
+    return fetch_df_from_db(query, params)
 
 
 @st.cache_data(show_spinner=False)
@@ -160,8 +130,9 @@ def get_table_by_id(
     if not is_uuid4(table_id):
         return None
     
-    condition = f"WHERE table_id = '{table_id}'"
-    return get_tables_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    condition = "WHERE table_id = :table_id"
+    params = {"table_id": table_id}
+    return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
 
 
 def get_tables_by_id(
@@ -170,12 +141,13 @@ def get_tables_by_id(
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
-    condition = f"""
+) -> list[dict]:
+    condition = """
     INNER JOIN (
-        SELECT UNNEST(ARRAY [{", ".join([ f"'{col}'" for col in table_ids if is_uuid4(col) ])}]) AS id
+        SELECT UNNEST(ARRAY [:table_ids]) AS id
     ) selected ON (table_chars.table_id = selected.id::UUID)"""
-    return get_tables_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    params = {"table_ids": table_ids}
+    return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
 
 
 def get_tables_by_table_group(
@@ -184,31 +156,32 @@ def get_tables_by_table_group(
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
+) -> list[dict]:
     if not is_uuid4(table_group_id):
         return None
     
-    condition = f"WHERE table_chars.table_groups_id = '{table_group_id}'"
-    return get_tables_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    condition = "WHERE table_chars.table_groups_id = :table_group_id"
+    params = {"table_group_id": table_group_id}
+    return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
 
 
 def get_tables_by_condition(
     filter_condition: str,
+    filter_params: dict,
     include_tags: bool = False,
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
-    schema: str = st.session_state["dbschema"]
+) -> list[dict]:
     query = f"""
-    {f"""
+    {"""
     WITH active_test_definitions AS (
         SELECT
             test_defs.table_groups_id,
             test_defs.table_name,
             COUNT(*) AS count
-        FROM {schema}.test_definitions test_defs
-            LEFT JOIN {schema}.data_column_chars ON (
+        FROM test_definitions test_defs
+            LEFT JOIN data_column_chars ON (
                 test_defs.table_groups_id = data_column_chars.table_groups_id
                 AND test_defs.table_name = data_column_chars.table_name
                 AND test_defs.column_name = data_column_chars.column_name
@@ -241,11 +214,11 @@ def get_tables_by_condition(
         -- Table Groups Tags
         {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
         """ if include_tags else ""}
-        {f"""
+        {"""
         -- Has Test Runs
         EXISTS(
             SELECT 1
-            FROM {schema}.test_results
+            FROM test_results
             WHERE table_groups_id = table_chars.table_groups_id
                 AND table_name = table_chars.table_name
         ) AS has_test_runs,
@@ -263,12 +236,12 @@ def get_tables_by_condition(
         table_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         profiling_starttime AS profile_run_date,
         TRUE AS is_latest_profile
-    FROM {schema}.data_table_chars table_chars
-        LEFT JOIN {schema}.profiling_runs ON (
+    FROM data_table_chars table_chars
+        LEFT JOIN profiling_runs ON (
             table_chars.last_complete_profile_run_id = profiling_runs.id
         )
-        {f"""
-        LEFT JOIN {schema}.table_groups ON (
+        {"""
+        LEFT JOIN table_groups ON (
             table_chars.table_groups_id = table_groups.id
         )
         """ if include_tags else ""}
@@ -282,10 +255,8 @@ def get_tables_by_condition(
     ORDER BY table_name;
     """
 
-    results = db.retrieve_data(query)
-    if not results.empty:
-        # to_json converts datetimes, NaN, etc, to JSON-safe values (Note: to_dict does not)
-        return json.loads(results.to_json(orient="records"))
+    results = fetch_all_from_db(query, filter_params)
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
@@ -299,8 +270,9 @@ def get_column_by_id(
     if not is_uuid4(column_id):
         return None
 
-    condition = f"WHERE column_chars.column_id = '{column_id}'"
-    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    condition = "WHERE column_chars.column_id = :column_id"
+    params = {"column_id": column_id}
+    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
 
 
 @st.cache_data(show_spinner="Loading data ...")
@@ -313,13 +285,17 @@ def get_column_by_name(
     include_active_tests: bool = False,
     include_scores: bool = False,
 ) -> dict | None:
-
-    condition = f"""
-    WHERE column_chars.column_name = '{column_name}'
-    AND column_chars.table_name = '{table_name}'
-    AND column_chars.table_groups_id = '{table_group_id}'
+    condition = """
+    WHERE column_chars.column_name = :column_name
+    AND column_chars.table_name = :table_name
+    AND column_chars.table_groups_id = :table_group_id
     """
-    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    params = {
+        "column_name": column_name,
+        "table_name": table_name,
+        "table_group_id": table_group_id,
+    }
+    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
 
 
 def get_columns_by_id(
@@ -328,12 +304,13 @@ def get_columns_by_id(
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
-    condition = f"""
+) -> list[dict]:
+    condition = """
     INNER JOIN (
-        SELECT UNNEST(ARRAY [{", ".join([ f"'{col}'" for col in column_ids if is_uuid4(col) ])}]) AS id
+        SELECT UNNEST(ARRAY [:column_ids]) AS id
     ) selected ON (column_chars.column_id = selected.id::UUID)"""
-    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    params = {"column_ids": [ col for col in column_ids if is_uuid4(col) ]}
+    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
 
 
 def get_columns_by_table_group(
@@ -342,23 +319,23 @@ def get_columns_by_table_group(
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
+) -> list[dict]:
     if not is_uuid4(table_group_id):
         return None
 
-    condition = f"WHERE column_chars.table_groups_id = '{table_group_id}'"
-    return get_columns_by_condition(condition, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    condition = "WHERE column_chars.table_groups_id = :table_group_id"
+    params = {"table_group_id": table_group_id}
+    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
 
 
 def get_columns_by_condition(
     filter_condition: str,
+    filter_params: dict,
     include_tags: bool = False,
     include_has_test_runs: bool = False,
     include_active_tests: bool = False,
     include_scores: bool = False,
-) -> list[dict] | None:
-    schema: str = st.session_state["dbschema"]
-
+) -> list[dict]:
     query = f"""
     SELECT
         column_chars.column_id::VARCHAR AS id,
@@ -391,21 +368,21 @@ def get_columns_by_condition(
         column_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         run_date AS profile_run_date,
         TRUE AS is_latest_profile,
-        {f"""
+        {"""
         -- Has Test Runs
         EXISTS(
             SELECT 1
-            FROM {schema}.test_results
+            FROM test_results
             WHERE table_groups_id = column_chars.table_groups_id
                 AND table_name = column_chars.table_name
                 AND column_names = column_chars.column_name
         ) AS has_test_runs,
         """ if include_has_test_runs else ""}
-        {f"""
+        {"""
         -- Test Definition Count
         (
             SELECT COUNT(*)
-            FROM {schema}.test_definitions
+            FROM test_definitions
             WHERE table_groups_id = column_chars.table_groups_id
                 AND table_name = column_chars.table_name
                 AND column_name = column_chars.column_name
@@ -418,16 +395,16 @@ def get_columns_by_condition(
         column_chars.dq_score_testing,
         """ if include_scores else ""}
         {COLUMN_PROFILING_FIELDS}
-    FROM {schema}.data_column_chars column_chars
-        {f"""
-        LEFT JOIN {schema}.data_table_chars table_chars ON (
+    FROM data_column_chars column_chars
+        {"""
+        LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
-        LEFT JOIN {schema}.table_groups ON (
+        LEFT JOIN table_groups ON (
             column_chars.table_groups_id = table_groups.id
         )
         """ if include_tags else ""}
-        LEFT JOIN {schema}.profile_results ON (
+        LEFT JOIN profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
@@ -435,23 +412,14 @@ def get_columns_by_condition(
     {filter_condition}
     ORDER BY table_name, ordinal_position;
     """
-
-    results = db.retrieve_data(query)
-    if not results.empty:
-        # to_json converts datetimes, NaN, etc, to JSON-safe values (Note: to_dict does not)
-        return json.loads(results.to_json(orient="records"))
+    results = fetch_all_from_db(query, filter_params)
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
 def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
     if not profile_run_id:
         return []
-
-    schema: str = st.session_state["dbschema"]
-
-    column_condition = ""
-    if column_name:
-        column_condition = f"AND column_name = '{column_name}'"
 
     query = f"""
     WITH pii_results AS (
@@ -461,23 +429,23 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
                 WHEN detail LIKE 'Risk: MODERATE%%' THEN 'Moderate'
                 ELSE null
             END AS pii_risk
-        FROM {schema}.profile_anomaly_results
+        FROM profile_anomaly_results
     )
     SELECT column_name,
         anomaly_name,
         issue_likelihood,
         detail,
         pii_risk
-    FROM {schema}.profile_anomaly_results anomaly_results
-        LEFT JOIN {schema}.profile_anomaly_types anomaly_types ON (
+    FROM profile_anomaly_results anomaly_results
+        LEFT JOIN profile_anomaly_types anomaly_types ON (
             anomaly_types.id = anomaly_results.anomaly_id
         )
         LEFT JOIN pii_results ON (
             anomaly_results.id = pii_results.id
         )
-    WHERE profile_run_id = '{profile_run_id}'
-        AND table_name = '{table_name}'
-        {column_condition}
+    WHERE profile_run_id = :profile_run_id
+        AND table_name = :table_name
+        {"AND column_name = :column_name" if column_name else ""}
         AND COALESCE(disposition, 'Confirmed') = 'Confirmed'
     ORDER BY
         CASE issue_likelihood
@@ -493,29 +461,10 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
         END,
         column_name;
     """
-
-    results = db.retrieve_data(query)
-    return [row.to_dict() for _, row in results.iterrows()]
-
-
-class LatestProfilingRun(NamedTuple):
-    id: str
-    run_time: datetime
-
-
-def get_latest_run_date(project_code: str) -> LatestProfilingRun | None:
-    session = get_current_session()
-    result = session.execute(
-        """
-        SELECT id, profiling_starttime
-        FROM profiling_runs
-        WHERE project_code = :project_code
-            AND status = 'Complete'
-        ORDER BY profiling_starttime DESC
-        LIMIT 1
-        """,
-        params={"project_code": project_code},
-    )
-    if result and (latest_run := result.first()):
-        return LatestProfilingRun(str(latest_run.id), latest_run.profiling_starttime)
-    return None
+    params = {
+        "profile_run_id": profile_run_id,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]

@@ -1,12 +1,5 @@
 /**
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} test_suites_ct
- * @property {number} connections_ct
- * @property {number} table_groups_ct
- * @property {string} default_connection_id
- * @property {boolean} can_export_to_observability
+ * @import { ProjectSummary } from '../utils.js';
  *
  * @typedef TableGroupOption
  * @type {object}
@@ -73,7 +66,7 @@ const TestSuites = (/** @type Properties */ props) => {
         { id: wrapperId, style: 'overflow-y: auto;' },
         () => {
             const projectSummary = getValue(props.project_summary);
-            return projectSummary.test_suites_ct > 0
+            return projectSummary.test_suite_count > 0
             ? div(
                 { class: 'tg-test-suites'},
                 () => div(
@@ -244,7 +237,7 @@ const ConditionalEmptyState = (
         }),
     };
 
-    if (projectSummary.connections_ct <= 0) {
+    if (projectSummary.connection_count <= 0) {
         args = {
             message: EMPTY_STATE_MESSAGE.connection,
             link: {
@@ -253,7 +246,7 @@ const ConditionalEmptyState = (
                 params: { project_code: projectSummary.project_code },
             },
         };
-    } else if (projectSummary.table_groups_ct <= 0) {
+    } else if (projectSummary.table_group_count <= 0) {
         args = {
             message: EMPTY_STATE_MESSAGE.tableGroup,
             link: {

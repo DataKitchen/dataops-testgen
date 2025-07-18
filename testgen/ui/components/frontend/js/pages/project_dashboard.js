@@ -1,11 +1,5 @@
 /**
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} test_runs_count
- * @property {number} profiling_runs_count
- * @property {number} connections_count
- * @property {string} default_connection_id
+ * @import { ProjectSummary } from '../utils.js';
  *
  * @typedef TestSuiteSummary
  * @type {object}
@@ -48,7 +42,7 @@
  *
  * @typedef Properties
  * @type {object}
- * @property {ProjectSummary} project
+ * @property {ProjectSummary} project_summary
  * @property {TableGroupSummary[]} table_groups
  * @property {SortOption[]} table_groups_sort_options
  */
@@ -133,7 +127,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 { class: 'flex-column mt-4' },
                 getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
             )
-            : ConditionalEmptyState(getValue(props.project)),
+            : ConditionalEmptyState(getValue(props.project_summary)),
     );
 }
 
@@ -173,7 +167,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
         );
     }
 
-    const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start)) / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start * 1000)) / (1000 * 60 * 60 * 24));
 
     return div(
         div(
@@ -283,7 +277,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
         },
     };
 
-    const args = project.connections_count > 0 ? forTablegroups : forConnections;
+    const args = project.connection_count > 0 ? forTablegroups : forConnections;
 
     return EmptyState({
         icon: 'home',

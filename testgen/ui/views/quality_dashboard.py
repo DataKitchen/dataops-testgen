@@ -2,10 +2,10 @@ from typing import ClassVar, get_args
 
 import streamlit as st
 
+from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.queries import project_queries
 from testgen.ui.queries.scoring_queries import get_all_score_cards
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session
@@ -29,19 +29,13 @@ class QualityDashboardPage(Page):
     )
 
     def render(self, *, project_code: str, **_kwargs) -> None:
-        project_summary = project_queries.get_summary_by_code(project_code)
+        project_summary = Project.get_summary(project_code)
 
         testgen.page_header(PAGE_TITLE)
         testgen.testgen_component(
             "quality_dashboard",
             props={
-                "project_summary": {
-                    "project_code": project_code,
-                    "connections_count": int(project_summary["connections_ct"]),
-                    "default_connection_id": str(project_summary["default_connection_id"]),
-                    "table_groups_count": int(project_summary["table_groups_ct"]),
-                    "profiling_runs_count": int(project_summary["profiling_runs_ct"]),
-                },
+                "project_summary": project_summary.to_dict(json_safe=True),
                 "scores": [
                     format_score_card(score)
                     for score in get_all_score_cards(project_code)

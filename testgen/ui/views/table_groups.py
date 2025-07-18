@@ -1,18 +1,20 @@
 import logging
 import typing
+from collections.abc import Iterable
 from dataclasses import asdict
 from functools import partial
 
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-import testgen.ui.services.connection_service as connection_service
-import testgen.ui.services.table_group_service as table_group_service
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import table_group_queries
 from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
@@ -41,9 +43,14 @@ class TableGroupsPage(Page):
 
         user_can_edit = user_session_service.user_can_edit()
         if connection_id:
-            table_groups = table_group_service.get_by_connection(project_code, connection_id)
+            table_groups = TableGroup.select_minimal_where(
+                TableGroup.project_code == project_code,
+                TableGroup.connection_id == connection_id,
+            )
         else:
-            table_groups = table_group_service.get_all(project_code)
+            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+
+        connections = self._get_connections(project_code)
 
         return testgen.testgen_component(
             "table_group_list",
@@ -53,10 +60,8 @@ class TableGroupsPage(Page):
                 "permissions": {
                     "can_edit": user_can_edit,
                 },
-                "connections": self._get_connections(project_code),
-                "table_groups": self._format_table_group_list([
-                    table_group.to_dict() for _, table_group in table_groups.iterrows()
-                ]),
+                "connections": connections,
+                "table_groups": self._format_table_group_list(table_groups, connections),
             },
             on_change_handlers={
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
@@ -76,7 +81,6 @@ class TableGroupsPage(Page):
     def add_table_group_dialog(self, project_code: str, connection_id: str | None, *_args):
         return self._table_group_wizard(
             project_code,
-            save_table_group_fn=table_group_service.add,
             connection_id=connection_id,
             steps=[
                 "tableGroup",
@@ -89,7 +93,6 @@ class TableGroupsPage(Page):
     def edit_table_group_dialog(self, project_code: str, table_group_id: str):
         return self._table_group_wizard(
             project_code,
-            save_table_group_fn=table_group_service.edit,
             table_group_id=table_group_id,
             steps=[
                 "tableGroup",
@@ -101,7 +104,6 @@ class TableGroupsPage(Page):
         self,
         project_code: str,
         *,
-        save_table_group_fn: typing.Callable[[dict], str],
         steps: list[str] | None = None,
         connection_id: str | None = None,
         table_group_id: str | None = None,
@@ -144,54 +146,53 @@ class TableGroupsPage(Page):
 
         is_table_group_used = False
         connections = self._get_connections(project_code)
-        original_table_group = {"project_code": project_code}
+        table_group = TableGroup(project_code=project_code)
+        original_table_group_schema = None
         if table_group_id:
-            original_table_group = table_group_service.get_by_id(table_group_id=table_group_id).to_dict()
-            is_table_group_used = table_group_service.is_table_group_used(table_group_id)
+            table_group = TableGroup.get(table_group_id)
+            original_table_group_schema = table_group.table_group_schema
+            is_table_group_used = TableGroup.is_in_use([table_group_id])
 
-        table_group = {
-            **original_table_group,
-            **get_table_group(),
-        }
+        add_scorecard_definition = False
+        for key, value in get_table_group().items():
+            if key == "add_scorecard_definition":
+                add_scorecard_definition = value
+            else:
+                setattr(table_group, key, value)
+
         table_group_preview = None
 
         if is_table_group_used:
-            table_group["table_group_schema"] = original_table_group["table_group_schema"]
+            table_group.table_group_schema = original_table_group_schema
 
         if len(connections) == 1:
-            table_group["connection_id"] = connections[0]["connection_id"]
+            table_group.connection_id = connections[0]["connection_id"]
 
-        if not table_group.get("connection_id"):
+        if not table_group.connection_id:
             if connection_id:
-                table_group["connection_id"] = int(connection_id)
+                table_group.connection_id = int(connection_id)
             elif len(connections) == 1:
-                table_group["connection_id"] = connections[0]["connection_id"]
-        elif table_group.get("id"):
+                table_group.connection_id = connections[0]["connection_id"]
+        elif table_group.id:
             connections = [
                 conn for conn in connections
-                if int(conn["connection_id"]) == int(table_group.get("connection_id"))
+                if int(conn["connection_id"]) == int(table_group.connection_id)
             ]
 
         if should_preview():
-            connection = connection_service.get_by_id(table_group["connection_id"], hide_passwords=False)
-            table_group_preview = table_group_service.get_table_group_preview(
-                project_code,
-                connection,
-                {"id": table_group.get("id") or "temp", **table_group},
-            )
+            table_group_preview = table_group_queries.get_table_group_preview(table_group)
 
         success = None
         message = ""
-        table_group_id = None
         if should_save():
             success = True
             if is_table_group_verified():
                 try:
-                    table_group_id = save_table_group_fn(table_group)
+                    table_group.save(add_scorecard_definition)
                     if should_run_profiling():
                         try:
-                            run_profiling_in_background(table_group_id)
-                            message = f"Profiling run started for table group {table_group['table_groups_name']}."
+                            run_profiling_in_background(table_group.id)
+                            message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception:
                             success = False
                             message = "Profiling run encountered errors"
@@ -210,14 +211,14 @@ class TableGroupsPage(Page):
             props={
                 "project_code": project_code,
                 "connections": connections,
-                "table_group": table_group,
+                "table_group": table_group.to_dict(json_safe=True),
                 "is_in_use": is_table_group_used,
                 "table_group_preview": table_group_preview,
                 "steps": steps,
                 "results": {
                     "success": success,
                     "message": message,
-                    "table_group_id": table_group_id,
+                    "table_group_id": table_group.id,
                 } if success is not None else None,
             },
             on_change_handlers={
@@ -229,24 +230,33 @@ class TableGroupsPage(Page):
 
     def _get_connections(self, project_code: str, connection_id: str | None = None) -> list[dict]:
         if connection_id:
-            connections = [connection_service.get_by_id(connection_id, hide_passwords=True)]
+            connections = [Connection.get_minimal(connection_id)]
         else:
-            connections = [
-                connection for _, connection in connection_service.get_connections(
-                    project_code, hide_passwords=True
-                ).iterrows()
-            ]
+            connections = Connection.select_minimal_where(Connection.project_code == project_code)
         return [ format_connection(connection) for connection in connections ]
 
-    def _format_table_group_list(self, table_groups: list[dict]) -> list[dict]:
+    def _format_table_group_list(
+        self,
+        table_groups: Iterable[TableGroupMinimal],
+        connections: list[dict],
+    ) -> list[dict]:
+        connections_by_id = { con["connection_id"]: con for con in connections }
+        formatted_list = []
+
         for table_group in table_groups:
-            flavors = [f for f in FLAVOR_OPTIONS if f.value == table_group["sql_flavor_code"]]
+            formatted_table_group = table_group.to_dict(json_safe=True)
+            connection = connections_by_id[table_group.connection_id]
+
+            flavors = [f for f in FLAVOR_OPTIONS if f.value == connection["sql_flavor_code"]]
             if flavors and (flavor := flavors[0]):
-                table_group["connection"] = {
-                    "name": table_group["connection_name"],
+                formatted_table_group["connection"] = {
+                    "name": connection["connection_name"],
                     "flavor": asdict(flavor),
                 }
-        return table_groups
+    
+            formatted_list.append(formatted_table_group)
+
+        return formatted_list
 
     @st.dialog(title="Run Profiling")
     def run_profiling_dialog(self, project_code: str, table_group_id: str) -> None:
@@ -268,7 +278,7 @@ class TableGroupsPage(Page):
             default=False,
         )
 
-        table_group = table_group_service.get_by_id(table_group_id).to_dict()
+        table_group = TableGroup.get_minimal(table_group_id)
         result = None
         if should_run_profiling():
             success = True
@@ -285,7 +295,7 @@ class TableGroupsPage(Page):
             "run_profiling_dialog",
             props={
                 "project_code": project_code,
-                "table_group": table_group,
+                "table_group": table_group.to_dict(json_safe=True),
                 "result": result,
             },
             on_change_handlers={
@@ -295,13 +305,13 @@ class TableGroupsPage(Page):
         )
 
     @st.dialog(title="Delete Table Group")
+    @with_database_session
     def delete_table_group_dialog(self, project_code: str, table_group_id: str):
         def on_delete_confirmed(*_args):
             confirm_deletion(True)
 
-        table_group = table_group_service.get_by_id(table_group_id=table_group_id)
-        table_group_name = table_group["table_groups_name"]
-        can_be_deleted = table_group_service.cascade_delete([table_group_name], dry_run=True)
+        table_group = TableGroup.get_minimal(table_group_id)
+        can_be_deleted = not TableGroup.is_in_use([table_group_id])
         is_deletion_confirmed, confirm_deletion = temp_value(
             f"table_groups:confirm_delete:{table_group_id}",
             default=False,
@@ -311,9 +321,9 @@ class TableGroupsPage(Page):
 
         result = None
         if is_deletion_confirmed():
-            if not table_group_service.are_table_groups_in_use([table_group_name]):
-                table_group_service.cascade_delete([table_group_name])
-                message = f"Table Group {table_group_name} has been deleted. "
+            if not TableGroup.has_running_process([table_group_id]):
+                TableGroup.cascade_delete([table_group_id])
+                message = f"Table Group {table_group.table_groups_name} has been deleted. "
                 st.rerun()
             else:
                 message = "This Table Group is in use by a running process and cannot be deleted."
@@ -323,7 +333,7 @@ class TableGroupsPage(Page):
             "table_group_delete",
             props={
                 "project_code": project_code,
-                "table_group": table_group.to_dict(),
+                "table_group": table_group.to_dict(json_safe=True),
                 "can_be_deleted": can_be_deleted,
                 "result": result,
             },

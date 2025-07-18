@@ -6,10 +6,12 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
+from testgen.common.models import with_database_session
+from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service, user_session_service
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 
 PAGE_TITLE = "Project Settings"
@@ -30,11 +32,11 @@ class ProjectSettingsPage(Page):
         roles=[ "admin" ],
     )
 
-    project: dict | None = None
+    project: Project | None = None
     existing_names: list[str] | None = None
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
-        self.project = project_service.get_project_by_code(project_code)
+        self.project = Project.get(project_code)
 
         testgen.page_header(
             PAGE_TITLE,
@@ -52,18 +54,18 @@ class ProjectSettingsPage(Page):
             with testgen.card():
                 name_input = st.text_input(
                     label="Project Name",
-                    value=self.project["project_name"],
+                    value=self.project.project_name,
                     max_chars=30,
                     key="project_settings:keys:project_name",
                 )
                 st.text_input(
                     label="Observability API URL",
-                    value=self.project["observability_api_url"],
+                    value=self.project.observability_api_url,
                     key="project_settings:keys:observability_api_url",
                 )
                 st.text_input(
                     label="Observability API Key",
-                    value=self.project["observability_api_key"],
+                    value=self.project.observability_api_key,
                     key="project_settings:keys:observability_api_key",
                 )
 
@@ -97,22 +99,27 @@ class ProjectSettingsPage(Page):
                         key="project-settings:keys:edit",
                     )
 
+    @with_database_session
     def edit_project(self) -> None:
-        project = self._get_edited_project()
-        if project["project_name"] and (not self.existing_names or project["project_name"] not in self.existing_names):
-            project_service.edit_project(project)
+        edited_project = self._get_edited_project()
+        if edited_project["project_name"] and (not self.existing_names or edited_project["project_name"] not in self.existing_names):
+            self.project.project_name = edited_project["project_name"]
+            self.project.observability_api_url = edited_project["observability_api_url"]
+            self.project.observability_api_key = edited_project["observability_api_key"]
+            self.project.save()
             st.toast("Changes have been saved.")
 
     def _get_edited_project(self) -> None:
         edited_project = {
-            "id": self.project["id"],
-            "project_code": self.project["project_code"],
+            "id": self.project.id,
+            "project_code": self.project.project_code,
         }
         # We have to get the input widget values from the session state
         # The return values for st.text_input do not reflect the latest user input if the button is clicked without unfocusing the input
         # https://discuss.streamlit.io/t/issue-with-modifying-text-using-st-text-input-and-st-button/56619/5
         for key in [ "project_name", "observability_api_url", "observability_api_key" ]:
-            edited_project[key] = st.session_state[f"project_settings:keys:{key}"].strip()
+            value = st.session_state.get(f"project_settings:keys:{key}")
+            edited_project[key] = value.strip() if value else None
         return edited_project
 
     def _display_connection_status(self, status_container: DeltaGenerator) -> None:

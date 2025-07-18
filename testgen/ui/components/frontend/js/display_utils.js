@@ -3,7 +3,7 @@ function formatTimestamp(
     /** @type boolean */ show_year,
 ) {
     if (timestamp) {
-        const date = new Date(timestamp);
+        const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
         if (!isNaN(date)) {
             const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
             const hours = date.getHours();

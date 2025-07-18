@@ -12,13 +12,14 @@ from testgen.commands.run_refresh_score_cards_results import (
     run_refresh_score_cards_results,
 )
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionCriteria, SelectedIssue
+from testgen.common.models.test_run import TestRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
-from testgen.ui.queries import profiling_queries, test_run_queries
 from testgen.ui.queries.scoring_queries import (
     get_all_score_cards,
     get_column_filters,
@@ -330,8 +331,8 @@ def save_score_definition(_) -> None:
 
     if is_new:
         latest_run = max(
-            profiling_queries.get_latest_run_date(project_code),
-            test_run_queries.get_latest_run_date(project_code),
+            ProfilingRun.get_latest_run(project_code),
+            TestRun.get_latest_run(project_code),
             key=lambda run: getattr(run, "run_time", datetime.min),
         )
 

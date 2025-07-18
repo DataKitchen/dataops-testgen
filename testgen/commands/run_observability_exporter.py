@@ -15,6 +15,7 @@ from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
 )
+from testgen.common.models.test_suite import TestSuite
 
 LOG = logging.getLogger("testgen")
 
@@ -310,11 +311,11 @@ def export_test_results(test_suite_id):
 
 def run_observability_exporter(project_code, test_suite):
     LOG.info("CurrentStep: Observability Export - Test Results")
-    result = fetch_dict_from_db(
-        "SELECT id::VARCHAR FROM test_suites WHERE test_suite = :test_suite AND project_code = :project_code",
-        {"test_suite": test_suite, "project_code": project_code},
+    test_suites = TestSuite.select_minimal_where(
+        TestSuite.project_code == project_code,
+        TestSuite.test_suite == test_suite,
     )
-    qty_of_exported_events = export_test_results(result[0]["id"])
+    qty_of_exported_events = export_test_results(test_suites[0].id)
     click.echo(f"{qty_of_exported_events} events have been exported.")
 
 

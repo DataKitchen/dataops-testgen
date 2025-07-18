@@ -7,10 +7,10 @@ import pandas as pd
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
-import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.common.models import with_database_session
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -21,7 +21,8 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import project_service, user_session_service
+from testgen.ui.services import user_session_service
+from testgen.ui.services.database_service import fetch_df_from_db
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 
@@ -37,23 +38,23 @@ class ProfilingResultsPage(Page):
     ]
 
     def render(self, run_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
-        run_df = profiling_queries.get_run_by_id(run_id)
-        if run_df.empty:
+        run = ProfilingRun.get_minimal(run_id)
+        if not run:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
             return
 
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
-        project_service.set_sidebar_project(run_df["project_code"])
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
+        session.set_sidebar_project(run.project_code)
 
         testgen.page_header(
             "Data Profiling Results",
             "view-data-profiling-results",
             breadcrumbs=[
-                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run_df["project_code"] } },
-                { "label": f"{run_df['table_groups_name']} | {run_date}" },
+                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
+                { "label": f"{run.table_groups_name} | {run_date}" },
             ],
         )
 
@@ -143,7 +144,7 @@ class ProfilingResultsPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run_df["table_groups_name"], run_date, run_id, data),
+                args=(run.table_groups_name, run_date, run_id, data),
             )
 
         with popover_container.container(key="tg--export-popover"):
@@ -281,25 +282,27 @@ def get_excel_report_data(
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_run_tables(profiling_run_id: str):
-    schema: str = st.session_state["dbschema"]
-    query = f"""
+def get_profiling_run_tables(profiling_run_id: str) -> pd.DataFrame:
+    query = """
     SELECT DISTINCT table_name
-        FROM {schema}.profile_results
-    WHERE profile_run_id = '{profiling_run_id}'
-    ORDER BY table_name
+    FROM profile_results
+    WHERE profile_run_id = :profiling_run_id
+    ORDER BY table_name;
     """
-    return db.retrieve_data(query)
+    return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_run_columns(profiling_run_id: str, table_name: str):
-    schema: str = st.session_state["dbschema"]
-    query = f"""
+def get_profiling_run_columns(profiling_run_id: str, table_name: str) -> pd.DataFrame:
+    query = """
     SELECT DISTINCT column_name
-        FROM {schema}.profile_results
-    WHERE profile_run_id = '{profiling_run_id}'
-        AND table_name = '{table_name}'
-    ORDER BY column_name
+    FROM profile_results
+    WHERE profile_run_id = :profiling_run_id
+        AND table_name = :table_name
+    ORDER BY column_name;
     """
-    return db.retrieve_data(query)
+    params = {
+        "profiling_run_id": profiling_run_id,
+        "table_name": table_name or "",
+    }
+    return fetch_df_from_db(query, params)
