@@ -7,15 +7,6 @@ from testgen.ui.services.user_session_service import AUTH_TOKEN_COOKIE_NAME
 LOG = logging.getLogger("testgen")
 
 
-def copy_to_clipboard(text):
-    script = f"""await (async function () {{
-        window.parent.postMessage({{ type: 'TestgenCopyToClipboard', text: '{text}' }}, '*');
-        return 0;
-    }})()
-    """
-    execute_javascript(script)
-
-
 def clear_component_states():
     execute_javascript(
         f"""await (async function () {{

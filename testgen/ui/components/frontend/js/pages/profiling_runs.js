@@ -238,7 +238,9 @@ const ProfilingRunItem = (
         ),
         div(
             { style: `flex: ${columns[5]}; font-size: 16px;` },
-            item.dq_score_profiling ?? '--',
+            item.column_ct && item.dq_score_profiling
+                ? item.dq_score_profiling
+                : '--',
         ),
     );
 }

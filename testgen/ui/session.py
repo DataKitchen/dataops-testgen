@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
 
 if TYPE_CHECKING:
     from testgen.common.version_service import Version
@@ -39,7 +39,7 @@ class TestgenSession(Singleton):
     add_project: bool
     version: Version | None
 
-    testgen_event_id: str | None
+    testgen_event_id: ClassVar[dict[str, str]] = {}
     sidebar_event_id: str | None
     link_event_id: str | None
     breadcrumb_event_id: str | None

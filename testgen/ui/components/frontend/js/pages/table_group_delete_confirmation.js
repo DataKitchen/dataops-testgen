@@ -95,6 +95,15 @@ const TableGroupDeleteConfirmation = (props) => {
                 onclick: () => emitEvent('DeleteTableGroupConfirmed'),
             }),
         ),
+        () => {
+            const result = getValue(props.result);
+            return result
+                ? Alert(
+                    { type: result.success ? 'success' : 'error', class: 'mt-3' },
+                    div(result.message),
+                )
+                : '';
+        },
     );
 };
 

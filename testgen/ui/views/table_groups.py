@@ -305,7 +305,7 @@ class TableGroupsPage(Page):
                 st.rerun()
             else:
                 message = "This Table Group is in use by a running process and cannot be deleted."
-            result = {"success": success, "message": message},
+            result = {"success": success, "message": message}
 
         testgen.testgen_component(
             "table_group_delete",

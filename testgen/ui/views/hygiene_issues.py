@@ -257,28 +257,17 @@ class HygieneIssuesPage(Page):
             if not selected_row:
                 st.markdown(":orange[Select a record to see more information.]")
             else:
-                col1, col2 = st.columns([0.8, 0.2])
+                _, buttons_column = st.columns([0.5, 0.5])
+
+                with buttons_column:
+                    col1, col2, col3 = st.columns([.3, .3, .3])
+                    
                 with col1:
-                    fm.render_html_list(
-                        selected_row,
-                        [
-                            "anomaly_name",
-                            "table_name",
-                            "column_name",
-                            "column_type",
-                            "anomaly_description",
-                            "detail",
-                            "likelihood_explanation",
-                            "suggested_action",
-                        ],
-                        "Hygiene Issue Detail",
-                        int_data_width=700,
-                    )
-                with col2:
                     view_profiling_button(
                         selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
                     )
 
+                with col2:
                     if st.button(
                         ":material/visibility: Source Data", help="View current source data for highlighted issue", use_container_width=True
                     ):
@@ -288,6 +277,8 @@ class HygieneIssuesPage(Page):
                             issue_type=selected_row["anomaly_name"],
                         )
                         source_data_dialog(selected_row)
+
+                with col3:
                     if st.button(
                             ":material/download: Issue Report",
                             use_container_width=True,
@@ -312,10 +303,24 @@ class HygieneIssuesPage(Page):
                                 [(arg,) for arg in selected],
                             )
                             download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+
+                fm.render_html_list(
+                    selected_row,
+                    [
+                        "anomaly_name",
+                        "table_name",
+                        "column_name",
+                        "column_type",
+                        "anomaly_description",
+                        "detail",
+                        "likelihood_explanation",
+                        "suggested_action",
+                    ],
+                    "Hygiene Issue Detail",
+                    int_data_width=700,
+                )
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
-
-
 
         cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
 
