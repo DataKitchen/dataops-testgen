@@ -186,11 +186,7 @@ class TestResultsPage(Page):
         )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
-        disable_dispo = True if not selected or status == "'Passed'" else False
-
-        affected_cached_functions = [get_test_disposition]
-        if "r.disposition" in dict(sorting_columns):
-            affected_cached_functions.append(get_test_results)
+        affected_cached_functions = [get_test_disposition, get_test_results]
 
         disposition_actions = [
             { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
@@ -200,7 +196,14 @@ class TestResultsPage(Page):
         ]
 
         if user_session_service.user_can_disposition():
+            disable_all_dispo = not selected or status == "'Passed'" or all(sel["result_status"] == "Passed" for sel in selected)
+            disposition_translator =  {"No Decision": None}
             for action in disposition_actions:
+                disable_dispo = disable_all_dispo or all(
+                    sel["disposition"] == disposition_translator.get(action["status"], action["status"])
+                    or sel["result_status"] == "Passed"
+                    for sel in selected
+                )
                 action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
 
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing

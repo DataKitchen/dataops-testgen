@@ -210,7 +210,7 @@ def update_result_disposition(selected, str_schema, str_new_status):
     def finalize_small_update(status, ids):
         return f"""UPDATE {str_schema}.test_results
                       SET disposition = NULLIF('{status}', 'No Decision')
-                    WHERE id IN ({ids});"""
+                    WHERE id IN ({ids}) and result_status != 'Passed';"""
 
     def finalize_big_update(status, ids):
         return f"""WITH selects
@@ -220,7 +220,7 @@ def update_result_disposition(selected, str_schema, str_new_status):
                      FROM {str_schema}.test_results r
                    INNER JOIN selects s
                       ON (r.id = s.selected_id)
-                    WHERE r.id = test_results.id;"""
+                    WHERE r.id = test_results.id and result_status != 'Passed';"""
 
     def finalize_test_update(ids):
         str_lock_test = ", lock_refresh = 'N'" if active_yn == "Y" else ", lock_refresh = 'Y'"
