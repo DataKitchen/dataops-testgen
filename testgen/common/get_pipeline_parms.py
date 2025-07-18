@@ -1,45 +1,69 @@
-from testgen.common.database.database_service import RetrieveDBResultsToDictList
+from testgen.common.database.database_service import fetch_dict_from_db
+from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.common.read_file import read_template_sql_file
 
 
-def RetrieveProfilingParms(strTableGroupsID):
-    strSQL = read_template_sql_file("parms_profiling.sql", "parms")
-    # Replace Parameters
-    strSQL = strSQL.replace("{TABLE_GROUPS_ID}", strTableGroupsID)
+class ProfilingParams(ConnectionParams):
+    project_code: str
+    connection_id: str
+    table_groups_id: str
+    profiling_table_set: str
+    profiling_include_mask: str
+    profiling_exclude_mask: str
+    profile_id_column_mask: str
+    profile_sk_column_mask: str
+    profile_use_sampling: str
+    profile_flag_cdes: bool
+    profile_sample_percent: str
+    profile_sample_min_count: int
+    profile_do_pair_rules: str
+    profile_pair_rule_pct: int
+    max_threads: int
+    
+class TestGenerationParams(ConnectionParams):
+    project_code: str
+    connection_id: str
+    export_to_observability: str
+    test_suite_id: str
+    profiling_as_of_date: str
 
-    # Execute Query
-    lstParms = RetrieveDBResultsToDictList("DKTG", strSQL)
-
-    if lstParms is None:
-        raise ValueError("Project Connection Parameters not found")
-
-    return lstParms[0]
-
-
-def RetrieveTestGenParms(strTableGroupsID, strTestSuite):
-    strSQL = read_template_sql_file("parms_test_gen.sql", "parms")
-    # Replace Parameters
-    strSQL = strSQL.replace("{TABLE_GROUPS_ID}", strTableGroupsID)
-    strSQL = strSQL.replace("{TEST_SUITE}", strTestSuite)
-
-    # Execute Query
-    lstParms = RetrieveDBResultsToDictList("DKTG", strSQL)
-    if len(lstParms) == 0:
-        raise ValueError("SQL retrieved 0 records")
-    return lstParms[0]
+class TestExecutionParams(ConnectionParams):
+    project_code: str
+    connection_id: str
+    test_suite_id: str
+    table_groups_id: str
+    profiling_table_set: str
+    profiling_include_mask: str
+    profiling_exclude_mask: str
+    max_threads: int
+    max_query_chars: int
 
 
-def RetrieveTestExecParms(strProjectCode, strTestSuite):
-    strSQL = read_template_sql_file("parms_test_execution.sql", "parms")
-    # Replace Parameters
-    strSQL = strSQL.replace("{PROJECT_CODE}", strProjectCode)
-    strSQL = strSQL.replace("{TEST_SUITE}", strTestSuite)
+def get_profiling_params(table_group_id: str) -> ProfilingParams:
+    results = fetch_dict_from_db(
+        read_template_sql_file("parms_profiling.sql", "parms"),
+        {"TABLE_GROUP_ID": table_group_id},
+    )
+    if not results:
+        raise ValueError("Connection parameters not found for profiling.")
+    return results[0]
 
-    # Execute Query
-    lstParms = RetrieveDBResultsToDictList("DKTG", strSQL)
-    if len(lstParms) == 0:
-        raise ValueError("Test Execution parameters could not be retrieved")
-    elif len(lstParms) > 1:
-        raise ValueError("Test Execution parameters returned too many records")
 
-    return lstParms[0]
+def get_test_generation_params(table_group_id: str, test_suite: str) -> TestGenerationParams:
+    results = fetch_dict_from_db(
+        read_template_sql_file("parms_test_gen.sql", "parms"),
+        {"TABLE_GROUP_ID": table_group_id, "TEST_SUITE": test_suite},
+    )
+    if not results:
+        raise ValueError("Connection parameters not found for test generation.")
+    return results[0]
+
+
+def get_test_execution_params(project_code: str, test_suite: str) -> TestExecutionParams:
+    results = fetch_dict_from_db(
+        read_template_sql_file("parms_test_execution.sql", "parms"),
+        {"PROJECT_CODE": project_code, "TEST_SUITE": test_suite}
+    )
+    if not results:
+        raise ValueError("Connection parameters not found for test execution.")
+    return results[0]

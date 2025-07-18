@@ -5,54 +5,27 @@ import uuid
 from datetime import UTC, datetime
 
 import pandas as pd
+from progress.spinner import Spinner
 
 import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.profiling_query import CProfilingSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
-    AssignConnectParms,
-    QuoteCSVItems,
-    RetrieveDBResultsToDictList,
-    RetrieveProfilingParms,
-    RunActionQueryList,
-    RunThreadedRetrievalQueryList,
-    WriteListToDB,
     date_service,
+    execute_db_queries,
+    fetch_dict_from_db,
+    fetch_from_db_threaded,
+    get_profiling_params,
+    quote_csv_items,
+    set_target_db_params,
+    write_to_app_db,
 )
 from testgen.common.database.database_service import empty_cache
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.session import session
 
-booClean = True
 LOG = logging.getLogger("testgen")
-
-
-def InitializeProfilingSQL(strProject, strSQLFlavor):
-    return CProfilingSQL(strProject, strSQLFlavor)
-
-
-def CompileAnomalyTestQueries(clsProfiling, lst_tests):
-    # Get queries for each test
-    lst_queries = []
-    for dct_test_type in lst_tests:
-        str_query = clsProfiling.GetAnomalyTestQuery(dct_test_type)
-        if str_query:
-            lst_queries.append(str_query)
-
-    return lst_queries
-
-
-def CompileAnomalyScoringQueries(clsProfiling, lst_tests):
-    # Get queries for each test
-    lst_queries = []
-    for dct_test_type in lst_tests:
-        if dct_test_type["dq_score_prevalence_formula"]:
-            str_query = clsProfiling.GetAnomalyScoringQuery(dct_test_type)
-            if str_query:
-                lst_queries.append(str_query)
-
-    return lst_queries
 
 
 def save_contingency_rules(df_merged, threshold_ratio):
@@ -117,8 +90,7 @@ def save_contingency_rules(df_merged, threshold_ratio):
                 ]
             )
 
-    WriteListToDB(
-        "DKTG",
+    write_to_app_db(
         lst_rules,
         [
             "profile_run_id",
@@ -137,7 +109,7 @@ def save_contingency_rules(df_merged, threshold_ratio):
     )
 
 
-def RunPairwiseContingencyCheck(clsProfiling, threshold_ratio):
+def RunPairwiseContingencyCheck(clsProfiling: CProfilingSQL, threshold_ratio: float):
     # Goal: identify pairs of values that represent IF X=A THEN Y=B rules
 
     # Define the threshold percent -- should be high
@@ -149,8 +121,7 @@ def RunPairwiseContingencyCheck(clsProfiling, threshold_ratio):
 
     # Retrieve columns to include in list from profiing results
     clsProfiling.contingency_max_values = str_max_values
-    str_query = clsProfiling.GetContingencyColumns()
-    lst_tables = RetrieveDBResultsToDictList("DKTG", str_query)
+    lst_tables = fetch_dict_from_db(*clsProfiling.GetContingencyColumns())
 
     # Retrieve record counts per column combination
     df_merged = None
@@ -159,9 +130,8 @@ def RunPairwiseContingencyCheck(clsProfiling, threshold_ratio):
             df_merged = None
             clsProfiling.data_schema = dct_table["schema_name"]
             clsProfiling.data_table = dct_table["table_name"]
-            clsProfiling.contingency_columns = QuoteCSVItems(dct_table["contingency_columns"])
-            str_query = clsProfiling.GetContingencyCounts()
-            lst_counts = RetrieveDBResultsToDictList("PROJECT", str_query)
+            clsProfiling.contingency_columns = quote_csv_items(dct_table["contingency_columns"])
+            lst_counts = fetch_dict_from_db(*clsProfiling.GetContingencyCounts(), use_target_db=True)
             if lst_counts:
                 df = pd.DataFrame(lst_counts)
                 # Get list of columns
@@ -248,8 +218,8 @@ def run_profiling_in_background(table_group_id):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
-    if strTableGroupsID is None:
+def run_profiling_queries(table_group_id: str, username: str | None = None, spinner: Spinner | None = None):
+    if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
     has_errors = False
@@ -259,58 +229,33 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
     # Generate UUID for Profile Run ID
     profiling_run_id = str(uuid.uuid4())
 
-    dctParms = RetrieveProfilingParms(strTableGroupsID)
+    params = get_profiling_params(table_group_id)
 
     LOG.info("CurrentStep: Initializing Query Generator")
-    clsProfiling = InitializeProfilingSQL(dctParms["project_code"], dctParms["sql_flavor"])
+    clsProfiling = CProfilingSQL(params["project_code"], params["sql_flavor"])
 
     # Set Project Connection Parms in common.db_bridgers from retrieved parms
     LOG.info("CurrentStep: Assigning Connection Parms")
-    AssignConnectParms(
-        dctParms["project_code"],
-        dctParms["connection_id"],
-        dctParms["project_host"],
-        dctParms["project_port"],
-        dctParms["project_db"],
-        dctParms["table_group_schema"],
-        dctParms["project_user"],
-        dctParms["sql_flavor"],
-        dctParms["url"],
-        dctParms["connect_by_url"],
-        dctParms["connect_by_key"],
-        dctParms["private_key"],
-        dctParms["private_key_passphrase"],
-        dctParms["http_path"],
-        "PROJECT",
-    )
+    set_target_db_params(params)
 
     # Set General Parms
-    clsProfiling.table_groups_id = strTableGroupsID
-    clsProfiling.connection_id = dctParms["connection_id"]
-    clsProfiling.parm_do_sample = "N"
-    clsProfiling.parm_sample_size = 0
-    clsProfiling.parm_vldb_flag = "N"
-    clsProfiling.parm_do_freqs = "Y"
-    clsProfiling.parm_max_freq_length = 25
-    clsProfiling.parm_do_patterns = "Y"
-    clsProfiling.parm_max_pattern_length = 25
+    clsProfiling.table_groups_id = table_group_id
+    clsProfiling.connection_id = params["connection_id"]
     clsProfiling.profile_run_id = profiling_run_id
-    clsProfiling.data_schema = dctParms["table_group_schema"]
-    clsProfiling.parm_table_set = dctParms["profiling_table_set"]
-    clsProfiling.parm_table_include_mask = dctParms["profiling_include_mask"]
-    clsProfiling.parm_table_exclude_mask = dctParms["profiling_exclude_mask"]
-    clsProfiling.profile_id_column_mask = dctParms["profile_id_column_mask"]
-    clsProfiling.profile_sk_column_mask = dctParms["profile_sk_column_mask"]
-    clsProfiling.profile_use_sampling = dctParms["profile_use_sampling"]
-    clsProfiling.profile_flag_cdes = dctParms["profile_flag_cdes"]
-    clsProfiling.profile_sample_percent = dctParms["profile_sample_percent"]
-    clsProfiling.profile_sample_min_count = dctParms["profile_sample_min_count"]
+    clsProfiling.data_schema = params["table_group_schema"]
+    clsProfiling.parm_table_set = params["profiling_table_set"]
+    clsProfiling.parm_table_include_mask = params["profiling_include_mask"]
+    clsProfiling.parm_table_exclude_mask = params["profiling_exclude_mask"]
+    clsProfiling.profile_id_column_mask = params["profile_id_column_mask"]
+    clsProfiling.profile_sk_column_mask = params["profile_sk_column_mask"]
+    clsProfiling.profile_use_sampling = params["profile_use_sampling"]
+    clsProfiling.profile_flag_cdes = params["profile_flag_cdes"]
+    clsProfiling.profile_sample_percent = params["profile_sample_percent"]
+    clsProfiling.profile_sample_min_count = params["profile_sample_min_count"]
     clsProfiling.process_id = process_service.get_current_process_id()
 
     # Add a record in profiling_runs table for the new profile
-    strProfileRunQuery = clsProfiling.GetProfileRunInfoRecordsQuery()
-    lstProfileRunQuery = [strProfileRunQuery]
-    RunActionQueryList("DKTG", lstProfileRunQuery)
+    execute_db_queries([clsProfiling.GetProfileRunInfoRecordsQuery()])
     if spinner:
         spinner.next()
 
@@ -320,8 +265,7 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
         # Retrieve Column Metadata
         LOG.info("CurrentStep: Getting DDF from project")
 
-        strQuery = clsProfiling.GetDDFQuery()
-        lstResult = RetrieveDBResultsToDictList("PROJECT", strQuery)
+        lstResult = fetch_dict_from_db(*clsProfiling.GetDDFQuery(), use_target_db=True)
         column_count = len(lstResult)
 
         if lstResult:
@@ -341,11 +285,10 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                 lstQueries = []
                 for parm_sampling_table in distinct_tables_list:
                     clsProfiling.sampling_table = parm_sampling_table
-                    strQuery = clsProfiling.GetTableSampleCount()
-                    lstQueries.append(strQuery)
+                    lstQueries.append(clsProfiling.GetTableSampleCount())
 
-                lstSampleTables, _, intErrors = RunThreadedRetrievalQueryList(
-                    "PROJECT", lstQueries, dctParms["max_threads"], spinner
+                lstSampleTables, _, intErrors = fetch_from_db_threaded(
+                    lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
                 )
                 dctSampleTables = {x[0]: [x[1], x[2]] for x in lstSampleTables}
                 if intErrors > 0:
@@ -368,7 +311,6 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                 clsProfiling.profile_run_id = profiling_run_id
                 clsProfiling.col_is_decimal = dctColumnRecord["is_decimal"]
                 clsProfiling.col_ordinal_position = dctColumnRecord["ordinal_position"]
-                clsProfiling.col_max_char_length = dctColumnRecord["character_maximum_length"]
                 clsProfiling.col_gen_type = dctColumnRecord["general_type"]
                 clsProfiling.parm_do_sample = "N"
 
@@ -385,15 +327,14 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                         clsProfiling.parm_sample_size = 0
                         clsProfiling.sample_ratio = ""
 
-                strQuery = clsProfiling.GetProfilingQuery()
-                lstQueries.append(strQuery)
+                lstQueries.append(clsProfiling.GetProfilingQuery())
 
             # Run Profiling Queries and save results
             LOG.info("CurrentStep: Profiling Round 1")
             LOG.debug("Running %s profiling queries", len(lstQueries))
 
-            lstProfiles, colProfileNames, intErrors = RunThreadedRetrievalQueryList(
-                "PROJECT", lstQueries, dctParms["max_threads"], spinner
+            lstProfiles, colProfileNames, intErrors = fetch_from_db_threaded(
+                lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
             )
             if intErrors > 0:
                 has_errors = True
@@ -401,7 +342,7 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                     f"Errors were encountered executing profiling queries. ({intErrors} errors occurred.) Please check log."
                 )
             LOG.info("CurrentStep: Saving Round 1 profiling results to Metadata")
-            WriteListToDB("DKTG", lstProfiles, colProfileNames, "profile_results")
+            write_to_app_db(lstProfiles, colProfileNames, "profile_results")
 
             if clsProfiling.profile_use_sampling == "Y":
                 lstQueries = []
@@ -409,17 +350,15 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                     if value[0] > -1:
                         clsProfiling.sampling_table = table_name
                         clsProfiling.sample_ratio = value[1]
-                        strQuery = clsProfiling.UpdateProfileResultsToEst()
-                        lstQueries.append(strQuery)
+                        lstQueries.append(clsProfiling.UpdateProfileResultsToEst())
 
-                RunActionQueryList("DKTG", lstQueries)
+                execute_db_queries(lstQueries)
 
             if clsProfiling.parm_do_freqs == "Y":
                 lstUpdates = []
                 # Get secondary profiling columns
                 LOG.info("CurrentStep: Selecting columns for frequency analysis")
-                strQuery = clsProfiling.GetSecondProfilingColumnsQuery()
-                lstResult = RetrieveDBResultsToDictList("DKTG", strQuery)
+                lstResult = fetch_dict_from_db(*clsProfiling.GetSecondProfilingColumnsQuery())
 
                 if lstResult:
                     # Assemble secondary profiling queries
@@ -431,12 +370,11 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                         clsProfiling.data_table = dctColumnRecord["table_name"]
                         clsProfiling.col_name = dctColumnRecord["column_name"]
 
-                        strQuery = clsProfiling.GetSecondProfilingQuery()
-                        lstQueries.append(strQuery)
+                        lstQueries.append(clsProfiling.GetSecondProfilingQuery())
                     # Run secondary profiling queries
                     LOG.info("CurrentStep: Retrieving %s frequency results from project", len(lstQueries))
-                    lstUpdates, colProfileNames, intErrors = RunThreadedRetrievalQueryList(
-                        "PROJECT", lstQueries, dctParms["max_threads"], spinner
+                    lstUpdates, colProfileNames, intErrors = fetch_from_db_threaded(
+                        lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
                     )
                     if intErrors > 0:
                         has_errors = True
@@ -447,7 +385,7 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
                     if lstUpdates:
                         # Copy secondary results to DQ staging
                         LOG.info("CurrentStep: Writing frequency results to Staging")
-                        WriteListToDB("DKTG", lstUpdates, colProfileNames, "stg_secondary_profile_updates")
+                        write_to_app_db(lstUpdates, colProfileNames, "stg_secondary_profile_updates")
 
             LOG.info("CurrentStep: Generating profiling update queries")
 
@@ -456,41 +394,40 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
 
             if lstUpdates:
                 # Run single update query, then delete from staging
-                strQuery = clsProfiling.GetSecondProfilingUpdateQuery()
-                lstQueries.append(strQuery)
-                strQuery = clsProfiling.GetSecondProfilingStageDeleteQuery()
-                lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetDataTypeSuggestionUpdateQuery()
-            lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetFunctionalDataTypeUpdateQuery()
-            lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetFunctionalTableTypeStageQuery()
-            lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetFunctionalTableTypeUpdateQuery()
-            lstQueries.append(strQuery)
-            strQuery = clsProfiling.GetPIIFlagUpdateQuery()
-            lstQueries.append(strQuery)
+                lstQueries.extend([
+                    clsProfiling.GetSecondProfilingUpdateQuery(),
+                    clsProfiling.GetSecondProfilingStageDeleteQuery(),
+                ])
+            lstQueries.extend([
+                clsProfiling.GetDataTypeSuggestionUpdateQuery(),
+                clsProfiling.GetFunctionalDataTypeUpdateQuery(),
+                clsProfiling.GetFunctionalTableTypeStageQuery(),
+                clsProfiling.GetFunctionalTableTypeUpdateQuery(),
+                clsProfiling.GetPIIFlagUpdateQuery(),
+            ])
 
-            strQuery = clsProfiling.GetAnomalyTestTypesQuery()
-            lstAnomalyTypes = RetrieveDBResultsToDictList("DKTG", strQuery)
-            lstQueries.extend(CompileAnomalyTestQueries(clsProfiling, lstAnomalyTypes))
-            lstQueries.extend(CompileAnomalyScoringQueries(clsProfiling, lstAnomalyTypes))
-            strQuery = clsProfiling.GetAnomalyStatsRefreshQuery()
-            lstQueries.append(strQuery)
+            lstAnomalyTypes = fetch_dict_from_db(*clsProfiling.GetAnomalyTestTypesQuery())
+            lstQueries.extend([
+                query for test_type in lstAnomalyTypes if (query := clsProfiling.GetAnomalyTestQuery(test_type))
+            ])
+            lstQueries.extend([
+                clsProfiling.GetAnomalyScoringQuery(test_type)
+                for test_type in lstAnomalyTypes
+                if test_type["dq_score_prevalence_formula"]
+            ])
+            lstQueries.append(clsProfiling.GetAnomalyStatsRefreshQuery())
 
             # Always runs last
-            strQuery = clsProfiling.GetDataCharsRefreshQuery()
-            lstQueries.append(strQuery)
+            lstQueries.append(clsProfiling.GetDataCharsRefreshQuery())
             if clsProfiling.profile_flag_cdes:
-                strQuery = clsProfiling.GetCDEFlaggerQuery()
-                lstQueries.append(strQuery)
+                lstQueries.append(clsProfiling.GetCDEFlaggerQuery())
 
             LOG.info("CurrentStep: Running profiling update queries")
-            RunActionQueryList("DKTG", lstQueries)
+            execute_db_queries(lstQueries)
 
-            if dctParms["profile_do_pair_rules"] == "Y":
+            if params["profile_do_pair_rules"] == "Y":
                 LOG.info("CurrentStep: Compiling pairwise contingency rules")
-                RunPairwiseContingencyCheck(clsProfiling, dctParms["profile_pair_rule_pct"])
+                RunPairwiseContingencyCheck(clsProfiling, params["profile_pair_rule_pct"])
         else:
             LOG.info("No columns were selected to profile.")
     except Exception as e:
@@ -501,17 +438,15 @@ def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
         raise
     finally:
         LOG.info("Updating the profiling run record")
-        RunActionQueryList("DKTG", [
-            clsProfiling.GetProfileRunInfoRecordUpdateQuery(),
-        ])
+        execute_db_queries([clsProfiling.GetProfileRunInfoRecordUpdateQuery()])
         end_time = datetime.now(UTC)
 
-        RunActionQueryList("DKTG", [
+        execute_db_queries([
             clsProfiling.GetAnomalyScoringRollupRunQuery(),
             clsProfiling.GetAnomalyScoringRollupTableGroupQuery(),
         ])
         run_refresh_score_cards_results(
-            project_code=dctParms["project_code"],
+            project_code=params["project_code"],
             add_history_entry=True,
             refresh_date=date_service.parse_now(clsProfiling.run_date),
         )

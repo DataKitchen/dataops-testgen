@@ -3,14 +3,14 @@ import logging
 import click
 
 from testgen import settings
-from testgen.commands.run_get_entities import run_table_group_list
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.common.database.database_service import (
-    AssignConnectParms,
-    CreateDatabaseIfNotExists,
-    RunActionQueryList,
+    create_database,
+    execute_db_queries,
     replace_params,
+    set_target_db_params,
 )
+from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.common.read_file import read_template_sql_file
 
 LOG = logging.getLogger("testgen")
@@ -69,23 +69,16 @@ def _get_max_productid_seq(iteration: int):
 
 
 def _prepare_connection_to_target_database(params_mapping):
-    AssignConnectParms(
-        params_mapping["PROJECT_KEY"],
-        None,
-        params_mapping["PROJECT_DB_HOST"],
-        params_mapping["PROJECT_DB_PORT"],
-        params_mapping["PROJECT_DB"],
-        params_mapping["PROJECT_SCHEMA"],
-        params_mapping["TESTGEN_ADMIN_USER"],
-        params_mapping["SQL_FLAVOR"],
-        None,
-        None,
-        False,
-        None,
-        None,
-        None,
-        "PROJECT",
-    )
+    connection_params: ConnectionParams = {
+        "sql_flavor": params_mapping["SQL_FLAVOR"],
+        "project_host": params_mapping["PROJECT_DB_HOST"],
+        "project_port": params_mapping["PROJECT_DB_PORT"],
+        "project_db": params_mapping["PROJECT_DB"],
+        "project_user": params_mapping["TESTGEN_ADMIN_USER"],
+        "table_group_schema": params_mapping["PROJECT_SCHEMA"],
+        "project_pw_encrypted": params_mapping["TESTGEN_ADMIN_PASSWORD"],
+    }
+    set_target_db_params(connection_params)
 
 
 def _get_params_mapping(iteration: int = 0) -> dict:
@@ -114,7 +107,7 @@ def run_quick_start(delete_target_db: bool) -> None:
     # Create DB
     target_db_name = params_mapping["PROJECT_DB"]
     click.echo(f"Creating target db : {target_db_name}")
-    CreateDatabaseIfNotExists(target_db_name, params_mapping, delete_target_db, drop_users_and_roles=False)
+    create_database(target_db_name, params_mapping, drop_existing=delete_target_db)
 
     # run setup
     command = "testgen setup-system-db --delete-db --yes"
@@ -124,21 +117,13 @@ def run_quick_start(delete_target_db: bool) -> None:
 
     # Schema and Populate target db
     click.echo(f"Populating target db : {target_db_name}")
-    queries = [
-        replace_params(read_template_sql_file("recreate_target_data_schema.sql", "quick_start"), params_mapping),
-        replace_params(read_template_sql_file("populate_target_data.sql", "quick_start"), params_mapping),
-    ]
-    RunActionQueryList(
-        "PROJECT",
-        queries,
-        user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+    execute_db_queries(
+        [
+            (replace_params(read_template_sql_file("recreate_target_data_schema.sql", "quick_start"), params_mapping), params_mapping),
+            (replace_params(read_template_sql_file("populate_target_data.sql", "quick_start"), params_mapping), params_mapping),
+        ],
+        use_target_db=True,
     )
-
-    # Get table group id
-    project_key = params_mapping["PROJECT_KEY"]
-    rows, _ = run_table_group_list(project_key)
-    connection_id = str(rows[0][2])
 
 
 def run_quick_start_increment(iteration):
@@ -148,12 +133,9 @@ def run_quick_start_increment(iteration):
     target_db_name = params_mapping["PROJECT_DB"]
     LOG.info(f"Incremental population of target db : {target_db_name}")
 
-    queries = [
-        replace_params(read_template_sql_file("update_target_data.sql", "quick_start"), params_mapping),
-    ]
-    RunActionQueryList(
-        "PROJECT",
-        queries,
-        user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+    execute_db_queries(
+        [
+            (replace_params(read_template_sql_file("update_target_data.sql", "quick_start"), params_mapping), params_mapping),
+        ],
+        use_target_db=True,
     )

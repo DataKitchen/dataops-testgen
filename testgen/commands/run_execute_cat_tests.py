@@ -1,70 +1,26 @@
 import logging
 from datetime import UTC, datetime
 
+from progress.spinner import Spinner
+
 from testgen import settings
 from testgen.commands.queries.execute_cat_tests_query import CCATExecutionSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
-    RetrieveDBResultsToDictList,
-    RunActionQueryList,
-    RunThreadedRetrievalQueryList,
-    WriteListToDB,
     date_service,
+    execute_db_queries,
+    fetch_dict_from_db,
+    fetch_from_db_threaded,
+    write_to_app_db,
 )
+from testgen.common.get_pipeline_parms import TestExecutionParams
 from testgen.common.mixpanel_service import MixpanelService
 
 LOG = logging.getLogger("testgen")
 
 
-def RetrieveTargetTables(clsCATExecute):
-    # Gets distinct list of tables to be tested, to aggregate tests by table, from dk db
-    strQuery = clsCATExecute.GetDistinctTablesSQL()
-    lstTables = RetrieveDBResultsToDictList("DKTG", strQuery)
-
-    if len(lstTables) == 0:
-        LOG.info("0 tables in the list for CAT test execution.")
-
-    return lstTables
-
-
-def AggregateTableTests(clsCATExecute):
-    # Writes records of aggregated tests per table and sequence number
-    # (to prevent table queries from getting too large) to dk db.
-    strQuery = clsCATExecute.GetAggregateTableTestSQL()
-    lstQueries = [strQuery]
-    RunActionQueryList("DKTG", lstQueries)
-
-
-def RetrieveTestParms(clsCATExecute):
-    # Retrieves records of aggregated tests to run as queries from dk db
-    strQuery = clsCATExecute.GetAggregateTestParmsSQL()
-    lstResults = RetrieveDBResultsToDictList("DKTG", strQuery)
-
-    return lstResults
-
-
-def PrepCATQueries(clsCATExecute, lstCATParms):
-    # Prepares CAT Queries and populates query list
-    LOG.info("CurrentStep: Preparing CAT Queries")
-    lstQueries = []
-    for dctCATQuery in lstCATParms:
-        clsCATExecute.target_schema = dctCATQuery["schema_name"]
-        clsCATExecute.target_table = dctCATQuery["table_name"]
-        clsCATExecute.dctTestParms = dctCATQuery
-        strQuery = clsCATExecute.PrepCATQuerySQL()
-        lstQueries.append(strQuery)
-
-    return lstQueries
-
-
-def ParseCATResults(clsCATExecute):
-    # Parses aggregate results to individual test_result records at dk db
-    strQuery = clsCATExecute.GetCATResultsParseSQL()
-    RunActionQueryList("DKTG", [strQuery])
-
-
 def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, username: str | None = None):
-    _, row_counts = RunActionQueryList(("DKTG"), [
+    _, row_counts = execute_db_queries([
         clsCATExecute.FinalizeTestResultsSQL(),
         clsCATExecute.PushTestRunStatusUpdateSQL(),
         clsCATExecute.FinalizeTestSuiteUpdateSQL(),
@@ -72,7 +28,7 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, username: str | None = None
     end_time = datetime.now(UTC)
     
     try:
-        RunActionQueryList(("DKTG"), [
+        execute_db_queries([
             clsCATExecute.CalcPrevalenceTestResultsSQL(),
             clsCATExecute.TestScoringRollupRunSQL(),
             clsCATExecute.TestScoringRollupTableGroupSQL(),
@@ -98,17 +54,25 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, username: str | None = None
 
 
 def run_cat_test_queries(
-    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, username=None, minutes_offset=0, spinner=None
+    params: TestExecutionParams,
+    test_run_id: str,
+    test_time: str,
+    project_code: str,
+    test_suite: str,
+    error_msg: str,
+    username: str | None = None,
+    minutes_offset: int = 0,
+    spinner: Spinner | None = None
 ):
-    booErrors = False
+    has_errors = False
 
     LOG.info("CurrentStep: Initializing CAT Query Generator")
     clsCATExecute = CCATExecutionSQL(
-        strProjectCode, dctParms["test_suite_id"], strTestSuite, dctParms["sql_flavor"], dctParms["max_query_chars"], minutes_offset
+        project_code, params["test_suite_id"], test_suite, params["sql_flavor"], params["max_query_chars"], minutes_offset
     )
-    clsCATExecute.test_run_id = strTestRunID
-    clsCATExecute.run_date = strTestTime
-    clsCATExecute.table_groups_id = dctParms["table_groups_id"]
+    clsCATExecute.test_run_id = test_run_id
+    clsCATExecute.run_date = test_time
+    clsCATExecute.table_groups_id = params["table_groups_id"]
     clsCATExecute.exception_message += error_msg
 
     # START TEST EXECUTION
@@ -121,7 +85,8 @@ def run_cat_test_queries(
     try:
         # Retrieve distinct target tables from metadata
         LOG.info("CurrentStep: Retrieving Target Tables")
-        lstTables = RetrieveTargetTables(clsCATExecute)
+        # Gets distinct list of tables to be tested, to aggregate tests by table, from dk db
+        lstTables = fetch_dict_from_db(*clsCATExecute.GetDistinctTablesSQL())
         LOG.info("Test Tables Identified: %s", len(lstTables))
 
         if lstTables:
@@ -129,27 +94,39 @@ def run_cat_test_queries(
             for dctTable in lstTables:
                 clsCATExecute.target_schema = dctTable["schema_name"]
                 clsCATExecute.target_table = dctTable["table_name"]
-                AggregateTableTests(clsCATExecute)
+                # Writes records of aggregated tests per table and sequence number
+                # (to prevent table queries from getting too large) to dk db.
+                execute_db_queries([clsCATExecute.GetAggregateTableTestSQL()])
 
             LOG.info("CurrentStep: Retrieving CAT Tests to Run")
-            lstCATParms = RetrieveTestParms(clsCATExecute)
+            # Retrieves records of aggregated tests to run as queries from dk db
+            lstCATParms = fetch_dict_from_db(*clsCATExecute.GetAggregateTestParmsSQL())
 
-            lstCATQueries = PrepCATQueries(clsCATExecute, lstCATParms)
+            lstCATQueries = []
+            # Prepares CAT Queries and populates query list
+            LOG.info("CurrentStep: Preparing CAT Queries")
+            for dctCATQuery in lstCATParms:
+                clsCATExecute.target_schema = dctCATQuery["schema_name"]
+                clsCATExecute.target_table = dctCATQuery["table_name"]
+                clsCATExecute.cat_test_params = dctCATQuery
+                lstCATQueries.append(clsCATExecute.PrepCATQuerySQL())
+
             if lstCATQueries:
                 LOG.info("CurrentStep: Performing CAT Tests")
-                lstAllResults, lstResultColumnNames, intErrors = RunThreadedRetrievalQueryList(
-                    "PROJECT", lstCATQueries, dctParms["max_threads"], spinner
+                lstAllResults, lstResultColumnNames, intErrors = fetch_from_db_threaded(
+                    lstCATQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
                 )
 
                 if lstAllResults:
                     LOG.info("CurrentStep: Saving CAT Results")
                     # Write aggregate result records to aggregate result table at dk db
-                    WriteListToDB("DKTG", lstAllResults, lstResultColumnNames, "working_agg_cat_results")
+                    write_to_app_db(lstAllResults, lstResultColumnNames, "working_agg_cat_results")
                     LOG.info("CurrentStep: Parsing CAT Results")
-                    ParseCATResults(clsCATExecute)
+                    # Parses aggregate results to individual test_result records at dk db
+                    execute_db_queries([clsCATExecute.GetCATResultsParseSQL()])
                     LOG.info("Test results successfully parsed.")
                 if intErrors > 0:
-                    booErrors = True
+                    has_errors = True
                     cat_error_msg = f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) Please check log."
                     LOG.warning(cat_error_msg)
                     clsCATExecute.exception_message += cat_error_msg
@@ -157,14 +134,14 @@ def run_cat_test_queries(
             LOG.info("No valid tests were available to perform")
 
     except Exception as e:
-        booErrors = True
+        has_errors = True
         sqlsplit = e.args[0].split("[SQL", 1)
         errorline = sqlsplit[0].replace("'", "''") if len(sqlsplit) > 0 else "unknown error"
         clsCATExecute.exception_message += f"{type(e).__name__}: {errorline}"
         raise
 
     else:
-        return booErrors
+        return has_errors
 
     finally:
         LOG.info("Finalizing test run")

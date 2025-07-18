@@ -2,7 +2,7 @@ import logging
 import os
 
 from testgen import settings
-from testgen.common import CreateDatabaseIfNotExists, RunActionQueryList, date_service
+from testgen.common import create_database, date_service, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
@@ -74,16 +74,15 @@ def _get_params_mapping() -> dict:
 def run_launch_db_config(delete_db: bool) -> None:
     params_mapping = _get_params_mapping()
 
-    CreateDatabaseIfNotExists(get_tg_db(), params_mapping, delete_db)
+    create_database(get_tg_db(), params_mapping, drop_existing=delete_db, drop_users_and_roles=True)
 
     queries = get_queries_for_command("dbsetup", params_mapping)
 
-    RunActionQueryList(
-        "DKTG",
-        queries,
-        "S",
+    execute_db_queries(
+        [(query, None) for query in queries],
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
     )
 
     ScoreDefinition.from_table_group({

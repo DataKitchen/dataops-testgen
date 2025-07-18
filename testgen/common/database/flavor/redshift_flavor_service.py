@@ -4,16 +4,19 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class RedshiftFlavorService(FlavorService):
-    def get_connection_string_head(self, strPW):
-        strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@"
-        return strConnect
+    def init(self, connection_params: dict):
+        super().init(connection_params)
+        # This is for connection purposes. sqlalchemy 1.4.46 uses postgresql to connect to redshift database
+        self.flavor = "postgresql"
 
-    def get_connection_string_from_fields(self, strPW, is_password_overwritten: bool = False):  # NOQA ARG002
+    def get_connection_string_head(self):
+        return f"{self.flavor}://{self.username}:{quote_plus(self.password)}@"
+
+    def get_connection_string_from_fields(self):
         # STANDARD FORMAT:  strConnect = 'flavor://username:password@host:port/database'
-        strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@{self.host}:{self.port}/{self.dbname}"
-        return strConnect
+        return f"{self.flavor}://{self.username}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.dbname}"
 
     def get_pre_connection_queries(self):
         return [
-            "SET SEARCH_PATH = '" + self.dbschema + "'",
+            ("SET SEARCH_PATH = :schema", {"schema": self.dbschema}),
         ]

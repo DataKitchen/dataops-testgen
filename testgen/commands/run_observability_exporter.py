@@ -12,9 +12,8 @@ from requests_extensions import get_session
 from testgen import settings
 from testgen.common import date_service, read_template_sql_file
 from testgen.common.database.database_service import (
-    ExecuteDBQuery,
-    RetrieveDBResultsToDictList,
-    RetrieveDBResultsToList,
+    execute_db_queries,
+    fetch_dict_from_db,
 )
 
 LOG = logging.getLogger("testgen")
@@ -77,21 +76,17 @@ def _get_api_endpoint(api_url: str | None, event_type: str) -> str:
 
 def collect_event_data(test_suite_id):
     try:
-        event_data_query = (
-            read_template_sql_file("get_event_data.sql", "observability")
-            .replace("{TEST_SUITE_ID}", test_suite_id)
+        event_data_query_result = fetch_dict_from_db(
+            read_template_sql_file("get_event_data.sql", "observability"),
+            {"TEST_SUITE_ID": test_suite_id},
         )
-
-        event_data_query_result = RetrieveDBResultsToDictList("DKTG", event_data_query)
         if not event_data_query_result:
             LOG.error(
                 f"Could not get event data for exporting to Observability. Test suite '{test_suite_id}'. EXITING!"
             )
             sys.exit(1)
         if len(event_data_query_result) == 0:
-            LOG.error(
-                f"Event data query is empty. Test suite '{test_suite_id}'. Exiting export to Observability!"
-            )
+            LOG.error(f"Event data query is empty. Test suite '{test_suite_id}'. Exiting export to Observability!")
             sys.exit(1)
 
         event = event_data_query_result[0]
@@ -99,9 +94,7 @@ def collect_event_data(test_suite_id):
         api_key = event.observability_api_key
         api_url = event.observability_api_url
     except Exception:
-        LOG.exception(
-            f"Error collecting event data for exporting to Observability. Test suite '{test_suite_id}'"
-        )
+        LOG.exception(f"Error collecting event data for exporting to Observability. Test suite '{test_suite_id}'")
         sys.exit(2)
     else:
         return event_data, api_url, api_key
@@ -208,12 +201,10 @@ def _get_processed_profiling_table_set(profiling_table_set):
 
 def collect_test_results(test_suite_id, max_qty_events):
     try:
-        query = (
-            read_template_sql_file("get_test_results.sql", "observability")
-            .replace("{TEST_SUITE_ID}", test_suite_id)
-            .replace("{MAX_QTY_EVENTS}", str(max_qty_events))
+        query_results = fetch_dict_from_db(
+            read_template_sql_file("get_test_results.sql", "observability"),
+            {"TEST_SUITE_ID": test_suite_id, "MAX_QTY_EVENTS": max_qty_events},
         )
-        query_results = RetrieveDBResultsToDictList("DKTG", query)
         collected = []
         updated_ids = []
     except Exception:
@@ -289,14 +280,12 @@ def mark_exported_results(test_suite_id, ids):
     if len(ids) == 0:
         return
 
-    result_ids = ", ".join(ids)
     query = (
-        read_template_sql_file("update_test_results_exported_to_observability.sql", "observability")
-        .replace("{TEST_SUITE_ID}", test_suite_id)
-        .replace("{RESULT_IDS}", result_ids)
+        read_template_sql_file("update_test_results_exported_to_observability.sql", "observability"),
+        {"TEST_SUITE_ID": test_suite_id, "TEST_RESULT_IDS": ids},
     )
     try:
-        ExecuteDBQuery("DKTG", query)
+        execute_db_queries([query])
     except Exception:
         LOG.exception("Error marking exported results.")
         LOG.error(  # noqa: TRY400
@@ -321,11 +310,11 @@ def export_test_results(test_suite_id):
 
 def run_observability_exporter(project_code, test_suite):
     LOG.info("CurrentStep: Observability Export - Test Results")
-    result = RetrieveDBResultsToList(
-        "DKTG",
-        f"SELECT id::VARCHAR FROM test_suites WHERE test_suite = '{test_suite}' AND project_code = '{project_code}'"
+    result = fetch_dict_from_db(
+        "SELECT id::VARCHAR FROM test_suites WHERE test_suite = :test_suite AND project_code = :project_code",
+        {"test_suite": test_suite, "project_code": project_code},
     )
-    qty_of_exported_events = export_test_results(result[0][0][0])
+    qty_of_exported_events = export_test_results(result[0]["id"])
     click.echo(f"{qty_of_exported_events} events have been exported.")
 
 
