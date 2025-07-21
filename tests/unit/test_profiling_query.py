@@ -14,15 +14,16 @@ def test_include_exclude_mask_basic():
     profiling_query.parm_table_exclude_mask = "temp%,tmp%,raw_slot_utilization%,gps_product_step_change_log"
 
     # test run
-    query = profiling_query.GetDDFQuery()
+    query, _ = profiling_query.GetDDFQuery()
 
     # test assertions
     assert "SELECT 'dummy_project_code'" in query
-    assert r"AND ((c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful%' ))" in query
-    assert (
-        r"AND NOT ((c.table_name LIKE 'temp%' ) OR (c.table_name LIKE 'tmp%' ) OR (c.table_name LIKE 'raw\_slot\_utilization%' ) OR (c.table_name LIKE 'gps\_product\_step\_change\_log' ))"
-        in query
-    )
+    assert r"""AND  (
+                (c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful%' )
+            )""" in query
+    assert r"""AND NOT (
+                (c.table_name LIKE 'temp%' ) OR (c.table_name LIKE 'tmp%' ) OR (c.table_name LIKE 'raw\_slot\_utilization%' ) OR (c.table_name LIKE 'gps\_product\_step\_change\_log' )
+            )""" in query
 
 
 @pytest.mark.unit
@@ -37,13 +38,13 @@ def test_include_empty_exclude_mask(mask):
     profiling_query.parm_table_exclude_mask = "temp%,tmp%,raw_slot_utilization%,gps_product_step_change_log"
 
     # test run
-    query = profiling_query.GetDDFQuery()
+    query, _ = profiling_query.GetDDFQuery()
+    print(query)
 
     # test assertions
-    assert (
-        r"AND NOT ((c.table_name LIKE 'temp%' ESCAPE '\\') OR (c.table_name LIKE 'tmp%' ESCAPE '\\') OR (c.table_name LIKE 'raw\\_slot\\_utilization%' ESCAPE '\\') OR (c.table_name LIKE 'gps\\_product\\_step\\_change\\_log' ESCAPE '\\')"
-        in query
-    )
+    assert r"""AND NOT (
+                (c.table_name LIKE 'temp%' ESCAPE '\\') OR (c.table_name LIKE 'tmp%' ESCAPE '\\') OR (c.table_name LIKE 'raw\\_slot\\_utilization%' ESCAPE '\\') OR (c.table_name LIKE 'gps\\_product\\_step\\_change\\_log' ESCAPE '\\')
+            )""" in query
 
 
 @pytest.mark.unit
@@ -58,7 +59,10 @@ def test_include_empty_include_mask(mask):
     profiling_query.parm_table_exclude_mask = mask
 
     # test run
-    query = profiling_query.GetDDFQuery()
+    query, _ = profiling_query.GetDDFQuery()
+    print(query)
 
     # test assertions
-    assert r"AND ((c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful[_]%' ))" in query
+    assert r"""AND  (
+                (c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful[_]%' )
+            )""" in query
