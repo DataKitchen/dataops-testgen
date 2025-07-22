@@ -50,7 +50,7 @@ def _get_upgrade_template_directory():
     return "dbupgrade"
 
 
-def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = ""):
+def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = "") -> tuple[list[tuple[str, dict]], str]:
     files = sorted(get_template_files(mask=mask, sub_directory=sub_directory), key=lambda key: str(key))
 
     max_prefix = ""
@@ -68,7 +68,7 @@ def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r
     return queries, max_prefix
 
 
-def _execute_upgrade_scripts(params_mapping, lstScripts):
+def _execute_upgrade_scripts(params_mapping: dict, lstScripts: list[tuple[str, dict]]):
     # Run scripts using admin credentials
     execute_db_queries(
         lstScripts,
