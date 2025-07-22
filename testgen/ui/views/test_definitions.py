@@ -138,7 +138,8 @@ class TestDefinitionsPage(Page):
                 ])
 
             for action in disposition_actions:
-                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=not selected)
+                action_disabled = not selected or all(sel[action["attribute"]] == ("Y" if action["value"] else "N") for sel in selected)
+                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=action_disabled)
 
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:

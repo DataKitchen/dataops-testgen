@@ -140,7 +140,7 @@ class HygieneIssuesPage(Page):
 
         with action_filter_column:
             action = testgen.select(
-                options=["Confirmed", "Dismissed", "Muted", "No Action" ],
+                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
                 default_value=action,
                 bind_to_query="action",
                 label="Action",
@@ -312,32 +312,39 @@ class HygieneIssuesPage(Page):
                                 [(arg,) for arg in selected],
                             )
                             download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
-
-            cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
-
-            disposition_actions = [
-                { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
-                { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
-                { "icon": "🔇", "help": "Mute this test to deactivate it for future runs", "status": "Inactive" },
-                { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
-            ]
-
-            if user_session_service.user_can_disposition():
-                # Need to render toolbar buttons after grid, so selection status is maintained
-                for d_action in disposition_actions:
-                    d_action["button"] = actions_column.button(d_action["icon"], help=d_action["help"], disabled=not selected)
-
-                # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-                for d_action in disposition_actions:
-                    if d_action["button"]:
-                        fm.reset_post_updates(
-                            do_disposition_update(selected, d_action["status"]),
-                            as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=cached_functions,
-                        )
         else:
             st.markdown(":green[**No Hygiene Issues Found**]")
+
+
+
+        cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
+
+        disposition_actions = [
+            { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
+            { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
+            { "icon": "🔇", "help": "Mute this test to deactivate it for future runs", "status": "Inactive" },
+            { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
+        ]
+
+        if user_session_service.user_can_disposition():
+            disposition_translator = {"No Decision": None}
+            # Need to render toolbar buttons after grid, so selection status is maintained
+            for d_action in disposition_actions:
+                disable_action=not selected or all(
+                    sel["disposition"] == disposition_translator.get(d_action["status"], d_action["status"])
+                    for sel in selected
+                )
+                d_action["button"] = actions_column.button(d_action["icon"], help=d_action["help"], disabled=disable_action)
+
+            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
+            for d_action in disposition_actions:
+                if d_action["button"]:
+                    fm.reset_post_updates(
+                        do_disposition_update(selected, d_action["status"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=cached_functions,
+                    )
 
         # Help Links
         st.markdown(
