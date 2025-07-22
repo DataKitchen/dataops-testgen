@@ -11,7 +11,6 @@
  * @property {string} test_suite_name
  * @property {string} table_name
  * @property {string} test_focus
- * @property {string?} status
  * @property {string} severity
  * @property {string} active
  * @property {string} locked

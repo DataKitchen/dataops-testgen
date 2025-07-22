@@ -283,12 +283,12 @@ def show_test_form(
     test_action = empty_if_null(selected_test_def["test_action"]) if mode == "edit" else ""
     schema_name = selected_test_def["schema_name"] if mode == "edit" else table_group["table_group_schema"]
     table_name = empty_if_null(selected_test_def["table_name"]) if mode == "edit" else empty_if_null(str_table_name)
-    skip_errors = selected_test_def["skip_errors"] if mode == "edit" else 0
+    skip_errors = selected_test_def["skip_errors"] or 0 if mode == "edit" else 0
     test_active = selected_test_def["test_active"] == "Y" if mode == "edit" else True
     lock_refresh = selected_test_def["lock_refresh"] == "Y" if mode == "edit" else False
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     check_result = selected_test_def["check_result"] if mode == "edit" else None
-    column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else ""
+    column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else empty_if_null(str_column_name)
     last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
     profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
     profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
@@ -299,12 +299,12 @@ def show_test_form(
     baseline_unique_ct = empty_if_null(selected_test_def["baseline_unique_ct"]) if mode == "edit" else ""
     baseline_value = empty_if_null(selected_test_def["baseline_value"]) if mode == "edit" else ""
     baseline_value_ct = empty_if_null(selected_test_def["baseline_value_ct"]) if mode == "edit" else ""
-    threshold_value = empty_if_null(selected_test_def["threshold_value"]) if mode == "edit" else 0
+    threshold_value = selected_test_def["threshold_value"] or 0 if mode == "edit" else 0
     baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
     baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
     baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
-    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else 0
-    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else 0
+    lower_tolerance = selected_test_def["lower_tolerance"] or 0 if mode == "edit" else 0
+    upper_tolerance = selected_test_def["upper_tolerance"] or 0 if mode == "edit" else 0
     subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
     groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
     having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
@@ -315,7 +315,7 @@ def show_test_form(
     match_subset_condition = empty_if_null(selected_test_def["match_subset_condition"]) if mode == "edit" else ""
     match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
     match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
-    window_days = selected_test_def["window_days"] if mode == "edit" and selected_test_def["window_days"] else 0
+    window_days = selected_test_def["window_days"] or 0 if mode == "edit" else 0
     test_mode = empty_if_null(selected_test_def["test_mode"]) if mode == "edit" else ""
 
     # export_to_observability
@@ -508,49 +508,20 @@ def show_test_form(
         test_definition["column_name"] = None
         column_name_label = None
     elif test_scope == "referential":
-        column_name_disabled = False
         test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=500,
             help=column_name_help,
-            disabled=column_name_disabled,
         )
     elif test_scope == "custom":
-        if str_column_name:
-            if mode == "add":  # query add present
-                column_name_disabled = False
-                column_name = str_column_name
-            else:  # query edit present
-                column_name_disabled = False
-                column_name = str_column_name
-        else:
-            if mode == "add":  # query add not-present
-                column_name_disabled = False
-            else:  # query edit not-present
-                column_name_disabled = False
-
         test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=100,
             help=column_name_help,
-            disabled=column_name_disabled,
         )
     elif test_scope == "column":  # CAT column test
-        if str_column_name:
-            column_name_disabled = True
-            if mode == "add":
-                column_name = str_column_name  # CAT add present
-            else:
-                pass  # CAT edit present
-        else:
-            column_name_disabled = False
-            if mode == "add":
-                pass  # CAT add not-present
-            else:
-                pass  # CAT edit not-present
-
         column_name_label = "Column Name"
         column_name_options = get_column_names(table_groups_id, test_definition["table_name"])
         column_name_help = "Select the column to test"
@@ -561,7 +532,6 @@ def show_test_form(
             index=column_name_index,
             help=column_name_help,
             key="column-name-form",
-            disabled=column_name_disabled,
         )
 
     leftover_attributes = dynamic_attributes.copy()
@@ -573,7 +543,7 @@ def show_test_form(
         numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
 
         default_value = 0 if attribute in numeric_attributes else ""
-        value = empty_if_null(selected_test_def[attribute]) if mode == "edit" else default_value
+        value = selected_test_def[attribute] if mode == "edit" and selected_test_def[attribute] is not None else default_value
 
         index = dynamic_attributes.index(attribute)
         leftover_attributes.remove(attribute)

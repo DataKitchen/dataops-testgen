@@ -44,7 +44,7 @@ const TableGroup = (props) => {
     window.testgen.isPage = true;
 
     const connections = getValue(props.connections) ?? [];
-    const enableConnectionSelector = getValue(props.table_group)?.connection_id === undefined;
+    const enableConnectionSelector = !(getValue(props.table_group)?.connection_id ?? null);
     const updatedTableGroup = van.state(getValue(props.table_group) ?? {});
     const disableSchemaField = getValue(props.in_used ?? false);
     const disableSave = van.state(true);
