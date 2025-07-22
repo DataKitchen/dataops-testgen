@@ -43,6 +43,7 @@ class CDeriveTestsSQL:
         strInputString = strInputString.replace("{GENERATION_SET}", self.generation_set)
         strInputString = strInputString.replace("{AS_OF_DATE}", self.as_of_date)
         strInputString = strInputString.replace("{DATA_SCHEMA}", self.data_schema)
+        strInputString = strInputString.replace("{ID_SEPARATOR}", "`" if self.sql_flavor == "databricks" else '"')
 
         return strInputString
 
