@@ -73,7 +73,7 @@ const Connections = (props) => {
                 }),
         ),
         div(
-            { class: 'flex-column fx-gap-4 tg-connections--border p-4' },
+            { class: 'flex-column fx-gap-4 p-4' },
             ConnectionForm(
                 {
                     connection: props.connection,
@@ -114,11 +114,6 @@ const Connections = (props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-connections--border {
-    border: var(--button-stroked-border);
-    border-radius: 8px;
-}
-
 .tg-connections--link {
     margin-left: auto;
     border-radius: 4px;
