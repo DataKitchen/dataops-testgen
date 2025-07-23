@@ -51,8 +51,16 @@ import { ExpansionPanel } from './expansion_panel.js';
 import { required } from '../form_validators.js';
 import { Select } from './select.js';
 import { Caption } from './caption.js';
+import { Textarea } from './textarea.js';
 
 const { div } = van.tags;
+
+const normalizeTableSet = (value) => {
+    return value?.split(/[,\n]/)
+        .map(part => part.trim())
+        .filter(part => part)
+        .join(', ');
+}
 
 /**
  * 
@@ -67,7 +75,7 @@ const TableGroupForm = (props) => {
     const tableGroupsName = van.state(tableGroup.table_groups_name);
     const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
     const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
-    const profilingTableSet = van.state(tableGroup.profiling_table_set);
+    const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
     const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '%_id');
     const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '%_sk');
@@ -279,17 +287,14 @@ const CriteriaForm = (
                     },
                 }),
             ),
-            Input({
+            Textarea({
                 name: 'profiling_table_set',
                 label: 'Explicit Table List',
                 value: profilingTableSet,
-                height: 38,
+                height: 108,
                 class: 'tg-column-flex',
                 help: 'List of specific table names to include, separated by commas or newlines',
-                onChange: (value, state) => {
-                    profilingTableSet.val = value;
-                    options.setValidity?.('profilingTableSet', state.valid);
-                },
+                onChange: (value) => profilingTableSet.val = normalizeTableSet(value),
             }),
         ),
         div(
