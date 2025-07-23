@@ -181,7 +181,8 @@ def get_table_groups_summary(project_code: str) -> pd.DataFrame:
         latest_profile.dismissed_ct as latest_anomalies_dismissed_ct
     FROM {schema}.table_groups as groups
         LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
-    WHERE groups.project_code = '{project_code}';
+    WHERE groups.project_code = '{project_code}'
+        AND groups.include_in_dashboard IS TRUE;
     """
 
     return db.retrieve_data(sql)

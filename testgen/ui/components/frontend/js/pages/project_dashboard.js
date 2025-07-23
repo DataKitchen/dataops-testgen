@@ -73,10 +73,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const isEmpty = van.derive(() => {
-        const projectSummary = getValue(props.project)
-        return projectSummary.test_runs_count <= 0 && projectSummary.profiling_runs_count <= 0;
-    });
     const tableGroups = van.derive(() => getValue(props.table_groups));
     const tableGroupsSearchTerm = van.state('');
     const tableGroupsSortOption = van.state(getValue(props.table_groups_sort_options).find(o => o.selected)?.value);
@@ -109,7 +105,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
     return div(
         { id: wrapperId, class: 'flex-column tg-overview' },
-        () => !getValue(isEmpty)
+        () => getValue(tableGroups).length
             ? div(
                 { class: 'flex-row fx-align-flex-end fx-gap-4' },
                 Input({
@@ -132,7 +128,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 }),
             )
             : '',
-        () => !getValue(isEmpty)
+        () => getValue(tableGroups).length
             ? div(
                 { class: 'flex-column mt-4' },
                 getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
