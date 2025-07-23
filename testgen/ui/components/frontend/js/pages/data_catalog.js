@@ -61,8 +61,9 @@ import { Button } from '../components/button.js';
 import { Link } from '../components/link.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 import { Portal } from '../components/portal.js';
+import { TableCreateScriptCard } from '../data_profiling/table_create_script.js';
 
-const { div, h2, span, i } = van.tags;
+const { div, h2, span } = van.tags;
 
 // https://www.sam.today/blog/html5-dnd-globe-icon
 const EMPTY_IMAGE = new Image(1, 1);
@@ -421,6 +422,9 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
             TestSuitesCard(item),
+            item.type === 'table'
+                ? TableCreateScriptCard({}, item)
+                : null,
         )
         : ItemEmptyState(
             'Select a table or column on the left to view its details.',

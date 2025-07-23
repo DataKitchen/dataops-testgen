@@ -1,8 +1,8 @@
 /**
  * @typedef Properties
  * @type {object}
- * @property {(string)} type
- * @property {(string|null)} color
+ * @property {'basic' | 'flat' | 'icon' | 'stroked'} type
+ * @property {'basic' | 'primary' | 'warn'} color
  * @property {(string|null)} width
  * @property {(string|null)} label
  * @property {(string|null)} icon
@@ -26,11 +26,6 @@ const BUTTON_TYPE = {
     FLAT: 'flat',
     ICON: 'icon',
     STROKED: 'stroked',
-};
-const BUTTON_COLOR = {
-    BASIC: 'basic',
-    PRIMARY: 'primary',
-    WARN: 'warn',
 };
 const DEFAULT_ICON_SIZE = 18;
 
