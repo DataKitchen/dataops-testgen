@@ -27,6 +27,7 @@
  * @property {string?} type
  * @property {string?} class
  * @property {string?} testId
+ * @property {any?} prefix
  * @property {Array<Validator>?} validators
  */
 import van from '../van.min.js';
@@ -109,20 +110,31 @@ const Input = (/** @type Properties */ props) => {
             },
             'clear',
         ) : '',
-        input({
-            class: () => `tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''}`,
-            style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
-            value,
-            name: props.name ?? '',
-            type: props.type ?? 'text',
-            disabled: props.disabled,
-            placeholder: () => getValue(props.placeholder) ?? '',
-            oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
-            onclick: van.derive(() => autocompleteOptions.val?.length
-                ? () => autocompleteOpened.val = true
-                : null
-            ),
-        }),
+
+        div(
+            {
+                class: () => `flex-row tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''}`,
+                style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
+            },
+            props.prefix
+                ? div(
+                    { class: 'tg-input--field-prefix' },
+                    props.prefix,
+                )
+                : undefined,
+            input({
+                value,
+                name: props.name ?? '',
+                type: props.type ?? 'text',
+                disabled: props.disabled,
+                placeholder: () => getValue(props.placeholder) ?? '',
+                oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
+                onclick: van.derive(() => autocompleteOptions.val?.length
+                    ? () => autocompleteOpened.val = true
+                    : null
+                ),
+            }),
+        ),
         () => 
             getValue(props.validators)?.length > 0
                 ? small({ class: 'tg-input--error' }, firstError)
@@ -183,12 +195,25 @@ stylesheet.replace(`
     border: 1px solid transparent;
     transition: border-color 0.3s;
     background-color: var(--form-field-color);
-    padding: 4px 8px;
     color: var(--primary-text-color);
     font-size: 14px;
 }
+.tg-input--field > .tg-input--field-prefix {
+    padding-left: 8px;
+}
+.tg-input--field > input {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    font-size: 14px;
+    background-color: var(--form-field-color);
+    color: var(--primary-text-color);
+    border: unset;
+    padding: 4px 8px;
+    border-radius: 8px;
+}
 
-.tg-input--field::placeholder {
+.tg-input--field > input::placeholder {
     font-style: italic;
     color: var(--disabled-text-color);
 }
@@ -232,7 +257,7 @@ stylesheet.replace(`
     background: var(--select-hover-background);
 }
 
-.tg-input--disabled {
+.tg-input--disabled > input {
     cursor: not-allowed;
     color: var(--disabled-text-color);
 }

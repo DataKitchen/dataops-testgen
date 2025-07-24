@@ -11,6 +11,7 @@
  * @property {string | number | boolean | null} selected
  * @property {function(string | number | boolean | null)?} onChange
  * @property {number?} width
+ * @property {boolean?} inline
  */
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet } from '../utils.js';
@@ -19,12 +20,13 @@ const { div, input, label } = van.tags;
 
 const RadioGroup = (/** @type Properties */ props) => {
     loadStylesheet('radioGroup', stylesheet);
+
     const groupName = getRandomId();
 
     return div(
-        { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
+        { class: () => `${getValue(props.inline) ? 'flex-row fx-gap-2' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: 'text-caption mb-1' },
+            { class: () => `text-caption ${getValue(props.inline) ? '' : 'mb-1'}` },
             props.label,
         ),
         () => div(
