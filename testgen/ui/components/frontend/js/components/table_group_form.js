@@ -38,7 +38,7 @@
  * @property {TableGroup} tableGroup
  * @property {Connection[]} connections
  * @property {boolean?} showConnectionSelector
- * @property {boolean?} enableConnectionSelector
+ * @property {boolean?} disableConnectionSelector
  * @property {boolean?} disableSchemaField
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -94,7 +94,6 @@ const TableGroupForm = (props) => {
         }));
     });
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
-    const disableConnectionSelector = van.derive(() => !getValue(props.enableConnectionSelector) || (getValue(props.connections) ?? []).length <= 0);
     const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
 
     const updatedTableGroup = van.derive(() => {
@@ -151,7 +150,7 @@ const TableGroupForm = (props) => {
                 value: tableGroupConnectionId.rawVal,
                 options: connectionOptions,
                 height: 38,
-                disabled: disableConnectionSelector,
+                disabled: props.disableConnectionSelector,
                 onChange: (value) => {
                     tableGroupConnectionId.val = value;
                     setFieldValidity('connection_id', !!value);
@@ -159,7 +158,7 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { disableSchemaField, setValidity: setFieldValidity },
+            { disableSchemaField, editMode: !!tableGroup.id, setValidity: setFieldValidity },
             tableGroupsName,
             profilingIncludeMask,
             profilingExcludeMask,
@@ -307,13 +306,16 @@ const MainForm = (
                 options.setValidity?.('profiling_delay_days', state.valid);
             },
         }),
-        Checkbox({
-            name: 'add_scorecard_definition',
-            label: 'Add scorecard for table group',
-            help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
-            checked: addScorecardDefinition,
-            onChange: (value) => addScorecardDefinition.val = value,
-        }),
+        () => 
+            !options.editMode ?
+                Checkbox({
+                    name: 'add_scorecard_definition',
+                    label: 'Add scorecard for table group',
+                    help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
+                    checked: addScorecardDefinition,
+                    onChange: (value) => addScorecardDefinition.val = value,
+                })
+                : '',
     );
 };
 

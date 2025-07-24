@@ -49,7 +49,6 @@ const TestDefinitionSummary = (props) => {
         {id: wrapperId},
         () => {
             const testDefinition = getValue(props.test_definition);
-            console.log(testDefinition);
 
             return div(
                 { class: 'flex-column' },

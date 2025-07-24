@@ -90,9 +90,41 @@ def get_test_suite_ids_by_table_group_names(table_group_names):
     return result.to_dict()["id"].values()
 
 
-def test_table_group(table_group, connection_id, project_code):
-    # get connection data
-    connection = connection_service.get_by_id(connection_id, hide_passwords=False)
+def get_table_group_preview(project_code: str, connection: dict | None, table_group: dict) -> dict:
+    table_group_preview = {
+        "schema": table_group["table_group_schema"],
+        "tables": set(),
+        "column_count": 0,
+        "success": True,
+        "message": None,
+    }
+    if connection:
+        try:
+            table_group_results = test_table_group(table_group, connection, project_code)
+
+            for column in table_group_results:
+                table_group_preview["schema"] = column["table_schema"]
+                table_group_preview["tables"].add(column["table_name"])
+                table_group_preview["column_count"] += 1
+
+            if len(table_group_results) <= 0:
+                table_group_preview["success"] = False
+                table_group_preview["message"] = (
+                    "No tables found matching the criteria. Please check the Table Group configuration"
+                    " or the database permissions."
+                )
+        except Exception as error:
+            table_group_preview["success"] = False
+            table_group_preview["message"] = error.args[0]
+    else:
+        table_group_preview["success"] = False
+        table_group_preview["message"] = "No connection selected. Please select a connection to preview the Table Group."
+
+    table_group_preview["tables"] = list(table_group_preview["tables"])
+    return table_group_preview
+
+
+def test_table_group(table_group, connection, project_code):
     connection_id = str(connection["connection_id"])
 
     # get table group data
