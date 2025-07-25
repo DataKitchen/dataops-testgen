@@ -4,6 +4,7 @@ import click
 
 from testgen import settings
 from testgen.commands.run_launch_db_config import run_launch_db_config
+from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
     create_database,
     execute_db_queries,
@@ -85,6 +86,7 @@ def _get_params_mapping(iteration: int = 0) -> dict:
     return {
         "TESTGEN_ADMIN_USER": settings.DATABASE_ADMIN_USER,
         "TESTGEN_ADMIN_PASSWORD": settings.DATABASE_ADMIN_PASSWORD,
+        "SCHEMA_NAME": get_tg_schema(),
         "PROJECT_DB": settings.PROJECT_DATABASE_NAME,
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
         "PROJECT_KEY": settings.PROJECT_KEY,
@@ -136,6 +138,27 @@ def run_quick_start_increment(iteration):
     execute_db_queries(
         [
             (replace_params(read_template_sql_file("update_target_data.sql", "quick_start"), params_mapping), params_mapping),
+            (replace_params(read_template_sql_file(f"update_target_data_iter{iteration}.sql", "quick_start"), params_mapping), params_mapping),
         ],
         use_target_db=True,
+    )
+    setup_cat_tests(iteration)
+
+
+def setup_cat_tests(iteration):
+    if iteration == 0:
+        return
+    elif iteration == 1:
+        sql_file = "add_cat_tests.sql"
+    elif iteration >=1:
+        sql_file = "update_cat_tests.sql"
+
+    params_mapping = _get_params_mapping(iteration)
+    query = replace_params(read_template_sql_file(sql_file, "quick_start"), params_mapping)
+
+    execute_db_queries(
+        [
+            (query, params_mapping),
+        ],
+        use_target_db=False,
     )

@@ -18,6 +18,10 @@ LEFT JOIN f_ebike_sales fes ON t.sale_id = fes.sale_id
  WHERE fes.sale_id IS NULL
    AND t.sale_date <= :MAX_DATE;
 
+DROP TABLE IF EXISTS tmp_f_ebike_sales_last_month;
+
+CREATE TABLE tmp_f_ebike_sales_last_month AS
+SELECT * from f_ebike_sales f WHERE f.sale_date <= (DATE_TRUNC('month', CURRENT_DATE) - (interval '3 month' - interval '{ITERATION_NUMBER} month') - interval '1 day');
 
 TRUNCATE TABLE d_ebike_customers;
 

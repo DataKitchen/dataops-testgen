@@ -196,7 +196,7 @@ class HygieneIssuesPage(Page):
                     height=20,
                     width=400,
                 )
-        
+
         lst_show_columns = [
             "table_name",
             "column_name",
@@ -262,7 +262,7 @@ class HygieneIssuesPage(Page):
 
                 with buttons_column:
                     col1, col2, col3 = st.columns([.3, .3, .3])
-                    
+
                 with col1:
                     view_profiling_button(
                         selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
