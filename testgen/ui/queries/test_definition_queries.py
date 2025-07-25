@@ -315,7 +315,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite, target
         update_target_column = f"'{target_table_column['column_name']}' as column_name"
         update_target_table = f"'{target_table_column['table_name']}' as table_name"
     else:
-        update_target_column = "td.colum_name"
+        update_target_column = "td.column_name"
         update_target_table = "td.table_name"
     test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
     sql = f"""

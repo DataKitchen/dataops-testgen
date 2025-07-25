@@ -88,6 +88,12 @@ stylesheet.replace(`
     background-color: var(--primary-color);
 }
 
+.tg-checkbox--input:checked:disabled,
+.tg-checkbox--input:indeterminate:disabled {
+    cursor: not-allowed;
+    background-color: var(--disabled-text-color);
+}
+
 .tg-checkbox--input:checked::after,
 .tg-checkbox--input:indeterminate::after {
     position: absolute;
