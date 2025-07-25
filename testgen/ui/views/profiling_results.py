@@ -124,11 +124,6 @@ class ProfilingResultsPage(Page):
             "Hygiene Issues",
         ]
 
-        # Show CREATE script button
-        if len(df) > 0 and table_name != "%%":
-            with st.expander("📜 **Table CREATE script with suggested datatypes**"):
-                st.code(generate_create_script(df), "sql")
-
         selected_row = fm.render_grid_select(
             df,
             show_columns,
@@ -283,28 +278,6 @@ def get_excel_report_data(
         columns=columns,
         update_progress=update_progress,
     )
-
-
-def generate_create_script(df):
-    ddf = df[["schema_name", "table_name", "column_name", "column_type", "datatype_suggestion"]].copy()
-    ddf.fillna("", inplace=True)
-
-    ddf["comment"] = ddf.apply(
-        lambda row: "-- WAS " + row["column_type"] if row["column_type"] != row["datatype_suggestion"] else "", axis=1
-    )
-    max_len_name = ddf.apply(lambda row: len(row["column_name"]), axis=1).max() + 3
-    max_len_type = ddf.apply(lambda row: len(row["datatype_suggestion"]), axis=1).max() + 3
-
-    str_header = f"CREATE TABLE {df.at[0, 'schema_name']}.{ddf.at[0, 'table_name']} ( "
-    col_defs = ddf.apply(
-        lambda row: f"     {row['column_name']:<{max_len_name}} {row['datatype_suggestion']:<{max_len_type}},    {row['comment']}",
-        axis=1,
-    ).tolist()
-    str_footer = ");"
-    # Drop final comma in column definitions
-    col_defs[-1] = col_defs[-1].replace(",    --", "    --")
-
-    return "\n".join([str_header, *list(col_defs), str_footer])
 
 
 @st.cache_data(show_spinner=False)

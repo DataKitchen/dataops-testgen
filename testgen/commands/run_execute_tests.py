@@ -18,6 +18,7 @@ from testgen.common import (
     date_service,
 )
 from testgen.common.database.database_service import ExecuteDBQuery, empty_cache
+from testgen.ui.session import session
 
 from .run_execute_cat_tests import run_cat_test_queries
 from .run_refresh_data_chars import run_refresh_data_chars_queries
@@ -109,7 +110,7 @@ def run_execution_steps_in_background(project_code, test_suite):
         empty_cache()
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(project_code, test_suite),
+            args=(project_code, test_suite, session.username),
         )
         background_thread.start()
     else:
@@ -121,6 +122,7 @@ def run_execution_steps_in_background(project_code, test_suite):
 def run_execution_steps(
     project_code: str,
     test_suite: str,
+    username: str | None = None,
     minutes_offset: int=0,
     spinner: Spinner=None,
 ) -> str:
@@ -178,7 +180,7 @@ def run_execution_steps(
 
     LOG.info("CurrentStep: Execute Step - CAT Test Execution")
     if run_cat_test_queries(
-        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, minutes_offset, spinner
+        test_exec_params, test_run_id, test_time, project_code, test_suite, error_msg, username, minutes_offset, spinner
     ):
         has_errors = True
 

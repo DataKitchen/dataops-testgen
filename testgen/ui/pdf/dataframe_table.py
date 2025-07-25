@@ -79,6 +79,7 @@ class VerticalHeaderCell(Flowable):
     """
 
     INITIAL_HEIGHT = 40
+    MAX_HEIGHT = 100
     HEIGHT_INCR_STEP = 5
 
     def __init__(self, flowable):
@@ -94,7 +95,7 @@ class VerticalHeaderCell(Flowable):
         while True:
             flowable_height, self.flowable_width = self.flowable.wrap(available_height, self.available_width)
 
-            if self.flowable_width > self.available_width:
+            if self.flowable_width > self.available_width and available_height <= self.MAX_HEIGHT:
                 available_height += self.HEIGHT_INCR_STEP
             else:
                 break
