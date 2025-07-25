@@ -9,6 +9,7 @@
  * @property {function(boolean, Event)?} onChange
  * @property {number?} width
  * @property {string?} testId
+ * @property {boolean?} disabled
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -36,6 +37,7 @@ const Checkbox = (/** @type Properties */ props) => {
                 const onChange = props.onChange?.val ?? props.onChange;
                 return onChange ? (/** @type Event */ event) => onChange(event.target.checked, event) : null;
             }),
+            disabled: props.disabled ?? false,
         }),
         span({'data-testid': 'checkbox-label'}, props.label),
         () => getValue(props.help)

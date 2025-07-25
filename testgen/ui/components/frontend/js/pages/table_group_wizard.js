@@ -153,6 +153,7 @@ const TableGroupWizard = (props) => {
         }),
         () => {
             const runProfiling = van.state(stepsState.runProfiling.rawVal);
+            const results = getValue(props.results) ?? {};
 
             van.derive(() => {
                 stepsState.runProfiling.val = runProfiling.val;
@@ -164,6 +165,7 @@ const TableGroupWizard = (props) => {
                 return RunProfilingStep(
                     stepsState.tableGroup.rawVal,
                     runProfiling,
+                    results?.success ?? false,
                 );
             });
         },
@@ -234,9 +236,10 @@ const TableGroupWizard = (props) => {
 /**
  * @param {object} tableGroup 
  * @param {boolean} runProfiling 
+ * @param {boolean?} disabled
  * @returns 
  */
-const RunProfilingStep = (tableGroup, runProfiling) => {
+const RunProfilingStep = (tableGroup, runProfiling, disabled) => {
     return div(
         { class: 'flex-column fx-gap-3' },
         Checkbox({
@@ -247,6 +250,7 @@ const RunProfilingStep = (tableGroup, runProfiling) => {
                 span('?'),
             ),
             checked: runProfiling,
+            disabled: disabled ?? false,
             onChange: (value) => runProfiling.val = value,
         }),
         div(
