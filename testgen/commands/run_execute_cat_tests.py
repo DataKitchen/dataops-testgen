@@ -63,7 +63,7 @@ def ParseCATResults(clsCATExecute):
     RunActionQueryList("DKTG", [strQuery])
 
 
-def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
+def FinalizeTestRun(clsCATExecute: CCATExecutionSQL, username: str | None = None):
     _, row_counts = RunActionQueryList(("DKTG"), [
         clsCATExecute.FinalizeTestResultsSQL(),
         clsCATExecute.PushTestRunStatusUpdateSQL(),
@@ -89,6 +89,7 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
     MixpanelService().send_event(
         "run-tests",
         source=settings.ANALYTICS_JOB_SOURCE,
+        username=username,
         sql_flavor=clsCATExecute.flavor,
         test_count=row_counts[0],
         run_duration=(end_time - date_service.parse_now(clsCATExecute.run_date)).total_seconds(),
@@ -97,7 +98,7 @@ def FinalizeTestRun(clsCATExecute: CCATExecutionSQL):
 
 
 def run_cat_test_queries(
-    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, minutes_offset=0, spinner=None
+    dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, error_msg, username=None, minutes_offset=0, spinner=None
 ):
     booErrors = False
 
@@ -167,4 +168,4 @@ def run_cat_test_queries(
 
     finally:
         LOG.info("Finalizing test run")
-        FinalizeTestRun(clsCATExecute)
+        FinalizeTestRun(clsCATExecute, username)
