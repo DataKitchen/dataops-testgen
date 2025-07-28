@@ -140,7 +140,7 @@ class HygieneIssuesPage(Page):
 
         with action_filter_column:
             action = testgen.select(
-                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
+                options=["✓ Confirmed", "✘ Dismissed", "🔇 Muted", "↩︎ No Action"],
                 default_value=action,
                 bind_to_query="action",
                 label="Action",
@@ -430,6 +430,7 @@ def get_profiling_anomalies(
         criteria += " AND r.column_name ILIKE :column_name"
         params["column_name"] = column_name
     if action:
+        action = action.split(" ", 1)[1]
         if action == "No Action":
             criteria += " AND r.disposition IS NULL"
         else:
