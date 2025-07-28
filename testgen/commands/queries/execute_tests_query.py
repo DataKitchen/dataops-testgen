@@ -143,9 +143,11 @@ class CTestExecutionSQL:
             query = CleanSQL(query)
         return query, params
 
-    def AddTestRecordtoTestRunTable(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("ex_write_test_record_to_testrun_table.sql")
+    def GetHistoricThresholdUpdate(self) -> tuple[str, dict]:
+        query = self._get_query("ex_update_history_threshold_last_n.sql")
+        if self._use_clean:
+            query = CleanSQL(query)
+        return query
 
     def PushTestRunStatusUpdateSQL(self) -> tuple[str, dict]:
         # Runs on App database
