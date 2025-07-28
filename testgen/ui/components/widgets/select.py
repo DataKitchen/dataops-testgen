@@ -32,11 +32,15 @@ def select(
     option_display_labels = options
 
     if isinstance(options, pd.DataFrame):
-        value_column = value_column or options.columns[0]
-        display_column = display_column or value_column
+        if options.empty:
+            option_values = []
+            option_display_labels = []
+        else:
+            value_column = value_column or options.columns[0]
+            display_column = display_column or value_column
 
-        option_values = options[value_column].values.tolist()
-        option_display_labels = options[display_column].values.tolist()
+            option_values = options[value_column].values.tolist()
+            option_display_labels = options[display_column].values.tolist()
 
     kwargs["options"] = [*option_display_labels]
     if default_value in option_values:

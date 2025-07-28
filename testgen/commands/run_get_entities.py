@@ -1,7 +1,6 @@
 import logging
 
 from testgen.common import RetrieveDBResultsToList, read_template_sql_file
-from testgen.common.encrypt import DecryptText
 
 LOG = logging.getLogger("testgen")
 
@@ -27,17 +26,6 @@ def run_list_projects():
 def run_list_connections():
     sql_template = read_template_sql_file("get_connections_list.sql", "get_entities")
     return RetrieveDBResultsToList("DKTG", sql_template)
-
-
-def run_get_connection(connection_id):
-    sql_template = read_template_sql_file("get_connection.sql", "get_entities")
-    sql_template = sql_template.replace("{CONNECTION_ID}", str(connection_id))
-    rows, _ = RetrieveDBResultsToList("DKTG", sql_template)
-    connection = rows.pop()._asdict()
-    connection["password"] = DecryptText(connection["project_pw_encrypted"]) if connection["project_pw_encrypted"] else None
-    connection["private_key"] = DecryptText(connection["private_key"]) if connection["private_key"] else None
-    connection["private_key_passphrase"] = DecryptText(connection["private_key_passphrase"]) if connection["private_key_passphrase"] else ""
-    return connection
 
 
 def run_table_group_list(project_code):

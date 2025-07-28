@@ -15,7 +15,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                      AND p.run_date::DATE <= '{AS_OF_DATE}'
                   GROUP BY r.table_groups_id),
      curprof AS (SELECT p.schema_name, p.table_name, p.profile_run_id,
-                        STRING_AGG(QUOTE_IDENT(p.column_name), ', ' ORDER BY p.position) as unique_by_columns
+                        STRING_AGG('{ID_SEPARATOR}' || p.column_name || '{ID_SEPARATOR}', ', ' ORDER BY p.position) as unique_by_columns
                    FROM last_run lr
                  INNER JOIN profile_results p
                     ON (lr.table_groups_id = p.table_groups_id

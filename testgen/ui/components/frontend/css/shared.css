@@ -78,6 +78,8 @@ body {
     --portal-background: white;
     --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
     --select-hover-background: rgb(240, 242, 246);
+
+    --app-background-color: #f8f9fa;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,6 +121,8 @@ body {
         --portal-background: #14181f;
         --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
         --select-hover-background: rgb(38, 39, 48);
+
+        --app-background-color: rgb(14, 17, 23);
     }
 }
 
@@ -618,4 +622,12 @@ code > .tg-icon:hover {
 
 .accent-primary {
     accent-color: var(--primary-color);
+}
+
+.border {
+    border: var(--button-stroked-border);
+}
+
+.border-radius-1 {
+    border-radius: 4px;
 }

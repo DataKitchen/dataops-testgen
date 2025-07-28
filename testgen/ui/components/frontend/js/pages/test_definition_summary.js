@@ -11,7 +11,6 @@
  * @property {string} test_suite_name
  * @property {string} table_name
  * @property {string} test_focus
- * @property {string?} status
  * @property {string} severity
  * @property {string} active
  * @property {string} locked
@@ -50,7 +49,6 @@ const TestDefinitionSummary = (props) => {
         {id: wrapperId},
         () => {
             const testDefinition = getValue(props.test_definition);
-            console.log(testDefinition);
 
             return div(
                 { class: 'flex-column' },

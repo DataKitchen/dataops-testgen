@@ -64,10 +64,10 @@ const TableGroupList = (props) => {
                 });
             }
 
-            return div(
+            return tableGroups.length > 0
+            ? div(
                 Toolbar(permissions, connections, connectionId),
-                tableGroups.length > 0
-                    ? tableGroups.map((tableGroup) => Card({
+                tableGroups.map((tableGroup) => Card({
                         testId: 'table-group-card',
                         class: '',
                         title: div(
@@ -179,22 +179,22 @@ const TableGroupList = (props) => {
                             )
                             : undefined,
                     }))
-                    : EmptyState({
-                        icon: 'table_view',
-                        label: 'No table groups yet',
-                        class: 'mt-4',
-                        message: EMPTY_STATE_MESSAGE.tableGroup,
-                        button: Button({
-                            type: 'stroked',
-                            icon: 'add',
-                            label: 'Add Table Group',
-                            color: 'primary',
-                            style: 'width: unset;',
-                            disabled: !permissions.can_edit,
-                            onclick: () => emitEvent('AddTableGroupClicked', {}),
-                        }),
-                    }),
-            );
+                )
+            : EmptyState({
+                icon: 'table_view',
+                label: 'No table groups yet',
+                class: 'mt-4',
+                message: EMPTY_STATE_MESSAGE.tableGroup,
+                button: Button({
+                    type: 'stroked',
+                    icon: 'add',
+                    label: 'Add Table Group',
+                    color: 'primary',
+                    style: 'width: unset;',
+                    disabled: !permissions.can_edit,
+                    onclick: () => emitEvent('AddTableGroupClicked', {}),
+                }),
+            });
         },
     );
 }

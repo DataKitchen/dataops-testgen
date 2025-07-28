@@ -38,6 +38,7 @@ from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
+from testgen.ui.views.dialogs.table_create_script_dialog import table_create_script_dialog
 from testgen.utils import format_field, friendly_score, is_uuid4, score
 
 PAGE_ICON = "dataset"
@@ -126,6 +127,10 @@ class DataCatalogPage(Page):
                     args=(selected_table_group, items),
                 ),
                 "RemoveTableClicked": remove_table_dialog,
+                "CreateScriptClicked": lambda item: table_create_script_dialog(
+                    item["table_name"],
+                    columns,
+                ),
                 "DataPreviewClicked": lambda item: data_preview_dialog(
                     item["table_group_id"],
                     item["schema_name"],
@@ -403,8 +408,11 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         CONCAT('table_', table_chars.table_id) AS table_id,
         column_chars.column_name,
         table_chars.table_name,
+        column_chars.schema_name,
         column_chars.general_type,
+        column_chars.column_type,
         column_chars.functional_data_type,
+        profile_results.datatype_suggestion,
         table_chars.record_ct,
         profile_results.value_ct,
         column_chars.drop_date,

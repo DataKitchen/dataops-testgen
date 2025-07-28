@@ -92,6 +92,12 @@ class ConnectionsPage(Page):
             else:
                 updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
+            if is_pristine(updated_connection.get("password")):
+                del updated_connection["password"]
+
+            if updated_connection.get("password") == CLEAR_SENTINEL:
+                updated_connection["password"] = ""
+
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)
@@ -226,13 +232,19 @@ class ConnectionsPage(Page):
     def setup_data_configuration(self, project_code: str, connection_id: str) -> None:
         def on_save_table_group_clicked(payload: dict) -> None:
             table_group: dict = payload["table_group"]
+            table_group_verified: bool = payload.get("table_group_verified", False)
             run_profiling: bool = payload.get("run_profiling", False)
 
             set_new_table_group(table_group)
+            set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
 
         def on_go_to_profiling_runs(params: dict) -> None:
             set_navigation_params({ **params, "project_code": project_code })
+
+        def on_preview_table_group(table_group: dict) -> None:
+            set_new_table_group(table_group)
+            mark_for_preview(True)
 
         get_navigation_params, set_navigation_params = temp_value(
             "connections:new_table_group:go_to_profiling_run",
@@ -242,61 +254,94 @@ class ConnectionsPage(Page):
             self.router.navigate(to="profiling-runs", with_args=params)
 
         get_new_table_group, set_new_table_group = temp_value(
-            "connections:new_connection:table_group",
+            f"connections:{connection_id}:table_group",
             default={},
         )
         get_run_profiling, set_run_profiling = temp_value(
-            "connections:new_connection:run_profiling",
+            f"connections:{connection_id}:run_profiling",
             default=False,
         )
 
         results = None
         table_group = get_new_table_group()
         should_run_profiling = get_run_profiling()
+        should_preview, mark_for_preview = temp_value(
+            f"connections:{connection_id}:tg_preview",
+            default=False,
+        )
+        is_table_group_verified, set_table_group_verified = temp_value(
+            f"connections:{connection_id}:tg_verified",
+            default=False,
+        )
+
+        table_group_preview = None
+        if should_preview():
+            connection = connection_service.get_by_id(connection_id, hide_passwords=False)
+            table_group_preview = table_group_service.get_table_group_preview(
+                project_code,
+                connection,
+                {"id": "temp", **table_group},
+            )
+
         if table_group:
             success = True
             message = None
             table_group_id = None
 
-            try:
-                table_group_id = table_group_service.add({
-                    **table_group,
-                    "project_code": project_code,
-                    "connection_id": connection_id,
-                })
+            if is_table_group_verified():
+                try:
+                    table_group_id = table_group_service.add({
+                        **table_group,
+                        "project_code": project_code,
+                        "connection_id": connection_id,
+                    })
 
-                if should_run_profiling:
-                    try:
-                        run_profiling_in_background(table_group_id)
-                        message = f"Profiling run started for table group {table_group['table_groups_name']}."
-                    except Exception as error:
-                        message = "Profiling run encountered errors"
-                        success = False
-                        LOG.exception(message)
-                else:
-                    LOG.info("Table group %s created", table_group_id)
-                    st.rerun()
-            except Exception as error:
-                message = "Error creating table group"
-                success = False
-                LOG.exception(message)
+                    if should_run_profiling:
+                        try:
+                            run_profiling_in_background(table_group_id)
+                            message = f"Profiling run started for table group {table_group['table_groups_name']}."
+                        except Exception as error:
+                            message = "Profiling run encountered errors"
+                            success = False
+                            LOG.exception(message)
+                    else:
+                        LOG.info("Table group %s created", table_group_id)
+                        st.rerun()
+                except Exception as error:
+                    message = "Error creating table group"
+                    success = False
+                    LOG.exception(message)
 
-            results = {
-                "success": success,
-                "message": message,
-                "table_group_id": table_group_id,
-            }
+                results = {
+                    "success": success,
+                    "message": message,
+                    "table_group_id": table_group_id,
+                }
+            else:
+                results = {
+                    "success": False,
+                    "message": "Verify the table group before saving",
+                    "connection_id": None,
+                    "table_group_id": None,
+                }
 
         testgen.testgen_component(
             "table_group_wizard",
             props={
                 "project_code": project_code,
                 "connection_id": connection_id,
+                "table_group_preview": table_group_preview,
+                "steps": [
+                    "tableGroup",
+                    "testTableGroup",
+                    "runProfiling",
+                ],
                 "results": results,
             },
             on_change_handlers={
                 "SaveTableGroupClicked": on_save_table_group_clicked,
                 "GoToProfilingRunsClicked": on_go_to_profiling_runs,
+                "PreviewTableGroupClicked": on_preview_table_group,
             },
         )
 

@@ -22,6 +22,7 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import empty_cache
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.ui.session import session
 
 booClean = True
 LOG = logging.getLogger("testgen")
@@ -238,7 +239,7 @@ def run_profiling_in_background(table_group_id):
         empty_cache()
         background_thread = threading.Thread(
             target=run_profiling_queries,
-            args=(table_group_id,),
+            args=(table_group_id, session.username),
         )
         background_thread.start()
     else:
@@ -247,7 +248,7 @@ def run_profiling_in_background(table_group_id):
         subprocess.Popen(script)  # NOQA S603
 
 
-def run_profiling_queries(strTableGroupsID, spinner=None):
+def run_profiling_queries(strTableGroupsID, username=None, spinner=None):
     if strTableGroupsID is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -518,6 +519,7 @@ def run_profiling_queries(strTableGroupsID, spinner=None):
         MixpanelService().send_event(
             "run-profiling",
             source=settings.ANALYTICS_JOB_SOURCE,
+            username=username,
             sql_flavor=clsProfiling.flavor,
             sampling=clsProfiling.profile_use_sampling == "Y",
             table_count=table_count,

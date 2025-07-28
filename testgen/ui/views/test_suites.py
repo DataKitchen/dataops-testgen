@@ -182,7 +182,7 @@ def show_test_suite(mode, project_code, table_groups_df, selected=None):
                 help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
             ),
             "test_suite_schema": test_suite_schema,
-            "export_to_observability": left_column.toggle(
+            "export_to_observability": left_column.checkbox(
                 "Export to Observability",
                 value=export_to_observability,
                 help="Fields below are only required when overriding the Table Group defaults.",

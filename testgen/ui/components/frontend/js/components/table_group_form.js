@@ -14,6 +14,7 @@
  * @property {string?} profile_sk_column_mask
  * @property {number?} profiling_delay_days
  * @property {boolean?} profile_flag_cdes
+ * @property {boolean?} include_in_dashboard
  * @property {boolean?} add_scorecard_definition
  * @property {boolean?} profile_use_sampling
  * @property {number?} profile_sample_percent
@@ -38,7 +39,7 @@
  * @property {TableGroup} tableGroup
  * @property {Connection[]} connections
  * @property {boolean?} showConnectionSelector
- * @property {boolean?} enableConnectionSelector
+ * @property {boolean?} disableConnectionSelector
  * @property {boolean?} disableSchemaField
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -49,8 +50,17 @@ import { Checkbox } from './checkbox.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { required } from '../form_validators.js';
 import { Select } from './select.js';
+import { Caption } from './caption.js';
+import { Textarea } from './textarea.js';
 
-const { div, span } = van.tags;
+const { div } = van.tags;
+
+const normalizeTableSet = (value) => {
+    return value?.split(/[,\n]/)
+        .map(part => part.trim())
+        .filter(part => part)
+        .join(', ');
+}
 
 /**
  * 
@@ -65,12 +75,13 @@ const TableGroupForm = (props) => {
     const tableGroupsName = van.state(tableGroup.table_groups_name);
     const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
     const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
-    const profilingTableSet = van.state(tableGroup.profiling_table_set);
+    const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
     const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '%_id');
     const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '%_sk');
     const profilingDelayDays = van.state(tableGroup.profiling_delay_days ?? 0);
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
+    const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
     const profileSamplePercent = van.state(tableGroup.profile_sample_percent ?? 30);
@@ -94,7 +105,6 @@ const TableGroupForm = (props) => {
         }));
     });
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
-    const disableConnectionSelector = van.derive(() => !getValue(props.enableConnectionSelector) || (getValue(props.connections) ?? []).length <= 0);
     const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
 
     const updatedTableGroup = van.derive(() => {
@@ -104,12 +114,13 @@ const TableGroupForm = (props) => {
             table_groups_name: tableGroupsName.val,
             profiling_include_mask: profilingIncludeMask.val,
             profiling_exclude_mask: profilingExcludeMask.val,
-            profiling_table_set: profilingTableSet.val,
+            profiling_table_set: normalizeTableSet(profilingTableSet.val),
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
             profile_sk_column_mask: profileSkColumnMask.val,
             profiling_delay_days: profilingDelayDays.val,
             profile_flag_cdes: profileFlagCdes.val,
+            include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
             profile_use_sampling: profileUseSampling.val,
             profile_sample_percent: profileSamplePercent.val,
@@ -151,7 +162,7 @@ const TableGroupForm = (props) => {
                 value: tableGroupConnectionId.rawVal,
                 options: connectionOptions,
                 height: 38,
-                disabled: disableConnectionSelector,
+                disabled: props.disableConnectionSelector,
                 onChange: (value) => {
                     tableGroupConnectionId.val = value;
                     setFieldValidity('connection_id', !!value);
@@ -161,14 +172,21 @@ const TableGroupForm = (props) => {
         MainForm(
             { disableSchemaField, setValidity: setFieldValidity },
             tableGroupsName,
+            tableGroupSchema,
+        ),
+        CriteriaForm(
+            { setValidity: setFieldValidity },
             profilingIncludeMask,
             profilingExcludeMask,
             profilingTableSet,
-            tableGroupSchema,
             profileIdColumnMask,
             profileSkColumnMask,
+        ),
+        SettingsForm(
+            { editMode: !!tableGroup.id, setValidity: setFieldValidity },
             profilingDelayDays,
             profileFlagCdes,
+            includeInDashboard,
             addScorecardDefinition,
         ),
         SamplingForm(
@@ -195,23 +213,16 @@ const TableGroupForm = (props) => {
 const MainForm = (
     options,
     tableGroupsName,
-    profilingIncludeMask,
-    profilingExcludeMask,
-    profilingTableSet,
     tableGroupSchema,
-    profileIdColumnMask,
-    profileSkColumnMask,
-    profilingDelayDays,
-    profileFlagCdes,
-    addScorecardDefinition,
 ) => {
     return div(
-        { class: 'tg-main-form flex-column fx-gap-3 fx-flex-wrap' },
+        { class: 'flex-row fx-gap-3 fx-flex-wrap' },
         Input({
             name: 'table_groups_name',
             label: 'Name',
             value: tableGroupsName,
             height: 38,
+            class: 'tg-column-flex',
             help: 'Unique name to describe the table group',
             helpPlacement: 'bottom-right',
             onChange: (value, state) => {
@@ -221,49 +232,11 @@ const MainForm = (
             validators: [ required ],
         }),
         Input({
-            name: 'profiling_include_mask',
-            label: 'Tables to Include Mask',
-            value: profilingIncludeMask,
-            height: 38,
-            help: 'SQL filter supported by your database\'s LIKE operator for table names to include',
-            onChange: (value, state) => {
-                profilingIncludeMask.val = value;
-                options.setValidity?.('profiling_include_mask', state.valid);
-            },
-        }),
-        Input({
-            name: 'profiling_exclude_mask',
-            label: 'Tables to Exclude Mask',
-            value: profilingExcludeMask,
-            height: 38,
-            help: 'SQL filter supported by your database\'s LIKE operator for table names to exclude',
-            onChange: (value, state) => {
-                profilingExcludeMask.val = value;
-                options.setValidity?.('profiling_exclude_mask', state.valid);
-            },
-        }),
-        Input({
-            name: 'profiling_table_set',
-            label: 'Explicit Table List',
-            value: profilingTableSet,
-            height: 38,
-            help: 'List of specific table names to include, separated by commas',
-            onChange: (value, state) => {
-                profilingTableSet.val = value;
-                options.setValidity?.('profiling_table_set', state.valid);
-            },
-        }),
-        Checkbox({
-            name: 'profile_flag_cdes',
-            label: 'Detect critical data elements (CDE) during profiling',
-            checked: profileFlagCdes,
-            onChange: (value) => profileFlagCdes.val = value,
-        }),
-        Input({
             name: 'table_group_schema',
             label: 'Schema',
             value: tableGroupSchema,
             height: 38,
+            class: 'tg-column-flex',
             help: 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
             disabled: options.disableSchemaField,
@@ -273,46 +246,133 @@ const MainForm = (
             },
             validators: [ required ],
         }),
-        Input({
-            name: 'profile_id_column_mask',
-            label: 'Profiling ID Column Mask',
-            value: profileIdColumnMask,
-            height: 38,
-            help: 'SQL filter supported by your database\'s LIKE operator representing ID columns (optional)',
-            onChange: (value, state) => {
-                profileIdColumnMask.val = value;
-                options.setValidity?.('profile_id_column_mask', state.valid);
-            },
-        }),
-        Input({
-            name: 'profile_sk_column_mask',
-            label: 'Profiling Surrogate Key Column Mask',
-            value: profileSkColumnMask,
-            height: 38,
-            help: 'SQL filter supported by your database\'s LIKE operator representing surrogate key columns (optional)',
-            onChange: (value, state) => {
-                profileSkColumnMask.val = value
-                options.setValidity?.('profile_sk_column_mask', state.valid);
-            },
-        }),
+    );
+};
+
+const CriteriaForm = (
+    options,
+    profilingIncludeMask,
+    profilingExcludeMask,
+    profilingTableSet,
+    profileIdColumnMask,
+    profileSkColumnMask,
+) => {
+    return div(
+        { class: 'flex-column fx-gap-3 border border-radius-1 p-3 mt-1', style: 'position: relative;' },
+        Caption({content: 'Criteria', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+        div(
+            { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start' },
+            div(
+                { class: 'tg-column-flex flex-column fx-gap-3', },
+                Input({
+                    name: 'profiling_include_mask',
+                    label: 'Tables to Include Mask',
+                    value: profilingIncludeMask,
+                    height: 38,
+                    help: 'SQL filter supported by your database\'s LIKE operator for table names to include',
+                    onChange: (value, state) => {
+                        profilingIncludeMask.val = value;
+                        options.setValidity?.('profiling_include_mask', state.valid);
+                    },
+                }),
+                Input({
+                    name: 'profiling_exclude_mask',
+                    label: 'Tables to Exclude Mask',
+                    value: profilingExcludeMask,
+                    height: 38,
+                    help: 'SQL filter supported by your database\'s LIKE operator for table names to exclude',
+                    onChange: (value, state) => {
+                        profilingExcludeMask.val = value;
+                        options.setValidity?.('profiling_exclude_mask', state.valid);
+                    },
+                }),
+            ),
+            Textarea({
+                name: 'profiling_table_set',
+                label: 'Explicit Table List',
+                value: profilingTableSet,
+                height: 108,
+                class: 'tg-column-flex',
+                help: 'List of specific table names to include, separated by commas or newlines',
+                onChange: (value) => profilingTableSet.val = value,
+            }),
+        ),
+        div(
+            { class: 'flex-row fx-gap-3 fx-flex-wrap' },
+            Input({
+                name: 'profile_id_column_mask',
+                label: 'Profiling ID Column Mask',
+                value: profileIdColumnMask,
+                height: 38,
+                class: 'tg-column-flex',
+                help: 'SQL filter supported by your database\'s LIKE operator representing ID columns',
+                onChange: (value, state) => {
+                    profileIdColumnMask.val = value;
+                    options.setValidity?.('profile_id_column_mask', state.valid);
+                },
+            }),
+            Input({
+                name: 'profile_sk_column_mask',
+                label: 'Profiling Surrogate Key Column Mask',
+                value: profileSkColumnMask,
+                height: 38,
+                class: 'tg-column-flex',
+                help: 'SQL filter supported by your database\'s LIKE operator representing surrogate key columns',
+                onChange: (value, state) => {
+                    profileSkColumnMask.val = value
+                    options.setValidity?.('profile_sk_column_mask', state.valid);
+                },
+            }),
+        ),
+    );
+};
+
+const SettingsForm = (
+    options,
+    profilingDelayDays,
+    profileFlagCdes,
+    includeInDashboard,
+    addScorecardDefinition,
+) => {
+    return div(
+        { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start border border-radius-1 p-3 mt-1', style: 'position: relative;' },
+        Caption({content: 'Settings', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
+        div(
+            { class: 'tg-column-flex flex-column fx-gap-3' },
+            Checkbox({
+                name: 'profile_flag_cdes',
+                label: 'Detect critical data elements (CDE) during profiling',
+                checked: profileFlagCdes,
+                onChange: (value) => profileFlagCdes.val = value,
+            }),
+            Checkbox({
+                name: 'include_in_dashboard',
+                label: 'Include table group in Project Dashboard',
+                checked: includeInDashboard,
+                onChange: (value) => includeInDashboard.val = value,
+            }),
+            () => !options.editMode
+                ? Checkbox({
+                    name: 'add_scorecard_definition',
+                    label: 'Add scorecard for table group',
+                    help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
+                    checked: addScorecardDefinition,
+                    onChange: (value) => addScorecardDefinition.val = value,
+                })
+                : null,
+        ),
         Input({
             name: 'profiling_delay_days',
             type: 'number',
             label: 'Min Profiling Age (in days)',
             value: profilingDelayDays,
             height: 38,
+            class: 'tg-column-flex',
             help: 'Number of days to wait before new profiling will be available to generate tests',
             onChange: (value, state) => {
                 profilingDelayDays.val = value;
                 options.setValidity?.('profiling_delay_days', state.valid);
             },
-        }),
-        Checkbox({
-            name: 'add_scorecard_definition',
-            label: 'Add scorecard for table group',
-            help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
-            checked: addScorecardDefinition,
-            onChange: (value) => addScorecardDefinition.val = value,
         }),
     );
 };
@@ -323,17 +383,17 @@ const SamplingForm = (
     profileSamplePercent,
     profileSampleMinCount,
 ) => {
-    return div(
-        { class: 'tg-sampling-form flex-column fx-gap-3' },
-        Checkbox({
-            name: 'profile_use_sampling',
-            label: 'Use profile sampling',
-            help: 'When checked, profiling will be based on a sample of records instead of the full table',
-            checked: profileUseSampling,
-            onChange: (value) => profileUseSampling.val = value,
-        }),
-        ExpansionPanel(
-            { title: 'Sampling Parameters', testId: 'sampling-panel' },
+    return ExpansionPanel(
+        { title: 'Sampling Parameters', testId: 'sampling-panel' },
+        div(
+            { class: 'flex-column fx-gap-3' },
+            Checkbox({
+                name: 'profile_use_sampling',
+                label: 'Use profile sampling',
+                help: 'When checked, profiling will be based on a sample of records instead of the full table',
+                checked: profileUseSampling,
+                onChange: (value) => profileUseSampling.val = value,
+            }),
             div(
                 { class: 'flex-row fx-gap-3' },
                 Input({
@@ -488,10 +548,9 @@ const TaggingForm = (
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-main-form {
-    height: 316px;
+.tg-column-flex {
+    flex: 250px;
 }
-
 .tg-tagging-form-fields {
     height: 332px;
 }

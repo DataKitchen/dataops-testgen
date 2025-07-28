@@ -52,9 +52,9 @@ def testgen_component(
                 Router().queue_navigation(to=event_data["href"], with_args=event_data.get("params"))
             elif on_change_handlers and (handler := on_change_handlers.get(event)):
                 # Prevent handling the same event multiple times
-                event_id = f"{component_id}:{event_data.get('_id', '')}"
-                if event_id != session.testgen_event_id:
-                    session.testgen_event_id = event_id
+                event_id = event_data.get("_id", "")
+                if event_id != session.testgen_event_id.get(component_id):
+                    session.testgen_event_id[component_id] = event_id
                     handler(event_data.get("payload"))
 
     event_data = component(
@@ -65,9 +65,9 @@ def testgen_component(
     )
     if event_handlers and event_data and (event := event_data.get("event")) and (handler := event_handlers.get(event)):
         # Prevent handling the same event multiple times
-        event_id = f"{component_id}:{event_data.get('_id', '')}"
-        if event_id != session.testgen_event_id:
-            session.testgen_event_id = event_id
+        event_id = event_data.get("_id", "")
+        if event_id != session.testgen_event_id.get(component_id):
+            session.testgen_event_id[component_id] = event_id
             # These events are not handled through the component's on_change callback
             # because they may call st.rerun(), causing the "Calling st.rerun() within a callback is a noop" error
             handler(event_data.get("payload"))

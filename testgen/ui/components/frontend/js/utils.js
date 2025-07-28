@@ -116,7 +116,7 @@ function friendlyPercent(/** @type number */ value) {
     }
     const rounded = Math.round(value);
     if (rounded === 0 && value > 0) {
-        return '< 0';
+        return '< 1';
     }
     if (rounded === 100 && value < 100) {
         return '> 99';

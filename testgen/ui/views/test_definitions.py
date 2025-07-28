@@ -29,6 +29,7 @@ from testgen.ui.services import project_service, user_session_service
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
+from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 
 LOG = logging.getLogger("testgen")
 
@@ -64,7 +65,7 @@ class TestDefinitionsPage(Page):
             ],
         )
 
-        table_filter_column, column_filter_column, table_actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
+        table_filter_column, column_filter_column, test_filter_column, table_actions_column = st.columns([.3, .3, .3, .4], vertical_alignment="bottom")
         testgen.flex_row_end(table_actions_column)
 
         actions_column, disposition_column = st.columns([.5, .5])
@@ -80,7 +81,7 @@ class TestDefinitionsPage(Page):
                 default_value=table_name or (table_options[0] if table_options else None),
                 bind_to_query="table_name",
                 required=True,
-                label="Table Name",
+                label="Table",
             )
         with column_filter_column:
             column_options = columns_df.loc[columns_df["table_name"] == table_name]["column_name"].dropna().unique().tolist()
@@ -88,9 +89,19 @@ class TestDefinitionsPage(Page):
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
-                label="Column Name",
+                label="Column",
                 disabled=not table_name,
                 accept_new_options=True,
+            )
+        with test_filter_column:
+            test_options = columns_df.groupby("test_type").first().reset_index().sort_values("test_name_short")
+            test_type = testgen.select(
+                options=test_options,
+                value_column="test_type",
+                display_column="test_name_short",
+                default_value=None,
+                bind_to_query="test_type",
+                label="Test Type",
             )
 
         with disposition_column:
@@ -102,8 +113,14 @@ class TestDefinitionsPage(Page):
         ):
             add_test_dialog(project_code, table_group, test_suite, table_name, column_name)
 
+        if user_can_edit and table_actions_column.button(
+            ":material/play_arrow: Run Tests",
+            help="Run test suite's tests",
+        ):
+            run_tests_dialog(project_code, test_suite)
+
         selected = show_test_defs_grid(
-            project_code, test_suite["test_suite"], table_name, column_name, do_multi_select, table_actions_column,
+            project_code, test_suite["test_suite"], table_name, column_name, test_type, do_multi_select, table_actions_column,
             table_group["id"]
         )
         fm.render_refresh_button(table_actions_column)
@@ -121,7 +138,8 @@ class TestDefinitionsPage(Page):
                 ])
 
             for action in disposition_actions:
-                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=not selected)
+                action_disabled = not selected or all(sel[action["attribute"]] == ("Y" if action["value"] else "N") for sel in selected)
+                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=action_disabled)
 
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:
@@ -265,12 +283,12 @@ def show_test_form(
     test_action = empty_if_null(selected_test_def["test_action"]) if mode == "edit" else ""
     schema_name = selected_test_def["schema_name"] if mode == "edit" else table_group["table_group_schema"]
     table_name = empty_if_null(selected_test_def["table_name"]) if mode == "edit" else empty_if_null(str_table_name)
-    skip_errors = selected_test_def["skip_errors"] if mode == "edit" else 0
+    skip_errors = selected_test_def["skip_errors"] or 0 if mode == "edit" else 0
     test_active = selected_test_def["test_active"] == "Y" if mode == "edit" else True
     lock_refresh = selected_test_def["lock_refresh"] == "Y" if mode == "edit" else False
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     check_result = selected_test_def["check_result"] if mode == "edit" else None
-    column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else ""
+    column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else empty_if_null(str_column_name)
     last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
     profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
     profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
@@ -281,12 +299,12 @@ def show_test_form(
     baseline_unique_ct = empty_if_null(selected_test_def["baseline_unique_ct"]) if mode == "edit" else ""
     baseline_value = empty_if_null(selected_test_def["baseline_value"]) if mode == "edit" else ""
     baseline_value_ct = empty_if_null(selected_test_def["baseline_value_ct"]) if mode == "edit" else ""
-    threshold_value = empty_if_null(selected_test_def["threshold_value"]) if mode == "edit" else 0
+    threshold_value = selected_test_def["threshold_value"] or 0 if mode == "edit" else 0
     baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
     baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
     baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
-    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else 0
-    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else 0
+    lower_tolerance = selected_test_def["lower_tolerance"] or 0 if mode == "edit" else 0
+    upper_tolerance = selected_test_def["upper_tolerance"] or 0 if mode == "edit" else 0
     subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
     groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
     having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
@@ -297,7 +315,7 @@ def show_test_form(
     match_subset_condition = empty_if_null(selected_test_def["match_subset_condition"]) if mode == "edit" else ""
     match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
     match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
-    window_days = selected_test_def["window_days"] if mode == "edit" and selected_test_def["window_days"] else 0
+    window_days = selected_test_def["window_days"] or 0 if mode == "edit" else 0
     test_mode = empty_if_null(selected_test_def["test_mode"]) if mode == "edit" else ""
 
     # export_to_observability
@@ -490,49 +508,20 @@ def show_test_form(
         test_definition["column_name"] = None
         column_name_label = None
     elif test_scope == "referential":
-        column_name_disabled = False
         test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=500,
             help=column_name_help,
-            disabled=column_name_disabled,
         )
     elif test_scope == "custom":
-        if str_column_name:
-            if mode == "add":  # query add present
-                column_name_disabled = False
-                column_name = str_column_name
-            else:  # query edit present
-                column_name_disabled = False
-                column_name = str_column_name
-        else:
-            if mode == "add":  # query add not-present
-                column_name_disabled = False
-            else:  # query edit not-present
-                column_name_disabled = False
-
         test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=100,
             help=column_name_help,
-            disabled=column_name_disabled,
         )
     elif test_scope == "column":  # CAT column test
-        if str_column_name:
-            column_name_disabled = True
-            if mode == "add":
-                column_name = str_column_name  # CAT add present
-            else:
-                pass  # CAT edit present
-        else:
-            column_name_disabled = False
-            if mode == "add":
-                pass  # CAT add not-present
-            else:
-                pass  # CAT edit not-present
-
         column_name_label = "Column Name"
         column_name_options = get_column_names(table_groups_id, test_definition["table_name"])
         column_name_help = "Select the column to test"
@@ -543,7 +532,6 @@ def show_test_form(
             index=column_name_index,
             help=column_name_help,
             key="column-name-form",
-            disabled=column_name_disabled,
         )
 
     leftover_attributes = dynamic_attributes.copy()
@@ -551,11 +539,11 @@ def show_test_form(
     def render_dynamic_attribute(attribute: str, container: DeltaGenerator):
         if not attribute in dynamic_attributes:
             return
-        
+
         numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
 
         default_value = 0 if attribute in numeric_attributes else ""
-        value = empty_if_null(selected_test_def[attribute]) if mode == "edit" else default_value
+        value = selected_test_def[attribute] if mode == "edit" and selected_test_def[attribute] is not None else default_value
 
         index = dynamic_attributes.index(attribute)
         leftover_attributes.remove(attribute)
@@ -577,7 +565,7 @@ def show_test_form(
                 custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
             elif test_type == "CUSTOM":
                 custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
-                
+
             test_definition[attribute] = st.text_area(
                 label=label_text,
                 value=custom_query,
@@ -870,13 +858,13 @@ def update_test_definition(selected, attribute, value, message):
 
 
 def show_test_defs_grid(
-    str_project_code, str_test_suite, str_table_name, str_column_name, do_multi_select, export_container,
+    str_project_code, str_test_suite, str_table_name, str_column_name, str_test_type, do_multi_select, export_container,
         str_table_groups_id
 ):
     with st.container():
         with st.spinner("Loading data ..."):
             df = test_definition_service.get_test_definitions(
-                str_project_code, str_test_suite, str_table_name, str_column_name
+                str_project_code, str_test_suite, str_table_name, str_column_name, str_test_type
             )
             date_service.accommodate_dataframe_to_timezone(df, st.session_state)
 
@@ -899,7 +887,7 @@ def show_test_defs_grid(
         "Schema",
         "Table",
         "Columns / Focus",
-        "Test Name",
+        "Test Type",
         "Active",
         "Locked",
         "Urgency",
@@ -1097,8 +1085,9 @@ def run_table_groups_lookup_query(str_project_code, str_connection_id=None, tabl
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     schema: str = st.session_state["dbschema"]
     sql = f"""
-    SELECT table_name, column_name
-    FROM {schema}.test_definitions
+    SELECT d.table_name, d.column_name, t.test_name_short, d.test_type
+    FROM {schema}.test_definitions d
+    LEFT JOIN {schema}.test_types as t on t.test_type = d.test_type
     WHERE test_suite_id = '{test_suite_id}'
     ORDER BY table_name, column_name;
     """

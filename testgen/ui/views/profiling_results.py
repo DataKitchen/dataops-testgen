@@ -69,7 +69,7 @@ class ProfilingResultsPage(Page):
                 value_column="table_name",
                 default_value=table_name,
                 bind_to_query="table_name",
-                label="Table Name",
+                label="Table",
             )
 
         with column_filter_column:
@@ -80,17 +80,17 @@ class ProfilingResultsPage(Page):
                 value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
-                label="Column Name",
+                label="Column",
                 disabled=not table_name,
                 accept_new_options=bool(table_name),
             )
 
         with sort_column:
             sortable_columns = (
-                ("Schema Name", "schema_name"),
-                ("Table Name", "table_name"),
-                ("Column Name", "column_name"),
-                ("Column Type", "column_type"),
+                ("Schema", "schema_name"),
+                ("Table", "table_name"),
+                ("Column", "column_name"),
+                ("Data Type", "column_type"),
                 ("Semantic Data Type", "semantic_data_type"),
                 ("Hygiene Issues", "hygiene_issues"),
             )
@@ -106,7 +106,7 @@ class ProfilingResultsPage(Page):
                     column_name=column_name,
                     sorting_columns=sorting_columns,
                 )
-                
+
         show_columns = [
             "schema_name",
             "table_name",
@@ -115,17 +115,21 @@ class ProfilingResultsPage(Page):
             "semantic_data_type",
             "hygiene_issues",
         ]
-
-        # Show CREATE script button
-        if len(df) > 0 and table_name != "%%":
-            with st.expander("📜 **Table CREATE script with suggested datatypes**"):
-                st.code(generate_create_script(df), "sql")
+        show_column_headers = [
+            "Schema",
+            "Table",
+            "Column",
+            "Data Type",
+            "Semantic Data Type",
+            "Hygiene Issues",
+        ]
 
         selected_row = fm.render_grid_select(
             df,
             show_columns,
             bind_to_query_name="selected",
             bind_to_query_prop="id",
+            show_column_headers=show_column_headers,
         )
 
         popover_container = export_button_column.empty()
@@ -274,28 +278,6 @@ def get_excel_report_data(
         columns=columns,
         update_progress=update_progress,
     )
-
-
-def generate_create_script(df):
-    ddf = df[["schema_name", "table_name", "column_name", "column_type", "datatype_suggestion"]].copy()
-    ddf.fillna("", inplace=True)
-
-    ddf["comment"] = ddf.apply(
-        lambda row: "-- WAS " + row["column_type"] if row["column_type"] != row["datatype_suggestion"] else "", axis=1
-    )
-    max_len_name = ddf.apply(lambda row: len(row["column_name"]), axis=1).max() + 3
-    max_len_type = ddf.apply(lambda row: len(row["datatype_suggestion"]), axis=1).max() + 3
-
-    str_header = f"CREATE TABLE {df.at[0, 'schema_name']}.{ddf.at[0, 'table_name']} ( "
-    col_defs = ddf.apply(
-        lambda row: f"     {row['column_name']:<{max_len_name}} {row['datatype_suggestion']:<{max_len_type}},    {row['comment']}",
-        axis=1,
-    ).tolist()
-    str_footer = ");"
-    # Drop final comma in column definitions
-    col_defs[-1] = col_defs[-1].replace(",    --", "    --")
-
-    return "\n".join([str_header, *list(col_defs), str_footer])
 
 
 @st.cache_data(show_spinner=False)

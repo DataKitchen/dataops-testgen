@@ -22,7 +22,7 @@ def _get_select_statement(schema):
                 business_domain, stakeholder_group, transform_level, data_product,
                 CASE WHEN profile_use_sampling = 'Y' THEN true ELSE false END AS profile_use_sampling,
                 profile_sample_percent, profile_sample_min_count,
-                profiling_delay_days, profile_flag_cdes
+                profiling_delay_days, profile_flag_cdes, include_in_dashboard
         FROM table_groups
         """
 
@@ -122,6 +122,7 @@ def edit(schema, table_group):
                     profile_sample_min_count={int(table_group["profile_sample_min_count"])},
                     profiling_delay_days='{table_group["profiling_delay_days"]}',
                     profile_flag_cdes={table_group["profile_flag_cdes"]},
+                    include_in_dashboard={table_group["include_in_dashboard"]},
                     description='{table_group["description"]}',
                     data_source=NULLIF('{table_group["data_source"]}', ''),
                     source_system=NULLIF('{table_group["source_system"]}', ''),
@@ -157,6 +158,7 @@ def add(schema, table_group) -> str:
         profile_sample_min_count,
         profiling_delay_days,
         profile_flag_cdes,
+        include_in_dashboard,
         description,
         data_source,
         source_system,
@@ -182,6 +184,7 @@ def add(schema, table_group) -> str:
         {table_group["profile_sample_min_count"]},
         '{table_group["profiling_delay_days"]}'::character varying,
         {table_group["profile_flag_cdes"]},
+        {table_group["include_in_dashboard"]},
         '{table_group["description"]}',
         NULLIF('{table_group["data_source"]}', ''),
         NULLIF('{table_group["source_system"]}', ''),

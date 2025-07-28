@@ -1,26 +1,48 @@
 /**
+ * @import { TableGroupPreview } from '../components/table_group_test.js'
+ * @import { Connection } from ''../components/connection_form.js'
+ * @import { TableGroup } from ''../components/table_group_form.js'
+ * 
  * @typedef WizardResult
  * @type {object}
  * @property {boolean} success
  * @property {string} message
- * @property {string} table_group_id
+ * @property {string?} table_group_id
  * 
  * @typedef Properties
  * @type {object}
  * @property {string} project_code
- * @property {string} connection_id
+ * @property {TableGroup} table_group
+ * @property {Connection[]} connections
+ * @property {string[]?} steps
+ * @property {boolean?} is_in_use
+ * @property {TableGroupPreview?} table_group_preview
  * @property {WizardResult?} results
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { TableGroupForm } from '../components/table_group_form.js';
+import { TableGroupTest } from '../components/table_group_test.js';
 import { emitEvent, getValue, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { Button } from '../components/button.js';
 import { Alert } from '../components/alert.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Icon } from '../components/icon.js';
+import { Caption } from '../components/caption.js';
 
 const { div, i, span, strong } = van.tags;
+const stepsTitle = {
+    tableGroup: 'Configure Table Group',
+    testTableGroup: 'Preview Table Group',
+    runProfiling: 'Run Profiling',
+};
+const lastStepCustonButtonText = {
+    runProfiling: (state) => state ? 'Save & Run Profiling' : 'Save',
+};
+const defaultSteps = [
+    'tableGroup',
+    'testTableGroup',
+];
 
 /**
  * @param {Properties} props 
@@ -29,16 +51,15 @@ const TableGroupWizard = (props) => {
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const steps = [
-        'tableGroup',
-        'runProfiling',
-    ];
+    const steps =  props.steps?.val ?? defaultSteps;
     const stepsState = {
-        tableGroup: van.state({}),
+        tableGroup: van.state(props.table_group.val),
+        testTableGroup: van.state(false),
         runProfiling: van.state(true),
     };
     const stepsValidity = {
         tableGroup: van.state(false),
+        testTableGroup: van.state(false),
         runProfiling: van.state(true),
     };
     const currentStepIndex = van.state(0);
@@ -53,18 +74,30 @@ const TableGroupWizard = (props) => {
     const nextButtonLabel = van.derive(() => {
         const isLastStep = currentStepIndex.val === steps.length - 1;
         if (isLastStep) {
-            return stepsState.runProfiling.val ? 'Save & Run Profiling' : 'Finish Setup';
+            const stepKey = steps[currentStepIndex.val];
+            const stepState = stepsState[stepKey];
+            return lastStepCustonButtonText[stepKey]?.(stepState.val) ?? 'Save';
         }
         return 'Next';
     });
+
+    van.derive(() => {
+        const tableGroupPreview = getValue(props.table_group_preview);
+        stepsValidity.testTableGroup.val = tableGroupPreview?.success ?? false;
+        stepsState.testTableGroup.val = tableGroupPreview?.success ?? false;
+    });
+
     const setStep = (stepIdx) => {
         currentStepIndex.val = stepIdx;
     };
     const saveTableGroup = () => {
-        const payload = {
-            table_group: stepsState.tableGroup.val,
-            run_profiling: stepsState.runProfiling.val,
-        };
+        const payloadEntries = [
+            ['tableGroup', 'table_group', stepsState.tableGroup.val],
+            ['testTableGroup', 'table_group_verified', stepsState.testTableGroup.val],
+            ['runProfiling', 'run_profiling', stepsState.runProfiling.val],
+        ].filter(([stepKey,]) => steps.includes(stepKey)).map(([, eventKey, stepState]) => [eventKey, stepState]);
+
+        const payload = Object.fromEntries(payloadEntries);
         emitEvent('SaveTableGroupClicked', { payload });
     };
 
@@ -74,78 +107,128 @@ const TableGroupWizard = (props) => {
 
     return div(
         { id: domId, class: 'tg-table-group-wizard flex-column fx-gap-3' },
+        div(
+            {},
+            () => {
+                const stepName = steps[currentStepIndex.val];
+                const stepNumber = currentStepIndex.val + 1;
+                return Caption({
+                    content: `Step ${stepNumber} of ${steps.length}: ${stepsTitle[stepName]}`,
+                });
+            },
+        ),
         WizardStep(0, currentStepIndex, () => {
             currentStepIndex.val;
 
+            const connections = getValue(props.connections) ?? [];
+            const tableGroup = stepsState.tableGroup.rawVal;
+
             return TableGroupForm({
-                tableGroup: stepsState.tableGroup.rawVal,
+                connections,
+                tableGroup: tableGroup,
+                showConnectionSelector: connections.length > 1,
+                disableConnectionSelector: false,
+                disableSchemaField: props.is_in_use ?? false,
                 onChange: (updatedTableGroup, state) => {
                     stepsState.tableGroup.val = updatedTableGroup;
                     stepsValidity.tableGroup.val = state.valid;
                 },
             });
         }),
+        WizardStep(1, currentStepIndex, () => {
+            const tableGroup = stepsState.tableGroup.rawVal;
+
+            if (currentStepIndex.val === 1) {
+                props.table_group_preview.val = undefined;
+                stepsValidity.testTableGroup.val = false;
+                stepsState.testTableGroup.val = false;
+
+                emitEvent('PreviewTableGroupClicked', { payload: tableGroup });
+            }
+
+            return TableGroupTest(
+                tableGroup.table_group_schema ?? '--',
+                props.table_group_preview,
+            );
+        }),
         () => {
-            const results = getValue(props.results);
             const runProfiling = van.state(stepsState.runProfiling.rawVal);
+            const results = getValue(props.results) ?? {};
 
             van.derive(() => {
                 stepsState.runProfiling.val = runProfiling.val;
             });
 
-            return WizardStep(1, currentStepIndex, () => {
+            return WizardStep(2, currentStepIndex, () => {
                 currentStepIndex.val;
     
                 return RunProfilingStep(
                     stepsState.tableGroup.rawVal,
                     runProfiling,
-                    results,
+                    results?.success ?? false,
                 );
             });
         },
         div(
-            { class: 'tg-table-group-wizard--footer flex-row' },
-            () => currentStepIndex.val > 0
-                ? Button({
-                    label: 'Previous',
-                    type: 'stroked',
-                    color: 'basic',
-                    width: 'auto',
-                    style: 'margin-right: auto; min-width: 200px;',
-                    onclick: () => setStep(currentStepIndex.val - 1),
-                })
-                : '',
+            { class: 'flex-column fx-gap-3' },
             () => {
-                const results = getValue(props.results);
-                const runProfiling = stepsState.runProfiling.val;
-
-                if (results && results.success && runProfiling) {
-                    return Button({
-                        type: 'stroked',
-                        color: 'primary',
-                        label: 'Go to Profiling Runs',
-                        width: 'auto',
-                        icon: 'chevron_right',
-                        onclick: () => emitEvent('GoToProfilingRunsClicked', { payload: { table_group_id: results.table_group_id } }),
-                    });
-                }
-
-                return Button({
-                    label: nextButtonLabel,
-                    type: nextButtonType,
-                    color: 'primary',
-                    width: 'auto',
-                    style: 'margin-left: auto; min-width: 200px;',
-                    disabled: currentStepIsInvalid,
-                    onclick: () => {
-                        if (currentStepIndex.val < steps.length - 1) {
-                            return setStep(currentStepIndex.val + 1);
-                        }
-
-                        saveTableGroup();
-                    },
-                });
+                const results = getValue(props.results) ?? {};
+                return Object.keys(results).length > 0
+                    ? Alert({ type: results.success ? 'success' : 'error' }, span(results.message))
+                    : '';
             },
+            div(
+                { class: 'flex-row' },
+                () => {
+                    const results = getValue(props.results);
+    
+                    if (currentStepIndex.val <= 0 || results?.success === true) {
+                        return '';
+                    }
+    
+                    return Button({
+                        label: 'Previous',
+                        type: 'stroked',
+                        color: 'basic',
+                        width: 'auto',
+                        style: 'margin-right: auto; min-width: 200px;',
+                        onclick: () => setStep(currentStepIndex.val - 1),
+                    });
+                },
+                () => {
+                    const results = getValue(props.results);
+                    const runProfiling = stepsState.runProfiling.val;
+                    const stepKey = steps[currentStepIndex.val];
+    
+                    if (results && results.success && stepKey === 'runProfiling' && runProfiling) {
+                        return Button({
+                            type: 'stroked',
+                            color: 'primary',
+                            label: 'Go to Profiling Runs',
+                            width: 'auto',
+                            icon: 'chevron_right',
+                            style: 'margin-left: auto;',
+                            onclick: () => emitEvent('GoToProfilingRunsClicked', { payload: { table_group_id: results.table_group_id } }),
+                        });
+                    }
+    
+                    return Button({
+                        label: nextButtonLabel,
+                        type: nextButtonType,
+                        color: 'primary',
+                        width: 'auto',
+                        style: 'margin-left: auto; min-width: 200px;',
+                        disabled: currentStepIsInvalid,
+                        onclick: () => {
+                            if (currentStepIndex.val < steps.length - 1) {
+                                return setStep(currentStepIndex.val + 1);
+                            }
+    
+                            saveTableGroup();
+                        },
+                    });
+                },
+            ),
         ),
     );
 };
@@ -153,10 +236,10 @@ const TableGroupWizard = (props) => {
 /**
  * @param {object} tableGroup 
  * @param {boolean} runProfiling 
- * @param {WizardResult} result
+ * @param {boolean?} disabled
  * @returns 
  */
-const RunProfilingStep = (tableGroup, runProfiling, results) => {
+const RunProfilingStep = (tableGroup, runProfiling, disabled) => {
     return div(
         { class: 'flex-column fx-gap-3' },
         Checkbox({
@@ -167,6 +250,7 @@ const RunProfilingStep = (tableGroup, runProfiling, results) => {
                 span('?'),
             ),
             checked: runProfiling,
+            disabled: disabled ?? false,
             onChange: (value) => runProfiling.val = value,
         }),
         div(
@@ -176,12 +260,6 @@ const RunProfilingStep = (tableGroup, runProfiling, results) => {
                 ? i('Profiling will be performed in a background process.')
                 : i('Profiling will be skipped. You can run this step later from the Profiling Runs page.'),
         ),
-        () => {
-            const results_ = getValue(results) ?? {};
-            return Object.keys(results_).length > 0
-                ? Alert({ type: results_.success ? 'success' : 'error' }, span(results_.message))
-                : '';
-        },
     );
 };
 
@@ -194,7 +272,7 @@ const WizardStep = (index, currentIndex, content) => {
     const hidden = van.derive(() => getValue(currentIndex) !== getValue(index));
 
     return div(
-        { class: () => hidden.val ? 'hidden' : ''},
+        { class: () => `flex-column fx-gap-3 ${hidden.val ? 'hidden' : ''}`},
         content,
     );
 };

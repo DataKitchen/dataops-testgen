@@ -22,7 +22,7 @@ def update_attribute(schema, test_definition_ids, attribute, value):
 
 @st.cache_data(show_spinner=False)
 @with_database_session
-def get_test_definitions(_, project_code, test_suite, table_name, column_name, test_definition_ids: list[str] | None):
+def get_test_definitions(_, project_code, test_suite, table_name, column_name, test_type, test_definition_ids: list[str] | None):
     db_session = get_current_session()
     params = {}
     order_by = "ORDER BY d.schema_name, d.table_name, d.column_name, d.test_type"
@@ -48,6 +48,10 @@ def get_test_definitions(_, project_code, test_suite, table_name, column_name, t
     if column_name:
         filters += " AND d.column_name ILIKE :column_name"
         params["column_name"] = column_name
+    
+    if test_type:
+        filters += " AND d.test_type = :test_type"
+        params["test_type"] = test_type
 
     sql = f"""
     SELECT
@@ -311,7 +315,7 @@ def copy(schema, test_definitions, target_table_group, target_test_suite, target
         update_target_column = f"'{target_table_column['column_name']}' as column_name"
         update_target_table = f"'{target_table_column['table_name']}' as table_name"
     else:
-        update_target_column = "td.colum_name"
+        update_target_column = "td.column_name"
         update_target_table = "td.table_name"
     test_definition_ids = [f"'{td['id']}'" for td in test_definitions]
     sql = f"""

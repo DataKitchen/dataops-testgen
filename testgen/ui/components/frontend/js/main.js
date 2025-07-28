@@ -30,7 +30,6 @@ import { ScheduleList } from './pages/schedule_list.js';
 import { Connections } from './pages/connections.js';
 import { TableGroupWizard } from './pages/table_group_wizard.js';
 import { HelpMenu } from './components/help_menu.js'
-import { TableGroup } from './pages/table_group.js';
 import { TableGroupList } from './pages/table_group_list.js';
 import { TableGroupDeleteConfirmation } from './pages/table_group_delete_confirmation.js';
 import { RunProfilingDialog } from './pages/run_profiling_dialog.js';
@@ -64,7 +63,6 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         connections: Connections,
         table_group_wizard: TableGroupWizard,
         help_menu: HelpMenu,
-        table_group: TableGroup,
         table_group_list: TableGroupList,
         table_group_delete: TableGroupDeleteConfirmation,
         run_profiling_dialog: RunProfilingDialog,
