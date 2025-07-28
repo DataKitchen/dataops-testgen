@@ -92,6 +92,12 @@ class ConnectionsPage(Page):
             else:
                 updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
+            if is_pristine(updated_connection.get("password")):
+                del updated_connection["password"]
+
+            if updated_connection.get("password") == CLEAR_SENTINEL:
+                updated_connection["password"] = ""
+
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)

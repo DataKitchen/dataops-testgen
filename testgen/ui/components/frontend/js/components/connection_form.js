@@ -55,10 +55,9 @@
 import van from '../van.min.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
-import { getValue, emitEvent, loadStylesheet, isEqual, debounce } from '../utils.js';
+import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
-import { Checkbox } from './checkbox.js';
 import { Select } from './select.js';
 import { maxLength, minLength, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
@@ -66,7 +65,7 @@ import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { Caption } from './caption.js';
 
-const { div, hr, i, span } = van.tags;
+const { div, i, span } = van.tags;
 const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
@@ -116,13 +115,15 @@ const ConnectionForm = (props, saveButton) => {
         private_key: isEditMode ? '' : (connection?.private_key ?? ''),
         private_key_passphrase: isEditMode ? '' : (connection?.private_key_passphrase ?? ''),
         http_path: connection?.http_path ?? '',
-        url: formatURL(
-            urlSuffix ?? '',
-            connection?.project_host ?? '',
-            connection?.project_port ?? defaultPort ?? '',
-            connection?.project_db ?? '',
-            connection?.http_path ?? '',
-        ),
+        url: connection?.connect_by_url 
+            ? (connection?.url ?? '')
+            : formatURL(
+                urlSuffix ?? '',
+                connection?.project_host ?? '',
+                connection?.project_port ?? defaultPort ?? '',
+                connection?.project_db ?? '',
+                connection?.http_path ?? '',
+            ),
 
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
@@ -342,7 +343,7 @@ const RedshiftForm = (
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.password ?? '');
@@ -350,6 +351,8 @@ const RedshiftForm = (
     const [prefixPart, sufixPart] = originalURLTemplate.split('@');
     const connectionStringPrefix = van.state(`${prefixPart}@`);
     const connectionStringSuffix = van.state(connection.rawVal?.url ?? '');
+
+    const validityPerField = {};
 
     if (!connectionStringSuffix.rawVal) {
         connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal);
@@ -374,7 +377,8 @@ const RedshiftForm = (
             project_db: connectionDatabase.val,
             project_user: connectionUsername.val,
             password: connectionPassword.val,
-            url: connectionStringSuffix.rawVal,
+            connect_by_url: connectByUrl.val,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
         }, isValid.val);
     });
 
@@ -411,7 +415,8 @@ const RedshiftForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionHost.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_host'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ maxLength(250) ],
                 }),
@@ -424,7 +429,8 @@ const RedshiftForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionPort.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_port'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ minLength(3), maxLength(5) ],
                 })
@@ -437,7 +443,8 @@ const RedshiftForm = (
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_name'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(100) ],
             }),
@@ -467,7 +474,8 @@ const RedshiftForm = (
                 height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_user'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(50) ],
             }),
@@ -480,7 +488,8 @@ const RedshiftForm = (
                 placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['password'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
             }),
         ),
@@ -514,7 +523,7 @@ const DatabricksForm = (
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal?.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal?.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal?.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal?.project_port || defaultPorts[flavor.flavor]);
     const connectionHttpPath = van.state(connection.rawVal?.http_path ?? '');
     const connectionDatabase = van.state(connection.rawVal?.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal?.project_user ?? '');
@@ -523,6 +532,8 @@ const DatabricksForm = (
     const [prefixPart, sufixPart] = originalURLTemplate.split('@');
     const connectionStringPrefix = van.state(`${prefixPart}@`);
     const connectionStringSuffix = van.state(connection.rawVal?.url ?? '');
+
+    const validityPerField = {};
 
     if (!connectionStringSuffix.rawVal) {
         connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal, connectionHttpPath.rawVal);
@@ -548,7 +559,8 @@ const DatabricksForm = (
             project_user: connectionUsername.val,
             password: connectionPassword.val,
             http_path: connectionHttpPath.val,
-            url: connectionStringSuffix.rawVal,
+            connect_by_url: connectByUrl.val,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
         }, isValid.val);
     });
 
@@ -585,7 +597,8 @@ const DatabricksForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionHost.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_host'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ maxLength(250) ],
                 }),
@@ -598,7 +611,8 @@ const DatabricksForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionPort.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_port'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ minLength(3), maxLength(5) ],
                 })
@@ -612,7 +626,8 @@ const DatabricksForm = (
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionHttpPath.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['http_path'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(50) ],
             }),
@@ -624,7 +639,8 @@ const DatabricksForm = (
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_name'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(100) ],
             }),
@@ -654,7 +670,8 @@ const DatabricksForm = (
                 height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_user'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(50) ],
             }),
@@ -667,7 +684,8 @@ const DatabricksForm = (
                 placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['password'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
             }),
         ),
@@ -692,17 +710,22 @@ const SnowflakeForm = (
 ) => {
     const originalURLTemplate = flavor.connection_string;
 
-    const isValid = van.state(true);
-    const clearPrivateKeyPhrase = van.state(false);
+    const isValid = van.state(false);
+    const clearPrivateKeyPhrase = van.state(connection.rawVal?.private_key_passphrase === clearSentinel);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
     const connectByKey = van.state(connection.rawVal?.connect_by_key ?? false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.password ?? '');
     const connectionPrivateKey = van.state(connection.rawVal?.private_key ?? '');
-    const connectionPrivateKeyPassphrase = van.state(connection.rawVal?.private_key_passphrase ?? '');
+    const connectionPrivateKeyPassphrase = van.state(
+        clearPrivateKeyPhrase.rawVal
+        ? ''
+        : (connection.rawVal?.private_key_passphrase ?? '')
+    );
+    const validityPerField = {};
 
     const privateKeyFileRaw = van.state(cachedFile);
 
@@ -732,7 +755,8 @@ const SnowflakeForm = (
             project_db: connectionDatabase.val,
             project_user: connectionUsername.val,
             password: connectionPassword.val,
-            url: connectionStringSuffix.rawVal,
+            connect_by_url: connectByUrl.val,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
             connect_by_key: connectByKey.val,
             private_key: connectionPrivateKey.val,
             private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : connectionPrivateKeyPassphrase.val,
@@ -772,7 +796,8 @@ const SnowflakeForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionHost.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_host'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ maxLength(250) ],
                 }),
@@ -785,7 +810,8 @@ const SnowflakeForm = (
                     disabled: connectByUrl,
                     onChange: (value, state) => {
                         connectionPort.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['db_port'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [ minLength(3), maxLength(5) ],
                 })
@@ -798,7 +824,8 @@ const SnowflakeForm = (
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_name'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(100) ],
             }),
@@ -814,7 +841,8 @@ const SnowflakeForm = (
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => {
                         connectionStringSuffix.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                 }),
             ),
@@ -842,7 +870,8 @@ const SnowflakeForm = (
                 height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
-                    isValid.val = isValid.val && state.valid;
+                    validityPerField['db_user'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
                 },
                 validators: [ maxLength(50) ],
             }),
@@ -865,7 +894,8 @@ const SnowflakeForm = (
                                         clearPrivateKeyPhrase.val = false;
                                     }
                                     connectionPrivateKeyPassphrase.val = value;
-                                    isValid.val = isValid.val && state.valid;
+                                    validityPerField['private_key_passphrase'] = state.valid;
+                                    isValid.val = Object.values(validityPerField).every(v => v);
                                 },
                             }),
                             () => {
@@ -905,7 +935,8 @@ const SnowflakeForm = (
                                     console.error(err);
                                     isFieldValid = false;
                                 }
-                                isValid.val = isValid.val && isFieldValid;
+                                validityPerField['private_key'] = state.valid;
+                                isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
                                 sizeLimit(200 * 1024 * 1024),
@@ -923,7 +954,8 @@ const SnowflakeForm = (
                     placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
                     onChange: (value, state) => {
                         connectionPassword.val = value;
-                        isValid.val = isValid.val && state.valid;
+                        validityPerField['password'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
                     },
                 });
             },
