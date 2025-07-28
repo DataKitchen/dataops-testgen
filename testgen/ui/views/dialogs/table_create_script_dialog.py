@@ -13,7 +13,8 @@ def table_create_script_dialog(table_name: str, data: pd.DataFrame) -> None:
 
 
 def generate_create_script(table_name: str, data: pd.DataFrame) -> str:
-    df = data[data["table_name"] == table_name][["schema_name", "table_name", "column_name", "column_type", "datatype_suggestion"]].copy()
+    df = data[data["table_name"] == table_name][["schema_name", "table_name", "column_name", "column_type", "datatype_suggestion"]]
+    df = df.copy().reset_index(drop=True)
     df.fillna("", inplace=True)
 
     df["comment"] = df.apply(
