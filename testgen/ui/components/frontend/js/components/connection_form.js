@@ -55,10 +55,9 @@
 import van from '../van.min.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
-import { getValue, emitEvent, loadStylesheet, isEqual, debounce } from '../utils.js';
+import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
-import { Checkbox } from './checkbox.js';
 import { Select } from './select.js';
 import { maxLength, minLength, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
@@ -66,7 +65,7 @@ import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { Caption } from './caption.js';
 
-const { div, hr, i, span } = van.tags;
+const { div, i, span } = van.tags;
 const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
@@ -116,13 +115,15 @@ const ConnectionForm = (props, saveButton) => {
         private_key: isEditMode ? '' : (connection?.private_key ?? ''),
         private_key_passphrase: isEditMode ? '' : (connection?.private_key_passphrase ?? ''),
         http_path: connection?.http_path ?? '',
-        url: formatURL(
-            urlSuffix ?? '',
-            connection?.project_host ?? '',
-            connection?.project_port ?? defaultPort ?? '',
-            connection?.project_db ?? '',
-            connection?.http_path ?? '',
-        ),
+        url: connection?.connect_by_url 
+            ? (connection?.url ?? '')
+            : formatURL(
+                urlSuffix ?? '',
+                connection?.project_host ?? '',
+                connection?.project_port ?? defaultPort ?? '',
+                connection?.project_db ?? '',
+                connection?.http_path ?? '',
+            ),
 
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
@@ -342,7 +343,7 @@ const RedshiftForm = (
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.password ?? '');
@@ -377,7 +378,7 @@ const RedshiftForm = (
             project_user: connectionUsername.val,
             password: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
         }, isValid.val);
     });
 
@@ -522,7 +523,7 @@ const DatabricksForm = (
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal?.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal?.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal?.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal?.project_port || defaultPorts[flavor.flavor]);
     const connectionHttpPath = van.state(connection.rawVal?.http_path ?? '');
     const connectionDatabase = van.state(connection.rawVal?.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal?.project_user ?? '');
@@ -559,7 +560,7 @@ const DatabricksForm = (
             password: connectionPassword.val,
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
-            url: connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
         }, isValid.val);
     });
 
@@ -714,7 +715,7 @@ const SnowflakeForm = (
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
     const connectByKey = van.state(connection.rawVal?.connect_by_key ?? false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
-    const connectionPort = van.state(connection.rawVal.project_port ?? '');
+    const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.password ?? '');
@@ -755,7 +756,7 @@ const SnowflakeForm = (
             project_user: connectionUsername.val,
             password: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
             connect_by_key: connectByKey.val,
             private_key: connectionPrivateKey.val,
             private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : connectionPrivateKeyPassphrase.val,
