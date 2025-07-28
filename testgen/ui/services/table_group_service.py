@@ -175,6 +175,6 @@ def get_profiling_table_set_with_quotes(profiling_table_set):
     aux_list = []
     split = profiling_table_set.split(",")
     for item in split:
-        aux_list.append(f"'{item}'")
+        aux_list.append(f"'{item.strip()}'")
     profiling_table_set = ",".join(aux_list)
     return profiling_table_set

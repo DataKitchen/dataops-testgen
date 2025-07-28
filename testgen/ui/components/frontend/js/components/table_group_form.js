@@ -114,7 +114,7 @@ const TableGroupForm = (props) => {
             table_groups_name: tableGroupsName.val,
             profiling_include_mask: profilingIncludeMask.val,
             profiling_exclude_mask: profilingExcludeMask.val,
-            profiling_table_set: profilingTableSet.val,
+            profiling_table_set: normalizeTableSet(profilingTableSet.val),
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
             profile_sk_column_mask: profileSkColumnMask.val,
@@ -294,7 +294,7 @@ const CriteriaForm = (
                 height: 108,
                 class: 'tg-column-flex',
                 help: 'List of specific table names to include, separated by commas or newlines',
-                onChange: (value) => profilingTableSet.val = normalizeTableSet(value),
+                onChange: (value) => profilingTableSet.val = value,
             }),
         ),
         div(
