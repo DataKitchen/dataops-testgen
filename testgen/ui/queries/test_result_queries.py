@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pandas as pd
 import streamlit as st
 
@@ -11,6 +13,7 @@ def get_test_results(
     test_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     query = f"""
@@ -19,10 +22,11 @@ def get_test_results(
                 FROM test_results r
             WHERE
                 r.test_run_id = :run_id
-                {" AND r.result_status IN :test_statuses" if test_statuses else ""}
-                {" AND r.test_type = :test_type_id" if test_type_id else ""}
-                {" AND r.table_name = :table_name" if table_name else ""}
-                {" AND r.column_names ILIKE :column_name" if column_name else ""}
+                {"AND r.result_status IN :test_statuses" if test_statuses else ""}
+                {"AND r.test_type = :test_type_id" if test_type_id else ""}
+                {"AND r.table_name = :table_name" if table_name else ""}
+                {"AND r.column_names ILIKE :column_name" if column_name else ""}
+                {"AND r.disposition IS NULL" if action == "No Action" else "AND r.disposition = :disposition" if action else ""}
             )
     SELECT r.table_name,
             p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
@@ -109,6 +113,9 @@ def get_test_results(
         "test_type_id": test_type_id,
         "table_name": table_name,
         "column_name": column_name,
+        "disposition": {
+            "Muted": "Inactive",
+        }.get(action, action),
     }
 
     df = fetch_df_from_db(query, params)

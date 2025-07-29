@@ -45,7 +45,7 @@ class HygieneIssuesPage(Page):
     def render(
         self,
         run_id: str,
-        issue_class: str | None = None,
+        likelihood: str | None = None,
         issue_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
@@ -73,11 +73,19 @@ class HygieneIssuesPage(Page):
         )
 
         others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.2, .2, .15, .3, .15], vertical_alignment="bottom")
-        (table_filter_column, column_filter_column, issue_type_filter_column, liklihood_filter_column, action_filter_column, sort_column) = (
-            st.columns([.15, .2, .2, .2, .15, .1], vertical_alignment="bottom")
+        (liklihood_filter_column, table_filter_column, column_filter_column, issue_type_filter_column, action_filter_column, sort_column) = (
+            st.columns([.2, .15, .2, .2, .15, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
+
+        with liklihood_filter_column:
+            likelihood = testgen.select(
+                options=["Definite", "Likely", "Possible", "Potential PII"],
+                default_value=likelihood,
+                bind_to_query="likelihood",
+                label="Likelihood",
+            )
 
         run_columns_df = get_profiling_run_columns(run_id)
         with table_filter_column:
@@ -125,29 +133,22 @@ class HygieneIssuesPage(Page):
             )
             issue_type_id = testgen.select(
                 options=issue_type_options,
-                default_value=None if issue_class == "Potential PII" else issue_type,
+                default_value=None if likelihood == "Potential PII" else issue_type,
                 value_column="anomaly_id",
                 display_column="anomaly_name",
                 bind_to_query="issue_type",
                 label="Issue Type",
-                disabled=issue_class == "Potential PII",
-            )
-
-        with liklihood_filter_column:
-            issue_class = testgen.select(
-                options=["Definite", "Likely", "Possible", "Potential PII"],
-                default_value=issue_class,
-                bind_to_query="issue_class",
-                label="Likelihood",
+                disabled=likelihood == "Potential PII",
             )
 
         with action_filter_column:
             action = testgen.select(
-                options=["✓ Confirmed", "✘ Dismissed", "🔇 Muted", "↩︎ No Action"],
+                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
                 default_value=action,
                 bind_to_query="action",
                 label="Action",
             )
+            action = action.split("	", 1)[1] if action else None
 
         with sort_column:
             sortable_columns = (
@@ -167,8 +168,7 @@ class HygieneIssuesPage(Page):
         with st.container():
             with st.spinner("Loading data ..."):
                 # Get hygiene issue list
-                action = action.split(" ", 1)[1]
-                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, action, sorting_columns)
+                df_pa = get_profiling_anomalies(run_id, likelihood, issue_type_id, table_name, column_name, action, sorting_columns)
 
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_anomaly_disposition(run_id)
