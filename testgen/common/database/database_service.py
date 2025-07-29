@@ -263,7 +263,7 @@ def write_to_app_db(data: list[LegacyRow], column_names: list[str], table_name: 
 
 def replace_params(query: str, params: dict[str, Any]) -> str:
     for key, value in params.items():
-        query = query.replace(f"{{{key}}}", str(value))
+        query = query.replace(f"{{{key}}}", "" if value is None else str(value))
     return query
 
 
