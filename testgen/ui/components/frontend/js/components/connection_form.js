@@ -379,6 +379,7 @@ const RedshiftForm = (
             password: connectionPassword.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
+            connect_by_key: false,
         }, isValid.val);
     });
 
@@ -561,6 +562,7 @@ const DatabricksForm = (
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
+            connect_by_key: false,
         }, isValid.val);
     });
 
