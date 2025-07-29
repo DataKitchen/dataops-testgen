@@ -9,8 +9,9 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-import testgen.ui.services.database_service as db
-import testgen.ui.services.query_service as dq
+from testgen.common.models import with_database_session
+from testgen.common.models.project import Project
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.components.widgets.download_dialog import (
@@ -22,7 +23,6 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.queries import project_queries
 from testgen.ui.queries.profiling_queries import (
     TAG_FIELDS,
     get_column_by_id,
@@ -34,12 +34,13 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
 )
 from testgen.ui.services import user_session_service
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.ui.views.dialogs.table_create_script_dialog import table_create_script_dialog
-from testgen.utils import format_field, friendly_score, is_uuid4, score
+from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
@@ -68,44 +69,39 @@ class DataCatalogPage(Page):
                 # (something to do with displaying the extra cache spinner next to the custom component)
                 # Enclosing the loading logic in a Streamlit container also fixes it
 
-                project_summary = project_queries.get_summary_by_code(project_code)
+                project_summary = Project.get_summary(project_code)
                 user_can_navigate = not user_session_service.user_has_catalog_role()
-                table_groups = get_table_group_options(project_code)
+                table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
-                if not table_group_id or table_group_id not in table_groups["id"].values:
-                    table_group_id = table_groups.iloc[0]["id"] if not table_groups.empty else None
+                if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
+                    table_group_id = str(table_groups[0].id) if table_groups else None
                     on_table_group_selected(table_group_id)
 
-                columns, selected_item, selected_table_group = pd.DataFrame(), None, None
+                columns, selected_item, selected_table_group = [], None, None
                 if table_group_id:
-                    selected_table_group = table_groups.loc[table_groups["id"] == table_group_id].iloc[0]
+                    selected_table_group = next(item for item in table_groups if str(item.id) == table_group_id)
                     columns = get_table_group_columns(table_group_id)
                     selected_item = get_selected_item(selected, table_group_id)
 
         if selected_item:
             selected_item["project_code"] = project_code
-            selected_item["connection_id"] = format_field(selected_table_group["connection_id"])
+            selected_item["connection_id"] = str(selected_table_group.connection_id)
         else:
             on_item_selected(None)
         
         testgen_component(
             "data_catalog",
             props={
-                "project_summary": {
-                    "project_code": project_code,
-                    "connections_ct": format_field(project_summary["connections_ct"]),
-                    "table_groups_ct": format_field(project_summary["table_groups_ct"]),
-                    "default_connection_id": format_field(project_summary["default_connection_id"]),
-                },
+                "project_summary": project_summary.to_dict(json_safe=True),
                 "table_group_filter_options": [
                     {
-                        "value": format_field(table_group["id"]),
-                        "label": format_field(table_group["table_groups_name"]),
-                        "selected": str(table_group_id) == str(table_group["id"]),
-                    } for _, table_group in table_groups.iterrows()
+                        "value": str(table_group.id),
+                        "label": table_group.table_groups_name,
+                        "selected": table_group_id == str(table_group.id),
+                    } for table_group in table_groups
                 ],
-                "columns": columns.to_json(orient="records") if not columns.empty else None,
-                "selected_item": json.dumps(selected_item),
+                "columns": json.dumps(make_json_safe(columns)) if columns else None,
+                "selected_item": json.dumps(make_json_safe(selected_item)) if selected_item else None,
                 "tag_values": get_tag_values(),
                 "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
                 "permissions": {
@@ -161,7 +157,7 @@ class ExportItem(typing.TypedDict):
     id: str
     type: typing.Literal["table", "column"]
 
-def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: dict, items: list[ExportItem] | None) -> None:
+def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None) -> None:
     if items:
         table_data = get_tables_by_id(
             table_ids=[ item["id"] for item in items if item["type"] == "table" ],
@@ -175,12 +171,12 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: di
         )
     else:
         table_data = get_tables_by_table_group(
-            table_group["id"],
+            table_group.id,
             include_tags=True,
             include_active_tests=True,
         )
         column_data = get_columns_by_table_group(
-            table_group["id"],
+            table_group.id,
             include_tags=True,
             include_active_tests=True,
         )
@@ -197,7 +193,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: di
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
-            lambda val: datetime.fromtimestamp(val / 1000).strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
+            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
         )
 
     for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
@@ -295,13 +291,14 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: di
     return get_excel_file_data(
         data,
         "Data Catalog Columns",
-        details={"Table group": table_group["table_groups_name"]},
+        details={"Table group": table_group.table_groups_name},
         columns=file_columns,
         update_progress=update_progress,
     )
 
 
 @st.dialog(title="Remove Table from Catalog")
+@with_database_session
 def remove_table_dialog(item: dict) -> None:
     remove_clicked, set_remove_clicked = temp_value("data-catalog:confirm-remove-table-val")
     st.html(f"Are you sure you want to remove the table <b>{item['table_name']}</b> from the data catalog?")
@@ -318,15 +315,14 @@ def remove_table_dialog(item: dict) -> None:
         )
 
     if remove_clicked():
-        schema = st.session_state["dbschema"]
-        db.execute_sql(f"""
-        DELETE FROM {schema}.data_column_chars
-        WHERE table_id = '{item["id"]}';
-        """)
-        db.execute_sql(f"""
-        DELETE FROM {schema}.data_table_chars
-        WHERE table_id = '{item["id"]}';
-        """)
+        execute_db_query(
+            "DELETE FROM data_column_chars WHERE table_id = :table_id;",
+            {"table_id": item["id"]},
+        )
+        execute_db_query(
+            "DELETE FROM data_table_chars WHERE table_id = :table_id;",
+            {"table_id": item["id"]},
+        )
 
         st.success("Table has been removed.")
         time.sleep(1)
@@ -339,51 +335,48 @@ def remove_table_dialog(item: dict) -> None:
 def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
-    cde_value_map = {
-        True: "TRUE",
-        False: "FALSE",
-        None: "NULL",
-    }
 
     tags = payload["tags"]
-    set_attributes = [ f"{key} = NULLIF('{tags.get(key) or ''}', '')" for key in attributes if key in tags ]
+    set_attributes = [ f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags ]
+    params = { key: tags.get(key) or "" for key in attributes if key in tags }
     if "critical_data_element" in tags:
-        set_attributes.append(f"critical_data_element = {cde_value_map[tags.get('critical_data_element')]}")
+        set_attributes.append("critical_data_element = :critical_data_element")
+        params.update({"critical_data_element": tags.get("critical_data_element")})
 
-    tables = []
-    columns = []
-    for item in payload["items"]:
-        id_list = tables if item["type"] == "table" else columns
-        id_list.append(item["id"])
-
-    schema = st.session_state["dbschema"]
+    params["table_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "table" ]
+    params["column_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "column" ]
 
     with spinner_container:
         with st.spinner("Saving tags"):
-            if tables:
-                db.execute_sql_raw(f"""
-                WITH selected as (
-                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in tables ])}]) AS table_id
+            if params["table_ids"]:
+                execute_db_query(
+                    f"""
+                    WITH selected as (
+                        SELECT UNNEST(ARRAY [:table_ids]) AS table_id
+                    )
+                    UPDATE data_table_chars
+                    SET {', '.join(set_attributes)}
+                    FROM data_table_chars dtc
+                        INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
+                    WHERE dtc.table_id = data_table_chars.table_id;
+                    """,
+                    params,
                 )
-                UPDATE {schema}.data_table_chars
-                SET {', '.join(set_attributes)}
-                FROM {schema}.data_table_chars dtc
-                    INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
-                WHERE dtc.table_id = data_table_chars.table_id;
-                """)
-                
 
-            if columns:
-                db.execute_sql_raw(f"""
-                WITH selected as (
-                    SELECT UNNEST(ARRAY [{", ".join([ f"'{item}'" for item in columns ])}]) AS column_id
+            if params["column_ids"]:
+                execute_db_query(
+                    f"""
+                    WITH selected as (
+                        SELECT UNNEST(ARRAY [:column_ids]) AS column_id
+                    )
+                    UPDATE data_column_chars
+                    SET {', '.join(set_attributes)}
+                    FROM data_column_chars dcc
+                        INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
+                    WHERE dcc.column_id = data_column_chars.column_id;
+                    """,
+                    params,
                 )
-                UPDATE {schema}.data_column_chars
-                SET {', '.join(set_attributes)}
-                FROM {schema}.data_column_chars dcc
-                    INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
-                WHERE dcc.column_id = data_column_chars.column_id;
-                """) 
 
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
         func.clear()
@@ -392,18 +385,11 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
 
 
 @st.cache_data(show_spinner=False)
-def get_table_group_options(project_code):
-    schema = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(schema, project_code)
-
-
-@st.cache_data(show_spinner=False)
-def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
+def get_table_group_columns(table_group_id: str) -> list[dict]:
     if not is_uuid4(table_group_id):
-        return pd.DataFrame()
+        return []
     
-    schema = st.session_state["dbschema"]
-    sql = f"""
+    query = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
         CONCAT('table_', table_chars.table_id) AS table_id,
         column_chars.column_name,
@@ -421,19 +407,22 @@ def get_table_group_columns(table_group_id: str) -> pd.DataFrame:
         table_chars.critical_data_element AS table_critical_data_element,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
-    FROM {schema}.data_column_chars column_chars
-        LEFT JOIN {schema}.data_table_chars table_chars ON (
+    FROM data_column_chars column_chars
+        LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
-        LEFT JOIN {schema}.profile_results ON (
+        LEFT JOIN profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
         )
-    WHERE column_chars.table_groups_id = '{table_group_id}'
+    WHERE column_chars.table_groups_id = :table_group_id
     ORDER BY table_name, ordinal_position;
     """
-    return db.retrieve_data(sql)
+    params = {"table_group_id": table_group_id}
+
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
@@ -460,14 +449,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
 
 
 @st.cache_data(show_spinner=False)
-def get_latest_test_issues(table_group_id: str, table_name: str, column_name: str | None = None) -> dict | None:
-    schema = st.session_state["dbschema"]
-
-    column_condition = ""
-    if column_name:
-        column_condition = f"AND column_names = '{column_name}'"
-
-    sql = f"""
+def get_latest_test_issues(table_group_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
+    query = f"""
     SELECT test_results.id::VARCHAR(50),
         column_names AS column_name,
         test_name_short AS test_name,
@@ -475,20 +458,20 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         result_message,
         test_suite,
         test_results.test_run_id::VARCHAR(50),
-        EXTRACT(EPOCH FROM test_starttime) * 1000 AS test_run_date
-    FROM {schema}.test_suites
-        LEFT JOIN {schema}.test_runs ON (
+        EXTRACT(EPOCH FROM test_starttime)::INT AS test_run_date
+    FROM test_suites
+        LEFT JOIN test_runs ON (
             test_suites.last_complete_test_run_id = test_runs.id
         )
-        LEFT JOIN {schema}.test_results ON (
+        LEFT JOIN test_results ON (
             test_runs.id = test_results.test_run_id
         )
-        LEFT JOIN {schema}.test_types ON (
+        LEFT JOIN test_types ON (
             test_results.test_type = test_types.test_type
         )
-    WHERE test_suites.table_groups_id = '{table_group_id}'
-        AND table_name = '{table_name}'
-        {column_condition}
+    WHERE test_suites.table_groups_id = :table_group_id
+        AND table_name = :table_name
+        {"AND column_names = :column_name" if column_name else ""}
         AND result_status <> 'Passed'
         AND COALESCE(disposition, 'Confirmed') = 'Confirmed'
     ORDER BY
@@ -499,65 +482,67 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
         END,
         column_name;
     """
+    params = {
+        "table_group_id": table_group_id,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
 
-    df = db.retrieve_data(sql)
-    return [row.to_dict() for _, row in df.iterrows()]
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
-def get_related_test_suites(table_group_id: str, table_name: str, column_name: str | None = None) -> dict | None:
-    schema = st.session_state["dbschema"]
-
-    column_condition = ""
-    if column_name:
-        column_condition = f"AND column_name = '{column_name}'"
-
-    sql = f"""
+def get_related_test_suites(table_group_id: str, table_name: str, column_name: str | None = None) -> list[dict]:
+    query = f"""
     SELECT
         test_suites.id::VARCHAR,
         test_suite AS name,
         COUNT(*) AS test_count
-    FROM {schema}.test_definitions
-        LEFT JOIN {schema}.test_suites ON (
+    FROM test_definitions
+        LEFT JOIN test_suites ON (
             test_definitions.test_suite_id = test_suites.id
         )
-    WHERE test_suites.table_groups_id = '{table_group_id}'
-        AND table_name = '{table_name}'
-        {column_condition}
+    WHERE test_suites.table_groups_id = :table_group_id
+        AND table_name = :table_name
+        {"AND column_name = :column_name" if column_name else ""}
     GROUP BY test_suites.id
     ORDER BY test_suite;
     """
+    params = {
+        "table_group_id": table_group_id,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
 
-    df = db.retrieve_data(sql)
-    return [row.to_dict() for _, row in df.iterrows()]
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
 def get_tag_values() -> dict[str, list[str]]:
-    schema = st.session_state["dbschema"]
-
     quote = lambda v: f"'{v}'"
-    sql = f"""
+    query = f"""
     SELECT DISTINCT
         UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
         UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
-    FROM {schema}.data_column_chars
+    FROM data_column_chars
     UNION
     SELECT DISTINCT
         UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
         UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
-    FROM {schema}.data_table_chars
+    FROM data_table_chars
     UNION
     SELECT DISTINCT
         UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS if t != 'aggregation_level'])}]) as tag,
         UNNEST(array[{', '.join([ t for t in TAG_FIELDS if t != 'aggregation_level'])}]) AS value
-    FROM {schema}.table_groups
-    ORDER BY value
+    FROM table_groups
+    ORDER BY value;
     """
-    df = db.retrieve_data(sql)
+    results = fetch_all_from_db(query)
 
     values = defaultdict(list)
-    for _, row in df.iterrows():
-        if row["tag"] and row["value"]:
-            values[row["tag"]].append(row["value"])
+    for row in results:
+        if row.tag and row.value:
+            values[row.tag].append(row.value)
     return values

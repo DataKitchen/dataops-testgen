@@ -4,15 +4,14 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class TrinoFlavorService(FlavorService):
-    def get_connection_string_head(self, strPW):
-        strConnect = f"{self.flavor}://{self.username}:{quote_plus(strPW)}@"
-        return strConnect
+    def get_connection_string_head(self):
+        return f"{self.flavor}://{self.username}:{quote_plus(self.password)}@"
 
-    def get_connection_string_from_fields(self, strPW, is_password_overwritten: bool = False):  # NOQA ARG002
+    def get_connection_string_from_fields(self):
         # STANDARD FORMAT:  strConnect = 'flavor://username:password@host:port/catalog'
-        return f"{self.flavor}://{self.username}:{quote_plus(strPW)}@{self.host}:{self.port}/{self.catalog}"
+        return f"{self.flavor}://{self.username}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.catalog}"
 
     def get_pre_connection_queries(self):
         return [
-            "USE " + self.catalog + "." + self.dbschema,
+            (f"USE {self.catalog}.{self.dbschema}", None),
         ]

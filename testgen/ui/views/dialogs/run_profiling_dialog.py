@@ -1,24 +1,27 @@
 import time
 
-import pandas as pd
 import streamlit as st
 
-import testgen.ui.services.query_service as dq
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
+from testgen.common.models import with_database_session
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.session import session
+from testgen.utils import to_dataframe
 
 LINK_KEY = "run_profiling_dialog:keys:go-to-runs"
 LINK_HREF = "profiling-runs"
 
 
 @st.dialog(title="Run Profiling")
-def run_profiling_dialog(project_code: str, table_group: pd.Series | None = None, default_table_group_id: str | None = None) -> None:
-    if table_group is not None and not table_group.empty:
-        table_group_id: str = table_group["id"]
-        table_group_name: str = table_group["table_groups_name"]
+@with_database_session
+def run_profiling_dialog(project_code: str, table_group: TableGroupMinimal | None = None, default_table_group_id: str | None = None) -> None:
+    if table_group:
+        table_group_id: str = str(table_group.id)
+        table_group_name: str = table_group.table_groups_name
     else:
-        table_groups_df = get_table_group_options(project_code)
+        table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+        table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
         table_group_id: str = testgen.select(
             label="Table Group",
             options=table_groups_df,
@@ -79,9 +82,3 @@ def run_profiling_dialog(project_code: str, table_group: pd.Series | None = None
                 time.sleep(2)
                 st.cache_data.clear()
                 st.rerun()
-
-
-@st.cache_data(show_spinner=False)
-def get_table_group_options(project_code: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    return dq.run_table_groups_lookup_query(schema, project_code)

@@ -1,13 +1,6 @@
 /**
  * @import { Score } from '../components/score_card.js';
- *
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} connections_count
- * @property {string} default_connection_id
- * @property {number} table_groups_count
- * @property {number} profiling_runs_count
+ * @import { ProjectSummary } from '../utils.js';
  *
  * @typedef Category
  * @type {object}
@@ -153,7 +146,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         },
     };
 
-    if (projectSummary.connections_count <= 0) {
+    if (projectSummary.connection_count <= 0) {
         args = {
             message: EMPTY_STATE_MESSAGE.connection,
             link: {
@@ -162,9 +155,9 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
                 params: { project_code: projectSummary.project_code },
             },
         };
-    } else if (projectSummary.profiling_runs_count <= 0) {
+    } else if (projectSummary.profiling_run_count <= 0) {
         args = {
-            message: projectSummary.table_groups_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
+            message: projectSummary.table_group_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
             link: {
                 label: 'Go to Table Groups',
                 href: 'table-groups',

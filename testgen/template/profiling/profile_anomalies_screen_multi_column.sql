@@ -13,7 +13,7 @@ WITH mults AS (   SELECT p.project_code,
                          STRING_AGG(table_name, ', ' order by table_name) as table_list,
                          MAX(RIGHT(REPEAT('0', 20) || SPLIT_PART(p.top_patterns, '|', 1), 20) || '|' || SPLIT_PART(p.top_patterns, '|', 2) )as very_top_pattern
                     FROM profile_results p
-                    WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
+                    WHERE p.profile_run_id = :PROFILE_RUN_ID
                    GROUP BY p.project_code, p.table_groups_id, schema_name, p.column_name
                   HAVING COUNT(*) > 1 ),
     subset AS
@@ -21,7 +21,7 @@ WITH mults AS (   SELECT p.project_code,
             SELECT p.project_code,
                    p.table_groups_id,
                    p.profile_run_id,
-                   '{ANOMALY_ID}' as anomaly_id,
+                   :ANOMALY_ID as anomaly_id,
                    p.schema_name,
                    p.table_name,
                    p.column_name,
@@ -41,8 +41,8 @@ WITH mults AS (   SELECT p.project_code,
              AND  p.schema_name = i.schema_name
              AND  p.table_name = i.table_name
              AND  p.column_name = i.column_name
-             AND  '{ANOMALY_ID}' = i.anomaly_id)
-             WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
+             AND  :ANOMALY_ID = i.anomaly_id)
+             WHERE p.profile_run_id = :PROFILE_RUN_ID
                AND i.anomaly_id IS NULL
                AND ({ANOMALY_CRITERIA})
     )

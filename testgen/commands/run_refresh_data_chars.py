@@ -4,23 +4,23 @@ from progress.spinner import Spinner
 
 from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
 from testgen.common.database.database_service import (
-    RetrieveDBResultsToDictList,
-    RunActionQueryList,
-    RunThreadedRetrievalQueryList,
-    WriteListToDB,
+    execute_db_queries,
+    fetch_dict_from_db,
+    fetch_from_db_threaded,
+    write_to_app_db,
 )
+from testgen.common.get_pipeline_parms import TestExecutionParams
 
 LOG = logging.getLogger("testgen")
 STAGING_TABLE = "stg_data_chars_updates"
 
 
-def run_refresh_data_chars_queries(params: dict, run_date: str, spinner: Spinner=None):
+def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, spinner: Spinner=None):
     LOG.info("CurrentStep: Initializing Data Characteristics Refresh")
     sql_generator = CRefreshDataCharsSQL(params, run_date, STAGING_TABLE)
 
     LOG.info("CurrentStep: Getting DDF for table group")
-    ddf_query = sql_generator.GetDDFQuery()
-    ddf_results = RetrieveDBResultsToDictList("PROJECT", ddf_query)
+    ddf_results = fetch_dict_from_db(*sql_generator.GetDDFQuery(), use_target_db=True)
 
     distinct_tables = {
         f"{item['table_schema']}.{item['table_name']}"
@@ -30,8 +30,8 @@ def run_refresh_data_chars_queries(params: dict, run_date: str, spinner: Spinner
         count_queries = sql_generator.GetRecordCountQueries(distinct_tables)
         
         LOG.info("CurrentStep: Getting record counts for table group")
-        count_results, _, error_count = RunThreadedRetrievalQueryList(
-            "PROJECT", count_queries, params["max_threads"], spinner
+        count_results, _, error_count = fetch_from_db_threaded(
+            count_queries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
         )
         if error_count:
             LOG.warning(f"{error_count} errors were encountered while retrieving record counts.")
@@ -69,10 +69,10 @@ def run_refresh_data_chars_queries(params: dict, run_date: str, spinner: Spinner
     ]
 
     LOG.info("CurrentStep: Writing data characteristics to staging")
-    WriteListToDB("DKTG", staging_records, staging_columns, STAGING_TABLE)
+    write_to_app_db(staging_records, staging_columns, STAGING_TABLE)
 
     LOG.info("CurrentStep: Refreshing data characteristics and deleting staging")
-    RunActionQueryList("DKTG", [
+    execute_db_queries([
         sql_generator.GetDataCharsUpdateQuery(),
         sql_generator.GetStagingDeleteQuery(),
     ])

@@ -1,7 +1,7 @@
 WITH last_run
    AS (SELECT test_suite_id, MAX(test_starttime) as max_starttime
          FROM test_runs
-        WHERE test_suite_id = '{TEST_SUITE_ID}'
+        WHERE test_suite_id = :TEST_SUITE_ID
           AND status = 'Complete'
        GROUP BY test_suite_id)
 UPDATE test_suites

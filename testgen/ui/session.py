@@ -61,6 +61,11 @@ class TestgenSession(Singleton):
         if key in state:
             del state[key]
 
+    def set_sidebar_project(self, project_code: str) -> None:
+        if project_code != self.sidebar_project:
+            self.sidebar_project = project_code
+            st.rerun()
+
 
 def temp_value(session_key: str, *, default: T | None = None) -> tuple[TempValueGetter[T | None], TempValueSetter[T]]:
     scoped_session_key = f"tg-session:tmp-value:{session_key}"

@@ -12,8 +12,8 @@ Optional: n/a*/
          COUNT(*) as tests
     FROM test_definitions td
     JOIN test_suites ts ON td.test_suite_id = ts.id
-   WHERE ts.project_code = '{PROJECT_CODE}'
-     AND ts.test_suite = '{TEST_SUITE}'
+   WHERE ts.project_code = :PROJECT_CODE
+     AND ts.test_suite = :TEST_SUITE
      AND td.last_auto_gen_date IS NOT NULL
 GROUP BY ts.id, td.last_auto_gen_date, td.profiling_as_of_date, td.lock_refresh
 ORDER BY td.last_auto_gen_date desc;

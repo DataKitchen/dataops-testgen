@@ -6,7 +6,7 @@ WITH anomalies
                COUNT(DISTINCT schema_name || '.' || table_name) as anomaly_table_ct,
                COUNT(DISTINCT schema_name || '.' || table_name || '.' || column_name) as anomaly_column_ct
           FROM profile_anomaly_results
-         WHERE profile_run_id = '{PROFILE_RUN_ID}'::UUID
+         WHERE profile_run_id = :PROFILE_RUN_ID
         GROUP BY profile_run_id ),
 profiles
    AS ( SELECT r.id as profile_run_id,
@@ -15,7 +15,7 @@ profiles
           FROM profiling_runs r
          INNER JOIN profile_results p
             ON r.id = p.profile_run_id
-         WHERE r.id = '{PROFILE_RUN_ID}'::UUID
+         WHERE r.id = :PROFILE_RUN_ID
          GROUP BY r.id ),
 stats
    AS ( SELECT p.profile_run_id, table_ct, column_ct,

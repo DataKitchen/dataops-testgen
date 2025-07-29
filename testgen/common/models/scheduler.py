@@ -1,11 +1,11 @@
-import uuid
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any, Self
+from uuid import UUID, uuid4
 
 from cron_converter import Cron
 from sqlalchemy import Column, String, select
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import Base, get_current_session
@@ -14,12 +14,12 @@ from testgen.common.models import Base, get_current_session
 class JobSchedule(Base):
     __tablename__ = "job_schedules"
 
-    id: UUID = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String)
 
     key: str = Column(String, nullable=False)
-    args: list[Any] = Column(JSONB, nullable=False, default=[])
-    kwargs: dict[str, Any] = Column(JSONB, nullable=False, default={})
+    args: list[Any] = Column(postgresql.JSONB, nullable=False, default=[])
+    kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default={})
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)
 

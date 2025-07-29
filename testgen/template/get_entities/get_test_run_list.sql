@@ -15,8 +15,8 @@ Optional: table-name, column-name, from-date, thru-date*/
       FROM test_runs tr
 INNER JOIN test_results r ON tr.id = r.test_run_id
 INNER JOIN test_suites ts ON tr.test_suite_id = ts.id
-     WHERE ts.project_code = '{PROJECT_CODE}'
-       AND ts.test_suite = '{TEST_SUITE}'
+     WHERE ts.project_code = :PROJECT_CODE
+       AND ts.test_suite = :TEST_SUITE
   GROUP BY tr.id,
            ts.project_code,
            ts.test_suite,

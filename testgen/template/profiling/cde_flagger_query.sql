@@ -1,6 +1,6 @@
 UPDATE data_column_chars
    SET critical_data_element = FALSE
- WHERE table_groups_id = '{TABLE_GROUPS_ID}';
+ WHERE table_groups_id = :TABLE_GROUPS_ID;
 
 WITH cde_selects
    AS ( SELECT table_groups_id, table_name, column_name
@@ -9,7 +9,7 @@ WITH cde_selects
 --                ROUND(100.0 * (value_ct - COALESCE(zero_length_ct, 0.0) - COALESCE(filled_value_ct, 0.0))::DEC(15, 3) /
 --                      NULLIF(record_ct::DEC(15, 3), 0), 0) AS pct_records_populated
           FROM profile_results p
-         WHERE p.profile_run_id = '{PROFILE_RUN_ID}'
+         WHERE p.profile_run_id = :PROFILE_RUN_ID
            AND ROUND(100.0 * (value_ct - COALESCE(zero_length_ct, 0.0) - COALESCE(filled_value_ct, 0.0))::DEC(15, 3) /
                      NULLIF(record_ct::DEC(15, 3), 0), 0) > 75
            AND ((p.functional_table_type ILIKE '%Entity'

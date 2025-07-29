@@ -7,4 +7,4 @@ SELECT
     profiling_include_mask as include_mask,
     profiling_exclude_mask as exclude_mask
 FROM table_groups
-where project_code = '{PROJECT_CODE}';
+where project_code = :PROJECT_CODE;

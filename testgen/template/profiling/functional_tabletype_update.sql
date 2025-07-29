@@ -5,4 +5,4 @@ WHERE s.project_code = profile_results.project_code
   AND s.schema_name = profile_results.schema_name
   AND s.table_name = profile_results.table_name
   AND s.run_date = profile_results.run_date
-  AND s.run_date = '{RUN_DATE}';
+  AND s.run_date = :RUN_DATE;

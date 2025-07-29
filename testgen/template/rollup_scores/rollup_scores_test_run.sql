@@ -3,7 +3,7 @@ UPDATE test_runs
    SET dq_affected_data_points = 0,
        dq_total_data_points = 0,
        dq_score_test_run = 1
- WHERE id = '{RUN_ID}';
+ WHERE id = :RUN_ID;
 
 -- Roll up scoring to test run
 WITH score_detail
@@ -11,7 +11,7 @@ WITH score_detail
              MAX(r.dq_record_ct) as row_ct,
              (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * MAX(r.dq_record_ct) as affected_data_points
         FROM test_results r
-       WHERE r.test_run_id = '{RUN_ID}'
+       WHERE r.test_run_id = :RUN_ID
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY r.test_run_id, r.table_name, r.column_names ),
 score_calc

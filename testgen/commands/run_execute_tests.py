@@ -9,15 +9,16 @@ import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.execute_tests_query import CTestExecutionSQL
 from testgen.common import (
-    AssignConnectParms,
-    RetrieveDBResultsToDictList,
-    RetrieveTestExecParms,
-    RunActionQueryList,
-    RunThreadedRetrievalQueryList,
-    WriteListToDB,
     date_service,
+    execute_db_queries,
+    fetch_dict_from_db,
+    fetch_from_db_threaded,
+    get_test_execution_params,
+    set_target_db_params,
+    write_to_app_db,
 )
-from testgen.common.database.database_service import ExecuteDBQuery, empty_cache
+from testgen.common.database.database_service import empty_cache
+from testgen.common.get_pipeline_parms import TestExecutionParams
 from testgen.ui.session import session
 
 from .run_execute_cat_tests import run_cat_test_queries
@@ -27,34 +28,47 @@ from .run_test_parameter_validation import run_parameter_validation_queries
 LOG = logging.getLogger("testgen")
 
 
-def add_test_run_record(test_run_id, test_suite_id, test_time, process_id):
-    query = f"""
+def add_test_run_record(test_run_id: str, test_suite_id: str, test_time: str, process_id: int):
+    execute_db_queries([(
+        """
         INSERT INTO test_runs(id, test_suite_id, test_starttime, process_id)
-        (SELECT '{test_run_id}':: UUID as id,
-                '{test_suite_id}' as test_suite_id,
-                '{test_time}' as test_starttime,
-                '{process_id}' as process_id);
-    """
-    ExecuteDBQuery("DKTG", query)
+        (SELECT :test_run_id as id,
+                :test_suite_id as test_suite_id,
+                :test_time as test_starttime,
+                :process_id as process_id);
+        """,
+        {
+            "test_run_id": test_run_id,
+            "test_suite_id": test_suite_id,
+            "test_time": test_time,
+            "process_id": process_id,
+        }
+    )])
 
 
-def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTestSuite, minutes_offset=0, spinner=None):
-    booErrors = False
+def run_test_queries(
+    params: TestExecutionParams,
+    test_run_id: str,
+    test_time: str,
+    project_code: str,
+    test_suite: str,
+    minutes_offset: int = 0,
+    spinner: Spinner | None = None,
+):
+    has_errors = False
     error_msg = ""
 
     LOG.info("CurrentStep: Initializing Query Generator")
 
-    clsExecute = CTestExecutionSQL(strProjectCode, dctParms["sql_flavor"], dctParms["test_suite_id"], strTestSuite, minutes_offset)
-    clsExecute.run_date = strTestTime
-    clsExecute.test_run_id = strTestRunID
+    clsExecute = CTestExecutionSQL(project_code, params["sql_flavor"], params["test_suite_id"], test_suite, minutes_offset)
+    clsExecute.run_date = test_time
+    clsExecute.test_run_id = test_run_id
     clsExecute.process_id = process_service.get_current_process_id()
-    booClean = False
 
     try:
         # Retrieve non-CAT Queries
         LOG.info("CurrentStep: Retrieve Non-CAT Queries")
-        strQuery = clsExecute.GetTestsNonCAT(booClean)
-        lstTestSet = RetrieveDBResultsToDictList("DKTG", strQuery)
+        lstTestSet = fetch_dict_from_db(*clsExecute.GetTestsNonCAT())
 
         if len(lstTestSet) == 0:
             LOG.debug("0 non-CAT Queries retrieved.")
@@ -63,25 +77,23 @@ def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTes
             LOG.info("CurrentStep: Preparing Non-CAT Tests")
             lstTestQueries = []
             for dctTest in lstTestSet:
-                # Set Test Parms
-                clsExecute.ClearTestParms()
-                clsExecute.dctTestParms = dctTest
-                lstTestQueries.append(clsExecute.GetTestQuery(booClean))
+                clsExecute.test_params = dctTest
+                lstTestQueries.append(clsExecute.GetTestQuery())
                 if spinner:
                     spinner.next()
 
             # Execute list, returning test results
             LOG.info("CurrentStep: Executing Non-CAT Test Queries")
-            lstTestResults, colResultNames, intErrors = RunThreadedRetrievalQueryList(
-                "PROJECT", lstTestQueries, dctParms["max_threads"], spinner
+            lstTestResults, colResultNames, intErrors = fetch_from_db_threaded(
+                lstTestQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
             )
 
             # Copy test results to DK DB
             LOG.info("CurrentStep: Saving Non-CAT Test Results")
             if lstTestResults:
-                WriteListToDB("DKTG", lstTestResults, colResultNames, "test_results")
+                write_to_app_db(lstTestResults, colResultNames, "test_results")
             if intErrors > 0:
-                booErrors = True
+                has_errors = True
                 error_msg = (
                     f"Errors were encountered executing Referential Tests. ({intErrors} errors occurred.) "
                     "Please check log. "
@@ -95,12 +107,11 @@ def run_test_queries(dctParms, strTestRunID, strTestTime, strProjectCode, strTes
         errorline = sqlsplit[0].replace("'", "''") if len(sqlsplit) > 0 else "unknown error"
         clsExecute.exception_message = f"{type(e).__name__}: {errorline}"
         LOG.info("Updating the test run record with exception message")
-        lstTestRunQuery = [clsExecute.PushTestRunStatusUpdateSQL()]
-        RunActionQueryList("DKTG", lstTestRunQuery)
+        execute_db_queries([clsExecute.PushTestRunStatusUpdateSQL()])
         raise
 
     else:
-        return booErrors, error_msg
+        return has_errors, error_msg
 
 
 def run_execution_steps_in_background(project_code, test_suite):
@@ -123,8 +134,8 @@ def run_execution_steps(
     project_code: str,
     test_suite: str,
     username: str | None = None,
-    minutes_offset: int=0,
-    spinner: Spinner=None,
+    minutes_offset: int = 0,
+    spinner: Spinner | None = None,
 ) -> str:
     # Initialize required parms for all steps
     has_errors = False
@@ -137,7 +148,7 @@ def run_execution_steps(
         spinner.next()
 
     LOG.info("CurrentStep: Retrieving TestExec Parameters")
-    test_exec_params = RetrieveTestExecParms(project_code, test_suite)
+    test_exec_params = get_test_execution_params(project_code, test_suite)
 
     # Add a record in Test Run table for the new Test Run
     add_test_run_record(
@@ -145,23 +156,7 @@ def run_execution_steps(
     )
 
     LOG.info("CurrentStep: Assigning Connection Parms")
-    AssignConnectParms(
-        test_exec_params["project_code"],
-        test_exec_params["connection_id"],
-        test_exec_params["project_host"],
-        test_exec_params["project_port"],
-        test_exec_params["project_db"],
-        test_exec_params["table_group_schema"],
-        test_exec_params["project_user"],
-        test_exec_params["sql_flavor"],
-        test_exec_params["url"],
-        test_exec_params["connect_by_url"],
-        test_exec_params["connect_by_key"],
-        test_exec_params["private_key"],
-        test_exec_params["private_key_passphrase"],
-        test_exec_params["http_path"],
-        "PROJECT",
-    )
+    set_target_db_params(test_exec_params)
 
     try:
         LOG.info("CurrentStep: Execute Step - Data Characteristics Refresh")

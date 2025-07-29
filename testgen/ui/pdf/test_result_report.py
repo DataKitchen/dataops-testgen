@@ -27,10 +27,8 @@ from testgen.ui.pdf.style import (
     get_formatted_datetime,
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
-from testgen.ui.services.database_service import get_schema
-from testgen.ui.services.test_results_service import (
-    do_source_data_lookup,
-    do_source_data_lookup_custom,
+from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
+from testgen.ui.queries.test_result_queries import (
     get_test_result_history,
 )
 from testgen.utils import get_base_url
@@ -166,7 +164,7 @@ def build_summary_table(document, tr_data):
 
 
 def build_history_table(document, tr_data):
-    history_data = get_test_result_history(get_schema(), tr_data, limit=15)
+    history_data = get_test_result_history(tr_data, limit=15)
 
     history_table_style = TableStyle(
         (
@@ -243,17 +241,9 @@ def get_report_content(document, tr_data):
     yield build_history_table(document, tr_data)
 
     if tr_data["test_type"] == "CUSTOM":
-        sample_data_tuple = do_source_data_lookup_custom(
-            get_schema(),
-            tr_data,
-            limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT,
-        )
+        sample_data_tuple = get_test_issue_source_data_custom(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
     else:
-        sample_data_tuple = do_source_data_lookup(
-            get_schema(),
-            tr_data,
-            limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT,
-        )
+        sample_data_tuple = get_test_issue_source_data(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)

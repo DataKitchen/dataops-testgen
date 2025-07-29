@@ -9,13 +9,13 @@ WITH tablesrank AS
           FROM profile_results p
          INNER JOIN (SELECT DISTINCT schema_name, table_name
                        FROM profile_results
-                      WHERE project_code = '{PROJECT_CODE}'
-                        AND schema_name = '{DATA_SCHEMA}'
-                        AND run_date = '{RUN_DATE}') pt
+                      WHERE project_code = :PROJECT_CODE
+                        AND schema_name = :DATA_SCHEMA
+                        AND run_date = :RUN_DATE) pt
                  ON (p.schema_name = pt.schema_name
                 AND  p.table_name = pt.table_name)
-          WHERE p.project_code = '{PROJECT_CODE}'
-            AND p.schema_name = '{DATA_SCHEMA}'
+          WHERE p.project_code = :PROJECT_CODE
+            AND p.schema_name = :DATA_SCHEMA
           ORDER BY p.schema_name, p.table_name, p.run_date DESC),
      tablescount AS
          (SELECT *
@@ -59,6 +59,6 @@ WITH tablesrank AS
           ORDER BY project_code, schema_name, table_name)
 INSERT INTO stg_functional_table_updates
 (project_code, schema_name, run_date, table_name, table_period, table_type)
-SELECT project_code, schema_name, '{RUN_DATE}' as run_date,
+SELECT project_code, schema_name, :RUN_DATE as run_date,
        table_name, table_period, table_type
 FROM tablestat;

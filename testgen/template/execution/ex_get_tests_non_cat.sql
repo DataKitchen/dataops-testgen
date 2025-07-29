@@ -45,7 +45,7 @@ FROM test_definitions td
                     ON (td.test_type = tt.test_type)
          LEFT JOIN test_templates tm
                     ON (td.test_type = tm.test_type
-                   AND  '{SQL_FLAVOR}' = tm.sql_flavor)
-WHERE td.test_suite_id = '{TEST_SUITE_ID}'
+                   AND  :SQL_FLAVOR = tm.sql_flavor)
+WHERE td.test_suite_id = :TEST_SUITE_ID
   AND tt.run_type = 'QUERY'
   AND td.test_active = 'Y';

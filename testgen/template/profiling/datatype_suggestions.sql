@@ -144,8 +144,8 @@ FROM (
     -- pull out declared size if present, else NULL
     CAST(substring(column_type FROM '\((\d+)\)') AS int) AS current_size
   FROM profile_results
-  WHERE project_code = '{PROJECT_CODE}'
-    AND schema_name   = '{DATA_SCHEMA}'
-    AND run_date      = '{RUN_DATE}'
+  WHERE project_code = :PROJECT_CODE
+    AND schema_name   = :DATA_SCHEMA
+    AND run_date      = :RUN_DATE
 ) AS base
 WHERE pr.id = base.id;

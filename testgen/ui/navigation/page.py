@@ -8,8 +8,8 @@ import streamlit as st
 from streamlit.runtime.state.query_params_proxy import QueryParamsProxy
 
 import testgen.ui.navigation.router
+from testgen.common.models.project import Project
 from testgen.ui.navigation.menu import MenuItem
-from testgen.ui.services import project_service
 from testgen.ui.session import session
 
 CanActivateGuard = typing.Callable[[], bool | str]
@@ -34,7 +34,7 @@ class Page(abc.ABC):
         for guard in self.can_activate or []:
             can_activate = guard()
             if can_activate != True:
-                session.sidebar_project = session.sidebar_project or project_service.get_projects()[0]["code"]
+                session.sidebar_project = session.sidebar_project or Project.select_where()[0].project_code
 
                 if type(can_activate) == str:
                     return self.router.navigate(to=can_activate, with_args={ "project_code": session.sidebar_project })

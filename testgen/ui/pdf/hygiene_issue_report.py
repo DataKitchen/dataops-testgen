@@ -21,7 +21,7 @@ from testgen.ui.pdf.style import (
     get_formatted_datetime,
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
-from testgen.ui.services.hygiene_issues_service import get_source_data
+from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
 from testgen.utils import get_base_url
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
@@ -186,7 +186,7 @@ def get_report_content(document, hi_data):
     yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
-    sample_data_tuple = get_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
+    sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)
