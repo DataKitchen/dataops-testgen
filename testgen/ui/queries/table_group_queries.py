@@ -10,27 +10,33 @@ from testgen.ui.services.database_service import fetch_from_target_db
 
 class TableGroupPreview(TypedDict):
     schema: str
-    tables: list[str]
+    tables: dict[str, bool]
     column_count: int
     success: bool
     message: str | None
 
 
-def get_table_group_preview(table_group: TableGroup) -> TableGroupPreview:
+def get_table_group_preview(
+    table_group: TableGroup,
+    connection: Connection | None = None,
+    verify_table_access: bool = False,
+) -> TableGroupPreview:
     table_group_preview: TableGroupPreview = {
         "schema": table_group.table_group_schema,
-        "tables": set(),
+        "tables": {},
         "column_count": 0,
         "success": True,
         "message": None,
     }
-    if table_group.connection_id:
+    if connection or table_group.connection_id:
         try:
-            table_group_results = _fetch_table_group_columns(table_group)
+            connection = connection or Connection.get(table_group.connection_id)
+
+            table_group_results = _fetch_table_group_columns(connection, table_group)
 
             for column in table_group_results:
                 table_group_preview["schema"] = column["table_schema"]
-                table_group_preview["tables"].add(column["table_name"])
+                table_group_preview["tables"][column["table_name"]] = None
                 table_group_preview["column_count"] += 1
 
             if len(table_group_results) <= 0:
@@ -39,19 +45,37 @@ def get_table_group_preview(table_group: TableGroup) -> TableGroupPreview:
                     "No tables found matching the criteria. Please check the Table Group configuration"
                     " or the database permissions."
                 )
+
+            if verify_table_access:
+                for table_name in table_group_preview["tables"].keys():
+                    try:
+                        results = fetch_from_target_db(
+                            connection, 
+                            (
+                                f"SELECT 1 FROM {table_group_preview['schema']}.{table_name} LIMIT 1"
+                                if connection.sql_flavor != "mssql"
+                                else f"SELECT TOP 1 * FROM {table_group_preview['schema']}.{table_name}"
+                            ),
+                        )
+                    except Exception as error:
+                        table_group_preview["tables"][table_name] = False
+                    else:
+                        table_group_preview["tables"][table_name] = results is not None and len(results) > 0
+
+                    if not all(table_group_preview["tables"].values()):
+                        table_group_preview["message"] = (
+                            "Some tables were not accessible. Please the check the database permissions."
+                        )
         except Exception as error:
             table_group_preview["success"] = False
             table_group_preview["message"] = error.args[0]
     else:
         table_group_preview["success"] = False
         table_group_preview["message"] = "No connection selected. Please select a connection to preview the Table Group."
-
-    table_group_preview["tables"] = list(table_group_preview["tables"])
     return table_group_preview
 
 
-def _fetch_table_group_columns(table_group: TableGroup) -> list[Row]:
-    connection = Connection.get(table_group.connection_id)
+def _fetch_table_group_columns(connection: Connection, table_group: TableGroup) -> list[Row]:
     profiling_table_set = table_group.profiling_table_set
 
     sql_generator = CProfilingSQL(table_group.project_code, connection.sql_flavor)

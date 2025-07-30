@@ -90,6 +90,7 @@ class TableGroupsPage(Page):
         )
 
     @st.dialog(title="Edit Table Group")
+    @with_database_session
     def edit_table_group_dialog(self, project_code: str, table_group_id: str):
         return self._table_group_wizard(
             project_code,
@@ -108,8 +109,12 @@ class TableGroupsPage(Page):
         connection_id: str | None = None,
         table_group_id: str | None = None,
     ):
-        def on_preview_table_group_clicked(table_group: dict):
+        def on_preview_table_group_clicked(payload: dict):
+            table_group = payload["table_group"]
+            verify_table_access = payload.get("verify_access") or False
+
             mark_for_preview(True)
+            mark_for_access_preview(verify_table_access)
             set_table_group(table_group)
 
         def on_save_table_group_clicked(payload: dict):
@@ -133,6 +138,7 @@ class TableGroupsPage(Page):
             self.router.navigate(to="profiling-runs", with_args=params)
 
         should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
+        should_verify_access, mark_for_access_preview = temp_value("table_groups:preview_access:new", default=False)
         should_save, set_save = temp_value("table_groups:save:new", default=False)
         get_table_group, set_table_group = temp_value("table_groups:updated:new", default={})
         is_table_group_verified, set_table_group_verified = temp_value(
@@ -180,7 +186,10 @@ class TableGroupsPage(Page):
             ]
 
         if should_preview():
-            table_group_preview = table_group_queries.get_table_group_preview(table_group)
+            table_group_preview = table_group_queries.get_table_group_preview(
+                table_group,
+                verify_table_access=should_verify_access(),
+            )
 
         success = None
         message = ""

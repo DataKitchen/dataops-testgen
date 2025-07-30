@@ -96,11 +96,11 @@ class ConnectionsPage(Page):
             else:
                 updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
-            if is_pristine(updated_connection.get("password")):
-                del updated_connection["password"]
+            if is_pristine(updated_connection.get("project_pw_encrypted")):
+                del updated_connection["project_pw_encrypted"]
 
-            if updated_connection.get("password") == CLEAR_SENTINEL:
-                updated_connection["password"] = ""
+            if updated_connection.get("project_pw_encrypted") == CLEAR_SENTINEL:
+                updated_connection["project_pw_encrypted"] = ""
 
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
@@ -234,9 +234,13 @@ class ConnectionsPage(Page):
         def on_go_to_profiling_runs(params: dict) -> None:
             set_navigation_params({ **params, "project_code": project_code })
 
-        def on_preview_table_group(table_group: dict) -> None:
+        def on_preview_table_group(payload: dict) -> None:
+            table_group = payload["table_group"]
+            verify_table_access = payload.get("verify_access") or False
+
             set_new_table_group(table_group)
             mark_for_preview(True)
+            mark_for_access_preview(verify_table_access)
 
         get_navigation_params, set_navigation_params = temp_value(
             "connections:new_table_group:go_to_profiling_run",
@@ -261,6 +265,10 @@ class ConnectionsPage(Page):
             f"connections:{connection_id}:tg_preview",
             default=False,
         )
+        should_verify_access, mark_for_access_preview = temp_value(
+            f"connections:{connection_id}:tg_preview_access",
+            default=False,
+        )
         is_table_group_verified, set_table_group_verified = temp_value(
             f"connections:{connection_id}:tg_verified",
             default=False,
@@ -274,7 +282,10 @@ class ConnectionsPage(Page):
 
         table_group_preview = None
         if should_preview():
-            table_group_preview = table_group_queries.get_table_group_preview(table_group)
+            table_group_preview = table_group_queries.get_table_group_preview(
+                table_group,
+                verify_table_access=should_verify_access(),
+            )
 
         if table_group_data:
             success = True
