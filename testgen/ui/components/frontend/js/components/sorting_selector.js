@@ -37,13 +37,6 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         {}
     );
 
-    const selectedDiv = div(
-        {
-            class: 'tg-sort-selector--column-list',
-            style: `flex-grow: 1`,
-        },
-    );
-
     const directionIcons = {
         ASC: `arrow_upward`,
         DESC: `arrow_downward`,
@@ -54,6 +47,7 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         const directionIcon = van.derive(() => directionIcons[state.val.direction]);
         return button(
             {
+                class: 'flex-row',
                 onclick: () => {
                     state.val = { ...state.val, direction: state.val.direction === "DESC" ? "ASC" : "DESC" };
                 },
@@ -63,12 +57,25 @@ const SortingSelector = (/** @type {Properties} */ props) => {
                 directionIcon,
             ),
             span(columnLabel[colId]),
+            i(
+                {
+                    class: `material-symbols-rounded clickable dismiss-button`,
+                    style: `margin-left: auto;`,
+                    onclick: (event) => {
+                        event?.preventDefault();
+                        event?.stopPropagation();
+
+                        componentState[colId].val = { direction: defaultDirection, order: null };
+                    },
+                },
+                'close',
+            ),
         )
     }
 
     const selectColumn = (colId, direction) => {
-        componentState[colId].val = { direction: direction, order: selectedDiv.childElementCount }
-        van.add(selectedDiv, activeColumnItem(colId));
+        const activeColumnsCount = Object.values(componentState).filter((columnState) => columnState.val.order != null).length;
+        componentState[colId].val = { direction: direction, order: activeColumnsCount };
     }
 
     prevComponentState.forEach(([colId, direction]) => selectColumn(colId, direction));
@@ -79,7 +86,6 @@ const SortingSelector = (/** @type {Properties} */ props) => {
                 componentState[colId].val = { direction: defaultDirection, order: null }
             )
         );
-        selectedDiv.innerHTML = ``;
     }
 
     const externalComponentState = () => Object.entries(componentState).filter(
@@ -112,13 +118,6 @@ const SortingSelector = (/** @type {Properties} */ props) => {
         )
     }
 
-    const optionsDiv = div(
-        {
-            class: 'tg-sort-selector--column-list',
-        },
-        columns.map(([colLabel, colId]) => van.derive(() => columnItem(colId))),
-    )
-
     const resetDisabled = () => Object.entries(componentState).filter(
         ([colId, colState]) => colState.val.order != null
     ).length === 0;
@@ -133,12 +132,26 @@ const SortingSelector = (/** @type {Properties} */ props) => {
             },
             span("Selected columns")
         ),
-        selectedDiv,
+        () => div(
+            {
+                class: 'tg-sort-selector--column-list',
+                style: `flex-grow: 1`,
+            },
+            Object.entries(componentState)
+                .filter(([, colState]) => colState.val.order != null)
+                .sort(([, colState]) => colState.val.order)
+                .map(([colId,]) => activeColumnItem(colId))
+        ),
         div(
             { class: `tg-sort-selector--header` },
             span("Available columns")
         ),
-        optionsDiv,
+        div(
+            {
+                class: 'tg-sort-selector--column-list',
+            },
+            columns.map(([colLabel, colId]) => van.derive(() => columnItem(colId))),
+        ),
         div(
             { class: `tg-sort-selector--footer` },
             button(
@@ -228,6 +241,13 @@ stylesheet.replace(`
     color: var(--disabled-text-color) !important;
 }
 
+.dismiss-button {
+    margin-left: auto;
+    color: var(--disabled-text-color);
+}
+.dismiss-button:hover {
+    color: var(--button-text-color);
+}
 
 @media (prefers-color-scheme: dark) {
     .tg-sort-selector--column-list button:hover {
