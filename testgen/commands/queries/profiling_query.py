@@ -104,7 +104,7 @@ class CProfilingSQL:
             "NOW_TIMESTAMP": date_service.get_now_as_string(),
             "EXCEPTION_MESSAGE": self.exception_message,
             "SAMPLING_TABLE": self.sampling_table,
-            "SAMPLE_SIZE": self.parm_sample_size,
+            "SAMPLE_SIZE": int(self.parm_sample_size),
             "PROFILE_USE_SAMPLING": self.profile_use_sampling,
             "PROFILE_SAMPLE_PERCENT": self.profile_sample_percent,
             "PROFILE_SAMPLE_MIN_COUNT": self.profile_sample_min_count,
@@ -340,7 +340,7 @@ class CProfilingSQL:
 
     def GetTableSampleCount(self) -> tuple[str, dict]:
         # Runs on Target database
-        return self._get_query("project_get_table_sample_count.sql")
+        return self._get_query(f"project_get_table_sample_count_{self.flavor}.sql", f"flavors/{self.flavor}/profiling")
 
     def GetContingencyColumns(self) -> tuple[str, dict]:
         # Runs on App database
