@@ -27,8 +27,6 @@ class TestgenSession(Singleton):
     page_args_pending_router: dict
     current_page: str
 
-    dbschema: str
-
     name: str
     username: str
     authentication_status: bool
