@@ -105,7 +105,7 @@ class CTestExecutionSQL:
             "RUN_DATE": self.run_date,
             "EXCEPTION_MESSAGE": self.exception_message,
             "START_TIME": self.today,
-            "PROCESS_ID": str(self.process_id),
+            "PROCESS_ID": self.process_id,
             "VARCHAR_TYPE": "STRING" if self.flavor == "databricks" else "VARCHAR",
             "NOW_TIMESTAMP": date_service.get_now_as_string_with_offset(self.minutes_offset),
             **{key.upper(): value or "" for key, value in self.test_params.items()},
