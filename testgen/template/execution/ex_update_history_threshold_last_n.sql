@@ -25,26 +25,3 @@ UPDATE test_definitions t
 SET baseline_value = s.calc_signal
 FROM stats s
 WHERE t.id = s.test_definition_id;
-
-/*
-UPDATE test_definitions du
-   SET baseline_value = stats.calc_signal
-  FROM LATERAL (
-     SELECT CASE du.history_calculation
-               WHEN 'Average' THEN AVG(r.result_signal)
-               WHEN 'Minimum' THEN MIN(r.result_signal)
-               WHEN 'Maximum' THEN MAX(r.result_signal)
-               WHEN 'Sum'     THEN SUM(r.result_signal)
-               WHEN 'Value'   THEN MAX(r.result_signal) -- MAX of 1 value
-            END AS calc_signal
-       FROM ( SELECT result_signal
-                FROM test_results tr
-               WHERE tr.test_definition_id = du.id
-               ORDER BY tr.test_time DESC
-               LIMIT du.history_lookback -- dynamically bound per row
-       ) AS r
-     ) AS stats
- WHERE du.test_suite_id = '{TEST_SUITE_ID}'
-   AND du.test_active = 'Y'
-   AND du.history_lookback IS NOT NULL;
-*/

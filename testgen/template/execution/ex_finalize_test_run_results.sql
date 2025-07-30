@@ -2,6 +2,7 @@ UPDATE test_results
    SET test_description = COALESCE(r.test_description, d.test_description, tt.test_description),
        severity = COALESCE(d.severity, s.severity, tt.default_severity),
        threshold_value = COALESCE(r.threshold_value, d.threshold_value),
+       result_signal = COALESCE(r.result_signal, r.result_measure),
        result_status = CASE
                          WHEN r.result_status = 'Error' THEN 'Error'
                          WHEN r.result_code = 1 THEN 'Passed'
