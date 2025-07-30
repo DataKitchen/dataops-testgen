@@ -50,7 +50,7 @@ SELECT n.table_groups_id, n.profile_run_id,
        :RUN_DATE ::TIMESTAMP as last_auto_gen_date,
        :AS_OF_DATE ::TIMESTAMP as profiling_as_of_date,
        'Y' as test_active,
-       record_ct as baseline_ct, 0.5 AS threshold_value
+       record_ct as baseline_ct, 10 AS threshold_value
   FROM newtests n
 LEFT JOIN locked l
   ON (n.schema_name = l.schema_name
