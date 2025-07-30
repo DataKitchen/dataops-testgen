@@ -390,7 +390,7 @@ class _ThreadedFetch:
 
     def __call__(self, query: str, params: dict | None = None) -> tuple[list[LegacyRow], list[str], bool]:
         LOG.debug(f"Query: {query}")
-        column_names: list[str] = None
+        column_names: list[str] = []
         row_data: list = None
         has_errors = False
 
