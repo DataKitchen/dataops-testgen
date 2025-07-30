@@ -113,28 +113,25 @@ def _update_revision_number(params_mapping, latest_prefix_applied):
 
 
 def run_upgrade_db_config() -> bool:
-    LOG.info("Running run_upgrade_db_config")
-
+    LOG.info("Upgrading system version")
     params_mapping = _get_params_mapping()
+    current_revision = _get_revision_prefix(params_mapping)
 
-    # Look for prefix one higher than last revision extant in db
-    strNextPrefix = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
-    # Retrieve template upgrade directory name
+    next_revision = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
     upgrade_dir = _get_upgrade_template_directory()
 
-    # Retrieve and execute upgrade scripts, if any
-    lstQueries, max_prefix = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
-    LOG.info(f"Updating db config qty of queries: {len(lstQueries)}. New prefix: {max_prefix}. Queries: {lstQueries}")
-    if len(lstQueries) > 0:
-        has_been_upgraded = _execute_upgrade_scripts(params_mapping, lstQueries)
+    queries, max_revision = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=next_revision)
+    LOG.info(f"Current revision: {current_revision}. Latest revision: {max_revision or current_revision}. Upgrade scripts: {len(queries)}")
+    if len(queries) > 0:
+        has_been_upgraded = _execute_upgrade_scripts(params_mapping, queries)
     else:
         has_been_upgraded = False
 
+    LOG.info("Refreshing static metadata")
     _refresh_static_metadata(params_mapping)
 
     if has_been_upgraded:
-        # Update revision number to max prefix found in update scripts
-        _update_revision_number(params_mapping, max_prefix)
+        _update_revision_number(params_mapping, max_revision)
         LOG.info("Application data was successfully upgraded, and static metadata was refreshed.")
     else:
         LOG.info("Database upgrade was not required. Static metadata was refreshed.")
