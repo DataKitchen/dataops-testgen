@@ -110,10 +110,15 @@ const ProjectDashboard = (/** @type Properties */ props) => {
             )
             : '',
         () => getValue(tableGroups).length
-            ? div(
-                { class: 'flex-column mt-4' },
-                getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
-            )
+            ? getValue(filteredTableGroups).length
+                ? div(
+                    { class: 'flex-column mt-4' },
+                    getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup))   
+                )
+                : div(
+                    { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                    'No table groups found matching filters',
+                )
             : ConditionalEmptyState(getValue(props.project_summary)),
     );
 }
