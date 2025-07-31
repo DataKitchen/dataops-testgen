@@ -4,7 +4,6 @@ import streamlit as st
 
 from testgen import settings
 from testgen.common import version_service
-from testgen.common.credentials import get_tg_schema
 from testgen.common.docker_service import check_basic_configuration
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
@@ -38,7 +37,6 @@ def render(log_level: int = logging.INFO):
 
     set_locale()
 
-    session.dbschema = get_tg_schema()
     session.sidebar_project = (
         session.page_args_pending_router and session.page_args_pending_router.get("project_code")
     ) or st.query_params.get("project_code", session.sidebar_project)

@@ -133,7 +133,7 @@ class ProjectSettingsPage(Page):
                 project["observability_api_url"],
                 project["observability_api_key"],
             )
-            status_container.success("The connection was successful.")
+            single_element_container.success("The connection was successful.")
         except Exception as e:
             with single_element_container.container():
                 st.error("Error attempting the connection.")

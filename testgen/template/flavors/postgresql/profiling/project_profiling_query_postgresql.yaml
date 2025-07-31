@@ -250,4 +250,4 @@ strTemplate99_N: |
 
 strTemplate99_else: ' '
 
-strTemplate100_sampling: 'WHERE RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}'
+strTemplate100_sampling: 'WHERE RANDOM() <= 1.0 / {PROFILE_SAMPLE_RATIO}'

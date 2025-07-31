@@ -51,7 +51,7 @@ class CCATExecutionSQL:
     def _get_query(self, template_file_name: str, sub_directory: str | None = "exec_cat_tests", no_bind: bool = False) -> tuple[str, dict | None]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
-            "MAX_QUERY_CHARS": str(self.max_query_chars),
+            "MAX_QUERY_CHARS": self.max_query_chars,
             "TEST_RUN_ID": self.test_run_id,
             "PROJECT_CODE": self.project_code,
             "TEST_SUITE": self.test_suite,

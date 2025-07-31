@@ -1,20 +1,7 @@
 /**
- * @import { ProjectSummary } from '../utils.js';
- *
- * @typedef TestSuiteSummary
- * @type {object}
- * @property {string} id
- * @property {string} test_suite
- * @property {number} test_ct
- * @property {number?} latest_run_start
- * @property {string?} latest_run_id
- * @property {number} last_run_test_ct
- * @property {number} last_run_passed_ct
- * @property {number} last_run_warning_ct
- * @property {number} last_run_failed_ct
- * @property {number} last_run_error_ct
- * @property {number} last_run_dismissed_ct
- *
+ * @import { ProjectSummary } from '../types.js';
+ * @import { TestSuiteSummary } from '../types.js';
+ * 
  * @typedef TableGroupSummary
  * @type {object}
  * @property {string} id

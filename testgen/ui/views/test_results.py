@@ -58,6 +58,7 @@ class TestResultsPage(Page):
         test_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        action: str | None = None,
         **_kwargs,
     ) -> None:
         run = TestRun.get_minimal(run_id)
@@ -80,9 +81,9 @@ class TestResultsPage(Page):
             ],
         )
 
-        summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
-        table_filter_column, column_filter_column, test_type_filter_column, status_filter_column, sort_column, export_button_column = st.columns(
-            [.175, .175, .2, .2, .1, .15], vertical_alignment="bottom"
+        summary_column, score_column, actions_column, export_button_column = st.columns([.3, .15, .3, .15], vertical_alignment="bottom")
+        status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, action_filter_column, sort_column = st.columns(
+            [.175, .2, .2, .175, .15, .1], vertical_alignment="bottom"
         )
 
         testgen.flex_row_end(actions_column)
@@ -91,6 +92,22 @@ class TestResultsPage(Page):
         with summary_column:
             tests_summary = get_test_result_summary(run_id)
             testgen.summary_bar(items=tests_summary, height=20, width=800)
+
+        with status_filter_column:
+            status_options = [
+                "Failed + Warning",
+                "Failed",
+                "Warning",
+                "Passed",
+                "Error",
+            ]
+            status = testgen.select(
+                options=status_options,
+                default_value=status or "Failed + Warning",
+                bind_to_query="status",
+                bind_empty_value=True,
+                label="Status",
+            )
 
         run_columns_df = get_test_run_columns(run_id)
         with table_filter_column:
@@ -128,21 +145,14 @@ class TestResultsPage(Page):
                 label="Test Type",
             )
 
-        with status_filter_column:
-            status_options = [
-                "Failed + Warning",
-                "Failed",
-                "Warning",
-                "Passed",
-                "Error",
-            ]
-            status = testgen.select(
-                options=status_options,
-                default_value=status or "Failed + Warning",
-                bind_to_query="status",
-                bind_empty_value=True,
-                label="Status",
+        with action_filter_column:
+            action = testgen.select(
+                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
+                default_value=action,
+                bind_to_query="action",
+                label="Action",
             )
+            action = action.split("	", 1)[1] if action else None
 
         with sort_column:
             sortable_columns = (
@@ -183,6 +193,7 @@ class TestResultsPage(Page):
             test_type,
             table_name,
             column_name,
+            action,
             sorting_columns,
             do_multi_select,
         )
@@ -417,13 +428,14 @@ def show_result_detail(
     test_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
+    action: typing.Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
     do_multi_select: bool = False,
 ):
     with st.container():
         with st.spinner("Loading data ..."):
             # Retrieve test results (always cached, action as null)
-            df = test_result_queries.get_test_results(run_id, test_statuses, test_type_id, table_name, column_name, sorting_columns)
+            df = test_result_queries.get_test_results(run_id, test_statuses, test_type_id, table_name, column_name, action, sorting_columns)
             # Retrieve disposition action (cache refreshed)
             df_action = get_test_disposition(run_id)
             # Update action from disposition df

@@ -28,21 +28,12 @@ class TestSuiteSummary(EntityMinimal):
     id: UUID
     project_code: str
     test_suite: str
-    connection_id: UUID
     connection_name: str
     table_groups_id: UUID
     table_groups_name: str
     test_suite_description: str
-    test_action: str
-    severity: str
-    export_to_observability: str
-    dq_score_exclude: bool
-    test_suite_schema: str
-    component_key: str
-    component_type: str
-    component_name: str
+    export_to_observability: bool
     test_ct: int
-    latest_auto_gen_date: datetime
     last_complete_profile_run_id: UUID
     latest_run_id: UUID
     latest_run_start: datetime
@@ -94,13 +85,7 @@ class TestSuite(Entity):
     @st.cache_data(show_spinner=False)
     def select_summary(cls, project_code: str, table_group_id: str | None = None) -> Iterable[TestSuiteSummary]:
         query = f"""
-        WITH last_gen_date AS (
-            SELECT test_suite_id,
-                MAX(last_auto_gen_date) AS auto_gen_date
-            FROM test_definitions
-            GROUP BY test_suite_id
-        ),
-        last_run AS (
+        WITH last_run AS (
             SELECT test_runs.test_suite_id,
                 test_runs.id,
                 test_runs.test_starttime,
@@ -158,21 +143,12 @@ class TestSuite(Entity):
             suites.id,
             suites.project_code,
             suites.test_suite,
-            suites.connection_id,
             connections.connection_name,
             suites.table_groups_id,
             groups.table_groups_name,
             suites.test_suite_description,
-            suites.test_action,
-            CASE WHEN suites.severity IS NULL THEN 'Inherit' ELSE suites.severity END,
-            suites.export_to_observability,
-            suites.dq_score_exclude,
-            suites.test_suite_schema,
-            suites.component_key,
-            suites.component_type,
-            suites.component_name,
+            CASE WHEN suites.export_to_observability = 'Y' THEN TRUE ELSE FALSE END AS export_to_observability,
             test_defs.count AS test_ct,
-            last_gen_date.auto_gen_date AS latest_auto_gen_date,
             last_complete_profile_run_id,
             last_run.id AS latest_run_id,
             last_run.test_starttime AS latest_run_start,
@@ -183,8 +159,6 @@ class TestSuite(Entity):
             last_run.error_ct AS last_run_error_ct,
             last_run.dismissed_ct AS last_run_dismissed_ct
         FROM test_suites AS suites
-        LEFT JOIN last_gen_date
-            ON (suites.id = last_gen_date.test_suite_id)
         LEFT JOIN last_run
             ON (suites.id = last_run.test_suite_id)
         LEFT JOIN test_defs

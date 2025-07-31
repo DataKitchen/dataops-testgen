@@ -211,6 +211,7 @@ stylesheet.replace(`
     border: unset;
     padding: 4px 8px;
     border-radius: 8px;
+    outline: none;
 }
 
 .tg-input--field > input::placeholder {
@@ -218,9 +219,8 @@ stylesheet.replace(`
     color: var(--disabled-text-color);
 }
 
-.tg-input--field:focus,
-.tg-input--field:focus-visible {
-    outline: none;
+.tg-input--field:has(input:focus),
+.tg-input--field:has(input:focus-visible) {
     border-color: var(--primary-color);
 }
 

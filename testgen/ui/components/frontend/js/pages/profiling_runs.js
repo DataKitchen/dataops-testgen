@@ -33,7 +33,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 import { Checkbox } from '../components/checkbox.js';
 
@@ -58,6 +58,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
 
     const tableId = 'profiling-runs-table';
     resizeFrameHeightToElement(tableId);
+    resizeFrameHeightOnDOMChange(tableId);
 
     const initializeSelectedStates = (items) => {
         for (const profilingRun of items) {
@@ -73,7 +74,8 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         initializeSelectedStates(profilingRunItems.val);
     });
 
-    return div(
+    return () => getValue(profilingRunItems).length
+    ? div(
         { class: 'table', id: tableId },
         () => {
             const items = profilingRunItems.val;
@@ -146,9 +148,13 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                 'Profiling Score',
             ),
         ),
-        () => div(
+        div(
             profilingRunItems.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.profiling_run_id], userCanRun, userCanEdit)),
         ),
+    )
+    : div(
+        { class: 'pt-7 text-secondary', style: 'text-align: center;' },
+        'No test runs found matching filters',
     );
 }
 

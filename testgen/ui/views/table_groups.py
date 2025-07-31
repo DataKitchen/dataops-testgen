@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -42,6 +43,7 @@ class TableGroupsPage(Page):
         testgen.page_header(PAGE_TITLE, "create-a-table-group")
 
         user_can_edit = user_session_service.user_can_edit()
+        project_summary = Project.get_summary(project_code)
         if connection_id:
             table_groups = TableGroup.select_minimal_where(
                 TableGroup.project_code == project_code,
@@ -55,7 +57,7 @@ class TableGroupsPage(Page):
         return testgen.testgen_component(
             "table_group_list",
             props={
-                "project_code": project_code,
+                "project_summary": project_summary.to_dict(json_safe=True),
                 "connection_id": connection_id,
                 "permissions": {
                     "can_edit": user_can_edit,
@@ -227,7 +229,7 @@ class TableGroupsPage(Page):
                 "results": {
                     "success": success,
                     "message": message,
-                    "table_group_id": table_group.id,
+                    "table_group_id": str(table_group.id),
                 } if success is not None else None,
             },
             on_change_handlers={

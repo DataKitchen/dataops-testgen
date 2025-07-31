@@ -51,33 +51,11 @@ class TestSuitesPage(Page):
         test_suites = TestSuite.select_summary(project_code, table_group_id)
         project_summary = Project.get_summary(project_code)
         
-        test_suite_fields = [
-            "id",
-            "connection_name",
-            "table_groups_name",
-            "test_suite",
-            "test_suite_description",
-            "test_ct",
-            "latest_run_start",
-            "latest_run_id",
-            "last_run_test_ct",
-            "last_run_passed_ct",
-            "last_run_warning_ct",
-            "last_run_failed_ct",
-            "last_run_error_ct",
-            "last_run_dismissed_ct",
-            "last_complete_profile_run_id",
-        ]
         testgen.testgen_component(
             "test_suites",
             props={
                 "project_summary": project_summary.to_dict(json_safe=True),
-                "test_suites": [
-                    {
-                        fieldname: test_suite_dict[fieldname] for fieldname in test_suite_fields
-                    } for test_suite in test_suites
-                    if (test_suite_dict := test_suite.to_dict(json_safe=True))
-                ],
+                "test_suites": [test_suite.to_dict(json_safe=True) for test_suite in test_suites],
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),

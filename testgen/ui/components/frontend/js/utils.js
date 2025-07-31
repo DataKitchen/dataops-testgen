@@ -1,16 +1,3 @@
-/**
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} connection_count
- * @property {string} default_connection_id
- * @property {number} table_group_count
- * @property {number} profiling_run_count
- * @property {number} test_suite_count
- * @property {number} test_definition_count
- * @property {number} test_run_count
- * @property {bool} can_export_to_observability
- */
 import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
 

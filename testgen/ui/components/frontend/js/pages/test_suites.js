@@ -1,29 +1,12 @@
 /**
- * @import { ProjectSummary } from '../utils.js';
+ * @import { ProjectSummary } from '../types.js';
+ * @import { TestSuiteSummary } from '../types.js';
  *
  * @typedef TableGroupOption
  * @type {object}
  * @property {string} id
  * @property {string} name
  * @property {boolean} selected
- *
- * @typedef TestSuite
- * @type {object}
- * @property {string} id
- * @property {string} connection_name
- * @property {string} table_groups_name
- * @property {string} test_suite
- * @property {string} test_suite_description
- * @property {number} test_ct
- * @property {string} latest_run_start
- * @property {string} latest_run_id
- * @property {number} last_run_test_ct
- * @property {number} last_run_passed_ct
- * @property {number} last_run_warning_ct
- * @property {number} last_run_failed_ct
- * @property {number} last_run_error_ct
- * @property {number} last_run_dismissed_ct
- * @property {string} last_complete_profile_run_id
  *
  * @typedef Permissions
  * @type {object}
@@ -32,7 +15,7 @@
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
- * @property {TestSuite} test_suites
+ * @property {TestSuiteSummary} test_suites
  * @property {TableGroupOption[]} table_group_filter_options
  * @property {Permissions} permissions
  */
@@ -105,9 +88,10 @@ const TestSuites = (/** @type Properties */ props) => {
                             : '',
                     ),
                 ),
-                () => div(
+                () => getValue(testSuites)?.length
+                ? div(
                     { class: 'flex-column' },
-                    getValue(testSuites).map((/** @type TestSuite */ testSuite) => Card({
+                    getValue(testSuites).map((/** @type TestSuiteSummary */ testSuite) => Card({
                         border: true,
                         testId: 'test-suite-card',
                         title: () => div(
@@ -122,11 +106,13 @@ const TestSuites = (/** @type Properties */ props) => {
                                     Button({
                                         type: 'icon',
                                         icon: 'output',
-                                        tooltip: projectSummary.can_export_to_observability
-                                            ? 'Export results to Observability'
-                                            : 'Observability export not configured in Project Settings',
+                                        tooltip: !projectSummary.can_export_to_observability
+                                            ? 'Observability export not configured in Project Settings'
+                                            : !testSuite.export_to_observability
+                                            ? 'Observability export not configured for test suite'
+                                            : 'Export results to Observability',
                                         tooltipPosition: 'left',
-                                        disabled: !projectSummary.can_export_to_observability,
+                                        disabled: !projectSummary.can_export_to_observability || !testSuite.export_to_observability,
                                         onclick: () => emitEvent('ExportActionClicked', {payload: testSuite.id}),
                                     }),
                                     Button({
@@ -210,6 +196,10 @@ const TestSuites = (/** @type Properties */ props) => {
                             ),
                         ),
                     })),
+                )
+                : div(
+                    { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                    'No test suites found matching filters',
                 ),
             )
             : ConditionalEmptyState(projectSummary, userCanEdit);

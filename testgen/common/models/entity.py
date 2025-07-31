@@ -139,12 +139,17 @@ class Entity(Base):
         return list(cls.__annotations__.keys())
 
     def save(self) -> None:
+        is_new = self.id is None
         db_session = get_current_session()
         db_session.add(self)
         db_session.flush([self])
         db_session.commit()
         db_session.refresh(self, ["id"])
-        self.__class__.clear_cache()
+        if is_new:
+            # We clear all because cached data like Project.select_summary will be affected
+            st.cache_data.clear()
+        else:
+            self.__class__.clear_cache()
 
     def delete(self) -> None:
         db_session = get_current_session()

@@ -92,15 +92,16 @@ class DataProfilingPage(Page):
         with st.spinner("Loading data ..."):
             profiling_runs = ProfilingRun.select_summary(project_code, table_group_id)
 
-        run_count = len(profiling_runs)
-        page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
-        profiling_runs = [
-            {
-                **row.to_dict(json_safe=True),
-                "dq_score_profiling": friendly_score(row.dq_score_profiling),
-            } for row in profiling_runs
-        ]
-        paginated = profiling_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
+        paginated = []
+        if run_count := len(profiling_runs):
+            page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+            profiling_runs = [
+                {
+                    **row.to_dict(json_safe=True),
+                    "dq_score_profiling": friendly_score(row.dq_score_profiling),
+                } for row in profiling_runs
+            ]
+            paginated = profiling_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
             testgen_component(
