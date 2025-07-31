@@ -769,7 +769,7 @@ def view_edit_test(button_container, test_definition_id):
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     tr_id = tr_data["test_result_id"][:8]
-    tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
+    tr_time = pd.Timestamp(tr_data["test_date"]).strftime("%Y%m%d_%H%M%S")
     file_name = f"testgen_test_issue_report_{tr_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:

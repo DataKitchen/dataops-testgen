@@ -102,7 +102,7 @@ def build_summary_table(document, tr_data):
         parent=TABLE_STYLE_DEFAULT,
     )
 
-    test_timestamp = get_formatted_datetime(tr_data["test_time"])
+    test_timestamp = get_formatted_datetime(tr_data["test_date"])
     summary_table_data = [
         (
             "Test",
@@ -172,7 +172,7 @@ def build_history_table(document, tr_data):
         ),
         parent=TABLE_STYLE_DATA)
 
-    test_timestamp = pandas.to_datetime(tr_data["test_time"])
+    test_timestamp = pandas.to_datetime(tr_data["test_date"])
 
     style_per_status = {
         status: ParagraphStyle(f"result_{status}", parent=PARA_STYLE_CELL, textColor=color)

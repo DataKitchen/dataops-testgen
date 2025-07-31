@@ -225,7 +225,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
             hygiene_issue_report.create_report(buffer, issue)
         else:
             issue_id = issue["test_result_id"][:8]
-            timestamp = pd.Timestamp(issue["test_time"]).strftime("%Y%m%d_%H%M%S")
+            timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
             test_result_report.create_report(buffer, issue)
 
         update_progress(1.0)
