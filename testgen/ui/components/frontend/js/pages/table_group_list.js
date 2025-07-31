@@ -1,5 +1,5 @@
 /**
- * @import { ProjectSummary } from '../utils.js';
+ * @import { ProjectSummary } from '../types.js';
  * @import { TableGroup } from '../components/table_group_form.js';
  * @import { Connection } from '../components/connection_form.js';
  * 

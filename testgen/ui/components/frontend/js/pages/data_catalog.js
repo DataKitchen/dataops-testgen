@@ -1,7 +1,7 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
  * @import { TreeNode, SelectedNode } from '../components/tree.js';
- * @import { ProjectSummary } from '../utils.js';
+ * @import { ProjectSummary } from '../types.js';
  * 
  * @typedef ColumnPath
  * @type {object}

@@ -1,6 +1,6 @@
 /**
  * @import { Score } from '../components/score_card.js';
- * @import { ProjectSummary } from '../utils.js';
+ * @import { ProjectSummary } from '../types.js';
  *
  * @typedef Category
  * @type {object}
