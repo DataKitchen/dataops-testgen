@@ -105,7 +105,8 @@ const TestSuites = (/** @type Properties */ props) => {
                             : '',
                     ),
                 ),
-                () => div(
+                () => getValue(testSuites)?.length
+                ? div(
                     { class: 'flex-column' },
                     getValue(testSuites).map((/** @type TestSuite */ testSuite) => Card({
                         border: true,
@@ -210,6 +211,10 @@ const TestSuites = (/** @type Properties */ props) => {
                             ),
                         ),
                     })),
+                )
+                : div(
+                    { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                    'No test suites found matching filters',
                 ),
             )
             : ConditionalEmptyState(projectSummary, userCanEdit);

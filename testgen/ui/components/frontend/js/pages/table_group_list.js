@@ -1,4 +1,5 @@
 /**
+ * @import { ProjectSummary } from '../utils.js';
  * @import { TableGroup } from '../components/table_group_form.js';
  * @import { Connection } from '../components/connection_form.js';
  * 
@@ -8,7 +9,7 @@
  * 
  * @typedef Properties
  * @type {object}
- * @property {string} project_code
+ * @property {ProjectSummary} project_summary
  * @property {string?} connection_id
  * @property {Connection[]} connections
  * @property {TableGroup[]} table_groups
@@ -43,12 +44,13 @@ const TableGroupList = (props) => {
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, style: 'overflow-y: auto;' },
+        { id: wrapperId, class: 'tg-tablegroups' },
         () => {
             const permissions = getValue(props.permissions) ?? {can_edit: false};
             const connections = getValue(props.connections) ?? [];
             const connectionId = getValue(props.connection_id);
             const tableGroups = getValue(props.table_groups) ?? [];
+            const projectSummary = getValue(props.project_summary);
 
             if (connections.length <= 0) {
                 return EmptyState({
@@ -58,16 +60,17 @@ const TableGroupList = (props) => {
                     link: {
                         label: 'Go to Connections',
                         href: 'connections',
-                        params: { project_code: getValue(props.project_code) },
+                        params: { project_code: projectSummary.project_code },
                         disabled: !permissions.can_edit,
                     },
                 });
             }
 
-            return tableGroups.length > 0
+            return projectSummary.table_group_count > 0
             ? div(
                 Toolbar(permissions, connections, connectionId),
-                tableGroups.map((tableGroup) => Card({
+                tableGroups.length
+                    ? tableGroups.map((tableGroup) => Card({
                         testId: 'table-group-card',
                         class: '',
                         title: div(
@@ -89,7 +92,7 @@ const TableGroupList = (props) => {
                                     Link({
                                         label: 'View test suites',
                                         href: 'test-suites',
-                                        params: { 'project_code': getValue(props.project_code), 'table_group_id': tableGroup.id },
+                                        params: { 'project_code': projectSummary.project_code, 'table_group_id': tableGroup.id },
                                         right_icon: 'chevron_right',
                                         right_icon_size: 20,
                                     }),
@@ -179,6 +182,10 @@ const TableGroupList = (props) => {
                             )
                             : undefined,
                     }))
+                    : div(
+                        { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                        'No table groups found matching filters',
+                    ),
                 )
             : EmptyState({
                 icon: 'table_view',
@@ -279,6 +286,11 @@ const TruncatedText = ({ max, ...options }, ...children) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tg-tablegroups {
+    overflow-y: auto;
+    min-height: 400px;
+}
+
 .tg-tablegroup--card-title h4 {
     margin: 0;
     color: var(--primary-text-color);
