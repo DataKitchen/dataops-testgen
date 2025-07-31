@@ -317,7 +317,7 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('3022', 'Recency', 'mssql', 'DATEDIFF(day, MAX({COLUMN_NAME}), CAST(''{RUN_DATE}''AS DATE))', '>', '{THRESHOLD_VALUE}'),
         ('3023', 'Required', 'mssql', 'COUNT(*) - COUNT( {COLUMN_NAME} )', '>', '{THRESHOLD_VALUE}'),
         ('3024', 'Row_Ct', 'mssql', 'COUNT(*)', '<', '{THRESHOLD_VALUE}'),
-        ('3025', 'Row_Ct_Pct', 'mssql', 'ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT} ) AS FLOAT)/ CAST({BASELINE_CT} AS FLOAT, 2)))', '>', '{THRESHOLD_VALUE}'),
+        ('3025', 'Row_Ct_Pct', 'mssql', 'ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT} ) AS FLOAT)/ CAST({BASELINE_CT} AS FLOAT), 2))', '>', '{THRESHOLD_VALUE}'),
         ('3026', 'Street_Addr_Pattern', 'mssql', 'CAST(100.0*SUM(CASE WHEN UPPER({COLUMN_NAME}) LIKE ''[1-9]% [A-Z]% %'' AND CHARINDEX('' '', {COLUMN_NAME}) BETWEEN 2 AND 6 THEN 1 ELSE 0 END) as FLOAT) /CAST(COUNT({COLUMN_NAME}) AS FLOAT)', '<', '{THRESHOLD_VALUE}'),
         ('3027', 'US_State', 'mssql', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN (''AL'',''AK'',''AS'',''AZ'',''AR'',''CA'',''CO'',''CT'',''DE'',''DC'',''FM'',''FL'',''GA'',''GU'',''HI'',''ID'',''IL'',''IN'',''IA'',''KS'',''KY'',''LA'',''ME'',''MH'',''MD'',''MA'',''MI'',''MN'',''MS'',''MO'',''MT'',''NE'',''NV'',''NH'',''NJ'',''NM'',''NY'',''NC'',''ND'',''MP'',''OH'',''OK'',''OR'',''PW'',''PA'',''PR'',''RI'',''SC'',''SD'',''TN'',''TX'',''UT'',''VT'',''VI'',''VA'',''WA'',''WV'',''WI'',''WY'',''AE'',''AP'',''AA'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('3028', 'Unique', 'mssql', 'COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})', '>', '{THRESHOLD_VALUE}'),
