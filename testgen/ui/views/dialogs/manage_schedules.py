@@ -131,7 +131,7 @@ class ScheduleDialog:
                     # We postpone the validation status update when the previous rerun had a failed
                     # attempt to insert a schedule. This prevents the error message of being overridden
                     if st.session_state.get("schedule_form_success", None) is None:
-                        st.success(
+                        st.info(
                             f"**Next runs:** {' | '.join(sample)} ({cron_tz.replace('_', ' ')})",
                             icon=":material/check:",
                         )

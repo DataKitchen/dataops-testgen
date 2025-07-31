@@ -33,7 +33,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { formatTimestamp, formatDuration } from '../display_utils.js';
 import { Checkbox } from '../components/checkbox.js';
 
@@ -47,7 +47,7 @@ const TestRuns = (/** @type Properties */ props) => {
         try {
             items = JSON.parse(props.items?.val);
         } catch { }
-        Streamlit.setFrameHeight(100 * items.length);
+        Streamlit.setFrameHeight(100 * items.length || 150);
         return items;
     });
     const columns = ['5%', '28%', '17%', '40%', '10%'];
@@ -58,6 +58,7 @@ const TestRuns = (/** @type Properties */ props) => {
 
     const tableId = 'test-runs-table';
     resizeFrameHeightToElement(tableId);
+    resizeFrameHeightOnDOMChange(tableId);
 
     const initializeSelectedStates = (items) => {
         for (const testRun of items) {
@@ -73,7 +74,8 @@ const TestRuns = (/** @type Properties */ props) => {
         initializeSelectedStates(testRunItems.val);
     });
 
-    return div(
+    return () => getValue(testRunItems).length
+    ? div(
         { class: 'table', id: tableId },
         () => {
             const items = testRunItems.val;
@@ -142,9 +144,13 @@ const TestRuns = (/** @type Properties */ props) => {
                 'Testing Score',
             ),
         ),
-        () => div(
+        div(
             testRunItems.val.map(item => TestRunItem(item, columns, selectedRuns[item.test_run_id], userCanRun, userCanEdit)),
         ),
+    )
+    : div(
+        { class: 'pt-7 text-secondary', style: 'text-align: center;' },
+        'No test runs found matching filters',
     );
 }
 

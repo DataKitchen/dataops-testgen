@@ -108,14 +108,17 @@ class TestRunsPage(Page):
 
         with st.spinner("Loading data ..."):
             test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id)
-        page_index = testgen.paginator(count=len(test_runs), page_size=PAGE_SIZE)
-        test_runs = [
-            {
-                **row.to_dict(json_safe=True),
-                "dq_score_testing": friendly_score(row.dq_score_testing),
-            } for row in test_runs
-        ]
-        paginated = test_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
+
+        paginated = []
+        if run_count := len(test_runs):
+            page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
+            test_runs = [
+                {
+                    **row.to_dict(json_safe=True),
+                    "dq_score_testing": friendly_score(row.dq_score_testing),
+                } for row in test_runs
+            ]
+            paginated = test_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
 
         with list_container:
             testgen_component(
