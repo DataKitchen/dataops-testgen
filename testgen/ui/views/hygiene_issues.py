@@ -548,6 +548,7 @@ def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
     ]
 
 
+@with_database_session
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
