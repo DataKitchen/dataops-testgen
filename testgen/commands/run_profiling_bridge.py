@@ -290,7 +290,7 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
                 lstSampleTables, _, intErrors = fetch_from_db_threaded(
                     lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
                 )
-                dctSampleTables = {x[0]: [x[1], x[2]] for x in lstSampleTables}
+                dctSampleTables = {x[0]: [x[1], x[2], x[3]] for x in lstSampleTables}
                 if intErrors > 0:
                     has_errors = True
                     LOG.warning(
@@ -322,10 +322,14 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
                         clsProfiling.sample_ratio = dctSampleTables[
                             clsProfiling.data_schema + "." + clsProfiling.data_table
                         ][1]
+                        clsProfiling.sample_percent_calc = dctSampleTables[
+                            clsProfiling.data_schema + "." + clsProfiling.data_table
+                        ][2]
                         clsProfiling.parm_do_sample = clsProfiling.profile_use_sampling
                     else:
                         clsProfiling.parm_sample_size = 0
                         clsProfiling.sample_ratio = ""
+                        clsProfiling.sample_percent_calc = ""
 
                 lstQueries.append(clsProfiling.GetProfilingQuery())
 

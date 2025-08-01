@@ -237,7 +237,7 @@ strTemplate15_ALL:  NULL as functional_data_type,
 
 strTemplate16_ALL: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} '
+strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)'
 
 strTemplate98_else: ' FROM {DATA_SCHEMA}.{DATA_TABLE} '
 
@@ -248,6 +248,13 @@ strTemplate99_N: |
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
         FROM {DATA_SCHEMA}.{DATA_TABLE} LIMIT 1) pctile
 
+strTemplate99_N_sampling: |
+  , (SELECT
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+        FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64) LIMIT 1) pctile
+
 strTemplate99_else: ' '
 
-strTemplate100_sampling: 'WHERE RANDOM() <= 1.0 / {PROFILE_SAMPLE_RATIO}'
+strTemplate100_sampling: ' '

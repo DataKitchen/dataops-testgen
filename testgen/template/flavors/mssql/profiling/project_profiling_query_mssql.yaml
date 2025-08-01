@@ -1,5 +1,5 @@
 ---
-strTemplate01_sampling:  "SELECT TOP {SAMPLE_SIZE} "
+strTemplate01_sampling:  "SELECT "
 strTemplate01_else:  "SELECT "
 strTemplate02_all: |
   {CONNECTION_ID} as connection_id,
@@ -259,7 +259,7 @@ strTemplate15_ALL:  NULL as functional_data_type,
 
 strTemplate16_ALL: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} WITH (NOLOCK)'
+strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) WITH (NOLOCK)'
 
 strTemplate98_else: ' FROM {DATA_SCHEMA}.{DATA_TABLE} WITH (NOLOCK)'
 
@@ -270,6 +270,13 @@ strTemplate99_N: |
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
         FROM {DATA_SCHEMA}.{DATA_TABLE} WITH (NOLOCK)) pctile
 
+strTemplate99_N_sampling: |
+     , (SELECT TOP 1
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
+        FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) WITH (NOLOCK)) pctile
+
 strTemplate99_else: ' '
 
-strTemplate100_sampling: ' ORDER BY RAND()'
+strTemplate100_sampling: ' '
