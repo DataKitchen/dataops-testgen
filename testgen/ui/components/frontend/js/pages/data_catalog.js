@@ -210,10 +210,10 @@ const DataCatalog = (/** @type Properties */ props) => {
                             multiSelectToggle: userCanEdit,
                             multiSelectToggleLabel: 'Edit multiple',
                             onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => 
-                                !node.label.toLowerCase().includes(search.toLowerCase())
-                                || (!!node.children && !searchOptions.tableName.val)
-                                || (!node.children && !searchOptions.columnName.val)
+                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => search 
+                                && (!node.label.toLowerCase().includes(search.toLowerCase())
+                                    || (!!node.children && !searchOptions.tableName.val)
+                                    || (!node.children && !searchOptions.columnName.val))
                                 || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
                                 || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
                             onApplySearchOptions: () => {
@@ -222,7 +222,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                                 // Otherwise, nothing will be matched and the user might not realize why 
                                 if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
                                     searchOptions.tableName.val = true;
-                                    searchOptions.columnName.val = true
+                                    searchOptions.columnName.val = true;
                                 }
                             },
                             hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
