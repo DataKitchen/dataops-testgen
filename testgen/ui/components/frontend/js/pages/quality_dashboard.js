@@ -59,20 +59,25 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                     sortedBy,
                     getValue(props.project_summary),
                 ),
-                () =>  div(
-                    { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                    getValue(scores).map(score => ScoreCard(
-                        score,
-                        Link({
-                            label: 'View details',
-                            right_icon: 'chevron_right',
-                            href: 'quality-dashboard:score-details',
-                            class: 'ml-4',
-                            params: { definition_id: score.id },
-                        }),
-                        {showHistory: true},
-                    ))
-                ),
+                () => getValue(scores).length
+                    ? div(
+                        { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                        getValue(scores).map(score => ScoreCard(
+                            score,
+                            Link({
+                                label: 'View details',
+                                right_icon: 'chevron_right',
+                                href: 'quality-dashboard:score-details',
+                                class: 'ml-4',
+                                params: { definition_id: score.id },
+                            }),
+                            {showHistory: true},
+                        ))
+                    )
+                    : div(
+                        { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                        'No scorecards found matching filters',
+                    ),
             ) : ConditionalEmptyState(getValue(props.project_summary)),
     );
 };
@@ -84,7 +89,7 @@ const Toolbar = (
     /** @type ProjectSummary */ projectSummary
 ) => {
     const sortOptions = [
-        { label: "Score Name", value: "name" },
+        { label: "Scorecard Name", value: "name" },
         { label: "Lowest Score", value: "score" },
     ];
 
@@ -96,7 +101,7 @@ const Toolbar = (
             style: 'font-size: 14px; margin-right: 16px;',
             icon: 'search',
             clearable: true,
-            placeholder: 'Search scores',
+            placeholder: 'Search scorecards',
             value: filterBy,
             onChange: options?.onsearch,
             testId: 'scorecards-filter',

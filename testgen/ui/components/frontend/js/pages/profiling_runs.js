@@ -47,7 +47,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         try {
             items = JSON.parse(props.items?.val);
         } catch { }
-        Streamlit.setFrameHeight(100 * items.length);
+        Streamlit.setFrameHeight(100 * items.length || 150);
         return items;
     });
     const columns = ['5%', '15%', '20%', '20%', '30%', '10%'];
@@ -154,7 +154,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     )
     : div(
         { class: 'pt-7 text-secondary', style: 'text-align: center;' },
-        'No test runs found matching filters',
+        'No profiling runs found matching filters',
     );
 }
 

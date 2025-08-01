@@ -78,8 +78,6 @@ def get_test_results(
         FROM run_results r
     INNER JOIN test_types tt
         ON (r.test_type = tt.test_type)
-    LEFT JOIN test_definitions rd
-        ON (r.test_definition_id = rd.id)
     LEFT JOIN test_definitions d
         ON (r.test_suite_id = d.test_suite_id
         AND  r.table_name = d.table_name

@@ -32,6 +32,15 @@ import { colorMap, formatTimestamp } from '../display_utils.js';
 const { div, i, span } = van.tags;
 const PAGE_SIZE = 100;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
+const statusColors = {
+    'Potential PII': colorMap.grey,
+    Likely: colorMap.orange,
+    Possible: colorMap.yellow,
+    Definite: colorMap.red,
+    Warning: colorMap.yellow,
+    Failed: colorMap.red,
+    Passed: colorMap.green,
+};
 
 const IssuesTable = (
     /** @type Issue[] */ issues,
@@ -117,23 +126,24 @@ const IssuesTable = (
             ),
         ),
         () => Toolbar(filters, issues, category),
-        div(
-            { class: 'table-header issues-columns flex-row' },
-            Checkbox({
-                checked: () => selectedIssues.val.length === PAGE_SIZE,
-                indeterminate: () => !!selectedIssues.val.length,
-                onChange: (checked) => {
-                    if (checked) {
-                        selectedIssues.val = displayedIssues.val.map(({ id, issue_type }) => ({ id, issue_type }));
-                    } else {
-                        selectedIssues.val = [];
-                    }
-                },
-            }),
-            span({ class: category === 'column_name' ? null : 'ml-6' }),
-            columns.map(c => span({ style: `flex: ${c === 'detail' ? '1 1' : '0 0'} ${ISSUES_COLUMNS_SIZES[c]};` }, ISSUES_COLUMN_LABEL[c]))
-        ),
-        () => div(
+        () => displayedIssues.val.length
+        ? div(
+            div(
+                { class: 'table-header issues-columns flex-row' },
+                Checkbox({
+                    checked: () => selectedIssues.val.length === PAGE_SIZE,
+                    indeterminate: () => !!selectedIssues.val.length,
+                    onChange: (checked) => {
+                        if (checked) {
+                            selectedIssues.val = displayedIssues.val.map(({ id, issue_type }) => ({ id, issue_type }));
+                        } else {
+                            selectedIssues.val = [];
+                        }
+                    },
+                }),
+                span({ class: category === 'column_name' ? null : 'ml-6' }),
+                columns.map(c => span({ style: `flex: ${c === 'detail' ? '1 1' : '0 0'} ${ISSUES_COLUMNS_SIZES[c]};` }, ISSUES_COLUMN_LABEL[c]))
+            ),
             displayedIssues.val.map((row) => div(
                 { class: 'table-row flex-row issues-row' },
                 Checkbox({
@@ -151,18 +161,22 @@ const IssuesTable = (
                     : ColumnProfilingButton(row.column, row.table, row.table_group_id),
                 columns.map((columnName) => TableCell(row, columnName)),
             )),
+            () => Paginator({
+                pageIndex,
+                count: filteredIssues.val.length,
+                pageSize: PAGE_SIZE,
+                onChange: (newIndex) => {
+                    if (newIndex !== pageIndex.val) {
+                        pageIndex.val = newIndex;
+                        SCROLL_CONTAINER.scrollTop = 0;
+                    }
+                },
+            }),
+        )
+        : div(
+            { class: 'mt-7 mb-6 text-secondary', style: 'text-align: center;' },
+            'No issues found matching filters',
         ),
-        () => Paginator({
-            pageIndex,
-            count: filteredIssues.val.length,
-            pageSize: PAGE_SIZE,
-            onChange: (newIndex) => {
-                if (newIndex !== pageIndex.val) {
-                    pageIndex.val = newIndex;
-                    SCROLL_CONTAINER.scrollTop = 0;
-                }
-            },
-        }),
     );
 };
 
@@ -203,7 +217,10 @@ const Toolbar = (
             .sort()
             .map(value => ({ label: value, value })),
         status: [ 'Definite', 'Failed', 'Likely', 'Possible', 'Warning', 'Potential PII' ]
-            .map(value => ({ label: value, value })),
+            .map(value => ({ 
+                label: div({ class: 'flex-row fx-gap-2' }, dot({}, statusColors[value]), span(value)),
+                value,
+            })),
     };
 
     const displayedFilters = [ 'type', 'status' ];
@@ -275,16 +292,6 @@ const IssueCell = (value, row) => {
 };
 
 const StatusCell = (value, row) => {
-    const statusColors = {
-        'Potential PII': colorMap.grey,
-        Likely: colorMap.orange,
-        Possible: colorMap.yellow,
-        Definite: colorMap.red,
-        Warning: colorMap.yellow,
-        Failed: colorMap.red,
-        Passed: colorMap.green,
-    };
-
     return div(
         { class: 'flex-row fx-align-flex-center', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.status}` },
         dot({ class: 'mr-2' }, statusColors[value]),
