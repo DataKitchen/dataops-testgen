@@ -7,6 +7,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.queries.profiling_queries import COLUMN_PROFILING_FIELDS
 from testgen.ui.services.database_service import fetch_one_from_db
+from testgen.utils import make_json_safe
 
 
 def column_history_dialog(*args) -> None:
@@ -48,7 +49,7 @@ def _column_history_dialog(
                     "run_date": run["profiling_starttime"],
                 } for run in profiling_runs
             ],
-            "selected_item": selected_item,
+            "selected_item": make_json_safe(selected_item),
         },
         on_change_handlers={
             "RunSelected": on_run_selected,
