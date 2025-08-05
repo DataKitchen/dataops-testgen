@@ -303,6 +303,8 @@ def show_test_form(
     match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
     match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
     window_days = selected_test_def["window_days"] or 0 if mode == "edit" else 0
+    history_calculation = empty_if_null(selected_test_def["history_calculation"]) if mode == "edit" else ""
+    history_lookback = empty_if_null(selected_test_def["history_lookback"]) if mode == "edit" else ""
 
     # export_to_observability
     inherited_export_to_observability = "Yes" if test_suite.export_to_observability else "No"
@@ -397,6 +399,8 @@ def show_test_form(
         "match_groupby_names": match_groupby_names,
         "match_having_condition": match_having_condition,
         "window_days": window_days,
+        "history_calculation": history_calculation,
+        "history_lookback": history_lookback,
     }
 
     # test_definition_status
@@ -517,10 +521,18 @@ def show_test_form(
         if not attribute in dynamic_attributes:
             return
 
-        numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        choice_fields = {
+            "history_calculation": ["Value", "Minimum", "Maximum", "Sum", "Average"],
+        }
+        float_numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        int_numeric_attributes = ["history_lookback"]
 
-        default_value = 0 if attribute in numeric_attributes else ""
-        value = selected_test_def[attribute] if mode == "edit" and selected_test_def[attribute] is not None else default_value
+        default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
+        value = (
+            selected_test_def[attribute]
+            if mode == "edit" and selected_test_def[attribute] is not None
+            else default_value
+        )
 
         index = dynamic_attributes.index(attribute)
         leftover_attributes.remove(attribute)
@@ -550,13 +562,28 @@ def show_test_form(
                 height=150 if test_type == "CUSTOM" else 75,
                 help=help_text,
             )
-        elif attribute in numeric_attributes:
+        elif attribute in float_numeric_attributes:
             test_definition[attribute] = container.number_input(
                 label=label_text,
                 value=float(value),
                 step=1.0,
                 help=help_text,
             )
+        elif attribute in int_numeric_attributes:
+            test_definition[attribute] = container.number_input(
+                label=label_text,
+                value=int(value),
+                step=1,
+                help=help_text,
+            )
+        elif attribute in choice_fields:
+            with container:
+                test_definition[attribute] = testgen.select(
+                    label_text,
+                    choice_fields[attribute],
+                    required=True,
+                    default_value=value,
+                )
         else:
             test_definition[attribute] = container.text_input(
                 label=label_text,

@@ -65,6 +65,8 @@ class TestDefinitionSummary(EntityMinimal):
     match_groupby_names: str
     match_having_condition: str
     custom_query: str
+    history_calculation: str
+    history_lookback: int
     test_active: str
     test_definition_status: str
     severity: str
@@ -177,6 +179,8 @@ class TestDefinition(Entity):
     match_subset_condition: str = Column(NullIfEmptyString)
     match_groupby_names: str = Column(NullIfEmptyString)
     match_having_condition: str = Column(NullIfEmptyString)
+    history_calculation: str = Column(NullIfEmptyString)
+    history_lookback: int = Column(ZeroIfEmptyInteger, default=0)
     test_mode: str = Column(String)
     custom_query: str = Column(QueryString)
     test_active: bool = Column(YNString, default="Y")
