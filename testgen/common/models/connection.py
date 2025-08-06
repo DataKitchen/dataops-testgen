@@ -22,7 +22,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.models import get_current_session
-from testgen.common.models.custom_types import EncryptedBytea
+from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
@@ -61,6 +61,7 @@ class Connection(Entity):
     private_key_passphrase: str = Column(EncryptedBytea)
     http_path: str = Column(String)
     warehouse: str = Column(String)
+    service_account_key: JSON_TYPE = Column(EncryptedJson)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)

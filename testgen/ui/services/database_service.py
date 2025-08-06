@@ -53,12 +53,15 @@ def fetch_one_from_db(query: str, params: dict | None = None) -> RowMapping | No
     return result._mapping if result else None
 
 
-def fetch_from_target_db(connection: Connection, query: str, params: dict | None = None) -> list[Row]:        
+def fetch_from_target_db(connection: Connection, query: str, params: dict | None = None) -> list[Row]:
     flavor_service = get_flavor_service(connection.sql_flavor)
     flavor_service.init(connection.to_dict())
-    connection_string = flavor_service.get_connection_string()
-    connect_args = flavor_service.get_connect_args()
-    engine = create_engine(connection_string, connect_args=connect_args)
+
+    engine = create_engine(
+        flavor_service.get_connection_string(),
+        connect_args=flavor_service.get_connect_args(),
+        **flavor_service.get_engine_args(),
+    )
 
     with engine.connect() as connection:
         cursor: CursorResult = connection.execute(text(query), params)

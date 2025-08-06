@@ -33,6 +33,7 @@ dependencies = [
     "sqlalchemy==1.4.46",
     "databricks-sql-connector==2.9.3",
     "snowflake-sqlalchemy==1.6.1",
+    "sqlalchemy-bigquery==1.14.1",
     "pyodbc==5.0.0",
     "psycopg2-binary==2.9.9",
     "pycryptodome==3.21",

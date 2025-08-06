@@ -162,7 +162,7 @@ class ConnectionsPage(Page):
                 message = "Error creating connection"
                 success = False
                 LOG.exception(message)
-            
+
             results = {
                 "success": success,
                 "message": message,
@@ -476,5 +476,11 @@ FLAVOR_OPTIONS = [
         value="databricks",
         flavor="databricks",
         icon=get_asset_data_url("flavors/databricks.svg"),
+    ),
+    ConnectionFlavor(
+        label="BigQuery",
+        value="bigquery",
+        flavor="bigquery",
+        icon=get_asset_data_url("flavors/bigquery.svg"),
     ),
 ]
