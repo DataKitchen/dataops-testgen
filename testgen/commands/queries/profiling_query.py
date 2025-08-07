@@ -43,6 +43,7 @@ class CProfilingSQL:
 
     sampling_table = ""
     sample_ratio = ""
+    sample_percent_calc = ""
 
     process_id = None
 
@@ -82,7 +83,7 @@ class CProfilingSQL:
             self._rollup_scores_sql = CRollupScoresSQL(self.profile_run_id, self.table_groups_id)
 
         return self._rollup_scores_sql
-    
+
     def _get_params(self) -> dict:
         return {
             "PROJECT_CODE": self.project_code,
@@ -109,6 +110,7 @@ class CProfilingSQL:
             "PROFILE_SAMPLE_PERCENT": self.profile_sample_percent,
             "PROFILE_SAMPLE_MIN_COUNT": self.profile_sample_min_count,
             "PROFILE_SAMPLE_RATIO": self.sample_ratio,
+            "SAMPLE_PERCENT_CALC": self.sample_percent_calc,
             "PARM_MAX_PATTERN_LENGTH": self.parm_max_pattern_length,
             "CONTINGENCY_COLUMNS": self.contingency_columns,
             "CONTINGENCY_MAX_VALUES": self.contingency_max_values,
@@ -321,7 +323,10 @@ class CProfilingSQL:
             strQ += dctSnippetTemplate["strTemplate98_else"]
 
         if self.col_gen_type == "N":
-            strQ += dctSnippetTemplate["strTemplate99_N"]
+            if self.parm_do_sample == "Y":
+                strQ += dctSnippetTemplate["strTemplate99_N_sampling"]
+            else:
+                strQ += dctSnippetTemplate["strTemplate99_N"]
         else:
             strQ += dctSnippetTemplate["strTemplate99_else"]
 
