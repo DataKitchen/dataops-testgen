@@ -30,6 +30,7 @@ class TableGroupsPage(Page):
     can_activate: typing.ClassVar = [
         lambda: session.authentication_status,
         lambda: not user_session_service.user_has_catalog_role(),
+        lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
         icon="table_view",
@@ -44,6 +45,9 @@ class TableGroupsPage(Page):
 
         user_can_edit = user_session_service.user_can_edit()
         project_summary = Project.get_summary(project_code)
+        if connection_id and not connection_id.isdigit():
+            connection_id = None
+
         if connection_id:
             table_groups = TableGroup.select_minimal_where(
                 TableGroup.project_code == project_code,

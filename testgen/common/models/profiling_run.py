@@ -131,8 +131,13 @@ class ProfilingRun(Entity):
     @classmethod
     @st.cache_data(show_spinner=False)
     def select_summary(
-        cls, project_code: str, table_group_id: str | None = None, profiling_run_ids: list[str] | None = None
+        cls, project_code: str, table_group_id: str | UUID | None = None, profiling_run_ids: list[str] | None = None
     ) -> Iterable[ProfilingRunSummary]:
+        if (table_group_id and not is_uuid4(table_group_id)) or (
+            profiling_run_ids and not all(is_uuid4(run_id) for run_id in profiling_run_ids)
+        ):
+            return []
+
         query = f"""
         WITH profile_anomalies AS (
             SELECT profile_anomaly_results.profile_run_id,

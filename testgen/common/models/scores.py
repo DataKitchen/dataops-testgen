@@ -50,6 +50,7 @@ Categories = Literal[
     "transform_level",
     "data_product",
 ]
+ScoreTypes = Literal["score", "cde_score"]
 
 
 class ScoreCategory(enum.Enum):
@@ -344,7 +345,7 @@ class ScoreDefinition(Base):
 
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
-            dq_dimension_filter = f" AND dq_dimension = '{value_}'"
+            dq_dimension_filter = " AND dq_dimension = :value"
 
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
@@ -594,7 +595,7 @@ class ScoreDefinitionBreakdownItem(Base):
         *,
         definition_id: str,
         category: Categories,
-        score_type: Literal["score", "cde_score"],
+        score_type: ScoreTypes,
     ) -> Iterable[Self]:
         items = []
         db_session = get_current_session()

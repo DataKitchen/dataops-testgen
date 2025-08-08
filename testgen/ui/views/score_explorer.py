@@ -105,7 +105,7 @@ class ScoreExplorerPage(Page):
                 score_definition.name = name
                 score_definition.total_score = total_score and total_score.lower() == "true"
                 score_definition.cde_score = cde_score and cde_score.lower() == "true"
-                score_definition.category = ScoreCategory(category) if category else None
+                score_definition.category = ScoreCategory(category) if category in [cat.value for cat in ScoreCategory] else None
 
                 if filters:
                     applied_filters: list[dict] = try_json(filters, default=[])
