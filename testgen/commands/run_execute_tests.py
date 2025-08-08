@@ -19,6 +19,8 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import empty_cache
 from testgen.common.get_pipeline_parms import TestExecutionParams
+from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection
 from testgen.ui.session import session
 
 from .run_execute_cat_tests import run_cat_test_queries
@@ -130,6 +132,7 @@ def run_execution_steps_in_background(project_code, test_suite):
         subprocess.Popen(script)  # NOQA S603
 
 
+@with_database_session
 def run_execution_steps(
     project_code: str,
     test_suite: str,
@@ -155,8 +158,12 @@ def run_execution_steps(
         test_run_id, test_exec_params["test_suite_id"], test_time, process_service.get_current_process_id()
     )
 
-    LOG.info("CurrentStep: Assigning Connection Parms")
-    set_target_db_params(test_exec_params)
+    LOG.info("CurrentStep: Assigning Connection Parameters")
+    connection = Connection.get_by_table_group(test_exec_params["table_groups_id"])
+    set_target_db_params(connection.__dict__)
+    test_exec_params["sql_flavor"] = connection.sql_flavor
+    test_exec_params["max_query_chars"] = connection.max_query_chars
+    test_exec_params["max_threads"] = connection.max_threads
 
     try:
         LOG.info("CurrentStep: Execute Step - Data Characteristics Refresh")

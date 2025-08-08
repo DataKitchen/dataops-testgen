@@ -208,7 +208,7 @@ def fetch_from_db_threaded(
     result_data = [element for sublist in result_data for element in sublist]
     return result_data, result_columns, error_count
 
-    
+
 def fetch_list_from_db(
     query: str, params: dict | None = None, use_target_db: bool = False
 ) -> tuple[list[LegacyRow], list[str]]:
@@ -309,7 +309,7 @@ def _init_app_db_connection(
     engine = None
     if user_type == "normal":
         engine = engine_cache.app_db
-    
+
     if not engine:
         user = user_override if is_admin else get_tg_username()
         password = password_override if (is_admin or password_override is not None) else get_tg_password()
