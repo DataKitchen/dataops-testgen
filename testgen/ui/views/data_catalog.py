@@ -426,7 +426,7 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
-    if not selected or not is_uuid4(table_group_id):
+    if not selected or "_" not in selected or not is_uuid4(table_group_id):
         return None
 
     item_type, item_id = selected.split("_", 2)

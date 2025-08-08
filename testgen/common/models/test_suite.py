@@ -11,6 +11,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.utils import is_uuid4
 
 
 @dataclass
@@ -83,7 +84,10 @@ class TestSuite(Entity):
 
     @classmethod
     @st.cache_data(show_spinner=False)
-    def select_summary(cls, project_code: str, table_group_id: str | None = None) -> Iterable[TestSuiteSummary]:
+    def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TestSuiteSummary]:
+        if table_group_id and not is_uuid4(table_group_id):
+            return []
+
         query = f"""
         WITH last_run AS (
             SELECT test_runs.test_suite_id,

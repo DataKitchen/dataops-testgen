@@ -59,6 +59,7 @@ class DataProfilingPage(Page):
         with group_filter_column:
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
             table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
+            table_groups_df["id"] = table_groups_df["id"].apply(lambda x: str(x))
             table_group_id = testgen.select(
                 options=table_groups_df,
                 value_column="id",

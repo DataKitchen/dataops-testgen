@@ -1,4 +1,5 @@
 import logging
+import typing
 from io import BytesIO
 from typing import ClassVar
 
@@ -8,7 +9,14 @@ import streamlit as st
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionBreakdownItem, SelectedIssue
+from testgen.common.models.scores import (
+    Categories,
+    ScoreCategory,
+    ScoreDefinition,
+    ScoreDefinitionBreakdownItem,
+    ScoreTypes,
+    SelectedIssue,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -60,6 +68,9 @@ class ScoreDetailsPage(Page):
             ],
         )
 
+        if category not in typing.get_args(Categories):
+            category = None
+
         if not category and score_definition.category:
             category = score_definition.category.value
 
@@ -72,6 +83,8 @@ class ScoreDetailsPage(Page):
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
             user_can_edit = user_session_service.user_can_edit()
             score_card = format_score_card(score_definition.as_cached_score_card())
+            if score_type not in typing.get_args(ScoreTypes):
+                score_type = None
             if not score_type:
                 score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
             if not drilldown:

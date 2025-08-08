@@ -125,6 +125,13 @@ class TestRun(Entity):
         test_suite_id: str | None = None,
         test_run_ids: list[str] | None = None,
     ) -> Iterable[TestRunSummary]:
+        if (
+            (table_group_id and not is_uuid4(table_group_id))
+            or (test_suite_id and not is_uuid4(test_suite_id))
+            or (test_run_ids and not all(is_uuid4(run_id) for run_id in test_run_ids))
+        ):
+            return []
+
         query = f"""
         WITH run_results AS (
             SELECT test_run_id,
