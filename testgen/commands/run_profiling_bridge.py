@@ -23,6 +23,8 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import empty_cache
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -218,11 +220,17 @@ def run_profiling_in_background(table_group_id):
         subprocess.Popen(script)  # NOQA S603
 
 
+@with_database_session
 def run_profiling_queries(table_group_id: str, username: str | None = None, spinner: Spinner | None = None):
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
     has_errors = False
+
+    # Set Project Connection Parms in common.db_bridgers from retrieved parms
+    LOG.info("CurrentStep: Assigning Connection Parameters")
+    connection = Connection.get_by_table_group(table_group_id)
+    set_target_db_params(connection.__dict__)
 
     LOG.info("CurrentStep: Retrieving Parameters")
 
@@ -232,15 +240,11 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
     params = get_profiling_params(table_group_id)
 
     LOG.info("CurrentStep: Initializing Query Generator")
-    clsProfiling = CProfilingSQL(params["project_code"], params["sql_flavor"])
-
-    # Set Project Connection Parms in common.db_bridgers from retrieved parms
-    LOG.info("CurrentStep: Assigning Connection Parms")
-    set_target_db_params(params)
+    clsProfiling = CProfilingSQL(params["project_code"], connection.sql_flavor)
 
     # Set General Parms
     clsProfiling.table_groups_id = table_group_id
-    clsProfiling.connection_id = params["connection_id"]
+    clsProfiling.connection_id = connection.connection_id
     clsProfiling.profile_run_id = profiling_run_id
     clsProfiling.data_schema = params["table_group_schema"]
     clsProfiling.parm_table_set = params["profiling_table_set"]
@@ -288,7 +292,7 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
                     lstQueries.append(clsProfiling.GetTableSampleCount())
 
                 lstSampleTables, _, intErrors = fetch_from_db_threaded(
-                    lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+                    lstQueries, use_target_db=True, max_threads=connection.max_threads, spinner=spinner
                 )
                 dctSampleTables = {x[0]: [x[1], x[2], x[3]] for x in lstSampleTables}
                 if intErrors > 0:
@@ -338,7 +342,7 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
             LOG.debug("Running %s profiling queries", len(lstQueries))
 
             lstProfiles, colProfileNames, intErrors = fetch_from_db_threaded(
-                lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+                lstQueries, use_target_db=True, max_threads=connection.max_threads, spinner=spinner
             )
             if intErrors > 0:
                 has_errors = True
@@ -378,7 +382,7 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
                     # Run secondary profiling queries
                     LOG.info("CurrentStep: Retrieving %s frequency results from project", len(lstQueries))
                     lstUpdates, colProfileNames, intErrors = fetch_from_db_threaded(
-                        lstQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+                        lstQueries, use_target_db=True, max_threads=connection.max_threads, spinner=spinner
                     )
                     if intErrors > 0:
                         has_errors = True
