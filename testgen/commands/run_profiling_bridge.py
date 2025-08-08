@@ -221,7 +221,7 @@ def run_profiling_in_background(table_group_id):
 
 
 @with_database_session
-def run_profiling_queries(table_group_id: str, username: str | None = None, spinner: Spinner | None = None):
+def run_profiling_queries(table_group_id: str, username: str | None = None, spinner: Spinner | None = None, minutes_offset: int = 0):
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -240,7 +240,7 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
     params = get_profiling_params(table_group_id)
 
     LOG.info("CurrentStep: Initializing Query Generator")
-    clsProfiling = CProfilingSQL(params["project_code"], connection.sql_flavor)
+    clsProfiling = CProfilingSQL(params["project_code"], connection.sql_flavor, minutes_offset=minutes_offset)
 
     # Set General Parms
     clsProfiling.table_groups_id = table_group_id
