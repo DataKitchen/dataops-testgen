@@ -98,6 +98,7 @@ class TestResultsPage(Page):
                 "Warning",
                 "Passed",
                 "Error",
+                "Log",
             ]
             status = testgen.select(
                 options=status_options,
@@ -170,16 +171,12 @@ class TestResultsPage(Page):
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
         match status:
+            case None:
+                status = []
             case "Failed + Warning":
                 status = ["Failed", "Warning"]
-            case "Failed":
-                status = ["Failed"]
-            case "Warning":
-                status = ["Warning"]
-            case "Passed":
-                status = ["Passed"]
-            case "Error":
-                status = ["Error"]
+            case _:
+                status = [status]
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
@@ -332,6 +329,13 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         ) as error_ct,
         SUM(
             CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Log' THEN 1
+                ELSE 0
+            END
+        ) as log_ct,
+        SUM(
+            CASE
                 WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                 ELSE 0
             END
@@ -349,6 +353,7 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         { "label": "Warning", "value": result.warning_ct, "color": "yellow" },
         { "label": "Failed", "value": result.failed_ct, "color": "red" },
         { "label": "Error", "value": result.error_ct, "color": "brown" },
+        { "label": "Log", "value": result.error_ct, "color": "darkGrey" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
     ]
 
@@ -734,7 +739,11 @@ def source_data_dialog(selected_row):
 
     # Show detail
     fm.render_html_list(
-        selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
+        selected_row,
+        lst_columns=["input_parameters", "result_message"],
+        str_section_header=None,
+        int_data_width=0,
+        lst_labels=["Test Parameters", "Result Detail"],
     )
 
     with st.spinner("Retrieving source data..."):

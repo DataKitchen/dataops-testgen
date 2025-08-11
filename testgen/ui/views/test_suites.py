@@ -95,7 +95,7 @@ def edit_test_suite_dialog(project_code, table_groups, test_suite_id: str) -> No
 
 
 def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal], selected: TestSuite | None = None):
-    severity_options = ["Inherit", "Failed", "Warning"]
+    severity_options = ["Inherit", "Log", "Failed", "Warning"]
     selected_test_suite = selected if mode == "edit" else None
     table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
 

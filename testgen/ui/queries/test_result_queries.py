@@ -51,6 +51,10 @@ def get_test_results(
                 AND result_message NOT ILIKE 'Inactivated%%' THEN 1
             END::INTEGER as failed_ct,
             CASE
+                WHEN result_status = 'Log'
+                AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+            END::INTEGER as log_ct,
+            CASE
                 WHEN result_message ILIKE 'Inactivated%%' THEN 1
             END as execution_error_ct,
             p.project_code, r.table_groups_id::VARCHAR,

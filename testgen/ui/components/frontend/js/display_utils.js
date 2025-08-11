@@ -91,6 +91,7 @@ const colorMap = {
     brownLight: '#D7CCC8', // Brown 100
     brownDark: '#4E342E', // Brown 800
     grey: '#BDBDBD', // Gray 400
+    darkGrey: '#9E9E9E', // Gray 500
     empty: 'var(--empty)', // Light: Gray 200, Dark: Gray 800
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
     emptyTeal: 'var(--empty-teal)',

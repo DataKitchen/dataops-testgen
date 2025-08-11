@@ -507,6 +507,7 @@ CREATE TABLE test_runs (
    failed_ct               INTEGER,
    warning_ct              INTEGER,
    error_ct                INTEGER,
+   log_ct                  INTEGER,
    table_ct                INTEGER,
    column_ct               INTEGER,
    column_failed_ct        INTEGER,

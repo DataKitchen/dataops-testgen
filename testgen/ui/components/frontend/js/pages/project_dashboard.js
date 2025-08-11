@@ -239,6 +239,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                         { label: 'Warning', 'value': parseInt(suite.last_run_warning_ct), color: 'yellow' },
                         { label: 'Failed', 'value': parseInt(suite.last_run_failed_ct), color: 'red' },
                         { label: 'Error', 'value': parseInt(suite.last_run_error_ct), color: 'brown' },
+                        { label: 'Log', 'value': parseInt(suite.last_run_log_ct), color: 'darkGrey' },
                         { label: 'Dismissed', 'value': parseInt(suite.last_run_dismissed_ct), color: 'grey' },
                     ],
                     width: 350,

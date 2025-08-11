@@ -43,6 +43,7 @@ class TestSuiteSummary(EntityMinimal):
     last_run_warning_ct: int
     last_run_failed_ct: int
     last_run_error_ct: int
+    last_run_log_ct: int
     last_run_dismissed_ct: int
 
 
@@ -124,6 +125,13 @@ class TestSuite(Entity):
                 ) AS error_ct,
                 SUM(
                     CASE
+                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                        AND test_results.result_status = 'Log' THEN 1
+                        ELSE 0
+                    END
+                ) AS log_ct,
+                SUM(
+                    CASE
                         WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                         ELSE 0
                     END
@@ -161,6 +169,7 @@ class TestSuite(Entity):
             last_run.warning_ct AS last_run_warning_ct,
             last_run.failed_ct AS last_run_failed_ct,
             last_run.error_ct AS last_run_error_ct,
+            last_run.log_ct AS last_run_log_ct,
             last_run.dismissed_ct AS last_run_dismissed_ct
         FROM test_suites AS suites
         LEFT JOIN last_run

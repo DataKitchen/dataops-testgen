@@ -102,17 +102,18 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
   }
   .dk-text-value {
     display: <<BLOCK>>;
-    width: <<WIDTH>>px;
+    width: <<WIDTH>>;
     background-color: var(--dk-text-value-background);
     text-align: left;
     font-family: 'Courier New', monospace;
     padding-left: 10px;
     padding-right: 10px;
     box-sizing: border-box;
+    overflow-wrap: break-word;
   }
   .dk-num-value {
     display: <<BLOCK>>;
-    width: <<WIDTH>>px;
+    width: <<WIDTH>>;
     background-color: var(--dk-text-value-background);
     text-align: right;
     font-family: 'Courier New', monospace;
@@ -122,7 +123,7 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
   }
 </style>
 """
-    str_data_width = "100%" if int_data_width == 0 else str(int_data_width)
+    str_data_width = "100%" if int_data_width == 0 else f"{int_data_width}px"
     str_markdown = str_markdown.replace("<<WIDTH>>", str_data_width)
     str_markdown = str_markdown.replace("<<BLOCK>>", str_block)
 
@@ -164,7 +165,6 @@ def render_grid_select(
     :param key: Streamlit cache key for the grid. required when binding
         selection to query.
     """
-
     show_prompt(str_prompt)
 
     # Set grid formatting
@@ -181,19 +181,36 @@ function(params) {
 
     if (['Failed', 'Error'].includes(params.value)) {
         style.color = 'black';
-        style.borderColor = 'mistyrose';
+        style.borderColor = 'var(--ag-odd-row-background-color)';
         style.backgroundColor = "mistyrose";
         style.fontWeight = 'bolder';
+        style.display = 'flex';
+        style.alignItems = 'center';
+        style.justifyContent = 'center';
         return style;
     } else if (params.value === 'Warning') {
         style.color = 'black';
-        style.borderColor = 'seashell';
+        style.borderColor = 'var(--ag-odd-row-background-color)';
         style.backgroundColor = "seashell";
+        style.display = 'flex';
+        style.alignItems = 'center';
+        style.justifyContent = 'center';
         return style;
     }  else if (params.value === 'Passed') {
         style.color = 'black';
-        style.borderColor = 'honeydew';
+        style.borderColor = 'var(--ag-odd-row-background-color)';
         style.backgroundColor = "honeydew";
+        style.display = 'flex';
+        style.alignItems = 'center';
+        style.justifyContent = 'center';
+        return style;
+    }  else if (params.value === 'Log') {
+        style.color = 'black';
+        style.borderColor = 'var(--ag-odd-row-background-color)';
+        style.backgroundColor = "#9E9E9E";
+        style.display = 'flex';
+        style.alignItems = 'center';
+        style.justifyContent = 'center';
         return style;
     }  else if (params.value === '✓') {
         return {
@@ -280,7 +297,14 @@ function(params) {
             "headerCheckboxSelection": selection_mode_ == "multiple" and column == show_columns[0],
             "headerCheckboxSelectionFilteredOnly": selection_mode_ == "multiple" and column == show_columns[0],
         }
-        highlight_kwargs = {"cellStyle": cellstyle_jscode}
+        highlight_kwargs = {
+            "cellStyle": cellstyle_jscode,
+            "cellClassRules": {
+                "status-tag": JsCode(
+                    "function(params) { return ['Failed', 'Error', 'Warning', 'Passed', 'Log'].includes(params.value); }",
+                ),
+            },
+        }
 
         # Check if the column is a date-time column
         if is_datetime64_any_dtype(df[column]):
@@ -320,7 +344,13 @@ function(params) {
         custom_css={
             "#gridToolBar": {
                 "padding-bottom": "0px !important",
-            }
+            },
+            ".ag-row-hover .ag-cell.status-tag": {
+                "border-color": "var(--ag-row-hover-color) !important",
+            },
+            ".ag-row-selected .ag-cell.status-tag": {
+                "border-color": "var(--ag-selected-row-background-color) !important",
+            },
         },
         key=f"{key}_{selection_mode_}_{rendering_counter}",
         reload_data=data_changed,

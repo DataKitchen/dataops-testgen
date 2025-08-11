@@ -259,7 +259,12 @@ def show_test_form(
     test_types_severity = selected_test_type_row["default_severity"]
     inherited_severity = test_suite_severity if test_suite_severity else test_types_severity
 
-    severity_options = [f"Inherited ({inherited_severity})", "Warning", "Fail"]
+    severity_options = [
+        f"Inherited ({inherited_severity})",
+        "Log",
+        "Warning",
+        "Fail",
+    ]
     if mode == "add" or selected_test_def["severity"] is None:
         severity_index = 0
     else:

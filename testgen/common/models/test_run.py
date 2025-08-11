@@ -44,6 +44,7 @@ class TestRunSummary(EntityMinimal):
     warning_ct: int
     failed_ct: int
     error_ct: int
+    log_ct: int
     dismissed_ct: int
     dq_score_testing: float
 
@@ -68,6 +69,7 @@ class TestRun(Entity):
     failed_ct: int = Column(Integer)
     warning_ct: int = Column(Integer)
     error_ct: int = Column(Integer)
+    log_ct: int = Column(Integer)
     table_ct: int = Column(Integer)
     column_ct: int = Column(Integer)
     column_failed_ct: int = Column(Integer)
@@ -165,6 +167,13 @@ class TestRun(Entity):
                 ) AS error_ct,
                 SUM(
                     CASE
+                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                        AND result_status = 'Log' THEN 1
+                        ELSE 0
+                    END
+                ) AS log_ct,
+                SUM(
+                    CASE
                         WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                         ELSE 0
                     END
@@ -185,6 +194,7 @@ class TestRun(Entity):
             run_results.warning_ct,
             run_results.failed_ct,
             run_results.error_ct,
+            run_results.log_ct,
             run_results.dismissed_ct,
             test_runs.dq_score_test_run AS dq_score_testing
         FROM test_runs
