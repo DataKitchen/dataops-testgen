@@ -30,11 +30,13 @@ function formatDuration(/** @type string */ duration) {
     return formatted.trim() || '< 1s';
 }
 
-function formatNumber(/** @type number | string */ number, /** @type number */ precision = 3) {
+function formatNumber(/** @type number | string */ number, /** @type number */ decimals = 3) {
     if (!['number', 'string'].includes(typeof number) || isNaN(number)) {
         return '--';
     }
-    return parseFloat(Number(number).toPrecision(precision)).toLocaleString();
+    // toFixed - rounds to specified number of decimal places
+    // toLocaleString - adds commas as necessary
+    return parseFloat(Number(number).toFixed(decimals)).toLocaleString();
 }
 
 function capitalize(/** @type string */ text) {
