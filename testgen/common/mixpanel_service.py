@@ -90,6 +90,7 @@ class MixpanelService(Singleton):
         except Exception:
             LOG.exception("Failed to send analytics data")
 
+    @with_database_session
     def get_usage(self):
         query = """
         SELECT
