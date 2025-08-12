@@ -15,8 +15,3 @@ class RedshiftFlavorService(FlavorService):
     def get_connection_string_from_fields(self):
         # STANDARD FORMAT:  strConnect = 'flavor://username:password@host:port/database'
         return f"{self.flavor}://{self.username}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.dbname}"
-
-    def get_pre_connection_queries(self):
-        return [
-            ("SET SEARCH_PATH = :schema", {"schema": self.dbschema}),
-        ]

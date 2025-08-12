@@ -4,11 +4,13 @@ from testgen import settings
 from testgen.commands.queries.generate_tests_query import CDeriveTestsSQL
 from testgen.common import execute_db_queries, fetch_dict_from_db, get_test_generation_params, set_target_db_params
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 
 LOG = logging.getLogger("testgen")
 
 
+@with_database_session
 def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: str | None = None):
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")

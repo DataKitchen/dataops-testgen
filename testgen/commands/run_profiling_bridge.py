@@ -216,7 +216,7 @@ def run_profiling_in_background(table_group_id):
         background_thread.start()
     else:
         LOG.info(msg)
-        script = ["testgen", "run-profile", "-tg", table_group_id]
+        script = ["testgen", "run-profile", "-tg", str(table_group_id)]
         subprocess.Popen(script)  # NOQA S603
 
 
