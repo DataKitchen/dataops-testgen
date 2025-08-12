@@ -928,7 +928,7 @@ const SnowflakeForm = (
                                     console.error(err);
                                     isFieldValid = false;
                                 }
-                                validityPerField['private_key'] = state.valid;
+                                validityPerField['private_key'] = isFieldValid;
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
