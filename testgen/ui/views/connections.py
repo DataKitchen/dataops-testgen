@@ -46,6 +46,14 @@ class ConnectionsPage(Page):
         order=1,
         roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
+    trim_fields: typing.ClassVar[list[str]] = [
+        "project_host",
+        "project_port",
+        "project_user",
+        "project_db",
+        "url",
+        "http_path",
+    ]
 
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
@@ -105,7 +113,7 @@ class ConnectionsPage(Page):
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)
-            set_updated_connection(updated_connection)
+            set_updated_connection(self._sanitize_connection_input(updated_connection))
 
         def on_test_connection_clicked(updated_connection: dict) -> None:
             password = updated_connection.get("project_pw_encrypted")
@@ -129,7 +137,7 @@ class ConnectionsPage(Page):
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_check_status(True)
-            set_updated_connection(updated_connection)
+            set_updated_connection(self._sanitize_connection_input(updated_connection))
 
         results = None
         for key, value in get_updated_connection().items():
@@ -174,6 +182,18 @@ class ConnectionsPage(Page):
         if match:
             return match[0]
         return None
+
+    def _sanitize_connection_input(self, connection: dict) -> dict:
+        if not connection:
+            return connection
+
+        sanitized_connection_input = {}
+        for key, value in connection.items():
+            sanitized_value = value
+            if isinstance(value, str) and key in self.trim_fields:
+                sanitized_value = value.strip()
+            sanitized_connection_input[key] = sanitized_value
+        return sanitized_connection_input
 
     def _format_connection(self, connection: Connection, should_test: bool = False) -> dict:
         formatted_connection = format_connection(connection)
