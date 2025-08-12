@@ -631,3 +631,8 @@ code > .tg-icon:hover {
 .border-radius-1 {
     border-radius: 4px;
 }
+
+input::-ms-reveal,
+input::-ms-clear {
+    display: none;
+}

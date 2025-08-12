@@ -478,6 +478,11 @@ div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--expor
 }
 /*  */
 
+input::-ms-reveal,
+input::-ms-clear {
+    display: none;
+}
+
 /* Dark mode */
 @media (prefers-color-scheme: dark) {
     body {

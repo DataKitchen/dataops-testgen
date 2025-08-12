@@ -19,8 +19,10 @@
  * @property {string[]?} autocompleteOptions
  * @property {string?} icon
  * @property {boolean?} clearable
- * @property {boolean?} disabled
+ * @property {('value' | 'always')?} clearableCondition
  * @property {function(string, InputState)?} onChange
+ * @property {boolean?} disabled
+ * @property {function(string, InputState)?} onClear
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
@@ -39,7 +41,11 @@ import { Portal } from './portal.js';
 const { div,input, label, i, small } = van.tags;
 const defaultHeight = 32;
 const iconSize = 22;
-const clearIconSize = 20;
+const addonIconSize = 20;
+const passwordFieldTypeSwitch = {
+    password: 'text',
+    text: 'password',
+};
 
 const Input = (/** @type Properties */ props) => {
     loadStylesheet('input', stylesheet);
@@ -54,6 +60,9 @@ const Input = (/** @type Properties */ props) => {
         return errors.val[0] ?? '';
     });
 
+    const originalInputType = van.derive(() => getValue(props.type) ?? 'text');
+    const inputType = van.state(originalInputType.rawVal);
+
     const onChange = props.onChange?.val ?? props.onChange;
     if (onChange) {
         onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
@@ -64,6 +73,8 @@ const Input = (/** @type Properties */ props) => {
             onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
         }
     });
+
+    const onClear = props.onClear?.val ?? props.onClear ?? (() => value.val = '');
 
     const autocompleteOpened = van.state(false);
     const autocompleteOptions = van.derive(() => {
@@ -97,23 +108,49 @@ const Input = (/** @type Properties */ props) => {
         ),
         () => getValue(props.icon) ? i(
             {
-                class: 'material-symbols-rounded tg-input--icon',
+                class: 'material-symbols-rounded tg-input--icon text-secondary',
                 style: `bottom: ${((getValue(props.height) || defaultHeight) - iconSize) / 2}px`,
             },
             props.icon,
         ) : '',
-        () => getValue(props.clearable) ? i(
-            {
-                class: () => `material-symbols-rounded tg-input--clear clickable ${value.val ? '' : 'hidden'}`,
-                style: `bottom: ${((getValue(props.height) || defaultHeight) - clearIconSize) / 2}px`,
-                onclick: () => value.val = '',
-            },
-            'clear',
-        ) : '',
+        () => {
+            const clearableCondition = getValue(props.clearableCondition) ?? 'value';
+            const showClearable = getValue(props.clearable) && (
+                clearableCondition === 'always'
+                || (clearableCondition === 'value' && value.val)
+            );
+
+            return div(
+                { class: 'flex-row' },
+                originalInputType.val === 'password' && value.val
+                    ? i(
+                        {
+                            class: 'material-symbols-rounded tg-input--visibility clickable text-secondary',
+                            style: `bottom: ${((getValue(props.height) || defaultHeight) - addonIconSize) / 2}px`,
+                            onclick: () => inputType.val = passwordFieldTypeSwitch[inputType.val],
+                        },
+                        inputType.val === 'password' ? 'visibility' : 'visibility_off',
+                    )
+                    : '',
+                showClearable
+                    ? i(
+                        {
+                            class: () => `material-symbols-rounded tg-input--clear text-secondary clickable`,
+                            style: `bottom: ${((getValue(props.height) || defaultHeight) - addonIconSize) / 2}px`,
+                            onclick: onClear,
+                        },
+                        'clear',
+                    )
+                    : '',
+            );
+        },
 
         div(
             {
-                class: () => `flex-row tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''}`,
+                class: () => {
+                    const sufixIconCount = Number(value.val && originalInputType.val === 'password') + Number(value.val && getValue(props.clearable));
+                    return `flex-row tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''} sufix-padding-${sufixIconCount}`;
+                },
                 style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             },
             props.prefix
@@ -125,7 +162,7 @@ const Input = (/** @type Properties */ props) => {
             input({
                 value,
                 name: props.name ?? '',
-                type: props.type ?? 'text',
+                type: inputType,
                 disabled: props.disabled,
                 placeholder: () => getValue(props.placeholder) ?? '',
                 oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
@@ -178,14 +215,23 @@ stylesheet.replace(`
     padding-left: 28px;
 }
 
-.tg-input--clear {
+.tg-input--clear,
+.tg-input--visibility {
     position: absolute;
-    right: 4px;
-    font-size: ${clearIconSize}px;
+    font-size: ${addonIconSize}px;
+    right: 8px;
 }
 
-.tg-input--clear ~ .tg-input--field {
-    padding-right: 24px;
+.tg-input--visibility + .tg-input--clear {
+    right: ${addonIconSize + 16}px;
+}
+
+.tg-input--field.sufix-padding-1 {
+    padding-right: ${addonIconSize + 8}px;
+}
+
+.tg-input--field.sufix-padding-2 {
+    padding-right: ${addonIconSize * 2 + 8 * 2}px;;
 }
 
 .tg-input--field {
