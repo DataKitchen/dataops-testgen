@@ -38,7 +38,7 @@ class Project(Entity):
 
     @classmethod
     @st.cache_data(show_spinner=False)
-    def get_summary(cls, project_code: str) -> ProjectSummary:
+    def get_summary(cls, project_code: str) -> ProjectSummary | None:
         query = """
         SELECT
             (
@@ -81,7 +81,7 @@ class Project(Entity):
 
         db_session = get_current_session()
         result = db_session.execute(text(query), {"project_code": project_code}).first()
-        return ProjectSummary(**result, project_code=project_code)
+        return ProjectSummary(**result, project_code=project_code) if result else None
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:

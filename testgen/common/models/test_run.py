@@ -100,7 +100,7 @@ class TestRun(Entity):
 
         query = select(cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
         result = get_current_session().execute(query).first()
-        return TestRunMinimal(**result)
+        return TestRunMinimal(**result) if result else None
 
     @classmethod
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:

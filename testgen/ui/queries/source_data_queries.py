@@ -192,7 +192,7 @@ def _get_lookup_data(
     table_group_id: str,
     anomaly_id: str,
     error_type: Literal["Profile Anomaly", "Test Results"],
-) -> LookupData:
+) -> LookupData | None:
     result = fetch_one_from_db(
         """
         SELECT
@@ -214,12 +214,12 @@ def _get_lookup_data(
             "anomaly_id": anomaly_id,
         },
     )
-    return LookupData(**result)
+    return LookupData(**result) if result else None
 
 
 def _get_lookup_data_custom(
     test_definition_id: str,
-) -> LookupData:
+) -> LookupData | None:
     result = fetch_one_from_db(
         """
         SELECT 
@@ -229,4 +229,4 @@ def _get_lookup_data_custom(
         """,
         {"test_definition_id": test_definition_id},
     )
-    return LookupData(**result)
+    return LookupData(**result) if result else None

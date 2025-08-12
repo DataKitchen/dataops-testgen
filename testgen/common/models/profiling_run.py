@@ -99,7 +99,7 @@ class ProfilingRun(Entity):
             select(cls._minimal_columns).join(TableGroup, cls.table_groups_id == TableGroup.id).where(cls.id == run_id)
         )
         result = get_current_session().execute(query).first()
-        return ProfilingRunMinimal(**result)
+        return ProfilingRunMinimal(**result) if result else None
 
     @classmethod
     def get_latest_run(cls, project_code: str) -> LatestProfilingRun | None:
