@@ -1,17 +1,14 @@
 import base64
 import datetime
 import logging
-import typing
 
 import extra_streamlit_components as stx
 import jwt
 import streamlit as st
 
 from testgen import settings
-from testgen.ui.queries import user_queries
+from testgen.common.models.user import RoleType, User
 from testgen.ui.session import session
-
-RoleType = typing.Literal["admin", "data_quality", "analyst", "business", "catalog"]
 
 AUTH_TOKEN_COOKIE_NAME = "dk_cookie_name"  # noqa: S105
 AUTH_TOKEN_EXPIRATION_DAYS = 1
@@ -72,11 +69,10 @@ def end_user_session() -> None:
 
 
 def get_auth_data():
-    auth_data = user_queries.get_users(include_password=True)
-
+    users = User.select_where()
     usernames = {}
 
-    for item in auth_data.itertuples():
+    for item in users:
         usernames[item.username.lower()] = {
             "email": item.email,
             "name": item.name,

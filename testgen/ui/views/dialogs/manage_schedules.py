@@ -8,7 +8,7 @@ import cron_converter
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.models import Session
+from testgen.common.models import Session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import tz_select
@@ -33,6 +33,7 @@ class ScheduleDialog:
     def arg_value_input(self) -> tuple[bool, list[Any], dict[str, Any]]:
         raise NotImplementedError
 
+    @with_database_session
     def open(self, project_code: str) -> None:
         st.session_state["schedule_form_success"] = None
         st.session_state["schedule_cron_expr"] = ""
@@ -130,7 +131,7 @@ class ScheduleDialog:
                     # We postpone the validation status update when the previous rerun had a failed
                     # attempt to insert a schedule. This prevents the error message of being overridden
                     if st.session_state.get("schedule_form_success", None) is None:
-                        st.success(
+                        st.info(
                             f"**Next runs:** {' | '.join(sample)} ({cron_tz.replace('_', ' ')})",
                             icon=":material/check:",
                         )

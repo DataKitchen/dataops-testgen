@@ -41,8 +41,10 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
+from testgen.common.models import with_database_session
+from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.test_run import TestRun
 from testgen.scheduler import register_scheduler_job, run_scheduler
-from testgen.ui.queries import profiling_run_queries, test_run_queries
 from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
@@ -72,9 +74,9 @@ class CliGroup(click.Group):
     cls=CliGroup,
     help=f"""
     {VERSION_DATA.edition} {VERSION_DATA.current or ""}
-    
+
     {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
-    
+
     Schema revision: {get_schema_revision()}
     """
 )
@@ -625,11 +627,16 @@ def run_ui():
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
     patch_streamlit.patch(force=True)
-    try:
-        profiling_run_queries.cancel_all_running()
-        test_run_queries.cancel_all_running()
-    except Exception:
-        LOG.warning("Failed to cancel 'Running' profiling/test runs")
+
+    @with_database_session
+    def cancel_all_running():
+        try:
+            ProfilingRun.cancel_all_running()
+            TestRun.cancel_all_running()
+        except Exception:
+            LOG.warning("Failed to cancel 'Running' profiling/test runs")
+
+    cancel_all_running()
 
     try:
         app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")

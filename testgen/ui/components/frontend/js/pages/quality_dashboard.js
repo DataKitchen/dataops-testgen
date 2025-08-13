@@ -1,13 +1,6 @@
 /**
  * @import { Score } from '../components/score_card.js';
- *
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} connections_count
- * @property {string} default_connection_id
- * @property {number} table_groups_count
- * @property {number} profiling_runs_count
+ * @import { ProjectSummary } from '../types.js';
  *
  * @typedef Category
  * @type {object}
@@ -66,20 +59,25 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                     sortedBy,
                     getValue(props.project_summary),
                 ),
-                () =>  div(
-                    { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                    getValue(scores).map(score => ScoreCard(
-                        score,
-                        Link({
-                            label: 'View details',
-                            right_icon: 'chevron_right',
-                            href: 'quality-dashboard:score-details',
-                            class: 'ml-4',
-                            params: { definition_id: score.id },
-                        }),
-                        {showHistory: true},
-                    ))
-                ),
+                () => getValue(scores).length
+                    ? div(
+                        { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                        getValue(scores).map(score => ScoreCard(
+                            score,
+                            Link({
+                                label: 'View details',
+                                right_icon: 'chevron_right',
+                                href: 'quality-dashboard:score-details',
+                                class: 'ml-4',
+                                params: { definition_id: score.id },
+                            }),
+                            {showHistory: true},
+                        ))
+                    )
+                    : div(
+                        { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                        'No scorecards found matching filters',
+                    ),
             ) : ConditionalEmptyState(getValue(props.project_summary)),
     );
 };
@@ -91,7 +89,7 @@ const Toolbar = (
     /** @type ProjectSummary */ projectSummary
 ) => {
     const sortOptions = [
-        { label: "Score Name", value: "name" },
+        { label: "Scorecard Name", value: "name" },
         { label: "Lowest Score", value: "score" },
     ];
 
@@ -103,7 +101,7 @@ const Toolbar = (
             style: 'font-size: 14px; margin-right: 16px;',
             icon: 'search',
             clearable: true,
-            placeholder: 'Search scores',
+            placeholder: 'Search scorecards',
             value: filterBy,
             onChange: options?.onsearch,
             testId: 'scorecards-filter',
@@ -153,7 +151,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         },
     };
 
-    if (projectSummary.connections_count <= 0) {
+    if (projectSummary.connection_count <= 0) {
         args = {
             message: EMPTY_STATE_MESSAGE.connection,
             link: {
@@ -162,9 +160,9 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
                 params: { project_code: projectSummary.project_code },
             },
         };
-    } else if (projectSummary.profiling_runs_count <= 0) {
+    } else if (projectSummary.profiling_run_count <= 0) {
         args = {
-            message: projectSummary.table_groups_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
+            message: projectSummary.table_group_count ? EMPTY_STATE_MESSAGE.profiling : EMPTY_STATE_MESSAGE.tableGroup,
             link: {
                 label: 'Go to Table Groups',
                 href: 'table-groups',

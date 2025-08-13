@@ -16,8 +16,12 @@ SELECT t.sale_id,
   FROM tmp_ebike_sales t
 LEFT JOIN f_ebike_sales fes ON t.sale_id = fes.sale_id
  WHERE fes.sale_id IS NULL
-   AND t.sale_date <= '{MAX_DATE}';
+   AND t.sale_date <= :MAX_DATE;
 
+DROP TABLE IF EXISTS tmp_f_ebike_sales_last_month;
+
+CREATE TABLE tmp_f_ebike_sales_last_month AS
+SELECT * from f_ebike_sales f WHERE f.sale_date <= (DATE_TRUNC('month', CURRENT_DATE) - (interval '3 month' - interval '{ITERATION_NUMBER} month') - interval '1 day');
 
 TRUNCATE TABLE d_ebike_customers;
 
@@ -48,10 +52,10 @@ SELECT t.customer_id,
        t.credit_card,
        t.last_contact - (55 - (SELECT (CURRENT_DATE  - MAX(last_contact)) FROM tmp_d_ebike_customers))
 FROM tmp_d_ebike_customers t
-WHERE t.customer_id <= '{MAX_CUSTOMER_ID_SEQ}';
+WHERE t.customer_id <= :MAX_CUSTOMER_ID_SEQ;
 
 UPDATE d_ebike_customers
-    SET last_contact =   CASE WHEN '{ITERATION_NUMBER}' = 1 AND
+    SET last_contact =   CASE WHEN :ITERATION_NUMBER = 1 AND
             current_date - last_contact <= 60 THEN last_contact - (62 - (current_date - last_contact))
            ELSE last_contact END;
 
@@ -75,7 +79,7 @@ SELECT t.product_id,
        t.price,
        t.max_discount
 FROM tmp_d_ebike_products t
-WHERE  product_id <= '{MAX_PRODUCT_ID_SEQ}';
+WHERE  product_id <= :MAX_PRODUCT_ID_SEQ;
 
 
 TRUNCATE TABLE d_ebike_suppliers;
@@ -97,4 +101,4 @@ SELECT t.supplier_id,
        t.key_supplier,
        t.supply_reliability
 FROM tmp_d_ebike_suppliers t
-WHERE t.supplier_id <= '{MAX_SUPPLIER_ID_SEQ}';
+WHERE t.supplier_id <= :MAX_SUPPLIER_ID_SEQ;

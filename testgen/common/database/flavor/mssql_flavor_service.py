@@ -4,20 +4,13 @@ from testgen import settings
 from testgen.common.database.flavor.flavor_service import FlavorService
 
 
-class MssqlFlavorService(FlavorService):    
-    def get_connection_string_head(self, strPW):
-        username = self.username
-        password = quote_plus(strPW)
+class MssqlFlavorService(FlavorService):
+    def get_connection_string_head(self):
+        return f"mssql+pyodbc://{self.username}:{quote_plus(self.password)}@"
 
-        strConnect = f"mssql+pyodbc://{username}:{password}@"
-
-        return strConnect
-
-    def get_connection_string_from_fields(self, strPW, is_password_overwritten: bool = False):    # NOQA ARG002
-        password = quote_plus(strPW)
-
+    def get_connection_string_from_fields(self):
         strConnect = (
-            f"mssql+pyodbc://{self.username}:{password}@{self.host}:{self.port}/{self.dbname}?driver=ODBC+Driver+18+for+SQL+Server"
+            f"mssql+pyodbc://{self.username}:{quote_plus(self.password)}@{self.host}:{self.port}/{self.dbname}?driver=ODBC+Driver+18+for+SQL+Server"
         )
 
         if "synapse" in self.host:
@@ -25,14 +18,14 @@ class MssqlFlavorService(FlavorService):
 
         return strConnect
 
-    def get_pre_connection_queries(self):  # ARG002
+    def get_pre_connection_queries(self):
         return [
-            "SET ANSI_DEFAULTS ON;",
-            "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;",
+            ("SET ANSI_DEFAULTS ON;", None),
+            ("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;", None),
         ]
     
-    def get_connect_args(self, is_password_overwritten: bool = False):
-        connect_args = super().get_connect_args(is_password_overwritten)
+    def get_connect_args(self):
+        connect_args = super().get_connect_args()
         if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
             connect_args["TrustServerCertificate"] = "yes"
         return connect_args

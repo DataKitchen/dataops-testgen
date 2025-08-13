@@ -3,7 +3,9 @@ import json
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
+from testgen.common.models import with_database_session
 from testgen.ui.components.widgets.testgen_component import testgen_component
+from testgen.utils import make_json_safe
 
 
 def view_profiling_button(column_name: str, table_name: str, table_groups_id: str):
@@ -17,11 +19,12 @@ def view_profiling_button(column_name: str, table_name: str, table_groups_id: st
 
 
 @st.dialog(title="Column Profiling Results")
+@with_database_session
 def profiling_results_dialog(column_name: str, table_name: str, table_groups_id: str):
     column = profiling_queries.get_column_by_name(column_name, table_name, table_groups_id)
 
     if column:
         testgen_component(
             "column_profiling_results",
-            props={ "column": json.dumps(column) },
+            props={ "column": json.dumps(make_json_safe(column)) },
         )

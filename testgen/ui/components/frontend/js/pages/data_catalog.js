@@ -1,13 +1,7 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
  * @import { TreeNode, SelectedNode } from '../components/tree.js';
- *
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} connections_ct
- * @property {number} table_groups_ct
- * @property {string} default_connection_id
+ * @import { ProjectSummary } from '../types.js';
  * 
  * @typedef ColumnPath
  * @type {object}
@@ -182,7 +176,7 @@ const DataCatalog = (/** @type Properties */ props) => {
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
     const projectSummary = getValue(props.project_summary);
 
-    return projectSummary.table_groups_ct > 0
+    return projectSummary.table_group_count > 0
         ? div(
             { class: 'flex-column tg-dh' },
             div(
@@ -216,10 +210,10 @@ const DataCatalog = (/** @type Properties */ props) => {
                             multiSelectToggle: userCanEdit,
                             multiSelectToggleLabel: 'Edit multiple',
                             onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
-                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => 
-                                !node.label.toLowerCase().includes(search.toLowerCase())
-                                || (!!node.children && !searchOptions.tableName.val)
-                                || (!node.children && !searchOptions.columnName.val)
+                            isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => search 
+                                && (!node.label.toLowerCase().includes(search.toLowerCase())
+                                    || (!!node.children && !searchOptions.tableName.val)
+                                    || (!node.children && !searchOptions.columnName.val))
                                 || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
                                 || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
                             onApplySearchOptions: () => {
@@ -228,7 +222,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                                 // Otherwise, nothing will be matched and the user might not realize why 
                                 if (!searchOptions.tableName.val && !searchOptions.columnName.val) {
                                     searchOptions.tableName.val = true;
-                                    searchOptions.columnName.val = true
+                                    searchOptions.columnName.val = true;
                                 }
                             },
                             hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
@@ -728,7 +722,7 @@ const ConditionalEmptyState = (
             onclick: () => emitEvent('RunProfilingClicked', {}),
         }),
     }
-    if (projectSummary.connections_ct <= 0) {
+    if (projectSummary.connection_count <= 0) {
         args = {
             label: 'Your project is empty',
             message: EMPTY_STATE_MESSAGE.connection,
@@ -739,7 +733,7 @@ const ConditionalEmptyState = (
                 disabled: !userCanNavigate,
             },
         };
-    } else if (projectSummary.table_groups_ct <= 0) {
+    } else if (projectSummary.table_group_count <= 0) {
         args = {
             label: 'Your project is empty',
             message: EMPTY_STATE_MESSAGE.tableGroup,

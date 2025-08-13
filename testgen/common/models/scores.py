@@ -1,17 +1,23 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from testgen.common.models.table_group import TableGroup
+
 import enum
-import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from itertools import groupby
 from typing import Literal, Self, TypedDict
+from uuid import UUID, uuid4
 
-import pandas as pd
 from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, select, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import relationship
 
 from testgen.common import read_template_sql_file
-from testgen.common.models import Base, engine, get_current_session
+from testgen.common.models import Base, get_current_session
 from testgen.utils import is_uuid4
 
 SCORE_CATEGORIES = [
@@ -44,6 +50,7 @@ Categories = Literal[
     "transform_level",
     "data_product",
 ]
+ScoreTypes = Literal["score", "cde_score"]
 
 
 class ScoreCategory(enum.Enum):
@@ -62,33 +69,33 @@ class ScoreCategory(enum.Enum):
 class ScoreDefinition(Base):
     __tablename__ = "score_definitions"
 
-    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String)
     name: str = Column(String, nullable=False)
     total_score: bool = Column(Boolean, default=True, nullable=False)
     cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
-    criteria: "ScoreDefinitionCriteria" = relationship(
+    criteria: ScoreDefinitionCriteria = relationship(
         "ScoreDefinitionCriteria",
         cascade="all, delete-orphan",
         lazy="joined",
         uselist=False,
         single_parent=True,
     )
-    results: Iterable["ScoreDefinitionResult"] = relationship(
+    results: Iterable[ScoreDefinitionResult] = relationship(
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
         lazy="joined",
     )
-    breakdown: Iterable["ScoreDefinitionBreakdownItem"] = relationship(
+    breakdown: Iterable[ScoreDefinitionBreakdownItem] = relationship(
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
         lazy="joined",
     )
-    history: Iterable["ScoreDefinitionResultHistoryEntry"] = relationship(
+    history: Iterable[ScoreDefinitionResultHistoryEntry] = relationship(
         "ScoreDefinitionResultHistoryEntry",
         order_by="ScoreDefinitionResultHistoryEntry.last_run_time.asc()",
         cascade="all, delete-orphan",
@@ -97,23 +104,23 @@ class ScoreDefinition(Base):
     )
 
     @classmethod
-    def from_table_group(cls, table_group: dict) -> Self:
+    def from_table_group(cls, table_group: TableGroup) -> Self:
         definition = cls()
-        definition.project_code = table_group["project_code"]
-        definition.name = table_group["table_groups_name"]
+        definition.project_code = table_group.project_code
+        definition.name = table_group.table_groups_name
         definition.total_score = True
         definition.cde_score = True
         definition.category = ScoreCategory.dq_dimension
         definition.criteria = ScoreDefinitionCriteria(
             operand="AND",
             filters=[
-                ScoreDefinitionFilter(field="table_groups_name", value=table_group["table_groups_name"]),
+                ScoreDefinitionFilter(field="table_groups_name", value=table_group.table_groups_name),
             ],
         )
         return definition
 
     @classmethod
-    def get(cls, id_: str) -> "Self | None":
+    def get(cls, id_: str) -> Self | None:
         if not is_uuid4(id_):
             return None
 
@@ -129,7 +136,7 @@ class ScoreDefinition(Base):
         project_code: str | None = None,
         name_filter: str | None = None,
         sorted_by: str | None = "name",
-    ) -> "Iterable[Self]":
+    ) -> Iterable[Self]:
         definitions = []
         db_session = get_current_session()
         query = select(ScoreDefinition)
@@ -154,7 +161,7 @@ class ScoreDefinition(Base):
         db_session.delete(self)
         db_session.commit()
 
-    def as_score_card(self) -> "ScoreCard":
+    def as_score_card(self) -> ScoreCard:
         """
         Executes and combines two raw queries to build a fresh score
         card from this definition.
@@ -216,7 +223,7 @@ class ScoreDefinition(Base):
             "definition": self,
         }
 
-    def as_cached_score_card(self) -> "ScoreCard":
+    def as_cached_score_card(self) -> ScoreCard:
         """Reads the cached values to build a scorecard"""
         root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
         score_card: ScoreCard = {
@@ -303,9 +310,9 @@ class ScoreDefinition(Base):
             .replace("{records_count_filters}", records_count_filters)
             .replace("{non_null_columns}", ", ".join(non_null_columns))
         )
-        results = pd.read_sql_query(query, engine)
+        results = get_current_session().execute(query).mappings().all()
 
-        return [row.to_dict() for _, row in results.iterrows()]
+        return [dict(row) for row in results]
 
     def get_score_card_issues(
         self,
@@ -338,17 +345,17 @@ class ScoreDefinition(Base):
 
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
-            dq_dimension_filter = f" AND dq_dimension = '{value_}'"
+            dq_dimension_filter = " AND dq_dimension = :value"
 
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
             .replace("{filters}", filters)
             .replace("{group_by}", group_by)
-            .replace("{value}", value_)
             .replace("{dq_dimension_filter}", dq_dimension_filter)
         )
-        results = pd.read_sql_query(query, engine)
-        return [row.to_dict() for _, row in results.iterrows()]
+        params = {"value": value_}
+        results = get_current_session().execute(text(query), params).mappings().all()
+        return [dict(row) for row in results]
 
     def recalculate_scores_history(self) -> None:
         """
@@ -362,9 +369,9 @@ class ScoreDefinition(Base):
         query = (
             read_template_sql_file(template, sub_directory="score_cards")
             .replace("{filters}", " AND ".join(self._get_raw_query_filters()))
-            .replace("{definition_id}", str(self.id))
         )
-        overall_scores = get_current_session().execute(query).mappings().all()
+        params = {"definition_id": self.id}
+        overall_scores = get_current_session().execute(text(query), params).mappings().all()
         current_history: dict[tuple[datetime, str, str], ScoreDefinitionResultHistoryEntry] = {}
         renewed_history: dict[tuple[datetime, str, str], float] = {}
 
@@ -439,11 +446,11 @@ class ScoreDefinitionCriteria(Base):
 
     __tablename__ = "score_definition_criteria"
 
-    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    definition_id: str = Column(UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
+    definition_id: str = Column(postgresql.UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
     operand: Literal["AND", "OR"] = Column(String, nullable=False, default="AND")
     group_by_field: bool = Column(Boolean, nullable=False, default=True)
-    filters: list["ScoreDefinitionFilter"] = relationship(
+    filters: list[ScoreDefinitionFilter] = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -485,7 +492,7 @@ class ScoreDefinitionCriteria(Base):
         return len(self.filters) > 0
 
     @classmethod
-    def from_filters(cls, filters: list[dict], group_by_field: bool = True) -> "ScoreDefinitionCriteria":
+    def from_filters(cls, filters: list[dict], group_by_field: bool = True) -> ScoreDefinitionCriteria:
         chained_filters: list[ScoreDefinitionFilter] = []
         for filter_ in filters:
             root_filter = current_filter = ScoreDefinitionFilter(
@@ -507,22 +514,22 @@ class ScoreDefinitionCriteria(Base):
 class ScoreDefinitionFilter(Base):
     __tablename__ = "score_definition_filters"
 
-    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    criteria_id = Column(
-        UUID(as_uuid=True),
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
+    criteria_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
         ForeignKey("score_definition_criteria.id", ondelete="CASCADE"),
         nullable=True,
         default=None,
     )
     field: str = Column(String, nullable=False)
     value: str = Column(String, nullable=False)
-    next_filter_id = Column(
-        UUID(as_uuid=True),
+    next_filter_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
         ForeignKey("score_definition_filters.id", ondelete="CASCADE"),
         nullable=True,
         default=None,
     )
-    next_filter: "ScoreDefinitionFilter" = relationship(
+    next_filter: ScoreDefinitionFilter = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -545,8 +552,8 @@ class ScoreDefinitionFilter(Base):
 class ScoreDefinitionResult(Base):
     __tablename__ = "score_definition_results"
 
-    definition_id: str = Column(
-        UUID(as_uuid=True),
+    definition_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
         ForeignKey("score_definitions.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -557,9 +564,9 @@ class ScoreDefinitionResult(Base):
 class ScoreDefinitionBreakdownItem(Base):
     __tablename__ = "score_definition_results_breakdown"
 
-    id: str = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    definition_id: str = Column(
-        UUID(as_uuid=True),
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
+    definition_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
         ForeignKey("score_definitions.id", ondelete="CASCADE"),
     )
     category: str = Column(String, nullable=False)
@@ -588,8 +595,8 @@ class ScoreDefinitionBreakdownItem(Base):
         *,
         definition_id: str,
         category: Categories,
-        score_type: Literal["score", "cde_score"],
-    ) -> "Iterable[Self]":
+        score_type: ScoreTypes,
+    ) -> Iterable[Self]:
         items = []
         db_session = get_current_session()
         query = select(ScoreDefinitionBreakdownItem).where(
@@ -616,8 +623,8 @@ class ScoreDefinitionBreakdownItem(Base):
 class ScoreDefinitionResultHistoryEntry(Base):
     __tablename__ = "score_definition_results_history"
 
-    definition_id: str = Column(
-        UUID(as_uuid=True),
+    definition_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
         ForeignKey("score_definitions.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -637,14 +644,14 @@ class ScoreDefinitionResultHistoryEntry(Base):
         add_latest_runs.sql
         """
         # ruff: noqa: RUF027
-        query = (
-            read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
-            .replace("{project_code}", self.definition.project_code)
-            .replace("{definition_id}", str(self.definition_id))
-            .replace("{score_history_cutoff_time}", self.last_run_time.isoformat())
-        )
+        query = read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
+        params = {
+            "project_code": self.definition.project_code,
+            "definition_id": self.definition_id,
+            "score_history_cutoff_time": self.last_run_time.isoformat(),
+        }
         session = get_current_session()
-        session.execute(query)
+        session.execute(text(query), params)
 
 
 class ScoreCard(TypedDict):
@@ -655,8 +662,8 @@ class ScoreCard(TypedDict):
     cde_score: float
     profiling_score: float
     testing_score: float
-    categories: list["CategoryScore"]
-    history: list["HistoryEntry"]
+    categories: list[CategoryScore]
+    history: list[HistoryEntry]
     definition: ScoreDefinition | None
 
 

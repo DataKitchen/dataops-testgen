@@ -7,5 +7,5 @@
       FROM test_suites ts
  LEFT JOIN test_runs tr
         ON tr.test_suite_id = ts.id
-     WHERE ts.project_code = '{PROJECT_CODE}'
+     WHERE ts.project_code = :PROJECT_CODE
   ORDER BY ts.test_suite;

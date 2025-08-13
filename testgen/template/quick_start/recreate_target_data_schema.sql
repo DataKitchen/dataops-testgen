@@ -153,6 +153,8 @@ DROP TABLE IF EXISTS f_ebike_sales CASCADE;
 CREATE TABLE f_ebike_sales (
     sale_id INTEGER,
     sale_date DATE,
+    sale_date_year INTEGER GENERATED ALWAYS AS (EXTRACT(YEAR FROM sale_date)) STORED,
+    sale_date_month INTEGER GENERATED ALWAYS AS (EXTRACT(MONTH FROM sale_date)) STORED,
     customer_id INT,
     supplier_id INT,
     product_id INT,

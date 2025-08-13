@@ -1,26 +1,7 @@
 /**
- * @typedef ProjectSummary
- * @type {object}
- * @property {string} project_code
- * @property {number} test_runs_count
- * @property {number} profiling_runs_count
- * @property {number} connections_count
- * @property {string} default_connection_id
- *
- * @typedef TestSuiteSummary
- * @type {object}
- * @property {string} id
- * @property {string} test_suite
- * @property {number} test_ct
- * @property {number?} latest_run_start
- * @property {string?} latest_run_id
- * @property {number} last_run_test_ct
- * @property {number} last_run_passed_ct
- * @property {number} last_run_warning_ct
- * @property {number} last_run_failed_ct
- * @property {number} last_run_error_ct
- * @property {number} last_run_dismissed_ct
- *
+ * @import { ProjectSummary } from '../types.js';
+ * @import { TestSuiteSummary } from '../types.js';
+ * 
  * @typedef TableGroupSummary
  * @type {object}
  * @property {string} id
@@ -48,7 +29,7 @@
  *
  * @typedef Properties
  * @type {object}
- * @property {ProjectSummary} project
+ * @property {ProjectSummary} project_summary
  * @property {TableGroupSummary[]} table_groups
  * @property {SortOption[]} table_groups_sort_options
  */
@@ -129,11 +110,16 @@ const ProjectDashboard = (/** @type Properties */ props) => {
             )
             : '',
         () => getValue(tableGroups).length
-            ? div(
-                { class: 'flex-column mt-4' },
-                getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup)),
-            )
-            : ConditionalEmptyState(getValue(props.project)),
+            ? getValue(filteredTableGroups).length
+                ? div(
+                    { class: 'flex-column mt-4' },
+                    getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup))   
+                )
+                : div(
+                    { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                    'No table groups found matching filters',
+                )
+            : ConditionalEmptyState(getValue(props.project_summary)),
     );
 }
 
@@ -173,7 +159,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
         );
     }
 
-    const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start)) / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start * 1000)) / (1000 * 60 * 60 * 24));
 
     return div(
         div(
@@ -283,7 +269,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
         },
     };
 
-    const args = project.connections_count > 0 ? forTablegroups : forConnections;
+    const args = project.connection_count > 0 ? forTablegroups : forConnections;
 
     return EmptyState({
         icon: 'home',

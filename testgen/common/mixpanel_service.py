@@ -9,12 +9,10 @@ from hashlib import blake2b
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-import streamlit as st
-
-import testgen.ui.services.database_service as db
 from testgen import settings
 from testgen.common.models import with_database_session
 from testgen.common.models.settings import PersistedSetting, SettingNotFound
+from testgen.ui.services.database_service import fetch_one_from_db
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -92,14 +90,14 @@ class MixpanelService(Singleton):
         except Exception:
             LOG.exception("Failed to send analytics data")
 
+    @with_database_session
     def get_usage(self):
-        schema: str = st.session_state["dbschema"]
-        query = f"""
+        query = """
         SELECT
-            (SELECT COUNT(*) FROM {schema}.auth_users) AS user_count,
-            (SELECT COUNT(*) FROM {schema}.projects) AS project_count,
-            (SELECT COUNT(*) FROM {schema}.connections) AS connection_count,
-            (SELECT COUNT(*) FROM {schema}.table_groups) AS table_group_count,
-            (SELECT COUNT(*) FROM {schema}.test_suites) AS test_suite_count;
+            (SELECT COUNT(*) FROM auth_users) AS user_count,
+            (SELECT COUNT(*) FROM projects) AS project_count,
+            (SELECT COUNT(*) FROM connections) AS connection_count,
+            (SELECT COUNT(*) FROM table_groups) AS table_group_count,
+            (SELECT COUNT(*) FROM test_suites) AS test_suite_count;
         """
-        return db.retrieve_data(query).iloc[0].to_dict()
+        return fetch_one_from_db(query)

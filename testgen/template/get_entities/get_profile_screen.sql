@@ -1,8 +1,8 @@
 WITH
    profiling as ( SELECT *
                     FROM profile_results
-                   WHERE profile_run_id = '{PROFILE_RUN}'::UUID
-                     AND table_name ILIKE '{TABLE_NAME}' ),
+                   WHERE profile_run_id = :PROFILING_RUN_ID
+                     AND table_name ILIKE :TABLE_NAME ),
    profile_date as (SELECT MAX(run_date) as run_date
                       FROM profiling),
    mults AS ( SELECT p.project_code,

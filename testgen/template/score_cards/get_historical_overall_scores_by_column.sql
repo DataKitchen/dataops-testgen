@@ -19,7 +19,7 @@ FROM (
             AND history.last_run_time = v_dq_profile_scoring_history_by_column.score_history_cutoff_time
         )
     WHERE {filters}
-        AND history.definition_id = '{definition_id}'
+        AND history.definition_id = :definition_id
     GROUP BY project_code,
         history.definition_id,
         history.last_run_time
@@ -39,7 +39,7 @@ FULL OUTER JOIN (
             AND history.last_run_time = v_dq_test_scoring_history_by_column.score_history_cutoff_time
         )
     WHERE {filters}
-        AND history.definition_id = '{definition_id}'
+        AND history.definition_id = :definition_id
     GROUP BY project_code,
         history.definition_id,
         history.last_run_time

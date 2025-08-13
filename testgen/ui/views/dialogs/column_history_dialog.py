@@ -1,13 +1,13 @@
-import json
-
-import pandas as pd
 import streamlit as st
+from sqlalchemy.sql.expression import func
 
-import testgen.ui.services.database_service as db
+from testgen.common.models import with_database_session
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.queries.profiling_queries import COLUMN_PROFILING_FIELDS
-from testgen.utils import format_field
+from testgen.ui.services.database_service import fetch_one_from_db
+from testgen.utils import make_json_safe
 
 
 def column_history_dialog(*args) -> None:
@@ -16,6 +16,7 @@ def column_history_dialog(*args) -> None:
     
 
 @st.dialog(title="Column History")
+@with_database_session
 def _column_history_dialog(
     table_group_id: str,
     schema_name: str,
@@ -31,8 +32,12 @@ def _column_history_dialog(
 
     with loading_column:
         with st.spinner("Loading data ..."):
-            profiling_runs = get_profiling_runs(table_group_id, add_date)
-            run_id = st.session_state.get("column_history_dialog:run_id") or profiling_runs.iloc[0]["id"]
+            profiling_runs = ProfilingRun.select_minimal_where(
+                ProfilingRun.table_groups_id == table_group_id,
+                ProfilingRun.profiling_starttime >= func.to_timestamp(add_date),
+            )
+            profiling_runs = [run.to_dict(json_safe=True) for run in profiling_runs]
+            run_id = st.session_state.get("column_history_dialog:run_id") or profiling_runs[0]["id"]
             selected_item = get_run_column(run_id, schema_name, table_name, column_name)
 
     testgen_component(
@@ -40,11 +45,11 @@ def _column_history_dialog(
         props={
             "profiling_runs": [
                 {
-                    "run_id": format_field(run["id"]),
-                    "run_date": format_field(run["profiling_starttime"]),
-                } for _, run in profiling_runs.iterrows()
+                    "run_id": run["id"],
+                    "run_date": run["profiling_starttime"],
+                } for run in profiling_runs
             ],
-            "selected_item": selected_item,
+            "selected_item": make_json_safe(selected_item),
         },
         on_change_handlers={
             "RunSelected": on_run_selected,
@@ -57,38 +62,23 @@ def on_run_selected(run_id: str) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_runs(
-    table_group_id: str,
-    after_date: int,
-) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    query = f"""
-    SELECT
-        id::VARCHAR,
-        profiling_starttime
-    FROM {schema}.profiling_runs
-    WHERE table_groups_id = '{table_group_id}'
-       AND profiling_starttime >= TO_TIMESTAMP({after_date / 1000})
-    ORDER BY profiling_starttime DESC;
-    """
-    return db.retrieve_data(query)
-
-
-@st.cache_data(show_spinner=False)
 def get_run_column(run_id: str, schema_name: str, table_name: str, column_name: str) -> dict:
-    schema: str = st.session_state["dbschema"]
     query = f"""
     SELECT
         profile_run_id::VARCHAR,
         general_type,
         {COLUMN_PROFILING_FIELDS}
-    FROM {schema}.profile_results
-    WHERE profile_run_id = '{run_id}'
-        AND schema_name = '{schema_name}'
-        AND table_name = '{table_name}'
-        AND column_name = '{column_name}';
+    FROM profile_results
+    WHERE profile_run_id = :run_id
+        AND schema_name = :schema_name
+        AND table_name = :table_name
+        AND column_name = :column_name;
     """
-    results = db.retrieve_data(query)
-    if not results.empty:
-        # to_json converts datetimes, NaN, etc, to JSON-safe values (Note: to_dict does not)
-        return json.loads(results.to_json(orient="records"))[0]
+    params = {
+        "run_id": run_id,
+        "schema_name": schema_name,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
+    result = fetch_one_from_db(query, params)
+    return dict(result) if result else None

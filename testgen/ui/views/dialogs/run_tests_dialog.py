@@ -1,24 +1,27 @@
 import time
 
-import pandas as pd
 import streamlit as st
 
-import testgen.ui.services.database_service as db
 from testgen.commands.run_execute_tests import run_execution_steps_in_background
+from testgen.common.models import with_database_session
+from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.session import session
+from testgen.utils import to_dataframe
 
 LINK_KEY = "run_tests_dialog:keys:go-to-runs"
 LINK_HREF = "test-runs"
 
 
 @st.dialog(title="Run Tests")
-def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, default_test_suite_id: str | None = None) -> None:
-    if test_suite is not None and not test_suite.empty:
-        test_suite_id: str = test_suite["id"]
-        test_suite_name: str = test_suite["test_suite"]
+@with_database_session
+def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = None, default_test_suite_id: str | None = None) -> None:
+    if test_suite:
+        test_suite_id: str = str(test_suite.id)
+        test_suite_name: str = test_suite.test_suite
     else:
-        test_suites_df = get_test_suite_options(project_code)
+        test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code)
+        test_suites_df = to_dataframe(test_suites, TestSuiteMinimal.columns())
         test_suite_id: str = testgen.select(
             label="Test Suite",
             options=test_suites_df,
@@ -29,7 +32,7 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
             placeholder="Select test suite to run",
         )
         if test_suite_id:
-            test_suite_name: str = test_suites_df.loc[test_suites_df["id"] == test_suite_id, "test_suite"].iloc[0]
+            test_suite_name: str = next(item.test_suite for item in test_suites if item.id == test_suite_id)
         testgen.whitespace(1)
 
     if test_suite_id:
@@ -83,16 +86,3 @@ def run_tests_dialog(project_code: str, test_suite: pd.Series | None = None, def
                 time.sleep(2)
                 st.cache_data.clear()
                 st.rerun()
-
-
-@st.cache_data(show_spinner=False)
-def get_test_suite_options(project_code: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    sql = f"""
-    SELECT test_suites.id::VARCHAR(50),
-        test_suites.test_suite
-    FROM {schema}.test_suites
-    WHERE test_suites.project_code = '{project_code}'
-    ORDER BY test_suites.test_suite
-    """
-    return db.retrieve_data(sql)

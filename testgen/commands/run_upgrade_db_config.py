@@ -1,7 +1,7 @@
 import logging
 
 from testgen import settings
-from testgen.common import RetrieveSingleResultValue, RunActionQueryList, read_template_sql_file
+from testgen.common import execute_db_queries, fetch_dict_from_db, read_template_sql_file
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import replace_params
 from testgen.common.read_file import get_template_files
@@ -22,9 +22,8 @@ def _get_revision_prefix(params_mapping):
     strQuery = read_template_sql_file("get_tg_revision.sql", "dbupgrade_helpers")
     strQuery = replace_params(strQuery, params_mapping)
 
-    intNextRevision = RetrieveSingleResultValue("DKTG", strQuery)
-
-    return intNextRevision
+    result = fetch_dict_from_db(strQuery)
+    return result[0]["revision"]
 
 
 def _get_next_revision_prefix(params_mapping):
@@ -51,7 +50,7 @@ def _get_upgrade_template_directory():
     return "dbupgrade"
 
 
-def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = ""):
+def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = "") -> tuple[list[tuple[str, dict]], str]:
     files = sorted(get_template_files(mask=mask, sub_directory=sub_directory), key=lambda key: str(key))
 
     max_prefix = ""
@@ -60,7 +59,7 @@ def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r
         if file.name > min_val:
             template = file.read_text("utf-8")
             query = replace_params(template, params_mapping)
-            queries.append(query)
+            queries.append((query, None))
             max_prefix = file.name[0:4]
 
     if len(queries) == 0:
@@ -69,14 +68,13 @@ def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r
     return queries, max_prefix
 
 
-def _execute_upgrade_scripts(params_mapping, lstScripts):
+def _execute_upgrade_scripts(params_mapping: dict, lstScripts: list[tuple[str, dict]]):
     # Run scripts using admin credentials
-    RunActionQueryList(
-        "DKTG",
+    execute_db_queries(
         lstScripts,
-        "S",
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
     )
     return True
 
@@ -92,12 +90,11 @@ def _refresh_static_metadata(params_mapping):
     strQueryRights = read_template_sql_file("075_grant_role_rights.sql", "dbsetup")
     strQueryRights = replace_params(strQueryRights, params_mapping)
 
-    RunActionQueryList(
-        "DKTG",
-        [strQueryMetadata, strQueryViews, strQueryRights],
-        "S",
+    execute_db_queries(
+        [(strQueryMetadata, None), (strQueryViews, None), (strQueryRights, None)],
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
     )
 
 
@@ -107,38 +104,34 @@ def _update_revision_number(params_mapping, latest_prefix_applied):
     strQuery = strQuery.replace("{DB_REVISION}", str(int(latest_prefix_applied)))
     strQuery = replace_params(strQuery, params_mapping)
 
-    RunActionQueryList(
-        "DKTG",
-        [strQuery],
-        "S",
+    execute_db_queries(
+        [(strQuery, None)],
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        pwd_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
     )
 
 
 def run_upgrade_db_config() -> bool:
-    LOG.info("Running run_upgrade_db_config")
-
+    LOG.info("Upgrading system version")
     params_mapping = _get_params_mapping()
+    current_revision = _get_revision_prefix(params_mapping)
 
-    # Look for prefix one higher than last revision extant in db
-    strNextPrefix = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
-    # Retrieve template upgrade directory name
+    next_revision = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
     upgrade_dir = _get_upgrade_template_directory()
 
-    # Retrieve and execute upgrade scripts, if any
-    lstQueries, max_prefix = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
-    LOG.info(f"Updating db config qty of queries: {len(lstQueries)}. New prefix: {max_prefix}. Queries: {lstQueries}")
-    if len(lstQueries) > 0:
-        has_been_upgraded = _execute_upgrade_scripts(params_mapping, lstQueries)
+    queries, max_revision = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=next_revision)
+    LOG.info(f"Current revision: {current_revision}. Latest revision: {max_revision or current_revision}. Upgrade scripts: {len(queries)}")
+    if len(queries) > 0:
+        has_been_upgraded = _execute_upgrade_scripts(params_mapping, queries)
     else:
         has_been_upgraded = False
 
+    LOG.info("Refreshing static metadata")
     _refresh_static_metadata(params_mapping)
 
     if has_been_upgraded:
-        # Update revision number to max prefix found in update scripts
-        _update_revision_number(params_mapping, max_prefix)
+        _update_revision_number(params_mapping, max_revision)
         LOG.info("Application data was successfully upgraded, and static metadata was refreshed.")
     else:
         LOG.info("Database upgrade was not required. Static metadata was refreshed.")

@@ -6,11 +6,11 @@ from testgen import settings
 from testgen.common import version_service
 from testgen.common.docker_service import check_basic_configuration
 from testgen.common.models import with_database_session
+from testgen.common.models.project import Project
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
-from testgen.ui.services import database_service as db
-from testgen.ui.services import javascript_service, project_service, user_session_service
+from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
 
 
@@ -37,7 +37,6 @@ def render(log_level: int = logging.INFO):
 
     set_locale()
 
-    session.dbschema = db.get_schema()
     session.sidebar_project = (
         session.page_args_pending_router and session.page_args_pending_router.get("project_code")
     ) or st.query_params.get("project_code", session.sidebar_project)
@@ -50,7 +49,7 @@ def render(log_level: int = logging.INFO):
     if session.authentication_status and not session.logging_in:
         with st.sidebar:
             testgen.sidebar(
-                projects=project_service.get_projects(),
+                projects=Project.select_where(),
                 current_project=session.sidebar_project,
                 menu=application.menu,
                 current_page=session.current_page,

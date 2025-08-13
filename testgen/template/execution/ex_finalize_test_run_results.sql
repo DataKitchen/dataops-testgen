@@ -30,5 +30,5 @@ UPDATE test_results
 INNER JOIN test_suites s ON r.test_suite_id = s.id
 INNER JOIN test_definitions d ON r.test_definition_id = d.id
 INNER JOIN test_types tt ON r.test_type = tt.test_type
-WHERE r.test_run_id = '{TEST_RUN_ID}'
+WHERE r.test_run_id = :TEST_RUN_ID
   AND test_results.id = r.id;

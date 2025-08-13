@@ -22,7 +22,7 @@ WITH seq_digit  AS (
                    AND  t.schema_name = r.schema_name
                    AND  t.table_name = r.table_name
                    AND  t.cat_sequence = r.cat_sequence)
-                  WHERE t.test_run_id = '{TEST_RUN_ID}'
+                  WHERE t.test_run_id = :TEST_RUN_ID
                     AND t.column_names > ''
       ),
       parsed_results AS (
@@ -51,15 +51,16 @@ INSERT INTO test_results
           test_time, starttime, endtime, schema_name, table_name, column_names,
           skip_errors, input_parameters, result_code,
           result_measure, test_action, subset_condition, result_query, test_description)
-SELECT '{TEST_RUN_ID}' as test_run_id,
-        r.test_type, r.test_definition_id::UUID, '{TEST_SUITE_ID}'::UUID, r.test_time, r.start_time, r.end_time,
+SELECT :TEST_RUN_ID as test_run_id,
+        r.test_type, r.test_definition_id::UUID, :TEST_SUITE_ID, r.test_time, r.start_time, r.end_time,
         r.schema_name, r.table_name, r.column_name,
         0 as skip_errors,
         r.test_parms as input_parameters,
         r.test_result::INT as result_code,
         r.measure_result as result_measure,
         r.test_action, NULL as subset_condition,
-        'SELECT ' || LEFT(REPLACE(r.condition, '{RUN_' || 'DATE}', '{RUN_DATE}'), LENGTH(REPLACE(r.condition, '{RUN_' || 'DATE}', '{RUN_DATE}')) - LENGTH(' THEN ''0,'' ELSE ''1,'' END'))  || ' THEN 0 ELSE 1 END'
+        'SELECT ' || LEFT(REPLACE(r.condition, '{RUN_' || 'DATE}', :RUN_DATE), LENGTH(REPLACE(r.condition, '{RUN_' || 'DATE}', :RUN_DATE
+        )) - LENGTH(' THEN ''0,'' ELSE ''1,'' END'))  || ' THEN 0 ELSE 1 END'
            || ' FROM ' || r.schema_name || '.' || r.table_name as result_query,
         COALESCE(r.test_description, c.test_description) as test_description
   FROM parsed_results r

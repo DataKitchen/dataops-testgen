@@ -4,7 +4,7 @@ INSERT INTO profile_anomaly_results
 SELECT p.project_code,
        p.table_groups_id,
        p.profile_run_id,
-       '{ANOMALY_ID}' as anomaly_id,
+       :ANOMALY_ID as anomaly_id,
        p.schema_name,
        p.table_name,
        p.column_name,
@@ -16,7 +16,7 @@ LEFT JOIN v_inactive_anomalies i
  AND  p.schema_name = i.schema_name
  AND  p.table_name = i.table_name
  AND  p.column_name = i.column_name
- AND  '{ANOMALY_ID}' = i.anomaly_id)
- WHERE p.profile_run_id = '{PROFILE_RUN_ID}'::UUID
+ AND  :ANOMALY_ID = i.anomaly_id)
+ WHERE p.profile_run_id = :PROFILE_RUN_ID
    AND i.anomaly_id IS NULL
    AND ({ANOMALY_CRITERIA});

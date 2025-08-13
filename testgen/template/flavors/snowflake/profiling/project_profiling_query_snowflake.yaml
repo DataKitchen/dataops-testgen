@@ -206,6 +206,15 @@ strTemplate99_N: |
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
         FROM {DATA_SCHEMA}.{DATA_TABLE} LIMIT 1) pctile
+
+strTemplate99_N_sampling: |
+      ,
+      (SELECT
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
+        FROM {DATA_SCHEMA}.{DATA_TABLE} SAMPLE ({SAMPLE_SIZE} rows) LIMIT 1 ) pctile
+
 strTemplate99_else: ;
 
 strTemplate100_sampling: ' '

@@ -1,7 +1,8 @@
 import logging
 import time
-from typing import Literal
+from collections.abc import Iterable
 
+from testgen.common.models.project import Project
 from testgen.common.version_service import Version
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
@@ -17,7 +18,7 @@ LOGOUT_PATH = "logout"
 
 def sidebar(
     key: str = SIDEBAR_KEY,
-    projects: list[dict[Literal["name", "codde"], str]] | None = None,
+    projects: Iterable[Project] | None = None,
     current_project: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
@@ -39,7 +40,7 @@ def sidebar(
     component(
         id_="sidebar",
         props={
-            "projects": projects,
+            "projects": [ {"code": item.project_code, "name": item.project_name} for item in projects ],
             "current_project": current_project,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,

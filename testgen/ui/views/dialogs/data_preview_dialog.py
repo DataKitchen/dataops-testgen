@@ -1,8 +1,10 @@
 import pandas as pd
 import streamlit as st
 
-import testgen.ui.services.database_service as db
+from testgen.common.models.connection import Connection
 from testgen.ui.components import widgets as testgen
+from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.utils import to_dataframe
 
 
 @st.dialog(title="Data Preview")
@@ -40,31 +42,10 @@ def get_preview_data(
     table_name: str,
     column_name: str | None = None,
 ) -> pd.DataFrame:
-    tg_schema = st.session_state["dbschema"]
-    connection_query=f"""
-    SELECT
-        c.sql_flavor,
-        c.project_host,
-        c.project_port,
-        c.project_db,
-        c.project_user,
-        c.project_pw_encrypted,
-        c.url,
-        c.connect_by_url,
-        c.connect_by_key,
-        c.private_key,
-        c.private_key_passphrase,
-        c.http_path
-    FROM {tg_schema}.table_groups tg
-        INNER JOIN {tg_schema}.connections c ON (
-            tg.connection_id = c.connection_id
-        )
-    WHERE tg.id = '{table_group_id}';
-    """
-    connection_df = db.retrieve_data(connection_query).iloc[0]
+    connection = Connection.get_by_table_group(table_group_id)
 
-    if not connection_df.empty:
-        use_top = connection_df["sql_flavor"] == "mssql"
+    if connection:
+        use_top = connection.sql_flavor == "mssql"
         query = f"""
         SELECT DISTINCT
             {"TOP 100" if use_top else ""}
@@ -74,24 +55,11 @@ def get_preview_data(
         """
 
         try:
-            df = db.retrieve_target_db_df(
-                connection_df["sql_flavor"],
-                connection_df["project_host"],
-                connection_df["project_port"],
-                connection_df["project_db"],
-                connection_df["project_user"],
-                connection_df["project_pw_encrypted"],
-                query,
-                connection_df["url"],
-                connection_df["connect_by_url"],
-                connection_df["connect_by_key"],
-                connection_df["private_key"],
-                connection_df["private_key_passphrase"],
-                connection_df["http_path"],
-            )
+            results = fetch_from_target_db(connection, query)
         except:
             return pd.DataFrame()
         else:
+            df = to_dataframe(results)
             df.index = df.index + 1
             df.fillna("<null>", inplace=True)
             return df

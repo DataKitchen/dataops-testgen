@@ -26,7 +26,7 @@
  * @property {string} project_port
  * @property {string} project_db
  * @property {string} project_user
- * @property {string} password
+ * @property {string} project_pw_encrypted
  * @property {boolean} connect_by_url
  * @property {string?} url
  * @property {boolean} connect_by_key
@@ -109,7 +109,7 @@ const ConnectionForm = (props, saveButton) => {
         project_port: connection?.project_port ?? defaultPort ?? '',
         project_db: connection?.project_db ?? '',
         project_user: connection?.project_user ?? '',
-        password: isEditMode ? '' : (connection?.password ?? ''),
+        project_pw_encrypted: isEditMode ? '' : (connection?.project_pw_encrypted ?? ''),
         connect_by_url: connection?.connect_by_url ?? false,
         connect_by_key: connection?.connect_by_key ?? false,
         private_key: isEditMode ? '' : (connection?.private_key ?? ''),
@@ -346,7 +346,7 @@ const RedshiftForm = (
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
-    const connectionPassword = van.state(connection.rawVal?.password ?? '');
+    const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
 
     const [prefixPart, sufixPart] = originalURLTemplate.split('@');
     const connectionStringPrefix = van.state(`${prefixPart}@`);
@@ -376,7 +376,7 @@ const RedshiftForm = (
             project_port: connectionPort.val,
             project_db: connectionDatabase.val,
             project_user: connectionUsername.val,
-            password: connectionPassword.val,
+            project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
             connect_by_key: false,
@@ -486,7 +486,7 @@ const RedshiftForm = (
                 value: connectionPassword,
                 height: 38,
                 type: 'password',
-                placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
+                placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
                     validityPerField['password'] = state.valid;
@@ -528,7 +528,7 @@ const DatabricksForm = (
     const connectionHttpPath = van.state(connection.rawVal?.http_path ?? '');
     const connectionDatabase = van.state(connection.rawVal?.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal?.project_user ?? '');
-    const connectionPassword = van.state(connection.rawVal?.password ?? '');
+    const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
 
     const [prefixPart, sufixPart] = originalURLTemplate.split('@');
     const connectionStringPrefix = van.state(`${prefixPart}@`);
@@ -558,7 +558,7 @@ const DatabricksForm = (
             project_port: connectionPort.val,
             project_db: connectionDatabase.val,
             project_user: connectionUsername.val,
-            password: connectionPassword.val,
+            project_pw_encrypted: connectionPassword.val,
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
@@ -683,7 +683,7 @@ const DatabricksForm = (
                 value: connectionPassword,
                 height: 38,
                 type: 'password',
-                placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
+                placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
                     validityPerField['password'] = state.valid;
@@ -720,7 +720,7 @@ const SnowflakeForm = (
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
-    const connectionPassword = van.state(connection.rawVal?.password ?? '');
+    const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
     const connectionPrivateKey = van.state(connection.rawVal?.private_key ?? '');
     const connectionPrivateKeyPassphrase = van.state(
         clearPrivateKeyPhrase.rawVal
@@ -756,7 +756,7 @@ const SnowflakeForm = (
             project_port: connectionPort.val,
             project_db: connectionDatabase.val,
             project_user: connectionUsername.val,
-            password: connectionPassword.val,
+            project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
             connect_by_key: connectByKey.val,
@@ -953,7 +953,7 @@ const SnowflakeForm = (
                     value: connectionPassword,
                     height: 38,
                     type: 'password',
-                    placeholder: (originalConnection?.connection_id && originalConnection?.password) ? secretsPlaceholder : '',
+                    placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                     onChange: (value, state) => {
                         connectionPassword.val = value;
                         validityPerField['password'] = state.valid;
@@ -968,7 +968,7 @@ const SnowflakeForm = (
 function formatURL(url, host, port, database, httpPath) {
     return url.replace('<host>', host)
         .replace('<port>', port)
-        .replace('<db_name>', database)
+        .replace('<database>', database)
         .replace('<http_path>', httpPath);
 }
 

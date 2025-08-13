@@ -143,12 +143,22 @@ const TableGroupWizard = (props) => {
                 stepsValidity.testTableGroup.val = false;
                 stepsState.testTableGroup.val = false;
 
-                emitEvent('PreviewTableGroupClicked', { payload: tableGroup });
+                emitEvent('PreviewTableGroupClicked', { payload: {table_group: tableGroup} });
             }
 
             return TableGroupTest(
                 tableGroup.table_group_schema ?? '--',
                 props.table_group_preview,
+                {
+                    onVerifyAcess: () => {
+                        emitEvent('PreviewTableGroupClicked', {
+                            payload: {
+                                table_group: stepsState.tableGroup.rawVal,
+                                verify_access: true,
+                            },
+                        });
+                    }
+                }
             );
         }),
         () => {

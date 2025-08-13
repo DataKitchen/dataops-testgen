@@ -7,6 +7,7 @@ import streamlit as st
 
 import testgen.ui.navigation.page
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models.project import Project
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -114,8 +115,8 @@ class Router(Singleton):
     def navigate_with_warning(self, warning: str, to: str, with_args: dict = {}) -> None:  # noqa: B006
         st.warning(warning)
         time.sleep(3)
-        self.navigate(to, with_args)
-
+        session.sidebar_project = session.sidebar_project or Project.select_where()[0].project_code
+        self.navigate(to, {"project_code": session.sidebar_project, **with_args})
 
     def set_query_params(self, with_args: dict) -> None:
         params = st.query_params

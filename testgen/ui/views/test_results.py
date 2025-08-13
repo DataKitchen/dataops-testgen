@@ -2,7 +2,8 @@ import typing
 from functools import partial
 from io import BytesIO
 from itertools import zip_longest
-from operator import itemgetter
+from operator import attrgetter
+from uuid import UUID
 
 import pandas as pd
 import plotly.express as px
@@ -10,12 +11,14 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
-import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
-import testgen.ui.services.query_service as dq
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import with_database_session
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -27,14 +30,16 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
-from testgen.ui.services import project_service, test_definition_service, test_results_service, user_session_service
+from testgen.ui.queries import test_result_queries
+from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
+from testgen.ui.services import user_session_service
+from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
-from testgen.utils import friendly_score, is_uuid4
+from testgen.utils import friendly_score
 
-ALWAYS_SPIN = False
 PAGE_PATH = "test-runs:results"
 
 
@@ -53,31 +58,32 @@ class TestResultsPage(Page):
         test_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        action: str | None = None,
         **_kwargs,
     ) -> None:
-        run_df = get_run_by_id(run_id)
-        if run_df.empty:
+        run = TestRun.get_minimal(run_id)
+        if not run:
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",
             )
             return
 
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["test_starttime"])
-        project_service.set_sidebar_project(run_df["project_code"])
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run.test_starttime)
+        session.set_sidebar_project(run.project_code)
 
         testgen.page_header(
             "Test Results",
             "view-testgen-test-results",
             breadcrumbs=[
-                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run_df["project_code"] } },
-                { "label": f"{run_df['test_suite']} | {run_date}" },
+                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
+                { "label": f"{run.test_suite} | {run_date}" },
             ],
         )
 
-        summary_column, score_column, actions_column = st.columns([.4, .2, .4], vertical_alignment="bottom")
-        table_filter_column, column_filter_column, test_type_filter_column, status_filter_column, sort_column, export_button_column = st.columns(
-            [.175, .175, .2, .2, .1, .15], vertical_alignment="bottom"
+        summary_column, score_column, actions_column, export_button_column = st.columns([.3, .15, .3, .15], vertical_alignment="bottom")
+        status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, action_filter_column, sort_column = st.columns(
+            [.175, .2, .2, .175, .15, .1], vertical_alignment="bottom"
         )
 
         testgen.flex_row_end(actions_column)
@@ -87,8 +93,21 @@ class TestResultsPage(Page):
             tests_summary = get_test_result_summary(run_id)
             testgen.summary_bar(items=tests_summary, height=20, width=800)
 
-        with score_column:
-            render_score(run_df["project_code"], run_id)
+        with status_filter_column:
+            status_options = [
+                "Failed + Warning",
+                "Failed",
+                "Warning",
+                "Passed",
+                "Error",
+            ]
+            status = testgen.select(
+                options=status_options,
+                default_value=status or "Failed + Warning",
+                bind_to_query="status",
+                bind_empty_value=True,
+                label="Status",
+            )
 
         run_columns_df = get_test_run_columns(run_id)
         with table_filter_column:
@@ -126,21 +145,14 @@ class TestResultsPage(Page):
                 label="Test Type",
             )
 
-        with status_filter_column:
-            status_options = [
-                "Failed + Warning",
-                "Failed",
-                "Warning",
-                "Passed",
-                "Error",
-            ]
-            status = testgen.select(
-                options=status_options,
-                default_value=status or "Failed + Warning",
-                bind_to_query="status",
-                bind_empty_value=True,
-                label="Status",
+        with action_filter_column:
+            action = testgen.select(
+                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
+                default_value=action,
+                bind_to_query="action",
+                label="Action",
             )
+            action = action.split("	", 1)[1] if action else None
 
         with sort_column:
             sortable_columns = (
@@ -163,30 +175,31 @@ class TestResultsPage(Page):
             case "Failed + Warning":
                 status = ["Failed", "Warning"]
             case "Failed":
-                status = "Failed"
+                status = ["Failed"]
             case "Warning":
-                status = "Warning"
+                status = ["Warning"]
             case "Passed":
-                status = "Passed"
+                status = ["Passed"]
             case "Error":
-                status = "Error"
+                status = ["Error"]
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
             run_id,
             run_date,
-            run_df["test_suite"],
+            run.test_suite_id,
             export_button_column,
             status,
             test_type,
             table_name,
             column_name,
+            action,
             sorting_columns,
             do_multi_select,
         )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
-        affected_cached_functions = [get_test_disposition, get_test_results]
+        affected_cached_functions = [get_test_disposition, test_result_queries.get_test_results]
 
         disposition_actions = [
             { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
@@ -216,6 +229,11 @@ class TestResultsPage(Page):
                         lst_cached_functions=affected_cached_functions,
                     )
 
+        # Needs to be after all data loading/updating
+        # Otherwise the database session is lost for any queries after the fragment -_-
+        with score_column:
+            render_score(run.project_code, run_id)
+
         # Help Links
         st.markdown(
             "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
@@ -223,13 +241,14 @@ class TestResultsPage(Page):
 
 
 @st.fragment
+@with_database_session
 def render_score(project_code: str, run_id: str):
-    run_df = get_run_by_id(run_id)
+    run = TestRun.get_minimal(run_id)
     testgen.flex_row_center()
     with st.container():
         testgen.caption("Score", "text-align: center;")
         testgen.text(
-            friendly_score(run_df["dq_score_test_run"]) or "--",
+            friendly_score(run.dq_score_test_run) or "--",
             "font-size: 28px;",
         )
 
@@ -240,12 +259,12 @@ def render_score(project_code: str, run_id: str):
             style="color: var(--secondary-text-color);",
             icon="autorenew",
             icon_size=22,
-            tooltip=f"Recalculate scores for run {'and table group' if run_df["is_latest_run"] else ''}",
+            tooltip=f"Recalculate scores for run {'and table group' if run.is_latest_run else ''}",
             on_click=partial(
                 refresh_score,
                 project_code,
                 run_id,
-                run_df["table_groups_id"] if run_df["is_latest_run"] else None,
+                run.table_groups_id if run.is_latest_run else None,
             ),
         )
 
@@ -255,77 +274,35 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
     st.cache_data.clear()
 
 
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_run_by_id(test_run_id: str) -> pd.Series:
-    if not is_uuid4(test_run_id):
-        return pd.Series()
-
-    schema: str = st.session_state["dbschema"]
-    sql = f"""
-           SELECT tr.test_starttime,
-                  ts.test_suite,
-                  ts.project_code,
-                  ts.table_groups_id::VARCHAR,
-                  tr.dq_score_test_run,
-                  CASE WHEN tr.id = ts.last_complete_test_run_id THEN true ELSE false END AS is_latest_run
-             FROM {schema}.test_runs tr
-       INNER JOIN {schema}.test_suites ts ON tr.test_suite_id = ts.id
-            WHERE tr.id = '{test_run_id}'::UUID;
-    """
-    df = db.retrieve_data(sql)
-    if not df.empty:
-        return df.iloc[0]
-    else:
-        return pd.Series()
-
-
 @st.cache_data(show_spinner=False)
 def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    sql = f"""
+    query = """
     SELECT r.table_name as table_name, r.column_names AS column_name, t.test_name_short as test_name_short, t.test_type as test_type
-    FROM {schema}.test_results r
-    LEFT JOIN {schema}.test_types t ON t.test_type = r.test_type
-    WHERE test_run_id = '{test_run_id}'
+    FROM test_results r
+    LEFT JOIN test_types t ON t.test_type = r.test_type
+    WHERE test_run_id = :test_run_id
     ORDER BY table_name, column_names;
     """
-    return db.retrieve_data(sql)
+    return fetch_df_from_db(query, {"test_run_id": test_run_id})
 
 
 @st.cache_data(show_spinner=False)
-def get_test_results(
-    run_id: str,
-    test_status: str | list[str] | None = None,
-    test_type_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    sorting_columns: list[str] | None = None,
-) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    return test_results_service.get_test_results(schema, run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
-
-
-@st.cache_data(show_spinner=False)
-def get_test_disposition(str_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-        SELECT id::VARCHAR, disposition
-          FROM {str_schema}.test_results
-         WHERE test_run_id = '{str_run_id}';
+def get_test_disposition(test_run_id: str) -> pd.DataFrame:
+    query = """
+    SELECT id::VARCHAR, disposition
+    FROM test_results
+    WHERE test_run_id = :test_run_id;
     """
-
-    df = db.retrieve_data(str_sql)
-
+    df = fetch_df_from_db(query, {"test_run_id": test_run_id})
     dct_replace = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇", "Passed": ""}
     df["action"] = df["disposition"].replace(dct_replace)
 
     return df[["id", "action"]]
 
 
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_result_summary(run_id):
-    schema = st.session_state["dbschema"]
-    sql = f"""
+@st.cache_data(show_spinner=False)
+def get_test_result_summary(test_run_id: str) -> list[dict]:
+    query = """
     SELECT SUM(
             CASE
                 WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
@@ -360,77 +337,49 @@ def get_test_result_summary(run_id):
                 ELSE 0
             END
         ) as dismissed_ct
-    FROM {schema}.test_runs
-        LEFT JOIN {schema}.test_results ON (
-            test_runs.id = test_results.test_run_id
-        )
-    WHERE test_runs.id = '{run_id}'::UUID;
+    FROM test_runs
+    LEFT JOIN test_results ON (
+        test_runs.id = test_results.test_run_id
+    )
+    WHERE test_runs.id = :test_run_id;
     """
-    df = db.retrieve_data(sql)
+    result = fetch_one_from_db(query, {"test_run_id": test_run_id})
 
     return [
-        { "label": "Passed", "value": int(df.at[0, "passed_ct"]), "color": "green" },
-        { "label": "Warning", "value": int(df.at[0, "warning_ct"]), "color": "yellow" },
-        { "label": "Failed", "value": int(df.at[0, "failed_ct"]), "color": "red" },
-        { "label": "Error", "value": int(df.at[0, "error_ct"]), "color": "brown" },
-        { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
+        { "label": "Passed", "value": result.passed_ct, "color": "green" },
+        { "label": "Warning", "value": result.warning_ct, "color": "yellow" },
+        { "label": "Failed", "value": result.failed_ct, "color": "red" },
+        { "label": "Error", "value": result.error_ct, "color": "brown" },
+        { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
     ]
 
 
-@st.cache_data(show_spinner=ALWAYS_SPIN)
-def get_test_definition(str_test_def_id):
-    str_schema = st.session_state["dbschema"]
-    return test_definition_service.get_test_definition(str_schema, str_test_def_id)
-
-
-@st.cache_data(show_spinner=False)
-def do_source_data_lookup(selected_row):
-    schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup(schema, selected_row, limit=500)
-
-
-@st.cache_data(show_spinner=False)
-def do_source_data_lookup_custom(selected_row):
-    schema = st.session_state["dbschema"]
-    return test_results_service.do_source_data_lookup_custom(schema, selected_row, limit=500)
-
-
-@st.cache_data(show_spinner=False)
-def get_test_result_history(selected_row):
-    schema = st.session_state["dbschema"]
-    return test_results_service.get_test_result_history(schema, selected_row)
-
-
-def show_test_def_detail(test_def_id: str):
-    def readable_boolean(v: typing.Literal["Y", "N"]):
-        return "Yes" if v == "Y" else "No"
-
-    if not test_def_id:
+def show_test_def_detail(test_definition_id: str, test_suite: TestSuite):
+    def readable_boolean(v: bool):
+        return "Yes" if v else "No"
+    
+    if not test_definition_id:
         st.warning("Test definition no longer exists.")
         return
+    
+    test_definition = TestDefinition.get(test_definition_id)
 
-    df = get_test_definition(test_def_id)
-
-    specs = []
-    if not df.empty:
-        test_definition = df.iloc[0]
-        row = test_definition
-
-        dynamic_attributes_labels_raw: str = test_definition["default_parm_prompts"]
+    if test_definition:
+        dynamic_attributes_labels_raw = test_definition.default_parm_prompts
         if not dynamic_attributes_labels_raw:
             dynamic_attributes_labels_raw = ""
         dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
-        dynamic_attributes_raw: str = test_definition["default_parm_columns"]
+        dynamic_attributes_raw = test_definition.default_parm_columns
         dynamic_attributes_fields = dynamic_attributes_raw.split(",")
-        dynamic_attributes_values = itemgetter(*dynamic_attributes_fields)(test_definition)\
+        dynamic_attributes_values = attrgetter(*dynamic_attributes_fields)(test_definition)\
             if len(dynamic_attributes_fields) > 1\
-            else (test_definition[dynamic_attributes_fields[0]],)
+            else (getattr(test_definition, dynamic_attributes_fields[0]),)
 
         for field_name in dynamic_attributes_fields[len(dynamic_attributes_labels):]:
             dynamic_attributes_labels.append(snake_case_to_title_case(field_name))
 
-        dynamic_attributes_help_raw: str = test_definition["default_parm_help"]
+        dynamic_attributes_help_raw = test_definition.default_parm_help
         if not dynamic_attributes_help_raw:
             dynamic_attributes_help_raw = ""
         dynamic_attributes_help = dynamic_attributes_help_raw.split("|")
@@ -439,22 +388,21 @@ def show_test_def_detail(test_def_id: str):
             "test_definition_summary",
             props={
                 "test_definition": {
-                    "schema": test_definition["schema_name"],
-                    "test_suite_name": test_definition["test_suite_name"],
-                    "table_name": test_definition["table_name"],
-                    "test_focus": test_definition["column_name"],
-                    "export_to_observability": readable_boolean(test_definition["export_to_observability"])
-                        if test_definition["export_to_observability"]
-                        else f"Inherited ({readable_boolean(test_definition["default_export_to_observability"])})",
-                    "severity": test_definition["severity"] or f"Test Default ({test_definition['default_severity']})",
-                    "locked": readable_boolean(test_definition["lock_refresh"]),
-                    "active": readable_boolean(test_definition["test_active"]),
-                    "status": test_definition["status"],
-                    "usage_notes": test_definition["usage_notes"],
-                    "last_manual_update": test_definition["last_manual_update"].isoformat()
-                        if test_definition["last_manual_update"]
+                    "schema": test_definition.schema_name,
+                    "test_suite_name": test_suite.test_suite,
+                    "table_name": test_definition.table_name,
+                    "test_focus": test_definition.column_name,
+                    "export_to_observability": readable_boolean(test_definition.export_to_observability)
+                        if test_definition.export_to_observability is not None
+                        else f"Inherited ({readable_boolean(test_suite.export_to_observability)})",
+                    "severity": test_definition.severity or f"Test Default ({test_definition.default_severity})",
+                    "locked": readable_boolean(test_definition.lock_refresh),
+                    "active": readable_boolean(test_definition.test_active),
+                    "usage_notes": test_definition.usage_notes,
+                    "last_manual_update": test_definition.last_manual_update.isoformat()
+                        if test_definition.last_manual_update
                         else None,
-                    "custom_query": test_definition["custom_query"]
+                    "custom_query": test_definition.custom_query
                         if "custom_query" in dynamic_attributes_fields
                         else None,
                     "attributes": [
@@ -474,25 +422,31 @@ def show_test_def_detail(test_def_id: str):
 def show_result_detail(
     run_id: str,
     run_date: str,
-    test_suite: str,
+    test_suite_id: UUID,
     export_container: DeltaGenerator,
-    test_status: str | None = None,
+    test_statuses: list[str] | None = None,
     test_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
+    action: typing.Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
     do_multi_select: bool = False,
 ):
     with st.container():
         with st.spinner("Loading data ..."):
             # Retrieve test results (always cached, action as null)
-            df = get_test_results(run_id, test_status, test_type_id, table_name, column_name, sorting_columns)
+            df = test_result_queries.get_test_results(run_id, test_statuses, test_type_id, table_name, column_name, action, sorting_columns)
             # Retrieve disposition action (cache refreshed)
             df_action = get_test_disposition(run_id)
+            # Update action from disposition df
+            action_map = df_action.set_index("id")["action"].to_dict()
+            df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
 
             # Update action from disposition df
             action_map = df_action.set_index("id")["action"].to_dict()
             df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
+
+            test_suite = TestSuite.get_minimal(test_suite_id)
 
     lst_show_columns = [
         "table_name",
@@ -536,7 +490,7 @@ def show_result_detail(
         download_dialog(
             dialog_title="Download Excel Report",
             file_content_func=get_excel_report_data,
-            args=(test_suite, run_date, run_id, data),
+            args=(test_suite.test_suite, run_date, run_id, data),
         )
 
     with popover_container.container(key="tg--export-popover"):
@@ -553,7 +507,7 @@ def show_result_detail(
         st.markdown(":orange[Select a record to see more information.]")
     else:
         selected_row = selected_rows[0]
-        dfh = get_test_result_history(selected_row)
+        dfh = test_result_queries.get_test_result_history(selected_row)
         show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
         time_columns = ["test_date"]
@@ -639,10 +593,11 @@ def show_result_detail(
                 else:
                     write_history_graph(dfh)
             with ut_tab2:
-                show_test_def_detail(selected_row["test_definition_id_current"])
+                show_test_def_detail(selected_row["test_definition_id_current"], test_suite)
         return selected_rows
 
 
+@with_database_session
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: str,
@@ -651,7 +606,7 @@ def get_excel_report_data(
     data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
     if data is None:
-        data = get_test_results(run_id)
+        data = test_result_queries.get_test_results(run_id)
 
     columns = {
         "schema_name": {"header": "Schema"},
@@ -764,14 +719,14 @@ def do_disposition_update(selected, str_new_status):
         elif len(selected) == 1:
             str_which = f"of one result to {str_new_status}"
 
-        str_schema = st.session_state["dbschema"]
-        if not dq.update_result_disposition(selected, str_schema, str_new_status):
+        if not update_result_disposition(selected, str_new_status):
             str_result = f":red[**The update {str_which} did not succeed.**]"
 
     return str_result
 
 
 @st.dialog(title="Source Data")
+@with_database_session
 def source_data_dialog(selected_row):
     st.markdown(f"#### {selected_row['test_name_short']}")
     st.caption(selected_row["test_description"])
@@ -784,13 +739,13 @@ def source_data_dialog(selected_row):
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
-            bad_data_status, bad_data_msg, query, df_bad = do_source_data_lookup_custom(selected_row)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
         else:
-            bad_data_status, bad_data_msg, query, df_bad = do_source_data_lookup(selected_row)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data(selected_row, limit=500)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
-        st.error(f"{bad_data_msg}\n\n{query}")
+        st.error(bad_data_msg)
     elif df_bad is None:
         st.error("An unknown error was encountered.")
     else:
@@ -814,7 +769,7 @@ def view_edit_test(button_container, test_definition_id):
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     tr_id = tr_data["test_result_id"][:8]
-    tr_time = pd.Timestamp(tr_data["test_time"]).strftime("%Y%m%d_%H%M%S")
+    tr_time = pd.Timestamp(tr_data["test_date"]).strftime("%Y%m%d_%H%M%S")
     file_name = f"testgen_test_issue_report_{tr_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:
@@ -822,3 +777,53 @@ def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
         update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()
+
+
+def update_result_disposition(
+    selected: list[dict],
+    disposition: typing.Literal["Confirmed", "Dismissed", "Inactive", "No Decision"],
+):
+    test_result_ids = [row["test_result_id"] for row in selected]
+
+    execute_db_query(
+        """
+        WITH selects
+            AS (SELECT UNNEST(ARRAY [:test_result_ids]) AS selected_id)
+        UPDATE test_results
+        SET disposition = NULLIF(:disposition, 'No Decision')
+        FROM test_results r
+        INNER JOIN selects s
+            ON (r.id = s.selected_id::UUID)
+        WHERE r.id = test_results.id
+            AND r.result_status != 'Passed';
+        """,
+        {
+            "test_result_ids": test_result_ids,
+            "disposition": disposition,
+        },
+    )
+
+    execute_db_query(
+        """
+        WITH selects
+            AS (SELECT UNNEST(ARRAY [:test_result_ids]) AS selected_id)
+        UPDATE test_definitions
+        SET test_active = :test_active,
+            last_manual_update = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
+            lock_refresh = :lock_refresh
+        FROM test_definitions d
+        INNER JOIN test_results r
+            ON (d.id = r.test_definition_id)
+        INNER JOIN selects s
+            ON (r.id = s.selected_id::UUID)
+        WHERE d.id = test_definitions.id
+            AND r.result_status != 'Passed';
+        """,
+        {
+            "test_result_ids": test_result_ids,
+            "test_active": "N" if disposition == "Inactive" else "Y",
+            "lock_refresh": "Y" if disposition == "Inactive" else "N",
+        },
+    )
+
+    return True

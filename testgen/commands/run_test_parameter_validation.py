@@ -4,37 +4,37 @@ from itertools import chain
 
 from testgen.commands.queries.test_parameter_validation_query import CTestParamValidationSQL
 from testgen.common import (
-    RetrieveDBResultsToDictList,
-    RetrieveDBResultsToList,
-    RunActionQueryList,
+    execute_db_queries,
+    fetch_dict_from_db,
+    fetch_list_from_db,
 )
+from testgen.common.get_pipeline_parms import TestExecutionParams
 
 LOG = logging.getLogger("testgen")
 
 
 def run_parameter_validation_queries(
-    dctParms, test_run_id="", test_time="", strTestSuite=""
+    params: TestExecutionParams,
+    test_run_id: str = "",
+    test_time: str = "",
+    test_suite: str = "",
 ):
-
     LOG.info("CurrentStep: Initializing Test Parameter Validation")
-    clsExecute = CTestParamValidationSQL(dctParms["sql_flavor"], dctParms["test_suite_id"])
+    clsExecute = CTestParamValidationSQL(params["sql_flavor"], params["test_suite_id"])
     clsExecute.run_date = test_time
     clsExecute.test_run_id = test_run_id
     LOG.info("CurrentStep: Validation Class successfully initialized")
 
-    booClean = False
-
     # Retrieve Test Column list
     LOG.info("CurrentStep: Retrieve Test Columns for Validation")
-    strColumnList = clsExecute.GetTestValidationColumns(booClean)
-    test_columns, _ = RetrieveDBResultsToList("DKTG", strColumnList)
+    test_columns, _ = fetch_list_from_db(*clsExecute.GetTestValidationColumns())
 
     invalid_tests = [ test_ids for col, test_ids in test_columns if not col ]
     invalid_tests = { item for sublist in invalid_tests for item in sublist }
     test_columns = [ item for item in test_columns if item[0] ]
 
     if not test_columns:
-        LOG.warning(f"No test columns are present to validate in Test Suite {strTestSuite}")
+        LOG.warning(f"No test columns are present to validate in Test Suite {test_suite}")
         missing_columns = []
         missing_tables = set()
     else:
@@ -46,10 +46,7 @@ def run_parameter_validation_queries(
         # Retrieve Current Project Column list
         LOG.info("CurrentStep: Retrieve Current Columns for Validation")
         clsExecute.test_schemas = strSchemas
-        strProjectColumnList = clsExecute.GetProjectTestValidationColumns()
-        if "where table_schema in ()" in strProjectColumnList:
-            raise ValueError("No schema specified in Validation Columns check")
-        lstProjectTestColumns = RetrieveDBResultsToDictList("PROJECT", strProjectColumnList)
+        lstProjectTestColumns = fetch_dict_from_db(*clsExecute.GetProjectTestValidationColumns(), use_target_db=True)
 
         if len(lstProjectTestColumns) == 0:
             LOG.info("Current Test Column list is empty")
@@ -91,36 +88,30 @@ def run_parameter_validation_queries(
 
         clsExecute.flag_val = "D"
         clsExecute.test_ids = list(set(chain(*tests_missing_tables.values(), *tests_missing_columns.values(), invalid_tests)))
-        strPrepFlagTests = clsExecute.PrepFlagTestsWithFailedValidation()
-        RunActionQueryList("DKTG", [strPrepFlagTests])
+        execute_db_queries([clsExecute.PrepFlagTestsWithFailedValidation()])
 
         for column_name, test_ids in tests_missing_columns.items():
             clsExecute.message = f"Missing column: {column_name}"
             clsExecute.test_ids = test_ids
-            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
-            RunActionQueryList("DKTG", [strFlagTests])
+            execute_db_queries([clsExecute.FlagTestsWithFailedValidation()])
 
         for table_name, test_ids in tests_missing_tables.items():
             clsExecute.message = f"Missing table: {table_name}"
             clsExecute.test_ids = test_ids
-            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
-            RunActionQueryList("DKTG", [strFlagTests])
+            execute_db_queries([clsExecute.FlagTestsWithFailedValidation()])
         
         if invalid_tests:
             clsExecute.message = "Invalid test: schema, table, or column not defined"
             clsExecute.test_ids = invalid_tests
-            strFlagTests = clsExecute.FlagTestsWithFailedValidation()
-            RunActionQueryList("DKTG", [strFlagTests])
+            execute_db_queries([clsExecute.FlagTestsWithFailedValidation()])
 
         # Copy test results to DK DB, using temporary flagged D value to identify
         LOG.info("CurrentStep: Saving error results for invalid tests")
-        strReportValErrors = clsExecute.ReportTestValidationErrors()
-        RunActionQueryList("DKTG", [strReportValErrors])
+        execute_db_queries([clsExecute.ReportTestValidationErrors()])
 
         # Set to Inactive those test_definitions tests that are flagged D:  set to N
         LOG.info("CurrentStep: Disabling Tests That Failed Validation")
-        strDisableTests = clsExecute.DisableTestsWithFailedValidation()
-        RunActionQueryList("DKTG", [strDisableTests])
+        execute_db_queries([clsExecute.DisableTestsWithFailedValidation()])
 
         LOG.info("Validation Complete: Tests referencing missing tables or columns have been deactivated.")
     else:

@@ -1,10 +1,9 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
 INSERT INTO projects
-    (project_code, project_name, effective_from_date, observability_api_key, observability_api_url)
+    (project_code, project_name, observability_api_key, observability_api_url)
 SELECT '{PROJECT_CODE}' as project_code,
        '{PROJECT_NAME}' as project_name,
-       (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE      as effective_from_date,
        '{OBSERVABILITY_API_KEY}' as observability_api_key,
        '{OBSERVABILITY_API_URL}' as observability_api_url;
 

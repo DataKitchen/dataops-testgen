@@ -5,14 +5,12 @@ from io import BytesIO
 import pandas as pd
 import streamlit as st
 
-import testgen.ui.queries.profiling_queries as profiling_queries
-import testgen.ui.services.database_service as db
 import testgen.ui.services.form_service as fm
-import testgen.ui.services.query_service as dq
 from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import get_current_session
+from testgen.common.models import with_database_session
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -24,8 +22,13 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
-from testgen.ui.services import project_service, user_session_service
-from testgen.ui.services.hygiene_issues_service import get_source_data as get_source_data_uncached
+from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
+from testgen.ui.services import user_session_service
+from testgen.ui.services.database_service import (
+    execute_db_query,
+    fetch_df_from_db,
+    fetch_one_from_db,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.utils import friendly_score
@@ -42,39 +45,47 @@ class HygieneIssuesPage(Page):
     def render(
         self,
         run_id: str,
-        issue_class: str | None = None,
+        likelihood: str | None = None,
         issue_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
         action: str | None = None,
         **_kwargs,
     ) -> None:
-        run_df = profiling_queries.get_run_by_id(run_id)
-        if run_df.empty:
+        run = ProfilingRun.get_minimal(run_id)
+        if not run:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
                 "profiling-runs",
             )
             return
 
-        run_date = date_service.get_timezoned_timestamp(st.session_state, run_df["profiling_starttime"])
-        project_service.set_sidebar_project(run_df["project_code"])
+        run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
+        session.set_sidebar_project(run.project_code)
 
         testgen.page_header(
             "Hygiene Issues",
             "view-hygiene-issues",
             breadcrumbs=[
-                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run_df["project_code"] } },
-                { "label": f"{run_df['table_groups_name']} | {run_date}" },
+                { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
+                { "label": f"{run.table_groups_name} | {run_date}" },
             ],
         )
 
         others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.2, .2, .15, .3, .15], vertical_alignment="bottom")
-        (table_filter_column, column_filter_column, issue_type_filter_column, liklihood_filter_column, action_filter_column, sort_column) = (
-            st.columns([.15, .2, .2, .2, .15, .1], vertical_alignment="bottom")
+        (liklihood_filter_column, table_filter_column, column_filter_column, issue_type_filter_column, action_filter_column, sort_column) = (
+            st.columns([.2, .15, .2, .2, .15, .1], vertical_alignment="bottom")
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
+
+        with liklihood_filter_column:
+            likelihood = testgen.select(
+                options=["Definite", "Likely", "Possible", "Potential PII"],
+                default_value=likelihood,
+                bind_to_query="likelihood",
+                label="Likelihood",
+            )
 
         run_columns_df = get_profiling_run_columns(run_id)
         with table_filter_column:
@@ -122,29 +133,22 @@ class HygieneIssuesPage(Page):
             )
             issue_type_id = testgen.select(
                 options=issue_type_options,
-                default_value=None if issue_class == "Potential PII" else issue_type,
+                default_value=None if likelihood == "Potential PII" else issue_type,
                 value_column="anomaly_id",
                 display_column="anomaly_name",
                 bind_to_query="issue_type",
                 label="Issue Type",
-                disabled=issue_class == "Potential PII",
-            )
-
-        with liklihood_filter_column:
-            issue_class = testgen.select(
-                options=["Definite", "Likely", "Possible", "Potential PII"],
-                default_value=issue_class,
-                bind_to_query="issue_class",
-                label="Likelihood",
+                disabled=likelihood == "Potential PII",
             )
 
         with action_filter_column:
             action = testgen.select(
-                options=["✓ Confirmed", "✘ Dismissed", "🔇 Muted", "↩︎ No Action"],
+                options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
                 default_value=action,
                 bind_to_query="action",
                 label="Action",
             )
+            action = action.split("	", 1)[1] if action else None
 
         with sort_column:
             sortable_columns = (
@@ -164,7 +168,7 @@ class HygieneIssuesPage(Page):
         with st.container():
             with st.spinner("Loading data ..."):
                 # Get hygiene issue list
-                df_pa = get_profiling_anomalies(run_id, issue_class, issue_type_id, table_name, column_name, action, sorting_columns)
+                df_pa = get_profiling_anomalies(run_id, likelihood, issue_type_id, table_name, column_name, action, sorting_columns)
 
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_anomaly_disposition(run_id)
@@ -192,9 +196,6 @@ class HygieneIssuesPage(Page):
                     height=20,
                     width=400,
                 )
-
-        with score_column:
-            render_score(run_df["project_code"], run_id)
 
         lst_show_columns = [
             "table_name",
@@ -234,7 +235,7 @@ class HygieneIssuesPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run_df["table_groups_name"], run_date, run_id, data),
+                args=(run.table_groups_name, run_date, run_id, data),
             )
 
         with popover_container.container(key="tg--export-popover"):
@@ -261,7 +262,7 @@ class HygieneIssuesPage(Page):
 
                 with buttons_column:
                     col1, col2, col3 = st.columns([.3, .3, .3])
-                    
+
                 with col1:
                     view_profiling_button(
                         selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
@@ -351,19 +352,25 @@ class HygieneIssuesPage(Page):
                         lst_cached_functions=cached_functions,
                     )
 
+        # Needs to be after all data loading/updating
+        # Otherwise the database session is lost for any queries after the fragment -_-
+        with score_column:
+            render_score(run.project_code, run_id)
+
         # Help Links
         st.markdown(
             "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
         )
 
 @st.fragment
+@with_database_session
 def render_score(project_code: str, run_id: str):
-    run_df = profiling_queries.get_run_by_id(run_id)
+    run = ProfilingRun.get_minimal(run_id)
     testgen.flex_row_center()
     with st.container():
         testgen.caption("Score", "text-align: center;")
         testgen.text(
-            friendly_score(run_df["dq_score_profiling"]) or "--",
+            friendly_score(run.dq_score_profiling) or "--",
             "font-size: 28px;",
         )
 
@@ -374,12 +381,12 @@ def render_score(project_code: str, run_id: str):
             style="color: var(--secondary-text-color);",
             icon="autorenew",
             icon_size=22,
-            tooltip=f"Recalculate scores for run {'and table group' if run_df["is_latest_run"] else ''}",
+            tooltip=f"Recalculate scores for run {'and table group' if run.is_latest_run else ''}",
             on_click=partial(
                 refresh_score,
                 project_code,
                 run_id,
-                run_df["table_groups_id"] if run_df["is_latest_run"] else None,
+                run.table_groups_id if run.is_latest_run else None,
             ),
         )
 
@@ -391,15 +398,14 @@ def refresh_score(project_code: str, run_id: str, table_group_id: str | None) ->
 
 @st.cache_data(show_spinner=False)
 def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
-    schema: str = st.session_state["dbschema"]
-    sql = f"""
+    query = """
     SELECT r.table_name table_name, r.column_name column_name, r.anomaly_id anomaly_id, t.anomaly_name anomaly_name
-    FROM {schema}.profile_anomaly_results r
-    LEFT JOIN {schema}.profile_anomaly_types t on t.id = r.anomaly_id
-    WHERE r.profile_run_id = '{profiling_run_id}'
+    FROM profile_anomaly_results r
+    LEFT JOIN profile_anomaly_types t on t.id = r.anomaly_id
+    WHERE r.profile_run_id = :profiling_run_id
     ORDER BY r.table_name, r.column_name;
     """
-    return db.retrieve_data(sql)
+    return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
 
 
 @st.cache_data(show_spinner=False)
@@ -409,40 +415,10 @@ def get_profiling_anomalies(
     issue_type_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
-    action: str | None = None,
+    action: typing.Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
-):
-    db_session = get_current_session()
-    criteria = ""
-    order_by = ""
-    params = {"profile_run_id": profile_run_id}
-
-    if likelihood:
-        criteria += " AND t.issue_likelihood = :likelihood"
-        params["likelihood"] = likelihood
-    if issue_type_id:
-        criteria += " AND t.id = :issue_type_id"
-        params["issue_type_id"] = issue_type_id
-    if table_name:
-        criteria += " AND r.table_name = :table_name"
-        params["table_name"] = table_name
-    if column_name:
-        criteria += " AND r.column_name ILIKE :column_name"
-        params["column_name"] = column_name
-    if action:
-        action = action.split(" ", 1)[1]
-        if action == "No Action":
-            criteria += " AND r.disposition IS NULL"
-        else:
-            action_disposition_converter = {"Muted": "Inactive"}
-            criteria += " AND r.disposition = :disposition_name"
-            params["disposition_name"] = action_disposition_converter.get(action, action)
-
-    if sorting_columns:
-        order_by = "ORDER BY " + (", ".join(" ".join(col) for col in sorting_columns))
-
-    # Define the query -- first visible column must be first, because will hold the multi-select box
-    str_sql = f"""
+) -> pd.DataFrame:
+    query = f"""
     SELECT
         r.table_name,
         r.column_name,
@@ -465,14 +441,8 @@ def get_profiling_anomalies(
             WHEN t.issue_likelihood = 'Likely'   THEN 3
             WHEN t.issue_likelihood = 'Definite'  THEN 4
         END AS likelihood_order,
-        t.anomaly_description,
-        r.detail,
-        t.suggested_action,
-        r.anomaly_id,
-        r.table_groups_id::VARCHAR,
-        r.id::VARCHAR,
-        p.profiling_starttime,
-        r.profile_run_id::VARCHAR,
+        t.anomaly_description, r.detail, t.suggested_action,
+        r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
         tg.table_groups_name,
 
         -- These are used in the PDF report
@@ -487,7 +457,6 @@ def get_profiling_anomalies(
         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
         COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
         COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
-
     FROM profile_anomaly_results r
     INNER JOIN profile_anomaly_types t
         ON r.anomaly_id = t.id
@@ -497,20 +466,30 @@ def get_profiling_anomalies(
         ON r.table_groups_id = tg.id
     LEFT JOIN data_column_chars dcc
         ON (tg.id = dcc.table_groups_id
-        AND  r.schema_name = dcc.schema_name
-        AND  r.table_name = dcc.table_name
-        AND  r.column_name = dcc.column_name)
+        AND r.schema_name = dcc.schema_name
+        AND r.table_name = dcc.table_name
+        AND r.column_name = dcc.column_name)
     LEFT JOIN data_table_chars dtc
         ON dcc.table_id = dtc.table_id
     WHERE r.profile_run_id = :profile_run_id
-        {criteria}
-    {order_by}
+        {"AND t.issue_likelihood = :likelihood" if likelihood else ""}
+        {"AND t.id = :issue_type_id" if issue_type_id else ""}
+        {"AND r.table_name = :table_name" if table_name else ""}
+        {"AND r.column_name ILIKE :column_name" if column_name else ""}
+        {"AND r.disposition IS NULL" if action == "No Action" else "AND r.disposition = :disposition" if action else ""}
+    {f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}" if sorting_columns else ""}
     """
-
-    results = db_session.execute(str_sql, params=params)
-    columns = [column.name for column in results.cursor.description]
-
-    df = pd.DataFrame(list(results), columns=columns)
+    params = {
+        "profile_run_id": profile_run_id,
+        "likelihood": likelihood,
+        "issue_type_id": issue_type_id,
+        "table_name": table_name,
+        "column_name": column_name,
+        "disposition": {
+            "Muted": "Inactive",
+        }.get(action, action),
+    }
+    df = fetch_df_from_db(query, params)
     dct_replace = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇"}
     df["action"] = df["disposition"].replace(dct_replace)
 
@@ -518,15 +497,13 @@ def get_profiling_anomalies(
 
 
 @st.cache_data(show_spinner=False)
-def get_anomaly_disposition(str_profile_run_id):
-    str_schema = st.session_state["dbschema"]
-    str_sql = f"""
-            SELECT id::VARCHAR, disposition
-              FROM {str_schema}.profile_anomaly_results s
-             WHERE s.profile_run_id = '{str_profile_run_id}';
+def get_anomaly_disposition(profile_run_id: str) -> pd.DataFrame:
+    query = """
+    SELECT id::VARCHAR, disposition
+    FROM profile_anomaly_results s
+    WHERE s.profile_run_id = :profile_run_id;
     """
-    # Retrieve data as df
-    df = db.retrieve_data(str_sql)
+    df = fetch_df_from_db(query, {"profile_run_id": profile_run_id})
     dct_replace = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇", "Passed": ""}
     df["action"] = df["disposition"].replace(dct_replace)
 
@@ -534,45 +511,44 @@ def get_anomaly_disposition(str_profile_run_id):
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_anomaly_summary(str_profile_run_id):
-    str_schema = st.session_state["dbschema"]
-    # Define the query
-    str_sql = f"""
-        SELECT
-            schema_name,
-            COUNT(DISTINCT s.table_name) as table_ct,
-            COUNT(DISTINCT s.column_name) as column_ct,
-            COUNT(*) as issue_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                        AND t.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) as definite_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                        AND t.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) as likely_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                        AND t.issue_likelihood = 'Possible' THEN 1 ELSE 0 END) as possible_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed')
-                            IN ('Dismissed', 'Inactive')
-                        AND t.issue_likelihood <> 'Potential PII' THEN 1 ELSE 0 END) as dismissed_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: HIGH%%' THEN 1 ELSE 0 END) as pii_high_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: MODERATE%%' THEN 1 ELSE 0 END) as pii_moderate_ct,
-            SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') AND t.issue_likelihood = 'Potential PII' THEN 1 ELSE 0 END) as pii_dismissed_ct
-        FROM {str_schema}.profile_anomaly_results s
-        LEFT JOIN {str_schema}.profile_anomaly_types t ON (s.anomaly_id = t.id)
-        WHERE s.profile_run_id = '{str_profile_run_id}'
-        GROUP BY schema_name;
+def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
+    query = """
+    SELECT
+        schema_name,
+        COUNT(DISTINCT s.table_name) as table_ct,
+        COUNT(DISTINCT s.column_name) as column_ct,
+        COUNT(*) as issue_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                    AND t.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) as definite_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                    AND t.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) as likely_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
+                    AND t.issue_likelihood = 'Possible' THEN 1 ELSE 0 END) as possible_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed')
+                        IN ('Dismissed', 'Inactive')
+                    AND t.issue_likelihood <> 'Potential PII' THEN 1 ELSE 0 END) as dismissed_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: HIGH%%' THEN 1 ELSE 0 END) as pii_high_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: MODERATE%%' THEN 1 ELSE 0 END) as pii_moderate_ct,
+        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') AND t.issue_likelihood = 'Potential PII' THEN 1 ELSE 0 END) as pii_dismissed_ct
+    FROM profile_anomaly_results s
+    LEFT JOIN profile_anomaly_types t ON (s.anomaly_id = t.id)
+    WHERE s.profile_run_id = :profile_run_id
+    GROUP BY schema_name;
     """
-    df = db.retrieve_data(str_sql)
+    result = fetch_one_from_db(query, {"profile_run_id": profile_run_id})
 
     return [
-        { "label": "Definite", "value": int(df.at[0, "definite_ct"]), "color": "red" },
-        { "label": "Likely", "value": int(df.at[0, "likely_ct"]), "color": "orange" },
-        { "label": "Possible", "value": int(df.at[0, "possible_ct"]), "color": "yellow" },
-        { "label": "Dismissed", "value": int(df.at[0, "dismissed_ct"]), "color": "grey" },
-        { "label": "High Risk", "value": int(df.at[0, "pii_high_ct"]), "color": "red", "type": "PII" },
-        { "label": "Moderate Risk", "value": int(df.at[0, "pii_moderate_ct"]), "color": "orange", "type": "PII" },
-        { "label": "Dismissed", "value": int(df.at[0, "pii_dismissed_ct"]), "color": "grey", "type": "PII" },
+        { "label": "Definite", "value": result.definite_ct, "color": "red" },
+        { "label": "Likely", "value": result.likely_ct, "color": "orange" },
+        { "label": "Possible", "value": result.possible_ct, "color": "yellow" },
+        { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
+        { "label": "High Risk", "value": result.pii_high_ct, "color": "red", "type": "PII" },
+        { "label": "Moderate Risk", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
+        { "label": "Dismissed", "value": result.pii_dismissed_ct, "color": "grey", "type": "PII" },
     ]
 
 
+@with_database_session
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
@@ -603,12 +579,8 @@ def get_excel_report_data(
     )
 
 
-@st.cache_data(show_spinner=False)
-def get_source_data(hi_data, limit):
-    return get_source_data_uncached(hi_data, limit)
-
-
 @st.dialog(title="Source Data")
+@with_database_session
 def source_data_dialog(selected_row):
     st.markdown(f"#### {selected_row['anomaly_name']}")
     st.caption(selected_row["anomaly_description"])
@@ -618,7 +590,7 @@ def source_data_dialog(selected_row):
     fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
 
     with st.spinner("Retrieving source data..."):
-        bad_data_status, bad_data_msg, _, df_bad = get_source_data(selected_row, limit=500)
+        bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
@@ -645,8 +617,7 @@ def do_disposition_update(selected, str_new_status):
         elif len(selected) == 1:
             str_which = f"of one issue to {str_new_status}"
 
-        str_schema = st.session_state["dbschema"]
-        if not dq.update_anomaly_disposition(selected, str_schema, str_new_status):
+        if not update_anomaly_disposition(selected, str_new_status):
             str_result = f":red[**The update {str_which} did not succeed.**]"
 
     return str_result
@@ -661,3 +632,27 @@ def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
         update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()
+
+
+def update_anomaly_disposition(
+    selected: list[dict],
+    disposition: typing.Literal["Confirmed", "Dismissed", "Inactive", "No Decision"],
+):
+    execute_db_query(
+        """
+        WITH selects
+            AS (SELECT UNNEST(ARRAY [:anomaly_result_ids]) AS selected_id)
+        UPDATE profile_anomaly_results
+        SET disposition = NULLIF(:disposition, 'No Decision')
+        FROM profile_anomaly_results r
+        INNER JOIN selects s
+            ON (r.id = s.selected_id::UUID)
+        WHERE r.id = profile_anomaly_results.id;
+        """,
+        {
+            "anomaly_result_ids": [row["id"] for row in selected if "id"],
+            "disposition": disposition,
+        }
+    )
+
+    return True

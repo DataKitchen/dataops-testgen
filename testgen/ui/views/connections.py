@@ -5,6 +5,9 @@ from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 
+from testgen.common.database.flavor.flavor_service import ConnectionParams
+from testgen.ui.queries import table_group_queries
+
 try:
     from pyodbc import Error as PyODBCError
 except ImportError:
@@ -13,15 +16,16 @@ from sqlalchemy.exc import DatabaseError, DBAPIError
 
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling_bridge import run_profiling_in_background
-from testgen.common.database.database_service import empty_cache
+from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection, ConnectionMinimal
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import connection_service, table_group_service, user_session_service
+from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
-from testgen.utils import format_field
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Connection"
@@ -49,10 +53,10 @@ class ConnectionsPage(Page):
             "connect-your-database",
         )
 
-        dataframe = connection_service.get_connections(project_code)
-        connection = dataframe.iloc[0]
+        connections = Connection.select_where(Connection.project_code == project_code)
+        connection: Connection = connections[0]
         has_table_groups = (
-            len(connection_service.get_table_group_names_by_connection([connection["connection_id"]]) or []) > 0
+            len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
         user_is_admin = user_session_service.user_is_admin()
         should_check_status, set_check_status = temp_value(
@@ -77,7 +81,7 @@ class ConnectionsPage(Page):
                     updated_connection["url"] = url_parts[1]
 
             if updated_connection.get("connect_by_key"):
-                updated_connection["password"] = ""
+                updated_connection["project_pw_encrypted"] = ""
                 if is_pristine(updated_connection["private_key_passphrase"]):
                     del updated_connection["private_key_passphrase"]
             else:
@@ -92,11 +96,11 @@ class ConnectionsPage(Page):
             else:
                 updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
 
-            if is_pristine(updated_connection.get("password")):
-                del updated_connection["password"]
+            if is_pristine(updated_connection.get("project_pw_encrypted")):
+                del updated_connection["project_pw_encrypted"]
 
-            if updated_connection.get("password") == CLEAR_SENTINEL:
-                updated_connection["password"] = ""
+            if updated_connection.get("project_pw_encrypted") == CLEAR_SENTINEL:
+                updated_connection["project_pw_encrypted"] = ""
 
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
@@ -104,13 +108,13 @@ class ConnectionsPage(Page):
             set_updated_connection(updated_connection)
 
         def on_test_connection_clicked(updated_connection: dict) -> None:
-            password = updated_connection.get("password")
+            password = updated_connection.get("project_pw_encrypted")
             private_key = updated_connection.get("private_key")
             private_key_passphrase = updated_connection.get("private_key_passphrase")
             is_pristine = lambda value: value in ["", "***"]
 
             if is_pristine(password):
-                del updated_connection["password"]
+                del updated_connection["project_pw_encrypted"]
 
             if is_pristine(private_key):
                 del updated_connection["private_key"]
@@ -128,11 +132,13 @@ class ConnectionsPage(Page):
             set_updated_connection(updated_connection)
 
         results = None
-        connection = {**connection.to_dict(), **get_updated_connection()}
+        for key, value in get_updated_connection().items():
+            setattr(connection, key, value)
+
         if should_save():
             success = True
             try:
-                connection_service.edit_connection(connection)
+                connection.save()
                 message = "Changes have been saved successfully."
             except Exception as error:
                 message = "Error creating connection"
@@ -159,7 +165,7 @@ class ConnectionsPage(Page):
             on_change_handlers={
                 "TestConnectionClicked": on_test_connection_clicked,
                 "SaveConnectionClicked": on_save_connection_clicked,
-                "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection["connection_id"]),
+                "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection.connection_id),
             },
         )
 
@@ -169,31 +175,17 @@ class ConnectionsPage(Page):
             return match[0]
         return None
 
-    def _format_connection(self, connection: dict, should_test: bool = False) -> dict:
+    def _format_connection(self, connection: Connection, should_test: bool = False) -> dict:
         formatted_connection = format_connection(connection)
         if should_test:
             formatted_connection["status"] = asdict(self.test_connection(connection))
         return formatted_connection
 
-    def test_connection(self, connection: dict) -> "ConnectionStatus":
+    def test_connection(self, connection: Connection) -> "ConnectionStatus":
         empty_cache()
         try:
             sql_query = "select 1;"
-            results = db.retrieve_target_db_data(
-                connection["sql_flavor"],
-                connection["project_host"],
-                connection["project_port"],
-                connection["project_db"],
-                connection["project_user"],
-                connection["password"],
-                connection["url"],
-                connection["connect_by_url"],
-                connection["connect_by_key"],
-                connection.get("private_key", ""),
-                connection.get("private_key_passphrase", ""),
-                connection.get("http_path", ""),
-                sql_query,
-            )
+            results = db.fetch_from_target_db(connection, sql_query)
             connection_successful = len(results) == 1 and results[0][0] == 1
 
             if not connection_successful:
@@ -242,9 +234,13 @@ class ConnectionsPage(Page):
         def on_go_to_profiling_runs(params: dict) -> None:
             set_navigation_params({ **params, "project_code": project_code })
 
-        def on_preview_table_group(table_group: dict) -> None:
+        def on_preview_table_group(payload: dict) -> None:
+            table_group = payload["table_group"]
+            verify_table_access = payload.get("verify_access") or False
+
             set_new_table_group(table_group)
             mark_for_preview(True)
+            mark_for_access_preview(verify_table_access)
 
         get_navigation_params, set_navigation_params = temp_value(
             "connections:new_table_group:go_to_profiling_run",
@@ -263,10 +259,14 @@ class ConnectionsPage(Page):
         )
 
         results = None
-        table_group = get_new_table_group()
+        table_group_data = get_new_table_group()
         should_run_profiling = get_run_profiling()
         should_preview, mark_for_preview = temp_value(
             f"connections:{connection_id}:tg_preview",
+            default=False,
+        )
+        should_verify_access, mark_for_access_preview = temp_value(
+            f"connections:{connection_id}:tg_preview_access",
             default=False,
         )
         is_table_group_verified, set_table_group_verified = temp_value(
@@ -274,38 +274,37 @@ class ConnectionsPage(Page):
             default=False,
         )
 
+        table_group = TableGroup(
+            **table_group_data or {},
+            project_code = project_code,
+            connection_id = connection_id,
+        )
+
         table_group_preview = None
         if should_preview():
-            connection = connection_service.get_by_id(connection_id, hide_passwords=False)
-            table_group_preview = table_group_service.get_table_group_preview(
-                project_code,
-                connection,
-                {"id": "temp", **table_group},
+            table_group_preview = table_group_queries.get_table_group_preview(
+                table_group,
+                verify_table_access=should_verify_access(),
             )
 
-        if table_group:
+        if table_group_data:
             success = True
             message = None
-            table_group_id = None
 
             if is_table_group_verified():
                 try:
-                    table_group_id = table_group_service.add({
-                        **table_group,
-                        "project_code": project_code,
-                        "connection_id": connection_id,
-                    })
+                    table_group.save()
 
                     if should_run_profiling:
                         try:
-                            run_profiling_in_background(table_group_id)
-                            message = f"Profiling run started for table group {table_group['table_groups_name']}."
+                            run_profiling_in_background(table_group.id)
+                            message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception as error:
                             message = "Profiling run encountered errors"
                             success = False
                             LOG.exception(message)
                     else:
-                        LOG.info("Table group %s created", table_group_id)
+                        LOG.info("Table group %s created", table_group.id)
                         st.rerun()
                 except Exception as error:
                     message = "Error creating table group"
@@ -315,7 +314,7 @@ class ConnectionsPage(Page):
                 results = {
                     "success": success,
                     "message": message,
-                    "table_group_id": table_group_id,
+                    "table_group_id": table_group.id,
                 }
             else:
                 results = {
@@ -363,37 +362,14 @@ def is_open_ssl_error(error: Exception):
     )
 
 
-def format_connection(connection: dict) -> dict:
-    fields = [
-        "project_code",
-        "connection_id",
-        "connection_name",
-        "sql_flavor",
-        "sql_flavor_code",
-        "project_host",
-        "project_port",
-        "project_db",
-        "project_user",
-        "password",
-        "max_threads",
-        "max_query_chars",
-        "connect_by_url",
-        "connect_by_key",
-        "private_key",
-        "private_key_passphrase",
-        "http_path",
-        "url",
-    ]
-    formatted_connection = {}
+def format_connection(connection: Connection | ConnectionMinimal) -> dict:
+    formatted_connection = connection.to_dict(json_safe=True)
 
-    for fieldname in fields:
-        formatted_connection[fieldname] = format_field(connection[fieldname])
-
-    if formatted_connection["password"]:
-        formatted_connection["password"] = "***"  # noqa S105
-    if formatted_connection["private_key"]:
+    if formatted_connection.get("project_pw_encrypted"):
+        formatted_connection["project_pw_encrypted"] = "***"
+    if formatted_connection.get("private_key"):
         formatted_connection["private_key"] = "***"  # S105
-    if formatted_connection["private_key_passphrase"]:
+    if formatted_connection.get("private_key_passphrase"):
         formatted_connection["private_key_passphrase"] = "***"  # noqa S105
 
     flavors = [f for f in FLAVOR_OPTIONS if f.value == formatted_connection["sql_flavor_code"]]
@@ -401,6 +377,22 @@ def format_connection(connection: dict) -> dict:
         formatted_connection["flavor"] = asdict(flavor)
 
     return formatted_connection
+
+
+def get_connection_string(flavor: str) -> str:
+    connection_params: ConnectionParams = {
+        "sql_flavor": flavor,
+        "project_host": "<host>",
+        "project_port": "<port>",
+        "project_user": "<username>",
+        "project_db": "<database>",
+        "project_pw_encrypted": "<password>",
+        "http_path": "<http_path>",
+        "table_group_schema": "",
+    }
+    flavor_service = get_flavor_service(flavor)
+    flavor_service.init(connection_params)
+    return flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -418,48 +410,48 @@ FLAVOR_OPTIONS = [
         value="redshift",
         flavor="redshift",
         icon=get_asset_data_url("flavors/redshift.svg"),
-        connection_string=connection_service.get_connection_string("redshift"),
+        connection_string=get_connection_string("redshift"),
     ),
     ConnectionFlavor(
         label="Azure SQL Database",
         value="azure_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_sql.svg"),
-        connection_string=connection_service.get_connection_string("mssql"),
+        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Azure Synapse Analytics",
         value="synapse_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
-        connection_string=connection_service.get_connection_string("mssql"),
+        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Microsoft SQL Server",
         value="mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/mssql.svg"),
-        connection_string=connection_service.get_connection_string("mssql"),
+        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="PostgreSQL",
         value="postgresql",
         flavor="postgresql",
         icon=get_asset_data_url("flavors/postgresql.svg"),
-        connection_string=connection_service.get_connection_string("postgresql"),
+        connection_string=get_connection_string("postgresql"),
     ),
     ConnectionFlavor(
         label="Snowflake",
         value="snowflake",
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
-        connection_string=connection_service.get_connection_string("snowflake"),
+        connection_string=get_connection_string("snowflake"),
     ),
     ConnectionFlavor(
         label="Databricks",
         value="databricks",
         flavor="databricks",
         icon=get_asset_data_url("flavors/databricks.svg"),
-        connection_string=connection_service.get_connection_string("databricks"),
+        connection_string=get_connection_string("databricks"),
     ),
 ]
