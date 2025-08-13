@@ -12,6 +12,7 @@ from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -1179,17 +1180,33 @@ def get_column_names(table_groups_id: str, table_name: str) -> list[str]:
 def validate_test(test_definition, table_group: TableGroupMinimal):
     schema = test_definition["schema_name"]
     table_name = test_definition["table_name"]
+    connection = Connection.get_by_table_group(table_group.id)
 
     if test_definition["test_type"] == "Condition_Flag":
         condition = test_definition["custom_query"]
+        concat_operator = get_flavor_service(connection.sql_flavor).get_concat_operator()
         query = f"""
         SELECT 
-            COALESCE(CAST(SUM(CASE WHEN {condition} THEN 1 ELSE 0 END) AS VARCHAR(1000) ) || '|' ,'<NULL>|')
+            COALESCE(
+                CAST(
+                    SUM(
+                        CASE WHEN {condition} THEN 1 ELSE 0 END
+                    ) AS VARCHAR(1000)
+                )
+                {concat_operator} '|',
+                '<NULL>|'
+            )
         FROM {schema}.{table_name};
         """
     else:
-        query = test_definition["custom_query"]
-        query = query.replace("{DATA_SCHEMA}", schema)
+        query = replace_params(
+            f"""
+            SELECT COUNT(*)
+            FROM (
+                {test_definition["custom_query"]}
+            ) TEST
+            """,
+            {"DATA_SCHEMA": schema},
+        )
 
-    connection = Connection.get_by_table_group(table_group.id)
     fetch_from_target_db(connection, query)
