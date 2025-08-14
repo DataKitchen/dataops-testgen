@@ -11,6 +11,7 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {string?} connection_id
+ * @property {string?} table_group_name
  * @property {Connection[]} connections
  * @property {TableGroup[]} table_groups
  * @property {Permissions} permissions
@@ -26,6 +27,7 @@ import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 import { Select } from '../components/select.js';
 import { Icon } from '../components/icon.js';
 import { withTooltip } from '../components/tooltip.js';
+import { Input } from '../components/input.js';
 
 const { div, h4, i, span } = van.tags;
 
@@ -49,6 +51,7 @@ const TableGroupList = (props) => {
             const permissions = getValue(props.permissions) ?? {can_edit: false};
             const connections = getValue(props.connections) ?? [];
             const connectionId = getValue(props.connection_id);
+            const tableGroupNameFilter = getValue(props.table_group_name);
             const tableGroups = getValue(props.table_groups) ?? [];
             const projectSummary = getValue(props.project_summary);
 
@@ -68,7 +71,7 @@ const TableGroupList = (props) => {
 
             return projectSummary.table_group_count > 0
             ? div(
-                Toolbar(permissions, connections, connectionId),
+                Toolbar(permissions, connections, connectionId, tableGroupNameFilter),
                 tableGroups.length
                     ? tableGroups.map((tableGroup) => Card({
                         testId: 'table-group-card',
@@ -211,25 +214,49 @@ const TableGroupList = (props) => {
  * @param {Permissions} permissions
  * @param {Connection[]} connections
  * @param {string?} selectedConnection
+ * @param {string?} tableGroupNameFilter
  * @returns 
  */
-const Toolbar = (permissions, connections, selectedConnection) => {
+const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFilter) => {
+    const connection = van.state(selectedConnection || null);
+    const tableGroupFilter = van.state(tableGroupNameFilter || null);
+
+    van.derive(() => {
+        if (connection.val !== selectedConnection || tableGroupFilter.val !== tableGroupNameFilter) {
+            emitEvent('TableGroupsFiltered', { payload: { connection_id: connection.val || null, table_group_name: tableGroupFilter.val || null } });
+        }
+    });
+
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
-        (getValue(connections) ?? [])?.length > 1
-            ? Select({
-                testId: 'connection-select',
-                label: 'Connection',
-                allowNull: true,
+        div(
+            {class: 'flex-row fx-gap-4'},
+            (getValue(connections) ?? [])?.length > 1
+                ? Select({
+                    testId: 'connection-select',
+                    label: 'Connection',
+                    allowNull: true,
+                    height: 38,
+                    value: connection,
+                    options: getValue(connections)?.map((connection) => ({
+                        label: connection.connection_name,
+                        value: String(connection.connection_id),
+                    })) ?? [],
+                    onChange: (value) => connection.val = value,
+                })
+                : '',
+            Input({
+                testId: 'table-groups-name-filter',
+                icon: 'search',
+                label: '',
+                placeholder: 'Search table group names',
                 height: 38,
-                value: selectedConnection,
-                options: getValue(connections)?.map((connection) => ({
-                    label: connection.connection_name,
-                    value: String(connection.connection_id),
-                })) ?? [],
-                onChange: (value) => emitEvent('ConnectionSelected', { payload: value }),
-            })
-            : span(''),
+                width: 300,
+                clearable: true,
+                value: tableGroupFilter,
+                onChange: (value) => tableGroupFilter.val = value || null,
+            }),
+        ),
         div(
             { class: 'flex-row fx-gap-4' },
             Button({
