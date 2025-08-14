@@ -20,6 +20,7 @@
  * @property {string?} icon
  * @property {boolean?} clearable
  * @property {('value' | 'always')?} clearableCondition
+ * @property {boolean?} passwordSuggestions
  * @property {function(string, InputState)?} onChange
  * @property {boolean?} disabled
  * @property {function(string, InputState)?} onClear
@@ -164,6 +165,7 @@ const Input = (/** @type Properties */ props) => {
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),
                 placeholder: () => getValue(props.placeholder) ?? '',
                 oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
                 onclick: van.derive(() => autocompleteOptions.val?.length

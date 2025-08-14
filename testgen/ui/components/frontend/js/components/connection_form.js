@@ -486,6 +486,7 @@ const RedshiftForm = (
                 value: connectionPassword,
                 height: 38,
                 type: 'password',
+                passwordSuggestions: false,
                 placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
@@ -683,6 +684,7 @@ const DatabricksForm = (
                 value: connectionPassword,
                 height: 38,
                 type: 'password',
+                passwordSuggestions: false,
                 placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                 onChange: (value, state) => {
                     connectionPassword.val = value;
@@ -891,6 +893,7 @@ const SnowflakeForm = (
                                 value: connectionPrivateKeyPassphrase,
                                 height: 38,
                                 type: 'password',
+                                passwordSuggestions: false,
                                 help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
                                 placeholder: () => (originalConnection?.connection_id && originalConnection?.private_key_passphrase && !clearPrivateKeyPhrase.val) ? secretsPlaceholder : '',
                                 onChange: (value, state) => {
@@ -944,6 +947,7 @@ const SnowflakeForm = (
                     value: connectionPassword,
                     height: 38,
                     type: 'password',
+                    passwordSuggestions: false,
                     placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
                     onChange: (value, state) => {
                         connectionPassword.val = value;
