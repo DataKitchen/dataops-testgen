@@ -33,10 +33,10 @@ class TestRunMinimal(EntityMinimal):
 class TestRunSummary(EntityMinimal):
     test_run_id: UUID
     test_starttime: datetime
+    test_endtime: datetime
     table_groups_name: str
     test_suite: str
     status: TestRunStatus
-    duration: str
     process_id: int
     log_message: str
     test_ct: int
@@ -174,10 +174,10 @@ class TestRun(Entity):
         )
         SELECT test_runs.id AS test_run_id,
             test_runs.test_starttime,
+            test_runs.test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
             test_runs.status,
-            test_runs.duration,
             test_runs.process_id,
             test_runs.log_message,
             test_runs.test_ct,

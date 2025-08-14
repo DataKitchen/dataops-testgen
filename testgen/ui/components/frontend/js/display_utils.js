@@ -1,6 +1,6 @@
 function formatTimestamp(
     /** @type number | string */ timestamp,
-    /** @type boolean */ show_year,
+    /** @type boolean */ showYear,
 ) {
     if (timestamp) {
         const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
@@ -8,22 +8,29 @@ function formatTimestamp(
             const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
             const hours = date.getHours();
             const minutes = date.getMinutes();
-            return `${months[date.getMonth()]} ${date.getDate()}, ${show_year ? date.getFullYear() + ' at ': ''}${(hours % 12) || 12}:${String(minutes).padStart(2, '0')} ${hours / 12 >= 1 ? 'PM' : 'AM'}`;
+            return `${months[date.getMonth()]} ${date.getDate()}, ${showYear ? date.getFullYear() + ' at ': ''}${(hours % 12) || 12}:${String(minutes).padStart(2, '0')} ${hours / 12 >= 1 ? 'PM' : 'AM'}`;
         }
     }
     return '--';
 }
 
-function formatDuration(/** @type string */ duration) {
-    if (!duration) {
+function formatDuration(
+    /** @type Date | number | string */ startTime,
+    /** @type Date | number | string */ endTime,
+) {
+    if (!startTime || !endTime) {
         return '--';
     }
 
-    const [ hour, minute, second ] = duration.split(':');
+    const startDate = new Date(typeof startTime === 'number' ? startTime * 1000 : startTime);
+    const endDate = new Date(typeof endTime === 'number' ? endTime * 1000 : endTime);
+    const totalSeconds = Math.floor((endDate.getTime() - startDate.getTime()) / 1000);
+
     let formatted = [
-        { value: Number(hour), unit: 'h' },
-        { value: Number(minute), unit: 'm' },
-        { value: Number(second), unit: 's' },
+        { value: Math.floor(totalSeconds / (3600 * 24)), unit: 'd' },
+        { value: Math.floor((totalSeconds % (3600 * 24)) / 3600), unit: 'h' },
+        { value: Math.floor((totalSeconds % 3600) / 60), unit: 'm' },
+        { value: totalSeconds % 60, unit: 's' },
     ].map(({ value, unit }) => value ? `${value}${unit}` : '')
     .join(' ');
 

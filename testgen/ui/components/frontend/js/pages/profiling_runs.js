@@ -3,10 +3,10 @@
  * @type {object}
  * @property {string} profiling_run_id
  * @property {number} start_time
+ * @property {number} end_time
  * @property {string} table_groups_name
  * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
  * @property {string} log_message
- * @property {string} duration
  * @property {string} process_id
  * @property {string} schema_name
  * @property {number} column_ct
@@ -191,7 +191,7 @@ const ProfilingRunItem = (
                 ProfilingRunStatus(item),
                 div(
                     { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
-                    formatDuration(item.duration),
+                    formatDuration(item.start_time, item.end_time),
                 ),
             ),
             item.status === 'Running' && item.process_id && userCanRun ? Button({

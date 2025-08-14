@@ -33,10 +33,10 @@ class ProfilingRunMinimal(EntityMinimal):
 class ProfilingRunSummary(EntityMinimal):
     profiling_run_id: UUID
     start_time: datetime
+    end_time: datetime
     table_groups_name: str
     status: ProfilingRunStatus
     process_id: int
-    duration: str
     log_message: str
     schema_name: str
     table_ct: int
@@ -177,10 +177,10 @@ class ProfilingRun(Entity):
         )
         SELECT v_profiling_runs.profiling_run_id,
             v_profiling_runs.start_time,
+            v_profiling_runs.end_time,
             v_profiling_runs.table_groups_name,
             v_profiling_runs.status,
             v_profiling_runs.process_id,
-            v_profiling_runs.duration,
             v_profiling_runs.log_message,
             v_profiling_runs.schema_name,
             v_profiling_runs.table_ct,
