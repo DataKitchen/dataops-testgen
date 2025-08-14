@@ -879,6 +879,8 @@ const SnowflakeForm = (
             }),
             () => {
                 if (connectByKey.val) {
+                    const hasPrivateKeyPhrase = originalConnection?.private_key_passphrase || connectionPrivateKeyPassphrase.val;
+
                     return div(
                         { class: 'flex-column fx-gap-3' },
                         div(
@@ -899,24 +901,13 @@ const SnowflakeForm = (
                                     validityPerField['private_key_passphrase'] = state.valid;
                                     isValid.val = Object.values(validityPerField).every(v => v);
                                 },
+                                clearable: hasPrivateKeyPhrase,
+                                clearableCondition: 'always',
+                                onClear: () => {
+                                    clearPrivateKeyPhrase.val = true;
+                                    connectionPrivateKeyPassphrase.val = '';
+                                },
                             }),
-                            () => {
-                                const hasPrivateKeyPhrase = originalConnection?.private_key_passphrase || connectionPrivateKeyPassphrase.val;
-                                if (!hasPrivateKeyPhrase) {
-                                    return '';
-                                }
-
-                                return i(
-                                    {
-                                        class: 'material-symbols-rounded clickable text-secondary',
-                                        onclick: () => {
-                                            clearPrivateKeyPhrase.val = true;
-                                            connectionPrivateKeyPassphrase.val = '';
-                                        },
-                                    },
-                                    'clear',
-                                );
-                            },
                         ),
                         FileInput({
                             name: 'private_key',
