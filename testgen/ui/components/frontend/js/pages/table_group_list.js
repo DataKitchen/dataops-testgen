@@ -244,14 +244,14 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                     })) ?? [],
                     onChange: (value) => connection.val = value,
                 })
-                : span(''),
+                : '',
             Input({
                 testId: 'table-groups-name-filter',
                 icon: 'search',
-                label: 'Table Group Name',
-                placeholder: 'Search by table group names',
+                label: '',
+                placeholder: 'Search table group names',
                 height: 38,
-                width: 360,
+                width: 300,
                 clearable: true,
                 value: tableGroupFilter,
                 onChange: (value) => tableGroupFilter.val = value || null,
