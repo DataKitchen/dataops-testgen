@@ -17,8 +17,7 @@ def parse_now(value: str) -> datetime:
 
 def get_now_as_string_with_offset(minutes_offset):
     ret = datetime.utcnow()
-    if minutes_offset > 0:
-        ret = ret + timedelta(minutes=minutes_offset)
+    ret = ret + timedelta(minutes=minutes_offset)
     return ret.strftime("%Y-%m-%d %H:%M:%S")
 
 
