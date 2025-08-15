@@ -575,10 +575,22 @@ def show_test_form(
                 help=help_text,
             )
         elif attribute in int_numeric_attributes:
+            max_value = None
+            if (
+                attribute == "history_lookback"
+                and int(value) <= 1
+                and (
+                    not test_definition.get("history_calculation")
+                    or test_definition.get("history_calculation") == "Value"
+                )
+            ):
+                max_value = 1
             test_definition[attribute] = container.number_input(
                 label=label_text,
-                value=int(value),
                 step=1,
+                value=int(value),
+                max_value=max_value,
+                min_value=0,
                 help=help_text,
             )
         elif attribute in choice_fields:

@@ -445,33 +445,35 @@ CREATE TABLE data_column_chars (
 );
 
 CREATE TABLE test_types (
-   id                      VARCHAR,
-   test_type               VARCHAR(200) NOT NULL
-      CONSTRAINT cat_tests_test_type_pk
-         PRIMARY KEY,
-   test_name_short         VARCHAR(30),
-   test_name_long          VARCHAR(100),
-   test_description        VARCHAR(1000),
-   except_message          VARCHAR(1000),
-   measure_uom             VARCHAR(100),
-   measure_uom_description VARCHAR(200),
-   selection_criteria      TEXT,
-   dq_score_prevalence_formula TEXT,
-   dq_score_risk_factor       TEXT,
-   column_name_prompt      TEXT,
-   column_name_help        TEXT,
-   default_parm_columns    TEXT,
-   default_parm_values     TEXT,
-   default_parm_prompts    TEXT,
-   default_parm_help       TEXT,
-   default_severity        VARCHAR(10),
-   run_type                VARCHAR(10),
-   test_scope              VARCHAR,
-   dq_dimension            VARCHAR(50),
-   health_dimension        VARCHAR(50),
-   threshold_description   VARCHAR(200),
-   usage_notes             VARCHAR,
-   active                  VARCHAR
+   id                            VARCHAR,
+   test_type                     VARCHAR(200) NOT NULL
+                                    CONSTRAINT cat_tests_test_type_pk
+                                    PRIMARY KEY,
+   test_name_short               VARCHAR(30),
+   test_name_long                VARCHAR(100),
+   test_description              VARCHAR(1000),
+   except_message                VARCHAR(1000),
+   measure_uom                   VARCHAR(100),
+   measure_uom_description       VARCHAR(200),
+   selection_criteria            TEXT,
+   dq_score_prevalence_formula   TEXT,
+   dq_score_risk_factor          TEXT,
+   column_name_prompt            TEXT,
+   column_name_help              TEXT,
+   default_parm_columns          TEXT,
+   default_parm_values           TEXT,
+   default_parm_prompts          TEXT,
+   default_parm_help             TEXT,
+   default_severity              VARCHAR(10),
+   run_type                      VARCHAR(10),
+   test_scope                    VARCHAR,
+   dq_dimension                  VARCHAR(50),
+   health_dimension              VARCHAR(50),
+   threshold_description         VARCHAR(200),
+   result_visualization          VARCHAR(50) DEFAULT 'line_chart',
+   result_visualization_params   TEXT DEFAULT NULL,
+   usage_notes                   VARCHAR,
+   active                        VARCHAR
 );
 
 CREATE TABLE test_templates (

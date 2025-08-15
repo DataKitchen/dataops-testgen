@@ -14,7 +14,7 @@ WITH stats AS (
     FROM test_results tr
     WHERE tr.test_definition_id = d.id
     ORDER BY tr.test_time DESC
-    LIMIT d.history_lookback
+    LIMIT CASE WHEN d.history_calculation = 'Value' THEN 1 ELSE d.history_lookback END
   ) AS r ON TRUE
   WHERE d.test_suite_id    = '{TEST_SUITE_ID}'
     AND d.test_active      = 'Y'

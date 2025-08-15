@@ -1,4 +1,6 @@
+import json
 import typing
+from datetime import datetime, timedelta
 from functools import partial
 from io import BytesIO
 from itertools import zip_longest
@@ -353,7 +355,7 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         { "label": "Warning", "value": result.warning_ct, "color": "yellow" },
         { "label": "Failed", "value": result.failed_ct, "color": "red" },
         { "label": "Error", "value": result.error_ct, "color": "brown" },
-        { "label": "Log", "value": result.error_ct, "color": "darkGrey" },
+        { "label": "Log", "value": result.log_ct, "color": "darkGrey" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
     ]
 
@@ -638,10 +640,21 @@ def get_excel_report_data(
     )
 
 
-def write_history_graph(dfh):
+def write_history_graph(data: pd.DataFrame):
+    chart_type = data.at[0, "result_visualization"]
+    chart_params = json.loads(data.at[0, "result_visualization_params"] or "{}")
+
+    match chart_type:
+        case "binary_chart":
+            render_binary_chart(data, **chart_params)
+        case _: render_line_chart(data, **chart_params)
+
+
+def render_line_chart(dfh: pd.DataFrame, **_params: dict) -> None:
+    str_uom = dfh.at[0, "measure_uom"]
+
     y_min = min(dfh["result_measure"].min(), dfh["threshold_value"].min())
     y_max = max(dfh["result_measure"].max(), dfh["threshold_value"].max())
-    str_uom = dfh.at[0, "measure_uom"]
 
     fig = px.line(
         dfh,
@@ -712,6 +725,52 @@ def write_history_graph(dfh):
 
     fig.update_layout(legend={"x": 0.5, "y": 1.1, "xanchor": "center", "yanchor": "top", "orientation": "h"})
     fig.update_layout(width=500, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+
+    st.plotly_chart(fig)
+
+
+def render_binary_chart(data: pd.DataFrame, **params: dict) -> None:
+    history = data.copy(deep=True)
+    legend_labels = params.get("legend", {}).get("labels") or {"0": "0", "1": "1"}
+
+    history["test_start"] = history["test_date"].apply(datetime.fromisoformat)
+    history["test_end"] = history["test_start"].apply(lambda start: start + timedelta(seconds=30))
+    history["formatted_test_date"] = history["test_date"].apply(lambda date_str: datetime.fromisoformat(date_str).strftime("%I:%M:%S %p, %d/%m/%Y"))
+    history["result_measure_with_status"] = history.apply(lambda row: f"{legend_labels[str(int(row['result_measure']))]} ({row['result_status']})", axis=1)
+
+    fig = px.timeline(
+        history,
+        x_start="test_start",
+        x_end="test_end",
+        y="measure_uom",
+        color="result_measure_with_status",
+        color_discrete_map={
+            f"{legend_labels['0']} (Failed)": "#EF5350",
+            f"{legend_labels['0']} (Warning)": "#FF9800",
+            f"{legend_labels['0']} (Log)": "#BDBDBD",
+            f"{legend_labels['1']} (Passed)": "#9CCC65",
+            f"{legend_labels['1']} (Log)": "#42A5F5",
+        },
+        hover_name="formatted_test_date",
+        hover_data={
+            "test_start": False,
+            "test_end": False,
+            "result_measure": False,
+            "result_measure_with_status": False,
+            "measure_uom": False,
+        },
+        labels={
+            "result_measure_with_status": "",
+        },
+    )
+    fig.update_layout(
+        yaxis_visible=False,
+        xaxis_showline=True,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend={"x": 0.5, "y": 1.1, "xanchor": "center", "yanchor": "top", "orientation": "h"},
+        width=500,
+    )
 
     st.plotly_chart(fig)
 

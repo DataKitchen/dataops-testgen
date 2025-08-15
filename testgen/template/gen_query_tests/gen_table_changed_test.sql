@@ -1,7 +1,7 @@
 INSERT INTO test_definitions (table_groups_id, profile_run_id, test_type, test_suite_id,
                               schema_name, table_name,
                               skip_errors, test_active, last_auto_gen_date, profiling_as_of_date,
-                              lock_refresh, custom_query )
+                              lock_refresh, history_calculation, history_lookback, custom_query )
 WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     FROM profile_results p
                   INNER JOIN profiling_runs r
@@ -134,6 +134,8 @@ SELECT '{TABLE_GROUPS_ID}'::UUID as table_groups_id,
        '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date,
        '{AS_OF_DATE}'::TIMESTAMP as profiling_as_of_date,
        'N' as lock_refresh,
+       'Value' as history_calculation,
+       1 as history_lookback,
        fingerprint as custom_query
 FROM newtests n
 INNER JOIN test_types t

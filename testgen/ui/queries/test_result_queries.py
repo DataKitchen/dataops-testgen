@@ -136,7 +136,9 @@ def get_test_result_history(tr_data, limit: int | None = None):
         test_operator,
         threshold_value::NUMERIC,
         result_measure::NUMERIC,
-        result_status
+        result_status,
+        result_visualization,
+        result_visualization_params
     FROM v_test_results
     WHERE {f"""
         test_suite_id = :test_suite_id
