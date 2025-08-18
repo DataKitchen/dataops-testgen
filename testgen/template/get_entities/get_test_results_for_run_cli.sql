@@ -1,6 +1,6 @@
 SELECT ts.test_suite as test_suite_key,
-       table_name,
-       column_names as column_name,
+       r.table_name,
+       r.column_names as column_name,
        r.test_type,
        CASE
          WHEN COALESCE(td.severity, ts.severity, tt.default_severity) = 'Log' THEN 'Log'
