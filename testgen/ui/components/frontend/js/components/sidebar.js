@@ -223,7 +223,7 @@ stylesheet.replace(`
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: calc(100% - 64px);
+    height: calc(100% - 68px);
 }
 
 .menu .menu--project {

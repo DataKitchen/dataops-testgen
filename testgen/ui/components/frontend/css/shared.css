@@ -179,6 +179,12 @@ body {
     color: var(--caption-text-color);
     text-transform: uppercase;
 }
+
+.table-header > *,
+.table-row > * {
+    box-sizing: border-box;
+    padding: 0 4px;
+}
 /*  */
 
 /* Text utilities */
