@@ -161,11 +161,11 @@ const TableGroupForm = (props) => {
                 label: 'Connection',
                 value: tableGroupConnectionId.rawVal,
                 options: connectionOptions,
-                height: 38,
+                required: true,
                 disabled: props.disableConnectionSelector,
-                onChange: (value) => {
+                onChange: (value, state) => {
                     tableGroupConnectionId.val = value;
-                    setFieldValidity('connection_id', !!value);
+                    setFieldValidity('connection_id', state.valid);
                 },
             })
             : undefined,
@@ -216,12 +216,11 @@ const MainForm = (
     tableGroupSchema,
 ) => {
     return div(
-        { class: 'flex-row fx-gap-3 fx-flex-wrap' },
+        { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap' },
         Input({
             name: 'table_groups_name',
             label: 'Name',
             value: tableGroupsName,
-            height: 38,
             class: 'tg-column-flex',
             help: 'Unique name to describe the table group',
             helpPlacement: 'bottom-right',
@@ -235,7 +234,6 @@ const MainForm = (
             name: 'table_group_schema',
             label: 'Schema',
             value: tableGroupSchema,
-            height: 38,
             class: 'tg-column-flex',
             help: 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
@@ -268,7 +266,6 @@ const CriteriaForm = (
                     name: 'profiling_include_mask',
                     label: 'Tables to Include Mask',
                     value: profilingIncludeMask,
-                    height: 38,
                     help: 'SQL filter supported by your database\'s LIKE operator for table names to include',
                     onChange: (value, state) => {
                         profilingIncludeMask.val = value;
@@ -279,7 +276,6 @@ const CriteriaForm = (
                     name: 'profiling_exclude_mask',
                     label: 'Tables to Exclude Mask',
                     value: profilingExcludeMask,
-                    height: 38,
                     help: 'SQL filter supported by your database\'s LIKE operator for table names to exclude',
                     onChange: (value, state) => {
                         profilingExcludeMask.val = value;
@@ -303,7 +299,6 @@ const CriteriaForm = (
                 name: 'profile_id_column_mask',
                 label: 'Profiling ID Column Mask',
                 value: profileIdColumnMask,
-                height: 38,
                 class: 'tg-column-flex',
                 help: 'SQL filter supported by your database\'s LIKE operator representing ID columns',
                 onChange: (value, state) => {
@@ -315,7 +310,6 @@ const CriteriaForm = (
                 name: 'profile_sk_column_mask',
                 label: 'Profiling Surrogate Key Column Mask',
                 value: profileSkColumnMask,
-                height: 38,
                 class: 'tg-column-flex',
                 help: 'SQL filter supported by your database\'s LIKE operator representing surrogate key columns',
                 onChange: (value, state) => {
@@ -366,7 +360,6 @@ const SettingsForm = (
             type: 'number',
             label: 'Min Profiling Age (in days)',
             value: profilingDelayDays,
-            height: 38,
             class: 'tg-column-flex',
             help: 'Number of days to wait before new profiling will be available to generate tests',
             onChange: (value, state) => {
@@ -402,7 +395,6 @@ const SamplingForm = (
                     type: 'number',
                     label: 'Sample percent',
                     value: profileSamplePercent,
-                    height: 38,
                     help: 'Percent of records to include in the sample, unless the calculated count falls below the specified minimum',
                     onChange: (value, state) => {
                         profileSamplePercent.val = value;
@@ -415,7 +407,6 @@ const SamplingForm = (
                     type: 'number',
                     label: 'Min Sample Record Count',
                     value: profileSampleMinCount,
-                    height: 38,
                     help: 'Minimum number of records to be included in any sample (if available)',
                     onChange: (value, state) => {
                         profileSampleMinCount.val = value;
@@ -446,7 +437,6 @@ const TaggingForm = (
             class: 'fx-flex mb-3',
             label: 'Description',
             value: description,
-            height: 38,
             onChange: (value, state) => {
                 description.val = value;
                 options.setValidity?.('description', state.valid);
@@ -458,7 +448,6 @@ const TaggingForm = (
                 name: 'data_source',
                 label: 'Data Source',
                 value: dataSource,
-                height: 38,
                 help: 'Original source of the dataset',
                 onChange: (value, state) => {
                     dataSource.val = value;
@@ -469,7 +458,6 @@ const TaggingForm = (
                 name: 'source_process',
                 label: 'Source Process',
                 value: sourceProcess,
-                height: 38,
                 help: 'Process, program, or data flow that produced the dataset',
                 onChange: (value, state) => {
                     sourceProcess.val = value;
@@ -480,7 +468,6 @@ const TaggingForm = (
                 name: 'business_domain',
                 label: 'Business Domain',
                 value: businessDomain,
-                height: 38,
                 help: 'Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing',
                 onChange: (value, state) => {
                     businessDomain.val = value;
@@ -491,7 +478,6 @@ const TaggingForm = (
                 name: 'transform_level',
                 label: 'Transform Level',
                 value: transformLevel,
-                height: 38,
                 help: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)',
                 onChange: (value, state) => {
                     transformLevel.val = value;
@@ -502,7 +488,6 @@ const TaggingForm = (
                 name: 'source_system',
                 label: 'Source System',
                 value: sourceSystem,
-                height: 38,
                 help: 'Enterprise system source for the dataset',
                 onChange: (value, state) => {
                     sourceSystem.val = value;
@@ -513,7 +498,6 @@ const TaggingForm = (
                 name: 'data_location',
                 label: 'Data Location',
                 value: dataLocation,
-                height: 38,
                 help: 'Physical or virtual location of the dataset, e.g., Headquarters, Cloud',
                 onChange: (value, state) => {
                     dataLocation.val = value;
@@ -524,7 +508,6 @@ const TaggingForm = (
                 name: 'stakeholder_group',
                 label: 'Stakeholder Group',
                 value: stakeholderGroup,
-                height: 38,
                 help: 'Data owners or stakeholders responsible for the dataset',
                 onChange: (value, state) => {
                     stakeholderGroup.val = value;
@@ -535,7 +518,6 @@ const TaggingForm = (
                 name: 'data_product',
                 label: 'Data Product',
                 value: dataProduct,
-                height: 38,
                 help: 'Data domain that comprises the dataset',
                 onChange: (value, state) => {
                     dataProduct.val = value;

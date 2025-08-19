@@ -1,7 +1,8 @@
 import dataclasses
 import typing
 
-from testgen.ui.services import user_session_service
+from testgen.ui.auth import Permission
+from testgen.ui.session import session
 
 MenuSections = typing.Literal["Data Profiling", "Data Quality Testing", "Data Configuration", "Settings"]
 
@@ -11,7 +12,7 @@ class MenuItem:
     label: str
     icon: str | None = dataclasses.field(default=None)
     page: str | None = dataclasses.field(default=None)
-    roles: list[user_session_service.RoleType] | None = dataclasses.field(default_factory=list)
+    permission: Permission = dataclasses.field(default="view")
     order: int = dataclasses.field(default=0)
     section: MenuSections | None = dataclasses.field(default=None)
     items: list["MenuItem"] | None = dataclasses.field(default=None)
@@ -24,8 +25,8 @@ class Menu:
     def filter_for_current_user(self) -> "Menu":
         filtered_items = []
         for menu_item in self.items:
-            item_roles = menu_item.roles or []
-            if len(item_roles) <= 0 or any(map(user_session_service.user_has_role, item_roles)):
+            item_permission = menu_item.permission or "view"
+            if session.auth.user_has_permission(item_permission):
                 filtered_items.append(menu_item)
         return dataclasses.replace(self, items=filtered_items)
 

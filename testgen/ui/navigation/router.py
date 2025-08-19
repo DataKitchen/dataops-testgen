@@ -32,10 +32,10 @@ class Router(Singleton):
 
         # This hack is needed because the auth cookie is not set if navigation happens immediately after login
         # We have to navigate on the next run
-        if session.logging_in:
-            session.logging_in = False
+        if session.auth.logging_in:
+            session.auth.logging_in = False
 
-            pending_route = session.page_pending_login or session.user_default_page or ""
+            pending_route = session.page_pending_login or session.auth.default_page or ""
             pending_args = (
                 (session.page_args_pending_login or {})
                 if session.page_pending_login
@@ -43,10 +43,9 @@ class Router(Singleton):
             )
             session.page_pending_login = None
             session.page_args_pending_login = None
-
             self.navigate(to=pending_route, with_args=pending_args)
 
-        if session.cookies_ready:
+        if session.auth.cookies_ready:
             current_page = session.page_pending_cookies or current_page
             session.page_pending_cookies = None
 

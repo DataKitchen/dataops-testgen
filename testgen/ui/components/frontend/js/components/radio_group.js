@@ -2,37 +2,41 @@
 * @typedef Option
  * @type {object}
  * @property {string} label
+ * @property {string} help
  * @property {string | number | boolean | null} value
  *
  * @typedef Properties
  * @type {object}
  * @property {string} label
  * @property {Option[]} options
- * @property {string | number | boolean | null} selected
+ * @property {string | number | boolean | null} value
  * @property {function(string | number | boolean | null)?} onChange
  * @property {number?} width
- * @property {boolean?} inline
+ * @property {('default' | 'inline' | 'vertical')?} layout
  */
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet } from '../utils.js';
+import { withTooltip } from './tooltip.js';
+import { Icon } from './icon.js';
 
-const { div, input, label } = van.tags;
+const { div, input, label, span } = van.tags;
 
 const RadioGroup = (/** @type Properties */ props) => {
     loadStylesheet('radioGroup', stylesheet);
 
     const groupName = getRandomId();
+    const layout = getValue(props.layout) ?? 'default';
 
     return div(
-        { class: () => `${getValue(props.inline) ? 'flex-row fx-gap-2' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
+        { class: () => `tg-radio-group--wrapper ${layout}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: () => `text-caption ${getValue(props.inline) ? '' : 'mb-1'}` },
+            { class: 'text-caption tg-radio-group--label' },
             props.label,
         ),
         () => div(
-            { class: 'flex-row fx-gap-4 tg-radio-group' },
+            { class: 'tg-radio-group' },
             getValue(props.options).map(option => label(
-                { class: 'flex-row fx-gap-2 clickable' },
+                { class: `flex-row fx-gap-2 clickable ${layout === 'vertical' ? 'fx-align-flex-start' : ''}` },
                 input({
                     type: 'radio',
                     name: groupName,
@@ -44,7 +48,22 @@ const RadioGroup = (/** @type Properties */ props) => {
                     }),
                     class: 'tg-radio-group--input',
                 }),
-                option.label,
+                layout === 'vertical'
+                    ? div(
+                        { class: 'flex-column fx-gap-1' },
+                        option.label,
+                        span(
+                            { class: 'text-caption tg-radio-group--help' },
+                            option.help,
+                        ),
+                    )
+                    : option.label,
+                layout !== 'vertical' && option.help
+                    ? withTooltip(
+                        Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                        { text: option.help, position: 'top', width: 200 }
+                    )
+                    : null,
             )),
         ),
     );
@@ -52,11 +71,39 @@ const RadioGroup = (/** @type Properties */ props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-radio-group {
+.tg-radio-group--wrapper.inline {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.tg-radio-group--wrapper.default .tg-radio-group--label,
+.tg-radio-group--wrapper.vertical .tg-radio-group--label {
+    margin-bottom: 4px;
+}
+
+.tg-radio-group--wrapper.vertical .tg-radio-group--label {
+    margin-bottom: 12px;
+}
+
+.tg-radio-group--wrapper.default .tg-radio-group,
+.tg-radio-group--wrapper.inline .tg-radio-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
     height: 32px;
 }
 
+.tg-radio-group--wrapper.vertical .tg-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 .tg-radio-group--input {
+    flex: 0 0 auto;
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -100,6 +147,11 @@ stylesheet.replace(`
     height: 10px;
     background-color: var(--primary-color);
     border-radius: 5px;
+}
+
+.tg-radio-group--help {
+    white-space: pre-wrap;
+    line-height: 16px;
 }
 `);
 

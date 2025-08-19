@@ -13,6 +13,13 @@ function required(value) {
     return null;
 }
 
+function noSpaces(value) {
+    if (value?.includes(' ')) {
+        return `Value cannot contain spaces.`;
+    }
+    return null;
+}
+
 /**
  * 
  * @param {number} min 
@@ -20,7 +27,7 @@ function required(value) {
  */
 function minLength(min) {
     return (value) => {
-        if (typeof value !== 'string' || value.length < min) {
+        if (value && value.length < min) {
             return `Value must be at least ${min} characters long.`;
         }
         return null;
@@ -45,7 +52,7 @@ function maxLength(max) {
  * To use with FileInput, enforce a cap on file size
  * allowed to upload.
  * 
- * @param {number} size
+ * @param {number} limit
  * @returns {Validator}
  */
 function sizeLimit(limit) {
@@ -67,6 +74,7 @@ function sizeLimit(limit) {
 export {
     maxLength,
     minLength,
+    noSpaces,
     required,
     sizeLimit,
 };

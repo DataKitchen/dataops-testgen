@@ -27,7 +27,6 @@ from testgen.ui.components.widgets.download_dialog import (
 )
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
@@ -41,8 +40,7 @@ LOG = logging.getLogger("testgen")
 class TestDefinitionsPage(Page):
     path = "test-suites:definitions"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "test_suite_id" in st.query_params or "test-suites",
     ]
 
@@ -57,8 +55,8 @@ class TestDefinitionsPage(Page):
         table_group = TableGroup.get_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
         session.set_sidebar_project(project_code)
-        user_can_edit = user_session_service.user_can_edit()
-        user_can_disposition = user_session_service.user_can_disposition()
+        user_can_edit = session.auth.user_has_permission("edit")
+        user_can_disposition = session.auth.user_has_permission("disposition")
 
         testgen.page_header(
             "Test Definitions",

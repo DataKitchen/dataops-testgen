@@ -59,7 +59,6 @@ const TestSuites = (/** @type Properties */ props) => {
                         value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
                         options: getValue(props.table_group_filter_options) ?? [],
                         allowNull: true,
-                        height: 38,
                         style: 'font-size: 14px;',
                         testId: 'table-group-filter',
                         onChange: (value) => emitEvent('FilterApplied', {payload: value}),

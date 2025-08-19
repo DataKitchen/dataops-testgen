@@ -12,7 +12,7 @@ from testgen.common.models import Session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import tz_select
-from testgen.ui.services import user_session_service
+from testgen.ui.session import session
 
 
 class ScheduleDialog:
@@ -72,17 +72,18 @@ class ScheduleDialog:
                     db_session.commit()
                     st.rerun(scope="fragment")
 
+        user_can_edit = session.auth.user_has_permission("edit")
         testgen.testgen_component(
             "schedule_list",
             props={
                 "items": json.dumps(scheduled_jobs_json),
                 "arg_abel": self.arg_label,
-                "permissions": {"can_edit": user_session_service.user_can_edit()},
+                "permissions": {"can_edit": user_can_edit},
             },
             event_handlers={"DeleteSchedule": on_delete_sched}
         )
 
-        if user_session_service.user_can_edit():
+        if user_can_edit:
             with st.container(border=True):
                 self.add_schedule_form()
 

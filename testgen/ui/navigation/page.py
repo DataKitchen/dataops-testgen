@@ -9,6 +9,7 @@ from streamlit.runtime.state.query_params_proxy import QueryParamsProxy
 
 import testgen.ui.navigation.router
 from testgen.common.models.project import Project
+from testgen.ui.auth import Permission
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.session import session
 
@@ -19,6 +20,7 @@ LOG = logging.getLogger("testgen")
 class Page(abc.ABC):
     path: str
     menu_item: MenuItem | None = None
+    permission: Permission | None = "view"
     can_activate: typing.ClassVar[list[CanActivateGuard] | None] = None
 
     def __init__(self, router: testgen.ui.navigation.router.Router) -> None:
@@ -31,7 +33,8 @@ class Page(abc.ABC):
 
     def _navigate(self) -> None:
         self.router.navigate_to_pending()
-        for guard in self.can_activate or []:
+        permission_guard = lambda: session.auth.user_has_permission(self.permission) if self.permission else True
+        for guard in [ permission_guard, *(self.can_activate or []) ]:
             can_activate = guard()
             if can_activate != True:
                 session.sidebar_project = session.sidebar_project or Project.select_where()[0].project_code
@@ -42,7 +45,7 @@ class Page(abc.ABC):
                 session.page_pending_login = self.path
                 session.page_args_pending_login = st.query_params.to_dict()
 
-                default_page = session.user_default_page or ""
+                default_page = session.auth.default_page or ""
                 with_args = { "project_code": session.sidebar_project } if default_page else {}
                 return self.router.navigate(to=default_page, with_args=with_args)
 

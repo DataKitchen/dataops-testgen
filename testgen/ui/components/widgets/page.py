@@ -6,7 +6,7 @@ from testgen.common import version_service
 from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
 from testgen.ui.components.widgets.testgen_component import testgen_component
-from testgen.ui.services import user_session_service
+from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
 UPGRADE_URL = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/upgrade-testgen"
@@ -64,7 +64,7 @@ def help_menu(help_topic: str | None = None) -> None:
                         "support_email": settings.SUPPORT_EMAIL,
                         "version": version.__dict__,
                         "permissions": {
-                            "can_edit": user_session_service.user_can_edit(),
+                            "can_edit": session.auth.user_has_permission("edit"),
                         },
                     },
                     on_change_handlers={

@@ -11,7 +11,6 @@ from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session
 
 PAGE_TITLE = "Project Settings"
@@ -19,9 +18,9 @@ PAGE_TITLE = "Project Settings"
 
 class ProjectSettingsPage(Page):
     path = "settings"
+    permission = "administer"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: user_session_service.user_is_admin(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -29,7 +28,6 @@ class ProjectSettingsPage(Page):
         label=PAGE_TITLE,
         section="Settings",
         order=0,
-        roles=[ "admin" ],
     )
 
     project: Project | None = None

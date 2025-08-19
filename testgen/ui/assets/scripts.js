@@ -13,15 +13,6 @@ window.addEventListener('message', async function(event) {
     }
 });
 
-function removeElements(selectors) {
-    for (const selector of selectors) {
-        const element = window.top.document.querySelector(selector);
-        if (element) {
-            element.remove();
-        }
-    }
-}
-
 async function copyToClipboard(text) {
     if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text || '');
@@ -55,4 +46,5 @@ window.testgen = {
     states: {},
     components: {},
     loadedStylesheets: {},
+    changeLocation: url => window.location.href = url, 
 };

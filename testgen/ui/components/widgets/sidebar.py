@@ -7,7 +7,6 @@ from testgen.common.version_service import Version
 from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.router import Router
-from testgen.ui.services import javascript_service, user_session_service
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -22,8 +21,6 @@ def sidebar(
     current_project: str | None = None,
     menu: Menu = None,
     current_page: str | None = None,
-    username: str | None = None,
-    role: str | None = None,
     version: Version | None = None,
     support_email: str | None = None,
 ) -> None:
@@ -44,8 +41,8 @@ def sidebar(
             "current_project": current_project,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
-            "username": username,
-            "role": role,
+            "username": session.auth.user_display,
+            "role": session.auth.user.role if session.auth.user else None,
             "logout_path": LOGOUT_PATH,
             "version": version.__dict__,
             "support_email": support_email,
@@ -70,14 +67,20 @@ def on_change():
     session.sidebar_event_id = event_id
 
     if event_data.get("path") == LOGOUT_PATH:
-        javascript_service.clear_component_states()
-        user_session_service.end_user_session()
+        session.auth.end_user_session()
+        # This hack is needed because the auth cookie does not immediately get cleared
+        # We don't want to try to load the session again on the next run
+        session.auth.logging_out = True
+        # streamlit_authenticator sets authentication_status implicitly
+        # So we need to clear it
+        session.authentication_status = None
+        
         Router().queue_navigation(to="")
         # Without the time.sleep, cookies sometimes don't get cleared on deployed instances 
         # (even though it works fine locally)
         time.sleep(0.3)
     else:
         Router().queue_navigation(
-            to=event_data.get("path") or session.user_default_page,
+            to=event_data.get("path") or session.auth.default_page,
             with_args=event_data.get("params", {}),
         )

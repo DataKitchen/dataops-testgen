@@ -23,7 +23,6 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
@@ -35,8 +34,7 @@ PAGE_PATH = "quality-dashboard:score-details"
 class ScoreDetailsPage(Page):
     path = PAGE_PATH
     can_activate: ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "definition_id" in st.query_params or "quality-dashboard",
     ]
 
@@ -81,7 +79,7 @@ class ScoreDetailsPage(Page):
         score_breakdown = None
         issues = None
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
-            user_can_edit = user_session_service.user_can_edit()
+            user_can_edit = session.auth.user_has_permission("edit")
             score_card = format_score_card(score_definition.as_cached_score_card())
             if score_type not in typing.get_args(ScoreTypes):
                 score_type = None

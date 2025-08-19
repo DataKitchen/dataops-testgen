@@ -91,7 +91,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 { class: 'flex-row fx-align-flex-end fx-gap-4' },
                 Input({
                     width: 230,
-                    height: 38,
                     style: 'font-size: 14px;',
                     icon: 'search',
                     clearable: true,
@@ -103,7 +102,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     label: 'Sort by',
                     value: tableGroupsSortOption,
                     options: props.table_groups_sort_options?.val ?? [],
-                    height: 38,
                     style: 'font-size: 14px;',
                     testId: 'table-groups-sort',
                 }),

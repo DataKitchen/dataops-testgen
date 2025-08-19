@@ -15,6 +15,7 @@
  * @property {boolean} allowNull
  * @property {Function|null} onChange
  * @property {boolean?} disabled
+ * @property {boolean?} required
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
@@ -70,7 +71,7 @@ const Select = (/** @type {Properties} */ props) => {
             valueLabel.val = selectedOption?.label ?? '';
             valueIcon.val = selectedOption?.icon ?? undefined;
 
-            props.onChange?.(currentValue);
+            props.onChange?.(currentValue, { valid: !!currentValue || !getValue(props.required) });
         }
     });
 
@@ -82,7 +83,13 @@ const Select = (/** @type {Properties} */ props) => {
             onclick: van.derive(() => !getValue(props.disabled) ? () => opened.val = !opened.val : null),
             'data-testid': getValue(props.testId) ?? '',
         },
-        span({'data-testid': 'select-label'}, props.label),
+        span(
+            { class: 'flex-row fx-gap-1', 'data-testid': 'select-label' },
+            props.label,
+            () => getValue(props.required)
+                ? span({ class: 'text-error' }, '*')
+                : '',
+        ),
         div(
             {
                 class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
@@ -146,7 +153,7 @@ stylesheet.replace(`
 .tg-select--field {
     box-sizing: border-box;
     width: 100%;
-    height: 32px;
+    height: 38px;
     min-width: 200px;
     border: 1px solid transparent;
     transition: border-color 0.3s;

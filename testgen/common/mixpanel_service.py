@@ -57,7 +57,7 @@ class MixpanelService(Singleton):
         properties.setdefault("instance_id", self.instance_id)
         properties.setdefault("edition", settings.DOCKER_HUB_REPOSITORY)
         properties.setdefault("version", settings.VERSION)
-        properties.setdefault("username", session.username)
+        properties.setdefault("username", session.auth.user_display)
         properties.setdefault("distinct_id", self.get_distinct_id(properties["username"]))
         if include_usage:
             properties.update(self.get_usage())

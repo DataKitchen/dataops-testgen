@@ -6,7 +6,8 @@ import streamlit as st
 from testgen.ui.components.widgets.button import button
 from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import css_class, whitespace
-from testgen.ui.services.user_session_service import DISABLED_ACTION_TEXT
+
+DISABLED_ACTION_TEXT = "You do not have permissions to perform this action. Contact your administrator."
 
 
 class EmptyStateMessage(Enum):

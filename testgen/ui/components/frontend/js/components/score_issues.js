@@ -375,11 +375,6 @@ stylesheet.replace(`
 .issues-columns {
     text-transform: capitalize;
 }
-
-.issues-columns > span,
-.issues-row > div {
-    padding: 0 4px;
-}
 `);
 
 export { IssuesTable };
