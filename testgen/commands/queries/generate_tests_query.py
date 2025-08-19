@@ -2,7 +2,8 @@ import logging
 from typing import ClassVar, TypedDict
 
 from testgen.common import CleanSQL, date_service, read_template_sql_file
-from testgen.common.database.database_service import get_queries_for_command, replace_params
+from testgen.common.database.database_service import replace_params
+from testgen.common.read_file import get_template_files
 
 LOG = logging.getLogger("testgen")
 
@@ -67,11 +68,35 @@ class CDeriveTestsSQL:
 
     def GetTestDerivationQueriesAsList(self, template_directory: str) -> list[tuple[str, dict]]:
         # Runs on App database
-        params = self._get_params()
-        queries = get_queries_for_command(template_directory, params)
-        if self._use_clean:
-            queries = [ CleanSQL(query) for query in queries ]
-        return [ (query, params) for query in queries ]
+        generic_template_directory = template_directory
+        flavor_template_directory = f"flavors.{self.sql_flavor}.{template_directory}"
+
+        query_templates = {}
+        try:
+            for query_file in get_template_files(r"^.*sql$", generic_template_directory):
+                query_templates[query_file.name] = generic_template_directory
+        except:
+            LOG.debug(
+                f"query template '{generic_template_directory}' directory does not exist",
+                exc_info=True,
+                stack_info=True,
+            )
+
+        try:
+            for query_file in get_template_files(r"^.*sql$", flavor_template_directory):
+                query_templates[query_file.name] = flavor_template_directory
+        except:
+            LOG.debug(
+                f"query template '{generic_template_directory}' directory does not exist",
+                exc_info=True,
+                stack_info=True,
+            )
+
+        queries = []
+        for filename, sub_directory in query_templates.items():
+            queries.append(self._get_query(filename, sub_directory=sub_directory))
+
+        return queries
 
     def GetTestQueriesFromGenericFile(self) -> tuple[str, dict]:
         # Runs on App database

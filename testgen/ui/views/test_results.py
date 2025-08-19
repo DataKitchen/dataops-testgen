@@ -355,7 +355,7 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         { "label": "Warning", "value": result.warning_ct, "color": "yellow" },
         { "label": "Failed", "value": result.failed_ct, "color": "red" },
         { "label": "Error", "value": result.error_ct, "color": "brown" },
-        { "label": "Log", "value": result.log_ct, "color": "darkGrey" },
+        { "label": "Log", "value": result.log_ct, "color": "blue" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
     ]
 

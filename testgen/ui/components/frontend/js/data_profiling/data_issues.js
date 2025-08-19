@@ -37,7 +37,7 @@ const STATUS_COLORS = {
     Failed: 'red',
     Warning: 'yellow',
     Error: 'brown',
-    Log: 'darkGrey',
+    Log: 'blue',
 };
 
 const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Column */ item) => {

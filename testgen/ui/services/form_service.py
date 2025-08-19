@@ -207,7 +207,7 @@ function(params) {
     }  else if (params.value === 'Log') {
         style.color = 'black';
         style.borderColor = 'var(--ag-odd-row-background-color)';
-        style.backgroundColor = "#9E9E9E";
+        style.backgroundColor = "#2196F3";
         style.display = 'flex';
         style.alignItems = 'center';
         style.justifyContent = 'center';

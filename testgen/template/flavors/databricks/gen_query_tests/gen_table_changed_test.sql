@@ -111,13 +111,13 @@ combined
          WHERE rank = 1 ),
 newtests
    AS (SELECT profile_run_id, schema_name, table_name,
-             'COUNT(*)::VARCHAR || ''|'' || ' ||
+             'COUNT(*)::STRING || ''|'' || ' ||
              STRING_AGG(
                 REPLACE(
                         CASE
-                          WHEN general_type = 'D' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR'
-                          WHEN general_type = 'A' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR || ''|'' || SUM(LENGTH(@@@))::VARCHAR'
-                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@), 5)::VARCHAR'
+                          WHEN general_type = 'D' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || COUNT(DISTINCT @@@)::STRING'
+                          WHEN general_type = 'A' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || COUNT(DISTINCT @@@)::STRING || ''|'' || SUM(LENGTH(@@@))::STRING'
+                          WHEN general_type = 'N' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || SUM(@@@)::STRING || ''|'' || ROUND(AVG(@@@), 5)::STRING || ''|'' || ROUND(STDDEV(@@@), 5)::STRING'
                         END,
                         '@@@', '"' || column_name || '"'),
                         ' || ''|'' || '
