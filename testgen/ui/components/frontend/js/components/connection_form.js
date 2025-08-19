@@ -401,7 +401,7 @@ const RedshiftForm = (
                 ],
                 value: connectByUrl,
                 onChange: (value) => connectByUrl.val = value,
-                inline: true,
+                layout: 'inline',
             }),
             div(
                 { class: 'flex-row fx-gap-3 fx-flex' },
@@ -579,7 +579,7 @@ const DatabricksForm = (
                 ],
                 value: connectByUrl,
                 onChange: (value) => connectByUrl.val = value,
-                inline: true,
+                layout: 'inline',
             }),
             div(
                 { class: 'flex-row fx-gap-3 fx-flex' },
@@ -772,7 +772,7 @@ const SnowflakeForm = (
                 ],
                 value: connectByUrl,
                 onChange: (value) => connectByUrl.val = value,
-                inline: true,
+                layout: 'inline',
             }),
             div(
                 { class: 'flex-row fx-gap-3 fx-flex' },
@@ -845,7 +845,7 @@ const SnowflakeForm = (
                 ],
                 value: connectByKey,
                 onChange: (value) => connectByKey.val = value,
-                inline: true,
+                layout: 'inline',
             }),
 
             Input({
