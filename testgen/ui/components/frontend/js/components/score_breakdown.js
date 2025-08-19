@@ -25,6 +25,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         options:  Object.entries(CATEGORIES)
                             .sort((A, B) => A[1].localeCompare(B[1]))
                             .map(([value, label]) => ({ value, label })),
+                        height: 32,
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
                         testId: 'groupby-selector',
                     });
@@ -41,6 +42,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         label: '',
                         value: selectedScoreType,
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s, selected: s === scoreType })),
+                        height: 32,
                         onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
                         testId: 'score-type-selector',
                     });

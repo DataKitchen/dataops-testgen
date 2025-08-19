@@ -130,6 +130,7 @@ const Toolbar = (
             Input({
                 icon: 'search',
                 clearable: true,
+                height: 32,
                 onChange: (/** @type string */ value) => {
                     search.val = value;
                     filterTree(nodes.val, isNodeHidden);

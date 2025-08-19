@@ -97,7 +97,6 @@ const Toolbar = (
         { class: 'flex-row fx-align-flex-end mb-4' },
         Input({
             width: 230,
-            height: 38,
             style: 'font-size: 14px; margin-right: 16px;',
             icon: 'search',
             clearable: true,
@@ -109,7 +108,6 @@ const Toolbar = (
         Select({
             id: 'score-dashboard-sort',
             label: 'Sort by',
-            height: 38,
             style: 'font-size: 14px;',
             value: sortedBy,
             options: sortOptions,

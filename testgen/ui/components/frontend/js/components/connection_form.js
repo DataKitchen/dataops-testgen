@@ -59,7 +59,7 @@ import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
 import { Select } from './select.js';
-import { maxLength, minLength, sizeLimit } from '../form_validators.js';
+import { maxLength, minLength, required, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
 import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
@@ -252,7 +252,6 @@ const ConnectionForm = (props, saveButton) => {
             value: connectionFlavor,
             options: props.flavors,
             disabled: props.disableFlavor,
-            height: 38,
             help: 'Type of database server to connect to. This determines the database driver and SQL dialect that will be used by TestGen.',
             testId: 'sql_flavor',
         }),
@@ -260,13 +259,12 @@ const ConnectionForm = (props, saveButton) => {
             name: 'connection_name',
             label: 'Connection Name',
             value: connectionName,
-            height: 38,
             help: 'Unique name to describe the connection',
             onChange: (value, state) => {
                 connectionName.val = value;
                 setFieldValidity('connection_name', state.valid);
             },
-            validators: [ minLength(3), maxLength(40) ],
+            validators: [ required, minLength(3), maxLength(40) ],
         }),
 
         authenticationForm,
@@ -411,7 +409,6 @@ const RedshiftForm = (
                     name: 'db_host',
                     label: 'Host',
                     value: connectionHost,
-                    height: 38,
                     class: 'fx-flex',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -425,7 +422,6 @@ const RedshiftForm = (
                     name: 'db_port',
                     label: 'Port',
                     value: connectionPort,
-                    height: 38,
                     type: 'number',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -440,7 +436,6 @@ const RedshiftForm = (
                 name: 'db_name',
                 label: 'Database',
                 value: connectionDatabase,
-                height: 38,
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
@@ -455,9 +450,8 @@ const RedshiftForm = (
                     label: 'URL',
                     value: connectionStringSuffix,
                     class: 'fx-flex',
-                    height: 38,
                     name: 'url_suffix',
-                    prefix: span({ style: 'height: 38px; white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => connectionStringSuffix.val = value,
                 }),
@@ -472,7 +466,6 @@ const RedshiftForm = (
                 name: 'db_user',
                 label: 'Username',
                 value: connectionUsername,
-                height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
                     validityPerField['db_user'] = state.valid;
@@ -484,7 +477,6 @@ const RedshiftForm = (
                 name: 'password',
                 label: 'Password',
                 value: connectionPassword,
-                height: 38,
                 type: 'password',
                 passwordSuggestions: false,
                 placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
@@ -595,7 +587,6 @@ const DatabricksForm = (
                     name: 'db_host',
                     label: 'Host',
                     value: connectionHost,
-                    height: 38,
                     class: 'fx-flex',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -609,7 +600,6 @@ const DatabricksForm = (
                     name: 'db_port',
                     label: 'Port',
                     value: connectionPort,
-                    height: 38,
                     type: 'number',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -624,7 +614,6 @@ const DatabricksForm = (
                 label: 'HTTP Path',
                 value: connectionHttpPath,
                 class: 'fx-flex',
-                height: 38,
                 name: 'http_path',
                 disabled: connectByUrl,
                 onChange: (value, state) => {
@@ -638,7 +627,6 @@ const DatabricksForm = (
                 name: 'db_name',
                 label: 'Database',
                 value: connectionDatabase,
-                height: 38,
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
@@ -653,9 +641,8 @@ const DatabricksForm = (
                     label: 'URL',
                     value: connectionStringSuffix,
                     class: 'fx-flex',
-                    height: 38,
                     name: 'url_suffix',
-                    prefix: span({ style: 'height: 38px; white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => connectionStringSuffix.val = value,
                 }),
@@ -670,7 +657,6 @@ const DatabricksForm = (
                 name: 'db_user',
                 label: 'Username',
                 value: connectionUsername,
-                height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
                     validityPerField['db_user'] = state.valid;
@@ -682,7 +668,6 @@ const DatabricksForm = (
                 name: 'password',
                 label: 'Password',
                 value: connectionPassword,
-                height: 38,
                 type: 'password',
                 passwordSuggestions: false,
                 placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
@@ -795,7 +780,6 @@ const SnowflakeForm = (
                     name: 'db_host',
                     label: 'Host',
                     value: connectionHost,
-                    height: 38,
                     class: 'fx-flex',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -809,7 +793,6 @@ const SnowflakeForm = (
                     name: 'db_port',
                     label: 'Port',
                     value: connectionPort,
-                    height: 38,
                     type: 'number',
                     disabled: connectByUrl,
                     onChange: (value, state) => {
@@ -824,7 +807,6 @@ const SnowflakeForm = (
                 name: 'db_name',
                 label: 'Database',
                 value: connectionDatabase,
-                height: 38,
                 disabled: connectByUrl,
                 onChange: (value, state) => {
                     connectionDatabase.val = value;
@@ -839,9 +821,8 @@ const SnowflakeForm = (
                     label: 'URL',
                     value: connectionStringSuffix,
                     class: 'fx-flex',
-                    height: 38,
                     name: 'url_suffix',
-                    prefix: span({ style: 'height: 38px; white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => {
                         connectionStringSuffix.val = value;
@@ -871,7 +852,6 @@ const SnowflakeForm = (
                 name: 'db_user',
                 label: 'Username',
                 value: connectionUsername,
-                height: 38,
                 onChange: (value, state) => {
                     connectionUsername.val = value;
                     validityPerField['db_user'] = state.valid;
@@ -891,7 +871,6 @@ const SnowflakeForm = (
                                 name: 'private_key_passphrase',
                                 label: 'Private Key Passphrase',
                                 value: connectionPrivateKeyPassphrase,
-                                height: 38,
                                 type: 'password',
                                 passwordSuggestions: false,
                                 help: 'Passphrase used when creating the private key. Leave empty if the private key is not encrypted.',
@@ -945,7 +924,6 @@ const SnowflakeForm = (
                     name: 'password',
                     label: 'Password',
                     value: connectionPassword,
-                    height: 38,
                     type: 'password',
                     passwordSuggestions: false,
                     placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',

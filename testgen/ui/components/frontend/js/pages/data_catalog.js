@@ -185,7 +185,6 @@ const DataCatalog = (/** @type Properties */ props) => {
                     label: 'Table Group',
                     value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
                     options: getValue(props.table_group_filter_options) ?? [],
-                    height: 38,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
@@ -516,6 +515,7 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
             return Input({
                 label, help,
                 width: key === 'description' ? descriptionWidth : width,
+                height: 32,
                 value: state.rawVal,
                 placeholder: (inheritTable || inheritTableGroup) ? `Inherited: ${inheritTable ?? inheritTableGroup}` : null,
                 autocompleteOptions: props.tagOptions?.[key],
@@ -637,6 +637,7 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                                 })
                                 : Input({
                                     label, help, width,
+                                    height: 32,
                                     placeholder: () => checkedState.val ? null : '(keep current values)',
                                     autocompleteOptions: tagOptions[key],
                                     onChange: (value) => valueState.val = value || null,

@@ -228,15 +228,14 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
     });
 
     return div(
-        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
+        { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
         div(
-            {class: 'flex-row fx-gap-4'},
+            {class: 'flex-row fx-align-flex-end fx-gap-4'},
             (getValue(connections) ?? [])?.length > 1
                 ? Select({
                     testId: 'connection-select',
                     label: 'Connection',
                     allowNull: true,
-                    height: 38,
                     value: connection,
                     options: getValue(connections)?.map((connection) => ({
                         label: connection.connection_name,
@@ -250,7 +249,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 icon: 'search',
                 label: '',
                 placeholder: 'Search table group names',
-                height: 38,
                 width: 300,
                 clearable: true,
                 value: tableGroupFilter,
