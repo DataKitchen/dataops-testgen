@@ -2,19 +2,7 @@ import logging
 
 from streamlit_javascript import st_javascript
 
-from testgen.ui.services.user_session_service import AUTH_TOKEN_COOKIE_NAME
-
 LOG = logging.getLogger("testgen")
-
-
-def clear_component_states():
-    execute_javascript(
-        f"""await (async function () {{
-            window.parent.postMessage({{ type: 'TestgenLogout', cookie: '{AUTH_TOKEN_COOKIE_NAME}' }}, '*');
-            return 0;
-        }})()
-        """
-    )
 
 
 def execute_javascript(script):
