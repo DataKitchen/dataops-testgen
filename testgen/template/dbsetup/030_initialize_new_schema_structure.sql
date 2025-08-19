@@ -622,22 +622,15 @@ CREATE TABLE functional_test_results
 );
 
 CREATE TABLE auth_users (
-	id UUID 		DEFAULT gen_random_uuid()
+	id UUID 		 DEFAULT gen_random_uuid()
     CONSTRAINT pk_au_id
          PRIMARY KEY,
-	username 	VARCHAR(20),
-	email 		VARCHAR(120),
-	name 			VARCHAR(120),
-	password 	VARCHAR(120),
-	role        VARCHAR(20)
-);
-
-ALTER TABLE auth_users
-ADD CONSTRAINT username_check
-CHECK (
-    LENGTH(username) >= 4 AND       -- Minimum length of 4 characters
-    LENGTH(username) <= 20 AND      -- Maximum length of 20 characters
-    username ~ '^[a-zA-Z0-9_]+$'   -- Only alphanumeric characters and underscores allowed
+	username 	 VARCHAR(256),
+	email 		 VARCHAR(256),
+	name 			 VARCHAR(256),
+	password 	 VARCHAR(120),
+	role         VARCHAR(20),
+   latest_login TIMESTAMP
 );
 
 ALTER TABLE auth_users

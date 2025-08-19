@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, asc
+from sqlalchemy import Column, String, asc, func, update
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
 
@@ -19,5 +21,25 @@ class User(Entity):
     name: str = Column(NullIfEmptyString)
     password: str = Column(String)
     role: RoleType = Column(String)
+    latest_login: datetime = Column(postgresql.TIMESTAMP)
 
-    _default_order_by = (asc(username),)
+    _get_by = "username"
+    _default_order_by = (asc(func.lower(username)),)
+
+    def save(self, update_latest_login: bool = False) -> None:
+        if self.id and not update_latest_login:
+            values = {
+                column.key: getattr(self, column.key, None)
+                for column in self.__table__.columns
+                if column != User.latest_login
+            }
+            query = update(User).where(User.id == self.id).values(**values)
+            db_session = get_current_session()
+            db_session.execute(query)
+            db_session.commit()
+            User.clear_cache()
+        else:
+            if update_latest_login:
+                self.latest_login = datetime.now(UTC)
+            super().save()
+

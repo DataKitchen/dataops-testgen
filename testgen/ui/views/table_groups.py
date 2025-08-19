@@ -16,7 +16,6 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import table_group_queries
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
 from testgen.ui.views.profiling_runs import ProfilingScheduleDialog
@@ -28,8 +27,7 @@ PAGE_TITLE = "Table Groups"
 class TableGroupsPage(Page):
     path = "table-groups"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -37,7 +35,6 @@ class TableGroupsPage(Page):
         label=PAGE_TITLE,
         section="Data Configuration",
         order=0,
-        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
     def render(
@@ -49,7 +46,7 @@ class TableGroupsPage(Page):
     ) -> None:
         testgen.page_header(PAGE_TITLE, "create-a-table-group")
 
-        user_can_edit = user_session_service.user_can_edit()
+        user_can_edit = session.auth.user_has_permission("edit")
         project_summary = Project.get_summary(project_code)
         if connection_id and not connection_id.isdigit():
             connection_id = None

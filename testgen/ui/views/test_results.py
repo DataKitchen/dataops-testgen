@@ -32,7 +32,6 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.queries import test_result_queries
 from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
@@ -46,8 +45,7 @@ PAGE_PATH = "test-runs:results"
 class TestResultsPage(Page):
     path = PAGE_PATH
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "run_id" in st.query_params or "test-runs",
     ]
 
@@ -189,6 +187,7 @@ class TestResultsPage(Page):
             run_date,
             run.test_suite_id,
             export_button_column,
+            session.auth.user_has_permission("edit"),
             status,
             test_type,
             table_name,
@@ -208,7 +207,7 @@ class TestResultsPage(Page):
             { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
         ]
 
-        if user_session_service.user_can_disposition():
+        if session.auth.user_has_permission("disposition"):
             disable_all_dispo = not selected or status == "'Passed'" or all(sel["result_status"] == "Passed" for sel in selected)
             disposition_translator =  {"No Decision": None}
             for action in disposition_actions:
@@ -424,6 +423,7 @@ def show_result_detail(
     run_date: str,
     test_suite_id: UUID,
     export_container: DeltaGenerator,
+    user_can_edit: bool,
     test_statuses: list[str] | None = None,
     test_type_id: str | None = None,
     table_name: str | None = None,
@@ -517,7 +517,7 @@ def show_result_detail(
 
         with pg_col2:
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
-        if user_session_service.user_can_edit():
+        if user_can_edit:
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
 
         if selected_row["test_scope"] == "column":

@@ -24,7 +24,6 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 
 LOG = logging.getLogger("testgen")
@@ -35,8 +34,7 @@ CLEAR_SENTINEL = "<clear>"
 class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -44,7 +42,6 @@ class ConnectionsPage(Page):
         label=PAGE_TITLE,
         section="Data Configuration",
         order=1,
-        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
     trim_fields: typing.ClassVar[list[str]] = [
         "project_host",
@@ -66,7 +63,7 @@ class ConnectionsPage(Page):
         has_table_groups = (
             len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
-        user_is_admin = user_session_service.user_is_admin()
+        user_is_admin = session.auth.user_has_permission("administer")
         should_check_status, set_check_status = temp_value(
             "connections:status_check",
             default=False,

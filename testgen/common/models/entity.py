@@ -7,13 +7,14 @@ import streamlit as st
 from sqlalchemy import delete, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
-from sqlalchemy.sql.elements import BinaryExpression
+from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from testgen.common.models import Base, get_current_session
 from testgen.utils import is_uuid4, make_json_safe
 
 ENTITY_HASH_FUNCS = {
     BinaryExpression: lambda x: str(x.compile(compile_kwargs={"literal_binds": True})),
+    BooleanClauseList: lambda x: str(x.compile(compile_kwargs={"literal_binds": True})),
     tuple: lambda x: [str(y) for y in x],
 }
 

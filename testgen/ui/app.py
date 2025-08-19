@@ -10,7 +10,7 @@ from testgen.common.models.project import Project
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
-from testgen.ui.services import javascript_service, user_session_service
+from testgen.ui.services import javascript_service
 from testgen.ui.session import session
 
 
@@ -23,12 +23,14 @@ def render(log_level: int = logging.INFO):
         # Collapse when logging out because the sidebar takes some time to be removed from the DOM
         # Collapse for Catalog role since they only have access to one page
         initial_sidebar_state="collapsed"
-        if session.logging_out or user_session_service.user_has_catalog_role()
+        if session.auth and (session.auth.logging_out or (session.auth.is_logged_in and not session.auth.user_has_permission("view")))
         else "auto",
     )
 
     application = get_application(log_level=log_level)
     application.logger.debug("Starting Streamlit re-run")
+    if not session.auth:
+        session.auth = application.auth_class()
 
     status_ok, message = check_basic_configuration()
     if not status_ok:
@@ -41,20 +43,18 @@ def render(log_level: int = logging.INFO):
         session.page_args_pending_router and session.page_args_pending_router.get("project_code")
     ) or st.query_params.get("project_code", session.sidebar_project)
 
-    if session.authentication_status is None and not session.logging_out:
-        user_session_service.load_user_session()
+    if not session.auth.is_logged_in and not session.auth.logging_out:
+        session.auth.load_user_session()
 
     application.logo.render()
 
-    if session.authentication_status and not session.logging_in:
+    if session.auth.is_logged_in and not session.auth.logging_in:
         with st.sidebar:
             testgen.sidebar(
                 projects=Project.select_where(),
                 current_project=session.sidebar_project,
                 menu=application.menu,
                 current_page=session.current_page,
-                username=session.username,
-                role=session.auth_role,
                 version=version_service.get_version(),
                 support_email=settings.SUPPORT_EMAIL,
             )

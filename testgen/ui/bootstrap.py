@@ -3,6 +3,7 @@ import logging
 
 from testgen import settings
 from testgen.common import configure_logging
+from testgen.ui.auth import Authentication
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
@@ -47,7 +48,8 @@ LOG = logging.getLogger("testgen")
 
 
 class Application(singleton.Singleton):
-    def __init__(self, logo: plugins.Logo, router: Router, menu: Menu, logger: logging.Logger) -> None:
+    def __init__(self, auth_class: Authentication, logo: plugins.Logo, router: Router, menu: Menu, logger: logging.Logger) -> None:
+        self.auth_class = auth_class
         self.logo = logo
         self.router = router
         self.menu = menu
@@ -69,6 +71,7 @@ def run(log_level: int = logging.INFO) -> Application:
         plugins.cleanup()
 
     configure_logging(level=log_level)
+    auth_class = Authentication
     logo_class = plugins.Logo
 
     for plugin in installed_plugins:
@@ -77,6 +80,9 @@ def run(log_level: int = logging.INFO) -> Application:
         if spec.page:
             pages.append(spec.page)
 
+        if spec.auth:
+            auth_class = spec.auth
+
         if spec.logo:
             logo_class = spec.logo
 
@@ -84,12 +90,13 @@ def run(log_level: int = logging.INFO) -> Application:
             spec.component.provide()
 
     return Application(
+        auth_class=auth_class,
         logo=logo_class(),
         router=Router(routes=pages),
         menu=Menu(
             items=list(
                 {
-                    page.path: dataclasses.replace(page.menu_item, page=page.path)
+                    page.path: dataclasses.replace(page.menu_item, page=page.path, permission=page.permission)
                     for page in pages if page.menu_item
                 }.values()
             ),

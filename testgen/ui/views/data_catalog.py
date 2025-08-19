@@ -33,7 +33,6 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_id,
     get_tables_by_table_group,
 )
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
@@ -48,8 +47,9 @@ PAGE_TITLE = "Data Catalog"
 
 class DataCatalogPage(Page):
     path = "data-catalog"
+    permission = "catalog"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
@@ -70,7 +70,7 @@ class DataCatalogPage(Page):
                 # Enclosing the loading logic in a Streamlit container also fixes it
 
                 project_summary = Project.get_summary(project_code)
-                user_can_navigate = not user_session_service.user_has_catalog_role()
+                user_can_navigate = session.auth.user_has_permission("view")
                 table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
                 if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
@@ -105,7 +105,7 @@ class DataCatalogPage(Page):
                 "tag_values": get_tag_values(),
                 "last_saved_timestamp": st.session_state.get("data_catalog:last_saved_timestamp"),
                 "permissions": {
-                    "can_edit": user_session_service.user_can_disposition(),
+                    "can_edit": session.auth.user_has_permission("disposition"),
                     "can_navigate": user_can_navigate,
                 },
             },
@@ -417,7 +417,7 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
             AND column_chars.column_name = profile_results.column_name
         )
     WHERE column_chars.table_groups_id = :table_group_id
-    ORDER BY table_name, ordinal_position;
+    ORDER BY LOWER(table_chars.table_name), ordinal_position;
     """
     params = {"table_group_id": table_group_id}
 
@@ -523,21 +523,24 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
 def get_tag_values() -> dict[str, list[str]]:
     quote = lambda v: f"'{v}'"
     query = f"""
-    SELECT DISTINCT
-        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
-        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
-    FROM data_column_chars
-    UNION
-    SELECT DISTINCT
-        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
-        UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
-    FROM data_table_chars
-    UNION
-    SELECT DISTINCT
-        UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS if t != 'aggregation_level'])}]) as tag,
-        UNNEST(array[{', '.join([ t for t in TAG_FIELDS if t != 'aggregation_level'])}]) AS value
-    FROM table_groups
-    ORDER BY value;
+    SELECT *
+    FROM (
+        SELECT DISTINCT
+            UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+            UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+        FROM data_column_chars
+        UNION
+        SELECT DISTINCT
+            UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS])}]) as tag,
+            UNNEST(array[{', '.join(TAG_FIELDS)}]) AS value
+        FROM data_table_chars
+        UNION
+        SELECT DISTINCT
+            UNNEST(array[{', '.join([quote(t) for t in TAG_FIELDS if t != 'aggregation_level'])}]) as tag,
+            UNNEST(array[{', '.join([ t for t in TAG_FIELDS if t != 'aggregation_level'])}]) AS value
+        FROM table_groups
+    ) tag_values
+    ORDER BY LOWER(value);
     """
     results = fetch_all_from_db(query)
 

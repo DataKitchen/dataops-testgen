@@ -55,4 +55,5 @@ window.testgen = {
     states: {},
     components: {},
     loadedStylesheets: {},
+    changeLocation: url => window.location.href = url, 
 };

@@ -123,7 +123,7 @@ def run_execution_steps_in_background(project_code, test_suite):
         empty_cache()
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(project_code, test_suite, session.username),
+            args=(project_code, test_suite, session.auth.user_display),
         )
         background_thread.start()
     else:

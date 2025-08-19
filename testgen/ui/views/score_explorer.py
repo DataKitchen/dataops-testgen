@@ -26,7 +26,6 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_issue_reports,
     get_score_category_values,
 )
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
 
@@ -35,8 +34,7 @@ PAGE_PATH = "quality-dashboard:explorer"
 class ScoreExplorerPage(Page):
     path = PAGE_PATH
     can_activate: ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "definition_id" in st.query_params or "project_code" in st.query_params or "quality-dashboard",
     ]
 
@@ -85,7 +83,7 @@ class ScoreExplorerPage(Page):
         issues = None
         filter_values = {}
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
-            user_can_edit = user_session_service.user_can_edit()
+            user_can_edit = session.auth.user_has_permission("edit")
             filter_values = get_score_category_values(project_code)
 
             score_definition: ScoreDefinition = ScoreDefinition(
