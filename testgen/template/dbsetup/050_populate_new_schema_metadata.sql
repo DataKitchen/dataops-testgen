@@ -232,11 +232,23 @@ VALUES  ('2001', 'Combo_Match', 'redshift', 'ex_data_match_generic.sql'),
         ('2410', 'Aggregate_Balance_Range', 'databricks', 'ex_aggregate_match_range_generic.sql'),
         ('2411', 'Dupe_Rows', 'databricks', 'ex_dupe_rows_generic.sql'),
 
+        ('2501', 'Combo_Match', 'bigquery', 'ex_data_match_bigquery.sql'),
+        ('2502', 'Aggregate_Minimum', 'bigquery', 'ex_aggregate_match_no_drops_generic.sql'),
+        ('2503', 'Distribution_Shift', 'bigquery', 'ex_relative_entropy_bigquery.sql'),
+        ('2504', 'CUSTOM', 'bigquery', 'ex_custom_query_generic.sql'),
+        ('2506', 'Aggregate_Balance', 'bigquery', 'ex_aggregate_match_same_generic.sql'),
+        ('2507', 'Timeframe_Combo_Gain', 'bigquery', 'ex_window_match_no_drops_bigquery.sql'),
+        ('2508', 'Timeframe_Combo_Match', 'bigquery', 'ex_window_match_same_bigquery.sql'),
+        ('2509', 'Aggregate_Balance_Percent', 'bigquery', 'ex_aggregate_match_percent_generic.sql'),
+        ('2510', 'Aggregate_Balance_Range', 'bigquery', 'ex_aggregate_match_range_generic.sql'),
+        ('2511', 'Dupe_Rows', 'bigquery', 'ex_dupe_rows_generic.sql'),
+
         ('2012', 'Table_Freshness', 'redshift', 'ex_table_changed_generic.sql'),
         ('2112', 'Table_Freshness', 'snowflake', 'ex_table_changed_generic.sql'),
         ('2212', 'Table_Freshness', 'mssql', 'ex_table_changed_mssql.sql'),
         ('2312', 'Table_Freshness', 'postgresql', 'ex_table_changed_generic.sql'),
-        ('2412', 'Table_Freshness', 'databricks', 'ex_table_changed_generic.sql')
+        ('2412', 'Table_Freshness', 'databricks', 'ex_table_changed_generic.sql'),
+        ('2512', 'Table_Freshness', 'bigquery', 'ex_table_changed_bigquery.sql')
 ;
 
 TRUNCATE TABLE cat_test_conditions;
@@ -464,7 +476,45 @@ VALUES  ('1001', 'Alpha_Trunc', 'redshift', 'MAX(LENGTH({COLUMN_NAME}))', '<', '
         ('2036', 'Valid_Characters', 'snowflake', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHAR(160) || CHAR(8203) || CHAR(65279) || CHAR(8239) || CHAR(8201) || CHAR(12288) || CHAR(8204), ''XXXXXXX'') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('5036', 'Valid_Characters', 'trino', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), ''XXXXXXX'') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
         ('3036', 'Valid_Characters', 'mssql', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, NCHAR(160) || NCHAR(8203) || NCHAR(65279) || NCHAR(8239) || NCHAR(8201) || NCHAR(12288) || NCHAR(8204), ''XXXXXXX'') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
-        ('6036', 'Valid_Characters', 'databricks', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), ''XXXXXXX'') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}');
+        ('6036', 'Valid_Characters', 'databricks', 'SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), ''XXXXXXX'') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE ''''''%'''''' OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+
+        ('7001', 'Alpha_Trunc', 'bigquery', 'MAX(LENGTH({COLUMN_NAME}))', '<', '{THRESHOLD_VALUE}'),
+        ('7002', 'Avg_Shift', 'bigquery', 'ROUND(ABS((AVG(SAFE_CAST({COLUMN_NAME} AS FLOAT64)) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})-1)*POW(STDDEV({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}-1)*POW({BASELINE_SD},2)) / NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0))),3)', '>=', '{THRESHOLD_VALUE}'),
+        ('7003', 'Condition_Flag', 'bigquery', 'SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7004', 'Constant', 'bigquery', 'SUM(CASE WHEN {COLUMN_NAME} != {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7005', 'Daily_Record_Ct', 'bigquery', 'DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), DAY), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), DAY), DAY) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, DAY))', '<', '{THRESHOLD_VALUE}'),
+        ('7006', 'Dec_Trunc', 'bigquery', 'SUM(ROUND(ABS(MOD({COLUMN_NAME}, 1)), 5)) + 1', '<', '{THRESHOLD_VALUE}'),
+        ('7007', 'Distinct_Date_Ct', 'bigquery', 'COUNT(DISTINCT {COLUMN_NAME})', '<', '{THRESHOLD_VALUE}'),
+        ('7008', 'Distinct_Value_Ct', 'bigquery', 'COUNT(DISTINCT {COLUMN_NAME})', '!=', '{THRESHOLD_VALUE}'),
+        ('7009', 'Email_Format', 'bigquery', 'SUM(CASE WHEN NOT REGEXP_CONTAINS(CAST({COLUMN_NAME} AS STRING), r''^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+[.])+[A-Za-z]{2,}$'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7010', 'Future_Date', 'bigquery', 'SUM(IF({COLUMN_NAME} > CAST(CAST(''{RUN_DATE}'' AS DATETIME) AS {COLUMN_TYPE}), 1, 0))', '>', '{THRESHOLD_VALUE}'),
+        ('7011', 'Future_Date_1Y', 'bigquery', 'SUM(IF({COLUMN_NAME} > CAST(DATETIME_ADD(CAST(''{RUN_DATE}'' AS DATETIME), INTERVAL 1 YEAR) AS {COLUMN_TYPE}), 1, 0))', '>', '{THRESHOLD_VALUE}'),
+        ('7012', 'Incr_Avg_Shift', 'bigquery', 'COALESCE(ABS(({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME}) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD}), 0)', '>=', '{THRESHOLD_VALUE}'),
+        ('7013', 'LOV_All', 'bigquery', 'STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), ''|'' ORDER BY {COLUMN_NAME})', '!=', '{THRESHOLD_VALUE}'),
+        ('7014', 'LOV_Match', 'bigquery', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7015', 'Min_Date', 'bigquery', 'SUM(CASE WHEN {COLUMN_NAME} < SAFE_CAST(''{BASELINE_VALUE}'' AS {COLUMN_TYPE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7016', 'Min_Val', 'bigquery', 'SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7017', 'Missing_Pct', 'bigquery', 'ABS(2.0 * ASIN(SQRT({BASELINE_VALUE_CT} / {BASELINE_CT})) - 2.0 * ASIN(SQRT(COUNT({COLUMN_NAME}) / NULLIF(COUNT(*),0))))', '>=', '{THRESHOLD_VALUE}'),
+        ('7018', 'Monthly_Rec_Ct', 'bigquery', 'DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), MONTH), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), MONTH), MONTH) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, MONTH))', '>', '{THRESHOLD_VALUE}'),
+        ('7019', 'Outlier_Pct_Above', 'bigquery', 'SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT64) > {BASELINE_AVG} + 2*{BASELINE_SD} THEN 1 ELSE 0 END) / NULLIF(COUNT({COLUMN_NAME}),0)', '>', '{THRESHOLD_VALUE}'),
+        ('7020', 'Outlier_Pct_Below', 'bigquery', 'SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT64) < {BASELINE_AVG} - 2*{BASELINE_SD} THEN 1 ELSE 0 END) / NULLIF(COUNT({COLUMN_NAME}),0)', '>', '{THRESHOLD_VALUE}'),
+        ('7021', 'Pattern_Match', 'bigquery', 'COUNT(NULLIF({COLUMN_NAME}, '''')) - SUM(CAST(REGEXP_CONTAINS(CAST(NULLIF({COLUMN_NAME}, '''') AS STRING), r''{BASELINE_VALUE}'') AS INT64))', '>', '{THRESHOLD_VALUE}'),
+        ('7022', 'Recency', 'bigquery', 'CAST((DATETIME_DIFF(DATETIME_TRUNC(CAST(CAST(''{RUN_DATE}'' AS DATETIME) AS {COLUMN_TYPE}), DAY), DATETIME_TRUNC(MAX({COLUMN_NAME}), DAY), DAY)) AS INT64)', '>', '{THRESHOLD_VALUE}'),
+        ('7023', 'Required', 'bigquery', 'COUNT(*) - COUNT({COLUMN_NAME})', '>', '{THRESHOLD_VALUE}'),
+        ('7024', 'Row_Ct', 'bigquery', 'COUNT(*)', '<', '{THRESHOLD_VALUE}'),
+        ('7025', 'Row_Ct_Pct', 'bigquery', 'ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))', '>', '{THRESHOLD_VALUE}'),
+        ('7026', 'Street_Addr_Pattern', 'bigquery', '100.0 * SUM(CAST(REGEXP_CONTAINS(CAST({COLUMN_NAME} AS STRING), r''^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$'') AS INT64)) / NULLIF(COUNT({COLUMN_NAME}),0)', '<', '{THRESHOLD_VALUE}'),
+        ('7027', 'US_State', 'bigquery', 'SUM(CASE WHEN {COLUMN_NAME} NOT IN ('''',''AL'',''AK'',''AS'',''AZ'',''AR'',''CA'',''CO'',''CT'',''DE'',''DC'',''FM'',''FL'',''GA'',''GU'',''HI'',''ID'',''IL'',''IN'',''IA'',''KS'',''KY'',''LA'',''ME'',''MH'',''MD'',''MA'',''MI'',''MN'',''MS'',''MO'',''MT'',''NE'',''NV'',''NH'',''NJ'',''NM'',''NY'',''NC'',''ND'',''MP'',''OH'',''OK'',''OR'',''PW'',''PA'',''PR'',''RI'',''SC'',''SD'',''TN'',''TX'',''UT'',''VT'',''VI'',''VA'',''WA'',''WV'',''WI'',''WY'',''AE'',''AP'',''AA'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7028', 'Unique', 'bigquery', 'COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})', '>', '{THRESHOLD_VALUE}'),
+        ('7029', 'Unique_Pct', 'bigquery', 'ABS(2.0 * ASIN(SQRT({BASELINE_UNIQUE_CT}/{BASELINE_VALUE_CT})) - 2.0 * ASIN(SQRT(COUNT(DISTINCT {COLUMN_NAME}) / NULLIF(COUNT({COLUMN_NAME}),0))))', '>=', '{THRESHOLD_VALUE}'),
+        ('7036', 'Valid_Characters', 'bigquery', 'SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r''[\u00A0\u200B\uFEFF\u202F\u2009\u3000\u200C]'', ''X'') != {COLUMN_NAME} OR {COLUMN_NAME} LIKE '' %'' OR {COLUMN_NAME} LIKE "''%''" OR {COLUMN_NAME} LIKE ''"%"'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7033', 'Valid_Month', 'bigquery', 'SUM(CASE WHEN NULLIF({COLUMN_NAME}, '''') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7034', 'Valid_US_Zip', 'bigquery', 'SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r''[0-9]'', ''9'') NOT IN (''99999'',''999999999'',''99999-9999'') THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7035', 'Valid_US_Zip3', 'bigquery', 'SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r''[0-9]'', ''9'') != ''999'' THEN 1 ELSE 0 END)', '>', '{THRESHOLD_VALUE}'),
+        ('7032', 'Variability_Decrease', 'bigquery', '100.0 * STDDEV(CAST({COLUMN_NAME} AS FLOAT64)) / {BASELINE_SD}', '<', '{THRESHOLD_VALUE}'),
+        ('7031', 'Variability_Increase', 'bigquery', '100.0 * STDDEV(CAST({COLUMN_NAME} AS FLOAT64)) / {BASELINE_SD}', '>', '{THRESHOLD_VALUE}'),
+        ('7030', 'Weekly_Rec_Ct', 'bigquery', 'DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), WEEK), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), WEEK), WEEK) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, WEEK))', '>', '{THRESHOLD_VALUE}');
+
 
 TRUNCATE TABLE target_data_lookups;
 
@@ -1785,9 +1835,701 @@ GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500'),
           ''\ufeff'', ''\x65279'') as `{COLUMN_NAME}_content`,
        COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
  WHERE TRANSLATE(`{COLUMN_NAME}`, ''\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff'', ''XXXXXXXXXX'') <> `{COLUMN_NAME}`
-GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500')
-;
-
+GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500'),
+    ('1339', '1001', 'Profile Anomaly', 'Suggested_Type', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY record_ct DESC
+LIMIT 20;'),
+    ('1340', '1002', 'Profile Anomaly', 'Non_Standard_Blanks', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE (
+  `{COLUMN_NAME}` IN (''.'',''?'','' '')
+  OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r''-{2,}'')
+  OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r''0{2,}'')
+  OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r''9{2,}'')
+  OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r''x{2,}'')
+  OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r''z{2,}'')
+  OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (''blank'',''error'',''missing'',''tbd'',''n/a'',''#na'',''none'',''null'',''unknown'')
+  OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (''(blank)'',''(error)'',''(missing)'',''(tbd)'',''(n/a)'',''(#na)'',''(none)'',''(null)'',''(unknown)'')
+  OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (''[blank]'',''[error]'',''[missing]'',''[tbd]'',''[n/a]'',''[#na]'',''[none]'',''[null]'',''[unknown]'')
+  OR `{COLUMN_NAME}` = ''''
+  OR `{COLUMN_NAME}` IS NULL
+)
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`;'),
+    ('1341', '1003', 'Profile Anomaly', 'Invalid_Zip_USA', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), ''012345678'', ''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1342', '1004', 'Profile Anomaly', 'Multiple_Types_Minor', 'bigquery', NULL, 'SELECT DISTINCT column_name, columns.table_name,
+  CASE
+    WHEN LOWER(data_type) LIKE ''timestamp%'' THEN LOWER(data_type)
+    WHEN LOWER(data_type) LIKE ''date'' THEN LOWER(data_type)
+    WHEN LOWER(data_type) LIKE ''boolean'' THEN ''boolean''
+    WHEN data_type = ''TEXT'' THEN CONCAT(''varchar('', CAST(character_maximum_length AS STRING), '')'')
+    WHEN LOWER(data_type) LIKE ''char%'' THEN CONCAT(''char('', CAST(character_maximum_length AS STRING), '')'')
+    WHEN data_type = ''NUMBER'' AND numeric_precision = 38 AND numeric_scale = 0 THEN ''bigint''
+    WHEN LOWER(data_type) LIKE ''num%'' THEN CONCAT(''numeric('', CAST(numeric_precision AS STRING), '','', CAST(numeric_scale AS STRING), '')'')
+    ELSE data_type
+  END AS data_type
+FROM information_schema.columns
+JOIN information_schema.tables
+  ON columns.table_name = tables.table_name
+  AND columns.table_schema = tables.table_schema
+WHERE columns.table_schema = ''{TARGET_SCHEMA}''
+  AND columns.column_name = ''{COLUMN_NAME}''
+  AND tables.table_type = ''BASE TABLE''
+ORDER BY data_type, table_name;'),
+    ('1343', '1005', 'Profile Anomaly', 'Multiple_Types_Major', 'bigquery', NULL, 'SELECT DISTINCT column_name, columns.table_name,
+  CASE
+    WHEN LOWER(data_type) LIKE ''timestamp%'' THEN LOWER(data_type)
+    WHEN LOWER(data_type) LIKE ''date'' THEN LOWER(data_type)
+    WHEN LOWER(data_type) LIKE ''boolean'' THEN ''boolean''
+    WHEN data_type = ''TEXT'' THEN CONCAT(''varchar('', CAST(character_maximum_length AS STRING), '')'')
+    WHEN LOWER(data_type) LIKE ''char%'' THEN CONCAT(''char('', CAST(character_maximum_length AS STRING), '')'')
+    WHEN data_type = ''NUMBER'' AND numeric_precision = 38 AND numeric_scale = 0 THEN ''bigint''
+    WHEN LOWER(data_type) LIKE ''num%'' THEN CONCAT(''numeric('', CAST(numeric_precision AS STRING), '','', CAST(numeric_scale AS STRING), '')'')
+    ELSE data_type
+  END AS data_type
+FROM information_schema.columns
+JOIN information_schema.tables
+  ON columns.table_name = tables.table_name
+  AND columns.table_schema = tables.table_schema
+WHERE columns.table_schema = ''{TARGET_SCHEMA}''
+  AND columns.column_name = ''{COLUMN_NAME}''
+  AND tables.table_type = ''BASE TABLE''
+ORDER BY data_type, table_name;'),
+    ('1344', '1006', 'Profile Anomaly', 'No_Values', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`;'),
+    ('1345', '1007', 'Profile Anomaly', 'Column_Pattern_Mismatch', 'bigquery', NULL, '(
+  SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME},
+       (SELECT TRIM(SPLIT(''{DETAIL_EXPRESSION}'', ''|'')[SAFE_OFFSET(3)]) AS top_pattern) b
+  WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r''[a-z]'', ''a''), r''[A-Z]'', ''A''), r''[0-9]'', ''N'') = b.top_pattern
+  GROUP BY b.top_pattern, `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME},
+       (SELECT TRIM(SPLIT(''{DETAIL_EXPRESSION}'', ''|'')[SAFE_OFFSET(5)]) AS top_pattern) b
+  WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r''[a-z]'', ''a''), r''[A-Z]'', ''A''), r''[0-9]'', ''N'') = b.top_pattern
+  GROUP BY b.top_pattern, `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME},
+       (SELECT TRIM(SPLIT(''{DETAIL_EXPRESSION}'', ''|'')[SAFE_OFFSET(7)]) AS top_pattern) b
+  WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r''[a-z]'', ''a''), r''[A-Z]'', ''A''), r''[0-9]'', ''N'') = b.top_pattern
+  GROUP BY b.top_pattern, `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 5
+)
+UNION ALL
+(
+  SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME},
+       (SELECT TRIM(SPLIT(''{DETAIL_EXPRESSION}'', ''|'')[SAFE_OFFSET(9)]) AS top_pattern) b
+  WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r''[a-z]'', ''a''), r''[A-Z]'', ''A''), r''[0-9]'', ''N'') = b.top_pattern
+  GROUP BY b.top_pattern, `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 5
+)
+ORDER BY top_pattern DESC, count DESC;'),
+    ('1346', '1008', 'Profile Anomaly', 'Table_Pattern_Mismatch', 'bigquery', NULL, 'SELECT DISTINCT column_name, columns.table_name
+FROM information_schema.columns
+JOIN information_schema.tables
+  ON columns.table_name = tables.table_name
+  AND columns.table_schema = tables.table_schema
+WHERE columns.table_schema = ''{TARGET_SCHEMA}''
+  AND columns.column_name = ''{COLUMN_NAME}''
+  AND UPPER(tables.table_type) = ''BASE TABLE''
+ORDER BY table_name;'),
+    ('1347', '1009', 'Profile Anomaly', 'Leading_Spaces', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''^\s'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`;'),
+    ('1348', '1010', 'Profile Anomaly', 'Quoted_Values', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = ''"'' OR LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = "''"
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1349', '1011', 'Profile Anomaly', 'Char_Column_Number_Values', 'bigquery', NULL, '(
+  SELECT ''Numeric'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NOT NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+UNION ALL
+(
+  SELECT ''Non-Numeric'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+ORDER BY data_type, count DESC;'),
+    ('1350', '1012', 'Profile Anomaly', 'Char_Column_Date_Values', 'bigquery', NULL, '(
+  SELECT ''Date'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NOT NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+UNION ALL
+(
+  SELECT ''Non-Date'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+ORDER BY data_type, count DESC;'),
+    ('1353', '1015', 'Profile Anomaly', 'Boolean_Value_Mismatch', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY COUNT(*) DESC;'),
+    ('1354', '1016', 'Profile Anomaly', 'Potential_Duplicates', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+HAVING COUNT(*) > 1
+ORDER BY COUNT(*) DESC
+LIMIT 500;'),
+    ('1355', '1017', 'Profile Anomaly', 'Standardized_Value_Matches', 'bigquery', NULL, 'WITH cte AS (
+  SELECT UPPER(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r"[ ''\.\-\,]", '''')) AS possible_standard_value,
+         COUNT(DISTINCT `{COLUMN_NAME}`) AS cnt
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  GROUP BY possible_standard_value
+  HAVING COUNT(DISTINCT `{COLUMN_NAME}`) > 1
+)
+SELECT DISTINCT a.`{COLUMN_NAME}`, b.possible_standard_value, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME} a
+JOIN cte b
+  ON UPPER(REGEXP_REPLACE(CAST(a.`{COLUMN_NAME}` AS STRING), r"[ ''\.\-\,]", '''')) = b.possible_standard_value
+GROUP BY a.`{COLUMN_NAME}`, b.possible_standard_value
+ORDER BY b.possible_standard_value ASC, count DESC
+LIMIT 500;'),
+    ('1356', '1018', 'Profile Anomaly', 'Unlikely_Date_Values', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, CAST(CAST(''{PROFILE_RUN_DATE}'' AS DATETIME) AS DATE) AS profile_run_date, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME} a
+WHERE (CAST(`{COLUMN_NAME}` AS DATE) < DATE ''1900-01-01'')
+   OR (CAST(`{COLUMN_NAME}` AS DATE) > DATE_ADD(CAST(CAST(''{PROFILE_RUN_DATE}'' AS DATETIME) AS DATE), INTERVAL 30 YEAR))
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1357', '1019', 'Profile Anomaly', 'Recency_One_Year', 'bigquery', NULL, 'created_in_ui'),
+    ('1358', '1020', 'Profile Anomaly', 'Recency_Six_Months', 'bigquery', NULL, 'created_in_ui'),
+    ('1359', '1021', 'Profile Anomaly', 'Unexpected US States', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1360', '1022', 'Profile Anomaly', 'Unexpected Emails', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1361', '1023', 'Profile Anomaly', 'Small_Numeric_Value_Ct', 'bigquery', NULL, '(
+  SELECT ''Numeric'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NOT NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+UNION ALL
+(
+  SELECT ''Non-Numeric'' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NULL
+  GROUP BY `{COLUMN_NAME}`
+  ORDER BY count DESC
+  LIMIT 10
+)
+ORDER BY data_type, count DESC;'),
+    ('1362', '1024', 'Profile Anomaly', 'Invalid_Zip3_USA', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), ''012345678'', ''999999999'') <> ''999''
+GROUP BY `{COLUMN_NAME}`
+ORDER BY count DESC, `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1363', '1025', 'Profile Anomaly', 'Delimited_Data_Embedded', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$'')
+  AND NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''.*\s(and|but|or|yet)\s.*'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY COUNT(*) DESC
+LIMIT 500;'),
+    ('1364', '1004', 'Test Results', 'Alpha_Trunc', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS current_max_length, {THRESHOLD_VALUE} AS previous_max_length
+FROM {TARGET_SCHEMA}.{TABLE_NAME}, (
+  SELECT MAX(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS max_length
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+) a
+WHERE LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) = a.max_length
+  AND a.max_length < {THRESHOLD_VALUE}
+LIMIT 500;'),
+    ('1365', '1005', 'Test Results', 'Avg_Shift', 'bigquery', NULL, 'SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average
+FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+    ('1366', '1006', 'Test Results', 'Condition_Flag', 'bigquery', NULL, 'SELECT *
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {CUSTOM_QUERY}
+LIMIT 500;'),
+    ('1367', '1007', 'Test Results', 'Constant', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE}
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1368', '1009', 'Test Results', 'Daily_Record_Ct', 'bigquery', NULL, 'WITH daterange AS (
+  SELECT day AS all_dates
+  FROM UNNEST(
+    GENERATE_DATE_ARRAY(
+      (SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}),
+      (SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME})
+    )
+  ) AS day
+),
+existing_periods AS (
+  SELECT DISTINCT CAST(`{COLUMN_NAME}` AS DATE) AS period, COUNT(1) AS period_count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  GROUP BY period
+),
+p AS (
+  SELECT d.all_dates AS missing_period,
+         MAX(b.period) AS prior_available_date,
+         MIN(c.period) AS next_available_date
+  FROM daterange d
+  LEFT JOIN existing_periods a ON d.all_dates = a.period
+  LEFT JOIN existing_periods b ON b.period < d.all_dates
+  LEFT JOIN existing_periods c ON c.period > d.all_dates
+  WHERE a.period IS NULL
+    AND d.all_dates BETWEEN b.period AND c.period
+  GROUP BY d.all_dates
+)
+SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count
+FROM p
+LEFT JOIN existing_periods e ON (p.prior_available_date = e.period)
+LEFT JOIN existing_periods f ON (p.next_available_date = f.period)
+ORDER BY p.missing_period
+LIMIT 500;'),
+    ('1369', '1011', 'Test Results', 'Dec_Trunc', 'bigquery', NULL, 'SELECT DISTINCT LENGTH(SPLIT(CAST(`{COLUMN_NAME}` AS STRING), ''.'')[SAFE_OFFSET(1)]) AS decimal_scale, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY decimal_scale
+LIMIT 500;'),
+    ('1370', '1012', 'Test Results', 'Distinct_Date_Ct', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE `{COLUMN_NAME}` IS NOT NULL
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1371', '1013', 'Test Results', 'Distinct_Value_Ct', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE `{COLUMN_NAME}` IS NOT NULL
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1372', '1014', 'Test Results', 'Email_Format', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$'')
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1373', '1015', 'Test Results', 'Future_Date', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE DATETIME_DIFF(`{COLUMN_NAME}`, CAST(CAST(''{TEST_DATE}'' AS DATETIME) AS {COLUMN_TYPE}), DAY) > {THRESHOLD_VALUE}
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1374', '1016', 'Test Results', 'Future_Date_1Y', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE DATETIME_DIFF(`{COLUMN_NAME}`, DATE_ADD(CAST(CAST(''{TEST_DATE}'' AS DATETIME) AS {COLUMN_TYPE}), INTERVAL 365 DAY), DAY) > {THRESHOLD_VALUE}
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1375', '1017', 'Test Results', 'Incr_Avg_Shift', 'bigquery', NULL, 'SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average,
+       SUM(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_sum,
+       NULLIF(CAST(COUNT(`{COLUMN_NAME}`) AS FLOAT64), 0) AS current_value_count
+FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+    ('1376', '1018', 'Test Results', 'LOV_All', 'bigquery', NULL, 'SELECT lov
+FROM (
+  SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), ''|'' ORDER BY `{COLUMN_NAME}`) AS lov
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+)
+WHERE lov <> ''{THRESHOLD_VALUE}''
+LIMIT 500;'),
+    ('1377', '1019', 'Test Results', 'LOV_Match', 'bigquery', NULL, 'SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '''') AS `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE NULLIF(`{COLUMN_NAME}`, '''') NOT IN {BASELINE_VALUE}
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1378', '1020', 'Test Results', 'Min_Date', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS DATE) < CAST(CAST(''{BASELINE_VALUE}'' AS DATETIME) AS DATE)
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1379', '1021', 'Test Results', 'Min_Val', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, (ABS(CAST(`{COLUMN_NAME}` AS NUMERIC)) - ABS({BASELINE_VALUE})) AS difference_from_baseline
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS NUMERIC) < {BASELINE_VALUE}
+LIMIT 500;'),
+    ('1380', '1022', 'Test Results', 'Missing_Pct', 'bigquery', NULL, 'SELECT *
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE `{COLUMN_NAME}` IS NULL OR CAST(`{COLUMN_NAME}` AS STRING) = ''''
+LIMIT 10;'),
+    ('1381', '1023', 'Test Results', 'Monthly_Rec_Ct', 'bigquery', NULL, 'WITH daterange AS (
+  SELECT month AS all_dates
+  FROM UNNEST(
+    GENERATE_DATE_ARRAY(
+      DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), MONTH),
+      DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), MONTH),
+      INTERVAL 1 MONTH
+    )
+  ) AS month
+),
+existing_periods AS (
+  SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), MONTH) AS period, COUNT(1) AS period_count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  GROUP BY period
+),
+p AS (
+  SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month
+  FROM daterange d
+  LEFT JOIN existing_periods a ON d.all_dates = a.period
+  LEFT JOIN existing_periods b ON b.period < d.all_dates
+  LEFT JOIN existing_periods c ON c.period > d.all_dates
+  WHERE a.period IS NULL
+    AND d.all_dates BETWEEN b.period AND c.period
+  GROUP BY d.all_dates
+)
+SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count
+FROM p
+LEFT JOIN existing_periods e ON (p.prior_available_month = e.period)
+LEFT JOIN existing_periods f ON (p.next_available_month = f.period)
+ORDER BY p.missing_period;'),
+    ('1382', '1024', 'Test Results', 'Outlier_Pct_Above', 'bigquery', NULL, 'SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) > ({BASELINE_AVG} + (2 * {BASELINE_SD}))
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC;'),
+    ('1383', '1025', 'Test Results', 'Outlier_Pct_Below', 'bigquery', NULL, 'SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) < ({BASELINE_AVG} + (2 * {BASELINE_SD}))
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC;'),
+    ('1384', '1026', 'Test Results', 'Pattern_Match', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''''), r''{BASELINE_VALUE}'')
+GROUP BY `{COLUMN_NAME}`;'),
+    ('1385', '1028', 'Test Results', 'Recency', 'bigquery', NULL, 'SELECT DISTINCT col AS latest_date_available, CAST(CAST(''{TEST_DATE}'' AS DATETIME) AS {COLUMN_TYPE}) AS test_run_date
+FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME})
+WHERE DATETIME_DIFF(CAST(CAST(''{TEST_DATE}'' AS DATETIME) AS {COLUMN_TYPE}), col, DAY) > {THRESHOLD_VALUE};'),
+    ('1386', '1030', 'Test Results', 'Required', 'bigquery', NULL, 'SELECT *
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE `{COLUMN_NAME}` IS NULL
+LIMIT 500;'),
+    ('1387', '1031', 'Test Results', 'Row_Ct', 'bigquery', NULL, 'WITH cte AS (
+  SELECT COUNT(*) AS current_count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+)
+SELECT current_count,
+       ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / CAST({THRESHOLD_VALUE} AS FLOAT64), 2)) AS row_count_pct_decrease
+FROM cte
+WHERE current_count < {THRESHOLD_VALUE};'),
+    ('1388', '1032', 'Test Results', 'Row_Ct_Pct', 'bigquery', NULL, 'WITH cte AS (
+  SELECT COUNT(*) AS current_count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+)
+SELECT current_count, {BASELINE_CT} AS baseline_count,
+       ABS(ROUND(100 * (current_count - {BASELINE_CT}) / CAST({BASELINE_CT} AS FLOAT64), 2)) AS row_count_pct_difference
+FROM cte;'),
+    ('1389', '1033', 'Test Results', 'Street_Addr_Pattern', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''^[0-9]{1,5}[A-Za-z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[A-Za-z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY COUNT(*) DESC
+LIMIT 500;'),
+    ('1390', '1036', 'Test Results', 'US_State', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE NULLIF(`{COLUMN_NAME}`, '''') NOT IN (''AL'',''AK'',''AS'',''AZ'',''AR'',''CA'',''CO'',''CT'',''DE'',''DC'',''FM'',''FL'',''GA'',''GU'',''HI'',''ID'',''IL'',''IN'',''IA'',''KS'',''KY'',''LA'',''ME'',''MH'',''MD'',''MA'',''MI'',''MN'',''MS'',''MO'',''MT'',''NE'',''NV'',''NH'',''NJ'',''NM'',''NY'',''NC'',''ND'',''MP'',''OH'',''OK'',''OR'',''PW'',''PA'',''PR'',''RI'',''SC'',''SD'',''TN'',''TX'',''UT'',''VT'',''VI'',''VA'',''WA'',''WV'',''WI'',''WY'',''AE'',''AP'',''AA'')
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1391', '1034', 'Test Results', 'Unique', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+HAVING COUNT(*) > 1
+ORDER BY COUNT(*) DESC
+LIMIT 500;'),
+    ('1392', '1035', 'Test Results', 'Unique_Pct', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY COUNT(*) DESC
+LIMIT 500;'),
+    ('1393', '1037', 'Test Results', 'Weekly_Rec_Ct', 'bigquery', NULL, 'WITH daterange AS (
+  SELECT week_start AS all_dates
+  FROM UNNEST(
+    GENERATE_DATE_ARRAY(
+      DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), WEEK),
+      DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), WEEK),
+      INTERVAL 7 DAY
+    )
+  ) AS week_start
+),
+existing_periods AS (
+  SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), WEEK) AS period, COUNT(1) AS period_count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  GROUP BY period
+),
+p AS (
+  SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week
+  FROM daterange d
+  LEFT JOIN existing_periods a ON d.all_dates = a.period
+  LEFT JOIN existing_periods b ON b.period < d.all_dates
+  LEFT JOIN existing_periods c ON c.period > d.all_dates
+  WHERE a.period IS NULL
+    AND d.all_dates BETWEEN b.period AND c.period
+  GROUP BY d.all_dates
+)
+SELECT p.missing_period, p.prior_available_week, e.period_count AS prior_available_week_count, p.next_available_week, f.period_count AS next_available_week_count
+FROM p
+LEFT JOIN existing_periods e ON (p.prior_available_week = e.period)
+LEFT JOIN existing_periods f ON (p.next_available_week = f.period)
+ORDER BY p.missing_period;'),
+    ('1394', '1040', 'Test Results', 'Variability_Increase', 'bigquery', NULL, 'SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
+FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+    ('1395', '1041', 'Test Results', 'Variability_Decrease', 'bigquery', NULL, 'SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
+FROM {TARGET_SCHEMA}.{TABLE_NAME};'),
+    ('1396', '1027', 'Profile Anomaly', 'Variant_Coded_Values', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (
+  SELECT TRIM(val) FROM UNNEST(SPLIT(SUBSTR(''{DETAIL_EXPRESSION}'', STRPOS(''{DETAIL_EXPRESSION}'', '':'') + 2), ''|'')) AS val
+)
+GROUP BY `{COLUMN_NAME}`;'),
+    ('1397', '1043', 'Test Results', 'Valid_Characters', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''[\u00A0\u200B\uFEFF\u202F\u2001\u3000\u2004\u200C]'')
+  OR CAST(`{COLUMN_NAME}` AS STRING) LIKE '' %''
+  OR CAST(`{COLUMN_NAME}` AS STRING) LIKE ''\''''%''
+  OR CAST(`{COLUMN_NAME}` AS STRING) LIKE ''"%''
+GROUP BY `{COLUMN_NAME}`
+ORDER BY record_ct DESC
+LIMIT 20;'),
+    ('1398', '1044', 'Test Results', 'Valid_US_Zip', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), ''012345678'', ''999999999'') NOT IN (''99999'', ''999999999'', ''99999-9999'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY record_ct DESC
+LIMIT 20;'),
+    ('1399', '1045', 'Test Results', 'Valid_US_Zip3', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), ''012345678'', ''999999999'') != ''999''
+GROUP BY `{COLUMN_NAME}`
+ORDER BY record_ct DESC
+LIMIT 20;'),
+    ('1400', '1500', 'Test Results', 'Aggregate_Balance', 'bigquery', NULL, 'SELECT *
+FROM (
+  SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+  FROM (
+    SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+    FROM {TARGET_SCHEMA}.{TABLE_NAME}
+    WHERE {SUBSET_CONDITION}
+    GROUP BY {GROUPBY_NAMES}
+    {HAVING_CONDITION}
+    UNION ALL
+    SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+    FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+    WHERE {MATCH_SUBSET_CONDITION}
+    GROUP BY {MATCH_GROUPBY_NAMES}
+    {MATCH_HAVING_CONDITION}
+  ) a
+  GROUP BY {GROUPBY_NAMES}
+) s
+WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
+ORDER BY {GROUPBY_NAMES};'),
+    ('1401', '1501', 'Test Results', 'Aggregate_Minimum', 'bigquery', NULL, 'SELECT *
+FROM (
+  SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+  FROM (
+    SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+    FROM {TARGET_SCHEMA}.{TABLE_NAME}
+    WHERE {SUBSET_CONDITION}
+    GROUP BY {GROUPBY_NAMES}
+    {HAVING_CONDITION}
+    UNION ALL
+    SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+    FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+    WHERE {MATCH_SUBSET_CONDITION}
+    GROUP BY {MATCH_GROUPBY_NAMES}
+    {MATCH_HAVING_CONDITION}
+  ) a
+  GROUP BY {GROUPBY_NAMES}
+) s
+WHERE total < match_total OR (total IS NULL AND match_total IS NOT NULL)
+ORDER BY {GROUPBY_NAMES};'),
+    ('1402', '1502', 'Test Results', 'Combo_Match', 'bigquery', NULL, 'SELECT *
+FROM (
+  SELECT {COLUMN_NAME_NO_QUOTES}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE {SUBSET_CONDITION}
+  GROUP BY {COLUMN_NAME_NO_QUOTES}
+  {HAVING_CONDITION}
+  EXCEPT DISTINCT
+  SELECT {MATCH_GROUPBY_NAMES}
+  FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+  WHERE {MATCH_SUBSET_CONDITION}
+  GROUP BY {MATCH_GROUPBY_NAMES}
+  {MATCH_HAVING_CONDITION}
+) test
+ORDER BY {COLUMN_NAME_NO_QUOTES};'),
+    ('1403', '1503', 'Test Results', 'Distribution_Shift', 'bigquery', NULL, 'WITH latest_ver AS (
+  SELECT {CONCAT_COLUMNS} AS category,
+         CAST(COUNT(*) AS FLOAT64) / SUM(COUNT(*)) OVER() AS pct_of_total
+  FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+  WHERE {SUBSET_CONDITION}
+  GROUP BY {CONCAT_COLUMNS}
+)
+SELECT *
+FROM latest_ver;'),
+    ('1404', '1504', 'Test Results', 'Aggregate_Balance_Percent', 'bigquery', NULL, 'SELECT *
+FROM (
+  SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+  FROM (
+    SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+    FROM {TARGET_SCHEMA}.{TABLE_NAME}
+    WHERE {SUBSET_CONDITION}
+    GROUP BY {GROUPBY_NAMES}
+    {HAVING_CONDITION}
+    UNION ALL
+    SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+    FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+    WHERE {MATCH_SUBSET_CONDITION}
+    GROUP BY {MATCH_GROUPBY_NAMES}
+    {MATCH_HAVING_CONDITION}
+  ) a
+  GROUP BY {GROUPBY_NAMES}
+) s
+WHERE (total IS NOT NULL AND match_total IS NULL)
+   OR (total IS NULL AND match_total IS NOT NULL)
+   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+ORDER BY {GROUPBY_NAMES};'),
+    ('1405', '1505', 'Test Results', 'Aggregate_Balance_Range', 'bigquery', NULL, 'SELECT *
+FROM (
+  SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+  FROM (
+    SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+    FROM {TARGET_SCHEMA}.{TABLE_NAME}
+    WHERE {SUBSET_CONDITION}
+    GROUP BY {GROUPBY_NAMES}
+    {HAVING_CONDITION}
+    UNION ALL
+    SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+    FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+    WHERE {MATCH_SUBSET_CONDITION}
+    GROUP BY {MATCH_GROUPBY_NAMES}
+    {MATCH_HAVING_CONDITION}
+  ) a
+  GROUP BY {GROUPBY_NAMES}
+) s
+WHERE (total IS NOT NULL AND match_total IS NULL)
+   OR (total IS NULL AND match_total IS NOT NULL)
+   OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+ORDER BY {GROUPBY_NAMES};'),
+    ('1406', '1508', 'Test Results', 'Timeframe_Combo_Gain', 'bigquery', NULL, 'SELECT {COLUMN_NAME_NO_QUOTES}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+  AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+GROUP BY {COLUMN_NAME_NO_QUOTES}
+EXCEPT DISTINCT
+SELECT {COLUMN_NAME_NO_QUOTES}
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+  AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+GROUP BY {COLUMN_NAME_NO_QUOTES};'),
+    ('1407', '1509', 'Test Results', 'Timeframe_Combo_Match', 'bigquery', NULL, '(
+  SELECT ''Prior Timeframe'' AS missing_from, {COLUMN_NAME}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE {SUBSET_CONDITION}
+    AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+  EXCEPT DISTINCT
+  SELECT ''Prior Timeframe'' AS missing_from, {COLUMN_NAME}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE {SUBSET_CONDITION}
+    AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+    AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+)
+UNION ALL
+(
+  SELECT ''Latest Timeframe'' AS missing_from, {COLUMN_NAME}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE {SUBSET_CONDITION}
+    AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+    AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+  EXCEPT DISTINCT
+  SELECT ''Latest Timeframe'' AS missing_from, {COLUMN_NAME}
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE {SUBSET_CONDITION}
+    AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+);'),
+    ('1408', '1100', 'Profile Anomaly', 'Potential_PII', 'bigquery', NULL, 'SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}` DESC
+LIMIT 500;'),
+    ('1409', '1510', 'Test Results', 'Dupe_Rows', 'bigquery', NULL, 'SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE {SUBSET_CONDITION}
+GROUP BY {GROUPBY_NAMES}
+HAVING COUNT(*) > 1
+ORDER BY {GROUPBY_NAMES};'),
+    ('1410', '1028', 'Profile Anomaly', 'Inconsistent_Casing', 'bigquery', NULL, '(
+  SELECT ''Upper Case'' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
+  GROUP BY `{COLUMN_NAME}`
+  LIMIT 20
+)
+UNION ALL
+(
+  SELECT ''Mixed Case'' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+  FROM {TARGET_SCHEMA}.{TABLE_NAME}
+  WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
+    AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+  GROUP BY `{COLUMN_NAME}`
+  LIMIT 20
+);'),
+    ('1411', '1029', 'Profile Anomaly', 'Non_Alpha_Name_Address', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS STRING) = UPPER(CAST(`{COLUMN_NAME}` AS STRING))
+  AND CAST(`{COLUMN_NAME}` AS STRING) = LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+  AND CAST(`{COLUMN_NAME}` AS STRING) > ''''
+GROUP BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1412', '1030', 'Profile Anomaly', 'Non_Alpha_Prefixed_Name', 'bigquery', NULL, 'SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE CAST(`{COLUMN_NAME}` AS STRING) < ''A''
+  AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), 1, 1) NOT IN (''"'', '' '')
+  AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), LENGTH(CAST(`{COLUMN_NAME}` AS STRING)), 1) <> ''\''''
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`
+LIMIT 500;'),
+    ('1413', '1031', 'Profile Anomaly', 'Non_Printing_CHRs', 'bigquery', NULL, 'SELECT REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r''['' || CHR(160) || CHR(8191) || CHR(8192) || CHR(8193) || CHR(8194) || CHR(8195) || CHR(8196) || CHR(8201) || CHR(8202) || CHR(12288) || CHR(65279) || '']'', '''') AS `{COLUMN_NAME}_content`,
+       COUNT(*) AS record_ct
+FROM {TARGET_SCHEMA}.{TABLE_NAME}
+WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r''['' || CHR(160) || CHR(8191) || CHR(8192) || CHR(8193) || CHR(8194) || CHR(8195) || CHR(8196) || CHR(8201) || CHR(8202) || CHR(12288) || CHR(65279) || '']'')
+GROUP BY `{COLUMN_NAME}`
+ORDER BY `{COLUMN_NAME}`
+LIMIT 500');
 
 TRUNCATE TABLE variant_codings;
 

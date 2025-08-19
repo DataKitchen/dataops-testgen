@@ -106,7 +106,7 @@ class CTestExecutionSQL:
             "EXCEPTION_MESSAGE": self.exception_message,
             "START_TIME": self.today,
             "PROCESS_ID": self.process_id,
-            "VARCHAR_TYPE": "STRING" if self.flavor == "databricks" else "VARCHAR",
+            "VARCHAR_TYPE": "STRING" if self.flavor in ("databricks", "bigquery") else "VARCHAR",
             "NOW_TIMESTAMP": date_service.get_now_as_string_with_offset(self.minutes_offset),
             **{key.upper(): value or "" for key, value in self.test_params.items()},
         }
@@ -126,7 +126,9 @@ class CTestExecutionSQL:
             )
 
             subset_condition = self.test_params["subset_condition"]
-            params["SUBSET_DISPLAY"] = subset_condition.replace("'", "''") if subset_condition else ""
+            params["SUBSET_DISPLAY"] = subset_condition.replace(
+                "'", r"\'" if self.flavor == "bigquery" else "''"
+            ) if subset_condition else ""
 
         query = replace_params(query, params)
 

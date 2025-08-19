@@ -47,7 +47,7 @@ class CDeriveTestsSQL:
             "GENERATION_SET": self.generation_set,
             "AS_OF_DATE": self.as_of_date,
             "DATA_SCHEMA": self.data_schema,
-            "ID_SEPARATOR":  "`" if self.sql_flavor == "databricks" else '"',
+            "ID_SEPARATOR": "`" if self.sql_flavor in ("databricks", "bigquery") else '"',
         }
 
     def _get_query(self, template_file_name: str, sub_directory: str | None = "generation") -> tuple[str, dict]:

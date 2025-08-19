@@ -5,9 +5,35 @@ INSERT INTO working_agg_cat_tests
   column_names, test_types, test_definition_ids,
   test_actions, test_descriptions,
   test_parms, test_measures, test_conditions)
+
+-- Column types from latest profile_results
+WITH column_types AS (
+    SELECT pr.table_groups_id,
+           pr.connection_id,
+           pr.schema_name,
+           pr.table_name,
+           pr.column_name,
+           pr.column_type
+    FROM profile_results pr
+    INNER JOIN (
+        SELECT table_groups_id,
+               connection_id,
+               schema_name,
+               table_name,
+               column_name,
+               MAX(run_date) AS max_run_date
+        FROM profile_results
+        GROUP BY table_groups_id, connection_id, schema_name, table_name, column_name
+    ) latest
+      ON pr.table_groups_id = latest.table_groups_id
+     AND pr.schema_name = latest.schema_name
+     AND pr.table_name = latest.table_name
+     AND pr.column_name = latest.column_name
+     AND pr.run_date = latest.max_run_date
+),
+
 -- Test details from each test type
-WITH test_detail
-  AS (
+test_detail AS (
        SELECT t.test_suite_id,
               '{SCHEMA_NAME}' as schema_name, '{TABLE_NAME}' as table_name,
               '{RUN_DATE}'::TIMESTAMP as test_time,
@@ -29,9 +55,10 @@ WITH test_detail
               -- Standard Measure start
               'CAST(' ||
                 -- Nested parm replacements - part of query, not Python parms
-                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure,
                         '{COLUMN_NAME}', '{ID_SEPARATOR}' || COALESCE(t.column_name, '') || '{ID_SEPARATOR}'),
+                        '{COLUMN_TYPE}', COALESCE(ct.column_type, '')),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),
@@ -40,16 +67,17 @@ WITH test_detail
                         '{BASELINE_AVG}', COALESCE(t.baseline_avg, '') ),
                         '{BASELINE_SD}', COALESCE(t.baseline_sd, '') ),
                         '{CUSTOM_QUERY}', COALESCE(t.custom_query, '')),
-                        '{THRESHOLD_VALUE}', COALESCE(t.threshold_value, '') )
+                        '{THRESHOLD_VALUE}', COALESCE(t.threshold_value, ''))
                 -- Standard measure end with pipe delimiter
-                || ' AS VARCHAR(1000) ) {CONCAT_OPERATOR} ''|'' ' as measure,
+                || ' AS {VARCHAR_TYPE}) {CONCAT_OPERATOR} ''|'' ' as measure,
 
               -- Standard CASE for condition starts
               'CASE WHEN ' ||
                 -- Nested parm replacements - standard
-                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
                    c.measure || c.test_operator || c.test_condition,
                         '{COLUMN_NAME}', '{ID_SEPARATOR}' || COALESCE(t.column_name, '') || '{ID_SEPARATOR}'),
+                        '{COLUMN_TYPE}', COALESCE(ct.column_type, '')),
                         '{BASELINE_CT}', COALESCE(t.baseline_ct, '')),
                         '{BASELINE_UNIQUE_CT}', COALESCE(t.baseline_unique_ct, '')),
                         '{BASELINE_VALUE}', COALESCE(t.baseline_value, '') ),
@@ -58,20 +86,28 @@ WITH test_detail
                         '{BASELINE_AVG}', COALESCE(t.baseline_avg, '') ),
                         '{BASELINE_SD}', COALESCE(t.baseline_sd, '') ),
                         '{CUSTOM_QUERY}', COALESCE(t.custom_query, '')),
-                        '{THRESHOLD_VALUE}', COALESCE(t.threshold_value, '') )
+                        '{THRESHOLD_VALUE}', COALESCE(t.threshold_value, ''))
                 -- Standard case ends
                 || ' THEN ''0,'' ELSE ''1,'' END' as condition
          FROM test_definitions t
        INNER JOIN cat_test_conditions c
           ON (t.test_type = c.test_type
          AND  '{SQL_FLAVOR}' = c.sql_flavor)
+       INNER JOIN test_suites s
+          ON t.test_suite_id = s.id
+       LEFT JOIN column_types ct
+          ON s.table_groups_id = ct.table_groups_id
+         AND t.schema_name = ct.schema_name
+         AND t.table_name = ct.table_name
+         AND t.column_name = ct.column_name
         WHERE t.test_suite_id = '{TEST_SUITE_ID}'
           AND t.schema_name = '{SCHEMA_NAME}'
           AND t.table_name = '{TABLE_NAME}'
           AND COALESCE(t.test_active, 'Y') = 'Y'
       ),
-test_detail_split
-   AS ( SELECT test_suite_id, schema_name, table_name, test_time,
+
+test_detail_split AS (
+   SELECT test_suite_id, schema_name, table_name, test_time,
                column_name, test_type, test_definition_id, test_action, test_description,
                parms, measure, condition,
                SUM(LENGTH(condition)) OVER (PARTITION BY t.schema_name, t.table_name
@@ -79,7 +115,9 @@ test_detail_split
                FLOOR( SUM(LENGTH(condition)) OVER (PARTITION BY t.schema_name, t.table_name
                                              ORDER BY t.column_name ROWS UNBOUNDED PRECEDING )
                   / {MAX_QUERY_CHARS} ) + 1 as query_split_no
-          FROM test_detail t )
+          FROM test_detail t
+)
+
 SELECT '{TEST_RUN_ID}' as test_run_id,
        d.schema_name, d.table_name,
        d.query_split_no as cat_sequence,

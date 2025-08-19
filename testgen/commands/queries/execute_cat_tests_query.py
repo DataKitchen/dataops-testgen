@@ -47,7 +47,7 @@ class CCATExecutionSQL:
             self._rollup_scores_sql = CRollupScoresSQL(self.test_run_id, self.table_groups_id)
 
         return self._rollup_scores_sql
-    
+
     def _get_query(self, template_file_name: str, sub_directory: str | None = "exec_cat_tests", no_bind: bool = False) -> tuple[str, dict | None]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
@@ -58,7 +58,8 @@ class CCATExecutionSQL:
             "TEST_SUITE_ID": self.test_suite_id,
             "TABLE_GROUPS_ID": self.table_groups_id,
             "SQL_FLAVOR": self.flavor,
-            "ID_SEPARATOR": "`" if self.flavor == "databricks" else '"',
+            "ID_SEPARATOR": "`" if self.flavor in ("databricks", "bigquery") else '"',
+            "VARCHAR_TYPE": "STRING" if self.flavor == "bigquery" else "VARCHAR(1000)",
             "CONCAT_OPERATOR": self.concat_operator,
             "SCHEMA_NAME": self.target_schema,
             "TABLE_NAME": self.target_table,

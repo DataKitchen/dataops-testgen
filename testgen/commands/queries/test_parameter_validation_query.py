@@ -13,6 +13,7 @@ class CTestParamValidationSQL:
     test_ids: typing.ClassVar = []
     exception_message = ""
     flag_val = ""
+    tg_schema = ""
 
     _use_clean = False
 
@@ -34,6 +35,7 @@ class CTestParamValidationSQL:
             "CAT_TEST_IDS": tuple(self.test_ids or []),
             "START_TIME": self.today,
             "NOW_TIMESTAMP": date_service.get_now_as_string(),
+            "COLUMNS_TABLE": f"{self.tg_schema}.INFORMATION_SCHEMA.COLUMNS" if self.flavor == "bigquery" else "information_schema.columns"
         }
         query = replace_params(query, params)
         return query, params

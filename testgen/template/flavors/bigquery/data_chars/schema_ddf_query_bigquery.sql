@@ -20,7 +20,7 @@ SELECT '{PROJECT_CODE}' AS project_code,
            WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'(decimal|numeric|bignumeric)') THEN 'N'
            ELSE 'X'
        END AS general_type,
-       NULL AS is_decimal
+       REGEXP_CONTAINS(LOWER(c.data_type), r'(decimal|numeric|bignumeric)') AS is_decimal
 FROM `{DATA_SCHEMA}.INFORMATION_SCHEMA.COLUMNS` c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

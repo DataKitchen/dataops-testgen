@@ -34,6 +34,7 @@ class TestGenerationParams(BaseParams):
 class TestExecutionParams(BaseParams):
     test_suite_id: str
     table_groups_id: str
+    table_group_schema: str
     profiling_table_set: str
     profiling_include_mask: str
     profiling_exclude_mask: str

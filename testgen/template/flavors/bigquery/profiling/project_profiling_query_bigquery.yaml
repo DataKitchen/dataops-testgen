@@ -189,7 +189,7 @@ strTemplate08_else: NULL as min_value,
   NULL as percentile_25,
   NULL as percentile_50,
   NULL as percentile_75,
-strTemplate10_N_dec: SUM(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5)) as fractional_sum,
+strTemplate10_N_dec: SUM(COALESCE(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5), 0)) as fractional_sum,
 strTemplate10_else: NULL as fractional_sum,
 strTemplate11_D:  |
   MIN(`{COL_NAME}`) AS min_date, -- Other flavors have a minimum threshold of 0001-01-01, but BigQuery doesn't make it easy to to the same

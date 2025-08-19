@@ -62,7 +62,7 @@ def get_hygiene_issue_source_query(issue_data: dict) -> str:
     lookup_query = replace_params(lookup_query, params)
     lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
     return lookup_query
-    
+
 
 @st.cache_data(show_spinner=False)
 def get_hygiene_issue_source_data(
@@ -98,7 +98,7 @@ def get_test_issue_source_query(issue_data: dict) -> str:
     lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
     if not lookup_data or not lookup_data.lookup_query:
         return None
-    
+
     test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
     if not test_definition:
         return None
@@ -107,6 +107,7 @@ def get_test_issue_source_query(issue_data: dict) -> str:
         "TARGET_SCHEMA": issue_data["schema_name"],
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_names"],
+        "COLUMN_TYPE": issue_data["column_type"],
         "TEST_DATE": str(issue_data["test_date"]),
         "CUSTOM_QUERY": test_definition.custom_query,
         "BASELINE_VALUE": test_definition.baseline_value,
@@ -146,7 +147,7 @@ def get_test_issue_source_data(
         test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
-        
+
         lookup_query = get_test_issue_source_query(issue_data)
         if not lookup_query:
             return "NA", "Source data lookup is not available for this test.", None, None
@@ -189,7 +190,7 @@ def get_test_issue_source_data_custom(
         test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
-        
+
         lookup_query = get_test_issue_source_query_custom(issue_data)
         if not lookup_query:
             return "NA", "Source data lookup is not available for this test.", None, None
@@ -249,7 +250,7 @@ def _get_lookup_data_custom(
 ) -> LookupData | None:
     result = fetch_one_from_db(
         """
-        SELECT 
+        SELECT
             d.custom_query as lookup_query
         FROM test_definitions d
         WHERE d.id = :test_definition_id;
