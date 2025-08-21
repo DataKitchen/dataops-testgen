@@ -15,6 +15,7 @@ SELECT '{TEST_TYPE}'   as test_type,
     {SKIP_ERRORS} as skip_errors,
     /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
     'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+       NULL as result_signal,
     CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
        CASE
         WHEN COUNT(*) > 0 THEN

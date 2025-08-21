@@ -30,5 +30,6 @@
  * @property {number} last_run_warning_ct
  * @property {number} last_run_failed_ct
  * @property {number} last_run_error_ct
+ * @property {number} last_run_log_ct
  * @property {number} last_run_dismissed_ct
  */

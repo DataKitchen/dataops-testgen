@@ -11,6 +11,7 @@ SELECT '{TEST_TYPE}'   as test_type,
        '{SKIP_ERRORS}' as threshold_value,
        {SKIP_ERRORS} as skip_errors,
        '{INPUT_PARAMETERS}' as input_parameters,
+       NULL as result_signal,
        CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
        CASE
         WHEN COUNT(*) > 0 THEN

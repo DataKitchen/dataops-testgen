@@ -68,6 +68,10 @@ def run_test_queries(
     clsExecute.process_id = process_service.get_current_process_id()
 
     try:
+        # Update Historic Test Thresholds
+        LOG.info("CurrentStep: Updating Historic Test Thresholds")
+        execute_db_queries([clsExecute.GetHistoricThresholdUpdate()])
+
         # Retrieve non-CAT Queries
         LOG.info("CurrentStep: Retrieve Non-CAT Queries")
         lstTestSet = fetch_dict_from_db(*clsExecute.GetTestsNonCAT())

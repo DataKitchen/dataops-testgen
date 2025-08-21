@@ -472,7 +472,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
     WHERE test_suites.table_groups_id = :table_group_id
         AND table_name = :table_name
         {"AND column_names = :column_name" if column_name else ""}
-        AND result_status <> 'Passed'
+        AND result_status NOT IN ('Passed', 'Log')
         AND COALESCE(disposition, 'Confirmed') = 'Confirmed'
     ORDER BY
         CASE result_status

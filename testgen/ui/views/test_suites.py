@@ -95,7 +95,7 @@ def edit_test_suite_dialog(project_code, table_groups, test_suite_id: str) -> No
 
 
 def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal], selected: TestSuite | None = None):
-    severity_options = ["Inherit", "Failed", "Warning"]
+    severity_options = [None, "Log", "Failed", "Warning"]
     selected_test_suite = selected if mode == "edit" else None
     table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
 
@@ -144,6 +144,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
             "severity": right_column.selectbox(
                 label="Severity",
                 options=severity_options,
+                format_func=lambda value: "Inherit" if value is None else value,
                 index=severity_index,
                 help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
             ),

@@ -128,6 +128,8 @@ SELECT p.project_name,
        r.result_status,
        r.input_parameters,
        r.result_message,
+       tt.result_visualization,
+       tt.result_visualization_params,
        CASE WHEN result_code <> 1 THEN r.severity END as severity,
        CASE
          WHEN result_code <> 1 THEN r.disposition

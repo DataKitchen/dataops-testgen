@@ -162,6 +162,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                             { label: 'Warning', value: parseInt(testSuite.last_run_warning_ct), color: 'yellow' },
                                             { label: 'Failed', value: parseInt(testSuite.last_run_failed_ct), color: 'red' },
                                             { label: 'Error', value: parseInt(testSuite.last_run_error_ct), color: 'brown' },
+                                            { label: 'Log', value: parseInt(testSuite.last_run_log_ct), color: 'blue' },
                                             { label: 'Dismissed', value: parseInt(testSuite.last_run_dismissed_ct), color: 'grey' },
                                         ],
                                         height: 20,

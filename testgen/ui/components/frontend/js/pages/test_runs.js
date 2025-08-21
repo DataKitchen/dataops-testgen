@@ -14,6 +14,7 @@
  * @property {number} warning_ct
  * @property {number} failed_ct
  * @property {number} error_ct
+ * @property {number} log_ct
  * @property {number} dismissed_ct
  * @property {string} dq_score_testing
  *
@@ -210,6 +211,7 @@ const TestRunItem = (
                     { label: 'Warning', value: item.warning_ct, color: 'yellow' },
                     { label: 'Failed', value: item.failed_ct, color: 'red' },
                     { label: 'Error', value: item.error_ct, color: 'brown' },
+                    { label: 'Log', value: item.log_ct, color: 'blue' },
                     { label: 'Dismissed', value: item.dismissed_ct, color: 'grey' },
                 ],
                 height: 8,

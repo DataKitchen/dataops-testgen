@@ -185,7 +185,7 @@ def get_test_issue_source_data_custom(
 @dataclass
 class LookupData:
     lookup_query: str
-    sql_flavor: SQLFlavor | None
+    sql_flavor: SQLFlavor | None = None
 
 
 def _get_lookup_data(
