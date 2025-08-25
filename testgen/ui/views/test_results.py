@@ -734,7 +734,7 @@ def render_binary_chart(data: pd.DataFrame, **params: dict) -> None:
     legend_labels = params.get("legend", {}).get("labels") or {"0": "0", "1": "1"}
 
     history["test_start"] = history["test_date"].apply(datetime.fromisoformat)
-    history["test_end"] = history["test_start"].apply(lambda start: start + timedelta(seconds=30))
+    history["test_end"] = history["test_start"].apply(lambda start: start + timedelta(seconds=60))
     history["formatted_test_date"] = history["test_date"].apply(lambda date_str: datetime.fromisoformat(date_str).strftime("%I:%M:%S %p, %d/%m/%Y"))
     history["result_measure_with_status"] = history.apply(lambda row: f"{legend_labels[str(int(row['result_measure']))]} ({row['result_status']})", axis=1)
 
