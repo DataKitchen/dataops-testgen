@@ -23,7 +23,6 @@ from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import (
     execute_db_query,
     fetch_df_from_db,
@@ -37,8 +36,7 @@ from testgen.utils import friendly_score
 class HygieneIssuesPage(Page):
     path = "profiling-runs:hygiene"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 
@@ -332,7 +330,7 @@ class HygieneIssuesPage(Page):
             { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
         ]
 
-        if user_session_service.user_can_disposition():
+        if session.auth.user_has_permission("disposition"):
             disposition_translator = {"No Decision": None}
             # Need to render toolbar buttons after grid, so selection status is maintained
             for d_action in disposition_actions:

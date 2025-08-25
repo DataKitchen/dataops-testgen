@@ -68,6 +68,10 @@ def run_test_queries(
     clsExecute.process_id = process_service.get_current_process_id()
 
     try:
+        # Update Historic Test Thresholds
+        LOG.info("CurrentStep: Updating Historic Test Thresholds")
+        execute_db_queries([clsExecute.GetHistoricThresholdUpdate()])
+
         # Retrieve non-CAT Queries
         LOG.info("CurrentStep: Retrieve Non-CAT Queries")
         lstTestSet = fetch_dict_from_db(*clsExecute.GetTestsNonCAT())
@@ -123,7 +127,7 @@ def run_execution_steps_in_background(project_code, test_suite):
         empty_cache()
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(project_code, test_suite, session.username),
+            args=(project_code, test_suite, session.auth.user_display),
         )
         background_thread.start()
     else:

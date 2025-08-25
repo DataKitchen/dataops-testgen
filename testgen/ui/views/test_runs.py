@@ -17,7 +17,6 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
@@ -32,8 +31,7 @@ LOG = logging.getLogger("testgen")
 class TestRunsPage(Page):
     path = "test-runs"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -41,7 +39,6 @@ class TestRunsPage(Page):
         label=PAGE_TITLE,
         section="Data Quality Testing",
         order=0,
-        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
@@ -50,7 +47,7 @@ class TestRunsPage(Page):
             "test-results",
         )
 
-        user_can_run = user_session_service.user_can_edit()
+        user_can_run = session.auth.user_has_permission("edit")
         if render_empty_state(project_code, user_can_run):
             return
 

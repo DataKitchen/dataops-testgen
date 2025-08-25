@@ -168,11 +168,7 @@ Verify that you can login to the UI with the `TESTGEN_USERNAME` and `TESTGEN_PAS
 The [Data Observability quickstart](https://docs.datakitchen.io/articles/open-source-data-observability/data-observability-overview) walks you through DataOps Data Quality TestGen capabilities to demonstrate how it covers critical use cases for data and analytic teams.
 
 ```shell
-testgen quick-start --delete-target-db
-testgen run-profile --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
-testgen run-test-generation --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
-testgen run-tests --project-key DEFAULT --test-suite-key default-suite-1
-testgen quick-start --simulate-fast-forward
+testgen quick-start
 ```
 
 In the TestGen UI, you will see that new data profiling and test results have been generated.

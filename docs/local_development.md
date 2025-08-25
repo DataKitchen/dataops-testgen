@@ -93,11 +93,7 @@ testgen setup-system-db --yes
 
 Seed the demo data.
 ```shell
-testgen quick-start --delete-target-db
-testgen run-profile --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
-testgen run-test-generation --table-group-id 0ea85e17-acbe-47fe-8394-9970725ad37d
-testgen run-tests --project-key DEFAULT --test-suite-key default-suite-1
-testgen quick-start --simulate-fast-forward
+testgen quick-start
 ```
 
 ### Run the Application

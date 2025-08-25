@@ -19,8 +19,11 @@
  * @property {string[]?} autocompleteOptions
  * @property {string?} icon
  * @property {boolean?} clearable
- * @property {boolean?} disabled
+ * @property {('value' | 'always')?} clearableCondition
+ * @property {boolean?} passwordSuggestions
  * @property {function(string, InputState)?} onChange
+ * @property {boolean?} disabled
+ * @property {function(string, InputState)?} onClear
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
@@ -36,16 +39,24 @@ import { Icon } from './icon.js';
 import { withTooltip } from './tooltip.js';
 import { Portal } from './portal.js';
 
-const { div,input, label, i, small } = van.tags;
-const defaultHeight = 32;
+const { div, input, label, i, small, span } = van.tags;
+const defaultHeight = 38;
 const iconSize = 22;
-const clearIconSize = 20;
+const addonIconSize = 20;
+const passwordFieldTypeSwitch = {
+    password: 'text',
+    text: 'password',
+};
 
 const Input = (/** @type Properties */ props) => {
     loadStylesheet('input', stylesheet);
 
     const domId = van.derive(() => getValue(props.id) ?? getRandomId());
     const value = van.derive(() => getValue(props.value) ?? '');
+    const isRequired = van.derive(() => {
+        const validators = getValue(props.validators) ?? [];
+        return validators.some(v => v.name === 'required');
+    });
     const errors = van.derive(() => {
         const validators = getValue(props.validators) ?? [];
         return validators.map(v => v(value.val)).filter(error => error);
@@ -54,6 +65,10 @@ const Input = (/** @type Properties */ props) => {
         return errors.val[0] ?? '';
     });
 
+    const originalInputType = van.derive(() => getValue(props.type) ?? 'text');
+    const inputType = van.state(originalInputType.rawVal);
+
+    const isDirty = van.state(false);
     const onChange = props.onChange?.val ?? props.onChange;
     if (onChange) {
         onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
@@ -64,6 +79,8 @@ const Input = (/** @type Properties */ props) => {
             onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
         }
     });
+
+    const onClear = props.onClear?.val ?? props.onClear ?? (() => value.val = '');
 
     const autocompleteOpened = van.state(false);
     const autocompleteOptions = van.derive(() => {
@@ -88,6 +105,9 @@ const Input = (/** @type Properties */ props) => {
         div(
             { class: 'flex-row fx-gap-1 text-caption' },
             props.label,
+            () => isRequired.val
+                ? span({ class: 'text-error' }, '*')
+                : '',
             () => getValue(props.help)
                 ? withTooltip(
                     Icon({ size: 16, classes: 'text-disabled' }, 'help'),
@@ -95,25 +115,12 @@ const Input = (/** @type Properties */ props) => {
                 )
                 : null,
         ),
-        () => getValue(props.icon) ? i(
-            {
-                class: 'material-symbols-rounded tg-input--icon',
-                style: `bottom: ${((getValue(props.height) || defaultHeight) - iconSize) / 2}px`,
-            },
-            props.icon,
-        ) : '',
-        () => getValue(props.clearable) ? i(
-            {
-                class: () => `material-symbols-rounded tg-input--clear clickable ${value.val ? '' : 'hidden'}`,
-                style: `bottom: ${((getValue(props.height) || defaultHeight) - clearIconSize) / 2}px`,
-                onclick: () => value.val = '',
-            },
-            'clear',
-        ) : '',
-
         div(
             {
-                class: () => `flex-row tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''}`,
+                class: () => {
+                    const sufixIconCount = Number(value.val && originalInputType.val === 'password') + Number(value.val && getValue(props.clearable));
+                    return `flex-row tg-input--field ${getValue(props.disabled) ? 'tg-input--disabled' : ''} sufix-padding-${sufixIconCount}`;
+                },
                 style: () => `height: ${getValue(props.height) || defaultHeight}px;`,
             },
             props.prefix
@@ -125,18 +132,60 @@ const Input = (/** @type Properties */ props) => {
             input({
                 value,
                 name: props.name ?? '',
-                type: props.type ?? 'text',
+                type: inputType,
                 disabled: props.disabled,
+                ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),
                 placeholder: () => getValue(props.placeholder) ?? '',
-                oninput: debounce((/** @type Event */ event) => value.val = event.target.value, 300),
+                oninput: debounce((/** @type Event */ event) => {
+                    isDirty.val = true;
+                    value.val = event.target.value;
+                }, 300),
                 onclick: van.derive(() => autocompleteOptions.val?.length
                     ? () => autocompleteOpened.val = true
                     : null
                 ),
             }),
+            () => getValue(props.icon) ? i(
+                {
+                    class: 'material-symbols-rounded tg-input--icon text-secondary',
+                    style: `top: ${((getValue(props.height) || defaultHeight) - iconSize) / 2}px`,
+                },
+                props.icon,
+            ) : '',
+            () => {
+                const clearableCondition = getValue(props.clearableCondition) ?? 'value';
+                const showClearable = getValue(props.clearable) && (
+                    clearableCondition === 'always'
+                    || (clearableCondition === 'value' && value.val)
+                );
+
+                return div(
+                    { class: 'flex-row tg-input--icon-actions' },
+                    originalInputType.val === 'password' && value.val
+                        ? i(
+                            {
+                                class: 'material-symbols-rounded tg-input--visibility clickable text-secondary',
+                                style: `top: ${((getValue(props.height) || defaultHeight) - addonIconSize) / 2}px`,
+                                onclick: () => inputType.val = passwordFieldTypeSwitch[inputType.val],
+                            },
+                            inputType.val === 'password' ? 'visibility' : 'visibility_off',
+                        )
+                        : '',
+                    showClearable
+                        ? i(
+                            {
+                                class: () => `material-symbols-rounded tg-input--clear text-secondary clickable`,
+                                style: `top: ${((getValue(props.height) || defaultHeight) - addonIconSize) / 2}px`,
+                                onclick: onClear,
+                            },
+                            'clear',
+                        )
+                        : '',
+                );
+            },
         ),
         () => 
-            getValue(props.validators)?.length > 0
+            isDirty.val && firstError.val
                 ? small({ class: 'tg-input--error' }, firstError)
                 : '',
         Portal(
@@ -164,7 +213,7 @@ const Input = (/** @type Properties */ props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-input--label {
+.tg-input--field {
     position: relative;
 }
 
@@ -174,18 +223,26 @@ stylesheet.replace(`
     font-size: ${iconSize}px;
 }
 
-.tg-input--icon ~ .tg-input--field {
+.tg-input--field:has(.tg-input--icon) {
     padding-left: 28px;
 }
 
-.tg-input--clear {
+.tg-input--icon-actions {
     position: absolute;
-    right: 4px;
-    font-size: ${clearIconSize}px;
+    right: 8px;
 }
 
-.tg-input--clear ~ .tg-input--field {
-    padding-right: 24px;
+.tg-input--clear,
+.tg-input--visibility {
+    font-size: ${addonIconSize}px;
+}
+
+.tg-input--field.sufix-padding-1 {
+    padding-right: ${addonIconSize + 8}px;
+}
+
+.tg-input--field.sufix-padding-2 {
+    padding-right: ${addonIconSize * 2 + 8 * 2}px;;
 }
 
 .tg-input--field {

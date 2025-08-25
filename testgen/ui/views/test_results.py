@@ -1,4 +1,6 @@
+import json
 import typing
+from datetime import datetime, timedelta
 from functools import partial
 from io import BytesIO
 from itertools import zip_longest
@@ -32,7 +34,6 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.queries import test_result_queries
 from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
@@ -46,8 +47,7 @@ PAGE_PATH = "test-runs:results"
 class TestResultsPage(Page):
     path = PAGE_PATH
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "run_id" in st.query_params or "test-runs",
     ]
 
@@ -100,6 +100,7 @@ class TestResultsPage(Page):
                 "Warning",
                 "Passed",
                 "Error",
+                "Log",
             ]
             status = testgen.select(
                 options=status_options,
@@ -172,16 +173,12 @@ class TestResultsPage(Page):
             do_multi_select = st.toggle("Multi-Select", help=str_help)
 
         match status:
+            case None:
+                status = []
             case "Failed + Warning":
                 status = ["Failed", "Warning"]
-            case "Failed":
-                status = ["Failed"]
-            case "Warning":
-                status = ["Warning"]
-            case "Passed":
-                status = ["Passed"]
-            case "Error":
-                status = ["Error"]
+            case _:
+                status = [status]
 
         # Display main grid and retrieve selection
         selected = show_result_detail(
@@ -189,6 +186,7 @@ class TestResultsPage(Page):
             run_date,
             run.test_suite_id,
             export_button_column,
+            session.auth.user_has_permission("edit"),
             status,
             test_type,
             table_name,
@@ -208,7 +206,7 @@ class TestResultsPage(Page):
             { "icon": "↩︎", "help": "Clear action", "status": "No Decision" },
         ]
 
-        if user_session_service.user_can_disposition():
+        if session.auth.user_has_permission("disposition"):
             disable_all_dispo = not selected or status == "'Passed'" or all(sel["result_status"] == "Passed" for sel in selected)
             disposition_translator =  {"No Decision": None}
             for action in disposition_actions:
@@ -333,6 +331,13 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         ) as error_ct,
         SUM(
             CASE
+                WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
+                AND test_results.result_status = 'Log' THEN 1
+                ELSE 0
+            END
+        ) as log_ct,
+        SUM(
+            CASE
                 WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                 ELSE 0
             END
@@ -350,6 +355,7 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
         { "label": "Warning", "value": result.warning_ct, "color": "yellow" },
         { "label": "Failed", "value": result.failed_ct, "color": "red" },
         { "label": "Error", "value": result.error_ct, "color": "brown" },
+        { "label": "Log", "value": result.log_ct, "color": "blue" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
     ]
 
@@ -424,6 +430,7 @@ def show_result_detail(
     run_date: str,
     test_suite_id: UUID,
     export_container: DeltaGenerator,
+    user_can_edit: bool,
     test_statuses: list[str] | None = None,
     test_type_id: str | None = None,
     table_name: str | None = None,
@@ -517,7 +524,7 @@ def show_result_detail(
 
         with pg_col2:
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
-        if user_session_service.user_can_edit():
+        if user_can_edit:
             view_edit_test(v_col1, selected_row["test_definition_id_current"])
 
         if selected_row["test_scope"] == "column":
@@ -633,10 +640,21 @@ def get_excel_report_data(
     )
 
 
-def write_history_graph(dfh):
+def write_history_graph(data: pd.DataFrame):
+    chart_type = data.at[0, "result_visualization"]
+    chart_params = json.loads(data.at[0, "result_visualization_params"] or "{}")
+
+    match chart_type:
+        case "binary_chart":
+            render_binary_chart(data, **chart_params)
+        case _: render_line_chart(data, **chart_params)
+
+
+def render_line_chart(dfh: pd.DataFrame, **_params: dict) -> None:
+    str_uom = dfh.at[0, "measure_uom"]
+
     y_min = min(dfh["result_measure"].min(), dfh["threshold_value"].min())
     y_max = max(dfh["result_measure"].max(), dfh["threshold_value"].max())
-    str_uom = dfh.at[0, "measure_uom"]
 
     fig = px.line(
         dfh,
@@ -711,6 +729,52 @@ def write_history_graph(dfh):
     st.plotly_chart(fig)
 
 
+def render_binary_chart(data: pd.DataFrame, **params: dict) -> None:
+    history = data.copy(deep=True)
+    legend_labels = params.get("legend", {}).get("labels") or {"0": "0", "1": "1"}
+
+    history["test_start"] = history["test_date"].apply(datetime.fromisoformat)
+    history["test_end"] = history["test_start"].apply(lambda start: start + timedelta(seconds=60))
+    history["formatted_test_date"] = history["test_date"].apply(lambda date_str: datetime.fromisoformat(date_str).strftime("%I:%M:%S %p, %d/%m/%Y"))
+    history["result_measure_with_status"] = history.apply(lambda row: f"{legend_labels[str(int(row['result_measure']))]} ({row['result_status']})", axis=1)
+
+    fig = px.timeline(
+        history,
+        x_start="test_start",
+        x_end="test_end",
+        y="measure_uom",
+        color="result_measure_with_status",
+        color_discrete_map={
+            f"{legend_labels['0']} (Failed)": "#EF5350",
+            f"{legend_labels['0']} (Warning)": "#FF9800",
+            f"{legend_labels['0']} (Log)": "#BDBDBD",
+            f"{legend_labels['1']} (Passed)": "#9CCC65",
+            f"{legend_labels['1']} (Log)": "#42A5F5",
+        },
+        hover_name="formatted_test_date",
+        hover_data={
+            "test_start": False,
+            "test_end": False,
+            "result_measure": False,
+            "result_measure_with_status": False,
+            "measure_uom": False,
+        },
+        labels={
+            "result_measure_with_status": "",
+        },
+    )
+    fig.update_layout(
+        yaxis_visible=False,
+        xaxis_showline=True,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend={"x": 0.5, "y": 1.1, "xanchor": "center", "yanchor": "top", "orientation": "h"},
+        width=500,
+    )
+
+    st.plotly_chart(fig)
+
+
 def do_disposition_update(selected, str_new_status):
     str_result = None
     if selected:
@@ -734,7 +798,11 @@ def source_data_dialog(selected_row):
 
     # Show detail
     fm.render_html_list(
-        selected_row, ["input_parameters", "result_message"], None, 700, ["Test Parameters", "Result Detail"]
+        selected_row,
+        lst_columns=["input_parameters", "result_message"],
+        str_section_header=None,
+        int_data_width=0,
+        lst_labels=["Test Parameters", "Result Detail"],
     )
 
     with st.spinner("Retrieving source data..."):

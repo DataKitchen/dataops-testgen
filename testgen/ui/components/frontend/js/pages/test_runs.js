@@ -3,17 +3,18 @@
  * @type {object}
  * @property {string} test_run_id
  * @property {number} test_starttime
+ * @property {number} test_endtime
  * @property {string} table_groups_name
  * @property {string} test_suite
  * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
  * @property {string} log_message
- * @property {string} duration
  * @property {string} process_id
  * @property {number} test_ct
  * @property {number} passed_ct
  * @property {number} warning_ct
  * @property {number} failed_ct
  * @property {number} error_ct
+ * @property {number} log_ct
  * @property {number} dismissed_ct
  * @property {string} dq_score_testing
  *
@@ -192,7 +193,7 @@ const TestRunItem = (
                 TestRunStatus(item),
                 div(
                     { class: 'text-caption mt-1' },
-                    formatDuration(item.duration),
+                    formatDuration(item.test_starttime, item.test_endtime),
                 ),
             ),
             item.status === 'Running' && item.process_id && userCanRun ? Button({
@@ -210,6 +211,7 @@ const TestRunItem = (
                     { label: 'Warning', value: item.warning_ct, color: 'yellow' },
                     { label: 'Failed', value: item.failed_ct, color: 'red' },
                     { label: 'Error', value: item.error_ct, color: 'brown' },
+                    { label: 'Log', value: item.log_ct, color: 'blue' },
                     { label: 'Dismissed', value: item.dismissed_ct, color: 'grey' },
                 ],
                 height: 8,

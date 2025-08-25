@@ -91,7 +91,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 { class: 'flex-row fx-align-flex-end fx-gap-4' },
                 Input({
                     width: 230,
-                    height: 38,
                     style: 'font-size: 14px;',
                     icon: 'search',
                     clearable: true,
@@ -103,7 +102,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     label: 'Sort by',
                     value: tableGroupsSortOption,
                     options: props.table_groups_sort_options?.val ?? [],
-                    height: 38,
                     style: 'font-size: 14px;',
                     testId: 'table-groups-sort',
                 }),
@@ -241,6 +239,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                         { label: 'Warning', 'value': parseInt(suite.last_run_warning_ct), color: 'yellow' },
                         { label: 'Failed', 'value': parseInt(suite.last_run_failed_ct), color: 'red' },
                         { label: 'Error', 'value': parseInt(suite.last_run_error_ct), color: 'brown' },
+                        { label: 'Log', 'value': parseInt(suite.last_run_log_ct), color: 'blue' },
                         { label: 'Dismissed', 'value': parseInt(suite.last_run_dismissed_ct), color: 'grey' },
                     ],
                     width: 350,

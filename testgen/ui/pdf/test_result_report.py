@@ -40,6 +40,7 @@ RESULT_STATUS_COLORS = {
     "Warning": HexColor(0xFBC02D),
     "Failed": HexColor(0xEF5350),
     "Error": HexColor(0x8D6E63),
+    "Log": HexColor(0x9E9E9E),
 }
 
 

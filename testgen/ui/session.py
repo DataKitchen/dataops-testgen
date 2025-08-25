@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 if TYPE_CHECKING:
     from testgen.common.version_service import Version
+    from testgen.ui.auth import Authentication
 
 from collections.abc import Callable
 
@@ -18,20 +19,15 @@ TempValueSetter = Callable[[T], None]
 
 
 class TestgenSession(Singleton):
-    cookies_ready: bool
-    logging_in: bool
-    logging_out: bool
+    auth: Authentication
+    # streamlit_authenticator sets this attribute implicitly
+    authentication_status: bool
+
     page_pending_cookies: st.Page  # type: ignore
     page_pending_login: str
     page_args_pending_login: dict
     page_args_pending_router: dict
     current_page: str
-
-    name: str
-    username: str
-    authentication_status: bool
-    auth_role: Literal["admin", "data_quality", "analyst", "business", "catalog"]
-    user_default_page: str
 
     sidebar_project: str
     add_project: bool

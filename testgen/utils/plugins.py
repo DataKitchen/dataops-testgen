@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from testgen.ui.assets import get_asset_path
+from testgen.ui.auth import Authentication
 from testgen.ui.navigation.page import Page
 
 PLUGIN_PREFIX = "testgen_"
@@ -85,6 +86,7 @@ def _read_ui_plugin_spec() -> dict:
 
 
 class PluginSpec:
+    auth: ClassVar[type[Authentication] | None] = None
     page: ClassVar[type[Page] | None] = None
     logo: ClassVar[type[Logo] | None] = None
     component: ClassVar[ComponentSpec | None] = None
@@ -97,23 +99,28 @@ class Plugin:
 
     def load(self) -> PluginSpec:
         plugin_page = None
+        plugin_auth = None
         plugin_logo = None
         plugin_component_spec = None
 
         module = importlib.import_module(self.package)
         for property_name in dir(module):
             if ((maybe_class := getattr(module, property_name, None)) and inspect.isclass(maybe_class)):
-                if issubclass(maybe_class, PluginSpec):
+                if issubclass(maybe_class, PluginSpec) and maybe_class != PluginSpec:
                     return maybe_class
 
                 if issubclass(maybe_class, Page):
                     plugin_page = maybe_class
+
+                elif issubclass(maybe_class, Authentication):
+                    plugin_auth = maybe_class
 
                 elif issubclass(maybe_class, Logo):
                     plugin_logo = maybe_class
 
         return type("AnyPlugin", (PluginSpec,), {
             "page": plugin_page,
+            "auth": plugin_auth,
             "logo": plugin_logo,
             "component": plugin_component_spec,
         })

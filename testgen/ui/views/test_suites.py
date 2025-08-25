@@ -14,7 +14,6 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services import user_session_service
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
@@ -28,8 +27,7 @@ PAGE_TITLE = "Test Suites"
 class TestSuitesPage(Page):
     path = "test-suites"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -37,7 +35,6 @@ class TestSuitesPage(Page):
         label=PAGE_TITLE,
         section="Data Quality Testing",
         order=1,
-        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
 
     def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
@@ -47,7 +44,7 @@ class TestSuitesPage(Page):
         )
 
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-        user_can_edit = user_session_service.user_can_edit()
+        user_can_edit = session.auth.user_has_permission("edit")
         test_suites = TestSuite.select_summary(project_code, table_group_id)
         project_summary = Project.get_summary(project_code)
         
@@ -98,7 +95,7 @@ def edit_test_suite_dialog(project_code, table_groups, test_suite_id: str) -> No
 
 
 def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal], selected: TestSuite | None = None):
-    severity_options = ["Inherit", "Failed", "Warning"]
+    severity_options = [None, "Log", "Failed", "Warning"]
     selected_test_suite = selected if mode == "edit" else None
     table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
 
@@ -147,6 +144,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
             "severity": right_column.selectbox(
                 label="Severity",
                 options=severity_options,
+                format_func=lambda value: "Inherit" if value is None else value,
                 index=severity_index,
                 help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
             ),

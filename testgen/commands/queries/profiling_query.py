@@ -51,16 +51,18 @@ class CProfilingSQL:
     contingency_columns = ""
 
     exception_message = ""
+    minutes_offset = 0
 
     _data_chars_sql: CRefreshDataCharsSQL = None
     _rollup_scores_sql: CRollupScoresSQL = None
 
-    def __init__(self, strProjectCode, flavor):
+    def __init__(self, strProjectCode, flavor, minutes_offset=0):
         self.flavor = flavor
         self.project_code = strProjectCode
         # Defaults
-        self.run_date = date_service.get_now_as_string()
-        self.today = date_service.get_now_as_string()
+        self.run_date = date_service.get_now_as_string_with_offset(minutes_offset)
+        self.today = date_service.get_now_as_string_with_offset(minutes_offset)
+        self.minutes_offset = minutes_offset
 
     def _get_data_chars_sql(self) -> CRefreshDataCharsSQL:
         if not self._data_chars_sql:
@@ -102,7 +104,7 @@ class CProfilingSQL:
             "PROFILE_ID_COLUMN_MASK": self.profile_id_column_mask,
             "PROFILE_SK_COLUMN_MASK": self.profile_sk_column_mask,
             "START_TIME": self.today,
-            "NOW_TIMESTAMP": date_service.get_now_as_string(),
+            "NOW_TIMESTAMP": date_service.get_now_as_string_with_offset(minutes_offset=self.minutes_offset),
             "EXCEPTION_MESSAGE": self.exception_message,
             "SAMPLING_TABLE": self.sampling_table,
             "SAMPLE_SIZE": int(self.parm_sample_size),

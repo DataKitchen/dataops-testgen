@@ -6,6 +6,7 @@ SELECT '{TEST_TYPE}' as test_type,
        {SKIP_ERRORS} as skip_errors,
        'schema_name = {SCHEMA_NAME}, prior_schema = {MATCH_SCHEMA_NAME}, table_name = {TABLE_NAME}, column_name = {COLUMN_NAME}, subset_condition = {SUBSET_CONDITION}, mode = {MODE}'
          as input_parameters,
+       NULL as result_signal,
        CASE WHEN COUNT(*) > COALESCE(skip_errors, 0) THEN 0 ELSE 1 END as result_code,
        CONCAT(
              CONCAT( 'Mismatched measures: ', CAST( COALESCE(COUNT(*), 0) AS {VARCHAR_TYPE}) ),

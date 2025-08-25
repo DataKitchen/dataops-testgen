@@ -12,6 +12,7 @@ from streamlit_extras.no_default_selectbox import selectbox
 
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -26,7 +27,6 @@ from testgen.ui.components.widgets.download_dialog import (
 )
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
@@ -40,8 +40,7 @@ LOG = logging.getLogger("testgen")
 class TestDefinitionsPage(Page):
     path = "test-suites:definitions"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "test_suite_id" in st.query_params or "test-suites",
     ]
 
@@ -56,8 +55,8 @@ class TestDefinitionsPage(Page):
         table_group = TableGroup.get_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
         session.set_sidebar_project(project_code)
-        user_can_edit = user_session_service.user_can_edit()
-        user_can_disposition = user_session_service.user_can_disposition()
+        user_can_edit = session.auth.user_has_permission("edit")
+        user_can_disposition = session.auth.user_has_permission("disposition")
 
         testgen.page_header(
             "Test Definitions",
@@ -260,7 +259,12 @@ def show_test_form(
     test_types_severity = selected_test_type_row["default_severity"]
     inherited_severity = test_suite_severity if test_suite_severity else test_types_severity
 
-    severity_options = [f"Inherited ({inherited_severity})", "Warning", "Fail"]
+    severity_options = [
+        f"Inherited ({inherited_severity})",
+        "Log",
+        "Warning",
+        "Fail",
+    ]
     if mode == "add" or selected_test_def["severity"] is None:
         severity_index = 0
     else:
@@ -304,6 +308,8 @@ def show_test_form(
     match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
     match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
     window_days = selected_test_def["window_days"] or 0 if mode == "edit" else 0
+    history_calculation = empty_if_null(selected_test_def["history_calculation"]) if mode == "edit" else ""
+    history_lookback = empty_if_null(selected_test_def["history_lookback"]) if mode == "edit" else ""
 
     # export_to_observability
     inherited_export_to_observability = "Yes" if test_suite.export_to_observability else "No"
@@ -398,6 +404,8 @@ def show_test_form(
         "match_groupby_names": match_groupby_names,
         "match_having_condition": match_having_condition,
         "window_days": window_days,
+        "history_calculation": history_calculation,
+        "history_lookback": history_lookback,
     }
 
     # test_definition_status
@@ -518,10 +526,18 @@ def show_test_form(
         if not attribute in dynamic_attributes:
             return
 
-        numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        choice_fields = {
+            "history_calculation": ["Value", "Minimum", "Maximum", "Sum", "Average"],
+        }
+        float_numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        int_numeric_attributes = ["history_lookback"]
 
-        default_value = 0 if attribute in numeric_attributes else ""
-        value = selected_test_def[attribute] if mode == "edit" and selected_test_def[attribute] is not None else default_value
+        default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
+        value = (
+            selected_test_def[attribute]
+            if mode == "edit" and selected_test_def[attribute] is not None
+            else default_value
+        )
 
         index = dynamic_attributes.index(attribute)
         leftover_attributes.remove(attribute)
@@ -551,13 +567,40 @@ def show_test_form(
                 height=150 if test_type == "CUSTOM" else 75,
                 help=help_text,
             )
-        elif attribute in numeric_attributes:
+        elif attribute in float_numeric_attributes:
             test_definition[attribute] = container.number_input(
                 label=label_text,
                 value=float(value),
                 step=1.0,
                 help=help_text,
             )
+        elif attribute in int_numeric_attributes:
+            max_value = None
+            if (
+                attribute == "history_lookback"
+                and int(value) <= 1
+                and (
+                    not test_definition.get("history_calculation")
+                    or test_definition.get("history_calculation") == "Value"
+                )
+            ):
+                max_value = 1
+            test_definition[attribute] = container.number_input(
+                label=label_text,
+                step=1,
+                value=int(value),
+                max_value=max_value,
+                min_value=0,
+                help=help_text,
+            )
+        elif attribute in choice_fields:
+            with container:
+                test_definition[attribute] = testgen.select(
+                    label_text,
+                    choice_fields[attribute],
+                    required=True,
+                    default_value=value,
+                )
         else:
             test_definition[attribute] = container.text_input(
                 label=label_text,
@@ -626,7 +669,7 @@ def show_test_form(
     submit = bottom_left_column.button("Save")
 
     if submit:
-        if validate_form(test_scope, test_type, test_definition, column_name_label):
+        if validate_form(test_scope, test_definition, column_name_label):
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
@@ -750,13 +793,7 @@ def copy_move_test_dialog(
         time.sleep(1)
         st.rerun()
 
-def validate_form(test_scope, test_type, test_definition, column_name_label):
-    if test_type == "Condition_Flag" and not test_definition["threshold_value"]:
-        st.error("Threshold Error Count is a required field.")
-        return False
-    if not test_definition["test_type"]:
-        st.error("Test Type is a required field.")
-        return False
+def validate_form(test_scope, test_definition, column_name_label):
     if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
         st.error(f"{column_name_label} is a required field.")
         return False
@@ -1179,17 +1216,33 @@ def get_column_names(table_groups_id: str, table_name: str) -> list[str]:
 def validate_test(test_definition, table_group: TableGroupMinimal):
     schema = test_definition["schema_name"]
     table_name = test_definition["table_name"]
+    connection = Connection.get_by_table_group(table_group.id)
 
     if test_definition["test_type"] == "Condition_Flag":
         condition = test_definition["custom_query"]
+        concat_operator = get_flavor_service(connection.sql_flavor).get_concat_operator()
         query = f"""
         SELECT 
-            COALESCE(CAST(SUM(CASE WHEN {condition} THEN 1 ELSE 0 END) AS VARCHAR(1000) ) || '|' ,'<NULL>|')
+            COALESCE(
+                CAST(
+                    SUM(
+                        CASE WHEN {condition} THEN 1 ELSE 0 END
+                    ) AS VARCHAR(1000)
+                )
+                {concat_operator} '|',
+                '<NULL>|'
+            )
         FROM {schema}.{table_name};
         """
     else:
-        query = test_definition["custom_query"]
-        query = query.replace("{DATA_SCHEMA}", schema)
+        query = replace_params(
+            f"""
+            SELECT COUNT(*)
+            FROM (
+                {test_definition["custom_query"]}
+            ) TEST
+            """,
+            {"DATA_SCHEMA": schema},
+        )
 
-    connection = Connection.get_by_table_group(table_group.id)
     fetch_from_target_db(connection, query)

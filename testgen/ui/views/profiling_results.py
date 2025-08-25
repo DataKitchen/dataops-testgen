@@ -21,7 +21,6 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.services.database_service import fetch_df_from_db
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
@@ -32,8 +31,7 @@ FORM_DATA_WIDTH = 400
 class ProfilingResultsPage(Page):
     path = "profiling-runs:results"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 

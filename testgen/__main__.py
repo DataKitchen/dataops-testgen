@@ -117,10 +117,9 @@ def cli(ctx: Context, verbose: bool):
 @click.option(
     "-tg",
     "--table-group-id",
-    required=False,
+    required=True,
     type=click.STRING,
     help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
-    default=None,
 )
 def run_profile(configuration: Configuration, table_group_id: str):
     click.echo(f"run-profile with table_group_id: {table_group_id}")
@@ -136,16 +135,15 @@ def run_profile(configuration: Configuration, table_group_id: str):
     "-tg",
     "--table-group-id",
     help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
-    required=False,
+    required=True,
     type=click.STRING,
-    default=None,
 )
 @click.option(
     "-ts",
     "--test-suite-key",
     help="The identifier for a test suite. Use a test_suite_key shown in list-test-suites.",
-    required=False,
-    default=settings.DEFAULT_TEST_SUITE_KEY,
+    required=True,
+    type=click.STRING,
 )
 @click.option(
     "-gs",
@@ -340,27 +338,6 @@ def list_test_runs(configuration: Configuration, project_key: str, test_suite_ke
 
 @cli.command("quick-start", help="Use to generate sample target database, for demo purposes.")
 @click.option(
-    "--delete-target-db",
-    help="Will delete the current target database, if it exists",
-    is_flag=True,
-    default=False,
-)
-@click.option(
-    "--iteration",
-    "-i",
-    default=0,
-    required=False,
-    help="The monthly data increment snapshot. Can be 0, 1, 2 or 3. 0 is the initial data.",
-)
-@click.option(
-    "--simulate-fast-forward",
-    "-s",
-    default=False,
-    is_flag=True,
-    required=False,
-    help="For demo purposes, simulates that some time pass by and the target data is changing. This will call the iterations in order.",
-)
-@click.option(
     "--observability-api-url",
     help="Observability API url to be able to export TestGen data to Observability using the command 'export-observability'",
     type=click.STRING,
@@ -375,11 +352,10 @@ def list_test_runs(configuration: Configuration, project_key: str, test_suite_ke
     default="",
 )
 @pass_configuration
+@click.pass_context
 def quick_start(
+    ctx: Context,
     configuration: Configuration,
-    delete_target_db: bool,
-    iteration: int,
-    simulate_fast_forward: bool,
     observability_api_url: str,
     observability_api_key: str,
 ):
@@ -388,19 +364,32 @@ def quick_start(
     if observability_api_key:
         settings.OBSERVABILITY_API_KEY = observability_api_key
 
-    # Check if this is an increment or the initial state
-    if iteration == 0 and not simulate_fast_forward:
-        click.echo("quick-start command")
-        run_quick_start(delete_target_db)
+    click.echo("quick-start command")
+    run_quick_start(delete_target_db=True)
 
-    if not simulate_fast_forward:
+    click.echo("loading initial data")
+    run_quick_start_increment(0)
+    minutes_offset = -30*24*60 # 1 month ago
+    table_group_id="0ea85e17-acbe-47fe-8394-9970725ad37d"
+
+    click.echo(f"run-profile with table_group_id: {table_group_id}")
+    spinner = None
+    if not configuration.verbose:
+        spinner = MoonSpinner("Processing ... ")
+    message = run_profiling_queries(table_group_id, spinner=spinner, minutes_offset=minutes_offset)
+    click.echo("\n" + message)
+
+    LOG.info(f"run-test-generation with table_group_id: {table_group_id} test_suite: {settings.DEFAULT_TEST_SUITE_KEY}")
+    message = run_test_gen_queries(table_group_id, settings.DEFAULT_TEST_SUITE_KEY)
+    click.echo("\n" + message)
+
+    run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
+
+    for iteration in range(1, 4):
+        click.echo(f"Running iteration: {iteration} / 3")
+        minutes_offset = -10*24*60 * (3-iteration)
         run_quick_start_increment(iteration)
-    else:
-        for iteration in range(1, 4):
-            click.echo(f"Running iteration: {iteration} / 3")
-            minutes_offset = 2 * iteration
-            run_quick_start_increment(iteration)
-            run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
+        run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
 
     click.echo("Quick start has successfully finished.")
 

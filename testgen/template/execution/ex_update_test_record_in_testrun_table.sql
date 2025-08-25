@@ -4,6 +4,7 @@ WITH stats
                SUM(result_code)                                                    AS passed_ct,
                COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0)  AS failed_ct,
                COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) AS warning_ct,
+               COALESCE(SUM(CASE WHEN tr.result_status = 'Log' THEN 1 END), 0) AS log_ct,
                COALESCE(SUM(CASE WHEN tr.result_message ILIKE 'ERROR%' THEN 1 ELSE 0 END), 0) AS error_ct
           FROM test_runs r
         INNER JOIN test_results tr
@@ -19,6 +20,7 @@ UPDATE test_runs
        passed_ct = s.passed_ct,
        failed_ct = s.failed_ct,
        warning_ct = s.warning_ct,
+       log_ct = s.log_ct,
        error_ct = s.error_ct
   FROM test_runs r
 LEFT JOIN stats s

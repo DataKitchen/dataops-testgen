@@ -24,7 +24,6 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services import user_session_service
 from testgen.ui.session import session, temp_value
 
 LOG = logging.getLogger("testgen")
@@ -35,8 +34,7 @@ CLEAR_SENTINEL = "<clear>"
 class ConnectionsPage(Page):
     path = "connections"
     can_activate: typing.ClassVar = [
-        lambda: session.authentication_status,
-        lambda: not user_session_service.user_has_catalog_role(),
+        lambda: session.auth.is_logged_in,
         lambda: "project_code" in st.query_params,
     ]
     menu_item = MenuItem(
@@ -44,8 +42,15 @@ class ConnectionsPage(Page):
         label=PAGE_TITLE,
         section="Data Configuration",
         order=1,
-        roles=[ role for role in typing.get_args(user_session_service.RoleType) if role != "catalog" ],
     )
+    trim_fields: typing.ClassVar[list[str]] = [
+        "project_host",
+        "project_port",
+        "project_user",
+        "project_db",
+        "url",
+        "http_path",
+    ]
 
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
@@ -58,7 +63,7 @@ class ConnectionsPage(Page):
         has_table_groups = (
             len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
-        user_is_admin = user_session_service.user_is_admin()
+        user_is_admin = session.auth.user_has_permission("administer")
         should_check_status, set_check_status = temp_value(
             "connections:status_check",
             default=False,
@@ -105,7 +110,7 @@ class ConnectionsPage(Page):
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)
-            set_updated_connection(updated_connection)
+            set_updated_connection(self._sanitize_connection_input(updated_connection))
 
         def on_test_connection_clicked(updated_connection: dict) -> None:
             password = updated_connection.get("project_pw_encrypted")
@@ -129,7 +134,7 @@ class ConnectionsPage(Page):
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_check_status(True)
-            set_updated_connection(updated_connection)
+            set_updated_connection(self._sanitize_connection_input(updated_connection))
 
         results = None
         for key, value in get_updated_connection().items():
@@ -174,6 +179,18 @@ class ConnectionsPage(Page):
         if match:
             return match[0]
         return None
+
+    def _sanitize_connection_input(self, connection: dict) -> dict:
+        if not connection:
+            return connection
+
+        sanitized_connection_input = {}
+        for key, value in connection.items():
+            sanitized_value = value
+            if isinstance(value, str) and key in self.trim_fields:
+                sanitized_value = value.strip()
+            sanitized_connection_input[key] = sanitized_value
+        return sanitized_connection_input
 
     def _format_connection(self, connection: Connection, should_test: bool = False) -> dict:
         formatted_connection = format_connection(connection)
