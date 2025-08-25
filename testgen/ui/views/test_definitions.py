@@ -669,7 +669,7 @@ def show_test_form(
     submit = bottom_left_column.button("Save")
 
     if submit:
-        if validate_form(test_scope, test_type, test_definition, column_name_label):
+        if validate_form(test_scope, test_definition, column_name_label):
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
@@ -793,13 +793,7 @@ def copy_move_test_dialog(
         time.sleep(1)
         st.rerun()
 
-def validate_form(test_scope, test_type, test_definition, column_name_label):
-    if test_type == "Condition_Flag" and not test_definition["threshold_value"]:
-        st.error("Threshold Error Count is a required field.")
-        return False
-    if not test_definition["test_type"]:
-        st.error("Test Type is a required field.")
-        return False
+def validate_form(test_scope, test_definition, column_name_label):
     if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
         st.error(f"{column_name_label} is a required field.")
         return False

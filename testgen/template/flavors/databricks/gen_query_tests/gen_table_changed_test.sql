@@ -24,7 +24,7 @@ locked AS       (SELECT schema_name, table_name
                   FROM test_definitions
 				     WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
                    AND test_suite_id = '{TEST_SUITE_ID}'
-				       AND test_type = 'Stale_Table'
+				       AND test_type = 'Table_Freshness'
                    AND lock_refresh = 'Y'),
 -- IDs - TOP 2
 id_cols
@@ -126,7 +126,7 @@ newtests
       GROUP BY profile_run_id, schema_name, table_name)
 SELECT '{TABLE_GROUPS_ID}'::UUID as table_groups_id,
        n.profile_run_id,
-       'Stale_Table' AS test_type,
+       'Table_Freshness' AS test_type,
        '{TEST_SUITE_ID}' AS test_suite_id,
        n.schema_name, n.table_name,
        0 as skip_errors, 'Y' as test_active,
@@ -139,7 +139,7 @@ SELECT '{TABLE_GROUPS_ID}'::UUID as table_groups_id,
        fingerprint as custom_query
 FROM newtests n
 INNER JOIN test_types t
-   ON ('Stale_Table' = t.test_type
+   ON ('Table_Freshness' = t.test_type
   AND   'Y' = t.active)
 LEFT JOIN generation_sets s
    ON (t.test_type = s.test_type
