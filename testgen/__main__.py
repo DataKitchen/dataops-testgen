@@ -369,7 +369,7 @@ def quick_start(
 
     click.echo("loading initial data")
     run_quick_start_increment(0)
-    minutes_offset = -30*24*60*3
+    minutes_offset = -30*24*60 # 1 month ago
     table_group_id="0ea85e17-acbe-47fe-8394-9970725ad37d"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
@@ -387,7 +387,7 @@ def quick_start(
 
     for iteration in range(1, 4):
         click.echo(f"Running iteration: {iteration} / 3")
-        minutes_offset = -30*24*60 * (3-iteration)
+        minutes_offset = -10*24*60 * (3-iteration)
         run_quick_start_increment(iteration)
         run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
 
