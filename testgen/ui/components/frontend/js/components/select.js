@@ -20,6 +20,8 @@
  * @property {number?} height
  * @property {string?} style
  * @property {string?} testId
+ * @property {number?} portalClass
+ * @property {('normal' | 'inline')?} triggerStyle
  */
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../utils.js';
@@ -90,31 +92,48 @@ const Select = (/** @type {Properties} */ props) => {
                 ? span({ class: 'text-error' }, '*')
                 : '',
         ),
-        div(
-            {
-                class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
-                style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
-                'data-testid': 'select-input',
-            },
-            () => div(
-                { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
-                valueIcon.val
-                    ? Icon({ classes: 'mr-2' }, valueIcon.val)
-                    : undefined,
-                valueLabel.val,
-            ),
-            div(
-                { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
-                i(
-                    { class: 'material-symbols-rounded' },
-                    'expand_more',
+
+        () => getValue(props.triggerStyle) === 'inline'
+            ? div(
+                {class: 'tg-select--inline-trigger flex-row'},
+                span({}, valueLabel.val ?? '---'),
+                div(
+                    { class: 'tg-select--field--icon ', 'data-testid': 'select-input-trigger' },
+                    i(
+                        { class: 'material-symbols-rounded' },
+                        'expand_more',
+                    ),
+                ),
+            )
+            : div(
+                {
+                    class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
+                    style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+                    'data-testid': 'select-input',
+                },
+                () => div(
+                    { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
+                    valueIcon.val
+                        ? Icon({ classes: 'mr-2' }, valueIcon.val)
+                        : undefined,
+                    valueLabel.val,
+                ),
+                div(
+                    { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
+                    i(
+                        { class: 'material-symbols-rounded' },
+                        'expand_more',
+                    ),
                 ),
             ),
-        ),
+
         Portal(
             {target: domId.val, targetRelative: true, opened},
             () => div(
-                { class: 'tg-select--options-wrapper mt-1', 'data-testid': 'select-options' },
+                {
+                    class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
+                    'data-testid': 'select-options',
+                },
                 getValue(options).map(option =>
                     div(
                         {
@@ -225,6 +244,14 @@ stylesheet.replace(`
 .tg-select--option.selected {
     background: var(--select-hover-background);
     color: var(--primary-color);
+}
+
+.tg-select--inline-trigger {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tg-select--inline-trigger > span {
+    min-width: 24px;
 }
 `);
 

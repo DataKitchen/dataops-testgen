@@ -23,6 +23,7 @@
  * @property {boolean?} passwordSuggestions
  * @property {function(string, InputState)?} onChange
  * @property {boolean?} disabled
+ * @property {boolean?} readonly
  * @property {function(string, InputState)?} onClear
  * @property {number?} width
  * @property {number?} height
@@ -135,6 +136,7 @@ const Input = (/** @type Properties */ props) => {
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(props.readonly ? {readonly: true} : {}),
                 ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),
                 placeholder: () => getValue(props.placeholder) ?? '',
                 oninput: debounce((/** @type Event */ event) => {
