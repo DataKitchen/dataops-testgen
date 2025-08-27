@@ -233,7 +233,7 @@ class HygieneIssuesPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run.table_groups_name, run_date, run_id, data),
+                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, data),
             )
 
         with popover_container.container(key="tg--export-popover"):
@@ -550,6 +550,7 @@ def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
+    schema: str,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -558,7 +559,6 @@ def get_excel_report_data(
         data = get_profiling_anomalies(run_id)
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "anomaly_name": {"header": "Issue Type"},
@@ -571,7 +571,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Hygiene Issues",
-        details={"Table group": table_group, "Profiling run date": run_date},
+        details={"Table group": table_group, "Schema": schema, "Profiling run date": run_date},
         columns=columns,
         update_progress=update_progress,
     )

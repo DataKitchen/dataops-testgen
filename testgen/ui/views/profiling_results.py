@@ -86,7 +86,6 @@ class ProfilingResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Schema", "schema_name"),
                 ("Table", "table_name"),
                 ("Column", "column_name"),
                 ("Data Type", "column_type"),
@@ -107,7 +106,6 @@ class ProfilingResultsPage(Page):
                 )
 
         show_columns = [
-            "schema_name",
             "table_name",
             "column_name",
             "column_type",
@@ -115,7 +113,6 @@ class ProfilingResultsPage(Page):
             "hygiene_issues",
         ]
         show_column_headers = [
-            "Schema",
             "Table",
             "Column",
             "Data Type",
@@ -142,7 +139,7 @@ class ProfilingResultsPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run.table_groups_name, run_date, run_id, data),
+                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, data),
             )
 
         with popover_container.container(key="tg--export-popover"):
@@ -179,6 +176,7 @@ class ProfilingResultsPage(Page):
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
+    schema: str,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -217,7 +215,6 @@ def get_excel_report_data(
     )
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "position": {},
@@ -273,7 +270,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Profiling Results",
-        details={"Table group": table_group, "Profiling run date": run_date},
+        details={"Table group": table_group, "Schema": schema, "Profiling run date": run_date},
         columns=columns,
         update_progress=update_progress,
     )

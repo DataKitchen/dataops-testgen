@@ -18,6 +18,7 @@ from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -454,6 +455,7 @@ def show_result_detail(
             df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
 
             test_suite = TestSuite.get_minimal(test_suite_id)
+            table_group = TableGroup.get_minimal(test_suite.table_groups_id)
 
     lst_show_columns = [
         "table_name",
@@ -497,7 +499,7 @@ def show_result_detail(
         download_dialog(
             dialog_title="Download Excel Report",
             file_content_func=get_excel_report_data,
-            args=(test_suite.test_suite, run_date, run_id, data),
+            args=(test_suite.test_suite, table_group.table_group_schema, run_date, run_id, data),
         )
 
     with popover_container.container(key="tg--export-popover"):
@@ -608,6 +610,7 @@ def show_result_detail(
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: str,
+    schema: str,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -616,7 +619,6 @@ def get_excel_report_data(
         data = test_result_queries.get_test_results(run_id)
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_names": {"header": "Columns/Focus"},
         "test_name_short": {"header": "Test type"},
@@ -634,7 +636,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Results",
-        details={"Test suite": test_suite, "Test run date": run_date},
+        details={"Test suite": test_suite, "Schema": schema, "Test run date": run_date},
         columns=columns,
         update_progress=update_progress,
     )

@@ -24,6 +24,7 @@ class ProfilingRunMinimal(EntityMinimal):
     project_code: str
     table_groups_id: UUID
     table_groups_name: str
+    table_group_schema: str
     profiling_starttime: datetime
     dq_score_profiling: float
     is_latest_run: bool
@@ -81,6 +82,7 @@ class ProfilingRun(Entity):
         project_code,
         table_groups_id,
         TableGroup.table_groups_name,
+        TableGroup.table_group_schema,
         profiling_starttime,
         dq_score_profiling,
         case(
