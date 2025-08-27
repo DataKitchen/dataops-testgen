@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, text, update
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -80,7 +80,7 @@ class TableGroup(Entity):
     dq_score_profiling: float = Column(Float)
     dq_score_testing: float = Column(Float)
 
-    _default_order_by = (asc(table_groups_name),)
+    _default_order_by = (asc(func.lower(table_groups_name)),)
     _minimal_columns = TableGroupMinimal.__annotations__.keys()
     _update_exclude_columns = (
         id,

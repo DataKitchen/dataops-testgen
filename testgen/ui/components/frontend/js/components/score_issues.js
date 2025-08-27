@@ -27,7 +27,7 @@ import { Checkbox } from '../components/checkbox.js';
 import { Select } from './select.js';
 import { Paginator } from '../components/paginator.js';
 import { emitEvent, loadStylesheet } from '../utils.js';
-import { colorMap, formatTimestamp } from '../display_utils.js';
+import { colorMap, formatTimestamp, caseInsensitiveSort } from '../display_utils.js';
 
 const { div, i, span } = van.tags;
 const PAGE_SIZE = 100;
@@ -203,18 +203,18 @@ const Toolbar = (
 ) => {
     const filterOptions = {
         table: [ ...new Set(issues.map(({ table }) => table)) ]
-            .sort()
+            .sort(caseInsensitiveSort)
             .map(value => ({ label: value, value })),
         column: van.derive(() => (
             [ ...new Set(issues
                 .filter(({ table }) => table === filters.table.val)
                 .map(({ column }) => column)
             )]
-            .sort()
+            .sort(caseInsensitiveSort)
             .map(value => ({ label: value, value }))
         )),
         type: [ ...new Set(issues.map(({ type }) => type)) ]
-            .sort()
+            .sort(caseInsensitiveSort)
             .map(value => ({ label: value, value })),
         status: [ 'Definite', 'Failed', 'Likely', 'Possible', 'Warning', 'Potential PII' ]
             .map(value => ({ 

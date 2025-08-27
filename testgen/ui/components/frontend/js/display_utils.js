@@ -74,6 +74,14 @@ function humanReadableSize(bytes) {
     return `${bytes}B`;
 }
 
+const caseInsensitiveSort = new Intl.Collator('en').compare;
+const caseInsensitiveIncludes = (/** @type string */ value, /** @type string */ search) => {
+    if (value && search) {
+        return value.toLowerCase().includes(search.toLowerCase());
+    }
+    return !search;
+}
+
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 const colorMap = {
     red: '#EF5350', // Red 400
@@ -98,4 +106,14 @@ const colorMap = {
 
 const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
 
-export { formatTimestamp, formatDuration, formatNumber, capitalize, humanReadableSize, colorMap, DISABLED_ACTION_TEXT };
+export {
+    formatTimestamp,
+    formatDuration,
+    formatNumber,
+    capitalize,
+    humanReadableSize,
+    caseInsensitiveSort,
+    caseInsensitiveIncludes,
+    colorMap,
+    DISABLED_ACTION_TEXT,
+};

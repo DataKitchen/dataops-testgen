@@ -6,7 +6,7 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import asc, tuple_
+from sqlalchemy import asc, func, tuple_
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -1134,7 +1134,7 @@ def run_test_type_lookup_query(
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     results = TestDefinition.select_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
-        order_by = (asc(TestDefinition.table_name), asc(TestDefinition.column_name)),
+        order_by = (asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 

@@ -63,6 +63,7 @@ class ProfilingResultsPage(Page):
         with table_filter_column:
             # Table Name filter
             df = get_profiling_run_tables(run_id)
+            df = df.sort_values("table_name", key=lambda x: x.str.lower())
             table_name = testgen.select(
                 options=df,
                 value_column="table_name",
@@ -74,6 +75,7 @@ class ProfilingResultsPage(Page):
         with column_filter_column:
             # Column Name filter
             df = get_profiling_run_columns(run_id, table_name)
+            df = df.sort_values("column_name", key=lambda x: x.str.lower())
             column_name = testgen.select(
                 options=df,
                 value_column="column_name",
@@ -86,9 +88,9 @@ class ProfilingResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Table", "table_name"),
-                ("Column", "column_name"),
-                ("Data Type", "column_type"),
+                ("Table", "LOWER(table_name)"),
+                ("Column", "LOWER(column_name)"),
+                ("Data Type", "LOWER(column_type)"),
                 ("Semantic Data Type", "semantic_data_type"),
                 ("Hygiene Issues", "hygiene_issues"),
             )

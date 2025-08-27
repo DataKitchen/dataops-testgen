@@ -110,7 +110,7 @@ class HygieneIssuesPage(Page):
                     .groupby("column_name")
                     .first()
                     .reset_index()
-                    .sort_values("column_name")
+                    .sort_values("column_name", key=lambda x: x.str.lower())
                 )
             column_name = testgen.select(
                 options=column_options,
@@ -150,8 +150,8 @@ class HygieneIssuesPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Table", "r.table_name"),
-                ("Column", "r.column_name"),
+                ("Table", "LOWER(r.table_name)"),
+                ("Column", "LOWER(r.column_name)"),
                 ("Issue Type", "t.anomaly_name"),
                 ("Likelihood", "likelihood_order"),
                 ("Action", "r.disposition"),
@@ -401,7 +401,7 @@ def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     FROM profile_anomaly_results r
     LEFT JOIN profile_anomaly_types t on t.id = r.anomaly_id
     WHERE r.profile_run_id = :profiling_run_id
-    ORDER BY r.table_name, r.column_name;
+    ORDER BY LOWER(r.table_name), LOWER(r.column_name);
     """
     return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
 

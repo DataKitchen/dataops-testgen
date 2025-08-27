@@ -126,7 +126,7 @@ class TestResultsPage(Page):
                     run_columns_df["table_name"] == table_name
                     ]["column_name"].dropna().unique().tolist()
             else:
-                column_options = run_columns_df.groupby("column_name").first().reset_index().sort_values("column_name")
+                column_options = run_columns_df.groupby("column_name").first().reset_index().sort_values("column_name", key=lambda x: x.str.lower())
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -158,8 +158,8 @@ class TestResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Table", "r.table_name"),
-                ("Columns/Focus", "r.column_names"),
+                ("Table", "LOWER(r.table_name)"),
+                ("Columns/Focus", "LOWER(r.column_names)"),
                 ("Test Type", "r.test_type"),
                 ("Unit of Measure", "tt.measure_uom"),
                 ("Result Measure", "result_measure"),
@@ -280,7 +280,7 @@ def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
     FROM test_results r
     LEFT JOIN test_types t ON t.test_type = r.test_type
     WHERE test_run_id = :test_run_id
-    ORDER BY table_name, column_names;
+    ORDER BY LOWER(r.table_name), LOWER(r.column_names);
     """
     return fetch_df_from_db(query, {"test_run_id": test_run_id})
 

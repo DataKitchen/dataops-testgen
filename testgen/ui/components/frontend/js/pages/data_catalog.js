@@ -48,7 +48,7 @@ import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profilin
 import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
-import { capitalize } from '../display_utils.js';
+import { capitalize, caseInsensitiveIncludes } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
@@ -210,7 +210,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             multiSelectToggleLabel: 'Edit multiple',
                             onMultiSelect: (/** @type string[] | null */ selected) => multiSelectedItems.val = selected,
                             isNodeHidden: (/** @type TreeNode */ node, /** string */ search) => search 
-                                && (!node.label.toLowerCase().includes(search.toLowerCase())
+                                && (!caseInsensitiveIncludes(node.label, search)
                                     || (!!node.children && !searchOptions.tableName.val)
                                     || (!node.children && !searchOptions.columnName.val))
                                 || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
