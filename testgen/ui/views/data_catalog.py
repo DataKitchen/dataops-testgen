@@ -183,7 +183,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         
 
     data = pd.DataFrame(table_data + column_data)
-    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first")
+    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
 
     for key in ["column_type", "datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
@@ -480,7 +480,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             WHEN 'Warning' THEN 2
             ELSE 3
         END,
-        column_name;
+        LOWER(column_names);
     """
     params = {
         "table_group_id": table_group_id,
@@ -507,7 +507,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}
     GROUP BY test_suites.id
-    ORDER BY test_suite;
+    ORDER BY LOWER(test_suite);
     """
     params = {
         "table_group_id": table_group_id,

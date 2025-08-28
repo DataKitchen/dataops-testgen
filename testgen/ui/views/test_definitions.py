@@ -6,7 +6,7 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import asc, tuple_
+from sqlalchemy import asc, func, tuple_
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -877,7 +877,6 @@ def show_test_defs_grid(
             df = get_test_definitions(test_suite, table_name, column_name, test_type)
 
     lst_show_columns = [
-        "schema_name",
         "table_name",
         "column_name",
         "test_name_short",
@@ -889,7 +888,6 @@ def show_test_defs_grid(
         "last_manual_update",
     ]
     show_column_headers = [
-        "Schema",
         "Table",
         "Columns / Focus",
         "Test Type",
@@ -925,7 +923,7 @@ def show_test_defs_grid(
         download_dialog(
             dialog_title="Download Excel Report",
             file_content_func=get_excel_report_data,
-            args=(test_suite, data),
+            args=(test_suite, table_group.table_group_schema, data),
         )
 
     with popover_container.container(key="tg--export-popover"):
@@ -1006,6 +1004,7 @@ def show_test_defs_grid(
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: TestSuite,
+    schema: str,
     data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
     if data is not None:
@@ -1022,7 +1021,6 @@ def get_excel_report_data(
         )
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column/Focus"},
         "test_name_short": {"header": "Test type"},
@@ -1038,7 +1036,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Definitions",
-        details={"Test suite": test_suite.test_suite},
+        details={"Test suite": test_suite.test_suite, "Schema": schema},
         columns=columns,
         update_progress=update_progress,
     )
@@ -1136,7 +1134,7 @@ def run_test_type_lookup_query(
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     results = TestDefinition.select_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
-        order_by = (asc(TestDefinition.table_name), asc(TestDefinition.column_name)),
+        order_by = (asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 

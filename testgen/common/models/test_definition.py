@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     asc,
+    func,
     insert,
     select,
     text,
@@ -194,7 +195,7 @@ class TestDefinition(Entity):
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
 
-    _default_order_by = (asc(schema_name), asc(table_name), asc(column_name), asc(test_type))
+    _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
         *[key for key in TestDefinitionSummary.__annotations__.keys() if key != "default_test_description"],
         TestType.test_description.label("default_test_description"),

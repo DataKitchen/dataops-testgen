@@ -22,6 +22,7 @@ import { Button } from '../components/button.js';
 import { ScoreCard } from '../components/score_card.js';
 import { ScoreLegend } from '../components/score_legend.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
+import { caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
 
 const { div, span } = van.tags;
 
@@ -41,8 +42,8 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
         const sort = getValue(sortedBy) ?? 'name';
         const filter = getValue(filterTerm) ?? '';
         return getValue(props.scores)
-            .filter(score => score.name.toLowerCase().includes(filter.toLowerCase()))
-            .sort((a, b) => a[sort] > b[sort] ? 1 : (b[sort] > a[sort] ? -1 : 0));
+            .filter(score => caseInsensitiveIncludes(score.name, filter))
+            .sort((a, b) => caseInsensitiveSort(a[sort], b[sort]));
     });
 
     return div(

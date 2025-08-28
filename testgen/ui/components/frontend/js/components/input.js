@@ -38,6 +38,7 @@ import { debounce, getValue, loadStylesheet, getRandomId } from '../utils.js';
 import { Icon } from './icon.js';
 import { withTooltip } from './tooltip.js';
 import { Portal } from './portal.js';
+import { caseInsensitiveIncludes } from '../display_utils.js';
 
 const { div, input, label, i, small, span } = van.tags;
 const defaultHeight = 38;
@@ -84,7 +85,7 @@ const Input = (/** @type Properties */ props) => {
 
     const autocompleteOpened = van.state(false);
     const autocompleteOptions = van.derive(() => {
-        const filtered = getValue(props.autocompleteOptions)?.filter(option => option.toLowerCase().includes(value.val.toLowerCase()));
+        const filtered = getValue(props.autocompleteOptions)?.filter(option => caseInsensitiveIncludes(option, value.val));
         if (!filtered?.length) {
             autocompleteOpened.val = false;
         }

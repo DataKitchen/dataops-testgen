@@ -46,6 +46,7 @@ import { Icon } from './icon.js';
 import { Checkbox } from './checkbox.js';
 import { Toggle } from './toggle.js';
 import { withTooltip } from './tooltip.js';
+import { caseInsensitiveIncludes } from '../display_utils.js';
 
 const { div, h3, span } = van.tags;
 const levelOffset = 14;
@@ -121,7 +122,7 @@ const Toolbar = (
     const filtersActive = van.state(false);
     const isNodeHidden = (/** @type TreeNode */ node) => props.isNodeHidden
         ? props.isNodeHidden?.(node, search.val)
-        : !node.label.toLowerCase().includes(search.val.toLowerCase());
+        : !caseInsensitiveIncludes(node.label, search.val);
 
     return div(
         { class: 'tg-tree--actions' },

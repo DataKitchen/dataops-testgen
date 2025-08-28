@@ -173,18 +173,21 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
 
     quote = lambda v: f"'{v}'"
     query = f"""
-        SELECT DISTINCT
-            UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
-            UNNEST(array[{', '.join(categories)}]) AS value
-        FROM v_dq_test_scoring_latest_by_column
-        WHERE project_code = :project_code
-        UNION
-        SELECT DISTINCT
-            UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
-            UNNEST(array[{', '.join(categories)}]) AS value
-        FROM v_dq_profile_scoring_latest_by_column
-        WHERE project_code = :project_code
-        ORDER BY value
+        SELECT *
+        FROM (
+            SELECT DISTINCT
+                UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
+                UNNEST(array[{', '.join(categories)}]) AS value
+            FROM v_dq_test_scoring_latest_by_column
+            WHERE project_code = :project_code
+            UNION
+            SELECT DISTINCT
+                UNNEST(array[{', '.join([quote(c) for c in categories])}]) as category,
+                UNNEST(array[{', '.join(categories)}]) AS value
+            FROM v_dq_profile_scoring_latest_by_column
+            WHERE project_code = :project_code
+        ) category_values
+        ORDER BY LOWER(value)
     """
     results = fetch_all_from_db(query, {"project_code": project_code})
     for row in results:
@@ -206,7 +209,7 @@ def get_column_filters(project_code: str) -> list[dict]:
     FROM data_column_chars
     INNER JOIN table_groups ON (table_groups.id = data_column_chars.table_groups_id)
     WHERE table_groups.project_code = :project_code
-    ORDER BY table_name, ordinal_position;
+    ORDER BY LOWER(table_groups_name), LOWER(table_name), ordinal_position;
     """
     results = fetch_all_from_db(query, {"project_code": project_code})
     return [dict(row) for row in results]

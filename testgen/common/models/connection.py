@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     asc,
+    func,
     select,
 )
 from sqlalchemy.dialects import postgresql
@@ -60,7 +61,7 @@ class Connection(Entity):
     http_path: str = Column(String)
 
     _get_by = "connection_id"
-    _default_order_by = (asc(connection_name),)
+    _default_order_by = (asc(func.lower(connection_name)),)
     _minimal_columns = ConnectionMinimal.__annotations__.keys()
 
     @classmethod

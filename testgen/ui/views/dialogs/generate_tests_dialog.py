@@ -55,7 +55,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_name}",
+            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}'",
             language="shellSession",
         )
 

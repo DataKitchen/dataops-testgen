@@ -75,11 +75,13 @@ FROM (
 ) issues
 ORDER BY
     CASE
-        status
+        issues.status
         WHEN 'Definite' THEN 1
         WHEN 'Failed' THEN 2
         WHEN 'Likely' THEN 3
         WHEN 'Possible' THEN 4
         WHEN 'Warning' THEN 5
         ELSE 6
-    END
+    END,
+    LOWER(issues.table),
+    LOWER(issues.column)

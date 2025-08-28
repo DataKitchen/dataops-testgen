@@ -185,10 +185,9 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
             )
 
         if submit:
-            if " " in entity["test_suite"]:
-                proposed_test_suite = entity["test_suite"].replace(" ", "-")
+            if not entity["test_suite"]:
                 st.error(
-                    f"Blank spaces not allowed in field 'Test Suite Name'. Use dash or underscore instead. i.e.: {proposed_test_suite}"
+                    "Test Suite Name is required"
                 )
             else:
                 test_suite = selected or TestSuite()
@@ -264,7 +263,7 @@ def observability_export_dialog(test_suite_id: str) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:export-tests-show-cli"):
         st.code(
-            f"testgen export-observability --project-key {project_key} --test-suite-key {test_suite_key}",
+            f"testgen export-observability --project-key {project_key} --test-suite-key '{test_suite_key}'",
             language="shellSession"
         )
 
