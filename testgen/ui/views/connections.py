@@ -77,6 +77,9 @@ class ConnectionsPage(Page):
             default=False,
         )
 
+        def on_connection_updated(connection: dict) -> None:
+            set_updated_connection(self._sanitize_connection_input(connection))
+
         def on_save_connection_clicked(updated_connection):
             is_pristine = lambda value: value in ["", "***"]
 
@@ -140,6 +143,10 @@ class ConnectionsPage(Page):
         for key, value in get_updated_connection().items():
             setattr(connection, key, value)
 
+        flavor_service = get_flavor_service(connection.sql_flavor)
+        flavor_service.init({**connection.to_dict(), "project_pw_encrypted": "<password>"})
+        connection_string = flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
+
         if should_save():
             success = True
             try:
@@ -165,12 +172,14 @@ class ConnectionsPage(Page):
                 "permissions": {
                     "is_admin": user_is_admin,
                 },
+                "generated_connection_url": connection_string,
                 "results": results,
             },
             on_change_handlers={
                 "TestConnectionClicked": on_test_connection_clicked,
                 "SaveConnectionClicked": on_save_connection_clicked,
                 "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection.connection_id),
+                "ConnectionUpdated": on_connection_updated,
             },
         )
 

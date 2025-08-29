@@ -55,6 +55,7 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
                 type: 'icon',
                 icon: 'close',
                 style: `margin-left: auto;`,
+                onclick: close,
             });
         },
     );

@@ -17,6 +17,7 @@
  * @property {boolean} has_table_groups
  * @property {Array<Flavor>} flavors
  * @property {Permissions} permissions
+ * @property {string?} generated_connection_url
  * @property {Results?} results
  */
 import van from '../van.min.js';
@@ -79,6 +80,7 @@ const Connections = (props) => {
                     connection: props.connection,
                     flavors: props.flavors,
                     disableFlavor: false,
+                    dynamicConnectionUrl: props.generated_connection_url,
                     onChange: (connection, state) => {
                         formState.val = state;
                         updatedConnection.val = connection;
