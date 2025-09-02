@@ -3,7 +3,7 @@ import logging
 import click
 
 from testgen import settings
-from testgen.commands.run_launch_db_config import run_launch_db_config
+from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
     create_database,
@@ -116,6 +116,14 @@ def run_quick_start(delete_target_db: bool) -> None:
     click.echo(f"Running CLI command: {command}")
     delete_db = True
     run_launch_db_config(delete_db)
+
+    click.echo(f"Seeding the application db")
+    app_db_params = get_app_db_params_mapping()
+    execute_db_queries(
+        [
+            (replace_params(read_template_sql_file("initial_data_seeding.sql", "quick_start"), app_db_params), app_db_params),
+        ],
+    )
 
     # Schema and Populate target db
     click.echo(f"Populating target db : {target_db_name}")

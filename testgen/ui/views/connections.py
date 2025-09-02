@@ -59,10 +59,11 @@ class ConnectionsPage(Page):
         )
 
         connections = Connection.select_where(Connection.project_code == project_code)
-        connection: Connection = connections[0]
+        connection: Connection = connections[0] if len(connections) > 0 else Connection(sql_flavor="postgresql", sql_flavor_code="postgresql")
         has_table_groups = (
-            len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
+            connection.id and len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
+
         user_is_admin = session.auth.user_has_permission("administer")
         should_check_status, set_check_status = temp_value(
             "connections:status_check",
@@ -143,6 +144,7 @@ class ConnectionsPage(Page):
         for key, value in get_updated_connection().items():
             setattr(connection, key, value)
 
+        connection_string: str | None = None
         flavor_service = get_flavor_service(connection.sql_flavor)
         flavor_service.init({**connection.to_dict(), "project_pw_encrypted": "<password>"})
         connection_string = flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
