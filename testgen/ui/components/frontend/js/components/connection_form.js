@@ -60,7 +60,7 @@ import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
 import { Select } from './select.js';
-import { maxLength, minLength, required, sizeLimit } from '../form_validators.js';
+import { maxLength, minLength, required, requiredIf, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
 import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
@@ -413,7 +413,10 @@ const RedshiftForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        maxLength(250),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -426,7 +429,11 @@ const RedshiftForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        minLength(3),
+                        maxLength(5),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
                 })
             ),
             Input({
@@ -439,7 +446,10 @@ const RedshiftForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    maxLength(100),
+                    requiredIf(() => !connectByUrl.val),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
@@ -451,6 +461,9 @@ const RedshiftForm = (
                     prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => connectionUrl.val = value,
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -468,7 +481,10 @@ const RedshiftForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'password',
@@ -579,7 +595,10 @@ const DatabricksForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        maxLength(250),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -592,7 +611,11 @@ const DatabricksForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        minLength(3),
+                        maxLength(5),
+                    ],
                 })
             ),
             Input({
@@ -606,7 +629,10 @@ const DatabricksForm = (
                     validityPerField['http_path'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'db_name',
@@ -618,7 +644,10 @@ const DatabricksForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(100),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
@@ -630,6 +659,9 @@ const DatabricksForm = (
                     prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => connectionUrl.val = value,
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -647,7 +679,10 @@ const DatabricksForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'password',
@@ -762,7 +797,10 @@ const SnowflakeForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        maxLength(250),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -775,7 +813,11 @@ const SnowflakeForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        minLength(3),
+                        maxLength(5),
+                    ],
                 })
             ),
             Input({
@@ -788,7 +830,10 @@ const SnowflakeForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(100),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
@@ -804,6 +849,9 @@ const SnowflakeForm = (
                         validityPerField['url_suffix'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -832,7 +880,10 @@ const SnowflakeForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             () => {
                 if (connectByKey.val) {
@@ -889,6 +940,7 @@ const SnowflakeForm = (
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
+                                required,
                                 sizeLimit(200 * 1024 * 1024),
                             ],
                         }),
