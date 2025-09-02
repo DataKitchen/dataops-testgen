@@ -33,6 +33,7 @@
  * @property {string?} private_key
  * @property {string?} private_key_passphrase
  * @property {string?} http_path
+ * @property {string?} warehouse
  * @property {ConnectionStatus?} status
  * 
  * @typedef FormState
@@ -66,7 +67,7 @@ import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { Caption } from './caption.js';
 
-const { div, i, span } = van.tags;
+const { div, span } = van.tags;
 const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
@@ -112,6 +113,7 @@ const ConnectionForm = (props, saveButton) => {
         private_key: isEditMode ? '' : (connection?.private_key ?? ''),
         private_key_passphrase: isEditMode ? '' : (connection?.private_key_passphrase ?? ''),
         http_path: connection?.http_path ?? '',
+        warehouse: connection?.warehouse ?? '',
         url: connection?.url ?? '',
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
@@ -726,6 +728,7 @@ const SnowflakeForm = (
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
+    const connectionWarehouse = van.state(connection.rawVal.warehouse ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
     const connectionPrivateKey = van.state(connection.rawVal?.private_key ?? '');
@@ -752,6 +755,7 @@ const SnowflakeForm = (
             connect_by_key: connectByKey.val,
             private_key: connectionPrivateKey.val,
             private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : connectionPrivateKeyPassphrase.val,
+            warehouse: connectionWarehouse.val,
         }, privateKeyFileRaw.val, isValid.val);
     });
 
@@ -832,6 +836,20 @@ const SnowflakeForm = (
                 },
                 validators: [
                     requiredIf(() => !connectByUrl.val),
+                    maxLength(100),
+                ],
+            }),
+            Input({
+                name: 'warehouse',
+                label: 'Warehouse',
+                value: connectionWarehouse,
+                disabled: connectByUrl,
+                onChange: (value, state) => {
+                    connectionWarehouse.val = value;
+                    validityPerField['warehouse'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                validators: [
                     maxLength(100),
                 ],
             }),
@@ -978,7 +996,7 @@ function shouldRefreshUrl(previous, current) {
         return false;
     }
 
-    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path'];
+    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse'];
     return fields.some((fieldName) => previous[fieldName] !== current[fieldName]);
 }
 

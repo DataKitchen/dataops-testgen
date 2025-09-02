@@ -40,6 +40,11 @@ class SnowflakeFlavorService(FlavorService):
         #   NOTE:  Snowflake host should NOT include ".snowflakecomputing.com"
 
         account, _ = self.host.split(".", maxsplit=1) if "." in self.host else ("", "")
+
+        extra_params = {}
+        if self.warehouse:
+            extra_params["warehouse"] = self.warehouse
+
         connection_url = URL(
             host=self.host,
             port=int(self.port if str(self.port).isdigit() else 443),
@@ -48,6 +53,7 @@ class SnowflakeFlavorService(FlavorService):
             password="" if self.connect_by_key else self.password,
             database=self.dbname,
             schema=self.dbschema or "",
+            **extra_params,
         )
 
         return connection_url

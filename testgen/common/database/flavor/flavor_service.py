@@ -38,6 +38,7 @@ class FlavorService:
     private_key_passphrase = None
     http_path = None
     catalog = None
+    warehouse = None
 
     def init(self, connection_params: ConnectionParams):
         self.url = connection_params.get("url", None)
@@ -51,6 +52,7 @@ class FlavorService:
         self.connect_by_key = connection_params.get("connect_by_key", False)
         self.http_path = connection_params.get("http_path", None)
         self.catalog = connection_params.get("catalog", None)
+        self.warehouse = connection_params.get("warehouse", None)
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):

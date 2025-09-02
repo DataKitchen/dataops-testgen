@@ -60,6 +60,7 @@ class Connection(Entity):
     private_key: str = Column(EncryptedBytea)
     private_key_passphrase: str = Column(EncryptedBytea)
     http_path: str = Column(String)
+    warehouse: str = Column(String)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)
@@ -125,5 +126,6 @@ class Connection(Entity):
                 self.project_port = connection_parts["port"]
                 self.project_db = connection_parts["dbname"]
                 self.http_path = connection_parts.get("http_path") or None
+                self.warehouse = connection_parts.get("warehouse") or None
 
         super().save()

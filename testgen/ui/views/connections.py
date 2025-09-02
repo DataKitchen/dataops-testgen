@@ -405,29 +405,12 @@ def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     return formatted_connection
 
 
-def get_connection_string(flavor: str) -> str:
-    connection_params: ConnectionParams = {
-        "sql_flavor": flavor,
-        "project_host": "<host>",
-        "project_port": "<port>",
-        "project_user": "<username>",
-        "project_db": "<database>",
-        "project_pw_encrypted": "<password>",
-        "http_path": "<http_path>",
-        "table_group_schema": "",
-    }
-    flavor_service = get_flavor_service(flavor)
-    flavor_service.init(connection_params)
-    return flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ConnectionFlavor:
     value: str
     label: str
     icon: str
     flavor: str
-    connection_string: str
 
 
 FLAVOR_OPTIONS = [
@@ -436,48 +419,41 @@ FLAVOR_OPTIONS = [
         value="redshift",
         flavor="redshift",
         icon=get_asset_data_url("flavors/redshift.svg"),
-        connection_string=get_connection_string("redshift"),
     ),
     ConnectionFlavor(
         label="Azure SQL Database",
         value="azure_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_sql.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Azure Synapse Analytics",
         value="synapse_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Microsoft SQL Server",
         value="mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/mssql.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="PostgreSQL",
         value="postgresql",
         flavor="postgresql",
         icon=get_asset_data_url("flavors/postgresql.svg"),
-        connection_string=get_connection_string("postgresql"),
     ),
     ConnectionFlavor(
         label="Snowflake",
         value="snowflake",
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
-        connection_string=get_connection_string("snowflake"),
     ),
     ConnectionFlavor(
         label="Databricks",
         value="databricks",
         flavor="databricks",
         icon=get_asset_data_url("flavors/databricks.svg"),
-        connection_string=get_connection_string("databricks"),
     ),
 ]

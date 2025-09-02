@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE connections
+  ADD COLUMN warehouse VARCHAR(200);
