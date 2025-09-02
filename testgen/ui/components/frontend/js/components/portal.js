@@ -3,7 +3,7 @@
  *
  * NOTE: Ensure options is an object and turn individual properties into van.state
  * if dynamic updates are needed.
- *
+ * 
  * @typedef Options
  * @type {object}
  * @property {string} target
