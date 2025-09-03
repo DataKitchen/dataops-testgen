@@ -41,18 +41,18 @@ class FlavorService:
     warehouse = None
 
     def init(self, connection_params: ConnectionParams):
-        self.url = connection_params.get("url", None)
+        self.url = connection_params.get("url") or ""
         self.connect_by_url = connection_params.get("connect_by_url", False)
-        self.username = connection_params.get("project_user")
-        self.host = connection_params.get("project_host")
-        self.port = connection_params.get("project_port")
-        self.dbname = connection_params.get("project_db")
+        self.username = connection_params.get("project_user") or ""
+        self.host = connection_params.get("project_host") or ""
+        self.port = connection_params.get("project_port") or ""
+        self.dbname = connection_params.get("project_db") or ""
         self.flavor = connection_params.get("sql_flavor")
         self.dbschema = connection_params.get("table_group_schema", None)
         self.connect_by_key = connection_params.get("connect_by_key", False)
-        self.http_path = connection_params.get("http_path", None)
-        self.catalog = connection_params.get("catalog", None)
-        self.warehouse = connection_params.get("warehouse", None)
+        self.http_path = connection_params.get("http_path") or ""
+        self.catalog = connection_params.get("catalog") or ""
+        self.warehouse = connection_params.get("warehouse") or ""
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):

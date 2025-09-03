@@ -1,5 +1,6 @@
 import base64
 import logging
+import random
 import typing
 from dataclasses import asdict, dataclass, field
 
@@ -59,7 +60,11 @@ class ConnectionsPage(Page):
         )
 
         connections = Connection.select_where(Connection.project_code == project_code)
-        connection: Connection = connections[0] if len(connections) > 0 else Connection(sql_flavor="postgresql", sql_flavor_code="postgresql")
+        connection: Connection = connections[0] if len(connections) > 0 else Connection(
+            sql_flavor="postgresql",
+            sql_flavor_code="postgresql",
+            project_code=project_code,
+        )
         has_table_groups = (
             connection.id and len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
@@ -242,7 +247,7 @@ class ConnectionsPage(Page):
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
         except Exception as error:
             details = "Try again"
-            if connection["connect_by_key"] and not connection.get("private_key", ""):
+            if connection.connect_by_key and not connection.private_key:
                 details = "The private key is missing."
             LOG.exception("Error testing database connection")
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
@@ -258,6 +263,7 @@ class ConnectionsPage(Page):
             set_new_table_group(table_group)
             set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
+            mark_for_save(True)
 
         def on_go_to_profiling_runs(params: dict) -> None:
             set_navigation_params({ **params, "project_code": project_code })
@@ -301,11 +307,18 @@ class ConnectionsPage(Page):
             f"connections:{connection_id}:tg_verified",
             default=False,
         )
+        should_save, mark_for_save = temp_value(
+            f"connections:{connection_id}:tg_save",
+            default=False,
+        )
 
+        add_scorecard_definition = table_group_data.pop("add_scorecard_definition", False)
         table_group = TableGroup(
-            **table_group_data or {},
-            project_code = project_code,
-            connection_id = connection_id,
+            project_code=project_code,
+            **{
+                **(table_group_data or {}),
+                "connection_id": connection_id,
+            },
         )
 
         table_group_preview = None
@@ -315,13 +328,13 @@ class ConnectionsPage(Page):
                 verify_table_access=should_verify_access(),
             )
 
-        if table_group_data:
+        if should_save():
             success = True
             message = None
 
             if is_table_group_verified():
                 try:
-                    table_group.save()
+                    table_group.save(add_scorecard_definition=add_scorecard_definition)
 
                     if should_run_profiling:
                         try:
@@ -342,7 +355,7 @@ class ConnectionsPage(Page):
                 results = {
                     "success": success,
                     "message": message,
-                    "table_group_id": table_group.id,
+                    "table_group_id": str(table_group.id),
                 }
             else:
                 results = {
@@ -357,6 +370,7 @@ class ConnectionsPage(Page):
             props={
                 "project_code": project_code,
                 "connection_id": connection_id,
+                "table_group": table_group.to_dict(json_safe=True),
                 "table_group_preview": table_group_preview,
                 "steps": [
                     "tableGroup",
@@ -378,6 +392,7 @@ class ConnectionStatus:
     message: str
     successful: bool
     details: str | None = field(default=None)
+    _: float = field(default_factory=random.random)
 
 
 def is_open_ssl_error(error: Exception):

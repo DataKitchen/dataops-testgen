@@ -93,6 +93,11 @@ const ConnectionForm = (props, saveButton) => {
     const isEditMode = !!connection?.connection_id;
     const defaultPort = defaultPorts[connection?.sql_flavor];
 
+    const connectionStatus = van.state(undefined);
+    van.derive(() => {
+        connectionStatus.val = getValue(props.connection)?.status;
+    });
+
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
@@ -318,15 +323,17 @@ const ConnectionForm = (props, saveButton) => {
             saveButton,
         ),
         () => {
-            const conn = getValue(props.connection);
-            const connectionStatus = conn.status;
-            return connectionStatus
+            return connectionStatus.val
                 ? Alert(
-                    {type: connectionStatus.successful ? 'success' : 'error', closeable: true},
+                    {
+                        type: connectionStatus.val.successful ? 'success' : 'error',
+                        closeable: true,
+                        onClose: () => connectionStatus.val = undefined,
+                    },
                     div(
                         { class: 'flex-column' },
-                        span(connectionStatus.message),
-                        connectionStatus.details ? span(connectionStatus.details) : '',
+                        span(connectionStatus.val.message),
+                        connectionStatus.val.details ? span(connectionStatus.val.details) : '',
                     )
                 )
                 : '';
@@ -462,7 +469,11 @@ const RedshiftForm = (
                     name: 'url_suffix',
                     prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
-                    onChange: (value, state) => connectionUrl.val = value,
+                    onChange: (value, state) => {
+                        connectionUrl.val = value;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
                     validators: [
                         requiredIf(() => connectByUrl.val),
                     ],
@@ -660,7 +671,11 @@ const DatabricksForm = (
                     name: 'url_suffix',
                     prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
-                    onChange: (value, state) => connectionUrl.val = value,
+                    onChange: (value, state) => {
+                        connectionUrl.val = value;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
                     validators: [
                         requiredIf(() => connectByUrl.val),
                     ],
@@ -954,6 +969,7 @@ const SnowflakeForm = (
                                     console.error(err);
                                     isFieldValid = false;
                                 }
+
                                 validityPerField['private_key'] = isFieldValid;
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },

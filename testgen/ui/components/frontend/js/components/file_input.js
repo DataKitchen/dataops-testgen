@@ -60,10 +60,12 @@ const FileInput = (options) => {
         sizeLimit = sizeLimitValidator.args.limit;
     }
 
+    let hasBeenChecked = false;
     van.derive(() => {
-        if (options.onChange && (value.val !== value.oldVal || errors.val.length !== errors.oldVal.length)) {
+        if (options.onChange && (!hasBeenChecked || value.val !== value.oldVal || errors.val.length !== errors.oldVal.length)) {
             options.onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
         }
+        hasBeenChecked = true;
     });
 
     const browseFile = () => {
