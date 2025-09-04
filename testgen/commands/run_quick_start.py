@@ -117,7 +117,7 @@ def run_quick_start(delete_target_db: bool) -> None:
     delete_db = True
     run_launch_db_config(delete_db)
 
-    click.echo(f"Seeding the application db")
+    click.echo("Seeding the application db")
     app_db_params = get_app_db_params_mapping()
     execute_db_queries(
         [

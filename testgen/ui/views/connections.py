@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 
-from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.ui.queries import table_group_queries
 
 try:
