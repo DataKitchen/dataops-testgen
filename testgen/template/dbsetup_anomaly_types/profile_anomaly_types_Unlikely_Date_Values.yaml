@@ -51,6 +51,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
     error_type: Profile Anomaly
+  - id: '1450'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1189'
     test_id: '1018'
     test_type: Unlikely_Date_Values

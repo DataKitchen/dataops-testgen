@@ -141,6 +141,32 @@ test_types:
           OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
         ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
+  - id: '1466'
+    test_id: '1504'
+    test_type: Aggregate_Balance_Percent
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+          FROM
+            ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+              WHERE {SUBSET_CONDITION}
+              GROUP BY {GROUPBY_NAMES}
+              {HAVING_CONDITION}
+                UNION ALL
+              SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+                FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+              WHERE {MATCH_SUBSET_CONDITION}
+              GROUP BY {MATCH_GROUPBY_NAMES}
+              {MATCH_HAVING_CONDITION} ) a
+          GROUP BY {GROUPBY_NAMES} ) s
+        WHERE (total IS NOT NULL AND match_total IS NULL)
+          OR (total IS NULL AND match_total IS NOT NULL)
+          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+        ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
   - id: '1246'
     test_id: '1504'
     test_type: Aggregate_Balance_Percent
@@ -183,6 +209,10 @@ test_types:
   - id: '2009'
     test_type: Aggregate_Balance_Percent
     sql_flavor: redshift
+    template_name: ex_aggregate_match_percent_generic.sql
+  - id: '2509'
+    test_type: Aggregate_Balance_Percent
+    sql_flavor: redshift_spectrum
     template_name: ex_aggregate_match_percent_generic.sql
   - id: '2109'
     test_type: Aggregate_Balance_Percent

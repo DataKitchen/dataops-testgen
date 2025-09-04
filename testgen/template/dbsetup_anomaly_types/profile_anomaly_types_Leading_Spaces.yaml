@@ -49,6 +49,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1441'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1180'
     test_id: '1009'
     test_type: Leading_Spaces

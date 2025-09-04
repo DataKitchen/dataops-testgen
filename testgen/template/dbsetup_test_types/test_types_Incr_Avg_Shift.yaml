@@ -68,6 +68,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift_spectrum
+    measure: |-
+      NVL(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2012'
     test_type: Incr_Avg_Shift
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1017'
     test_type: Incr_Avg_Shift
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1412'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};

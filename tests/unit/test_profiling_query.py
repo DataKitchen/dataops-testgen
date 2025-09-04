@@ -18,7 +18,7 @@ def test_include_exclude_mask_basic():
 
     # test assertions
     assert "SELECT 'dummy_project_code'" in query
-    assert r"""AND  (
+    assert r"""AND (
                 (c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful%' )
             )""" in query
     assert r"""AND NOT (
@@ -63,6 +63,6 @@ def test_include_empty_include_mask(mask):
     print(query)
 
     # test assertions
-    assert r"""AND  (
+    assert r"""AND (
                 (c.table_name LIKE 'important%' ) OR (c.table_name LIKE '%useful[_]%' )
             )""" in query

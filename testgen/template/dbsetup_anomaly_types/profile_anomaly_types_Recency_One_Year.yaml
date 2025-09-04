@@ -48,6 +48,14 @@ profile_anomaly_types:
     lookup_query: |-
       created_in_ui
     error_type: Profile Anomaly
+  - id: '1451'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
   - id: '1190'
     test_id: '1019'
     test_type: Recency_One_Year

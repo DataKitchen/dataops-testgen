@@ -67,6 +67,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7016'
+    test_type: Min_Val
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2016'
     test_type: Min_Val
     sql_flavor: snowflake
@@ -112,6 +120,14 @@ test_types:
     test_id: '1021'
     test_type: Min_Val
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1416'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;

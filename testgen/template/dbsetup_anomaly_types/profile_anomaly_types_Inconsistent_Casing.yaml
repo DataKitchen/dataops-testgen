@@ -73,6 +73,20 @@ profile_anomaly_types:
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
     error_type: Profile Anomaly
+  - id: '1473'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+    error_type: Profile Anomaly
   - id: '1261'
     test_id: '1028'
     test_type: Inconsistent_Casing

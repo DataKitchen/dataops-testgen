@@ -68,6 +68,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7002'
+    test_type: Avg_Shift
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME})^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2002'
     test_type: Avg_Shift
     sql_flavor: snowflake
@@ -116,6 +124,14 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1402'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   - id: '1198'
     test_id: '1005'

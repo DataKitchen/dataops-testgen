@@ -164,6 +164,38 @@ test_types:
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       )
     error_type: Test Results
+  - id: '1469'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      )
+    error_type: Test Results
   - id: '1266'
     test_id: '1509'
     test_type: Timeframe_Combo_Match
@@ -212,6 +244,10 @@ test_types:
   - id: '2008'
     test_type: Timeframe_Combo_Match
     sql_flavor: redshift
+    template_name: ex_window_match_same_generic.sql
+  - id: '2508'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift_spectrum
     template_name: ex_window_match_same_generic.sql
   - id: '2108'
     test_type: Timeframe_Combo_Match

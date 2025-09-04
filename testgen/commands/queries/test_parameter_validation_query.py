@@ -47,7 +47,11 @@ class CTestParamValidationSQL:
 
     def GetProjectTestValidationColumns(self) -> tuple[str, dict]:
         # Runs on Target database
-        return self._get_query("ex_get_project_column_list_generic.sql", "flavors/generic/validate_tests")
+        filename = "ex_get_project_column_list.sql"
+        try:
+            return self._get_query(filename, f"flavors/{self.flavor}/validate_tests")
+        except ModuleNotFoundError:
+            return self._get_query(filename, "flavors/generic/validate_tests")
 
     def PrepFlagTestsWithFailedValidation(self) -> tuple[str, dict]:
         # Runs on App database

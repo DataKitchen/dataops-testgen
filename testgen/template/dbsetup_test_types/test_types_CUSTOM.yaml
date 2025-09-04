@@ -55,6 +55,10 @@ test_types:
     test_type: CUSTOM
     sql_flavor: redshift
     template_name: ex_custom_query_generic.sql
+  - id: '2504'
+    test_type: CUSTOM
+    sql_flavor: redshift_spectrum
+    template_name: ex_custom_query_generic.sql
   - id: '2104'
     test_type: CUSTOM
     sql_flavor: snowflake

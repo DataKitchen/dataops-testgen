@@ -54,6 +54,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
+  - id: '1446'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
   - id: '1185'
     test_id: '1014'
     test_type: Small Divergent Value Ct

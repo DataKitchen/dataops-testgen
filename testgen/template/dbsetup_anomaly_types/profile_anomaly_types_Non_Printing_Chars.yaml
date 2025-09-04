@@ -102,6 +102,27 @@ profile_anomaly_types:
        WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
     error_type: Profile Anomaly
+  - id: '1476'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                CHR(160), '\x160'),
+                CHR(8201), '\x8201'),
+                CHR(8203), '\x8203'),
+                CHR(8204), '\x8204'),
+                CHR(8205), '\x8205'),
+                CHR(8206), '\x8206'),
+                CHR(8207), '\x8207'),
+                CHR(8239), '\x8239'),
+                CHR(12288), '\x12288'),
+                CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
+             COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
   - id: '1276'
     test_id: '1031'
     test_type: Non_Printing_Chars

@@ -48,6 +48,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
     error_type: Profile Anomaly
+  - id: '1457'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1196'
     test_id: '1025'
     test_type: Delimited_Data_Embedded

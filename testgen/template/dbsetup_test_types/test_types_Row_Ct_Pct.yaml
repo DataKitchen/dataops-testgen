@@ -67,6 +67,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7025'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2025'
     test_type: Row_Ct_Pct
     sql_flavor: snowflake
@@ -112,6 +120,14 @@ test_types:
     test_id: '1032'
     test_type: Row_Ct_Pct
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1425'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;

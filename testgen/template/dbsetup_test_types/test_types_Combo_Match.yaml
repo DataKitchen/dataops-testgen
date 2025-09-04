@@ -121,6 +121,27 @@ test_types:
              ) test
       ORDER BY {COLUMN_NAME_NO_QUOTES};
     error_type: Test Results
+  - id: '1464'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
   - id: '1254'
     test_id: '1502'
     test_type: Combo_Match
@@ -158,6 +179,10 @@ test_types:
   - id: '2001'
     test_type: Combo_Match
     sql_flavor: redshift
+    template_name: ex_data_match_generic.sql
+  - id: '2501'
+    test_type: Combo_Match
+    sql_flavor: redshift_spectrum
     template_name: ex_data_match_generic.sql
   - id: '2101'
     test_type: Combo_Match

@@ -27,7 +27,7 @@ from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinima
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-SQLFlavorCode = Literal["redshift", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks"]
+SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks"]
 
 
 @dataclass

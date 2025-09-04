@@ -68,6 +68,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7006'
+    test_type: Dec_Trunc
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2006'
     test_type: Dec_Trunc
     sql_flavor: snowflake
@@ -115,6 +123,14 @@ test_types:
     test_id: '1011'
     test_type: Dec_Trunc
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;
+    error_type: Test Results
+  - id: '1406'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;

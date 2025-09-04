@@ -57,6 +57,16 @@ profile_anomaly_types:
        WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
       GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
     error_type: Profile Anomaly
+  - id: '1475'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
   - id: '1271'
     test_id: '1030'
     test_type: Non_Alpha_Prefixed_Name

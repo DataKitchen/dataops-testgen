@@ -68,6 +68,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7003'
+    test_type: Condition_Flag
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2003'
     test_type: Condition_Flag
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1006'
     test_type: Condition_Flag
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  - id: '1403'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
