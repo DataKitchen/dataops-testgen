@@ -22,7 +22,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
-from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
+from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data, get_hygiene_issue_source_query
 from testgen.ui.services.database_service import (
     execute_db_query,
     fetch_df_from_db,
@@ -580,12 +580,18 @@ def get_excel_report_data(
 @st.dialog(title="Source Data")
 @with_database_session
 def source_data_dialog(selected_row):
+    testgen.caption(f"Table > Column: <b>{selected_row['table_name']} > {selected_row['column_name']}</b>")
+
     st.markdown(f"#### {selected_row['anomaly_name']}")
     st.caption(selected_row["anomaly_description"])
-    fm.show_prompt(f"Column: {selected_row['column_name']}, Table: {selected_row['table_name']}")
+    
+    st.markdown("#### Hygiene Issue Detail")
+    st.caption(selected_row["detail"])
 
-    # Show the detail line
-    fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
+    st.markdown("#### SQL Query")
+    query = get_hygiene_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql")
 
     with st.spinner("Retrieving source data..."):
         bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
