@@ -2,6 +2,7 @@ from urllib.parse import quote_plus
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from snowflake.sqlalchemy import URL
 
 from testgen.common.database.flavor.flavor_service import FlavorService
 
@@ -38,25 +39,24 @@ class SnowflakeFlavorService(FlavorService):
         #   optionally + '/[schema]' + '?warehouse=xxx'
         #   NOTE:  Snowflake host should NOT include ".snowflakecomputing.com"
 
-        def get_raw_host_name(host):
-            endings = [
-                ".snowflakecomputing.com",
-            ]
-            for ending in endings:
-                if host.endswith(ending):
-                    i = host.index(ending)
-                    return host[0:i]
-            return host
+        account, _ = self.host.split(".", maxsplit=1) if "." in self.host else ("", "")
 
-        raw_host = get_raw_host_name(self.host)
-        host = raw_host
-        if self.port != "443":
-            host += ":" + self.port
+        extra_params = {}
+        if self.warehouse:
+            extra_params["warehouse"] = self.warehouse
 
-        if self.connect_by_key:
-            return f"snowflake://{self.username}@{host}/{self.dbname}/{self.dbschema}"
-        else:
-            return f"snowflake://{self.username}:{quote_plus(self.password)}@{host}/{self.dbname}/{self.dbschema}"
+        connection_url = URL(
+            host=self.host,
+            port=int(self.port if str(self.port).isdigit() else 443),
+            account=account,
+            user=self.username,
+            password="" if self.connect_by_key else self.password,
+            database=self.dbname,
+            schema=self.dbschema or "",
+            **extra_params,
+        )
+
+        return connection_url
 
     def get_pre_connection_queries(self):
         return [

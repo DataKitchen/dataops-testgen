@@ -197,4 +197,14 @@ function isDataURL(/** @type string */ url) {
     return url.startsWith('data:');
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL };
+function checkIsRequired(validators) {
+    let isRequired = validators.some(v => v.name === 'required');
+    if (!isRequired) {
+        isRequired = validators
+            .filter((v) => v.args?.name === 'requiredIf')
+            .some((v) => v.args?.condition?.())
+    }
+    return isRequired;
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired };

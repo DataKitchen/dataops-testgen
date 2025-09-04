@@ -92,3 +92,7 @@ def run_launch_db_config(delete_db: bool) -> None:
             table_groups_name=settings.DEFAULT_TABLE_GROUPS_NAME,
         )
     ).save()
+
+
+def get_app_db_params_mapping() -> dict:
+    return _get_params_mapping()

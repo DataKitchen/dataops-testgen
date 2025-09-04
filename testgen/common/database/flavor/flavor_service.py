@@ -1,5 +1,6 @@
 from abc import abstractmethod
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
+from urllib.parse import parse_qs, urlparse
 
 from testgen.common.encrypt import DecryptText
 
@@ -37,19 +38,21 @@ class FlavorService:
     private_key_passphrase = None
     http_path = None
     catalog = None
+    warehouse = None
 
     def init(self, connection_params: ConnectionParams):
-        self.url = connection_params.get("url", None)
+        self.url = connection_params.get("url") or ""
         self.connect_by_url = connection_params.get("connect_by_url", False)
-        self.username = connection_params.get("project_user")
-        self.host = connection_params.get("project_host")
-        self.port = connection_params.get("project_port")
-        self.dbname = connection_params.get("project_db")
+        self.username = connection_params.get("project_user") or ""
+        self.host = connection_params.get("project_host") or ""
+        self.port = connection_params.get("project_port") or ""
+        self.dbname = connection_params.get("project_db") or ""
         self.flavor = connection_params.get("sql_flavor")
         self.dbschema = connection_params.get("table_group_schema", None)
         self.connect_by_key = connection_params.get("connect_by_key", False)
-        self.http_path = connection_params.get("http_path", None)
-        self.catalog = connection_params.get("catalog", None)
+        self.http_path = connection_params.get("http_path") or ""
+        self.catalog = connection_params.get("catalog") or ""
+        self.warehouse = connection_params.get("warehouse") or ""
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):
@@ -90,3 +93,45 @@ class FlavorService:
     @abstractmethod
     def get_connection_string_head(self) -> str:
         raise NotImplementedError("Subclasses must implement this method")
+
+    def get_parts_from_connection_string(self) -> dict[str, Any]:
+        if self.connect_by_url:
+            if not self.url:
+                return {}
+
+            parsed_url = urlparse(self.get_connection_string())
+            credentials, location = (
+                parsed_url.netloc if "@" in parsed_url.netloc else f"@{parsed_url.netloc}"
+            ).split("@")
+            username, password = (
+                credentials if ":" in credentials else f"{credentials}:"
+            ).split(":")
+            host, port = (
+                location if ":" in location else f"{location}:"
+            ).split(":")
+
+            database = (path_patrs[0] if (path_patrs := parsed_url.path.strip("/").split("/")) else "")
+
+            extras = {
+                param_name: param_values[0]
+                for param_name, param_values in parse_qs(parsed_url.query or "").items()
+            }
+
+            return {
+                "username": username,
+                "password": password,
+                "host": host,
+                "port": port,
+                "dbname": database,
+                **extras,
+            }
+
+        return {
+            "username": self.username,
+            "password": self.password,
+            "host": self.host,
+            "port": self.port,
+            "dbname": self.dbname,
+            "http_path": self.http_path,
+            "catalog": self.catalog,
+        }

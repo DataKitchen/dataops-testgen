@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import EncryptedBytea
@@ -59,6 +60,7 @@ class Connection(Entity):
     private_key: str = Column(EncryptedBytea)
     private_key_passphrase: str = Column(EncryptedBytea)
     http_path: str = Column(String)
+    warehouse: str = Column(String)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)
@@ -115,13 +117,15 @@ class Connection(Entity):
 
     def save(self) -> None:
         if self.connect_by_url and self.url:
-            url_sections = self.url.split("/")
-            if url_sections:
-                host_port = url_sections[0]
-                host_port_sections = host_port.split(":")
-                self.project_host = host_port_sections[0] if host_port_sections else host_port
-                self.project_port = "".join(host_port_sections[1:]) if host_port_sections else ""
-            if len(url_sections) > 1:
-                self.project_db = url_sections[1]
+            flavor_service = get_flavor_service(self.sql_flavor)
+            flavor_service.init(self.to_dict())
+
+            connection_parts = flavor_service.get_parts_from_connection_string()
+            if connection_parts:
+                self.project_host = connection_parts["host"]
+                self.project_port = connection_parts["port"]
+                self.project_db = connection_parts["dbname"]
+                self.http_path = connection_parts.get("http_path") or None
+                self.warehouse = connection_parts.get("warehouse") or None
 
         super().save()

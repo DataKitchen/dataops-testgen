@@ -33,6 +33,7 @@
  * @property {string?} private_key
  * @property {string?} private_key_passphrase
  * @property {string?} http_path
+ * @property {string?} warehouse
  * @property {ConnectionStatus?} status
  * 
  * @typedef FormState
@@ -50,6 +51,7 @@
  * @property {Array.<Flavor>} flavors
  * @property {boolean} disableFlavor
  * @property {FileValue?} cachedPrivateKeyFile
+ * @property {string?} dynamicConnectionUrl
  * @property {(c: Connection, state: FormState, cache?: FieldsCache) => void} onChange
  */
 import van from '../van.min.js';
@@ -59,13 +61,13 @@ import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
 import { Select } from './select.js';
-import { maxLength, minLength, required, sizeLimit } from '../form_validators.js';
+import { maxLength, minLength, required, requiredIf, sizeLimit } from '../form_validators.js';
 import { RadioGroup } from './radio_group.js';
 import { FileInput } from './file_input.js';
 import { ExpansionPanel } from './expansion_panel.js';
 import { Caption } from './caption.js';
 
-const { div, i, span } = van.tags;
+const { div, span } = van.tags;
 const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
@@ -91,15 +93,16 @@ const ConnectionForm = (props, saveButton) => {
     const isEditMode = !!connection?.connection_id;
     const defaultPort = defaultPorts[connection?.sql_flavor];
 
+    const connectionStatus = van.state(undefined);
+    van.derive(() => {
+        connectionStatus.val = getValue(props.connection)?.status;
+    });
+
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
     const connectionQueryChars = van.state(connection?.max_query_chars ?? 9000);
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
-
-    const flavor = getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal);
-    const originalURLTemplate = flavor.connection_string;
-    const [_, urlSuffix] = originalURLTemplate.split('@');
 
     const updatedConnection = van.state({
         project_code: connection.project_code,
@@ -115,20 +118,27 @@ const ConnectionForm = (props, saveButton) => {
         private_key: isEditMode ? '' : (connection?.private_key ?? ''),
         private_key_passphrase: isEditMode ? '' : (connection?.private_key_passphrase ?? ''),
         http_path: connection?.http_path ?? '',
-        url: connection?.connect_by_url 
-            ? (connection?.url ?? '')
-            : formatURL(
-                urlSuffix ?? '',
-                connection?.project_host ?? '',
-                connection?.project_port ?? defaultPort ?? '',
-                connection?.project_db ?? '',
-                connection?.http_path ?? '',
-            ),
-
+        warehouse: connection?.warehouse ?? '',
+        url: connection?.url ?? '',
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
         max_query_chars: connectionQueryChars.rawVal ?? 9000,
+    });
+    const dynamicConnectionUrl = van.state(props.dynamicConnectionUrl?.rawVal ?? '');
+
+    van.derive(() => {
+        const previousValue = updatedConnection.oldVal;
+        const currentValue = updatedConnection.rawVal;
+
+        if (shouldRefreshUrl(previousValue, currentValue)) {
+            emitEvent('ConnectionUpdated', {payload: updatedConnection.rawVal});
+        }
+    });
+
+    van.derive(() => {
+        const updatedUrl = getValue(props.dynamicConnectionUrl);
+        dynamicConnectionUrl.val = updatedUrl;
     });
 
     const dirty = van.derive(() => !isEqual(updatedConnection.val, connection));
@@ -143,6 +153,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('redshift_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
         azure_mssql: () => AzureMSSQLForm(
             updatedConnection,
@@ -152,6 +163,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('mssql_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
         synapse_mssql: () => SynapseMSSQLForm(
             updatedConnection,
@@ -161,6 +173,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('mssql_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
         mssql: () => MSSQLForm(
             updatedConnection,
@@ -170,6 +183,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('mssql_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
         postgresql: () => PostgresqlForm(
             updatedConnection,
@@ -179,6 +193,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('mssql_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
 
         snowflake: () => SnowflakeForm(
@@ -191,6 +206,7 @@ const ConnectionForm = (props, saveButton) => {
             },
             connection,
             getValue(props.cachedPrivateKeyFile) ?? null,
+            dynamicConnectionUrl,
         ),
         databricks: () => DatabricksForm(
             updatedConnection,
@@ -200,6 +216,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('databricks_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
     };
 
@@ -306,15 +323,17 @@ const ConnectionForm = (props, saveButton) => {
             saveButton,
         ),
         () => {
-            const conn = getValue(props.connection);
-            const connectionStatus = conn.status;
-            return connectionStatus
+            return connectionStatus.val
                 ? Alert(
-                    {type: connectionStatus.successful ? 'success' : 'error', closeable: true},
+                    {
+                        type: connectionStatus.val.successful ? 'success' : 'error',
+                        closeable: true,
+                        onClose: () => connectionStatus.val = undefined,
+                    },
                     div(
                         { class: 'flex-column' },
-                        span(connectionStatus.message),
-                        connectionStatus.details ? span(connectionStatus.details) : '',
+                        span(connectionStatus.val.message),
+                        connectionStatus.val.details ? span(connectionStatus.val.details) : '',
                     )
                 )
                 : '';
@@ -328,6 +347,7 @@ const ConnectionForm = (props, saveButton) => {
  * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
+ * @param {VanState<string?>} dynamicConnectionUrl
  * @returns {HTMLElement}
  */
 const RedshiftForm = (
@@ -335,9 +355,8 @@ const RedshiftForm = (
     flavor,
     onChange,
     originalConnection,
+    dynamicConnectionUrl,
 ) => {
-    const originalURLTemplate = flavor.connection_string;
-
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
@@ -345,28 +364,9 @@ const RedshiftForm = (
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
-
-    const [prefixPart, sufixPart] = originalURLTemplate.split('@');
-    const connectionStringPrefix = van.state(`${prefixPart}@`);
-    const connectionStringSuffix = van.state(connection.rawVal?.url ?? '');
+    const connectionUrl = van.state(connection.rawVal?.url ?? '');
 
     const validityPerField = {};
-
-    if (!connectionStringSuffix.rawVal) {
-        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal);
-    }
-
-    van.derive(() => {
-        const connectionHost_ = connectionHost.val;
-        const connectionPort_ = connectionPort.val;
-        const connectionDatabase_ = connectionDatabase.val;
-
-        if (!connectByUrl.rawVal && originalURLTemplate.includes('@')) {
-            const [originalURLPrefix, originalURLSuffix] = originalURLTemplate.split('@');
-            connectionStringPrefix.val = `${originalURLPrefix}@`;
-            connectionStringSuffix.val = formatURL(originalURLSuffix, connectionHost_, connectionPort_, connectionDatabase_);
-        }
-    });
 
     van.derive(() => {
         onChange({
@@ -376,9 +376,16 @@ const RedshiftForm = (
             project_user: connectionUsername.val,
             project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
             connect_by_key: false,
         }, isValid.val);
+    });
+
+    van.derive(() => {
+        const newUrlValue = (dynamicConnectionUrl.val ?? '').replace(extractPrefix(dynamicConnectionUrl.rawVal), '');
+        if (!connectByUrl.rawVal) {
+            connectionUrl.val = newUrlValue;
+        }
     });
 
     return div(
@@ -386,7 +393,6 @@ const RedshiftForm = (
         div(
             { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
-
             RadioGroup({
                 label: 'Connect by',
                 options: [
@@ -416,7 +422,10 @@ const RedshiftForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        maxLength(250),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -429,7 +438,11 @@ const RedshiftForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        minLength(3),
+                        maxLength(5),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
                 })
             ),
             Input({
@@ -442,18 +455,28 @@ const RedshiftForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    maxLength(100),
+                    requiredIf(() => !connectByUrl.val),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
                 Input({
                     label: 'URL',
-                    value: connectionStringSuffix,
+                    value: connectionUrl,
                     class: 'fx-flex',
                     name: 'url_suffix',
-                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
-                    onChange: (value, state) => connectionStringSuffix.val = value,
+                    onChange: (value, state) => {
+                        connectionUrl.val = value;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -471,7 +494,10 @@ const RedshiftForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'password',
@@ -504,6 +530,7 @@ const MSSQLForm = RedshiftForm;
  * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
+ * @param {VanState<string?>} dynamicConnectionUrl
  * @returns {HTMLElement}
  */
 const DatabricksForm = (
@@ -511,9 +538,8 @@ const DatabricksForm = (
     flavor,
     onChange,
     originalConnection,
+    dynamicConnectionUrl,
 ) => {
-    const originalURLTemplate = flavor.connection_string;
-
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal?.connect_by_url ?? false);
     const connectionHost = van.state(connection.rawVal?.project_host ?? '');
@@ -522,28 +548,9 @@ const DatabricksForm = (
     const connectionDatabase = van.state(connection.rawVal?.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal?.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
-
-    const [prefixPart, sufixPart] = originalURLTemplate.split('@');
-    const connectionStringPrefix = van.state(`${prefixPart}@`);
-    const connectionStringSuffix = van.state(connection.rawVal?.url ?? '');
+    const connectionUrl = van.state(connection.rawVal?.url ?? '');
 
     const validityPerField = {};
-
-    if (!connectionStringSuffix.rawVal) {
-        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal, connectionHttpPath.rawVal);
-    }
-
-    van.derive(() => {
-        const connectionHost_ = connectionHost.val;
-        const connectionPort_ = connectionPort.val;
-        const connectionDatabase_ = connectionDatabase.val;
-        const connectionHttpPath_ = connectionHttpPath.val;
-
-        if (!connectByUrl.rawVal && originalURLTemplate.includes('@')) {
-            const [, originalURLSuffix] = originalURLTemplate.split('@');
-            connectionStringSuffix.val = formatURL(originalURLSuffix, connectionHost_, connectionPort_, connectionDatabase_, connectionHttpPath_);
-        }
-    });
 
     van.derive(() => {
         onChange({
@@ -554,9 +561,16 @@ const DatabricksForm = (
             project_pw_encrypted: connectionPassword.val,
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
             connect_by_key: false,
         }, isValid.val);
+    });
+
+    van.derive(() => {
+        const newUrlValue = (dynamicConnectionUrl.val ?? '').replace(extractPrefix(dynamicConnectionUrl.rawVal), '');
+        if (!connectByUrl.rawVal) {
+            connectionUrl.val = newUrlValue;
+        }
     });
 
     return div(
@@ -594,7 +608,10 @@ const DatabricksForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        maxLength(250),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -607,7 +624,11 @@ const DatabricksForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        minLength(3),
+                        maxLength(5),
+                    ],
                 })
             ),
             Input({
@@ -621,7 +642,10 @@ const DatabricksForm = (
                     validityPerField['http_path'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'db_name',
@@ -633,18 +657,28 @@ const DatabricksForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(100),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
                 Input({
                     label: 'URL',
-                    value: connectionStringSuffix,
+                    value: connectionUrl,
                     class: 'fx-flex',
                     name: 'url_suffix',
-                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
-                    onChange: (value, state) => connectionStringSuffix.val = value,
+                    onChange: (value, state) => {
+                        connectionUrl.val = value;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -662,7 +696,10 @@ const DatabricksForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             Input({
                 name: 'password',
@@ -687,7 +724,8 @@ const DatabricksForm = (
  * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
- * @param {string?} originalConnection
+ * @param {string?} cachedFile
+ * @param {VanState<string?>} dynamicConnectionUrl
  * @returns {HTMLElement}
  */
 const SnowflakeForm = (
@@ -696,9 +734,8 @@ const SnowflakeForm = (
     onChange,
     originalConnection,
     cachedFile,
+    dynamicConnectionUrl,
 ) => {
-    const originalURLTemplate = flavor.connection_string;
-
     const isValid = van.state(false);
     const clearPrivateKeyPhrase = van.state(connection.rawVal?.private_key_passphrase === clearSentinel);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
@@ -706,6 +743,7 @@ const SnowflakeForm = (
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
+    const connectionWarehouse = van.state(connection.rawVal.warehouse ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
     const connectionPrivateKey = van.state(connection.rawVal?.private_key ?? '');
@@ -714,28 +752,11 @@ const SnowflakeForm = (
         ? ''
         : (connection.rawVal?.private_key_passphrase ?? '')
     );
+    const connectionUrl = van.state(connection.rawVal?.url ?? '');
+
     const validityPerField = {};
 
     const privateKeyFileRaw = van.state(cachedFile);
-
-    const [prefixPart, sufixPart] = originalURLTemplate.split('@');
-    const connectionStringPrefix = van.state(`${prefixPart}@`);
-    const connectionStringSuffix = van.state(connection.rawVal?.url ?? '');
-
-    if (!connectionStringSuffix.rawVal) {
-        connectionStringSuffix.val = formatURL(sufixPart ?? '', connectionHost.rawVal, connectionPort.rawVal, connectionDatabase.rawVal);
-    }
-
-    van.derive(() => {
-        const connectionHost_ = connectionHost.val;
-        const connectionPort_ = connectionPort.val;
-        const connectionDatabase_ = connectionDatabase.val;
-
-        if (!connectByUrl.rawVal && originalURLTemplate.includes('@')) {
-            const [, originalURLSuffix] = originalURLTemplate.split('@');
-            connectionStringSuffix.val = formatURL(originalURLSuffix, connectionHost_, connectionPort_, connectionDatabase_);
-        }
-    });
 
     van.derive(() => {
         onChange({
@@ -745,11 +766,19 @@ const SnowflakeForm = (
             project_user: connectionUsername.val,
             project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionStringSuffix.val : connectionStringSuffix.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
             connect_by_key: connectByKey.val,
             private_key: connectionPrivateKey.val,
             private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : connectionPrivateKeyPassphrase.val,
+            warehouse: connectionWarehouse.val,
         }, privateKeyFileRaw.val, isValid.val);
+    });
+
+    van.derive(() => {
+        const newUrlValue = (dynamicConnectionUrl.val ?? '').replace(extractPrefix(dynamicConnectionUrl.rawVal), '');
+        if (!connectByUrl.rawVal) {
+            connectionUrl.val = newUrlValue;
+        }
     });
 
     return div(
@@ -787,7 +816,10 @@ const SnowflakeForm = (
                         validityPerField['db_host'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ maxLength(250) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        maxLength(250),
+                    ],
                 }),
                 Input({
                     name: 'db_port',
@@ -800,7 +832,11 @@ const SnowflakeForm = (
                         validityPerField['db_port'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
-                    validators: [ minLength(3), maxLength(5) ],
+                    validators: [
+                        requiredIf(() => !connectByUrl.val),
+                        minLength(3),
+                        maxLength(5),
+                    ],
                 })
             ),
             Input({
@@ -813,22 +849,42 @@ const SnowflakeForm = (
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(100) ],
+                validators: [
+                    requiredIf(() => !connectByUrl.val),
+                    maxLength(100),
+                ],
+            }),
+            Input({
+                name: 'warehouse',
+                label: 'Warehouse',
+                value: connectionWarehouse,
+                disabled: connectByUrl,
+                onChange: (value, state) => {
+                    connectionWarehouse.val = value;
+                    validityPerField['warehouse'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                validators: [
+                    maxLength(100),
+                ],
             }),
             () => div(
                 { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
                 Input({
                     label: 'URL',
-                    value: connectionStringSuffix,
+                    value: connectionUrl,
                     class: 'fx-flex',
                     name: 'url_suffix',
-                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, connectionStringPrefix),
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
                     disabled: !connectByUrl.val,
                     onChange: (value, state) => {
-                        connectionStringSuffix.val = value;
+                        connectionUrl.val = value;
                         validityPerField['url_suffix'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
                 }),
             ),
         ),
@@ -857,7 +913,10 @@ const SnowflakeForm = (
                     validityPerField['db_user'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
-                validators: [ maxLength(50) ],
+                validators: [
+                    required,
+                    maxLength(50),
+                ],
             }),
             () => {
                 if (connectByKey.val) {
@@ -910,10 +969,12 @@ const SnowflakeForm = (
                                     console.error(err);
                                     isFieldValid = false;
                                 }
+
                                 validityPerField['private_key'] = isFieldValid;
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
+                                required,
                                 sizeLimit(200 * 1024 * 1024),
                             ],
                         }),
@@ -938,11 +999,21 @@ const SnowflakeForm = (
     );
 };
 
-function formatURL(url, host, port, database, httpPath) {
-    return url.replace('<host>', host)
-        .replace('<port>', port)
-        .replace('<database>', database)
-        .replace('<http_path>', httpPath);
+function extractPrefix(url) {
+    const parts = (url ?? '').split('@');
+    if (!parts[0]) {
+        return '';
+    }
+    return `${parts[0]}@`;
+}
+
+function shouldRefreshUrl(previous, current) {
+    if (current.connect_by_url) {
+        return false;
+    }
+
+    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse'];
+    return fields.some((fieldName) => previous[fieldName] !== current[fieldName]);
 }
 
 const stylesheet = new CSSStyleSheet();

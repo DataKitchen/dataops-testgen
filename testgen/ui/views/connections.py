@@ -1,11 +1,11 @@
 import base64
 import logging
+import random
 import typing
 from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 
-from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.ui.queries import table_group_queries
 
 try:
@@ -59,10 +59,15 @@ class ConnectionsPage(Page):
         )
 
         connections = Connection.select_where(Connection.project_code == project_code)
-        connection: Connection = connections[0]
-        has_table_groups = (
-            len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
+        connection: Connection = connections[0] if len(connections) > 0 else Connection(
+            sql_flavor="postgresql",
+            sql_flavor_code="postgresql",
+            project_code=project_code,
         )
+        has_table_groups = (
+            connection.id and len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
+        )
+
         user_is_admin = session.auth.user_has_permission("administer")
         should_check_status, set_check_status = temp_value(
             "connections:status_check",
@@ -76,6 +81,9 @@ class ConnectionsPage(Page):
             "connections:update_connection",
             default=False,
         )
+
+        def on_connection_updated(connection: dict) -> None:
+            set_updated_connection(self._sanitize_connection_input(connection))
 
         def on_save_connection_clicked(updated_connection):
             is_pristine = lambda value: value in ["", "***"]
@@ -140,6 +148,11 @@ class ConnectionsPage(Page):
         for key, value in get_updated_connection().items():
             setattr(connection, key, value)
 
+        connection_string: str | None = None
+        flavor_service = get_flavor_service(connection.sql_flavor)
+        flavor_service.init({**connection.to_dict(), "project_pw_encrypted": "<password>"})
+        connection_string = flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
+
         if should_save():
             success = True
             try:
@@ -165,12 +178,14 @@ class ConnectionsPage(Page):
                 "permissions": {
                     "is_admin": user_is_admin,
                 },
+                "generated_connection_url": connection_string,
                 "results": results,
             },
             on_change_handlers={
                 "TestConnectionClicked": on_test_connection_clicked,
                 "SaveConnectionClicked": on_save_connection_clicked,
                 "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection.connection_id),
+                "ConnectionUpdated": on_connection_updated,
             },
         )
 
@@ -231,7 +246,7 @@ class ConnectionsPage(Page):
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
         except Exception as error:
             details = "Try again"
-            if connection["connect_by_key"] and not connection.get("private_key", ""):
+            if connection.connect_by_key and not connection.private_key:
                 details = "The private key is missing."
             LOG.exception("Error testing database connection")
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
@@ -247,6 +262,7 @@ class ConnectionsPage(Page):
             set_new_table_group(table_group)
             set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
+            mark_for_save(True)
 
         def on_go_to_profiling_runs(params: dict) -> None:
             set_navigation_params({ **params, "project_code": project_code })
@@ -290,11 +306,18 @@ class ConnectionsPage(Page):
             f"connections:{connection_id}:tg_verified",
             default=False,
         )
+        should_save, mark_for_save = temp_value(
+            f"connections:{connection_id}:tg_save",
+            default=False,
+        )
 
+        add_scorecard_definition = table_group_data.pop("add_scorecard_definition", False)
         table_group = TableGroup(
-            **table_group_data or {},
-            project_code = project_code,
-            connection_id = connection_id,
+            project_code=project_code,
+            **{
+                **(table_group_data or {}),
+                "connection_id": connection_id,
+            },
         )
 
         table_group_preview = None
@@ -304,13 +327,13 @@ class ConnectionsPage(Page):
                 verify_table_access=should_verify_access(),
             )
 
-        if table_group_data:
+        if should_save():
             success = True
             message = None
 
             if is_table_group_verified():
                 try:
-                    table_group.save()
+                    table_group.save(add_scorecard_definition=add_scorecard_definition)
 
                     if should_run_profiling:
                         try:
@@ -331,7 +354,7 @@ class ConnectionsPage(Page):
                 results = {
                     "success": success,
                     "message": message,
-                    "table_group_id": table_group.id,
+                    "table_group_id": str(table_group.id),
                 }
             else:
                 results = {
@@ -346,6 +369,7 @@ class ConnectionsPage(Page):
             props={
                 "project_code": project_code,
                 "connection_id": connection_id,
+                "table_group": table_group.to_dict(json_safe=True),
                 "table_group_preview": table_group_preview,
                 "steps": [
                     "tableGroup",
@@ -367,6 +391,7 @@ class ConnectionStatus:
     message: str
     successful: bool
     details: str | None = field(default=None)
+    _: float = field(default_factory=random.random)
 
 
 def is_open_ssl_error(error: Exception):
@@ -396,29 +421,12 @@ def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     return formatted_connection
 
 
-def get_connection_string(flavor: str) -> str:
-    connection_params: ConnectionParams = {
-        "sql_flavor": flavor,
-        "project_host": "<host>",
-        "project_port": "<port>",
-        "project_user": "<username>",
-        "project_db": "<database>",
-        "project_pw_encrypted": "<password>",
-        "http_path": "<http_path>",
-        "table_group_schema": "",
-    }
-    flavor_service = get_flavor_service(flavor)
-    flavor_service.init(connection_params)
-    return flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ConnectionFlavor:
     value: str
     label: str
     icon: str
     flavor: str
-    connection_string: str
 
 
 FLAVOR_OPTIONS = [
@@ -427,48 +435,41 @@ FLAVOR_OPTIONS = [
         value="redshift",
         flavor="redshift",
         icon=get_asset_data_url("flavors/redshift.svg"),
-        connection_string=get_connection_string("redshift"),
     ),
     ConnectionFlavor(
         label="Azure SQL Database",
         value="azure_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_sql.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Azure Synapse Analytics",
         value="synapse_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="Microsoft SQL Server",
         value="mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/mssql.svg"),
-        connection_string=get_connection_string("mssql"),
     ),
     ConnectionFlavor(
         label="PostgreSQL",
         value="postgresql",
         flavor="postgresql",
         icon=get_asset_data_url("flavors/postgresql.svg"),
-        connection_string=get_connection_string("postgresql"),
     ),
     ConnectionFlavor(
         label="Snowflake",
         value="snowflake",
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
-        connection_string=get_connection_string("snowflake"),
     ),
     ConnectionFlavor(
         label="Databricks",
         value="databricks",
         flavor="databricks",
         icon=get_asset_data_url("flavors/databricks.svg"),
-        connection_string=get_connection_string("databricks"),
     ),
 ]
