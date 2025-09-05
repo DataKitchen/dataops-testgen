@@ -125,9 +125,12 @@ def run_execution_steps_in_background(project_code, test_suite):
     if settings.IS_DEBUG:
         LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
         empty_cache()
+        username = None
+        if session.auth:
+            username = session.auth.user_display
         background_thread = threading.Thread(
             target=run_execution_steps,
-            args=(project_code, test_suite, session.auth.user_display),
+            args=(project_code, test_suite, username),
         )
         background_thread.start()
     else:

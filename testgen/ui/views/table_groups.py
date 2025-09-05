@@ -171,10 +171,13 @@ class TableGroupsPage(Page):
             original_table_group_schema = table_group.table_group_schema
             is_table_group_used = TableGroup.is_in_use([table_group_id])
 
+        add_monitor_test_suite = False
         add_scorecard_definition = False
         for key, value in get_table_group().items():
             if key == "add_scorecard_definition":
                 add_scorecard_definition = value
+            elif key == "add_monitor_test_suite":
+                add_monitor_test_suite = value
             else:
                 setattr(table_group, key, value)
 
@@ -209,7 +212,11 @@ class TableGroupsPage(Page):
             success = True
             if is_table_group_verified():
                 try:
-                    table_group.save(add_scorecard_definition)
+                    table_group.save(
+                        add_scorecard_definition,
+                        add_monitor_test_suite=add_monitor_test_suite,
+                        monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
+                    )
                     if should_run_profiling():
                         try:
                             run_profiling_in_background(table_group.id)
