@@ -34,7 +34,12 @@ from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.queries import test_result_queries
-from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
+from testgen.ui.queries.source_data_queries import (
+    get_test_issue_source_data,
+    get_test_issue_source_data_custom,
+    get_test_issue_source_query,
+    get_test_issue_source_query_custom,
+)
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
@@ -794,18 +799,24 @@ def do_disposition_update(selected, str_new_status):
 @st.dialog(title="Source Data")
 @with_database_session
 def source_data_dialog(selected_row):
+    testgen.caption(f"Table > Column: <b>{selected_row['table_name']} > {selected_row['column_names']}</b>")
+
     st.markdown(f"#### {selected_row['test_name_short']}")
     st.caption(selected_row["test_description"])
-    fm.show_prompt(f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}")
+    
+    st.markdown("#### Test Parameters")
+    st.caption(selected_row["input_parameters"])
 
-    # Show detail
-    fm.render_html_list(
-        selected_row,
-        lst_columns=["input_parameters", "result_message"],
-        str_section_header=None,
-        int_data_width=0,
-        lst_labels=["Test Parameters", "Result Detail"],
-    )
+    st.markdown("#### Result Detail")
+    st.caption(selected_row["result_message"])
+
+    st.markdown("#### SQL Query")
+    if selected_row["test_type"] == "CUSTOM":
+        query = get_test_issue_source_query_custom(selected_row)
+    else:
+        query = get_test_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql")
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":

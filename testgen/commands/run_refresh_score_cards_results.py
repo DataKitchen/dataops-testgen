@@ -72,7 +72,7 @@ def run_refresh_score_cards_results(
                         history_entry.add_as_cutoff()
             definition.save()
             LOG.info(
-                "CurrentStep: Done rereshing scorecard %s in project %s",
+                "CurrentStep: Done refreshing scorecard %s in project %s",
                 definition.name,
                 definition.project_code,
             )
