@@ -121,9 +121,9 @@ newtests AS (
       'CAST(COUNT(*) AS varchar) + ''|'' + ' || STRING_AGG(
          REPLACE(
             CASE
-               WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS varchar)'
-               WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS varchar) + ''|'' + CAST(SUM(LEN(@@@)) AS varchar)'
-               WHEN general_type = 'N' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(SUM(@@@) AS varchar) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS varchar) + ''|'' + CAST(ROUND(STDEV(@@@), 5) AS varchar)'
+               WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR)'
+               WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR) + ''|'' + CAST(SUM(LEN(@@@)) AS NVARCHAR)'
+               WHEN general_type = 'N' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(SUM(@@@) AS NVARCHAR) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS NVARCHAR) + ''|'' + CAST(ROUND(STDEV(CAST(@@@ AS FLOAT)), 5) AS NVARCHAR)'
             END,
             '@@@', '"' || column_name || '"'
          ),

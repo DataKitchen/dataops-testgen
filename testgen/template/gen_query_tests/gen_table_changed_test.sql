@@ -121,7 +121,7 @@ newtests
                         CASE
                           WHEN general_type = 'D' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR'
                           WHEN general_type = 'A' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR || ''|'' || SUM(LENGTH(@@@))::VARCHAR'
-                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@), 5)::VARCHAR'
+                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@::FLOAT), 5)::VARCHAR'
                         END,
                         '@@@', '"' || column_name || '"'),
                         ' || ''|'' || '
