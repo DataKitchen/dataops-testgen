@@ -4,6 +4,7 @@
  * @property {string} label
  * @property {string?} name
  * @property {boolean?} checked
+ * @property {string?} style
  * @property {function(boolean)?} onChange
  */
 import van from '../van.min.js';
@@ -15,7 +16,7 @@ const Toggle = (/** @type Properties */ props) => {
     loadStylesheet('toggle', stylesheet);
 
     return label(
-        { class: 'flex-row fx-gap-2 clickable', 'data-testid': props.name ?? '' },
+        { class: 'flex-row fx-gap-2 clickable', style: props.style ?? '', 'data-testid': props.name ?? '' },
         input({
             type: 'checkbox',
             role: 'switch',

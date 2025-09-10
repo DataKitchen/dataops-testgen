@@ -34,7 +34,7 @@ class TestSuitesPage(Page):
         icon=PAGE_ICON,
         label=PAGE_TITLE,
         section="Data Quality Testing",
-        order=1,
+        order=2,
     )
 
     def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:

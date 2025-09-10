@@ -36,6 +36,8 @@ import { RunProfilingDialog } from './pages/run_profiling_dialog.js';
 import { ConfirmationDialog } from './pages/confirmation_dialog.js';
 import { TestDefinitionSummary } from './pages/test_definition_summary.js';
 import { NotificationSettings } from './pages/notification_settings.js';
+import { TableMonitoringTrend } from './pages/table_monitoring_trends.js';
+import { MonitorsDashboard } from './pages/monitors_dashboard.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -70,6 +72,8 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         confirm_dialog: ConfirmationDialog,
         test_definition_summary: TestDefinitionSummary,
         notification_settings: NotificationSettings,
+        monitors_dashboard: MonitorsDashboard,
+        table_monitoring_trends: TableMonitoringTrend,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {

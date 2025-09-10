@@ -20,6 +20,7 @@ body {
     --blue: #42A5F5;
     --brown: #8D6E63;
     --grey: #BDBDBD;
+    --light-grey: #E0E0E0;
     --empty: #EEEEEE;
     --empty-light: #FAFAFA;
     --empty-teal: #E7F1F0;
@@ -194,6 +195,10 @@ body {
 
 .text-disabled {
     color: var(--disabled-text-color);
+}
+
+.text-small {
+    font-size: 12px;
 }
 
 .text-caption {

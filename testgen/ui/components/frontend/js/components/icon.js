@@ -1,8 +1,9 @@
 /**
  * @typedef Properties
  * @type {object}
+ * @property {string?} classes
  * @property {number?} size
- * @property {string} classes
+ * @property {boolean?} filled
  */
 import { getValue, isDataURL, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -18,7 +19,7 @@ const Icon = (/** @type Properties */ props, /** @type string */ icon) => {
             {
                 width: () => getValue(props.size) || DEFAULT_SIZE,
                 height: () => getValue(props.size) || DEFAULT_SIZE, src: icon,
-                class: () => `tg-icon tg-icon-image ${getValue(props.classes)}`,
+                class: () => `tg-icon tg-icon-image ${getValue(props.classes) ?? ''}`,
                 src: icon,
             }
         );
@@ -26,7 +27,7 @@ const Icon = (/** @type Properties */ props, /** @type string */ icon) => {
 
     return i(
         {
-            class: () => `material-symbols-rounded tg-icon text-secondary ${getValue(props.classes)}`,
+            class: () => `material-symbols-rounded tg-icon text-secondary ${getValue(props.filled) ? 'material-symbols-filled' : ''} ${getValue(props.classes) ?? ''}`,
             style: () => `font-size: ${getValue(props.size) || DEFAULT_SIZE}px;`,
             ...props,
         },
