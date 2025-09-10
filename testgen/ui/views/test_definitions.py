@@ -283,7 +283,7 @@ def show_test_form(
     last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
     profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
     profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
-    
+
 
     # dynamic attributes
     custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
@@ -529,7 +529,9 @@ def show_test_form(
         choice_fields = {
             "history_calculation": ["Value", "Minimum", "Maximum", "Sum", "Average"],
         }
-        float_numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        float_numeric_attributes = ["lower_tolerance", "upper_tolerance"]
+        if test_type != "LOV_All":
+            float_numeric_attributes.append("threshold_value")
         int_numeric_attributes = ["history_lookback"]
 
         default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
@@ -1072,7 +1074,7 @@ def generate_test_defs_help(str_test_type):
 
 @st.cache_data(show_spinner=False)
 def run_test_type_lookup_query(
-    test_type: str | None = None, 
+    test_type: str | None = None,
     include_referential: bool = True,
     include_table: bool = True,
     include_column: bool = True,
@@ -1085,7 +1087,7 @@ def run_test_type_lookup_query(
         "custom": include_custom,
     }
     scopes = [ key for key, include in scope_map.items() if include ]
-    
+
     query = f"""
     SELECT
         tt.id, tt.test_type, tt.id as cat_test_id,
@@ -1105,7 +1107,7 @@ def run_test_type_lookup_query(
         || tt.test_name_short
         || ': '
         || lower(tt.test_name_long)
-        || CASE 
+        || CASE
             WHEN tt.selection_criteria > '' THEN ' [auto-generated]'
             ELSE ''
         END as select_name
@@ -1220,7 +1222,7 @@ def validate_test(test_definition, table_group: TableGroupMinimal):
         condition = test_definition["custom_query"]
         concat_operator = get_flavor_service(connection.sql_flavor).get_concat_operator()
         query = f"""
-        SELECT 
+        SELECT
             COALESCE(
                 CAST(
                     SUM(
