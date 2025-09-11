@@ -15,24 +15,24 @@ SELECT '{PROJECT_CODE}'            as project_code,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
-           WHEN c.data_type ILIKE '%char%'
+           WHEN c.data_type ILIKE 'char%'
                THEN 'A'
-           WHEN c.data_type ILIKE 'boolean'
+           WHEN c.data_type = 'boolean'
                THEN 'B'
            WHEN c.data_type ILIKE 'date'
                OR c.data_type ILIKE 'timestamp%'
                THEN 'D'
-           WHEN c.data_type ILIKE 'time without time zone'
+           WHEN c.data_type ILIKE 'time with%'
                THEN 'T'
-           WHEN LOWER(c.data_type) IN ('bigint', 'double precision', 'integer', 'smallint', 'real')
-               OR c.data_type ILIKE 'numeric%'
+           WHEN LOWER(c.data_type) IN ('bigint', 'integer', 'smallint', 'double precision', 'real', 'numeric')
                THEN 'N'
            ELSE
-               'X' END          AS general_type,
+               'X'
+       END AS general_type,
        CASE
          WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
          ELSE numeric_scale > 0
-       END as is_decimal
+       END AS is_decimal
 FROM information_schema.columns c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position

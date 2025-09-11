@@ -16,20 +16,23 @@ SELECT '{PROJECT_CODE}'            as project_code,
        c.ordinal_position,
        CASE
            WHEN LOWER(c.data_type) LIKE '%char%'
+               OR c.data_type LIKE '%text%'
                THEN 'A'
            WHEN c.data_type = 'bit'
                THEN 'B'
            WHEN c.data_type = 'date'
-               OR c.data_type LIKE 'datetime%'
+               OR c.data_type LIKE '%datetime%'
                THEN 'D'
-           WHEN c.data_type like 'time%'
+           WHEN c.data_type = 'time'
                THEN 'T'
-           WHEN c.data_type IN ('bigint', 'double precision', 'integer', 'smallint', 'real')
-               OR c.data_type LIKE 'numeric%'
+           WHEN c.data_type IN ('real', 'float', 'decimal', 'numeric')
+               OR c.data_type LIKE '%int'
+               OR c.data_type LIKE '%money'
                THEN 'N'
            ELSE
-               'X' END          AS general_type,
-       case when c.numeric_scale > 0 then 1 else 0 END       as is_decimal
+               'X'
+       END AS general_type,
+       CASE WHEN c.numeric_scale > 0 THEN 1 ELSE 0 END AS is_decimal
 FROM information_schema.columns c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

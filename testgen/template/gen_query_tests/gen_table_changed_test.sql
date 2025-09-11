@@ -38,7 +38,8 @@ id_cols
                         ELSE 3
                      END, distinct_value_ct, column_name DESC) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'ID%'),
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'ID%'),
 -- Process Date - TOP 1
 process_date_cols
    AS (SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
@@ -52,7 +53,8 @@ process_date_cols
                WHEN column_name ILIKE '%in%'  THEN 2
              END , distinct_value_ct DESC, column_name) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'process%'),
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'process%'),
 -- Transaction Date - TOP 1
 tran_date_cols
    AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
@@ -61,7 +63,9 @@ tran_date_cols
                   ORDER BY
                      distinct_value_ct DESC, column_name) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'transactional date%' OR functional_data_type ILIKE 'period%'
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'transactional date%'
+            OR functional_data_type ILIKE 'period%'
             OR functional_data_type = 'timestamp' ),
 
 -- Numeric Measures
@@ -117,7 +121,7 @@ newtests
                         CASE
                           WHEN general_type = 'D' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR'
                           WHEN general_type = 'A' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR || ''|'' || SUM(LENGTH(@@@))::VARCHAR'
-                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@), 5)::VARCHAR'
+                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@::FLOAT), 5)::VARCHAR'
                         END,
                         '@@@', '"' || column_name || '"'),
                         ' || ''|'' || '

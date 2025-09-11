@@ -28,11 +28,11 @@ SELECT '{PROJECT_CODE}'            as project_code,
                THEN 'D'
            WHEN c.data_type ILIKE 'time without time zone'
                THEN 'T'
-           WHEN LOWER(c.data_type) IN ('bigint', 'double precision', 'integer', 'smallint', 'real')
-               OR c.data_type ILIKE 'numeric%'
+           WHEN LOWER(c.data_type) IN ('bigint', 'integer', 'smallint', 'double precision', 'real', 'numeric', 'money')
                THEN 'N'
            ELSE
-               'X' END          AS general_type,
+               'X'
+       END AS general_type,
        CASE
          WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
          ELSE numeric_scale > 0
