@@ -88,6 +88,7 @@ const ScheduleList = (/** @type Properties */ props) => {
                     options: timezones.map(tz_ => ({label: tz_, value: tz_})),
                     value: newScheduleForm.timezone,
                     allowNull: false,
+                    filterable: true,
                     onChange: (value) => {
                         newScheduleForm.timezone.val = value;
                         if (newScheduleForm.expression.val && newScheduleForm.timezone.val) {

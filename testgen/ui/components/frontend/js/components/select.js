@@ -21,6 +21,7 @@
  * @property {string?} style
  * @property {string?} testId
  * @property {number?} portalClass
+ * @property {boolean?} filterable
  * @property {('normal' | 'inline')?} triggerStyle
  */
 import van from '../van.min.js';
@@ -28,13 +29,14 @@ import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../util
 import { Portal } from './portal.js';
 import { Icon } from './icon.js';
 
-const { div, i, label, span } = van.tags;
+const { div, i, input, label, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
 
     const domId = van.derive(() => props.id?.val ?? getRandomId());
     const opened = van.state(false);
+    const optionsFilter = van.state('');
     const options = van.derive(() => {
         const options = getValue(props.options) ?? [];
         const allowNull = getValue(props.allowNull);
@@ -48,6 +50,27 @@ const Select = (/** @type {Properties} */ props) => {
 
         return options;
     });
+    const filteredOptions = van.derive(() => {
+        const allOptions = getValue(options);
+        const isFilterable = getValue(props.filterable);
+        const filterTerm = getValue(optionsFilter);
+        if (isFilterable && filterTerm.length) {
+            const filteredOptions_ = [];
+            for (let i = 0; i < allOptions.length; i++) {
+                const option = allOptions[i];
+                if (option.label === filterTerm) {
+                    return allOptions;
+                }
+
+                if (option.label.toLowerCase().includes(filterTerm.toLowerCase())) {
+                    filteredOptions_.push(option);
+                }
+            }
+            return filteredOptions_;
+        }
+        return allOptions;
+    });
+
     const value = isState(props.value) ? props.value : van.state(props.value ?? null);
     const initialSelection = options.val?.find((op) => op.value === value.val);
     const valueLabel = van.state(initialSelection?.label ?? '');
@@ -56,6 +79,16 @@ const Select = (/** @type {Properties} */ props) => {
     const changeSelection = (/** @type Option */ option) => {
         opened.val = false;
         value.val = option.value;
+    };
+
+    const filterOptions = (/** @type InputEvent */ event) => {
+        optionsFilter.val = event.target.value;
+    };
+
+    const showPortal = (/** @type Event */ event) => {
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        opened.val = getValue(props.disabled) ? false : true;
     };
 
     van.derive(() => {
@@ -82,8 +115,8 @@ const Select = (/** @type {Properties} */ props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            onclick: van.derive(() => !getValue(props.disabled) ? () => opened.val = !opened.val : null),
             'data-testid': getValue(props.testId) ?? '',
+            onclick: showPortal,
         },
         span(
             { class: 'flex-row fx-gap-1', 'data-testid': 'select-label' },
@@ -111,17 +144,27 @@ const Select = (/** @type {Properties} */ props) => {
                     style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
                     'data-testid': 'select-input',
                 },
-                () => div(
-                    { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
-                    valueIcon.val
-                        ? Icon({ classes: 'mr-2' }, valueIcon.val)
-                        : undefined,
-                    valueLabel.val,
-                ),
+                () => {
+                    return div(
+                        { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
+                        valueIcon.val
+                            ? Icon({ classes: 'mr-2' }, valueIcon.val)
+                            : undefined,
+                        getValue(props.filterable)
+                            ? input({
+                                id: `tg-select--field--${getRandomId()}`,
+                                value: valueLabel.val,
+                                onkeyup: filterOptions,
+                            })
+                            : valueLabel.val,
+                    );
+                },
                 div(
                     { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
                     i(
-                        { class: 'material-symbols-rounded' },
+                        {
+                            class: 'material-symbols-rounded',
+                        },
                         'expand_more',
                     ),
                 ),
@@ -134,7 +177,7 @@ const Select = (/** @type {Properties} */ props) => {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
                     'data-testid': 'select-options',
                 },
-                getValue(options).map(option =>
+                getValue(filteredOptions).map(option =>
                     div(
                         {
                             class: () => `tg-select--option ${getValue(value) === option.value ? 'selected' : ''}`,
@@ -194,6 +237,16 @@ stylesheet.replace(`
     height: 100%;
     flex: 1;
     font-weight: 500;
+}
+
+.tg-select--field--content > input {
+    border: unset !important;
+    background: transparent !important;
+    outline: none !important;
+    width: 100%;
+    font-weight: 500;
+    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
+    color: var(--primary-text-color);
 }
 
 .tg-select--field--icon {
