@@ -65,6 +65,7 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
+    view_mode: str | None = Column(NullIfEmptyString, default=None)
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()

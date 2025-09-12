@@ -84,14 +84,15 @@ CREATE TABLE connections (
 CREATE TABLE table_groups
 (
     id                       UUID DEFAULT gen_random_uuid()
-      CONSTRAINT pk_tg_id
+         CONSTRAINT pk_tg_id
          PRIMARY KEY,
     project_code             VARCHAR(30)
-      CONSTRAINT table_groups_projects_project_code_fk
-           REFERENCES projects,
+         CONSTRAINT table_groups_projects_project_code_fk
+         REFERENCES projects,
     connection_id            BIGINT
-          CONSTRAINT table_groups_connections_connection_id_fk
-           REFERENCES connections,
+         CONSTRAINT table_groups_connections_connection_id_fk
+         REFERENCES connections,
+    monitor_test_suite_id    UUID DEFAULT NULL,
     table_groups_name        VARCHAR(100),
     table_group_schema       VARCHAR(100),
     profiling_table_set      VARCHAR(2000),
@@ -161,9 +162,13 @@ CREATE TABLE test_suites (
    component_name          VARCHAR(100),
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN default FALSE,
+   view_mode               VARCHAR(20) DEFAULT NULL,
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
 );
+
+ALTER TABLE table_groups ADD CONSTRAINT table_groups_test_suites_monitor_test_suite_id_fk
+    FOREIGN KEY (monitor_test_suite_id) REFERENCES test_suites ON DELETE SET NULL;
 
 CREATE TABLE test_definitions (
    id                     UUID DEFAULT gen_random_uuid(),

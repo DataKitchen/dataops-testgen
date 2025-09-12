@@ -311,6 +311,7 @@ class ConnectionsPage(Page):
             default=False,
         )
 
+        add_monitor_test_suite = table_group_data.pop("add_monitor_test_suite", False)
         add_scorecard_definition = table_group_data.pop("add_scorecard_definition", False)
         table_group = TableGroup(
             project_code=project_code,
@@ -333,7 +334,11 @@ class ConnectionsPage(Page):
 
             if is_table_group_verified():
                 try:
-                    table_group.save(add_scorecard_definition=add_scorecard_definition)
+                    table_group.save(
+                        add_scorecard_definition=add_scorecard_definition,
+                        add_monitor_test_suite=add_monitor_test_suite,
+                        monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
+                    )
 
                     if should_run_profiling:
                         try:

@@ -79,7 +79,7 @@ def cli_job(job_data):
 
 @pytest.mark.unit
 def test_get_jobs(scheduler_instance, db_jobs, job_sched):
-    db_jobs.return_value = iter([[job_sched]])
+    db_jobs.return_value = iter([job_sched])
 
     jobs = list(scheduler_instance.get_jobs())
 

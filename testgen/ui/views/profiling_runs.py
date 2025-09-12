@@ -11,6 +11,7 @@ import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
@@ -122,7 +123,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
 
     title = "Profiling Schedules"
     arg_label = "Table Group"
-    job_key = "run-profile"
+    job_key = RUN_PROFILE_JOB_KEY
     table_groups: Iterable[TableGroupMinimal] | None = None
 
     def init(self) -> None:

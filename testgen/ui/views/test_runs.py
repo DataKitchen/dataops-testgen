@@ -10,6 +10,7 @@ import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
@@ -140,7 +141,7 @@ class TestRunScheduleDialog(ScheduleDialog):
 
     title = "Test Run Schedules"
     arg_label = "Test Suite"
-    job_key = "run-tests"
+    job_key = RUN_TESTS_JOB_KEY
     test_suites: Iterable[TestSuiteMinimal] | None = None
 
     def init(self) -> None:

@@ -10,6 +10,8 @@ from progress.spinner import Spinner
 import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.profiling_query import CProfilingSQL
+from testgen.commands.run_execute_tests import run_execution_steps_in_background
+from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (
     date_service,
@@ -25,6 +27,7 @@ from testgen.common.database.database_service import empty_cache
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -238,6 +241,9 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
     profiling_run_id = str(uuid.uuid4())
 
     params = get_profiling_params(table_group_id)
+    needs_monitor_tests_generated = (
+        bool(params["monitor_test_suite_id"]) and not params["last_complete_profile_run_id"]
+    )
 
     LOG.info("CurrentStep: Initializing Query Generator")
     clsProfiling = CProfilingSQL(params["project_code"], connection.sql_flavor, minutes_offset=minutes_offset)
@@ -471,7 +477,24 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
             scoring_duration=(datetime.now(UTC) - end_time).total_seconds(),
         )
 
+        if needs_monitor_tests_generated:
+            _generate_monitor_tests(params["project_code"], table_group_id, params["monitor_test_suite_id"])
+
     return f"""
         Profiling completed {"with errors. Check log for details." if has_errors else "successfully."}
         Run ID: {profiling_run_id}
     """
+
+
+@with_database_session
+def _generate_monitor_tests(project_code: str, table_group_id: str, test_suite_id: str) -> None:
+    try:
+        monitor_test_suite = TestSuite.get(test_suite_id)
+        if not monitor_test_suite:
+            LOG.info("Skipping test generation on missing monitor test suite")
+        else:
+            LOG.info("Generating monitor tests")
+            run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
+            run_execution_steps_in_background(project_code, monitor_test_suite.test_suite)
+    except Exception:
+        LOG.exception("Error generating monitor tests")
