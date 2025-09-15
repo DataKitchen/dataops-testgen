@@ -36,7 +36,7 @@ class Authentication:
     @property
     def user_display(self) -> str | None:
         return (self.user.name or self.user.username) if self.user else None
-    
+
     @property
     def default_page(self) -> str | None:
         return "project-dashboard" if self.user else ""
@@ -63,7 +63,7 @@ class Authentication:
                 "password": item.password,
             }
         return {"usernames": usernames}
-    
+
     def login_user(self, username: str) -> None:
         self.user = User.get(username)
         self.user.save(update_latest_login=True)
@@ -83,7 +83,7 @@ class Authentication:
     def end_user_session(self) -> None:
         self._clear_jwt_cookie()
         self.user = None
-        
+
     def _clear_jwt_cookie(self) -> None:
         execute_javascript(
             f"""await (async function () {{

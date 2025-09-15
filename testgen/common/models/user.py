@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, asc, func, update
+import streamlit as st
+from sqlalchemy import Column, String, asc, func, select, update
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
@@ -43,3 +44,8 @@ class User(Entity):
                 self.latest_login = datetime.now(UTC)
             super().save()
 
+    @classmethod
+    @st.cache_data(show_spinner=False)
+    def get(cls, identifier: str) -> Self | None:
+        query = select(cls).where(func.lower(User.username) == func.lower(identifier))
+        return get_current_session().scalars(query).first()
