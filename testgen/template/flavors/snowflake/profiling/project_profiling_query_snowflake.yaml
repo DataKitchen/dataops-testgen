@@ -94,7 +94,7 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as std_pattern_match,
 strTemplate06_A_patterns: ( SELECT LEFT(LISTAGG(pattern, ' | ') WITHIN GROUP (ORDER BY ct DESC), 1000) AS concat_pats
       FROM (
-            SELECT TOP 5 CAST(COUNT(*) AS VARCHAR(10)) || ' | ' || pattern AS pattern,
+            SELECT TOP 5 CAST(COUNT(*) AS VARCHAR(40)) || ' | ' || pattern AS pattern,
                    COUNT(*) AS ct
               FROM (  SELECT REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE(
                         "{COL_NAME}"::VARCHAR, '[a-z]', 'a'),
