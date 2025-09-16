@@ -838,7 +838,7 @@ def source_data_dialog(selected_row):
         if len(df_bad) == 500:
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
-        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+        st.dataframe(df_bad, width=1050, hide_index=True)
 
 
 def view_edit_test(button_container, test_definition_id):
