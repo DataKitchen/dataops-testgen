@@ -214,7 +214,7 @@ def run_profiling_in_background(table_group_id):
         empty_cache()
         background_thread = threading.Thread(
             target=run_profiling_queries,
-            args=(table_group_id, session.auth.user_display),
+            args=(table_group_id, session.auth.user_display if session.auth else None),
         )
         background_thread.start()
     else:

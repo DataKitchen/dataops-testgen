@@ -147,7 +147,7 @@ class TestType(Entity):
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"))
     cat_test_id: int = Column(BigInteger, Identity(), primary_key=True)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
