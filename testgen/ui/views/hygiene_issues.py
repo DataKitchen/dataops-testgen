@@ -156,7 +156,7 @@ class HygieneIssuesPage(Page):
                 ("Likelihood", "likelihood_order"),
                 ("Action", "r.disposition"),
             )
-            default = [(sortable_columns[i][1], "ASC") for i in (0, 1)]
+            default = [(sortable_columns[i][1], "ASC") for i in (3, 0, 1)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
@@ -434,10 +434,10 @@ def get_profiling_anomalies(
             THEN 'Potential PII: may require privacy policies, standards and procedures for access, storage and transmission.'
         END AS likelihood_explanation,
         CASE
-            WHEN t.issue_likelihood = 'Potential PII' THEN 1
-            WHEN t.issue_likelihood = 'Possible' THEN 2
-            WHEN t.issue_likelihood = 'Likely'   THEN 3
-            WHEN t.issue_likelihood = 'Definite'  THEN 4
+            WHEN t.issue_likelihood = 'Potential PII' THEN 4
+            WHEN t.issue_likelihood = 'Possible' THEN 3
+            WHEN t.issue_likelihood = 'Likely'   THEN 2
+            WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.suggested_action,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,

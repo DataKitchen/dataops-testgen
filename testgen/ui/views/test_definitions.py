@@ -6,7 +6,7 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import asc, func, tuple_
+from sqlalchemy import and_, asc, func, or_, tuple_
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -1184,13 +1184,16 @@ def get_test_definitions_collision(
     target_table_group_id: str,
     target_test_suite_id: str,
 ) -> pd.DataFrame:
+    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None]
+    column_tests = [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,
         TestDefinition.last_auto_gen_date.isnot(None),
-        tuple_(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type).in_(
-            [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions]
-        ),
+        or_(
+            tuple_(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type).in_(column_tests),
+            and_(tuple_(TestDefinition.table_name, TestDefinition.test_type).in_(table_tests), TestDefinition.column_name.is_(None)),
+        )
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
