@@ -805,7 +805,7 @@ def source_data_dialog(selected_row):
     st.caption(selected_row["test_description"])
     
     st.markdown("#### Test Parameters")
-    st.caption(selected_row["input_parameters"])
+    testgen.caption(selected_row["input_parameters"], styles="max-height: 100px; overflow: auto;")
 
     st.markdown("#### Result Detail")
     st.caption(selected_row["result_message"])

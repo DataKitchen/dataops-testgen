@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import streamlit as st
 from sqlalchemy import (
