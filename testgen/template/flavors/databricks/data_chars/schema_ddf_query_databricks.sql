@@ -13,11 +13,10 @@ SELECT '{PROJECT_CODE}' AS project_code,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
-           WHEN lower(c.data_type) RLIKE '(string|char|varchar|text)' THEN 'A'
-           WHEN lower(c.data_type) = 'boolean' THEN 'B'
-           WHEN lower(c.data_type) IN ('date', 'timestamp') THEN 'D'
-           WHEN lower(c.data_type) IN ('byte', 'short', 'int', 'integer', 'long', 'bigint', 'float', 'double') THEN 'N'
-           WHEN lower(c.data_type) LIKE 'decimal%' THEN 'N'
+           WHEN c.data_type IN ('STRING', 'CHAR') THEN 'A'
+           WHEN c.data_type = 'BOOLEAN' THEN 'B'
+           WHEN c.data_type IN ('DATE', 'TIMESTAMP', 'TIMESTAMP_NTZ') THEN 'D'
+           WHEN c.data_type IN ('BYTE', 'SHORT', 'INT', 'LONG', 'DECIMAL', 'FLOAT', 'DOUBLE') THEN 'N'
            ELSE 'X'
        END AS general_type,
        CASE

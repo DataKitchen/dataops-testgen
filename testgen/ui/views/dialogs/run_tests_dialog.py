@@ -42,7 +42,7 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
 
         if testgen.expander_toggle(expand_label="Show CLI command", key="run_tests_dialog:keys:show-cli"):
             st.code(
-                f"testgen run-tests --project-key {project_code} --test-suite-key {test_suite_name}",
+                f"testgen run-tests --project-key {project_code} --test-suite-key '{test_suite_name}'",
                 language="shellSession"
             )
 

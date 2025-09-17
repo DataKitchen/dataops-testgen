@@ -18,6 +18,7 @@ from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -33,7 +34,12 @@ from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.test_result_report import create_report
 from testgen.ui.queries import test_result_queries
-from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
+from testgen.ui.queries.source_data_queries import (
+    get_test_issue_source_data,
+    get_test_issue_source_data_custom,
+    get_test_issue_source_query,
+    get_test_issue_source_query_custom,
+)
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session
@@ -125,7 +131,7 @@ class TestResultsPage(Page):
                     run_columns_df["table_name"] == table_name
                     ]["column_name"].dropna().unique().tolist()
             else:
-                column_options = run_columns_df.groupby("column_name").first().reset_index().sort_values("column_name")
+                column_options = run_columns_df.groupby("column_name").first().reset_index().sort_values("column_name", key=lambda x: x.str.lower())
             column_name = testgen.select(
                 options=column_options,
                 value_column="column_name",
@@ -157,8 +163,8 @@ class TestResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Table", "r.table_name"),
-                ("Columns/Focus", "r.column_names"),
+                ("Table", "LOWER(r.table_name)"),
+                ("Columns/Focus", "LOWER(r.column_names)"),
                 ("Test Type", "r.test_type"),
                 ("Unit of Measure", "tt.measure_uom"),
                 ("Result Measure", "result_measure"),
@@ -279,7 +285,7 @@ def get_test_run_columns(test_run_id: str) -> pd.DataFrame:
     FROM test_results r
     LEFT JOIN test_types t ON t.test_type = r.test_type
     WHERE test_run_id = :test_run_id
-    ORDER BY table_name, column_names;
+    ORDER BY LOWER(r.table_name), LOWER(r.column_names);
     """
     return fetch_df_from_db(query, {"test_run_id": test_run_id})
 
@@ -454,6 +460,7 @@ def show_result_detail(
             df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
 
             test_suite = TestSuite.get_minimal(test_suite_id)
+            table_group = TableGroup.get_minimal(test_suite.table_groups_id)
 
     lst_show_columns = [
         "table_name",
@@ -497,7 +504,7 @@ def show_result_detail(
         download_dialog(
             dialog_title="Download Excel Report",
             file_content_func=get_excel_report_data,
-            args=(test_suite.test_suite, run_date, run_id, data),
+            args=(test_suite.test_suite, table_group.table_group_schema, run_date, run_id, data),
         )
 
     with popover_container.container(key="tg--export-popover"):
@@ -608,6 +615,7 @@ def show_result_detail(
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: str,
+    schema: str,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -616,7 +624,6 @@ def get_excel_report_data(
         data = test_result_queries.get_test_results(run_id)
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_names": {"header": "Columns/Focus"},
         "test_name_short": {"header": "Test type"},
@@ -634,7 +641,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Results",
-        details={"Test suite": test_suite, "Test run date": run_date},
+        details={"Test suite": test_suite, "Schema": schema, "Test run date": run_date},
         columns=columns,
         update_progress=update_progress,
     )
@@ -792,18 +799,24 @@ def do_disposition_update(selected, str_new_status):
 @st.dialog(title="Source Data")
 @with_database_session
 def source_data_dialog(selected_row):
+    testgen.caption(f"Table > Column: <b>{selected_row['table_name']} > {selected_row['column_names']}</b>")
+
     st.markdown(f"#### {selected_row['test_name_short']}")
     st.caption(selected_row["test_description"])
-    fm.show_prompt(f"Column: {selected_row['column_names']}, Table: {selected_row['table_name']}")
+    
+    st.markdown("#### Test Parameters")
+    testgen.caption(selected_row["input_parameters"], styles="max-height: 100px; overflow: auto;")
 
-    # Show detail
-    fm.render_html_list(
-        selected_row,
-        lst_columns=["input_parameters", "result_message"],
-        str_section_header=None,
-        int_data_width=0,
-        lst_labels=["Test Parameters", "Result Detail"],
-    )
+    st.markdown("#### Result Detail")
+    st.caption(selected_row["result_message"])
+
+    st.markdown("#### SQL Query")
+    if selected_row["test_type"] == "CUSTOM":
+        query = get_test_issue_source_query_custom(selected_row)
+    else:
+        query = get_test_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql")
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":

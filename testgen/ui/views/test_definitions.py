@@ -6,7 +6,7 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import asc, tuple_
+from sqlalchemy import and_, asc, func, or_, tuple_
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -283,7 +283,7 @@ def show_test_form(
     last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
     profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
     profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
-    
+
 
     # dynamic attributes
     custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
@@ -529,7 +529,9 @@ def show_test_form(
         choice_fields = {
             "history_calculation": ["Value", "Minimum", "Maximum", "Sum", "Average"],
         }
-        float_numeric_attributes = ["threshold_value", "lower_tolerance", "upper_tolerance"]
+        float_numeric_attributes = ["lower_tolerance", "upper_tolerance"]
+        if test_type != "LOV_All":
+            float_numeric_attributes.append("threshold_value")
         int_numeric_attributes = ["history_lookback"]
 
         default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
@@ -877,7 +879,6 @@ def show_test_defs_grid(
             df = get_test_definitions(test_suite, table_name, column_name, test_type)
 
     lst_show_columns = [
-        "schema_name",
         "table_name",
         "column_name",
         "test_name_short",
@@ -889,7 +890,6 @@ def show_test_defs_grid(
         "last_manual_update",
     ]
     show_column_headers = [
-        "Schema",
         "Table",
         "Columns / Focus",
         "Test Type",
@@ -925,7 +925,7 @@ def show_test_defs_grid(
         download_dialog(
             dialog_title="Download Excel Report",
             file_content_func=get_excel_report_data,
-            args=(test_suite, data),
+            args=(test_suite, table_group.table_group_schema, data),
         )
 
     with popover_container.container(key="tg--export-popover"):
@@ -1006,6 +1006,7 @@ def show_test_defs_grid(
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: TestSuite,
+    schema: str,
     data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
     if data is not None:
@@ -1022,7 +1023,6 @@ def get_excel_report_data(
         )
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column/Focus"},
         "test_name_short": {"header": "Test type"},
@@ -1038,7 +1038,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Definitions",
-        details={"Test suite": test_suite.test_suite},
+        details={"Test suite": test_suite.test_suite, "Schema": schema},
         columns=columns,
         update_progress=update_progress,
     )
@@ -1074,7 +1074,7 @@ def generate_test_defs_help(str_test_type):
 
 @st.cache_data(show_spinner=False)
 def run_test_type_lookup_query(
-    test_type: str | None = None, 
+    test_type: str | None = None,
     include_referential: bool = True,
     include_table: bool = True,
     include_column: bool = True,
@@ -1087,7 +1087,7 @@ def run_test_type_lookup_query(
         "custom": include_custom,
     }
     scopes = [ key for key, include in scope_map.items() if include ]
-    
+
     query = f"""
     SELECT
         tt.id, tt.test_type, tt.id as cat_test_id,
@@ -1107,7 +1107,7 @@ def run_test_type_lookup_query(
         || tt.test_name_short
         || ': '
         || lower(tt.test_name_long)
-        || CASE 
+        || CASE
             WHEN tt.selection_criteria > '' THEN ' [auto-generated]'
             ELSE ''
         END as select_name
@@ -1136,7 +1136,7 @@ def run_test_type_lookup_query(
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     results = TestDefinition.select_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
-        order_by = (asc(TestDefinition.table_name), asc(TestDefinition.column_name)),
+        order_by = (asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
@@ -1184,13 +1184,16 @@ def get_test_definitions_collision(
     target_table_group_id: str,
     target_test_suite_id: str,
 ) -> pd.DataFrame:
+    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None]
+    column_tests = [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,
         TestDefinition.last_auto_gen_date.isnot(None),
-        tuple_(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type).in_(
-            [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions]
-        ),
+        or_(
+            tuple_(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type).in_(column_tests),
+            and_(tuple_(TestDefinition.table_name, TestDefinition.test_type).in_(table_tests), TestDefinition.column_name.is_(None)),
+        )
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
@@ -1222,7 +1225,7 @@ def validate_test(test_definition, table_group: TableGroupMinimal):
         condition = test_definition["custom_query"]
         concat_operator = get_flavor_service(connection.sql_flavor).get_concat_operator()
         query = f"""
-        SELECT 
+        SELECT
             COALESCE(
                 CAST(
                     SUM(

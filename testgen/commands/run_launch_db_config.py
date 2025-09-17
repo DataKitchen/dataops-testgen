@@ -72,10 +72,10 @@ def _get_params_mapping() -> dict:
 
 
 @with_database_session
-def run_launch_db_config(delete_db: bool) -> None:
+def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> None:
     params_mapping = _get_params_mapping()
 
-    create_database(get_tg_db(), params_mapping, drop_existing=delete_db, drop_users_and_roles=True)
+    create_database(get_tg_db(), params_mapping, drop_existing=delete_db, drop_users_and_roles=drop_users_and_roles)
 
     queries = get_queries_for_command("dbsetup", params_mapping)
 
@@ -92,3 +92,7 @@ def run_launch_db_config(delete_db: bool) -> None:
             table_groups_name=settings.DEFAULT_TABLE_GROUPS_NAME,
         )
     ).save()
+
+
+def get_app_db_params_mapping() -> dict:
+    return _get_params_mapping()

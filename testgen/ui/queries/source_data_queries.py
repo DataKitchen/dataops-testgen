@@ -16,11 +16,7 @@ from testgen.utils import to_dataframe
 LOG = logging.getLogger("testgen")
 
 
-@st.cache_data(show_spinner=False)
-def get_hygiene_issue_source_data(
-    issue_data: dict,
-    limit: int | None = None,
-) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
+def get_hygiene_issue_source_query(issue_data: dict) -> str:
     def generate_lookup_query(test_id: str, detail_exp: str, column_names: list[str], sql_flavor: SQLFlavor) -> str:
         if test_id in {"1019", "1020"}:
             start_index = detail_exp.find("Columns: ")
@@ -40,32 +36,43 @@ def get_hygiene_issue_source_data(
             sql_query = ""
         return sql_query
 
-    lookup_query = None
-    try:
-        lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["anomaly_id"], "Profile Anomaly")
-        if not lookup_data:
-            return "NA", "Source data lookup is not available for this hygiene issue.", None, None
+    lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["anomaly_id"], "Profile Anomaly")
+    if not lookup_data:
+        return None
 
-        lookup_query = (
-            generate_lookup_query(
-                issue_data["anomaly_id"], issue_data["detail"], issue_data["column_name"], lookup_data.sql_flavor
-            )
-            if lookup_data.lookup_query == "created_in_ui"
-            else lookup_data.lookup_query
+    lookup_query = (
+        generate_lookup_query(
+            issue_data["anomaly_id"], issue_data["detail"], issue_data["column_name"], lookup_data.sql_flavor
         )
+        if lookup_data.lookup_query == "created_in_ui"
+        else lookup_data.lookup_query
+    )
 
+    if not lookup_query:
+        return None
+
+    params = {
+        "TARGET_SCHEMA": issue_data["schema_name"],
+        "TABLE_NAME": issue_data["table_name"],
+        "COLUMN_NAME": issue_data["column_name"],
+        "DETAIL_EXPRESSION": issue_data["detail"],
+        "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
+    }
+
+    lookup_query = replace_params(lookup_query, params)
+    lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
+    return lookup_query
+    
+
+@st.cache_data(show_spinner=False)
+def get_hygiene_issue_source_data(
+    issue_data: dict,
+    limit: int | None = None,
+) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
+    try:
+        lookup_query = get_hygiene_issue_source_query(issue_data)
         if not lookup_query:
             return "NA", "Source data lookup is not available for this hygiene issue.", None, None
-
-        params = {
-            "TARGET_SCHEMA": issue_data["schema_name"],
-            "TABLE_NAME": issue_data["table_name"],
-            "COLUMN_NAME": issue_data["column_name"],
-            "DETAIL_EXPRESSION": issue_data["detail"],
-            "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
-        }
-        lookup_query = replace_params(lookup_query, params)
-        lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
         results = fetch_from_target_db(connection, lookup_query)
@@ -87,53 +94,62 @@ def get_hygiene_issue_source_data(
         return "ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None
 
 
+def get_test_issue_source_query(issue_data: dict) -> str:
+    lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
+    if not lookup_data or not lookup_data.lookup_query:
+        return None
+    
+    test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+    if not test_definition:
+        return None
+
+    params = {
+        "TARGET_SCHEMA": issue_data["schema_name"],
+        "TABLE_NAME": issue_data["table_name"],
+        "COLUMN_NAME": issue_data["column_names"],
+        "TEST_DATE": str(issue_data["test_date"]),
+        "CUSTOM_QUERY": test_definition.custom_query,
+        "BASELINE_VALUE": test_definition.baseline_value,
+        "BASELINE_CT": test_definition.baseline_ct,
+        "BASELINE_AVG": test_definition.baseline_avg,
+        "BASELINE_SD": test_definition.baseline_sd,
+        "LOWER_TOLERANCE": test_definition.lower_tolerance,
+        "UPPER_TOLERANCE": test_definition.upper_tolerance,
+        "THRESHOLD_VALUE": test_definition.threshold_value,
+        "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
+        "GROUPBY_NAMES": test_definition.groupby_names,
+        "HAVING_CONDITION": test_definition.having_condition,
+        "MATCH_SCHEMA_NAME": test_definition.match_schema_name,
+        "MATCH_TABLE_NAME": test_definition.match_table_name,
+        "MATCH_COLUMN_NAMES": test_definition.match_column_names,
+        "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
+        "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,
+        "MATCH_HAVING_CONDITION": test_definition.match_having_condition,
+        "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
+        "WINDOW_DATE_COLUMN": test_definition.window_date_column,
+        "WINDOW_DAYS": test_definition.window_days,
+        "CONCAT_COLUMNS": ConcatColumnList(issue_data["column_names"], "<NULL>"),
+        "CONCAT_MATCH_GROUPBY": ConcatColumnList(test_definition.match_groupby_names, "<NULL>"),
+    }
+
+    lookup_query = replace_params(lookup_data.lookup_query, params)
+    lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
+    return lookup_query
+
+
 @st.cache_data(show_spinner=False)
 def get_test_issue_source_data(
     issue_data: dict,
     limit: int | None = None,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
-    lookup_query = None
     try:
-        lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
-
-        if not lookup_data or not lookup_data.lookup_query:
-            return "NA", "Source data lookup is not available for this test.", None, None
-
         test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
-
-        params = {
-            "TARGET_SCHEMA": issue_data["schema_name"],
-            "TABLE_NAME": issue_data["table_name"],
-            "COLUMN_NAME": issue_data["column_names"],
-            "TEST_DATE": str(issue_data["test_date"]),
-            "CUSTOM_QUERY": test_definition.custom_query,
-            "BASELINE_VALUE": test_definition.baseline_value,
-            "BASELINE_CT": test_definition.baseline_ct,
-            "BASELINE_AVG": test_definition.baseline_avg,
-            "BASELINE_SD": test_definition.baseline_sd,
-            "LOWER_TOLERANCE": test_definition.lower_tolerance,
-            "UPPER_TOLERANCE": test_definition.upper_tolerance,
-            "THRESHOLD_VALUE": test_definition.threshold_value,
-            "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
-            "GROUPBY_NAMES": test_definition.groupby_names,
-            "HAVING_CONDITION": test_definition.having_condition,
-            "MATCH_SCHEMA_NAME": test_definition.match_schema_name,
-            "MATCH_TABLE_NAME": test_definition.match_table_name,
-            "MATCH_COLUMN_NAMES": test_definition.match_column_names,
-            "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
-            "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,
-            "MATCH_HAVING_CONDITION": test_definition.match_having_condition,
-            "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
-            "WINDOW_DATE_COLUMN": test_definition.window_date_column,
-            "WINDOW_DAYS": test_definition.window_days,
-            "CONCAT_COLUMNS": ConcatColumnList(issue_data["column_names"], "<NULL>"),
-            "CONCAT_MATCH_GROUPBY": ConcatColumnList(test_definition.match_groupby_names, "<NULL>"),
-        }
-
-        lookup_query = replace_params(lookup_data.lookup_query, params)
-        lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
+        
+        lookup_query = get_test_issue_source_query(issue_data)
+        if not lookup_query:
+            return "NA", "Source data lookup is not available for this test.", None, None
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
         results = fetch_from_target_db(connection, lookup_query)
@@ -150,22 +166,33 @@ def get_test_issue_source_data(
         return "ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None
 
 
+def get_test_issue_source_query_custom(
+    issue_data: dict,
+) -> str:
+    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id_current"])
+    if not lookup_data or not lookup_data.lookup_query:
+        return None
+
+    params = {
+        "DATA_SCHEMA": issue_data["schema_name"],
+    }
+    lookup_query = replace_params(lookup_data.lookup_query, params)
+    return lookup_query
+
+
 @st.cache_data(show_spinner=False)
 def get_test_issue_source_data_custom(
     issue_data: dict,
     limit: int | None = None,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
-    lookup_query = None
     try:
-        lookup_data = _get_lookup_data_custom(issue_data["test_definition_id_current"])
-
-        if not lookup_data or not lookup_data.lookup_query:
+        test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+        if not test_definition:
+            return "NA", "Test definition no longer exists.", None, None
+        
+        lookup_query = get_test_issue_source_query_custom(issue_data)
+        if not lookup_query:
             return "NA", "Source data lookup is not available for this test.", None, None
-
-        params = {
-            "DATA_SCHEMA": issue_data["schema_name"],
-        }
-        lookup_query = replace_params(lookup_data.lookup_query, params)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
         results = fetch_from_target_db(connection, lookup_query)

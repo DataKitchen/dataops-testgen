@@ -22,7 +22,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.pdf.hygiene_issue_report import create_report
-from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
+from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data, get_hygiene_issue_source_query
 from testgen.ui.services.database_service import (
     execute_db_query,
     fetch_df_from_db,
@@ -110,7 +110,7 @@ class HygieneIssuesPage(Page):
                     .groupby("column_name")
                     .first()
                     .reset_index()
-                    .sort_values("column_name")
+                    .sort_values("column_name", key=lambda x: x.str.lower())
                 )
             column_name = testgen.select(
                 options=column_options,
@@ -150,13 +150,13 @@ class HygieneIssuesPage(Page):
 
         with sort_column:
             sortable_columns = (
-                ("Table", "r.table_name"),
-                ("Column", "r.column_name"),
+                ("Table", "LOWER(r.table_name)"),
+                ("Column", "LOWER(r.column_name)"),
                 ("Issue Type", "t.anomaly_name"),
                 ("Likelihood", "likelihood_order"),
                 ("Action", "r.disposition"),
             )
-            default = [(sortable_columns[i][1], "ASC") for i in (0, 1)]
+            default = [(sortable_columns[i][1], "ASC") for i in (3, 0, 1)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
@@ -233,7 +233,7 @@ class HygieneIssuesPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run.table_groups_name, run_date, run_id, data),
+                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, data),
             )
 
         with popover_container.container(key="tg--export-popover"):
@@ -401,7 +401,7 @@ def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     FROM profile_anomaly_results r
     LEFT JOIN profile_anomaly_types t on t.id = r.anomaly_id
     WHERE r.profile_run_id = :profiling_run_id
-    ORDER BY r.table_name, r.column_name;
+    ORDER BY LOWER(r.table_name), LOWER(r.column_name);
     """
     return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
 
@@ -434,10 +434,10 @@ def get_profiling_anomalies(
             THEN 'Potential PII: may require privacy policies, standards and procedures for access, storage and transmission.'
         END AS likelihood_explanation,
         CASE
-            WHEN t.issue_likelihood = 'Potential PII' THEN 1
-            WHEN t.issue_likelihood = 'Possible' THEN 2
-            WHEN t.issue_likelihood = 'Likely'   THEN 3
-            WHEN t.issue_likelihood = 'Definite'  THEN 4
+            WHEN t.issue_likelihood = 'Potential PII' THEN 4
+            WHEN t.issue_likelihood = 'Possible' THEN 3
+            WHEN t.issue_likelihood = 'Likely'   THEN 2
+            WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.suggested_action,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
@@ -550,6 +550,7 @@ def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
+    schema: str,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -558,7 +559,6 @@ def get_excel_report_data(
         data = get_profiling_anomalies(run_id)
 
     columns = {
-        "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "anomaly_name": {"header": "Issue Type"},
@@ -571,7 +571,7 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Hygiene Issues",
-        details={"Table group": table_group, "Profiling run date": run_date},
+        details={"Table group": table_group, "Schema": schema, "Profiling run date": run_date},
         columns=columns,
         update_progress=update_progress,
     )
@@ -580,12 +580,18 @@ def get_excel_report_data(
 @st.dialog(title="Source Data")
 @with_database_session
 def source_data_dialog(selected_row):
+    testgen.caption(f"Table > Column: <b>{selected_row['table_name']} > {selected_row['column_name']}</b>")
+
     st.markdown(f"#### {selected_row['anomaly_name']}")
     st.caption(selected_row["anomaly_description"])
-    fm.show_prompt(f"Column: {selected_row['column_name']}, Table: {selected_row['table_name']}")
+    
+    st.markdown("#### Hygiene Issue Detail")
+    st.caption(selected_row["detail"])
 
-    # Show the detail line
-    fm.render_html_list(selected_row, ["detail"], None, 700, ["Hygiene Issue Detail"])
+    st.markdown("#### SQL Query")
+    query = get_hygiene_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql")
 
     with st.spinner("Retrieving source data..."):
         bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)

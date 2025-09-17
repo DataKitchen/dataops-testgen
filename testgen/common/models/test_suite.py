@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, String, asc, text
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, String, asc, func, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -65,8 +65,9 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
+    view_mode: str | None = Column(NullIfEmptyString, default=None)
 
-    _default_order_by = (asc(test_suite),)
+    _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
 
     @classmethod
@@ -182,7 +183,7 @@ class TestSuite(Entity):
             ON (groups.id = suites.table_groups_id)
         WHERE suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
-        ORDER BY suites.test_suite;
+        ORDER BY LOWER(suites.test_suite);
         """
         params = {"project_code": project_code, "table_group_id": table_group_id}
         db_session = get_current_session()

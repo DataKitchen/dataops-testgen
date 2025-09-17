@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "4.22.2"
+version = "4.26.1"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -58,6 +58,7 @@ dependencies = [
     "pydantic==1.10.13",
     "streamlit-pydantic==0.6.0",
     "cron-converter==1.2.1",
+    "cron-descriptor==2.0.5",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",

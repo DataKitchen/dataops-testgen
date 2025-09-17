@@ -11,6 +11,7 @@ import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
@@ -122,7 +123,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
 
     title = "Profiling Schedules"
     arg_label = "Table Group"
-    job_key = "run-profile"
+    job_key = RUN_PROFILE_JOB_KEY
     table_groups: Iterable[TableGroupMinimal] | None = None
 
     def init(self) -> None:
@@ -131,17 +132,14 @@ class ProfilingScheduleDialog(ScheduleDialog):
     def get_arg_value(self, job):
         return next(item.table_groups_name for item in self.table_groups if str(item.id) == job.kwargs["table_group_id"])
 
-    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
-        table_groups_df = to_dataframe(self.table_groups, TableGroupMinimal.columns())
-        tg_id = testgen.select(
-            label="Table Group",
-            options=table_groups_df,
-            value_column="id",
-            display_column="table_groups_name",
-            required=True,
-            placeholder="Select table group",
-        )
-        return bool(tg_id), [], {"table_group_id": str(tg_id)}
+    def get_arg_value_options(self) -> list[dict[str, str]]:
+        return [
+            {"value": str(table_group.id), "label": table_group.table_groups_name}
+            for table_group in self.table_groups
+        ]
+
+    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
+        return [], {"table_group_id": str(arg_value)}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:

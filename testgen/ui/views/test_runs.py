@@ -10,6 +10,7 @@ import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
@@ -140,7 +141,7 @@ class TestRunScheduleDialog(ScheduleDialog):
 
     title = "Test Run Schedules"
     arg_label = "Test Suite"
-    job_key = "run-tests"
+    job_key = RUN_TESTS_JOB_KEY
     test_suites: Iterable[TestSuiteMinimal] | None = None
 
     def init(self) -> None:
@@ -149,17 +150,14 @@ class TestRunScheduleDialog(ScheduleDialog):
     def get_arg_value(self, job):
         return job.kwargs["test_suite_key"]
 
-    def arg_value_input(self) -> tuple[bool, list[typing.Any], dict[str, typing.Any]]:
-        test_suites_df = to_dataframe(self.test_suites, TestSuiteMinimal.columns())
-        ts_name = testgen.select(
-            label="Test Suite",
-            options=test_suites_df,
-            value_column="test_suite",
-            display_column="test_suite",
-            required=True,
-            placeholder="Select test suite",
-        )
-        return bool(ts_name), [], {"project_key": self.project_code, "test_suite_key": ts_name}
+    def get_arg_value_options(self) -> list[dict[str, str]]:
+        return [
+            {"value": test_suite.test_suite, "label": test_suite.test_suite}
+            for test_suite in self.test_suites
+        ]
+
+    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
+        return [], {"project_key": self.project_code, "test_suite_key": arg_value}
 
 
 def render_empty_state(project_code: str, user_can_run: bool) -> bool:

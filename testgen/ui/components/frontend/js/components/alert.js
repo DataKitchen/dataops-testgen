@@ -6,6 +6,7 @@
  * @property {boolean?} closeable
  * @property {string?} class
  * @property {'info'|'success'|'warn'|'error'} type
+ * @property {Function?} onClose
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet, getRandomId } from '../utils.js';
@@ -19,7 +20,7 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
 
     const elementId = getValue(props.id) ?? 'tg-alert-' + getRandomId();
     const close = () => {
-        document.getElementById(elementId)?.remove();
+        props.onClose ? props.onClose() : document.getElementById(elementId)?.remove();
     };
     const timeout = getValue(props.timeout);
     if (timeout && timeout > 0) {
@@ -55,6 +56,7 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
                 type: 'icon',
                 icon: 'close',
                 style: `margin-left: auto;`,
+                onclick: close,
             });
         },
     );

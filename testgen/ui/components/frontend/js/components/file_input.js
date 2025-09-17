@@ -20,7 +20,7 @@
  * 
  */
 import van from '../van.min.js';
-import { getRandomId, getValue, loadStylesheet } from "../utils.js";
+import { checkIsRequired, getRandomId, getValue, loadStylesheet } from "../utils.js";
 import { Icon } from './icon.js';
 import { Button } from './button.js';
 import { humanReadableSize } from '../display_utils.js';
@@ -48,17 +48,24 @@ const FileInput = (options) => {
         const validators = getValue(options.validators) ?? [];
         return validators.map(v => v(value.val)).filter(error => error);
     });
+    const isRequired = van.state(false);
+
+    van.derive(() => {
+        isRequired.val = checkIsRequired(getValue(options.validators) ?? []);
+    });
 
     let sizeLimit = undefined;
-    let sizeLimitValidator = (getValue(options.validators) ?? []).filter(v => v.args.name === 'sizeLimit')[0];
+    let sizeLimitValidator = (getValue(options.validators) ?? []).filter(v => v.args?.name === 'sizeLimit')[0];
     if (sizeLimitValidator) {
         sizeLimit = sizeLimitValidator.args.limit;
     }
 
+    let hasBeenChecked = false;
     van.derive(() => {
-        if (options.onChange && (value.val !== value.oldVal || errors.val.length !== errors.oldVal.length)) {
+        if (options.onChange && (!hasBeenChecked || value.val !== value.oldVal || errors.val.length !== errors.oldVal.length)) {
             options.onChange(value.val, { errors: errors.val, valid: errors.val.length <= 0 });
         }
+        hasBeenChecked = true;
     });
 
     const browseFile = () => {
@@ -106,8 +113,11 @@ const FileInput = (options) => {
     return div(
         { class: cssClass },
         label(
-            { class: 'tg-file-uploader--label' },
+            { class: 'tg-file-uploader--label text-caption flex-row fx-gap-1' },
             options.label,
+            () => isRequired.val
+                ? span({ class: 'text-error' }, '*')
+                : '',
         ),
         div(
             { class: () => `tg-file-uploader--dropzone flex-column clickable ${fileOver.val ? 'on-dragover' : ''}` },

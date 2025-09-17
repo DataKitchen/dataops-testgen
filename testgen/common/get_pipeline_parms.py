@@ -21,6 +21,8 @@ class ProfilingParams(BaseParams):
     profile_sample_min_count: int
     profile_do_pair_rules: str
     profile_pair_rule_pct: int
+    monitor_test_suite_id: str | None
+    last_complete_profile_run_id: str | None
 
 
 class TestGenerationParams(BaseParams):

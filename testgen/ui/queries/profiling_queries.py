@@ -72,7 +72,7 @@ boolean_true_ct
 def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None) -> pd.DataFrame:
     order_by = ""
     if sorting_columns is None:
-        order_by = "ORDER BY schema_name, table_name, position"
+        order_by = "ORDER BY LOWER(schema_name), LOWER(table_name), position"
     elif len(sorting_columns):
         order_by = "ORDER BY " + ", ".join(" ".join(col) for col in sorting_columns)
 
@@ -252,7 +252,7 @@ def get_tables_by_condition(
         )
         """ if include_active_tests else ""}
     {filter_condition}
-    ORDER BY table_name;
+    ORDER BY LOWER(table_chars.table_name);
     """
 
     results = fetch_all_from_db(query, filter_params)
@@ -410,7 +410,7 @@ def get_columns_by_condition(
             AND column_chars.column_name = profile_results.column_name
         )
     {filter_condition}
-    ORDER BY table_name, ordinal_position;
+    ORDER BY LOWER(column_chars.table_name), ordinal_position;
     """
     results = fetch_all_from_db(query, filter_params)
     return [ dict(row) for row in results ]
@@ -459,7 +459,7 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
             WHEN 'Moderate' THEN 2
             ELSE 3
         END,
-        column_name;
+        LOWER(column_name);
     """
     params = {
         "profile_run_id": profile_run_id,

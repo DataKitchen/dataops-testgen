@@ -36,7 +36,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatTimestamp } from '../display_utils.js';
+import { formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
@@ -60,7 +60,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     const filteredTableGroups = van.state(getValue(tableGroups));
 
     const sortFunctions = {
-        table_groups_name: (a, b) => a.table_groups_name.toLowerCase().localeCompare(b.table_groups_name.toLowerCase()),
+        table_groups_name: (a, b) => caseInsensitiveSort(a.table_groups_name, b.table_groups_name),
         latest_activity_date: (a, b) => Math.max(b.latest_profile_start, b.latest_tests_start) - Math.max(a.latest_profile_start, a.latest_tests_start),
         lowest_score: (a, b) => {
             const scoreA = a.dq_score ? (a.dq_score.startsWith('>') ? 99.99 : Number(a.dq_score)) : 101;
@@ -73,7 +73,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
         const sortByField = getValue(tableGroupsSortOption);
         const sortFn = sortFunctions[sortByField] ?? sortFunctions.latest_activity_date;
 
-        filteredTableGroups.val = getValue(tableGroups).filter(group => group.table_groups_name.toLowerCase().includes(searchTerm.toLowerCase() ?? '')).sort(sortFn);
+        filteredTableGroups.val = getValue(tableGroups).filter(group => caseInsensitiveIncludes(group.table_groups_name, searchTerm ?? '')).sort(sortFn);
     }
 
     onFiltersChange();

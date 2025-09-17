@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import Column, String, asc, text
+from sqlalchemy import Column, String, asc, func, text
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
@@ -34,7 +34,7 @@ class Project(Entity):
     observability_api_key: str = Column(NullIfEmptyString)
 
     _get_by = "project_code"
-    _default_order_by = (asc(project_name),)
+    _default_order_by = (asc(func.lower(project_name)),)
 
     @classmethod
     @st.cache_data(show_spinner=False)

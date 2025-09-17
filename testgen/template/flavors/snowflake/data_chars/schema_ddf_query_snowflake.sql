@@ -18,21 +18,22 @@ SELECT '{PROJECT_CODE}'            as project_code,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
-           WHEN c.data_type ILIKE '%char%' OR c.data_type = 'TEXT'
+           WHEN c.data_type = 'TEXT'
                THEN 'A'
-           WHEN c.data_type ILIKE 'boolean'
+           WHEN c.data_type = 'BOOLEAN'
                THEN 'B'
-           WHEN c.data_type ILIKE 'date'
-               OR c.data_type ILIKE 'timestamp%'
+           WHEN c.data_type = 'DATE'
+               OR c.data_type ILIKE 'TIMESTAMP%'
                THEN 'D'
-           WHEN c.data_type = 'time without time zone'
+           WHEN c.data_type = 'TIME'
                THEN 'T'
-           WHEN lower(c.data_type) IN ('bigint', 'double precision', 'integer', 'smallint', 'real', 'float')
-               OR c.data_type ILIKE 'num%'
+           WHEN c.data_type = 'NUMBER'
+               OR c.data_type = 'FLOAT'
                THEN 'N'
            ELSE
-               'X' END          AS general_type,
-       numeric_scale > 0        as is_decimal
+               'X'
+           END AS general_type,
+       numeric_scale > 0 AS is_decimal
 FROM information_schema.columns c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

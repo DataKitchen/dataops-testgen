@@ -46,7 +46,7 @@ class CliScheduler(Scheduler):
         self.reload_timer.start()
 
         jobs = {}
-        for (job_model,) in JobSchedule.select_where():
+        for job_model in JobSchedule.select_where():
             if job_model.key not in JOB_REGISTRY:
                 LOG.error("Job '%s' scheduled but not registered", job_model.key)
                 continue

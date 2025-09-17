@@ -4,11 +4,16 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 from cron_converter import Cron
-from sqlalchemy import Column, String, select
+from sqlalchemy import Column, String, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import Base, get_current_session
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_suite import TestSuite
+
+RUN_TESTS_JOB_KEY = "run-tests"
+RUN_PROFILE_JOB_KEY = "run-profile"
 
 
 class JobSchedule(Base):
@@ -25,7 +30,23 @@ class JobSchedule(Base):
 
     @classmethod
     def select_where(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
-        query = select(cls).where(*clauses).order_by(order_by)
+        test_definitions_count = (
+            select(cls.id)
+            .join(TestSuite, TestSuite.test_suite == cls.kwargs["test_suite_key"].astext)
+            .join(TestDefinition, TestDefinition.test_suite_id == TestSuite.id)
+            .where(cls.key == RUN_TESTS_JOB_KEY)
+            .group_by(cls.id, TestSuite.test_suite)
+            .having(func.count(TestDefinition.id) > 0)
+            .subquery()
+        )
+        test_runs_query = (
+            select(cls)
+            .join(test_definitions_count, test_definitions_count.c.id == cls.id)
+            .where(*clauses)
+        )
+        non_test_runs_query = select(cls).where(cls.key != RUN_TESTS_JOB_KEY, *clauses)
+        query = test_runs_query.union_all(non_test_runs_query).order_by(order_by)
+
         return get_current_session().execute(query)
 
     @classmethod

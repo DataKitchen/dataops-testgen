@@ -55,7 +55,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key {test_suite_name}",
+            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}'",
             language="shellSession",
         )
 
@@ -91,11 +91,8 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) AS unlocked_test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' AND td.last_manual_update IS NOT NULL THEN 1 ELSE 0 END) AS unlocked_edits_ct
         FROM test_definitions td
-        INNER JOIN test_types tt
-            ON (td.test_type = tt.test_type)
         WHERE td.test_suite_id = :test_suite_id
-            AND tt.run_type = 'CAT'
-            AND tt.selection_criteria IS NOT NULL;
+            AND td.last_auto_gen_date IS NOT NULL;
         """,
         {"test_suite_id": test_suite_id},
     )

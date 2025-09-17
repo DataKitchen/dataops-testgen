@@ -4,13 +4,14 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, text, update
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
 
@@ -52,6 +53,11 @@ class TableGroup(Entity):
     id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String, ForeignKey("projects.project_code"))
     connection_id: int = Column(BigInteger, ForeignKey("connections.connection_id"))
+    monitor_test_suite_id: UUID | None = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("test_suites.id"),
+        default=None,
+    )
     table_groups_name: str = Column(String)
     table_group_schema: str = Column(String)
     profiling_table_set: str = Column(NullIfEmptyString)
@@ -80,7 +86,7 @@ class TableGroup(Entity):
     dq_score_profiling: float = Column(Float)
     dq_score_testing: float = Column(Float)
 
-    _default_order_by = (asc(table_groups_name),)
+    _default_order_by = (asc(func.lower(table_groups_name)),)
     _minimal_columns = TableGroupMinimal.__annotations__.keys()
     _update_exclude_columns = (
         id,
@@ -260,7 +266,12 @@ class TableGroup(Entity):
         cls.select_minimal_where.clear()
         cls.select_summary.clear()
 
-    def save(self, add_scorecard_definition: bool = False) -> None:
+    def save(
+        self,
+        add_scorecard_definition: bool = False,
+        add_monitor_test_suite: bool = False,
+        monitor_schedule_timezone: str = "UTC",
+    ) -> None:
         if self.id:
             values = {
                 column.key: getattr(self, column.key, None)
@@ -273,7 +284,38 @@ class TableGroup(Entity):
             db_session.commit()
         else:
             super().save()
+            db_session = get_current_session()
+
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
+
+            if add_monitor_test_suite:
+                test_suite = TestSuite(
+                    project_code=self.project_code,
+                    test_suite=f"{self.table_groups_name} Monitor",
+                    connection_id=self.connection_id,
+                    table_groups_id=self.id,
+                    export_to_observability=False,
+                    dq_score_exclude=True,
+                    view_mode="Monitor",
+                )
+                test_suite.save()
+
+                schedule_job = JobSchedule(
+                    project_code=self.project_code,
+                    key=RUN_TESTS_JOB_KEY,
+                    cron_expr="0 * * * *",
+                    cron_tz=monitor_schedule_timezone,
+                    args=[],
+                    kwargs={"project_key": self.project_code, "test_suite_key": test_suite.test_suite},
+                )
+                db_session.add(schedule_job)
+
+                self.monitor_test_suite_id = test_suite.id
+                db_session.execute(
+                    update(TableGroup)
+                    .where(TableGroup.id == self.id).values(monitor_test_suite_id=test_suite.id)
+                )
+                db_session.commit()
 
         TableGroup.clear_cache()

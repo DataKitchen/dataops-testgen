@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import streamlit as st
 from sqlalchemy import (
@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     asc,
+    func,
     insert,
     select,
     text,
@@ -146,7 +147,7 @@ class TestType(Entity):
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"))
     cat_test_id: int = Column(BigInteger, Identity(), primary_key=True)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
@@ -194,7 +195,7 @@ class TestDefinition(Entity):
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
 
-    _default_order_by = (asc(schema_name), asc(table_name), asc(column_name), asc(test_type))
+    _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
         *[key for key in TestDefinitionSummary.__annotations__.keys() if key != "default_test_description"],
         TestType.test_description.label("default_test_description"),

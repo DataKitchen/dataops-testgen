@@ -3,6 +3,7 @@ import { dot } from '../components/dot.js';
 import { Caption } from '../components/caption.js';
 import { Select } from '../components/select.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { caseInsensitiveSort } from '../display_utils.js';
 import { getScoreColor } from '../score_utils.js';
 
 const { div, i, span } = van.tags;
@@ -23,7 +24,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         label: '',
                         value: selectedCategory,
                         options:  Object.entries(CATEGORIES)
-                            .sort((A, B) => A[1].localeCompare(B[1]))
+                            .sort((A, B) => caseInsensitiveSort(A[1], B[1]))
                             .map(([value, label]) => ({ value, label })),
                         height: 32,
                         onChange: (value) => emitEvent('CategoryChanged', { payload: value }),

@@ -38,7 +38,8 @@ id_cols
                         ELSE 3
                      END, distinct_value_ct, column_name DESC) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'ID%'),
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'ID%'),
 -- Process Date - TOP 1
 process_date_cols
    AS (SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
@@ -52,7 +53,8 @@ process_date_cols
                WHEN column_name ILIKE '%in%'  THEN 2
              END , distinct_value_ct DESC, column_name) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'process%'),
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'process%'),
 -- Transaction Date - TOP 1
 tran_date_cols
    AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
@@ -61,7 +63,9 @@ tran_date_cols
                   ORDER BY
                      distinct_value_ct DESC, column_name) AS rank
           FROM curprof
-         WHERE functional_data_type ILIKE 'transactional date%' OR functional_data_type ILIKE 'period%'
+         WHERE general_type IN ('A', 'D', 'N')
+           AND functional_data_type ILIKE 'transactional date%'
+            OR functional_data_type ILIKE 'period%'
             OR functional_data_type = 'timestamp' ),
 
 -- Numeric Measures
@@ -117,9 +121,9 @@ newtests AS (
       'CAST(COUNT(*) AS varchar) + ''|'' + ' || STRING_AGG(
          REPLACE(
             CASE
-               WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS varchar)'
-               WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS varchar) + ''|'' + CAST(SUM(LEN(@@@)) AS varchar)'
-               WHEN general_type = 'N' THEN 'CAST(MIN(@@@) AS varchar) + ''|'' + MAX(CAST(@@@ AS varchar)) + ''|'' + CAST(SUM(@@@) AS varchar) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS varchar) + ''|'' + CAST(ROUND(STDEV(@@@), 5) AS varchar)'
+               WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR)'
+               WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR) + ''|'' + CAST(SUM(LEN(@@@)) AS NVARCHAR)'
+               WHEN general_type = 'N' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(SUM(@@@) AS NVARCHAR) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS NVARCHAR) + ''|'' + CAST(ROUND(STDEV(CAST(@@@ AS FLOAT)), 5) AS NVARCHAR)'
             END,
             '@@@', '"' || column_name || '"'
          ),

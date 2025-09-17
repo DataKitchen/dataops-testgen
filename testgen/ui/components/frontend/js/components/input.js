@@ -23,6 +23,7 @@
  * @property {boolean?} passwordSuggestions
  * @property {function(string, InputState)?} onChange
  * @property {boolean?} disabled
+ * @property {boolean?} readonly
  * @property {function(string, InputState)?} onClear
  * @property {number?} width
  * @property {number?} height
@@ -34,10 +35,11 @@
  * @property {Array<Validator>?} validators
  */
 import van from '../van.min.js';
-import { debounce, getValue, loadStylesheet, getRandomId } from '../utils.js';
+import { debounce, getValue, loadStylesheet, getRandomId, checkIsRequired } from '../utils.js';
 import { Icon } from './icon.js';
 import { withTooltip } from './tooltip.js';
 import { Portal } from './portal.js';
+import { caseInsensitiveIncludes } from '../display_utils.js';
 
 const { div, input, label, i, small, span } = van.tags;
 const defaultHeight = 38;
@@ -53,10 +55,6 @@ const Input = (/** @type Properties */ props) => {
 
     const domId = van.derive(() => getValue(props.id) ?? getRandomId());
     const value = van.derive(() => getValue(props.value) ?? '');
-    const isRequired = van.derive(() => {
-        const validators = getValue(props.validators) ?? [];
-        return validators.some(v => v.name === 'required');
-    });
     const errors = van.derive(() => {
         const validators = getValue(props.validators) ?? [];
         return validators.map(v => v(value.val)).filter(error => error);
@@ -64,10 +62,10 @@ const Input = (/** @type Properties */ props) => {
     const firstError = van.derive(() => {
         return errors.val[0] ?? '';
     });
-
     const originalInputType = van.derive(() => getValue(props.type) ?? 'text');
     const inputType = van.state(originalInputType.rawVal);
 
+    const isRequired = van.state(false);
     const isDirty = van.state(false);
     const onChange = props.onChange?.val ?? props.onChange;
     if (onChange) {
@@ -80,11 +78,15 @@ const Input = (/** @type Properties */ props) => {
         }
     });
 
+    van.derive(() => {
+        isRequired.val = checkIsRequired(getValue(props.validators) ?? []);
+    });
+
     const onClear = props.onClear?.val ?? props.onClear ?? (() => value.val = '');
 
     const autocompleteOpened = van.state(false);
     const autocompleteOptions = van.derive(() => {
-        const filtered = getValue(props.autocompleteOptions)?.filter(option => option.toLowerCase().includes(value.val.toLowerCase()));
+        const filtered = getValue(props.autocompleteOptions)?.filter(option => caseInsensitiveIncludes(option, value.val));
         if (!filtered?.length) {
             autocompleteOpened.val = false;
         }
@@ -134,6 +136,7 @@ const Input = (/** @type Properties */ props) => {
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(props.readonly ? {readonly: true} : {}),
                 ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),
                 placeholder: () => getValue(props.placeholder) ?? '',
                 oninput: debounce((/** @type Event */ event) => {

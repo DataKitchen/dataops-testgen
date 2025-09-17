@@ -39,7 +39,7 @@ def _filter_by_date(log_data, start_date, end_date):
 
 # Function to search text in log data
 def _search_text(log_data, search_query):
-    return [line for line in log_data if search_query in line]
+    return [line for line in log_data if search_query.lower() in line.lower()]
 
 
 @st.dialog(title="Application Logs")

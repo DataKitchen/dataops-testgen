@@ -28,6 +28,7 @@ import { Select } from '../components/select.js';
 import { Icon } from '../components/icon.js';
 import { withTooltip } from '../components/tooltip.js';
 import { Input } from '../components/input.js';
+import { caseInsensitiveSort } from '../display_utils.js';
 
 const { div, h4, i, span } = van.tags;
 
@@ -292,7 +293,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
  */
 const TruncatedText = ({ max, ...options }, ...children) => {
     const sortedChildren = [...children.sort((a, b) => a.length - b.length)];
-    const tooltipText = children.sort((a, b) => a.localeCompare(b)).join(', ');
+    const tooltipText = children.sort(caseInsensitiveSort).join(', ');
 
     return div(
         { class: () => `${options.class ?? ''}`, style: 'position: relative;' },

@@ -13,6 +13,22 @@ function required(value) {
     return null;
 }
 
+/**
+ * @param {(v: any) => bool} condition 
+ * @returns {Validator}
+ */
+function requiredIf(condition) {
+    const validator = (value) => {
+        if (condition(value)) {
+            return required(value);
+        }
+        return null;
+    }
+    validator['args'] = { name: 'requiredIf', condition };
+
+    return validator;
+}
+
 function noSpaces(value) {
     if (value?.includes(' ')) {
         return `Value cannot contain spaces.`;
@@ -76,5 +92,6 @@ export {
     minLength,
     noSpaces,
     required,
+    requiredIf,
     sizeLimit,
 };
