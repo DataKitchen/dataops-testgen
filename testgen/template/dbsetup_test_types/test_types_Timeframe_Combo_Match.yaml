@@ -43,12 +43,12 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       EXCEPT
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
@@ -56,13 +56,13 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
           EXCEPT
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
@@ -75,12 +75,12 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
       EXCEPT
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
@@ -88,13 +88,13 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
         AND {WINDOW_DATE_COLUMN} < DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
           EXCEPT
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}))
@@ -107,12 +107,12 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       EXCEPT
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
@@ -120,13 +120,13 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
           EXCEPT
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
@@ -139,12 +139,12 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       EXCEPT
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
@@ -152,13 +152,13 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
           EXCEPT
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
@@ -171,12 +171,12 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       EXCEPT
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
@@ -184,13 +184,13 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
           EXCEPT
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM {TARGET_SCHEMA}.{TABLE_NAME}
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
