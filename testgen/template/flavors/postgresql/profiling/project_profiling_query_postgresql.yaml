@@ -25,7 +25,7 @@ strTemplate03_else:  NULL as min_length,
 strTemplate04_A:  SUM(CASE
         WHEN TRIM("{COL_NAME}") ~ '^0(\.0*)?$' THEN 1 ELSE 0
       END)  AS zero_value_ct,
-strTemplate04_N:  SUM( 1 - ABS(SIGN("{COL_NAME}")) )::BIGINT AS zero_value_ct,
+strTemplate04_N:  SUM( 1 - ABS(SIGN("{COL_NAME}"::NUMERIC)) )::BIGINT AS zero_value_ct,
 strTemplate04_else: NULL as zero_value_ct,
 strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) as distinct_std_value_ct,
   SUM(CASE
@@ -135,10 +135,10 @@ strTemplate07_A_freq:  (  SELECT LEFT(STRING_AGG(val, ' | ' ORDER BY ct DESC), 1
   )  AS top_freq_values,
 strTemplate07_else: NULL as top_freq_values,
 strTemplate08_N: MIN("{COL_NAME}")  AS min_value,
-  MIN(CASE WHEN "{COL_NAME}" > 0 THEN "{COL_NAME}" ELSE NULL END)  AS min_value_over_0,
+  MIN(CASE WHEN "{COL_NAME}"::NUMERIC > 0 THEN "{COL_NAME}" ELSE NULL END)  AS min_value_over_0,
   MAX("{COL_NAME}")  AS max_value,
-  AVG(CAST("{COL_NAME}" AS FLOAT))  AS avg_value,
-  STDDEV(CAST("{COL_NAME}" AS FLOAT))  AS stdev_value,
+  AVG(CAST("{COL_NAME}"::NUMERIC AS FLOAT))  AS avg_value,
+  STDDEV(CAST("{COL_NAME}"::NUMERIC AS FLOAT))  AS stdev_value,
   MIN(pct_25) as percentile_25,
   MIN(pct_50) as percentile_50,
   MIN(pct_75) as percentile_75,
@@ -243,16 +243,16 @@ strTemplate98_else: ' FROM {DATA_SCHEMA}.{DATA_TABLE} '
 
 strTemplate99_N: |
   , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_75
         FROM {DATA_SCHEMA}.{DATA_TABLE} LIMIT 1) pctile
 
 strTemplate99_N_sampling: |
   , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_75
         FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64) LIMIT 1) pctile
 
 strTemplate99_else: ' '
