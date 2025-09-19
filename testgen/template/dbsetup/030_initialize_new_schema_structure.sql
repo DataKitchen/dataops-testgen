@@ -621,7 +621,7 @@ CREATE TABLE target_data_lookups (
    lookup_query VARCHAR,
    error_type   VARCHAR(30)  NOT NULL,
    CONSTRAINT target_data_lookups_test_id_sql_flavor_error_type_pk
-      PRIMARY KEY (test_id, sql_flavor, error_type),
+      PRIMARY KEY (test_id, sql_flavor, error_type)
 );
 
 CREATE TABLE variant_codings (
