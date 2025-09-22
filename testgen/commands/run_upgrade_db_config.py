@@ -5,6 +5,7 @@ from testgen.common import execute_db_queries, fetch_dict_from_db, read_template
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import replace_params
 from testgen.common.read_file import get_template_files
+from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
 
 LOG = logging.getLogger("testgen")
 
@@ -92,6 +93,16 @@ def _refresh_static_metadata(params_mapping):
 
     execute_db_queries(
         [(strQueryMetadata, None), (strQueryViews, None), (strQueryRights, None)],
+        user_override=params_mapping["TESTGEN_ADMIN_USER"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
+    )
+    import_metadata_records_from_yaml(params_mapping)
+
+    strQueryMetadataConstraints = read_template_sql_file("055_recreate_metadata_constraints.sql", "dbsetup")
+    strQueryMetadataConstraints = replace_params(strQueryMetadataConstraints, params_mapping)
+    execute_db_queries(
+        [(strQueryMetadataConstraints, None)],
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",

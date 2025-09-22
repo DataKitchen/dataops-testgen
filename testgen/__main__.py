@@ -31,6 +31,7 @@ from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
 from testgen.commands.run_profiling_bridge import run_profiling_queries
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
+from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.common import (
     configure_logging,
@@ -501,6 +502,25 @@ def export_data(configuration: Configuration, project_key: str, test_suite_key: 
     run_observability_exporter(project_key, test_suite_key)
     LOG.info("CurrentStep: Main Program - Observability Export - DONE")
     click.echo("\nexport-observability completed successfully.\n")
+
+
+@click.option(
+    "--path",
+    help="Path to the templates folder. Defaults to path from project root.",
+    required=False,
+    default="testgen/template",
+)
+@cli.command("export-test-metadata", help="Exports current test metadata records to yaml files.")
+@pass_configuration
+def export_test_metadata(configuration: Configuration, path: str):
+    click.echo("export-test-metadata")
+    LOG.info("CurrentStep: Main Program - Test Metadata Export")
+    if not os.path.isdir(path):
+        LOG.error(f"Provided path {path} is not a directory. Please correct the --path option.")
+        return
+    run_test_metadata_exporter(path)
+    LOG.info("CurrentStep: Main Program - Test Metadata Export - DONE")
+    click.echo("\nexport-test-metadata completed successfully.\n")
 
 
 @cli.command("list-test-types", help="Lists all available TestGen test types.")
