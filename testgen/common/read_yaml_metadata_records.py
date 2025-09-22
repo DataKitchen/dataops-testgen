@@ -1,4 +1,4 @@
-__all__ = ["import_metadata_records_from_yaml", "export_metadata_records_to_yaml"]
+__all__ = ["export_metadata_records_to_yaml", "import_metadata_records_from_yaml"]
 
 import logging
 from importlib.resources import as_file

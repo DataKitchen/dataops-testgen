@@ -516,7 +516,7 @@ def export_test_metadata(configuration: Configuration, path: str):
     click.echo("export-test-metadata")
     LOG.info("CurrentStep: Main Program - Test Metadata Export")
     if not os.path.isdir(path):
-        LOG.error("Provided path {path} is not a directory. Please correct the --path option.")
+        LOG.error(f"Provided path {path} is not a directory. Please correct the --path option.")
         return
     run_test_metadata_exporter(path)
     LOG.info("CurrentStep: Main Program - Test Metadata Export - DONE")
