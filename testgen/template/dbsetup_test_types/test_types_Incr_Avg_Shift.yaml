@@ -30,23 +30,15 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Maximum Z-Score (number of SD's beyond mean) expected
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This is a more sensitive test than Average Shift, because it calculates an incremental difference in the average of new values compared to the average of values at baseline. This is appropriate for a cumulative dataset only, because it calculates the average of new entries based on the assumption that the count and average of records present at baseline are still present at the time of the test. This test compares the mean of new values with the standard deviation of the baseline average to calculate a Z-score.  If the new mean falls outside the Z-score threshold, a shift is detected. Potential Z-score thresholds may range from 0 to 3, depending on the sensitivity you prefer.  A failed test could indicate a quality issue or a legitimate shift in new data that should be noted and assessed by business users. Consider this test along with Variability Increase. If variability rises too, process, methodology or measurement flaws could be at issue. If variability remains consistent, the problem is more likely to be with the source data itself.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1012'
+  - id: '6012'
     test_type: Incr_Avg_Shift
-    sql_flavor: redshift
-    measure: |-
-      NVL(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2012'
-    test_type: Incr_Avg_Shift
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
     test_operator: '>='
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift
+    measure: |-
+      NVL(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: snowflake
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5012'
     test_type: Incr_Avg_Shift
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6012'
+  target_data_lookups:
+  - id: '1309'
+    test_id: '1017'
     test_type: Incr_Avg_Shift
     sql_flavor: databricks
-    measure: |-
-      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1012'
-    test_id: '1017'
-    test_type: Incr_Avg_Shift
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1094'
-    test_id: '1017'
-    test_type: Incr_Avg_Shift
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   - id: '1151'
     test_id: '1017'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}") AS FLOAT), 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
+  - id: '1094'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1012'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1208'
     test_id: '1017'
     test_type: Incr_Avg_Shift
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1309'
-    test_id: '1017'
-    test_type: Incr_Avg_Shift
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   test_templates: []

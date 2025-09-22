@@ -504,12 +504,21 @@ def export_data(configuration: Configuration, project_key: str, test_suite_key: 
     click.echo("\nexport-observability completed successfully.\n")
 
 
+@click.option(
+    "--path",
+    help="Path to the templates folder. Defaults to path from project root.",
+    required=False,
+    default="testgen/template",
+)
 @cli.command("export-test-metadata", help="Exports current test metadata records to yaml files.")
 @pass_configuration
-def export_test_metadata(configuration: Configuration):
+def export_test_metadata(configuration: Configuration, path: str):
     click.echo("export-test-metadata")
     LOG.info("CurrentStep: Main Program - Test Metadata Export")
-    run_test_metadata_exporter()
+    if not os.path.isdir(path):
+        LOG.error("Provided path {path} is not a directory. Please correct the --path option.")
+        return
+    run_test_metadata_exporter(path)
     LOG.info("CurrentStep: Main Program - Test Metadata Export - DONE")
     click.echo("\nexport-test-metadata completed successfully.\n")
 

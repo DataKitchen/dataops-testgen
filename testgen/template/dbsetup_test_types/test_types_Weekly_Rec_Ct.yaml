@@ -30,25 +30,17 @@ test_types:
   health_dimension: Volume
   threshold_description: |-
     Expected maximum count of calendar weeks without dates present
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     Weekly Records tests that at least one record is present for every calendar week within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each week. A failure here would suggest missing records for the number of weeks identified without data. You can adjust the threshold to accept a number of weeks that you know legitimately have no records.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1030'
+  - id: '6030'
     test_type: Weekly_Rec_Ct
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2030'
-    test_type: Weekly_Rec_Ct
-    sql_flavor: snowflake
-    measure: |-
-      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+      CAST(<%DATEDIFF_WEEK;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%> + 1 - COUNT(DISTINCT DATE_TRUNC('week', {COLUMN_NAME})) AS INT)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1030'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: redshift
+    measure: |-
+      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2030'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: snowflake
+    measure: |-
+      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5030'
     test_type: Weekly_Rec_Ct
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6030'
+  target_data_lookups:
+  - id: '1327'
+    test_id: '1037'
     test_type: Weekly_Rec_Ct
     sql_flavor: databricks
-    measure: |-
-      CAST(<%DATEDIFF_WEEK;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%> + 1 - COUNT(DISTINCT DATE_TRUNC('week', {COLUMN_NAME})) AS INT)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1030'
-    test_id: '1037'
-    test_type: Weekly_Rec_Ct
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('week',MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM {TARGET_SCHEMA}.{TABLE_NAME} UNION ALL SELECT (d.all_dates + INTERVAL '1 week' ) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('week', MAX("{COLUMN_NAME}")) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ),  existing_periods AS ( SELECT DISTINCT DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE ) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_week_count, MIN(c.period) AS next_available_week, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_week_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
-    error_type: Test Results
-  - id: '1112'
-    test_id: '1037'
-    test_type: Weekly_Rec_Ct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('week', MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM {TARGET_SCHEMA}.{TABLE_NAME} UNION ALL SELECT (d.all_dates + INTERVAL '1 week' ) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('week' , MAX("{COLUMN_NAME}")) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS (SELECT DISTINCT DATE_TRUNC('week', "{COLUMN_NAME}") :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC('week', "{COLUMN_NAME}") :: DATE) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_week_count, MIN(c.period) AS next_available_week, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_week_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+      WITH daterange AS( SELECT explode(sequence( date_trunc('week', (SELECT min(`{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME})), date_trunc('week', (SELECT max(`{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME})), interval 1 week)) AS all_dates ), existing_periods AS ( SELECT DISTINCT date_trunc('week', `{COLUMN_NAME}`) AS period, COUNT(1) AS period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY date_trunc('week', `{COLUMN_NAME}`) ) SELECT p.missing_period, p.prior_available_week, e.period_count AS prior_available_week_count, p.next_available_week, f.period_count AS next_available_week_count FROM ( SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ) p LEFT JOIN existing_periods e ON p.prior_available_week = e.period LEFT JOIN existing_periods f ON p.next_available_week = f.period ORDER BY p.missing_period;
     error_type: Test Results
   - id: '1169'
     test_id: '1037'
@@ -149,6 +141,22 @@ test_types:
           OR next_record_ct = 0
       ORDER BY check_period DESC;
     error_type: Test Results
+  - id: '1112'
+    test_id: '1037'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('week', MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM {TARGET_SCHEMA}.{TABLE_NAME} UNION ALL SELECT (d.all_dates + INTERVAL '1 week' ) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('week' , MAX("{COLUMN_NAME}")) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS (SELECT DISTINCT DATE_TRUNC('week', "{COLUMN_NAME}") :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC('week', "{COLUMN_NAME}") :: DATE) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_week_count, MIN(c.period) AS next_available_week, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_week_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+    error_type: Test Results
+  - id: '1030'
+    test_id: '1037'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('week',MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM {TARGET_SCHEMA}.{TABLE_NAME} UNION ALL SELECT (d.all_dates + INTERVAL '1 week' ) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('week', MAX("{COLUMN_NAME}")) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ),  existing_periods AS ( SELECT DISTINCT DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE ) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_week_count, MIN(c.period) AS next_available_week, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_week_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+    error_type: Test Results
   - id: '1226'
     test_id: '1037'
     test_type: Weekly_Rec_Ct
@@ -156,13 +164,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('week',MIN("{COLUMN_NAME}")) :: DATE AS all_dates  FROM {TARGET_SCHEMA}.{TABLE_NAME}  UNION ALL  SELECT (d.all_dates + INTERVAL '1 week' ) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC('week', MAX("{COLUMN_NAME}")) :: DATE FROM {TARGET_SCHEMA}.{TABLE_NAME}) ), existing_periods AS ( SELECT DISTINCT DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) as period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY DATE_TRUNC('week',"{COLUMN_NAME}") :: DATE ) SELECT p.missing_period, p.prior_available_week, e.period_count as prior_available_week_count, p.next_available_week, f.period_count as next_available_week_count FROM( SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ) p LEFT JOIN existing_periods e ON (p.prior_available_week = e.period) LEFT JOIN existing_periods f ON (p.next_available_week = f.period) ORDER BY p.missing_period;
-    error_type: Test Results
-  - id: '1327'
-    test_id: '1037'
-    test_type: Weekly_Rec_Ct
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      WITH daterange AS( SELECT explode(sequence( date_trunc('week', (SELECT min(`{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME})), date_trunc('week', (SELECT max(`{COLUMN_NAME}`) FROM {TARGET_SCHEMA}.{TABLE_NAME})), interval 1 week)) AS all_dates ), existing_periods AS ( SELECT DISTINCT date_trunc('week', `{COLUMN_NAME}`) AS period, COUNT(1) AS period_count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY date_trunc('week', `{COLUMN_NAME}`) ) SELECT p.missing_period, p.prior_available_week, e.period_count AS prior_available_week_count, p.next_available_week, f.period_count AS next_available_week_count FROM ( SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ) p LEFT JOIN existing_periods e ON p.prior_available_week = e.period LEFT JOIN existing_periods f ON p.next_available_week = f.period ORDER BY p.missing_period;
     error_type: Test Results
   test_templates: []

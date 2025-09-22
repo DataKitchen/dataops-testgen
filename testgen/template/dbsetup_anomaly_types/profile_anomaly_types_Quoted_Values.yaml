@@ -17,21 +17,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1042'
+  - id: '1282'
     test_id: '1010'
     test_type: Quoted_Values
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1067'
-    test_id: '1010'
-    test_type: Quoted_Values
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE '"%"' OR `{COLUMN_NAME}` ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Profile Anomaly
   - id: '1124'
     test_id: '1010'
@@ -41,6 +33,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" LIKE '"%"' OR "{COLUMN_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1067'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1042'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1181'
     test_id: '1010'
     test_type: Quoted_Values
@@ -48,12 +56,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1282'
-    test_id: '1010'
-    test_type: Quoted_Values
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE '"%"' OR `{COLUMN_NAME}` ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Profile Anomaly

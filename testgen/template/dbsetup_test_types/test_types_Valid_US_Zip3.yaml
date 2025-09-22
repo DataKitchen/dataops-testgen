@@ -29,15 +29,23 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Threshold Invalid Zip3 Count
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test looks for the presence of values that fail to match the three-digit numeric code expected for US Zip Code regional prefixes. These prefixes are often used to roll up Zip Code data to a regional level, and may be critical to anonymize detailed data and protect PID. Depending on your needs and regulatory requirements, longer zip codes could place PID at risk.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1035'
+  - id: '6035'
     test_type: Valid_US_Zip3
-    sql_flavor: redshift
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3035'
+    test_type: Valid_US_Zip3
+    sql_flavor: mssql
     measure: |-
       SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -46,6 +54,14 @@ test_types:
   - id: '4035'
     test_type: Valid_US_Zip3
     sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1035'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift
     measure: |-
       SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -67,38 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '3035'
-    test_type: Valid_US_Zip3
-    sql_flavor: mssql
-    measure: |-
-      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '6035'
+  target_data_lookups:
+  - id: '1332'
+    test_id: '1045'
     test_type: Valid_US_Zip3
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1241'
-    test_id: '1045'
-    test_type: Valid_US_Zip3
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
-    error_type: Test Results
-  - id: '1242'
-    test_id: '1045'
-    test_type: Valid_US_Zip3
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') <> '' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT 20;
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
     error_type: Test Results
   - id: '1243'
     test_id: '1045'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
     error_type: Test Results
+  - id: '1242'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') <> '' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1241'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
   - id: '1244'
     test_id: '1045'
     test_type: Valid_US_Zip3
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
-    error_type: Test Results
-  - id: '1332'
-    test_id: '1045'
-    test_type: Valid_US_Zip3
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
     error_type: Test Results
   test_templates: []

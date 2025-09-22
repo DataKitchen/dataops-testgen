@@ -31,21 +31,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of errors found by custom query
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This business-rule test is highly flexible, covering any error state that can be expressed by a SQL query against one or more tables in the database. In operation, the user-defined query is embedded within a parent query returning the count of error rows identified. Any row returned by the query is interpreted as a single error condition in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return errors in individual rows identified by joining tables. Or it might return an error based on a multi-column aggregate condition returning a single row if an error is found. This query is run separately when you click `Review Source Data` from Test Results, so be sure to include enough data in your results to follow-up. Interpretation is based on the user-defined meaning of the test.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:
-  - id: '2004'
+  - id: '2404'
     test_type: CUSTOM
-    sql_flavor: redshift
-    template_name: ex_custom_query_generic.sql
-  - id: '2104'
-    test_type: CUSTOM
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_custom_query_generic.sql
   - id: '2204'
     test_type: CUSTOM
@@ -55,7 +51,11 @@ test_types:
     test_type: CUSTOM
     sql_flavor: postgresql
     template_name: ex_custom_query_generic.sql
-  - id: '2404'
+  - id: '2004'
     test_type: CUSTOM
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_custom_query_generic.sql
+  - id: '2104'
+    test_type: CUSTOM
+    sql_flavor: snowflake
     template_name: ex_custom_query_generic.sql

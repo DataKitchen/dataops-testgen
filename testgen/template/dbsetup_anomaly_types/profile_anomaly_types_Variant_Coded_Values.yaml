@@ -19,21 +19,13 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Consistency
   target_data_lookups:
-  - id: '1229'
-    test_id: '1027'
-    test_type: Variant_Coded_Values
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
   - id: '1230'
     test_id: '1027'
     test_type: Variant_Coded_Values
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE lower("{COLUMN_NAME}") IN (SELECT trim(value) FROM TABLE (FLATTEN(INPUT => SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', POSITION(':', '{DETAIL_EXPRESSION}') + 2), '|'))) ) GROUP BY "{COLUMN_NAME}";
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE LOWER(`{COLUMN_NAME}`) IN (SELECT TRIM(value) FROM (SELECT EXPLODE(SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', INSTR('{DETAIL_EXPRESSION}', ':') + 2), '\\|')) AS value)) GROUP BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly
   - id: '1231'
     test_id: '1027'
@@ -51,11 +43,19 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE LOWER("{COLUMN_NAME}") = ANY(STRING_TO_ARRAY(SUBSTRING('{DETAIL_EXPRESSION}',  STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) GROUP BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1229'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1230'
     test_id: '1027'
     test_type: Variant_Coded_Values
-    sql_flavor: databricks
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE LOWER(`{COLUMN_NAME}`) IN (SELECT TRIM(value) FROM (SELECT EXPLODE(SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', INSTR('{DETAIL_EXPRESSION}', ':') + 2), '\\|')) AS value)) GROUP BY `{COLUMN_NAME}`;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE lower("{COLUMN_NAME}") IN (SELECT trim(value) FROM TABLE (FLATTEN(INPUT => SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', POSITION(':', '{DETAIL_EXPRESSION}') + 2), '|'))) ) GROUP BY "{COLUMN_NAME}";
     error_type: Profile Anomaly

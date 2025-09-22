@@ -30,38 +30,17 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of non-matching value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test verifies that values, or combinations of values, that are present in the main table are also found in a reference table. This is a useful test for referential integrity between fact and dimension tables. You can also use it to confirm the validity of a code or category, or of combinations of values that should only be found together within each record, such as product/size/color.  An error here means that one  or more category combinations in the main table are not found in the reference table. Both tables must be present to run this test.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1253'
+  - id: '1335'
     test_id: '1502'
     test_type: Combo_Match
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      SELECT *
-        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
-                 WHERE {SUBSET_CONDITION}
-               GROUP BY {COLUMN_NAME_NO_QUOTES}
-               {HAVING_CONDITION}
-                EXCEPT
-               SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-                WHERE {MATCH_SUBSET_CONDITION}
-               GROUP BY {MATCH_GROUPBY_NAMES}
-               {MATCH_HAVING_CONDITION}
-             ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
-    error_type: Test Results
-  - id: '1254'
-    test_id: '1502'
-    test_type: Combo_Match
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -121,10 +100,31 @@ test_types:
              ) test
       ORDER BY {COLUMN_NAME_NO_QUOTES};
     error_type: Test Results
-  - id: '1335'
+  - id: '1253'
     test_id: '1502'
     test_type: Combo_Match
-    sql_flavor: databricks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1254'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -143,13 +143,9 @@ test_types:
       ORDER BY {COLUMN_NAME_NO_QUOTES};
     error_type: Test Results
   test_templates:
-  - id: '2001'
+  - id: '2401'
     test_type: Combo_Match
-    sql_flavor: redshift
-    template_name: ex_data_match_generic.sql
-  - id: '2101'
-    test_type: Combo_Match
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_data_match_generic.sql
   - id: '2201'
     test_type: Combo_Match
@@ -159,7 +155,11 @@ test_types:
     test_type: Combo_Match
     sql_flavor: postgresql
     template_name: ex_data_match_generic.sql
-  - id: '2401'
+  - id: '2001'
     test_type: Combo_Match
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_data_match_generic.sql
+  - id: '2101'
+    test_type: Combo_Match
+    sql_flavor: snowflake
     template_name: ex_data_match_generic.sql

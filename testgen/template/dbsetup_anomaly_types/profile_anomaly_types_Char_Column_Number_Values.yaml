@@ -22,21 +22,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1043'
+  - id: '1283'
     test_id: '1011'
     test_type: Char_Column_Number_Values
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
-    error_type: Profile Anomaly
-  - id: '1068'
-    test_id: '1011'
-    test_type: Char_Column_Number_Values
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT A.* FROM (  SELECT DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 )  AS B ORDER BY data_type, count DESC;
+      SELECT A.* FROM (SELECT DISTINCT  'Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC LIMIT 10;
     error_type: Profile Anomaly
   - id: '1125'
     test_id: '1011'
@@ -46,6 +38,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT A.* FROM (  SELECT DISTINCT TOP 10 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
     error_type: Profile Anomaly
+  - id: '1068'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1043'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
   - id: '1182'
     test_id: '1011'
     test_type: Char_Column_Number_Values
@@ -53,12 +61,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT A.* FROM (SELECT DISTINCT TOP 10  'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS B ORDER BY data_type, count DESC;
-    error_type: Profile Anomaly
-  - id: '1283'
-    test_id: '1011'
-    test_type: Char_Column_Number_Values
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT A.* FROM (SELECT DISTINCT  'Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC LIMIT 10;
     error_type: Profile Anomaly

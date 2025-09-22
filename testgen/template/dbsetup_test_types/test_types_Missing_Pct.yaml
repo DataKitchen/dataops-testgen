@@ -30,25 +30,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum Cohen's H Difference
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test uses Cohen's H, a statistical test to identify a significant difference between two ratios.  Results are reported on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge.  An uptick in missing data may indicate a collection issue at the source.  A larger change may indicate a processing failure. A drop in missing data may also be significant, if it affects assumptions built into analytic products downstream. You can refine the expected threshold value as you view legitimate results of the measure over time.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1017'
+  - id: '6017'
     test_type: Missing_Pct
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2017'
-    test_type: Missing_Pct
-    sql_flavor: snowflake
-    measure: |-
-      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
+      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT({COLUMN_NAME})::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1017'
+    test_type: Missing_Pct
+    sql_flavor: redshift
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2017'
+    test_type: Missing_Pct
+    sql_flavor: snowflake
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5017'
     test_type: Missing_Pct
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6017'
+  target_data_lookups:
+  - id: '1314'
+    test_id: '1022'
     test_type: Missing_Pct
     sql_flavor: databricks
-    measure: |-
-      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT({COLUMN_NAME})::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1017'
-    test_id: '1022'
-    test_type: Missing_Pct
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
-    error_type: Test Results
-  - id: '1099'
-    test_id: '1022'
-    test_type: Missing_Pct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT 10;
+      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` :: VARCHAR(255) = '' LIMIT 10;
     error_type: Test Results
   - id: '1156'
     test_id: '1022'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR CAST("{COLUMN_NAME}" AS VARCHAR(255)) = '';
     error_type: Test Results
+  - id: '1099'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT 10;
+    error_type: Test Results
+  - id: '1017'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
+    error_type: Test Results
   - id: '1213'
     test_id: '1022'
     test_type: Missing_Pct
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
-    error_type: Test Results
-  - id: '1314'
-    test_id: '1022'
-    test_type: Missing_Pct
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` :: VARCHAR(255) = '' LIMIT 10;
     error_type: Test Results
   test_templates: []

@@ -16,18 +16,10 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Timeliness
   target_data_lookups:
-  - id: '1051'
+  - id: '1291'
     test_id: '1019'
     test_type: Recency_One_Year
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      created_in_ui
-    error_type: Profile Anomaly
-  - id: '1076'
-    test_id: '1019'
-    test_type: Recency_One_Year
-    sql_flavor: postgresql
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       created_in_ui
@@ -40,10 +32,18 @@ profile_anomaly_types:
     lookup_query: |-
       created_in_ui
     error_type: Profile Anomaly
-  - id: '1291'
+  - id: '1076'
     test_id: '1019'
     test_type: Recency_One_Year
-    sql_flavor: databricks
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1051'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
       created_in_ui

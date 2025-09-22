@@ -17,21 +17,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1041'
+  - id: '1281'
     test_id: '1009'
     test_type: Leading_Spaces
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1066'
-    test_id: '1009'
-    test_type: Leading_Spaces
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly
   - id: '1123'
     test_id: '1009'
@@ -41,6 +33,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1066'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1041'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1180'
     test_id: '1009'
     test_type: Leading_Spaces
@@ -48,12 +56,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1281'
-    test_id: '1009'
-    test_type: Leading_Spaces
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly

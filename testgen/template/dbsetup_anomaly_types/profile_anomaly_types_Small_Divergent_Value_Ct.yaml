@@ -22,21 +22,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.33'
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1046'
+  - id: '1286'
     test_id: '1014'
     test_type: Small Divergent Value Ct
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
-    error_type: Profile Anomaly
-  - id: '1071'
-    test_id: '1014'
-    test_type: Small Divergent Value Ct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY count DESC;
     error_type: Profile Anomaly
   - id: '1128'
     test_id: '1014'
@@ -46,6 +38,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
+  - id: '1071'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1046'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
   - id: '1185'
     test_id: '1014'
     test_type: Small Divergent Value Ct
@@ -53,12 +61,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
-    error_type: Profile Anomaly
-  - id: '1286'
-    test_id: '1014'
-    test_type: Small Divergent Value Ct
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY count DESC;
     error_type: Profile Anomaly

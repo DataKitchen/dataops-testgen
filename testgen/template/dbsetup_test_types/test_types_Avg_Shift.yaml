@@ -30,25 +30,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Standardized Difference Measure
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     Average Shift tests that the average of a numeric column has not significantly changed since baseline, when profiling was done. A significant shift may indicate errors in processing, differences in source data, or valid changes that may nevertheless impact assumptions in downstream data products. The test uses Cohen's D, a statistical technique to identify significant shifts in a value. Cohen's D measures the difference between the two averages, reporting results on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge. Depending on your data, some difference may be expected, so it's reasonable to adjust the threshold value that triggers test failure. This test works well for measures, or even for identifiers if you expect them to increment consistently. You may want to periodically adjust the expected threshold, or even the expected average value if you expect shifting over time. Consider this test along with Variability Increase. If variability rises too, process or measurement flaws could be at work. If variability remains consistent, the issue is more likely to be with the source data itself.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1002'
+  - id: '6002'
     test_type: Avg_Shift
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2002'
-    test_type: Avg_Shift
-    sql_flavor: snowflake
-    measure: |-
-      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV({COLUMN_NAME}::FLOAT),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV_SAMP({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1002'
+    test_type: Avg_Shift
+    sql_flavor: redshift
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2002'
+    test_type: Avg_Shift
+    sql_flavor: snowflake
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV({COLUMN_NAME}::FLOAT),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5002'
     test_type: Avg_Shift
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6002'
+  target_data_lookups:
+  - id: '1299'
+    test_id: '1005'
     test_type: Avg_Shift
     sql_flavor: databricks
-    measure: |-
-      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV_SAMP({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1002'
-    test_id: '1005'
-    test_type: Avg_Shift
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1084'
-    test_id: '1005'
-    test_type: Avg_Shift
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   - id: '1141'
     test_id: '1005'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
+  - id: '1084'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1002'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1198'
     test_id: '1005'
     test_type: Avg_Shift
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1299'
-    test_id: '1005'
-    test_type: Avg_Shift
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   test_templates: []

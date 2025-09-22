@@ -19,21 +19,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.33'
   dq_dimension: Completeness
   target_data_lookups:
-  - id: '1038'
+  - id: '1278'
     test_id: '1006'
     test_type: No_Values
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1063'
-    test_id: '1006'
-    test_type: No_Values
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly
   - id: '1120'
     test_id: '1006'
@@ -43,6 +35,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1063'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1038'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1177'
     test_id: '1006'
     test_type: No_Values
@@ -50,12 +58,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1278'
-    test_id: '1006'
-    test_type: No_Values
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly

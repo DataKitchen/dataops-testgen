@@ -30,30 +30,17 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of duplicate value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test verifies that combinations of values are not repeated within the table. By default when auto-generated, the test considers all columns to protect against duplication of entire rows. If you know the minimum columns that should constitute a unique record, such as a set of ID's, you should use those to make the test as sensitive as possible. Alternatively, if you know of columns you can always exclude, such as file_date or refresh_snapshot_id, remove them to tighten the test somewhat.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1253'
+  - id: '1257'
     test_id: '1510'
     test_type: Dupe_Rows
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
-                 WHERE {SUBSET_CONDITION}
-               GROUP BY {GROUPBY_NAMES}
-               HAVING COUNT(*) > 1
-      ORDER BY {GROUPBY_NAMES}
-    error_type: Test Results
-  - id: '1254'
-    test_id: '1510'
-    test_type: Dupe_Rows
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
@@ -89,10 +76,23 @@ test_types:
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
     error_type: Test Results
-  - id: '1257'
+  - id: '1253'
     test_id: '1510'
     test_type: Dupe_Rows
-    sql_flavor: databricks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1254'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
@@ -103,13 +103,9 @@ test_types:
       ORDER BY {GROUPBY_NAMES}
     error_type: Test Results
   test_templates:
-  - id: '2011'
+  - id: '2411'
     test_type: Dupe_Rows
-    sql_flavor: redshift
-    template_name: ex_dupe_rows_generic.sql
-  - id: '2111'
-    test_type: Dupe_Rows
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_dupe_rows_generic.sql
   - id: '2211'
     test_type: Dupe_Rows
@@ -119,7 +115,11 @@ test_types:
     test_type: Dupe_Rows
     sql_flavor: postgresql
     template_name: ex_dupe_rows_generic.sql
-  - id: '2411'
+  - id: '2011'
     test_type: Dupe_Rows
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2111'
+    test_type: Dupe_Rows
+    sql_flavor: snowflake
     template_name: ex_dupe_rows_generic.sql

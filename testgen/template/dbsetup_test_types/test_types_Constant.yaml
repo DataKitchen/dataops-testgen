@@ -29,23 +29,15 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Count of records with unexpected values
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     Constant Match tests that a single value determined to be a constant in baseline profiling is still the only value for the column that appears in subsequent versions of the dataset. Sometimes new data or business knowledge may reveal that the value is not a constant at all, even though only one value was present at profiling. In this case, you will want to disable this test. Alternatively, you can use the Value Match test to provide a limited number of valid values for the column.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1004'
+  - id: '6004'
     test_type: Constant
-    sql_flavor: redshift
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2004'
-    test_type: Constant
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -67,6 +59,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1004'
+    test_type: Constant
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2004'
+    test_type: Constant
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5004'
     test_type: Constant
     sql_flavor: trino
@@ -75,30 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6004'
+  target_data_lookups:
+  - id: '1301'
+    test_id: '1007'
     test_type: Constant
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1004'
-    test_id: '1007'
-    test_type: Constant
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1086'
-    test_id: '1007'
-    test_type: Constant
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1143'
     test_id: '1007'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
+  - id: '1086'
+    test_id: '1007'
+    test_type: Constant
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1004'
+    test_id: '1007'
+    test_type: Constant
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
   - id: '1200'
     test_id: '1007'
     test_type: Constant
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1301'
-    test_id: '1007'
-    test_type: Constant
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   test_templates: []

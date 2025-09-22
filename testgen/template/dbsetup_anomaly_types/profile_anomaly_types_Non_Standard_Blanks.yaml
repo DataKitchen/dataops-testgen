@@ -17,21 +17,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '1.0'
   dq_dimension: Completeness
   target_data_lookups:
-  - id: '1034'
+  - id: '1274'
     test_id: '1002'
     test_type: Non_Standard_Blanks
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1  GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1059'
-    test_id: '1002'
-    test_type: Non_Standard_Blanks
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')  THEN 1  WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN `{COLUMN_NAME}` IN ('.', '?', ' ') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP '-{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '0{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '9{2,}'         OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'x{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'z{2,}' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN `{COLUMN_NAME}` = '' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly
   - id: '1116'
     test_id: '1002'
@@ -41,6 +33,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?') OR "{COLUMN_NAME}" LIKE ' ' THEN 1 WHEN LEN("{COLUMN_NAME}") > 1 AND ( LOWER("{COLUMN_NAME}") LIKE '%..%' OR  LOWER("{COLUMN_NAME}") LIKE '%--%'  OR (LEN(REPLACE("{COLUMN_NAME}", '0', ''))= 0 )  OR (LEN(REPLACE("{COLUMN_NAME}", '9', ''))= 0 )  OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'x', ''))= 0 )  OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'z', ''))= 0 )   )  THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1059'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')  THEN 1  WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1034'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1  GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1173'
     test_id: '1002'
     test_type: Non_Standard_Blanks
@@ -48,12 +56,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '9{2,}'         OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'x{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'z{2,}' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
-    error_type: Profile Anomaly
-  - id: '1274'
-    test_id: '1002'
-    test_type: Non_Standard_Blanks
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CASE WHEN `{COLUMN_NAME}` IN ('.', '?', ' ') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP '-{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '0{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '9{2,}'         OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'x{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'z{2,}' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN `{COLUMN_NAME}` = '' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
     error_type: Profile Anomaly

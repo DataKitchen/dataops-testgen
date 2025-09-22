@@ -97,7 +97,7 @@ def _refresh_static_metadata(params_mapping):
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
     )
-    import_metadata_records_from_yaml(params_mapping)
+    import_metadata_records_from_yaml()
 
     strQueryMetadataConstraints = read_template_sql_file("055_recreate_metadata_constraints.sql", "dbsetup")
     strQueryMetadataConstraints = replace_params(strQueryMetadataConstraints, params_mapping)

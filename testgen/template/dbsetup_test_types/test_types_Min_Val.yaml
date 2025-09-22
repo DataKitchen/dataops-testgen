@@ -29,23 +29,15 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of values under limit
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes senes for valid data.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1016'
+  - id: '6016'
     test_type: Min_Val
-    sql_flavor: redshift
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2016'
-    test_type: Min_Val
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -67,6 +59,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1016'
+    test_type: Min_Val
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2016'
+    test_type: Min_Val
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5016'
     test_type: Min_Val
     sql_flavor: trino
@@ -75,30 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6016'
+  target_data_lookups:
+  - id: '1313'
+    test_id: '1021'
     test_type: Min_Val
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1016'
-    test_id: '1021'
-    test_type: Min_Val
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
-    error_type: Test Results
-  - id: '1098'
-    test_id: '1021'
-    test_type: Min_Val
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT 500;
     error_type: Test Results
   - id: '1155'
     test_id: '1021'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE};
     error_type: Test Results
+  - id: '1098'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1016'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
   - id: '1212'
     test_id: '1021'
     test_type: Min_Val
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
-    error_type: Test Results
-  - id: '1313'
-    test_id: '1021'
-    test_type: Min_Val
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT 500;
     error_type: Test Results
   test_templates: []

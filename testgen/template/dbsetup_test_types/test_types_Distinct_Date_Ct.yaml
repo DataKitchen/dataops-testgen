@@ -30,23 +30,15 @@ test_types:
   health_dimension: Recency
   threshold_description: |-
     Minimum distinct date count expected
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1007'
+  - id: '6007'
     test_type: Distinct_Date_Ct
-    sql_flavor: redshift
-    measure: |-
-      COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2007'
-    test_type: Distinct_Date_Ct
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       COUNT(DISTINCT {COLUMN_NAME})
     test_operator: <
@@ -68,6 +60,22 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1007'
+    test_type: Distinct_Date_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2007'
+    test_type: Distinct_Date_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5007'
     test_type: Distinct_Date_Ct
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6007'
+  target_data_lookups:
+  - id: '1304'
+    test_id: '1012'
     test_type: Distinct_Date_Ct
     sql_flavor: databricks
-    measure: |-
-      COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1007'
-    test_id: '1012'
-    test_type: Distinct_Date_Ct
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
-    error_type: Test Results
-  - id: '1089'
-    test_id: '1012'
-    test_type: Distinct_Date_Ct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
     error_type: Test Results
   - id: '1146'
     test_id: '1012'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
+  - id: '1089'
+    test_id: '1012'
+    test_type: Distinct_Date_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1007'
+    test_id: '1012'
+    test_type: Distinct_Date_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
   - id: '1203'
     test_id: '1012'
     test_type: Distinct_Date_Ct
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
-    error_type: Test Results
-  - id: '1304'
-    test_id: '1012'
-    test_type: Distinct_Date_Ct
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
     error_type: Test Results
   test_templates: []

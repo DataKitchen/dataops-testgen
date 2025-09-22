@@ -29,23 +29,15 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of dates prior to minimum
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test is appropriate for a cumulative dataset only, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates dates do not change.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1015'
+  - id: '6015'
     test_type: Min_Date
-    sql_flavor: redshift
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2015'
-    test_type: Min_Date
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -67,6 +59,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1015'
+    test_type: Min_Date
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2015'
+    test_type: Min_Date
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5015'
     test_type: Min_Date
     sql_flavor: trino
@@ -75,30 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6015'
+  target_data_lookups:
+  - id: '1312'
+    test_id: '1020'
     test_type: Min_Date
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1015'
-    test_id: '1020'
-    test_type: Min_Date
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1097'
-    test_id: '1020'
-    test_type: Min_Date
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`,  COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1154'
     test_id: '1020'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CAST("{COLUMN_NAME}" AS DATE) < CAST('{BASELINE_VALUE}' AS DATE) GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
+  - id: '1097'
+    test_id: '1020'
+    test_type: Min_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1015'
+    test_id: '1020'
+    test_type: Min_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
   - id: '1211'
     test_id: '1020'
     test_type: Min_Date
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1312'
-    test_id: '1020'
-    test_type: Min_Date
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`,  COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: DATE < '{BASELINE_VALUE}' :: DATE GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   test_templates: []

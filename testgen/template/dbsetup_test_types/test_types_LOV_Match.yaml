@@ -29,23 +29,15 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     List of values expected, in form ('Val1','Val2)
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This tests that all values in the column match the hard-coded list provided. This is relevant when the list of allowable values is small and not expected to change often. Even if new values might occasionally be added, this test is useful for downstream data products to provide warning that assumptions and logic may need to change.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1014'
+  - id: '6014'
     test_type: LOV_Match
-    sql_flavor: redshift
-    measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2014'
-    test_type: LOV_Match
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
     test_operator: '>'
@@ -67,6 +59,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1014'
+    test_type: LOV_Match
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2014'
+    test_type: LOV_Match
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5014'
     test_type: LOV_Match
     sql_flavor: trino
@@ -75,30 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6014'
+  target_data_lookups:
+  - id: '1311'
+    test_id: '1019'
     test_type: LOV_Match
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1014'
-    test_id: '1019'
-    test_type: LOV_Match
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1096'
-    test_id: '1019'
-    test_type: LOV_Match
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1153'
     test_id: '1019'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" ;
     error_type: Test Results
+  - id: '1096'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1014'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
   - id: '1210'
     test_id: '1019'
     test_type: LOV_Match
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1311'
-    test_id: '1019'
-    test_type: LOV_Match
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   test_templates: []

@@ -30,6 +30,8 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected minimum pct of baseline Standard Deviation (SD)
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: "This test looks for percent shifts in standard deviation as a measure\
     \ of the stability of a measure over time.  A significant change could indicate\
     \ that new values are erroneous, or that the cohort being evaluated is significantly\
@@ -37,22 +39,12 @@ test_types:
     \ process, better precision in measurement, the elimination of outliers, or a\
     \ more homogeneous cohort. "
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1032'
+  - id: '6032'
     test_type: Variability_Decrease
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2032'
-    test_type: Variability_Decrease
-    sql_flavor: snowflake
-    measure: |-
-      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+      100.0*STDDEV_SAMP({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -72,11 +64,19 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6032'
+  - id: '1032'
     test_type: Variability_Decrease
-    sql_flavor: databricks
+    sql_flavor: redshift
     measure: |-
-      100.0*STDDEV_SAMP({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2032'
+    test_type: Variability_Decrease
+    sql_flavor: snowflake
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -89,21 +89,13 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
-  - id: '1032'
+  - id: '1329'
     test_id: '1041'
     test_type: Variability_Decrease
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1114'
-    test_id: '1041'
-    test_type: Variability_Decrease
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
+      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   - id: '1171'
     test_id: '1041'
@@ -113,6 +105,22 @@ test_types:
     lookup_query: |-
       SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
+  - id: '1114'
+    test_id: '1041'
+    test_type: Variability_Decrease
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1032'
+    test_id: '1041'
+    test_type: Variability_Decrease
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1228'
     test_id: '1041'
     test_type: Variability_Decrease
@@ -120,13 +128,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
-    error_type: Test Results
-  - id: '1329'
-    test_id: '1041'
-    test_type: Variability_Decrease
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   test_templates: []

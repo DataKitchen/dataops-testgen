@@ -31,43 +31,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum divergence level between 0 and 1
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test measures the similarity of two sets of counts per categories, by using their proportional counts as probability distributions.  Using Jensen-Shannon divergence, a measure of relative entropy or difference between two distributions, the test assigns a score ranging from 0, meaning that the distributions are identical, to 1, meaning that the distributions are completely unrelated. This test can be used to compare datasets that may not match exactly, but should have similar distributions.  For example, it is a useful sanity check for data from different sources that you would expect to have a consistent spread, such as shipment of building materials per state and construction projects by state. Scores can be compared over time even if the distributions are not identical -- a dataset can be expected to maintain a comparable divergence score with a reference dataset over time. Both tables must be present to run this test.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1257'
+  - id: '1336'
     test_id: '1503'
     test_type: Distribution_Shift
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      WITH latest_ver
-         AS ( SELECT {CONCAT_COLUMNS} as category,
-                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
-               WHERE {SUBSET_CONDITION}
-               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
-      older_ver
-         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
-                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
-               WHERE {MATCH_SUBSET_CONDITION}
-               GROUP BY {MATCH_GROUPBY_NAMES} )
-      SELECT COALESCE(l.category, o.category) AS category,
-             o.pct_of_total AS old_pct,
-             l.pct_of_total AS new_pct
-        FROM latest_ver l
-      FULL JOIN older_ver o
-        ON (l.category = o.category)
-      ORDER BY COALESCE(l.category, o.category)
-    error_type: Test Results
-  - id: '1258'
-    test_id: '1503'
-    test_type: Distribution_Shift
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       WITH latest_ver
@@ -142,10 +116,36 @@ test_types:
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
     error_type: Test Results
-  - id: '1336'
+  - id: '1257'
     test_id: '1503'
     test_type: Distribution_Shift
-    sql_flavor: databricks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1258'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
       WITH latest_ver
@@ -169,13 +169,9 @@ test_types:
       ORDER BY COALESCE(l.category, o.category)
     error_type: Test Results
   test_templates:
-  - id: '2003'
+  - id: '2403'
     test_type: Distribution_Shift
-    sql_flavor: redshift
-    template_name: ex_relative_entropy_generic.sql
-  - id: '2103'
-    test_type: Distribution_Shift
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_relative_entropy_generic.sql
   - id: '2203'
     test_type: Distribution_Shift
@@ -185,7 +181,11 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: postgresql
     template_name: ex_relative_entropy_generic.sql
-  - id: '2403'
+  - id: '2003'
     test_type: Distribution_Shift
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2103'
+    test_type: Distribution_Shift
+    sql_flavor: snowflake
     template_name: ex_relative_entropy_generic.sql

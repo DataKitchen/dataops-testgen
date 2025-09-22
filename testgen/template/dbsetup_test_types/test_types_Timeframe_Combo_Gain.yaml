@@ -31,51 +31,13 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of missing value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test checks a single transactional table to verify that categorical values or combinations that are present in the most recent time window you define include at least all those found in the prior time window of the same duration. Missing values in the latest time window will trigger the test to fail. New values are permitted. Use this test to confirm that codes or categories are not lost across successive time periods in a transactional table.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1261'
-    test_id: '1508'
-    test_type: Timeframe_Combo_Gain
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      SELECT {COLUMN_NAME_NO_QUOTES}
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
-         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
-      GROUP BY {COLUMN_NAME_NO_QUOTES}
-       EXCEPT
-      SELECT {COLUMN_NAME_NO_QUOTES}
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
-      GROUP BY {COLUMN_NAME_NO_QUOTES}
-    error_type: Test Results
-  - id: '1262'
-    test_id: '1508'
-    test_type: Timeframe_Combo_Gain
-    sql_flavor: snowflake
-    lookup_type: null
-    lookup_query: |-
-      SELECT {COLUMN_NAME_NO_QUOTES}
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
-         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
-      GROUP BY {COLUMN_NAME_NO_QUOTES}
-       EXCEPT
-      SELECT {COLUMN_NAME_NO_QUOTES}
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
-       WHERE {SUBSET_CONDITION}
-         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
-      GROUP BY {COLUMN_NAME_NO_QUOTES}
-    error_type: Test Results
   - id: '1263'
     test_id: '1508'
     test_type: Timeframe_Combo_Gain
@@ -114,15 +76,49 @@ test_types:
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
     error_type: Test Results
-  test_templates:
-  - id: '2007'
+  - id: '1261'
+    test_id: '1508'
     test_type: Timeframe_Combo_Gain
     sql_flavor: redshift
-    template_name: ex_window_match_no_drops_generic.sql
-  - id: '2107'
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+       EXCEPT
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+    error_type: Test Results
+  - id: '1262'
+    test_id: '1508'
     test_type: Timeframe_Combo_Gain
     sql_flavor: snowflake
-    template_name: ex_window_match_no_drops_generic.sql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+       EXCEPT
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+    error_type: Test Results
+  test_templates:
+  - id: '2407'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: databricks
+    template_name: ex_window_match_no_drops_databricks.sql
   - id: '2207'
     test_type: Timeframe_Combo_Gain
     sql_flavor: mssql
@@ -131,7 +127,11 @@ test_types:
     test_type: Timeframe_Combo_Gain
     sql_flavor: postgresql
     template_name: ex_window_match_no_drops_postgresql.sql
-  - id: '2407'
+  - id: '2007'
     test_type: Timeframe_Combo_Gain
-    sql_flavor: databricks
-    template_name: ex_window_match_no_drops_databricks.sql
+    sql_flavor: redshift
+    template_name: ex_window_match_no_drops_generic.sql
+  - id: '2107'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: snowflake
+    template_name: ex_window_match_no_drops_generic.sql

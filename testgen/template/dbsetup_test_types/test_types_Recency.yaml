@@ -30,25 +30,17 @@ test_types:
   health_dimension: Recency
   threshold_description: |-
     Expected maximum count of days preceding test date
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test evaluates recency based on the latest referenced dates in the column.  The test is appropriate for transactional dates and timestamps.  The test can be especially valuable because timely data deliveries themselves may not assure that the most recent data is present. You can adjust the expected threshold to the maximum number of days that you expect the data to age before the dataset is refreshed.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1022'
+  - id: '6022'
     test_type: Recency
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      DATEDIFF('D', MAX({COLUMN_NAME}), '{RUN_DATE}'::DATE)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2022'
-    test_type: Recency
-    sql_flavor: snowflake
-    measure: |-
-      DATEDIFF('D', MAX({COLUMN_NAME}), '{RUN_DATE}'::DATE)
+      <%DATEDIFF_DAY;MAX({COLUMN_NAME});'{RUN_DATE}'::DATE%>
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1022'
+    test_type: Recency
+    sql_flavor: redshift
+    measure: |-
+      DATEDIFF('D', MAX({COLUMN_NAME}), '{RUN_DATE}'::DATE)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2022'
+    test_type: Recency
+    sql_flavor: snowflake
+    measure: |-
+      DATEDIFF('D', MAX({COLUMN_NAME}), '{RUN_DATE}'::DATE)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5022'
     test_type: Recency
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6022'
+  target_data_lookups:
+  - id: '1319'
+    test_id: '1028'
     test_type: Recency
     sql_flavor: databricks
-    measure: |-
-      <%DATEDIFF_DAY;MAX({COLUMN_NAME});'{RUN_DATE}'::DATE%>
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1022'
-    test_id: '1028'
-    test_type: Recency
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
-    error_type: Test Results
-  - id: '1104'
-    test_id: '1028'
-    test_type: Recency
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1161'
     test_id: '1028'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
     error_type: Test Results
+  - id: '1104'
+    test_id: '1028'
+    test_type: Recency
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE};
+    error_type: Test Results
+  - id: '1022'
+    test_id: '1028'
+    test_type: Recency
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
+    error_type: Test Results
   - id: '1218'
     test_id: '1028'
     test_type: Recency
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
-    error_type: Test Results
-  - id: '1319'
-    test_id: '1028'
-    test_type: Recency
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE};
     error_type: Test Results
   test_templates: []

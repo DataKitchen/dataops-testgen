@@ -30,24 +30,16 @@ test_types:
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of invalid email addresses
-  usage_notes: null
-  active: Y
   result_visualization: line_chart
   result_visualization_params: null
+  usage_notes: null
+  active: Y
   cat_test_conditions:
-  - id: '1009'
+  - id: '6009'
     test_type: Email_Format
-    sql_flavor: redshift
+    sql_flavor: databricks
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2009'
-    test_type: Email_Format
-    sql_flavor: snowflake
-    measure: |-
-      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::VARCHAR, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::STRING, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -67,6 +59,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1009'
+    test_type: Email_Format
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2009'
+    test_type: Email_Format
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::VARCHAR, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5009'
     test_type: Email_Format
     sql_flavor: trino
@@ -75,30 +83,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6009'
+  target_data_lookups:
+  - id: '1306'
+    test_id: '1014'
     test_type: Email_Format
     sql_flavor: databricks
-    measure: |-
-      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::STRING, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1009'
-    test_id: '1014'
-    test_type: Email_Format
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1091'
-    test_id: '1014'
-    test_type: Email_Format
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') != 1 GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1148'
     test_id: '1014'
@@ -108,6 +100,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" NOT LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%' GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
+  - id: '1091'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1009'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
   - id: '1205'
     test_id: '1014'
     test_type: Email_Format
@@ -115,13 +123,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') != 1 GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1306'
-    test_id: '1014'
-    test_type: Email_Format
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') != 1 GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   test_templates: []

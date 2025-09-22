@@ -23,21 +23,16 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1040'
+  - id: '1280'
     test_id: '1008'
     test_type: Table_Pattern_Mismatch
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
-    lookup_query: |-
-      SELECT column_name, table_name, data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type;
-    error_type: Profile Anomaly
-  - id: '1065'
-    test_id: '1008'
-    test_type: Table_Pattern_Mismatch
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY columns.table_name;
+    lookup_query: "SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns\
+      \ JOIN information_schema.tables ON columns.table_name = tables.table_name AND\
+      \ columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'\
+      \ AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE\
+      \ TABLE' ORDER BY table_name; "
     error_type: Profile Anomaly
   - id: '1122'
     test_id: '1008'
@@ -47,21 +42,26 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables  ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY table_name;
     error_type: Profile Anomaly
+  - id: '1065'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY columns.table_name;
+    error_type: Profile Anomaly
+  - id: '1040'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT column_name, table_name, data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type;
+    error_type: Profile Anomaly
   - id: '1179'
     test_id: '1008'
     test_type: Table_Pattern_Mismatch
     sql_flavor: snowflake
-    lookup_type: null
-    lookup_query: "SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns\
-      \ JOIN information_schema.tables ON columns.table_name = tables.table_name AND\
-      \ columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'\
-      \ AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE\
-      \ TABLE' ORDER BY table_name; "
-    error_type: Profile Anomaly
-  - id: '1280'
-    test_id: '1008'
-    test_type: Table_Pattern_Mismatch
-    sql_flavor: databricks
     lookup_type: null
     lookup_query: "SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns\
       \ JOIN information_schema.tables ON columns.table_name = tables.table_name AND\

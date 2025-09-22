@@ -29,22 +29,14 @@ test_types:
   health_dimension: Recency
   threshold_description: |-
     Expected count of future dates
-  usage_notes: null
-  active: Y
   result_visualization: line_chart
   result_visualization_params: null
+  usage_notes: null
+  active: Y
   cat_test_conditions:
-  - id: '1010'
+  - id: '6010'
     test_type: Future_Date
-    sql_flavor: redshift
-    measure: |-
-      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2010'
-    test_type: Future_Date
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
     test_operator: '>'
@@ -66,6 +58,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1010'
+    test_type: Future_Date
+    sql_flavor: redshift
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2010'
+    test_type: Future_Date
+    sql_flavor: snowflake
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5010'
     test_type: Future_Date
     sql_flavor: trino
@@ -74,30 +82,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6010'
+  target_data_lookups:
+  - id: '1307'
+    test_id: '1015'
     test_type: Future_Date
     sql_flavor: databricks
-    measure: |-
-      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1010'
-    test_id: '1015'
-    test_type: Future_Date
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1092'
-    test_id: '1015'
-    test_type: Future_Date
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1149'
     test_id: '1015'
@@ -107,6 +99,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CAST("{COLUMN_NAME}" AS DATE) >= CONVERT(DATE, '{TEST_DATE}') GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
+  - id: '1092'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1010'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
   - id: '1206'
     test_id: '1015'
     test_type: Future_Date
@@ -114,13 +122,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
-    error_type: Test Results
-  - id: '1307'
-    test_id: '1015'
-    test_type: Future_Date
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   test_templates: []

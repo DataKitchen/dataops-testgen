@@ -86,7 +86,7 @@ def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> 
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
     )
-    import_metadata_records_from_yaml(params_mapping)
+    import_metadata_records_from_yaml()
 
     ScoreDefinition.from_table_group(
         TableGroup(

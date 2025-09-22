@@ -16,21 +16,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
-  - id: '1057'
+  - id: '1297'
     test_id: '1025'
     test_type: Delimited_Data_Embedded
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1082'
-    test_id: '1025'
-    test_type: Delimited_Data_Embedded
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\s(and|but|or|yet)\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '.*\\s(and|but|or|yet)\\s.*') GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
     error_type: Profile Anomaly
   - id: '1139'
     test_id: '1025'
@@ -40,6 +32,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE ( "{COLUMN_NAME}" LIKE '%,%,%,%' OR "{COLUMN_NAME}" LIKE '%|%|%|%' OR "{COLUMN_NAME}" LIKE '%^%^%^%'  OR "{COLUMN_NAME}" LIKE '%' + CHAR(9) + '%' + CHAR(9) + '%' + CHAR(9) + '%' ) AND NOT ( "{COLUMN_NAME}" LIKE '% and %' OR "{COLUMN_NAME}" LIKE '% but %' OR "{COLUMN_NAME}" LIKE '% or %'  OR "{COLUMN_NAME}" LIKE '% yet %' ) AND ISNULL(CAST(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ',', '')) as FLOAT)   / CAST(NULLIF(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ' ', '')), 0) as FLOAT), 1) > 0.6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
+  - id: '1082'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\s(and|but|or|yet)\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1057'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1196'
     test_id: '1025'
     test_type: Delimited_Data_Embedded
@@ -47,12 +55,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '.*\\s(and|but|or|yet)\\s.*') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1297'
-    test_id: '1025'
-    test_type: Delimited_Data_Embedded
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '.*\\s(and|but|or|yet)\\s.*') GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
     error_type: Profile Anomaly

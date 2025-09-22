@@ -30,41 +30,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of group totals not matching aggregate value
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. It's ideal for confirming that two datasets exactly match -- that the sum of a measure or count of a value hasn't changed or shifted between categories. Use this test to compare a raw and processed version of the same dataset, or to confirm that an aggregated table exactly matches the detail table that it's built from. An error here means that one or more value combinations fail to match. New categories or combinations will cause failure.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1245'
+  - id: '1333'
     test_id: '1500'
     test_type: Aggregate_Balance
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      SELECT *
-        FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
-                 FROM
-                     ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                         FROM {TARGET_SCHEMA}.{TABLE_NAME}
-                        WHERE {SUBSET_CONDITION}
-                       GROUP BY {GROUPBY_NAMES}
-                       {HAVING_CONDITION}
-                         UNION ALL
-                       SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
-                         FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-                        WHERE {MATCH_SUBSET_CONDITION}
-                       GROUP BY {MATCH_GROUPBY_NAMES}
-                       {MATCH_HAVING_CONDITION} ) a
-              GROUP BY {GROUPBY_NAMES} ) s
-       WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
-    error_type: Test Results
-  - id: '1246'
-    test_id: '1500'
-    test_type: Aggregate_Balance
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -133,10 +109,34 @@ test_types:
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
       ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
-  - id: '1333'
+  - id: '1245'
     test_id: '1500'
     test_type: Aggregate_Balance
-    sql_flavor: databricks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+                 FROM
+                     ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+                         FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                        WHERE {SUBSET_CONDITION}
+                       GROUP BY {GROUPBY_NAMES}
+                       {HAVING_CONDITION}
+                         UNION ALL
+                       SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+                         FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                        WHERE {MATCH_SUBSET_CONDITION}
+                       GROUP BY {MATCH_GROUPBY_NAMES}
+                       {MATCH_HAVING_CONDITION} ) a
+              GROUP BY {GROUPBY_NAMES} ) s
+       WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
+      ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
+  - id: '1246'
+    test_id: '1500'
+    test_type: Aggregate_Balance
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -158,13 +158,9 @@ test_types:
       ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
   test_templates:
-  - id: '2006'
+  - id: '2406'
     test_type: Aggregate_Balance
-    sql_flavor: redshift
-    template_name: ex_aggregate_match_same_generic.sql
-  - id: '2106'
-    test_type: Aggregate_Balance
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_aggregate_match_same_generic.sql
   - id: '2206'
     test_type: Aggregate_Balance
@@ -174,7 +170,11 @@ test_types:
     test_type: Aggregate_Balance
     sql_flavor: postgresql
     template_name: ex_aggregate_match_same_generic.sql
-  - id: '2406'
+  - id: '2006'
     test_type: Aggregate_Balance
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_aggregate_match_same_generic.sql
+  - id: '2106'
+    test_type: Aggregate_Balance
+    sql_flavor: snowflake
     template_name: ex_aggregate_match_same_generic.sql

@@ -18,21 +18,13 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.33'
   dq_dimension: Uniqueness
   target_data_lookups:
-  - id: '1048'
+  - id: '1288'
     test_id: '1016'
     test_type: Potential_Duplicates
-    sql_flavor: redshift
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1073'
-    test_id: '1016'
-    test_type: Potential_Duplicates
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT 500;
     error_type: Profile Anomaly
   - id: '1130'
     test_id: '1016'
@@ -42,6 +34,22 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC;
     error_type: Profile Anomaly
+  - id: '1073'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1048'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1187'
     test_id: '1016'
     test_type: Potential_Duplicates
@@ -49,12 +57,4 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Profile Anomaly
-  - id: '1288'
-    test_id: '1016'
-    test_type: Potential_Duplicates
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT 500;
     error_type: Profile Anomaly

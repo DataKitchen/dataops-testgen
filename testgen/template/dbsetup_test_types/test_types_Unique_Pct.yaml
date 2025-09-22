@@ -30,23 +30,15 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum Cohen's H Difference
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     You can think of this as a test of similarity that measures whether the percentage of unique values is consistent with the percentage at baseline.  A significant change might indicate duplication or a telling shift in cardinality between entities. The test uses Cohen's H, a statistical test to identify a significant difference between two ratios.  Results are reported on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge.  You can refine the expected threshold value as you view legitimate results of the measure over time.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1029'
+  - id: '6029'
     test_type: Unique_Pct
-    sql_flavor: redshift
-    measure: |-
-      ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2029'
-    test_type: Unique_Pct
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
     test_operator: '>='
@@ -68,6 +60,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1029'
+    test_type: Unique_Pct
+    sql_flavor: redshift
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2029'
+    test_type: Unique_Pct
+    sql_flavor: snowflake
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5029'
     test_type: Unique_Pct
     sql_flavor: trino
@@ -76,30 +84,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6029'
+  target_data_lookups:
+  - id: '1326'
+    test_id: '1035'
     test_type: Unique_Pct
     sql_flavor: databricks
-    measure: |-
-      ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1029'
-    test_id: '1035'
-    test_type: Unique_Pct
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Test Results
-  - id: '1111'
-    test_id: '1035'
-    test_type: Unique_Pct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
     error_type: Test Results
   - id: '1168'
     test_id: '1035'
@@ -109,6 +101,22 @@ test_types:
     lookup_query: |-
       SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Test Results
+  - id: '1111'
+    test_id: '1035'
+    test_type: Unique_Pct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1029'
+    test_id: '1035'
+    test_type: Unique_Pct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
   - id: '1225'
     test_id: '1035'
     test_type: Unique_Pct
@@ -116,13 +124,5 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
-    error_type: Test Results
-  - id: '1326'
-    test_id: '1035'
-    test_type: Unique_Pct
-    sql_flavor: databricks
-    lookup_type: null
-    lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
     error_type: Test Results
   test_templates: []

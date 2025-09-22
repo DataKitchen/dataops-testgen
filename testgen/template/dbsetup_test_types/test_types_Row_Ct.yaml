@@ -28,23 +28,15 @@ test_types:
   health_dimension: Volume
   threshold_description: |-
     Expected minimum row count
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     Because this tests the row count against a constant minimum threshold, it's appropriate for any dataset, as long as the number of rows doesn't radically change from refresh to refresh.  But it's not responsive to change over time. You may want to adjust the threshold periodically if you are dealing with a cumulative dataset.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions:
-  - id: '1024'
+  - id: '6024'
     test_type: Row_Ct
-    sql_flavor: redshift
-    measure: |-
-      COUNT(*)
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  - id: '2024'
-    test_type: Row_Ct
-    sql_flavor: snowflake
+    sql_flavor: databricks
     measure: |-
       COUNT(*)
     test_operator: <
@@ -66,6 +58,22 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '1024'
+    test_type: Row_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(*)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2024'
+    test_type: Row_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(*)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '5024'
     test_type: Row_Ct
     sql_flavor: trino
@@ -74,30 +82,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '6024'
+  target_data_lookups:
+  - id: '1321'
+    test_id: '1031'
     test_type: Row_Ct
     sql_flavor: databricks
-    measure: |-
-      COUNT(*)
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
-  target_data_lookups:
-  - id: '1024'
-    test_id: '1031'
-    test_type: Row_Ct
-    sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
-    error_type: Test Results
-  - id: '1106'
-    test_id: '1031'
-    test_type: Row_Ct
-    sql_flavor: postgresql
-    lookup_type: null
-    lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1163'
     test_id: '1031'
@@ -107,18 +99,26 @@ test_types:
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(CAST(100 * (current_count - {THRESHOLD_VALUE}) AS NUMERIC) / CAST({THRESHOLD_VALUE} AS NUMERIC) ,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
     error_type: Test Results
+  - id: '1106'
+    test_id: '1031'
+    test_type: Row_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: NUMERIC / {THRESHOLD_VALUE} :: NUMERIC,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+    error_type: Test Results
+  - id: '1024'
+    test_id: '1031'
+    test_type: Row_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+    error_type: Test Results
   - id: '1220'
     test_id: '1031'
     test_type: Row_Ct
     sql_flavor: snowflake
-    lookup_type: null
-    lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count  FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
-    error_type: Test Results
-  - id: '1321'
-    test_id: '1031'
-    test_type: Row_Ct
-    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count  FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};

@@ -31,21 +31,17 @@ test_types:
   health_dimension: Recency
   threshold_description: |-
     Most recent prior table fingerprint
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Stale","1":"Updated"}}}'
   usage_notes: |-
     This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
   active: Y
-  result_visualization: binary_chart
-  result_visualization_params: '{"legend":{"labels":{"0":"Stale","1":"Updated"}}}'
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:
-  - id: '2012'
+  - id: '2412'
     test_type: Table_Freshness
-    sql_flavor: redshift
-    template_name: ex_table_changed_generic.sql
-  - id: '2112'
-    test_type: Table_Freshness
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_table_changed_generic.sql
   - id: '2212'
     test_type: Table_Freshness
@@ -55,7 +51,11 @@ test_types:
     test_type: Table_Freshness
     sql_flavor: postgresql
     template_name: ex_table_changed_generic.sql
-  - id: '2412'
+  - id: '2012'
     test_type: Table_Freshness
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_table_changed_generic.sql
+  - id: '2112'
+    test_type: Table_Freshness
+    sql_flavor: snowflake
     template_name: ex_table_changed_generic.sql

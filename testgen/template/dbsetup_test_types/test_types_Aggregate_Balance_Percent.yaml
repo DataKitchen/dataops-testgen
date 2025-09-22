@@ -30,43 +30,17 @@ test_types:
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of group totals not matching aggregate value
+  result_visualization: line_chart
+  result_visualization_params: null
   usage_notes: |-
     This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerance you set -- that the sum of a measure or count of a value remains sufficiently consistent between categories. You could use this test compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range defined as 5% below to 10% above the prior month. An error here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.
   active: Y
-  result_visualization: line_chart
-  result_visualization_params: null
   cat_test_conditions: []
   target_data_lookups:
-  - id: '1245'
+  - id: '1248'
     test_id: '1504'
     test_type: Aggregate_Balance_Percent
-    sql_flavor: redshift
-    lookup_type: null
-    lookup_query: |-
-      SELECT *
-        FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
-          FROM
-            ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
-              WHERE {SUBSET_CONDITION}
-              GROUP BY {GROUPBY_NAMES}
-              {HAVING_CONDITION}
-                UNION ALL
-              SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
-                FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
-              WHERE {MATCH_SUBSET_CONDITION}
-              GROUP BY {MATCH_GROUPBY_NAMES}
-              {MATCH_HAVING_CONDITION} ) a
-          GROUP BY {GROUPBY_NAMES} ) s
-        WHERE (total IS NOT NULL AND match_total IS NULL)
-          OR (total IS NULL AND match_total IS NOT NULL)
-          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
-        ORDER BY {GROUPBY_NAMES};
-    error_type: Test Results
-  - id: '1246'
-    test_id: '1504'
-    test_type: Aggregate_Balance_Percent
-    sql_flavor: snowflake
+    sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -141,10 +115,36 @@ test_types:
           OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
         ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
-  - id: '1248'
+  - id: '1245'
     test_id: '1504'
     test_type: Aggregate_Balance_Percent
-    sql_flavor: databricks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+          FROM
+            ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+              WHERE {SUBSET_CONDITION}
+              GROUP BY {GROUPBY_NAMES}
+              {HAVING_CONDITION}
+                UNION ALL
+              SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+                FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+              WHERE {MATCH_SUBSET_CONDITION}
+              GROUP BY {MATCH_GROUPBY_NAMES}
+              {MATCH_HAVING_CONDITION} ) a
+          GROUP BY {GROUPBY_NAMES} ) s
+        WHERE (total IS NOT NULL AND match_total IS NULL)
+          OR (total IS NULL AND match_total IS NOT NULL)
+          OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0))
+        ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
+  - id: '1246'
+    test_id: '1504'
+    test_type: Aggregate_Balance_Percent
+    sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
       SELECT *
@@ -168,13 +168,9 @@ test_types:
         ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
   test_templates:
-  - id: '2009'
+  - id: '2409'
     test_type: Aggregate_Balance_Percent
-    sql_flavor: redshift
-    template_name: ex_aggregate_match_percent_generic.sql
-  - id: '2109'
-    test_type: Aggregate_Balance_Percent
-    sql_flavor: snowflake
+    sql_flavor: databricks
     template_name: ex_aggregate_match_percent_generic.sql
   - id: '2209'
     test_type: Aggregate_Balance_Percent
@@ -184,7 +180,11 @@ test_types:
     test_type: Aggregate_Balance_Percent
     sql_flavor: postgresql
     template_name: ex_aggregate_match_percent_generic.sql
-  - id: '2409'
+  - id: '2009'
     test_type: Aggregate_Balance_Percent
-    sql_flavor: databricks
+    sql_flavor: redshift
+    template_name: ex_aggregate_match_percent_generic.sql
+  - id: '2109'
+    test_type: Aggregate_Balance_Percent
+    sql_flavor: snowflake
     template_name: ex_aggregate_match_percent_generic.sql
