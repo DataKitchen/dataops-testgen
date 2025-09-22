@@ -8,7 +8,6 @@ from os.path import sep as path_seperator
 
 from yaml import SafeDumper, safe_dump, safe_load
 
-from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_from_db_threaded
 from testgen.common.read_file import get_template_files
 
@@ -111,10 +110,8 @@ def _add_literal_representer():
     SafeDumper.add_representer(LiteralString, _literal_representer)
 
 
-def _process_yaml_for_import(data:dict, parent_table:str, parent_key:str, child_tables:list[str], default_pk:dict[str, list[str]], parent_child_column_map:dict[str, dict[str,str]]):
+def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, parent_key:str, child_tables:list[str], default_pk:dict[str, list[str]], parent_child_column_map:dict[str, dict[str,str]]):
     queries = []
-    schema = get_tg_schema()
-
     parent = data.get(parent_table)
     if not isinstance(parent, dict):
         raise TypeError(f"YAML key '{parent_table}' must be a dict")
@@ -140,7 +137,7 @@ def _process_yaml_for_import(data:dict, parent_table:str, parent_key:str, child_
             bound_values = {c: record[c] for c in columns}
 
             sql = f"""
-            INSERT INTO {schema}.{table_name} ({insert_cols})
+            INSERT INTO {params_mapping["SCHEMA_NAME"]}.{table_name} ({insert_cols})
             VALUES ({insert_vals})
             ON CONFLICT ({', '.join(pk_cols)}) DO UPDATE
             SET {update_stmt};
@@ -154,7 +151,7 @@ def _process_yaml_for_import(data:dict, parent_table:str, parent_key:str, child_
     update_stmt = ", ".join(f"{c}=EXCLUDED.{c}" for c in columns if c != parent_key)
     bound_values = {c: parent[c] for c in columns}
     parent_insert_query = f"""
-    INSERT INTO {schema}.{parent_table} ({insert_cols})
+    INSERT INTO {params_mapping["SCHEMA_NAME"]}.{parent_table} ({insert_cols})
     VALUES ({insert_vals})
     ON CONFLICT ({parent_key}) DO UPDATE
     SET {update_stmt};
@@ -164,16 +161,20 @@ def _process_yaml_for_import(data:dict, parent_table:str, parent_key:str, child_
 
     execute_db_queries(
         queries,
+        user_override=params_mapping["TESTGEN_ADMIN_USER"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="schema_admin",
     )
     return
 
-def import_metadata_records_from_yaml() -> None:
+def import_metadata_records_from_yaml(params_mapping: dict) -> None:
     files = sorted(get_template_files(mask="^.*ya?ml$", sub_directory=TEST_TYPES_TEMPLATE_FOLDER), key=lambda key: str(key))
     for yaml_file in files:
         with as_file(yaml_file) as f:
             with f.open("r") as file:
                 data = safe_load(file)
                 _process_yaml_for_import(
+                    params_mapping,
                     data,
                     TEST_TYPES_PARENT_TABLE,
                     TEST_TYPES_PARENT_KEY,
@@ -188,6 +189,7 @@ def import_metadata_records_from_yaml() -> None:
                 LOG.info(f"Importing {yaml_file}")
                 data = safe_load(file)
                 _process_yaml_for_import(
+                    params_mapping,
                     data,
                     ANOMALY_TYPES_PARENT_TABLE,
                     ANOMALY_TYPES_PARENT_KEY,
@@ -204,13 +206,12 @@ def _wrap_literal(table_name: str, recs: list[dict], literal_fields: dict[str, l
             if isinstance(val, str) and val != "":
                 rec[fld] = LiteralString(val)
 
-def _process_records_for_export(export_path:str, parent_table:str, parent_key:str, child_tables:list[str], default_pk:dict[str, list[str]], parent_child_column_map:dict[str, dict[str,str]], literal_fields:dict[str, list[str]]) -> None:
+def _process_records_for_export(params_mapping: dict, export_path:str, parent_table:str, parent_key:str, child_tables:list[str], default_pk:dict[str, list[str]], parent_child_column_map:dict[str, dict[str,str]], literal_fields:dict[str, list[str]]) -> None:
     if not isdir(export_path):
         mkdir(export_path)
-    schema = get_tg_schema()
     fetch_parent_query = f"""
     SELECT *
-    FROM {schema}.{parent_table};
+    FROM {params_mapping["SCHEMA_NAME"]}.{parent_table};
     """
     parent_records, parent_columns, _ = fetch_from_db_threaded(
         [(fetch_parent_query, None)],
@@ -220,7 +221,7 @@ def _process_records_for_export(export_path:str, parent_table:str, parent_key:st
         for child_name in child_tables:
             child_key = next(key for key, value in parent_child_column_map[child_name].items() if value==parent_key)
             fetch_children_query = f"""
-            SELECT * FROM {schema}.{child_name}
+            SELECT * FROM {params_mapping["SCHEMA_NAME"]}.{child_name}
             WHERE {child_key} = '{parent_record_dict[parent_key]}'
             ORDER BY {", ".join(default_pk[child_name])};
             """
@@ -241,9 +242,10 @@ def _process_records_for_export(export_path:str, parent_table:str, parent_key:st
             safe_dump(payload, f, sort_keys=False)
 
 
-def export_metadata_records_to_yaml(templates_path) -> None:
+def export_metadata_records_to_yaml(params_mapping: dict, templates_path: str) -> None:
     _add_literal_representer()
     _process_records_for_export(
+        params_mapping,
         f"{templates_path}{path_seperator}{TEST_TYPES_TEMPLATE_FOLDER}",
         TEST_TYPES_PARENT_TABLE,
         TEST_TYPES_PARENT_KEY,
@@ -253,6 +255,7 @@ def export_metadata_records_to_yaml(templates_path) -> None:
         TEST_TYPES_LITERAL_FIELDS,
     )
     _process_records_for_export(
+        params_mapping,
         f"{templates_path}{path_seperator}{ANOMALY_TYPES_TEMPLATE_FOLDER}",
         ANOMALY_TYPES_PARENT_TABLE,
         ANOMALY_TYPES_PARENT_KEY,
