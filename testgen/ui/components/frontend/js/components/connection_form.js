@@ -190,7 +190,7 @@ const ConnectionForm = (props, saveButton) => {
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
             (formValue, isValid) => {
                 updatedConnection.val = {...updatedConnection.val, ...formValue};
-                setFieldValidity('mssql_form', isValid);
+                setFieldValidity('postgresql_form', isValid);
             },
             connection,
             dynamicConnectionUrl,
@@ -226,6 +226,7 @@ const ConnectionForm = (props, saveButton) => {
 
     const authenticationForm = van.derive(() => {
         const selectedFlavorCode = connectionFlavor.val;
+        validityPerField.val = {connection_name: validityPerField.val.connection_name};
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
         return authenticationForms[flavor.value]();
     });
