@@ -12,7 +12,6 @@ def _get_params_mapping() -> dict:
         "SCHEMA_NAME": get_tg_schema(),
         "TESTGEN_ADMIN_USER": settings.DATABASE_ADMIN_USER,
         "TESTGEN_ADMIN_PASSWORD": settings.DATABASE_ADMIN_PASSWORD,
-        "OBSERVABILITY_URL": settings.OBSERVABILITY_API_URL,
     }
 
 @with_database_session
