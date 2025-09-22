@@ -1,5 +1,3 @@
-__all__ = ["AddQuotesToIdentifierCSV", "CleanSQL", "ConcatColumnList"]
-
 import re
 
 
@@ -16,7 +14,7 @@ def CleanSQL(strInput: str) -> str:
     return " ".join(parts)
 
 
-def AddQuotesToIdentifierCSV(strInput: str) -> str:
+def quote_identifiers(identifiers: str, flavor: str) -> str:
     # Keywords -- identifiers to quote
     keywords = [
         "select",
@@ -28,11 +26,17 @@ def AddQuotesToIdentifierCSV(strInput: str) -> str:
     ]
 
     quoted_values = []
-    for value in strInput.split(","):
+    for value in identifiers.split(","):
         value = value.strip()
         if value.startswith('"') and value.endswith('"'):
             quoted_values.append(value)
-        elif any(c.isupper() or c.isspace() or value.lower() in keywords for c in value):
+        elif any(
+            (flavor == "snowflake" and c.lower())
+            or (flavor != "snowflake" and c.isupper())
+            or c.isspace()
+            or value.lower() in keywords
+            for c in value
+        ):
             quoted_values.append(f'"{value}"')
         else:
             quoted_values.append(value)
