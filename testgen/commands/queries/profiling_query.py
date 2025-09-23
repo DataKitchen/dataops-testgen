@@ -1,3 +1,4 @@
+import re
 import typing
 
 from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
@@ -130,6 +131,7 @@ class CProfilingSQL:
         params = {}
 
         if query:
+            query = self._process_conditionals(query)
             if extra_params:
                 params.update(extra_params)
             params.update(self._get_params())
@@ -138,6 +140,33 @@ class CProfilingSQL:
             query = replace_templated_functions(query, self.flavor)
 
         return query, params
+
+    def _process_conditionals(self, query: str):
+        re_pattern = re.compile(r"^--\s+TG-(IF|ELSE|ENDIF)(?:\s+(\w+))?\s*$")
+        condition = None
+        updated_query = []
+        for line in query.splitlines(True):
+            if re_match := re_pattern.match(line):
+                match re_match.group(1):
+                    case "IF" if condition is None and re_match.group(2) is not None:
+                        condition = bool(getattr(self, re_match.group(2)))
+                    case "ELSE" if condition is not None:
+                        condition = not condition
+                    case "ENDIF" if condition is not None:
+                        condition = None
+                    case _:
+                        raise ValueError("Template conditional misused")
+            elif condition is not False:
+                updated_query.append(line)
+
+        if condition is not None:
+            raise ValueError("Template conditional misused")
+
+        return "".join(updated_query)
+
+    @property
+    def do_sample_bool(self):
+        return self.parm_do_sample == "Y"
 
     def GetSecondProfilingColumnsQuery(self) -> tuple[str, dict]:
         # Runs on App database

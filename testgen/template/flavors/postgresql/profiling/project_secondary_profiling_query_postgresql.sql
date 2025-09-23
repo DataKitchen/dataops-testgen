@@ -4,6 +4,9 @@ WITH ranked_vals AS (
          COUNT(*) AS ct,
          ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COL_NAME}") AS rn
     FROM {DATA_SCHEMA}.{DATA_TABLE}
+-- TG-IF do_sample_bool
+        TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)
+-- TG-ENDIF
    WHERE "{COL_NAME}" > ' '
    GROUP BY "{COL_NAME}"
 ),
