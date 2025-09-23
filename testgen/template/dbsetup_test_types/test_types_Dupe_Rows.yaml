@@ -89,6 +89,19 @@ test_types:
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
     error_type: Test Results
+  - id: '1472'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
   - id: '1254'
     test_id: '1510'
     test_type: Dupe_Rows
@@ -118,6 +131,10 @@ test_types:
   - id: '2011'
     test_type: Dupe_Rows
     sql_flavor: redshift
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2511'
+    test_type: Dupe_Rows
+    sql_flavor: redshift_spectrum
     template_name: ex_dupe_rows_generic.sql
   - id: '2111'
     test_type: Dupe_Rows

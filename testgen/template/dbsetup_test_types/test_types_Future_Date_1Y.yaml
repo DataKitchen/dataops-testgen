@@ -67,6 +67,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7011'
+    test_type: Future_Date_1Y
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - ('{RUN_DATE}'::DATE+365))))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2011'
     test_type: Future_Date_1Y
     sql_flavor: snowflake
@@ -112,6 +120,14 @@ test_types:
     test_id: '1016'
     test_type: Future_Date_1Y
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1411'
+    test_id: '1016'
+    test_type: Future_Date_1Y
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;

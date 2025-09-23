@@ -68,6 +68,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7022'
+    test_type: Recency
+    sql_flavor: redshift_spectrum
+    measure: |-
+      DATEDIFF('D', MAX({COLUMN_NAME}), '{RUN_DATE}'::DATE)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2022'
     test_type: Recency
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1028'
     test_type: Recency
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
+    error_type: Test Results
+  - id: '1422'
+    test_id: '1028'
+    test_type: Recency
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};

@@ -55,6 +55,10 @@ test_types:
     test_type: Table_Freshness
     sql_flavor: redshift
     template_name: ex_table_changed_generic.sql
+  - id: '2512'
+    test_type: Table_Freshness
+    sql_flavor: redshift_spectrum
+    template_name: ex_table_changed_generic.sql
   - id: '2112'
     test_type: Table_Freshness
     sql_flavor: snowflake

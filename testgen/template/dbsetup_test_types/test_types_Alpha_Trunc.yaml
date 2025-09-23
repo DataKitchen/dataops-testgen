@@ -67,6 +67,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7001'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift_spectrum
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2001'
     test_type: Alpha_Trunc
     sql_flavor: snowflake
@@ -112,6 +120,14 @@ test_types:
     test_id: '1004'
     test_type: Alpha_Trunc
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1401'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;

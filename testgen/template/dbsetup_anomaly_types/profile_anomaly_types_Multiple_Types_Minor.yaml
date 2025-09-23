@@ -48,6 +48,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT column_name, table_name,  CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying'     THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name;
     error_type: Profile Anomaly
+  - id: '1436'
+    test_id: '1004'
+    test_type: Multiple_Types_Minor
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT columnname AS column_name, tablename AS table_name, external_type AS data_type FROM svv_external_columns WHERE schemaname = '{TARGET_SCHEMA}' AND columnname = '{COLUMN_NAME}' ORDER BY external_type, tablename;
+    error_type: Profile Anomaly
   - id: '1175'
     test_id: '1004'
     test_type: Multiple_Types_Minor

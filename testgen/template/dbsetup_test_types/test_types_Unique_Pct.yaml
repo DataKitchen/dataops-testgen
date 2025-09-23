@@ -68,6 +68,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7029'
+    test_type: Unique_Pct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT({BASELINE_UNIQUE_CT}::FLOAT / {BASELINE_VALUE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( DISTINCT {COLUMN_NAME} )::FLOAT / NULLIF(COUNT( {COLUMN_NAME} ), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2029'
     test_type: Unique_Pct
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1035'
     test_type: Unique_Pct
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1429'
+    test_id: '1035'
+    test_type: Unique_Pct
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;

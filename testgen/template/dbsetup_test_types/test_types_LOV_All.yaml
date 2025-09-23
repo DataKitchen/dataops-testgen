@@ -65,6 +65,14 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7013'
+    test_type: LOV_All
+    sql_flavor: redshift_spectrum
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2013'
     test_type: LOV_All
     sql_flavor: snowflake
@@ -110,6 +118,14 @@ test_types:
     test_id: '1018'
     test_type: LOV_All
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM {TARGET_SCHEMA}.{TABLE_NAME} HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  - id: '1413'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM {TARGET_SCHEMA}.{TABLE_NAME} HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT 500;

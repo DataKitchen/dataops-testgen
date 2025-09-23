@@ -51,6 +51,14 @@ profile_anomaly_types:
     lookup_query: |-
       WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1458'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1230'
     test_id: '1027'
     test_type: Variant_Coded_Values

@@ -57,6 +57,14 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
+  - id: '1445'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
   - id: '1184'
     test_id: '1013'
     test_type: Small Missing Value Ct

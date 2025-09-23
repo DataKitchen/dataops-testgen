@@ -67,6 +67,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7033'
+    test_type: Valid_Month
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2033'
     test_type: Valid_Month
     sql_flavor: snowflake

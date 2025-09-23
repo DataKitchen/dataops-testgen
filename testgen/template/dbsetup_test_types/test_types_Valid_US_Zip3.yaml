@@ -67,6 +67,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7035'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2035'
     test_type: Valid_US_Zip3
     sql_flavor: snowflake
@@ -112,6 +120,14 @@ test_types:
     test_id: '1045'
     test_type: Valid_US_Zip3
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1461'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;

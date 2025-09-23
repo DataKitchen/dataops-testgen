@@ -68,6 +68,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7028'
+    test_type: Unique
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2028'
     test_type: Unique
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1034'
     test_type: Unique
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1428'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;

@@ -68,6 +68,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift_spectrum
+    measure: |-
+      100.0*SUM(({COLUMN_NAME} ~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$')::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2026'
     test_type: Street_Addr_Pattern
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1033'
     test_type: Street_Addr_Pattern
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1426'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;

@@ -72,6 +72,7 @@ const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
     redshift: '5439',
+    redshift_spectrum: '5439',
     azure_mssql: '1433',
     synapse_mssql: '1433',
     mssql: '1433',
@@ -154,6 +155,15 @@ const ConnectionForm = (props, saveButton) => {
             },
             connection,
             dynamicConnectionUrl,
+        ),
+        redshift_spectrum: () => RedshiftSpectrumForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('redshift_spectrum_form', isValid);
+            },
+            connection,
         ),
         azure_mssql: () => AzureMSSQLForm(
             updatedConnection,
@@ -516,6 +526,8 @@ const RedshiftForm = (
         ),
     );
 };
+
+const RedshiftSpectrumForm = RedshiftForm;
 
 const PostgresqlForm = RedshiftForm;
 

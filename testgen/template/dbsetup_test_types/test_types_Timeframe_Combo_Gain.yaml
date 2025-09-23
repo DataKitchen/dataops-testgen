@@ -95,6 +95,25 @@ test_types:
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
     error_type: Test Results
+  - id: '1468'
+    test_id: '1508'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - 2 * {WINDOW_DAYS}
+         AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+       EXCEPT
+      SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+       WHERE {SUBSET_CONDITION}
+         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}) - {WINDOW_DAYS}
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+    error_type: Test Results
   - id: '1262'
     test_id: '1508'
     test_type: Timeframe_Combo_Gain
@@ -130,6 +149,10 @@ test_types:
   - id: '2007'
     test_type: Timeframe_Combo_Gain
     sql_flavor: redshift
+    template_name: ex_window_match_no_drops_generic.sql
+  - id: '2507'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: redshift_spectrum
     template_name: ex_window_match_no_drops_generic.sql
   - id: '2107'
     test_type: Timeframe_Combo_Gain

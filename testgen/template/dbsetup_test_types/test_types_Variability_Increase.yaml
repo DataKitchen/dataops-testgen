@@ -76,6 +76,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7031'
+    test_type: Variability_Increase
+    sql_flavor: redshift_spectrum
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2031'
     test_type: Variability_Increase
     sql_flavor: snowflake
@@ -124,6 +132,14 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
+  - id: '1431'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM {TARGET_SCHEMA}.{TABLE_NAME};
     error_type: Test Results
   - id: '1227'
     test_id: '1040'

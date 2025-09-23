@@ -142,6 +142,32 @@ test_types:
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
     error_type: Test Results
+  - id: '1465'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
   - id: '1258'
     test_id: '1503'
     test_type: Distribution_Shift
@@ -184,6 +210,10 @@ test_types:
   - id: '2003'
     test_type: Distribution_Shift
     sql_flavor: redshift
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2503'
+    test_type: Distribution_Shift
+    sql_flavor: redshift_spectrum
     template_name: ex_relative_entropy_generic.sql
   - id: '2103'
     test_type: Distribution_Shift

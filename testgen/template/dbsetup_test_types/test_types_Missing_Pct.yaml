@@ -68,6 +68,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '7017'
+    test_type: Missing_Pct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '2017'
     test_type: Missing_Pct
     sql_flavor: snowflake
@@ -113,6 +121,14 @@ test_types:
     test_id: '1022'
     test_type: Missing_Pct
     sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
+    error_type: Test Results
+  - id: '1417'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
       SELECT TOP 10 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
