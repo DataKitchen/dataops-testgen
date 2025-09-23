@@ -77,7 +77,7 @@ def set_target_db_params(connection_params: ConnectionParams) -> None:
 
 def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
     module_path = f"testgen.common.database.flavor.{flavor}_flavor_service"
-    class_name = f"{flavor.capitalize()}FlavorService"
+    class_name = f"{flavor.replace('_', ' ').title().replace(' ', '')}FlavorService"
     module = importlib.import_module(module_path)
     flavor_class = getattr(module, class_name)
     return flavor_class()

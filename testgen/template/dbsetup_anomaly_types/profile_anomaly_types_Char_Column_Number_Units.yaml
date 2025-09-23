@@ -1,0 +1,18 @@
+profile_anomaly_types:
+  id: '1026'
+  anomaly_type: Char_Column_Number_Units
+  data_object: Column
+  anomaly_name: Character Column with Numbers and Units
+  anomaly_description: |-
+    This column is defined as alpha, but values include numbers with percents or common units. Embedded measures in alpha columns are harder to access, won't sort correctly, and might contradict user expectations downstream. Consider parsing into numeric and UOM columns to improve usability.
+  anomaly_criteria: |-
+    p.includes_digit_ct::FLOAT/NULLIF(p.value_ct, 0)::FLOAT > 0.5 AND TRIM(fn_parsefreq(p.top_freq_values, 1, 1))  ~ '(?i)^[0-9]+(\.[0-9]+)? ?(%|lb|oz|kg|g|mg|km|m|cm|mm|mi|ft|in)$'
+  detail_expression: |-
+    'Top Freq: ' || p.top_freq_values
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and ingestion process. Consider whether it might be better to parse the numeric and unit data and store in separate columns.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Consistency
+  target_data_lookups: []

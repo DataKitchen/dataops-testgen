@@ -53,6 +53,7 @@
  * @property {boolean} disableFlavor
  * @property {FileValue?} cachedPrivateKeyFile
  * @property {FileValue?} cacheServiceAccountKeyFile
+ * @param {string?} dynamicConnectionUrl
  * @property {(c: Connection, state: FormState, cache?: FieldsCache) => void} onChange
  */
 import van from '../van.min.js';
@@ -73,6 +74,7 @@ const clearSentinel = '<clear>';
 const secretsPlaceholder = '<hidden for safety reasons>';
 const defaultPorts = {
     redshift: '5439',
+    redshift_spectrum: '5439',
     azure_mssql: '1433',
     synapse_mssql: '1433',
     mssql: '1433',
@@ -158,6 +160,15 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             dynamicConnectionUrl,
         ),
+        redshift_spectrum: () => RedshiftSpectrumForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('redshift_spectrum_form', isValid);
+            },
+            connection,
+        ),
         azure_mssql: () => AzureMSSQLForm(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -193,7 +204,7 @@ const ConnectionForm = (props, saveButton) => {
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
             (formValue, isValid) => {
                 updatedConnection.val = {...updatedConnection.val, ...formValue};
-                setFieldValidity('mssql_form', isValid);
+                setFieldValidity('postgresql_form', isValid);
             },
             connection,
             dynamicConnectionUrl,
@@ -239,6 +250,7 @@ const ConnectionForm = (props, saveButton) => {
 
     const authenticationForm = van.derive(() => {
         const selectedFlavorCode = connectionFlavor.val;
+        validityPerField.val = {connection_name: validityPerField.val.connection_name};
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
         return authenticationForms[flavor.value]();
     });
@@ -532,6 +544,8 @@ const RedshiftForm = (
         ),
     );
 };
+
+const RedshiftSpectrumForm = RedshiftForm;
 
 const PostgresqlForm = RedshiftForm;
 

@@ -4,7 +4,7 @@ Select
 	   COALESCE(ts.component_name, tg.table_groups_name) as dataset_name,
 	   tg.table_group_schema as schema,
 	   c.connection_name as connection_name,
-	   c.project_db as project_db,
+	   COALESCE(NULLIF(c.project_db, ''), c.connection_name) as project_db,
 	   tg.profile_sample_min_count as profile_sample_minimum_count,
 	   ts.table_groups_id as table_groups_id,
 	   tg.profile_use_sampling as profile_use_sampling,

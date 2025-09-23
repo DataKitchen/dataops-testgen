@@ -1,0 +1,103 @@
+test_types:
+  id: '1042'
+  test_type: Valid_Month
+  test_name_short: Valid Month
+  test_name_long: Valid calendar month in expected format
+  test_description: |-
+    Tests for the presence of a valid representation of a calendar month consistent with the format at baseline.
+  except_message: |-
+    Column values are not a valid representation of a calendar month consistent with the format at baseline.
+  measure_uom: Invalid months
+  measure_uom_description: null
+  selection_criteria: |-
+    functional_data_type = 'Period Month'
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value,baseline_value
+  default_parm_values: |-
+    0,CASE WHEN max_length > 3 AND initcap(min_text) = min_text THEN '''January'',''February'',''March'',''April'',''May'',''June'',''July'',''August'',''September'',''October'',''November'',''December''' WHEN max_length > 3 AND upper(min_text) = min_text THEN '''JANUARY'',''FEBRUARY'',''MARCH'',''APRIL'',''MAY'',''JUNE'',''JULY'',''AUGUST'',''SEPTEMBER'',''OCTOBER'',''NOVEMBER'',''DECEMBER''' WHEN max_length > 3 AND lower(min_text) = min_text THEN '''january'',''february'',''march'',''april'',''may'',''june'',''july'',''august'',''september'',''october'',''november'',''december''' WHEN max_length = 3 AND initcap(min_text) = min_text THEN '''Jan'',''Feb'',''Mar'',''Apr'',''May'',''Jun'',''Jul'',''Aug'',''Sep'',''Oct'',''Nov'',''Dec''' WHEN max_length = 3 AND upper(min_text) = min_text THEN '''JAN'',''FEB'',''MAR'',''APR'',''MAY'',''JUN'',''JUL'',''AUG'',''SEP'',''OCT'',''NOV'',''DEC''' WHEN max_length = 3 AND lower(min_text) = min_text THEN '''jan'',''feb'',''mar'',''apr'',''may'',''jun'',''jul'',''aug'',''sep'',''oct'',''nov'',''dec''' WHEN max_length = 2 AND min_text = '01' THEN '''01'',''02'',''03'',''04'',''05'',''06'',''07'',''08'',''09'',''10'',''11'',''12''' WHEN max_length = 2 AND min_text = '1' THEN '''1'',''2'',''3'',''4'',''5'',''6'',''7'',''8'',''9'',''10'',''11'',''12''' WHEN min_value = 1 THEN '1,2,3,4,5,6,7,8,9,10,11,12' ELSE 'NULL' END
+  default_parm_prompts: |-
+    Threshold Invalid Months,Valid Month List
+  default_parm_help: |-
+    The acceptable number of records with invalid months present.|List of valid month values for this field, in quotes if field is numeric, separated by commas.
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of invalid months
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: null
+  active: N
+  cat_test_conditions:
+  - id: '7033'
+    test_type: Valid_Month
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6033'
+    test_type: Valid_Month
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3033'
+    test_type: Valid_Month
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4033'
+    test_type: Valid_Month
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1033'
+    test_type: Valid_Month
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7033'
+    test_type: Valid_Month
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2033'
+    test_type: Valid_Month
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5033'
+    test_type: Valid_Month
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups: []
+  test_templates: []

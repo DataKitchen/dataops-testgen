@@ -10,6 +10,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import get_template_files
+from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
 
 LOG = logging.getLogger("testgen")
 
@@ -86,6 +87,7 @@ def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> 
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
     )
+    import_metadata_records_from_yaml(params_mapping)
 
     ScoreDefinition.from_table_group(
         TableGroup(

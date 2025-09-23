@@ -47,6 +47,7 @@ SET datatype_suggestion =
                  AND POSITION('+' IN pr.top_freq_values) > 0
             THEN CASE
                    WHEN '{SQL_FLAVOR}' = 'redshift' THEN 'TIMESTAMPZ'
+                   WHEN '{SQL_FLAVOR}' = 'redshift_spectrum' THEN 'TIMESTAMPZ'
                    WHEN '{SQL_FLAVOR}' = 'postgresql' THEN 'TIMESTAMPZ'
                    WHEN '{SQL_FLAVOR}' = 'snowflake' THEN 'TIMESTAMP_TZ'
                    WHEN '{SQL_FLAVOR}' LIKE 'mssql%' THEN 'DATETIMEOFFSET'
@@ -61,6 +62,7 @@ SET datatype_suggestion =
                  AND POSITION(':' IN pr.top_freq_values) > 0
             THEN CASE
                    WHEN '{SQL_FLAVOR}' = 'redshift' THEN 'TIMESTAMP'
+                   WHEN '{SQL_FLAVOR}' = 'redshift_spectrum' THEN 'TIMESTAMP'
                    WHEN '{SQL_FLAVOR}' = 'postgresql' THEN 'TIMESTAMP'
                    WHEN '{SQL_FLAVOR}' = 'snowflake' THEN 'TIMESTAMP_NTZ'
                    WHEN '{SQL_FLAVOR}' LIKE 'mssql%' THEN 'DATETIME2'

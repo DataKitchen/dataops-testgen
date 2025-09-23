@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "snowflake", "mssql", "postgresql", "databricks"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks"]
 
 
 class ConnectionParams(TypedDict):

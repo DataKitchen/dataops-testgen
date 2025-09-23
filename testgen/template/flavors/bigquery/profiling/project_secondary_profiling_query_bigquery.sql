@@ -4,6 +4,9 @@ WITH counts AS (
     COUNT(*) AS ct
   FROM `{DATA_SCHEMA}.{DATA_TABLE}`
   WHERE `{COL_NAME}` > ' '
+-- TG-IF do_sample_bool
+    AND RAND() * 100 < {SAMPLE_PERCENT_CALC}
+-- TG-ENDIF
   GROUP BY `{COL_NAME}`
 ),
 ranked AS (

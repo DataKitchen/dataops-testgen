@@ -74,7 +74,7 @@ BEGIN
 
     IF lower_case_sql_flavor IN ('postgres', 'postgresql') THEN
         escaped_value := QUOTE_LITERAL(var_value);
-    ELSIF lower_case_sql_flavor IN ('redshift', 'snowflake') THEN
+    ELSIF lower_case_sql_flavor IN ('redshift', 'redshift_spectrum', 'snowflake') THEN
         escaped_value := TRIM(LEADING 'E' FROM QUOTE_LITERAL(var_value));
     ELSIF lower_case_sql_flavor = 'mssql' THEN
         escaped_value := '''' || REPLACE(var_value, '''', '''''') || '''';

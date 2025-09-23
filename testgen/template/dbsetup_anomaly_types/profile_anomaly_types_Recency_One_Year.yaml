@@ -1,0 +1,74 @@
+profile_anomaly_types:
+  id: '1019'
+  anomaly_type: Recency_One_Year
+  data_object: Dates
+  anomaly_name: Recency - No Table Dates within 1 Year
+  anomaly_description: |-
+    Among all date columns present in the table, none fall inside of one year from Profile date.
+  anomaly_criteria: |-
+    MAX(p.max_date) < CURRENT_DATE - INTERVAL '1 year'
+  detail_expression: |-
+    'Most Recent Date: ' || MAX(p.max_date)::VARCHAR
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether dates in table should be more recent.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: Timeliness
+  target_data_lookups:
+  - id: '1357'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1291'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1133'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1076'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1051'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1451'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1190'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly

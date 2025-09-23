@@ -1,0 +1,92 @@
+profile_anomaly_types:
+  id: '1005'
+  anomaly_type: Multiple_Types_Major
+  data_object: Multi-Col
+  anomaly_name: Multiple Data Types per Column Name - Major
+  anomaly_description: |-
+    Columns with the same name have broadly different types across tables. Differences could be significant enough to cause errors in downstream analysis, extra steps resulting in divergent business logic and inconsistencies in results.
+  anomaly_criteria: |-
+    m.general_type_ct > 1
+  detail_expression: |-
+    'Found ' || m.column_ct::VARCHAR || ' columns, ' || m.type_ct::VARCHAR(10) || ' types, ' || m.min_type || ' to ' || m.max_type
+  issue_likelihood: Likely
+  suggested_action: |-
+    Ideally, you should change the column data types to be fully consistent. If the data is meant to be different, you should change column names so downstream users aren't led astray.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: Consistency
+  target_data_lookups:
+  - id: '1343'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name,
+        CASE
+          WHEN LOWER(data_type) LIKE 'timestamp%' THEN LOWER(data_type)
+          WHEN LOWER(data_type) LIKE 'date' THEN LOWER(data_type)
+          WHEN LOWER(data_type) LIKE 'boolean' THEN 'boolean'
+          WHEN data_type = 'TEXT' THEN CONCAT('varchar(', CAST(character_maximum_length AS STRING), ')')
+          WHEN LOWER(data_type) LIKE 'char%' THEN CONCAT('char(', CAST(character_maximum_length AS STRING), ')')
+          WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint'
+          WHEN LOWER(data_type) LIKE 'num%' THEN CONCAT('numeric(', CAST(numeric_precision AS STRING), ',', CAST(numeric_scale AS STRING), ')')
+          ELSE data_type
+        END AS data_type
+      FROM information_schema.columns
+      JOIN information_schema.tables
+        ON columns.table_name = tables.table_name
+        AND columns.table_schema = tables.table_schema
+      WHERE columns.table_schema = '{TARGET_SCHEMA}'
+        AND columns.column_name = '{COLUMN_NAME}'
+        AND tables.table_type = 'BASE TABLE'
+      ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
+  - id: '1277'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS STRING) || ',' || CAST(numeric_scale AS STRING) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
+  - id: '1119'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 column_name, columns.table_name, CASE WHEN data_type = 'datetime' THEN 'datetime' WHEN data_type = 'datetime2' THEN 'datetime' WHEN data_type = 'varchar' THEN 'varchar(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'char' THEN 'char(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'numeric' THEN 'numeric(' + CAST(numeric_precision AS VARCHAR) + ',' + CAST(numeric_scale AS VARCHAR) + ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
+  - id: '1062'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character'  THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns  JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'  AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
+  - id: '1037'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, table_name,  CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying'     THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
+  - id: '1437'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT columnname AS column_name, tablename AS table_name, external_type AS data_type FROM svv_external_columns WHERE schemaname = '{TARGET_SCHEMA}' AND columnname = '{COLUMN_NAME}' ORDER BY external_type, tablename;
+    error_type: Profile Anomaly
+  - id: '1176'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' || CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+    error_type: Profile Anomaly

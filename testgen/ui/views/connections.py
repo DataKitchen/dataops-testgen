@@ -442,6 +442,12 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/redshift.svg"),
     ),
     ConnectionFlavor(
+        label="Amazon Redshift Spectrum",
+        value="redshift_spectrum",
+        flavor="redshift_spectrum",
+        icon=get_asset_data_url("flavors/redshift.svg"),
+    ),
+    ConnectionFlavor(
         label="Azure SQL Database",
         value="azure_mssql",
         flavor="mssql",

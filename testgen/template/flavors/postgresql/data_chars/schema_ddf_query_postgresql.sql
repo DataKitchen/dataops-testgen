@@ -26,7 +26,7 @@ SELECT '{PROJECT_CODE}'            as project_code,
            WHEN c.data_type ILIKE 'date'
                OR c.data_type ILIKE 'timestamp%'
                THEN 'D'
-           WHEN c.data_type ILIKE 'time without time zone'
+           WHEN c.data_type ILIKE 'time with%'
                THEN 'T'
            WHEN LOWER(c.data_type) IN ('bigint', 'integer', 'smallint', 'double precision', 'real', 'numeric', 'money')
                THEN 'N'

@@ -1,0 +1,69 @@
+test_types:
+  id: '1008'
+  test_type: CUSTOM
+  test_name_short: Custom Test
+  test_name_long: Custom-defined business rule
+  test_description: |-
+    Custom SQL Query Test
+  except_message: |-
+    Errors were detected according to test definition.
+  measure_uom: Errors found
+  measure_uom_description: |-
+    Count of errors identified by query
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: |-
+    Test Focus
+  column_name_help: |-
+    Specify a brief descriptor of the focus of this test that is unique within this Test Suite for the Table and Test Type. This distinguishes this test from others of the same type on the same table. Example: `Order Total Matches Detail` if you are testing that the total in one table matches the sum of lines in another.
+  default_parm_columns: custom_query
+  default_parm_values: null
+  default_parm_prompts: |-
+    Custom SQL Query Returning Error Records
+  default_parm_help: |-
+    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. \n\nA query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: custom
+  dq_dimension: Accuracy
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected count of errors found by custom query
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This business-rule test is highly flexible, covering any error state that can be expressed by a SQL query against one or more tables in the database. In operation, the user-defined query is embedded within a parent query returning the count of error rows identified. Any row returned by the query is interpreted as a single error condition in the test. Note that this query is run independently of other tests, and that performance will be slower, depending in large part on the efficiency of the query you write. Interpretation is based on the user-defined meaning of the test. Your query might be written to return errors in individual rows identified by joining tables. Or it might return an error based on a multi-column aggregate condition returning a single row if an error is found. This query is run separately when you click `Review Source Data` from Test Results, so be sure to include enough data in your results to follow-up. Interpretation is based on the user-defined meaning of the test.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2504'
+    test_type: CUSTOM
+    sql_flavor: bigquery
+    template_name: ex_custom_query_generic.sql
+  - id: '2404'
+    test_type: CUSTOM
+    sql_flavor: databricks
+    template_name: ex_custom_query_generic.sql
+  - id: '2204'
+    test_type: CUSTOM
+    sql_flavor: mssql
+    template_name: ex_custom_query_generic.sql
+  - id: '2304'
+    test_type: CUSTOM
+    sql_flavor: postgresql
+    template_name: ex_custom_query_generic.sql
+  - id: '2004'
+    test_type: CUSTOM
+    sql_flavor: redshift
+    template_name: ex_custom_query_generic.sql
+  - id: '2504'
+    test_type: CUSTOM
+    sql_flavor: redshift_spectrum
+    template_name: ex_custom_query_generic.sql
+  - id: '2104'
+    test_type: CUSTOM
+    sql_flavor: snowflake
+    template_name: ex_custom_query_generic.sql

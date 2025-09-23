@@ -1,6 +1,7 @@
 from typing import ClassVar, TypedDict
 
-from testgen.common import AddQuotesToIdentifierCSV, CleanSQL, ConcatColumnList, date_service, read_template_sql_file
+from testgen.common import date_service, read_template_sql_file
+from testgen.common.clean_sql import CleanSQL, ConcatColumnList, quote_identifiers
 from testgen.common.database.database_service import replace_params
 
 
@@ -113,7 +114,7 @@ class CTestExecutionSQL:
 
         if self.test_params:
             column_name = self.test_params["column_name"]
-            params["COLUMN_NAME"] = AddQuotesToIdentifierCSV(column_name) if column_name else ""
+            params["COLUMN_NAME"] = quote_identifiers(column_name, self.flavor) if column_name else ""
             # Shows contents without double-quotes for display and aggregate expressions
             params["COLUMN_NAME_NO_QUOTES"] = column_name or ""
             # Concatenates column list into single expression for relative entropy
