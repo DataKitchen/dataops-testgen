@@ -5,6 +5,9 @@ WITH ranked_vals AS (
          ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COL_NAME}") AS rn
     FROM {DATA_SCHEMA}.{DATA_TABLE}
    WHERE "{COL_NAME}" > ' '
+-- TG-IF do_sample_bool
+     AND RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}
+-- TG-ENDIF
    GROUP BY "{COL_NAME}"
 ),
 consol_vals AS (
