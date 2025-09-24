@@ -44,7 +44,14 @@ class TestDefinitionsPage(Page):
         lambda: "test_suite_id" in st.query_params or "test-suites",
     ]
 
-    def render(self, test_suite_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        test_suite_id: str,
+        table_name: str | None = None,
+        column_name: str | None = None,
+        test_type: str | None = None,
+        **_kwargs,
+    ) -> None:
         test_suite = TestSuite.get(test_suite_id)
         if not test_suite:
             self.router.navigate_with_warning(
@@ -74,25 +81,34 @@ class TestDefinitionsPage(Page):
         testgen.flex_row_start(actions_column)
         testgen.flex_row_end(disposition_column)
 
+        filters_changed = False
+        current_filters = (table_name, column_name, test_type)
+        if st.session_state.get("test_definitions:filters") != current_filters:
+            filters_changed = True
+            st.session_state["test_definitions:filters"] = current_filters
+
         with table_filter_column:
             columns_df = get_test_suite_columns(test_suite_id)
             table_options = list(columns_df["table_name"].unique())
             table_name = testgen.select(
                 options=table_options,
                 value_column="table_name",
-                default_value=table_name or (table_options[0] if table_options else None),
+                default_value=table_name,
                 bind_to_query="table_name",
-                required=True,
                 label="Table",
             )
         with column_filter_column:
-            column_options = columns_df.loc[columns_df["table_name"] == table_name]["column_name"].dropna().unique().tolist()
+            if table_name:
+                column_options = columns_df.loc[
+                    columns_df["table_name"] == table_name
+                    ]["column_name"].dropna().unique().tolist()
+            else:
+                column_options = columns_df.groupby("column_name").first().reset_index().sort_values("column_name", key=lambda x: x.str.lower())
             column_name = testgen.select(
                 options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column",
-                disabled=not table_name,
                 accept_new_options=True,
             )
         with test_filter_column:
@@ -101,29 +117,57 @@ class TestDefinitionsPage(Page):
                 options=test_options,
                 value_column="test_type",
                 display_column="test_name_short",
-                default_value=None,
+                default_value=test_type,
                 bind_to_query="test_type",
                 label="Test Type",
             )
 
-        with disposition_column:
-            str_help = "Toggle on to perform actions on multiple test definitions"
-            do_multi_select = user_can_disposition and st.toggle("Multi-Select", help=str_help)
+        if user_can_disposition:
+            with disposition_column:
+                multi_select = st.toggle("Multi-Select", help="Toggle on to perform actions on multiple test definitions")
 
-        if user_can_edit and actions_column.button(
-            ":material/add: Add", help="Add a new Test Definition"
-        ):
-            add_test_dialog(table_group, test_suite, table_name, column_name)
+        if user_can_edit:
+            if actions_column.button(
+                ":material/add: Add",
+                help="Add a new Test Definition",
+            ):
+                add_test_dialog(table_group, test_suite, table_name, column_name)
 
-        if user_can_edit and table_actions_column.button(
-            ":material/play_arrow: Run Tests",
-            help="Run test suite's tests",
-        ):
-            run_tests_dialog(project_code, test_suite)
+            if table_actions_column.button(
+                ":material/play_arrow: Run Tests",
+                help="Run test suite's tests",
+            ):
+                run_tests_dialog(project_code, test_suite)
 
-        selected = show_test_defs_grid(
-            test_suite, table_name, column_name, test_type, do_multi_select, table_actions_column, table_group
-        )
+        with st.container():
+            with st.spinner("Loading data ..."):
+                df = get_test_definitions(test_suite, table_name, column_name, test_type)
+
+        selected, selected_test_def = render_grid(df, multi_select, filters_changed)
+
+        popover_container = table_actions_column.empty()
+
+        def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+            # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+            with popover_container.container():
+                flex_row_end()
+                st.button(label="Export", icon=":material/download:", disabled=True)
+
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(test_suite, table_group.table_group_schema, data),
+            )
+
+        with popover_container.container(key="tg--export-popover"):
+            flex_row_end()
+            with st.popover(label="Export", icon=":material/download:", help="Download test definitions to Excel"):
+                css_class("tg--export-wrapper")
+                st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
+                st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
+                if selected:
+                    st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
+
         fm.render_refresh_button(table_actions_column)
 
         if user_can_disposition:
@@ -156,9 +200,6 @@ class TestDefinitionsPage(Page):
                             lst_cached_functions=[],
                         )
 
-        if selected:
-            selected_test_def = selected[0]
-
         if user_can_edit:
             if actions_column.button(
                 ":material/edit: Edit",
@@ -177,6 +218,102 @@ class TestDefinitionsPage(Page):
                 disabled=not selected,
             ):
                 delete_test_dialog(selected)
+
+        if selected_test_def:
+            render_selected_details(selected_test_def, table_group)
+
+
+def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> list[dict]:
+    columns = [
+        "table_name",
+        "column_name",
+        "test_name_short",
+        "test_active_display",
+        "lock_refresh_display",
+        "urgency",
+        "export_to_observability_display",
+        "profiling_as_of_date",
+        "last_manual_update",
+    ]
+    # Multiselect checkboxes do not display correctly if the dataframe column order does not start with the first displayed column -_-
+    df = df.reindex(columns=[columns[0]] + [ col for col in df.columns.to_list() if col != columns[0] ])
+
+    selected, selected_row = fm.render_grid_select(
+        df,
+        columns,
+        [
+            "Table",
+            "Columns / Focus",
+            "Test Type",
+            "Active",
+            "Locked",
+            "Urgency",
+            "Export to Observabilty",
+            "Based on Profiling",
+            "Last Manual Update",
+        ],
+        id_column="id",
+        selection_mode="multiple" if multi_select else "single",
+        reset_pagination=filters_changed,
+        bind_to_query=True,
+        render_highlights=False,
+    )
+
+    return selected, selected_row
+
+
+def render_selected_details(selected_test: dict, table_group: TableGroupMinimal) -> None:
+    columns = [
+        "schema_name",
+        "table_name",
+        "column_name",
+        "test_type",
+        "test_active_display",
+        "test_definition_status",
+        "lock_refresh_display",
+        "urgency",
+        "export_to_observability",
+    ]
+
+    labels = [
+        "schema_name",
+        "table_name",
+        "column_name",
+        "test_type",
+        "test_active",
+        "test_definition_status",
+        "lock_refresh",
+        "urgency",
+        "export_to_observability",
+    ]
+
+    additional_columns = [val.strip() for val in selected_test["default_parm_columns"].split(",")]
+    columns = columns + additional_columns
+    labels = labels + additional_columns
+    labels = list(map(snake_case_to_title_case, labels))
+
+    left_column, right_column = st.columns([0.5, 0.5])
+
+    with left_column:
+        fm.render_html_list(
+            selected_test,
+            columns,
+            "Test Definition Information",
+            int_data_width=700,
+            lst_labels=labels,
+        )
+
+    _, col_profile_button = right_column.columns([0.7, 0.3])
+    if selected_test["test_scope"] == "column" and selected_test["profile_run_id"]:
+        with col_profile_button:
+            view_profiling_button(
+                selected_test["column_name"],
+                selected_test["table_name"],
+                str(table_group.id),
+            )
+
+    with right_column:
+        st.write(generate_test_defs_help(selected_test["test_type"]))
 
 
 @st.dialog("Delete Tests")
@@ -472,51 +609,51 @@ def show_test_form(
 
     # schema_name
     test_definition["schema_name"] = left_column.text_input(
-        label="Schema Name", max_chars=100, value=schema_name, disabled=True
+        label="Schema", max_chars=100, value=schema_name, disabled=True
     )
 
     # table_name
-    test_definition["table_name"] = left_column.text_input(
-        label="Table Name", max_chars=100, value=table_name, disabled=False
-    )
-
-    # column_name
-    if selected_test_type_row["column_name_prompt"]:
-        column_name_label = selected_test_type_row["column_name_prompt"]
+    table_column_list = get_columns(table_groups_id)
+    if test_scope == "custom":
+        test_definition["table_name"] = left_column.text_input(
+            label="Table", max_chars=100, value=table_name, disabled=False
+        )
     else:
-        column_name_label = "Test Focus"
-    if selected_test_type_row["column_name_help"]:
-        column_name_help = selected_test_type_row["column_name_help"]
-    else:
-        column_name_help = "Help is not available"
+        table_name_options = { item["table_name"] for item in table_column_list }
+        if table_name not in table_name_options:
+            table_name_options.add(table_name)
+        table_name_options = list(table_name_options)
+        table_name_options.sort(key=lambda x: x.lower())
+        test_definition["table_name"] = st.selectbox(
+            label="Table",
+            options=table_name_options,
+            index=table_name_options.index(table_name) if table_name else 0,
+            disabled=mode == "edit",
+            key="table-name-form",
+        )
 
+    column_name_label = None
     if test_scope == "table":
         test_definition["column_name"] = None
-        column_name_label = None
-    elif test_scope == "referential":
+    elif test_scope in ("referential", "custom"):
+        column_name_label = selected_test_type_row["column_name_prompt"] if selected_test_type_row["column_name_prompt"] else "Test Focus"
         test_definition["column_name"] = left_column.text_input(
             label=column_name_label,
             value=column_name,
             max_chars=500,
-            help=column_name_help,
-        )
-    elif test_scope == "custom":
-        test_definition["column_name"] = left_column.text_input(
-            label=column_name_label,
-            value=column_name,
-            max_chars=100,
-            help=column_name_help,
+            help=selected_test_type_row["column_name_help"] if selected_test_type_row["column_name_help"] else None,
         )
     elif test_scope == "column":  # CAT column test
-        column_name_label = "Column Name"
-        column_name_options = get_column_names(table_groups_id, test_definition["table_name"])
-        column_name_help = "Select the column to test"
-        column_name_index = column_name_options.index(column_name) if column_name else 0
+        column_name_label = "Column"
+        column_name_options = { item["column_name"] for item in table_column_list if item["table_name"] == test_definition["table_name"]}
+        if column_name not in column_name_options:
+            column_name_options.add(column_name)
+        column_name_options = list(column_name_options)
+        column_name_options.sort(key=lambda x: x.lower())
         test_definition["column_name"] = st.selectbox(
             label=column_name_label,
             options=column_name_options,
-            index=column_name_index,
-            help=column_name_help,
+            index=column_name_options.index(column_name) if column_name else 0,
             key="column-name-form",
         )
 
@@ -865,143 +1002,6 @@ def update_test_definition(selected, attribute, value, message):
     return result
 
 
-def show_test_defs_grid(
-    test_suite: TestSuite,
-    table_name: str | None,
-    column_name: str | None,
-    test_type: str | None,
-    do_multi_select: bool,
-    export_container: DeltaGenerator,
-    table_group: TableGroupMinimal,
-):
-    with st.container():
-        with st.spinner("Loading data ..."):
-            df = get_test_definitions(test_suite, table_name, column_name, test_type)
-
-    lst_show_columns = [
-        "table_name",
-        "column_name",
-        "test_name_short",
-        "test_active_display",
-        "lock_refresh_display",
-        "urgency",
-        "export_to_observability_display",
-        "profiling_as_of_date",
-        "last_manual_update",
-    ]
-    show_column_headers = [
-        "Table",
-        "Columns / Focus",
-        "Test Type",
-        "Active",
-        "Locked",
-        "Urgency",
-        "Export to Observabilty",
-        "Based on Profiling",
-        "Last Manual Update",
-    ]
-    # Multiselect checkboxes do not display correctly if the dataframe column order does not start with the first displayed column -_-
-    columns = [lst_show_columns[0]] + [ col for col in df.columns.to_list() if col != lst_show_columns[0] ]
-    df = df.reindex(columns=columns)
-
-    dct_selected_row = fm.render_grid_select(
-        df,
-        lst_show_columns,
-        do_multi_select=do_multi_select,
-        show_column_headers=show_column_headers,
-        render_highlights=False,
-        bind_to_query_name="selected",
-        bind_to_query_prop="id",
-    )
-
-    popover_container = export_container.empty()
-
-    def open_download_dialog(data: pd.DataFrame | None = None) -> None:
-        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
-        with popover_container.container():
-            flex_row_end()
-            st.button(label="Export", icon=":material/download:", disabled=True)
-
-        download_dialog(
-            dialog_title="Download Excel Report",
-            file_content_func=get_excel_report_data,
-            args=(test_suite, table_group.table_group_schema, data),
-        )
-
-    with popover_container.container(key="tg--export-popover"):
-        flex_row_end()
-        with st.popover(label="Export", icon=":material/download:", help="Download test definitions to Excel"):
-            css_class("tg--export-wrapper")
-            st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
-            st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
-            if dct_selected_row:
-                st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(dct_selected_row)))
-
-    if dct_selected_row:
-        st.html("</p>&nbsp;</br>")
-        selected_row = dct_selected_row[0]
-        str_test_id = selected_row["id"]
-        row_selected = df[df["id"] == str_test_id].iloc[0]
-        str_parm_columns = selected_row["default_parm_columns"]
-
-        # Shared columns to show
-        lst_show_columns = [
-            "schema_name",
-            "table_name",
-            "column_name",
-            "test_type",
-            "test_active_display",
-            "test_definition_status",
-            "lock_refresh_display",
-            "urgency",
-            "export_to_observability",
-        ]
-
-        labels = [
-            "schema_name",
-            "table_name",
-            "column_name",
-            "test_type",
-            "test_active",
-            "test_definition_status",
-            "lock_refresh",
-            "urgency",
-            "export_to_observability",
-        ]
-
-        # Test-specific columns to show
-        additional_columns = [val.strip() for val in str_parm_columns.split(",")]
-        lst_show_columns = lst_show_columns + additional_columns
-        labels = labels + additional_columns
-
-        labels = list(map(snake_case_to_title_case, labels))
-
-        left_column, right_column = st.columns([0.5, 0.5])
-
-        with left_column:
-            fm.render_html_list(
-                selected_row,
-                lst_show_columns,
-                "Test Definition Information",
-                int_data_width=700,
-                lst_labels=labels,
-            )
-
-        _, col_profile_button = right_column.columns([0.7, 0.3])
-        if selected_row["test_scope"] == "column" and selected_row["profile_run_id"]:
-            with col_profile_button:
-                view_profiling_button(
-                    selected_row["column_name"],
-                    selected_row["table_name"],
-                    str(table_group.id),
-                )
-
-        with right_column:
-            st.write(generate_test_defs_help(row_selected["test_type"]))
-
-    return dct_selected_row
-
-
 @with_database_session
 def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
@@ -1198,22 +1198,19 @@ def get_test_definitions_collision(
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
 
-def get_column_names(table_groups_id: str, table_name: str) -> list[str]:
+def get_columns(table_groups_id: str) -> list[dict]:
     results = fetch_all_from_db(
         """
-        SELECT column_name
+        SELECT table_name, column_name
         FROM data_column_chars
         WHERE table_groups_id = :table_groups_id
-            AND table_name = :table_name
             AND drop_date IS NULL
-        ORDER BY column_name
         """,
         {
             "table_groups_id": table_groups_id,
-            "table_name": table_name,
         },
     )
-    return [ row.column_name for row in results ]
+    return [ dict(row) for row in results ]
 
 
 def validate_test(test_definition, table_group: TableGroupMinimal):

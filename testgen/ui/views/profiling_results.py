@@ -60,6 +60,13 @@ class ProfilingResultsPage(Page):
             [.3, .3, .08, .32], vertical_alignment="bottom"
         )
 
+        filters_changed = False
+        current_filters = (table_name, column_name)
+        if st.session_state.get("profiling_results:filters") != current_filters:
+            filters_changed = True
+            st.session_state["profiling_results:filters"] = current_filters
+
+
         with table_filter_column:
             # Table Name filter
             df = get_profiling_run_tables(run_id)
@@ -107,27 +114,13 @@ class ProfilingResultsPage(Page):
                     sorting_columns=sorting_columns,
                 )
 
-        show_columns = [
-            "table_name",
-            "column_name",
-            "column_type",
-            "semantic_data_type",
-            "hygiene_issues",
-        ]
-        show_column_headers = [
-            "Table",
-            "Column",
-            "Data Type",
-            "Semantic Data Type",
-            "Hygiene Issues",
-        ]
-
-        selected_row = fm.render_grid_select(
+        selected, selected_row = fm.render_grid_select(
             df,
-            show_columns,
-            bind_to_query_name="selected",
-            bind_to_query_prop="id",
-            show_column_headers=show_column_headers,
+            ["table_name", "column_name", "column_type", "semantic_data_type", "hygiene_issues"],
+            ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues"],
+            id_column="id",
+            reset_pagination=filters_changed,
+            bind_to_query=True,
         )
 
         popover_container = export_button_column.empty()
@@ -150,19 +143,18 @@ class ProfilingResultsPage(Page):
                 css_class("tg--export-wrapper")
                 st.button(label="All results", type="tertiary", on_click=open_download_dialog)
                 st.button(label="Filtered results", type="tertiary", on_click=partial(open_download_dialog, df))
-                if selected_row:
-                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_row)))
+                if selected:
+                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
 
 
         # Display profiling for selected row
         if not selected_row:
             st.markdown(":orange[Select a row to see profiling details.]")
         else:
-            item = selected_row[0]
-            item["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, item["table_name"], item.get("column_name"))
+            selected_row["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, selected_row["table_name"], selected_row.get("column_name"))
             testgen_component(
                 "column_profiling_results",
-                props={ "column": json.dumps(item), "data_preview": True },
+                props={ "column": json.dumps(selected_row), "data_preview": True },
                 on_change_handlers={
                     "DataPreviewClicked": lambda item: data_preview_dialog(
                         item["table_group_id"],

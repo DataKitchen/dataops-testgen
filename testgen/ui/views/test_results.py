@@ -5,13 +5,11 @@ from functools import partial
 from io import BytesIO
 from itertools import zip_longest
 from operator import attrgetter
-from uuid import UUID
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit.delta_generator import DeltaGenerator
 
 import testgen.ui.services.form_service as fm
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
@@ -21,7 +19,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -61,9 +59,9 @@ class TestResultsPage(Page):
         self,
         run_id: str,
         status: str | None = None,
-        test_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        test_type: str | None = None,
         action: str | None = None,
         **_kwargs,
     ) -> None:
@@ -94,6 +92,12 @@ class TestResultsPage(Page):
 
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
+
+        filters_changed = False
+        current_filters = (status, table_name, column_name, test_type, action)
+        if st.session_state.get("test_results:filters") != current_filters:
+            filters_changed = True
+            st.session_state["test_results:filters"] = current_filters
 
         with summary_column:
             tests_summary = get_test_result_summary(run_id)
@@ -175,8 +179,10 @@ class TestResultsPage(Page):
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
-            str_help = "Toggle on to perform actions on multiple results"
-            do_multi_select = st.toggle("Multi-Select", help=str_help)
+            multi_select = st.toggle(
+                "Multi-Select",
+                help="Toggle on to perform actions on multiple results",
+            )
 
         match status:
             case None:
@@ -186,21 +192,79 @@ class TestResultsPage(Page):
             case _:
                 status = [status]
 
-        # Display main grid and retrieve selection
-        selected = show_result_detail(
-            run_id,
-            run_date,
-            run.test_suite_id,
-            export_button_column,
-            session.auth.user_has_permission("edit"),
-            status,
-            test_type,
-            table_name,
-            column_name,
-            action,
-            sorting_columns,
-            do_multi_select,
+        with st.container():
+            with st.spinner("Loading data ..."):
+                # Retrieve test results (always cached, action as null)
+                df = test_result_queries.get_test_results(
+                    run_id, status, test_type, table_name, column_name, action, sorting_columns
+                )
+                # Retrieve disposition action (cache refreshed)
+                df_action = get_test_disposition(run_id)
+                # Update action from disposition df
+                action_map = df_action.set_index("id")["action"].to_dict()
+                df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
+
+                # Update action from disposition df
+                action_map = df_action.set_index("id")["action"].to_dict()
+                df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
+
+                test_suite = TestSuite.get_minimal(run.test_suite_id)
+                table_group = TableGroup.get_minimal(test_suite.table_groups_id)
+
+        selected, selected_row = fm.render_grid_select(
+            df,
+            [
+                "table_name",
+                "column_names",
+                "test_name_short",
+                "result_measure",
+                "measure_uom",
+                "result_status",
+                "action",
+                "result_message",
+            ],
+            [
+                "Table",
+                "Columns/Focus",
+                "Test Type",
+                "Result Measure",
+                "Unit of Measure",
+                "Status",
+                "Action",
+                "Details",
+            ],
+            id_column="test_result_id",
+            selection_mode="multiple" if multi_select else "single",
+            reset_pagination=filters_changed,
+            bind_to_query=True,
         )
+
+        popover_container = export_button_column.empty()
+
+        def open_download_dialog(data: pd.DataFrame | None = None) -> None:
+            # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
+            with popover_container.container():
+                flex_row_end()
+                st.button(label="Export", icon=":material/download:", disabled=True)
+
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(test_suite.test_suite, table_group.table_group_schema, run_date, run_id, data),
+            )
+
+        with popover_container.container(key="tg--export-popover"):
+            flex_row_end()
+            with st.popover(label="Export", icon=":material/download:", help="Download test results to Excel"):
+                css_class("tg--export-wrapper")
+                st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
+                st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
+                if selected:
+                    st.button(
+                        label="Selected tests",
+                        type="tertiary",
+                        on_click=partial(open_download_dialog, pd.DataFrame(selected)),
+                    )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
         affected_cached_functions = [get_test_disposition, test_result_queries.get_test_results]
@@ -238,10 +302,17 @@ class TestResultsPage(Page):
         with score_column:
             render_score(run.project_code, run_id)
 
+        if selected:
+            render_selected_details(
+                selected,
+                selected_row,
+                test_suite,
+                session.auth.user_has_permission("edit"),
+                multi_select,
+            )
+
         # Help Links
-        st.markdown(
-            "[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)"
-        )
+        st.markdown("[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)")
 
 
 @st.fragment
@@ -366,7 +437,7 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
     ]
 
 
-def show_test_def_detail(test_definition_id: str, test_suite: TestSuite):
+def show_test_def_detail(test_definition_id: str, test_suite: TestSuiteMinimal):
     def readable_boolean(v: bool):
         return "Yes" if v else "No"
     
@@ -431,128 +502,51 @@ def show_test_def_detail(test_definition_id: str, test_suite: TestSuite):
         )
 
 
-def show_result_detail(
-    run_id: str,
-    run_date: str,
-    test_suite_id: UUID,
-    export_container: DeltaGenerator,
+@with_database_session
+def render_selected_details(
+    selected_rows: list[dict],
+    selected_item: dict,
+    test_suite: TestSuiteMinimal,
     user_can_edit: bool,
-    test_statuses: list[str] | None = None,
-    test_type_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    action: typing.Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
-    sorting_columns: list[str] | None = None,
-    do_multi_select: bool = False,
-):
-    with st.container():
-        with st.spinner("Loading data ..."):
-            # Retrieve test results (always cached, action as null)
-            df = test_result_queries.get_test_results(run_id, test_statuses, test_type_id, table_name, column_name, action, sorting_columns)
-            # Retrieve disposition action (cache refreshed)
-            df_action = get_test_disposition(run_id)
-            # Update action from disposition df
-            action_map = df_action.set_index("id")["action"].to_dict()
-            df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
-
-            # Update action from disposition df
-            action_map = df_action.set_index("id")["action"].to_dict()
-            df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
-
-            test_suite = TestSuite.get_minimal(test_suite_id)
-            table_group = TableGroup.get_minimal(test_suite.table_groups_id)
-
-    lst_show_columns = [
-        "table_name",
-        "column_names",
-        "test_name_short",
-        "result_measure",
-        "measure_uom",
-        "result_status",
-        "action",
-        "result_message",
-    ]
-
-    lst_show_headers = [
-        "Table",
-        "Columns/Focus",
-        "Test Type",
-        "Result Measure",
-        "Unit of Measure",
-        "Status",
-        "Action",
-        "Details",
-    ]
-
-    selected_rows = fm.render_grid_select(
-        df,
-        lst_show_columns,
-        do_multi_select=do_multi_select,
-        show_column_headers=lst_show_headers,
-        bind_to_query_name="selected",
-        bind_to_query_prop="test_result_id",
-    )
-
-    popover_container = export_container.empty()
-
-    def open_download_dialog(data: pd.DataFrame | None = None) -> None:
-        # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
-        with popover_container.container():
-            flex_row_end()
-            st.button(label="Export", icon=":material/download:", disabled=True)
-
-        download_dialog(
-            dialog_title="Download Excel Report",
-            file_content_func=get_excel_report_data,
-            args=(test_suite.test_suite, table_group.table_group_schema, run_date, run_id, data),
-        )
-
-    with popover_container.container(key="tg--export-popover"):
-        flex_row_end()
-        with st.popover(label="Export", icon=":material/download:", help="Download test results to Excel"):
-            css_class("tg--export-wrapper")
-            st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
-            st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
-            if selected_rows:
-                st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_rows)))
-
-    # Display history and detail for selected row
+    multi_select: bool = False,
+) -> None:
     if not selected_rows:
         st.markdown(":orange[Select a record to see more information.]")
     else:
-        selected_row = selected_rows[0]
-        dfh = test_result_queries.get_test_result_history(selected_row)
-        show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
-
-        time_columns = ["test_date"]
-        date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
-
         pg_col1, pg_col2 = st.columns([0.5, 0.5])
 
         with pg_col2:
             v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
-        if user_can_edit:
-            view_edit_test(v_col1, selected_row["test_definition_id_current"])
 
-        if selected_row["test_scope"] == "column":
-            with v_col2:
-                view_profiling_button(
-                    selected_row["column_names"],
-                    selected_row["table_name"],
-                    selected_row["table_groups_id"],
-                )
+        if selected_item:
+            dfh = test_result_queries.get_test_result_history(selected_item)
+            show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
-        with v_col3:
-            if st.button(
-                    ":material/visibility: Source Data", help="View current source data for highlighted result",
-                    use_container_width=True
-            ):
-                MixpanelService().send_event(
-                    "view-source-data",
-                    page=PAGE_PATH,
-                    test_type=selected_row["test_name_short"],
-                )
-                source_data_dialog(selected_row)
+            time_columns = ["test_date"]
+            date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
+
+            if user_can_edit:
+                view_edit_test(v_col1, selected_item["test_definition_id_current"])
+
+            if selected_item["test_scope"] == "column":
+                with v_col2:
+                    view_profiling_button(
+                        selected_item["column_names"],
+                        selected_item["table_name"],
+                        selected_item["table_groups_id"],
+                    )
+
+            with v_col3:
+                if st.button(
+                        ":material/visibility: Source Data", help="View current source data for highlighted result",
+                        use_container_width=True
+                ):
+                    MixpanelService().send_event(
+                        "view-source-data",
+                        page=PAGE_PATH,
+                        test_type=selected_item["test_name_short"],
+                    )
+                    source_data_dialog(selected_item)
 
         with v_col4:
 
@@ -561,7 +555,7 @@ def show_result_detail(
                 if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
             ]
 
-            if do_multi_select:
+            if multi_select:
                 report_btn_help = (
                     "Generate PDF reports for the selected results that are not muted or dismissed and are not Passed"
                 )
@@ -594,21 +588,21 @@ def show_result_detail(
                     )
                     download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
-        with pg_col1:
-            fm.show_subheader(selected_row["test_name_short"])
-            st.markdown(f"###### {selected_row['test_description']}")
-            st.caption(empty_if_null(selected_row["measure_uom_description"]))
-            fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled")
-        with pg_col2:
-            ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
-            with ut_tab1:
-                if dfh.empty:
-                    st.write("Test history not available.")
-                else:
-                    write_history_graph(dfh)
-            with ut_tab2:
-                show_test_def_detail(selected_row["test_definition_id_current"], test_suite)
-        return selected_rows
+        if selected_item:
+            with pg_col1:
+                fm.show_subheader(selected_item["test_name_short"])
+                st.markdown(f"###### {selected_item['test_description']}")
+                st.caption(empty_if_null(selected_item["measure_uom_description"]))
+                fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled", key="test_history")
+            with pg_col2:
+                ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
+                with ut_tab1:
+                    if dfh.empty:
+                        st.write("Test history not available.")
+                    else:
+                        write_history_graph(dfh)
+                with ut_tab2:
+                    show_test_def_detail(selected_item["test_definition_id_current"], test_suite)
 
 
 @with_database_session
