@@ -1,7 +1,6 @@
 ---
-strTemplate01_sampling: "SELECT "
-strTemplate01_else: "SELECT "
-strTemplate02_all: |
+strTemplate01: | 
+  SELECT
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
   '{TABLE_GROUPS_ID}' as table_groups_id,
@@ -13,6 +12,11 @@ strTemplate02_all: |
   '{COL_TYPE}' AS column_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
+strTemplate02_X: |
+  COUNT("{COL_NAME}") AS value_ct,
+  COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
+  SUM(NVL2("{COL_NAME}", 0, 1)) AS null_value_ct,
+strTemplate02_else: |
   COUNT("{COL_NAME}") AS value_ct,
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
   SUM(NVL2("{COL_NAME}", 0, 1)) AS null_value_ct,
@@ -100,9 +104,9 @@ strTemplate06_A_patterns: ( SELECT LEFT(LISTAGG(pattern, ' | ') WITHIN GROUP (OR
                         "{COL_NAME}"::VARCHAR, '[a-z]', 'a'),
                                     '[A-Z]', 'A'),
                                     '[0-9]', 'N') AS pattern
-                       FROM {DATA_SCHEMA}.{DATA_TABLE}
+                       FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
                       WHERE "{COL_NAME}" > ' ' AND (SELECT MAX(LEN("{COL_NAME}"))
-                                                      FROM {DATA_SCHEMA}.{DATA_TABLE}) BETWEEN 3 and {PARM_MAX_PATTERN_LENGTH}) p
+                                                      FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {PARM_MAX_PATTERN_LENGTH}) p
             GROUP BY pattern
             HAVING pattern > ' '
             ORDER BY COUNT(*) DESC) as ps) AS top_patterns,
@@ -111,7 +115,7 @@ strTemplate07_A_freq:  (  SELECT LEFT(LISTAGG(val, ' | ') WITHIN GROUP (ORDER BY
   FROM (
           SELECT TOP 10 CAST(COUNT(*) as VARCHAR(10)) || ' | ' || "{COL_NAME}" as val,
           COUNT(*) as ct
-          FROM {DATA_SCHEMA}.{DATA_TABLE}
+          FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
           WHERE "{COL_NAME}" > ' '
           GROUP BY "{COL_NAME}"
           HAVING "{COL_NAME}" > ' '
@@ -177,7 +181,7 @@ strTemplate14_A_do_patterns:  ( SELECT COUNT(DISTINCT REGEXP_REPLACE( REGEXP_REP
                                       '[A-Z]', 'A'),
                                       '[0-9]', 'N')
                 ) AS pattern_ct
-     FROM {DATA_SCHEMA}.{DATA_TABLE}
+     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
     WHERE "{COL_NAME}" > ' ' )  AS distinct_pattern_ct,
   SUM(SIGN(REGEXP_COUNT(TRIM("{COL_NAME}"::VARCHAR), ' '))::BIGINT) AS embedded_space_ct,
   AVG(REGEXP_COUNT(TRIM("{COL_NAME}"::VARCHAR), ' ')::FLOAT)  AS avg_embedded_spaces,
@@ -195,9 +199,9 @@ strTemplate15_ALL:  NULL as functional_data_type,
 
 strTemplate16_ALL:  " '{PROFILE_RUN_ID}' as profile_run_id "
 
-strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} SAMPLE ({SAMPLE_SIZE} rows)'
+strTemplate98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_SIZE} rows)'
 
-strTemplate98_else: ' FROM {DATA_SCHEMA}.{DATA_TABLE}'
+strTemplate98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}"'
 
 strTemplate99_N: |
       ,
@@ -205,7 +209,7 @@ strTemplate99_N: |
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
-        FROM {DATA_SCHEMA}.{DATA_TABLE} LIMIT 1) pctile
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
 
 strTemplate99_N_sampling: |
       ,
@@ -213,7 +217,7 @@ strTemplate99_N_sampling: |
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
-        FROM {DATA_SCHEMA}.{DATA_TABLE} SAMPLE ({SAMPLE_SIZE} rows) LIMIT 1 ) pctile
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_SIZE} rows) LIMIT 1 ) pctile
 
 strTemplate99_else: ;
 

@@ -3,7 +3,7 @@ WITH ranked_vals AS (
   SELECT "{COL_NAME}",
          COUNT(*) AS ct,
          ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COL_NAME}") AS rn
-    FROM {DATA_SCHEMA}.{DATA_TABLE}
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
    WHERE "{COL_NAME}" > ' '
 -- TG-IF do_sample_bool
      AND RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}
@@ -28,5 +28,5 @@ SELECT '{PROJECT_CODE}' as project_code,
        REPLACE(LISTAGG(val, '^#^') WITHIN GROUP (ORDER BY min_rn), '^#^', CHR(10)) AS top_freq_values,
        ( SELECT MD5(LISTAGG(DISTINCT "{COL_NAME}", '|')
                            WITHIN GROUP (ORDER BY "{COL_NAME}")) as dvh
-           FROM {DATA_SCHEMA}.{DATA_TABLE} ) as distinct_value_hash
+           FROM "{DATA_SCHEMA}"."{DATA_TABLE}" ) as distinct_value_hash
   FROM consol_vals;
