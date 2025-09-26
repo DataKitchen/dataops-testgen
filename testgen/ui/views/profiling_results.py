@@ -62,8 +62,9 @@ class ProfilingResultsPage(Page):
 
         filters_changed = False
         current_filters = (table_name, column_name)
-        if st.session_state.get("profiling_results:filters") != current_filters:
-            filters_changed = True
+        if (query_filters := st.session_state.get("profiling_results:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
             st.session_state["profiling_results:filters"] = current_filters
 
 

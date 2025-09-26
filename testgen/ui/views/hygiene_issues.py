@@ -79,8 +79,9 @@ class HygieneIssuesPage(Page):
 
         filters_changed = False
         current_filters = (likelihood, table_name, column_name, issue_type, action)
-        if st.session_state.get("hygiene_issues:filters") != current_filters:
-            filters_changed = True
+        if  (query_filters := st.session_state.get("hygiene_issues:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
             st.session_state["hygiene_issues:filters"] = current_filters
 
         with liklihood_filter_column:

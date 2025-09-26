@@ -83,8 +83,9 @@ class TestDefinitionsPage(Page):
 
         filters_changed = False
         current_filters = (table_name, column_name, test_type)
-        if st.session_state.get("test_definitions:filters") != current_filters:
-            filters_changed = True
+        if (query_filters := st.session_state.get("test_definitions:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
             st.session_state["test_definitions:filters"] = current_filters
 
         with table_filter_column:

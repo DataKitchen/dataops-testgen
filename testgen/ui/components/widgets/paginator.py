@@ -1,3 +1,4 @@
+import math
 import typing
 
 import streamlit as st
@@ -32,7 +33,9 @@ def paginator(
             on_change()
 
     if page_index is None:
-        page_index = int(st.query_params.get(bind_to_query, 0)) if bind_to_query else 0
+        bound_value = st.query_params.get(bind_to_query, "")
+        page_index = int(bound_value) if bound_value.isdigit() else 0
+        page_index = page_index if page_index < math.ceil(count / page_size) else 0
 
     event_data = component(
         id_="paginator",

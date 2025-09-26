@@ -95,8 +95,9 @@ class TestResultsPage(Page):
 
         filters_changed = False
         current_filters = (status, table_name, column_name, test_type, action)
-        if st.session_state.get("test_results:filters") != current_filters:
-            filters_changed = True
+        if (query_filters := st.session_state.get("test_results:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
             st.session_state["test_results:filters"] = current_filters
 
         with summary_column:
