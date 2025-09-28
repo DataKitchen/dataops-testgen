@@ -576,7 +576,7 @@ def source_data_dialog(selected_row):
     st.markdown("#### SQL Query")
     query = get_hygiene_issue_source_query(selected_row)
     if query:
-        st.code(query, language="sql")
+        st.code(query, language="sql", height=100)
 
     with st.spinner("Retrieving source data..."):
         bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)

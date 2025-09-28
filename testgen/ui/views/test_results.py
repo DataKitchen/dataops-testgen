@@ -800,7 +800,7 @@ def source_data_dialog(selected_row):
     st.caption(selected_row["test_description"])
     
     st.markdown("#### Test Parameters")
-    testgen.caption(selected_row["input_parameters"], styles="max-height: 100px; overflow: auto;")
+    testgen.caption(selected_row["input_parameters"], styles="max-height: 75px; overflow: auto;")
 
     st.markdown("#### Result Detail")
     st.caption(selected_row["result_message"])
@@ -811,7 +811,7 @@ def source_data_dialog(selected_row):
     else:
         query = get_test_issue_source_query(selected_row)
     if query:
-        st.code(query, language="sql")
+        st.code(query, language="sql", height=100)
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
