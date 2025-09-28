@@ -13,6 +13,7 @@
  * @property {number?} latest_profile_start
  * @property {number} latest_profile_table_ct
  * @property {number} latest_profile_column_ct
+ * @property {number} latest_profile_data_point_ct
  * @property {number} latest_anomalies_ct
  * @property {number} latest_anomalies_definite_ct
  * @property {number} latest_anomalies_likely_ct
@@ -36,7 +37,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
+import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
@@ -137,7 +138,9 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     ),
                     span(
                         { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
-                        `${tableGroup.latest_profile_table_ct ?? 0} tables | ${tableGroup.latest_profile_column_ct ?? 0} columns`,
+                        `${formatNumber(tableGroup.latest_profile_table_ct ?? 0)} tables | 
+                        ${formatNumber(tableGroup.latest_profile_column_ct ?? 0)} columns | 
+                        ${formatNumber(tableGroup.latest_profile_data_point_ct ?? 0)} data points`,
                     ),
                     TableGroupTestSuiteSummary(tableGroup.test_suites),
                 ),
