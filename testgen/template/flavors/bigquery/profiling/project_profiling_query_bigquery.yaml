@@ -9,7 +9,7 @@ strTemplate01_else: |
     SELECT * FROM `{DATA_SCHEMA}.{DATA_TABLE}`
   )
   SELECT
-strTemplate02_all: |
+strTemplate01_5: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
   '{TABLE_GROUPS_ID}' as table_groups_id,
@@ -21,6 +21,11 @@ strTemplate02_all: |
   '{COL_TYPE}' AS column_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
+strTemplate02_X: |
+  COUNT(`{COL_NAME}`) AS value_ct,
+  COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
+  SUM(IF(`{COL_NAME}` IS NULL, 1, 0)) AS null_value_ct,
+strTemplate02_else: |
   COUNT(`{COL_NAME}`) AS value_ct,
   COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
   SUM(IF(`{COL_NAME}` IS NULL, 1, 0)) AS null_value_ct,

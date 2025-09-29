@@ -1,5 +1,5 @@
 /**
- * @typedef Option
+ * @typedef SelectOption
  * @type {object}
  * @property {string} label
  * @property {string} value
@@ -11,7 +11,7 @@
  * @property {string?} id
  * @property {string} label
  * @property {string?} value
- * @property {Array.<Option>} options
+ * @property {Array.<SelectOption>} options
  * @property {boolean} allowNull
  * @property {Function|null} onChange
  * @property {boolean?} disabled
@@ -76,7 +76,7 @@ const Select = (/** @type {Properties} */ props) => {
     const valueLabel = van.state(initialSelection?.label ?? '');
     const valueIcon = van.state(initialSelection?.icon ?? undefined);
 
-    const changeSelection = (/** @type Option */ option) => {
+    const changeSelection = (/** @type SelectOption */ option) => {
         opened.val = false;
         value.val = option.value;
     };

@@ -21,7 +21,8 @@ const Paginator = (/** @type Properties */ props) => {
     }
 
     const { count, pageSize } = props;
-    const pageIndexState = van.state(getValue(props.pageIndex) ?? 0);
+    const pageIndexState = van.derive(() => getValue(props.pageIndex) ?? 0);
+
     van.derive(() => {
         const onChange = props.onChange?.val ?? props.onChange ?? changePage;
         onChange(pageIndexState.val);

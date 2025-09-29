@@ -1,4 +1,3 @@
-import json
 import logging
 import typing
 from collections.abc import Iterable
@@ -11,19 +10,19 @@ import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
-from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.utils import friendly_score, to_dataframe, to_int
+from testgen.utils import friendly_score, to_int
 
-PAGE_SIZE = 50
 PAGE_ICON = "labs"
 PAGE_TITLE = "Test Runs"
 LOG = logging.getLogger("testgen")
@@ -48,93 +47,64 @@ class TestRunsPage(Page):
             "test-results",
         )
 
-        user_can_run = session.auth.user_has_permission("edit")
-        if render_empty_state(project_code, user_can_run):
-            return
-
-        group_filter_column, suite_filter_column, actions_column = st.columns([.3, .3, .4], vertical_alignment="bottom")
-
-        with group_filter_column:
-            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
-            table_groups_df["id"] = table_groups_df["id"].apply(lambda x: str(x))
-            table_group_id = testgen.select(
-                options=table_groups_df,
-                value_column="id",
-                display_column="table_groups_name",
-                default_value=table_group_id,
-                bind_to_query="table_group_id",
-                label="Table Group",
-                placeholder="---",
-            )
-
-        with suite_filter_column:
-            clauses = [TestSuite.project_code == project_code]
-            if table_group_id:
-                clauses.append(TestSuite.table_groups_id == table_group_id)
-            test_suites = TestSuite.select_where(*clauses)
-            test_suites_df = to_dataframe(test_suites, TestSuite.columns())
-            test_suites_df["id"] = test_suites_df["id"].apply(lambda x: str(x))
-            test_suite_id = testgen.select(
-                options=test_suites_df,
-                value_column="id",
-                display_column="test_suite",
-                default_value=test_suite_id,
-                bind_to_query="test_suite_id",
-                label="Test Suite",
-                placeholder="---",
-            )
-
-        with actions_column:
-            testgen.flex_row_end(actions_column)
-
-            st.button(
-                ":material/today: Test Run Schedules",
-                help="Manage when test suites should run",
-                on_click=partial(TestRunScheduleDialog().open, project_code)
-            )
-
-            if user_can_run:
-                st.button(
-                    ":material/play_arrow: Run Tests",
-                    help="Run tests for a test suite",
-                    on_click=partial(run_tests_dialog, project_code, None, test_suite_id)
-                )
-
-        fm.render_refresh_button(actions_column)
-
-        testgen.whitespace(0.5)
-        list_container = st.container()
-
         with st.spinner("Loading data ..."):
+            project_summary = Project.get_summary(project_code)
             test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id)
+            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+            test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code)
 
-        paginated = []
-        if run_count := len(test_runs):
-            page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
-            test_runs = [
-                {
-                    **row.to_dict(json_safe=True),
-                    "dq_score_testing": friendly_score(row.dq_score_testing),
-                } for row in test_runs
-            ]
-            paginated = test_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-
-        with list_container:
-            testgen_component(
-                "test_runs",
-                props={
-                    "items": json.dumps(paginated),
-                    "permissions": {
-                        "can_run": user_can_run,
-                        "can_edit": user_can_run,
-                    },
+        testgen_component(
+            "test_runs",
+            props={
+                "project_summary": project_summary.to_dict(json_safe=True),
+                "test_runs": [
+                    {
+                        **run.to_dict(json_safe=True),
+                        "dq_score_testing": friendly_score(run.dq_score_testing),
+                    } for run in test_runs
+                ],
+                "table_group_options": [
+                    {
+                        "value": str(table_group.id),
+                        "label": table_group.table_groups_name,
+                        "selected": str(table_group_id) == str(table_group.id),
+                    } for table_group in table_groups
+                ],
+                "test_suite_options": [
+                    {
+                        "value": str(test_suite.id),
+                        "label": test_suite.test_suite,
+                        "selected": str(test_suite_id) == str(test_suite.id),
+                    } for test_suite in test_suites
+                    if not table_group_id or str(table_group_id) == str(test_suite.table_groups_id)
+                ],
+                "permissions": {
+                    "can_edit": session.auth.user_has_permission("edit"),
                 },
-                event_handlers={
-                    "RunCanceled": on_cancel_run,
-                    "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
-                }
-            )
+            },
+            on_change_handlers={
+                "FilterApplied": on_test_runs_filtered,
+                "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
+                "RunTestsClicked": lambda *_: run_tests_dialog(project_code, None, test_suite_id),
+                "RefreshData": refresh_data,
+                "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
+            },
+            event_handlers={
+                "RunCanceled": on_cancel_run,
+            },
+        )
+
+
+class TestRunFilters(typing.TypedDict):
+    table_group_id: str
+    test_suite_id: str
+
+def on_test_runs_filtered(filters: TestRunFilters) -> None:
+    Router().set_query_params(filters)
+
+
+def refresh_data(*_) -> None:
+    TestRun.select_summary.clear()
 
 
 class TestRunScheduleDialog(ScheduleDialog):
@@ -158,56 +128,6 @@ class TestRunScheduleDialog(ScheduleDialog):
 
     def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
         return [], {"project_key": self.project_code, "test_suite_key": arg_value}
-
-
-def render_empty_state(project_code: str, user_can_run: bool) -> bool:
-    project_summary = Project.get_summary(project_code)
-    if project_summary.test_run_count:
-        return False
-
-    label="No test runs yet"
-    testgen.whitespace(5)
-    if not project_summary.connection_count:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Connection,
-            action_label="Go to Connections",
-            link_href="connections",
-            link_params={ "project_code": project_code },
-        )
-    elif not project_summary.table_group_count:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TableGroup,
-            action_label="Go to Table Groups",
-            link_href="table-groups",
-            link_params={
-                "project_code": project_code,
-                "connection_id": str(project_summary.default_connection_id),
-            }
-        )
-    elif not project_summary.test_suite_count or not project_summary.test_definition_count:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TestSuite,
-            action_label="Go to Test Suites",
-            link_href="test-suites",
-            link_params={ "project_code": project_code },
-        )
-    else:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TestExecution,
-            action_label="Run Tests",
-            action_disabled=not user_can_run,
-            button_onclick=partial(run_tests_dialog, project_code),
-            button_icon="play_arrow",
-        )
-    return True
 
 
 def on_cancel_run(test_run: dict) -> None:

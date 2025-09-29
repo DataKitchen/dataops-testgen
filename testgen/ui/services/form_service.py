@@ -9,6 +9,7 @@ import streamlit as st
 from pandas.api.types import is_datetime64_any_dtype
 from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBuilder, GridUpdateMode, JsCode
 
+from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
 
 """
@@ -142,30 +143,26 @@ def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_wid
 
 def render_grid_select(
     df: pd.DataFrame,
-    show_columns,
-    str_prompt=None,
-    int_height=400,
-    do_multi_select: bool | None = None,
+    columns: list[str],
+    column_headers: list[str] | None = None,
+    id_column: str | None = None,
     selection_mode: typing.Literal["single", "multiple", "disabled"] = "single",
-    show_column_headers=None,
-    render_highlights=True,
-    bind_to_query_name: str | None = None,
-    bind_to_query_prop: str | None = None,
+    page_size: int = 500,
+    reset_pagination: bool = False,
+    bind_to_query: bool = False,
+    render_highlights: bool = True,
     key: str = "aggrid",
-):
+) -> tuple[list[dict], dict]:
     """
-    :param do_multi_select: DEPRECATED. boolean to choose between single
-        or multiple selection.
     :param selection_mode: one of single, multiple or disabled. defaults
         to single.
-    :param bind_to_query_name: name of the query param where to bind the
-        selected row.
-    :param bind_to_query_prop: name of the property of the selected row
-        which value will be set in the query param.
+    :param bind_to_query: whether to bind the selected row and page to
+        query params.
     :param key: Streamlit cache key for the grid. required when binding
         selection to query.
     """
-    show_prompt(str_prompt)
+    if selection_mode != "disabled" and not id_column:
+        raise ValueError("id_column is required when using 'single' or 'multiple' selection mode")
 
     # Set grid formatting
     cellstyle_jscode = JsCode(
@@ -253,39 +250,62 @@ function(params) {
     rendering_counter = st.session_state.get(f"{key}_counter") or 0
     previous_dataframe = st.session_state.get(f"{key}_dataframe")
 
-    df = df.copy()
     if previous_dataframe is not None:
         data_changed = not df.equals(previous_dataframe)
 
-    dct_col_to_header = dict(zip(show_columns, show_column_headers, strict=True)) if show_column_headers else None
+    page_changed = st.session_state.get(f"{key}_page_change", False)
+    if page_changed:
+        st.session_state[f"{key}_page_change"] = False
 
-    gb = GridOptionsBuilder.from_dataframe(df)
-    selection_mode_ = selection_mode
-    if do_multi_select is not None:
-        selection_mode_ = "multiple" if do_multi_select else "single"
+    grid_container = st.container()
+    selected_column, paginator_column = st.columns([.5, .5])
+    with paginator_column:
+        def on_page_change():
+            st.session_state[f"{key}_page_change"] = True
+
+        page_index = testgen.paginator(
+            count=len(df),
+            page_size=page_size,
+            page_index=0 if reset_pagination else None,
+            bind_to_query="page" if bind_to_query else None,
+            on_change=on_page_change,
+            key=f"{key}_paginator",
+        )
+        # Prevent flickering data when filters are changed (which triggers 2 reruns - one from filter and another from paginator)
+        page_index = 0 if reset_pagination else page_index
+        paginated_df = df.iloc[page_size * page_index : page_size * (page_index + 1)]
+
+    dct_col_to_header = dict(zip(columns, column_headers, strict=True)) if column_headers else None
+
+    gb = GridOptionsBuilder.from_dataframe(paginated_df)
 
     pre_selected_rows: typing.Any = {}
-    if bind_to_query_name and bind_to_query_prop:
-        bound_value = st.query_params.get(bind_to_query_name)
-        bound_items = df[df[bind_to_query_prop] == bound_value]
+    if selection_mode == "single" and bind_to_query:
+        bound_value = st.query_params.get("selected")
+        bound_items = paginated_df[paginated_df[id_column] == bound_value]
         if len(bound_items) > 0:
             # https://github.com/PablocFonseca/streamlit-aggrid/issues/207#issuecomment-1793039564
-            pre_selected_rows = {str(bound_items.iloc[0][bind_to_query_prop]): True}
+            pre_selected_rows = {str(bound_value): True}
         else:
-            if data_changed and st.query_params.get(bind_to_query_name):
+            if data_changed and st.query_params.get("selected"):
                 rendering_counter += 1
-            Router().set_query_params({bind_to_query_name: None})
+            Router().set_query_params({"selected": None})
+
+    selection = set()
+    if selection_mode == "multiple":
+        selection = st.session_state.get(f"{key}_multiselection", set())
+        pre_selected_rows = {str(item): True for item in selection}
 
     gb.configure_selection(
-        selection_mode=selection_mode_,
-        use_checkbox=selection_mode_ == "multiple",
+        selection_mode=selection_mode,
+        use_checkbox=selection_mode == "multiple",
         pre_selected_rows=pre_selected_rows,
     )
 
-    if bind_to_query_prop:
-        gb.configure_grid_options(getRowId=JsCode(f"""function(row) {{ return row.data['{bind_to_query_prop}'] }}"""))
+    if id_column:
+        gb.configure_grid_options(getRowId=JsCode(f"function(row) {{ return row.data['{id_column}'] }}"))
 
-    all_columns = list(df.columns)
+    all_columns = list(paginated_df.columns)
 
     for column in all_columns:
         # Define common kwargs for all columns:  NOTE THAT FIRST COLUMN HOLDS CHECKBOX AND SHOULD BE SHOWN!
@@ -293,9 +313,9 @@ function(params) {
         common_kwargs = {
             "field": column,
             "header_name": str_header if str_header else ut_prettify_header(column),
-            "hide": column not in show_columns,
-            "headerCheckboxSelection": selection_mode_ == "multiple" and column == show_columns[0],
-            "headerCheckboxSelectionFilteredOnly": selection_mode_ == "multiple" and column == show_columns[0],
+            "hide": column not in columns,
+            "headerCheckboxSelection": selection_mode == "multiple" and column == columns[0],
+            "headerCheckboxSelectionFilteredOnly": selection_mode == "multiple" and column == columns[0],
         }
         highlight_kwargs = {
             "cellStyle": cellstyle_jscode,
@@ -307,8 +327,8 @@ function(params) {
         }
 
         # Check if the column is a date-time column
-        if is_datetime64_any_dtype(df[column]):
-            if (df[column].dt.time == pd.Timestamp("00:00:00").time()).all():
+        if is_datetime64_any_dtype(paginated_df[column]):
+            if (paginated_df[column].dt.time == pd.Timestamp("00:00:00").time()).all():
                 format_string = "yyyy-MM-dd"
             else:
                 format_string = "yyyy-MM-dd HH:mm"
@@ -327,49 +347,66 @@ function(params) {
         # Apply configuration using kwargs
         gb.configure_column(**all_kwargs)
 
-    grid_options = gb.build()
-
     # Render Grid:  custom_css fixes spacing bug and tightens empty space at top of grid
-    grid_data = AgGrid(
-        df,
-        gridOptions=grid_options,
-        theme="balham",
-        enable_enterprise_modules=False,
-        allow_unsafe_jscode=True,
-        update_mode=GridUpdateMode.NO_UPDATE,
-        update_on=["selectionChanged"],
-        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
-        height=int_height,
-        custom_css={
-            "#gridToolBar": {
-                "padding-bottom": "0px !important",
+    with grid_container:
+        grid_options = gb.build()
+        grid_data = AgGrid(
+            paginated_df.copy(),
+            gridOptions=grid_options,
+            theme="balham",
+            enable_enterprise_modules=False,
+            allow_unsafe_jscode=True,
+            update_mode=GridUpdateMode.NO_UPDATE,
+            update_on=["selectionChanged"],
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+            height=400,
+            custom_css={
+                "#gridToolBar": {
+                    "padding-bottom": "0px !important",
+                },
+                ".ag-row-hover .ag-cell.status-tag": {
+                    "border-color": "var(--ag-row-hover-color) !important",
+                },
+                ".ag-row-selected .ag-cell.status-tag": {
+                    "border-color": "var(--ag-selected-row-background-color) !important",
+                },
             },
-            ".ag-row-hover .ag-cell.status-tag": {
-                "border-color": "var(--ag-row-hover-color) !important",
-            },
-            ".ag-row-selected .ag-cell.status-tag": {
-                "border-color": "var(--ag-selected-row-background-color) !important",
-            },
-        },
-        key=f"{key}_{selection_mode_}_{rendering_counter}",
-        reload_data=data_changed,
-    )
+            key=f"{key}_{page_index}_{selection_mode}_{rendering_counter}",
+            reload_data=data_changed,
+        )
 
     st.session_state[f"{key}_counter"] = rendering_counter
     st.session_state[f"{key}_dataframe"] = df
 
-    selected_rows = grid_data["selected_rows"]
-    if len(selected_rows) > 0:
-        if bind_to_query_name and bind_to_query_prop:
-            Router().set_query_params({bind_to_query_name: selected_rows[0][bind_to_query_prop]})
-            
+    if selection_mode != "disabled":
+        selected_rows = grid_data["selected_rows"]
+        # During page change, there are 2 reruns and the first one does not return the selected rows
+        # So we ignore that run to prevent flickering the selected count
+        if not page_changed:
+            selection.difference_update(paginated_df[id_column].to_list())
+            selection.update([row[id_column] for row in selected_rows])
+            st.session_state[f"{key}_multiselection"] = selection
+
+        if selection:    
             # We need to get the data from the original dataframe
             # Otherwise changes to the dataframe (e.g., editing the current selection) do not get reflected in the returned rows
             # Adding "modelUpdated" to AgGrid(update_on=...) does not work
             # because it causes unnecessary reruns that cause dialogs to close abruptly
-            selected_props = [row[bind_to_query_prop] for row in selected_rows]
-            selected_df = df[df[bind_to_query_prop].isin(selected_props)]
-            selected_rows = json.loads(selected_df.to_json(orient="records"))
+            selected_df = df[df[id_column].isin(selection)]
+            selected_data = json.loads(selected_df.to_json(orient="records"))
+            
+            selected_id, selected_item = None, None
+            if selected_rows:
+                selected_id = selected_rows[len(selected_rows) - 1][id_column]
+                selected_item = next((item for item in selected_data if item[id_column] == selected_id), None)
+            if bind_to_query:
+                Router().set_query_params({"selected": selected_id})
 
-        return selected_rows
+            if selection_mode == "multiple" and (count := len(selected_data)):
+                with selected_column:
+                    testgen.caption(f"{count} item{'s' if count != 1 else ''} selected")
+
+            return selected_data, selected_item
+    
+    return None, None

@@ -16,7 +16,6 @@ SELECT '{PROJECT_CODE}'            as project_code,
        c.ordinal_position,
        CASE
            WHEN LOWER(c.data_type) LIKE '%char%'
-               OR c.data_type LIKE '%text%'
                THEN 'A'
            WHEN c.data_type = 'bit'
                THEN 'B'
