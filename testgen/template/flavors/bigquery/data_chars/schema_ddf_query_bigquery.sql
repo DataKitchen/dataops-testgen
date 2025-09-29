@@ -12,7 +12,7 @@ SELECT '{PROJECT_CODE}' AS project_code,
        NULL AS character_maximum_length,
        c.ordinal_position,
        CASE
-           WHEN REGEXP_CONTAINS(LOWER(c.data_type), r'(string|bytes)') THEN 'A'
+           WHEN LOWER(c.data_type) = 'string' THEN 'A'
            WHEN LOWER(c.data_type) = 'bool' THEN 'B'
            WHEN LOWER(c.data_type) IN ('date', 'datetime', 'timestamp') THEN 'D'
            WHEN LOWER(c.data_type) = 'time' THEN 'T'

@@ -52,7 +52,7 @@
  * @property {Array.<Flavor>} flavors
  * @property {boolean} disableFlavor
  * @property {FileValue?} cachedPrivateKeyFile
- * @property {FileValue?} cacheServiceAccountKeyFile
+ * @property {FileValue?} cachedServiceAccountKeyFile
  * @param {string?} dynamicConnectionUrl
  * @property {(c: Connection, state: FormState, cache?: FieldsCache) => void} onChange
  */
