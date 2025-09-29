@@ -1,12 +1,7 @@
 /**
  * @import { ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
- *
- * @typedef TableGroupOption
- * @type {object}
- * @property {string} id
- * @property {string} name
- * @property {boolean} selected
+ * @import { SelectOption } from '../components/select.js';
  *
  * @typedef Permissions
  * @type {object}
@@ -16,7 +11,7 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {TestSuiteSummary} test_suites
- * @property {TableGroupOption[]} table_group_filter_options
+ * @property {SelectOption[]} table_group_filter_options
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';
@@ -258,7 +253,7 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-test-suites {
     width: 100%;
-    min-height: 400px;
+    min-height: 500px;
 }
 
 .tg-test-suites--card-title h4 {

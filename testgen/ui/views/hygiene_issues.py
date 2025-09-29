@@ -44,9 +44,9 @@ class HygieneIssuesPage(Page):
         self,
         run_id: str,
         likelihood: str | None = None,
-        issue_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        issue_type: str | None = None,
         action: str | None = None,
         **_kwargs,
     ) -> None:
@@ -76,6 +76,13 @@ class HygieneIssuesPage(Page):
         )
         testgen.flex_row_end(actions_column)
         testgen.flex_row_end(export_button_column)
+
+        filters_changed = False
+        current_filters = (likelihood, table_name, column_name, issue_type, action)
+        if  (query_filters := st.session_state.get("hygiene_issues:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
+            st.session_state["hygiene_issues:filters"] = current_filters
 
         with liklihood_filter_column:
             likelihood = testgen.select(
@@ -160,8 +167,10 @@ class HygieneIssuesPage(Page):
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
-            str_help = "Toggle on to perform actions on multiple Hygiene Issues"
-            do_multi_select = st.toggle("Multi-Select", help=str_help)
+            multi_select = st.toggle(
+                "Multi-Select",
+                help="Toggle on to perform actions on multiple Hygiene Issues",
+            )
 
         with st.container():
             with st.spinner("Loading data ..."):
@@ -195,31 +204,14 @@ class HygieneIssuesPage(Page):
                     width=400,
                 )
 
-        lst_show_columns = [
-            "table_name",
-            "column_name",
-            "issue_likelihood",
-            "action",
-            "anomaly_name",
-            "detail",
-        ]
-
-        # Show main grid and retrieve selections
-        selected = fm.render_grid_select(
+        selected, selected_row = fm.render_grid_select(
             df_pa,
-            lst_show_columns,
-            int_height=400,
-            do_multi_select=do_multi_select,
-            bind_to_query_name="selected",
-            bind_to_query_prop="id",
-            show_column_headers=[
-                    "Table",
-                    "Column",
-                    "Likelihood",
-                    "Action",
-                    "Issue Type",
-                    "Detail"
-            ]
+            ["table_name", "column_name", "issue_likelihood", "action", "anomaly_name", "detail"],
+            ["Table", "Column", "Likelihood", "Action", "Issue Type", "Detail"],
+            id_column="id",
+            selection_mode="multiple" if multi_select else "single",
+            reset_pagination=filters_changed,
+            bind_to_query=True,
         )
 
         popover_container = export_button_column.empty()
@@ -245,22 +237,16 @@ class HygieneIssuesPage(Page):
                 if selected:
                     st.button(label="Selected issues", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
 
-        if not df_pa.empty:
-            if selected:
-                # Always show details for last selected row
-                selected_row = selected[len(selected) - 1]
-            else:
-                selected_row = None
+        # Display hygiene issue detail for selected row
+        if not selected:
+            st.markdown(":orange[Select a record to see more information.]")
+        else:
+            _, buttons_column = st.columns([0.5, 0.5])
 
-            # Display hygiene issue detail for selected row
-            if not selected_row:
-                st.markdown(":orange[Select a record to see more information.]")
-            else:
-                _, buttons_column = st.columns([0.5, 0.5])
+            with buttons_column:
+                col1, col2, col3 = st.columns([.3, .3, .3])
 
-                with buttons_column:
-                    col1, col2, col3 = st.columns([.3, .3, .3])
-
+            if selected_row:
                 with col1:
                     view_profiling_button(
                         selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
@@ -277,32 +263,33 @@ class HygieneIssuesPage(Page):
                         )
                         source_data_dialog(selected_row)
 
-                with col3:
-                    if st.button(
-                            ":material/download: Issue Report",
-                            use_container_width=True,
-                            help="Generate a PDF report for each selected issue",
-                    ):
-                        MixpanelService().send_event(
-                            "download-issue-report",
-                            page=self.path,
-                            issue_count=len(selected),
+            with col3:
+                if st.button(
+                        ":material/download: Issue Report",
+                        use_container_width=True,
+                        help="Generate a PDF report for each selected issue",
+                ):
+                    MixpanelService().send_event(
+                        "download-issue-report",
+                        page=self.path,
+                        issue_count=len(selected),
+                    )
+                    dialog_title = "Download Issue Report"
+                    if len(selected) == 1:
+                        download_dialog(
+                            dialog_title=dialog_title,
+                            file_content_func=get_report_file_data,
+                            args=(selected[0],),
                         )
-                        dialog_title = "Download Issue Report"
-                        if len(selected) == 1:
-                            download_dialog(
-                                dialog_title=dialog_title,
-                                file_content_func=get_report_file_data,
-                                args=(selected[0],),
-                            )
-                        else:
-                            zip_func = zip_multi_file_data(
-                                "testgen_hygiene_issue_reports.zip",
-                                get_report_file_data,
-                                [(arg,) for arg in selected],
-                            )
-                            download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+                    else:
+                        zip_func = zip_multi_file_data(
+                            "testgen_hygiene_issue_reports.zip",
+                            get_report_file_data,
+                            [(arg,) for arg in selected],
+                        )
+                        download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
+            if selected_row:
                 fm.render_html_list(
                     selected_row,
                     [
@@ -318,8 +305,6 @@ class HygieneIssuesPage(Page):
                     "Hygiene Issue Detail",
                     int_data_width=700,
                 )
-        else:
-            st.markdown(":green[**No Hygiene Issues Found**]")
 
         cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
 

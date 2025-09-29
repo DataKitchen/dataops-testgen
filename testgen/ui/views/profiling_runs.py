@@ -1,4 +1,3 @@
-import json
 import logging
 import typing
 from collections.abc import Iterable
@@ -17,14 +16,13 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.utils import friendly_score, to_dataframe, to_int
+from testgen.utils import friendly_score, to_int
 
 LOG = logging.getLogger("testgen")
-FORM_DATA_WIDTH = 400
-PAGE_SIZE = 50
 PAGE_ICON = "data_thresholding"
 PAGE_TITLE = "Profiling Runs"
 
@@ -48,75 +46,54 @@ class DataProfilingPage(Page):
             "investigate-profiling",
         )
 
-        user_can_run = session.auth.user_has_permission("edit")
-        if render_empty_state(project_code, user_can_run):
-            return
-
-        group_filter_column, actions_column = st.columns([.3, .7], vertical_alignment="bottom")
-
-        with group_filter_column:
-            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
-            table_groups_df["id"] = table_groups_df["id"].apply(lambda x: str(x))
-            table_group_id = testgen.select(
-                options=table_groups_df,
-                value_column="id",
-                display_column="table_groups_name",
-                default_value=table_group_id,
-                bind_to_query="table_group_id",
-                label="Table Group",
-                placeholder="---",
-            )
-
-        with actions_column:
-            testgen.flex_row_end()
-
-            st.button(
-                ":material/today: Profiling Schedules",
-                help="Manage when profiling should run for table groups",
-                on_click=partial(ProfilingScheduleDialog().open, project_code)
-            )
-
-            if user_can_run:
-                st.button(
-                    ":material/play_arrow: Run Profiling",
-                    help="Run profiling for a table group",
-                    on_click=partial(run_profiling_dialog, project_code, None, table_group_id)
-                )
-        fm.render_refresh_button(actions_column)
-
-        testgen.whitespace(0.5)
-        list_container = st.container()
-
         with st.spinner("Loading data ..."):
+            project_summary = Project.get_summary(project_code)
             profiling_runs = ProfilingRun.select_summary(project_code, table_group_id)
+            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
-        paginated = []
-        if run_count := len(profiling_runs):
-            page_index = testgen.paginator(count=run_count, page_size=PAGE_SIZE)
-            profiling_runs = [
-                {
-                    **row.to_dict(json_safe=True),
-                    "dq_score_profiling": friendly_score(row.dq_score_profiling),
-                } for row in profiling_runs
-            ]
-            paginated = profiling_runs[PAGE_SIZE * page_index : PAGE_SIZE * (page_index + 1)]
-
-        with list_container:
-            testgen_component(
-                "profiling_runs",
-                props={
-                    "items": json.dumps(paginated),
-                    "permissions": {
-                        "can_run": user_can_run,
-                        "can_edit": user_can_run,
-                    },
+        testgen_component(
+            "profiling_runs",
+            props={
+                "project_summary": project_summary.to_dict(json_safe=True),
+                "profiling_runs": [
+                    {
+                        **run.to_dict(json_safe=True),
+                        "dq_score_profiling": friendly_score(run.dq_score_profiling),
+                    } for run in profiling_runs
+                ],
+                "table_group_options": [
+                    {
+                        "value": str(table_group.id),
+                        "label": table_group.table_groups_name,
+                        "selected": str(table_group_id) == str(table_group.id),
+                    } for table_group in table_groups
+                ],
+                "permissions": {
+                    "can_edit": session.auth.user_has_permission("edit"),
                 },
-                event_handlers={
-                    "RunCanceled": on_cancel_run,
-                    "RunsDeleted": partial(on_delete_runs, project_code, table_group_id),
-                }
-            )
+            },
+            on_change_handlers={
+                "FilterApplied": on_profiling_runs_filtered,
+                "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
+                "RunProfilingClicked": lambda *_: run_profiling_dialog(project_code, None, table_group_id),
+                "RefreshData": refresh_data,
+                "RunsDeleted": partial(on_delete_runs, project_code, table_group_id),
+            },
+            event_handlers={
+                "RunCanceled": on_cancel_run,
+            },
+        )
+
+
+class ProfilingRunFilters(typing.TypedDict):
+    table_group_id: str
+
+def on_profiling_runs_filtered(filters: ProfilingRunFilters) -> None:
+    Router().set_query_params(filters)
+
+
+def refresh_data(*_) -> None:
+    ProfilingRun.select_summary.clear()
 
 
 class ProfilingScheduleDialog(ScheduleDialog):
@@ -140,47 +117,6 @@ class ProfilingScheduleDialog(ScheduleDialog):
 
     def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
         return [], {"table_group_id": str(arg_value)}
-
-
-def render_empty_state(project_code: str, user_can_run: bool) -> bool:
-    project_summary = Project.get_summary(project_code)
-    if project_summary.profiling_run_count:
-        return False
-
-    label = "No profiling runs yet"
-    testgen.whitespace(5)
-    if not project_summary.connection_count:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Connection,
-            action_label="Go to Connections",
-            link_href="connections",
-            link_params={ "project_code": project_code },
-        )
-    elif not project_summary.table_group_count:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.TableGroup,
-            action_label="Go to Table Groups",
-            link_href="table-groups",
-            link_params={
-                "project_code": project_code,
-                "connection_id": str(project_summary.default_connection_id),
-            },
-        )
-    else:
-        testgen.empty_state(
-            label=label,
-            icon=PAGE_ICON,
-            message=testgen.EmptyStateMessage.Profiling,
-            action_label="Run Profiling",
-            action_disabled=not user_can_run,
-            button_onclick=partial(run_profiling_dialog, project_code),
-            button_icon="play_arrow",
-        )
-    return True
 
 
 def on_cancel_run(profiling_run: dict) -> None:
