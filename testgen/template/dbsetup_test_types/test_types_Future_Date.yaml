@@ -34,6 +34,14 @@ test_types:
   usage_notes: null
   active: Y
   cat_test_conditions:
+  - id: '7010'
+    test_type: Future_Date
+    sql_flavor: bigquery
+    measure: |-
+      SUM(IF({COLUMN_NAME} > CAST(CAST('{RUN_DATE}' AS DATETIME) AS {COLUMN_TYPE}), 1, 0))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6010'
     test_type: Future_Date
     sql_flavor: databricks
@@ -91,6 +99,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1373'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE DATETIME_DIFF(`{COLUMN_NAME}`, CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), DAY) > {THRESHOLD_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1307'
     test_id: '1015'
     test_type: Future_Date

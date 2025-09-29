@@ -36,6 +36,38 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1407'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+        EXCEPT DISTINCT
+        SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+          AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+      )
+      UNION ALL
+      (
+        SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+          AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+        EXCEPT DISTINCT
+        SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+      );
+    error_type: Test Results
   - id: '1337'
     test_id: '1509'
     test_type: Timeframe_Combo_Match
@@ -229,6 +261,10 @@ test_types:
       )
     error_type: Test Results
   test_templates:
+  - id: '2508'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: bigquery
+    template_name: ex_window_match_same_bigquery.sql
   - id: '2408'
     test_type: Timeframe_Combo_Match
     sql_flavor: databricks

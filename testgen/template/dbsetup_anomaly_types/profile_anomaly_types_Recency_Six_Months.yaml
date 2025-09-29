@@ -16,6 +16,14 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Timeliness
   target_data_lookups:
+  - id: '1358'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
   - id: '1292'
     test_id: '1020'
     test_type: Recency_Six_Months

@@ -36,6 +36,14 @@ test_types:
     Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources.
   active: Y
   cat_test_conditions:
+  - id: '7007'
+    test_type: Distinct_Date_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6007'
     test_type: Distinct_Date_Ct
     sql_flavor: databricks
@@ -93,6 +101,19 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1370'
+    test_id: '1012'
+    test_type: Distinct_Date_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE `{COLUMN_NAME}` IS NOT NULL
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Test Results
   - id: '1304'
     test_id: '1012'
     test_type: Distinct_Date_Ct

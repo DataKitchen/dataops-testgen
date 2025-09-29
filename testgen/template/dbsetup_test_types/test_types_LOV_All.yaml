@@ -33,6 +33,14 @@ test_types:
     This is a more restrictive form of Value Match, testing that all values in the dataset match the list provided, and also that all values present in the list appear at least once in the dataset. This would be appropriate for tables where all category values in the column are represented at least once.
   active: Y
   cat_test_conditions:
+  - id: '7013'
+    test_type: LOV_All
+    sql_flavor: bigquery
+    measure: |-
+      STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), '|' ORDER BY {COLUMN_NAME})
+    test_operator: '!='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6013'
     test_type: LOV_All
     sql_flavor: databricks
@@ -90,6 +98,20 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1376'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT lov
+      FROM (
+        SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), '|' ORDER BY `{COLUMN_NAME}`) AS lov
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      )
+      WHERE lov <> '{THRESHOLD_VALUE}'
+      LIMIT 500;
+    error_type: Test Results
   - id: '1310'
     test_id: '1018'
     test_type: LOV_All

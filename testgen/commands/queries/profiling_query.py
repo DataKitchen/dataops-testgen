@@ -284,7 +284,12 @@ class CProfilingSQL:
         # Assemble in function
         strQ = ""
 
-        strQ += dctSnippetTemplate["strTemplate01"]
+        if self.parm_do_sample == "Y":
+            strQ += dctSnippetTemplate["strTemplate01_sampling"]
+        else:
+            strQ += dctSnippetTemplate["strTemplate01_else"]
+
+        strQ += dctSnippetTemplate["strTemplate01_5"]
 
         if self.col_gen_type == "X":
             strQ += dctSnippetTemplate["strTemplate02_X"]

@@ -17,6 +17,19 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1348'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = '"' OR LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = "'"
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1282'
     test_id: '1010'
     test_type: Quoted_Values

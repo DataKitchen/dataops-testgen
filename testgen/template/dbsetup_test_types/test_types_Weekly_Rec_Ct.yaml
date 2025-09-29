@@ -36,6 +36,14 @@ test_types:
     Weekly Records tests that at least one record is present for every calendar week within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each week. A failure here would suggest missing records for the number of weeks identified without data. You can adjust the threshold to accept a number of weeks that you know legitimately have no records.
   active: Y
   cat_test_conditions:
+  - id: '7030'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: bigquery
+    measure: |-
+      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), WEEK), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), WEEK), WEEK) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, WEEK))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6030'
     test_type: Weekly_Rec_Ct
     sql_flavor: databricks
@@ -93,6 +101,43 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1393'
+    test_id: '1037'
+    test_type: Weekly_Rec_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (
+        SELECT week_start AS all_dates
+        FROM UNNEST(
+          GENERATE_DATE_ARRAY(
+            DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), WEEK),
+            DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), WEEK),
+            INTERVAL 7 DAY
+          )
+        ) AS week_start
+      ),
+      existing_periods AS (
+        SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), WEEK) AS period, COUNT(1) AS period_count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        GROUP BY period
+      ),
+      p AS (
+        SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_week, MIN(c.period) AS next_available_week
+        FROM daterange d
+        LEFT JOIN existing_periods a ON d.all_dates = a.period
+        LEFT JOIN existing_periods b ON b.period < d.all_dates
+        LEFT JOIN existing_periods c ON c.period > d.all_dates
+        WHERE a.period IS NULL
+          AND d.all_dates BETWEEN b.period AND c.period
+        GROUP BY d.all_dates
+      )
+      SELECT p.missing_period, p.prior_available_week, e.period_count AS prior_available_week_count, p.next_available_week, f.period_count AS next_available_week_count
+      FROM p
+      LEFT JOIN existing_periods e ON (p.prior_available_week = e.period)
+      LEFT JOIN existing_periods f ON (p.next_available_week = f.period)
+      ORDER BY p.missing_period;
+    error_type: Test Results
   - id: '1327'
     test_id: '1037'
     test_type: Weekly_Rec_Ct

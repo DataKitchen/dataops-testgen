@@ -35,6 +35,14 @@ test_types:
     Value Count tests that the  count of unique values present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained, or for any dataset where you would expect a set number of distinct values should be present. A failure here would indicate missing records or a change in categories or value assignment.
   active: Y
   cat_test_conditions:
+  - id: '7008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '!='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6008'
     test_type: Distinct_Value_Ct
     sql_flavor: databricks
@@ -92,6 +100,19 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1371'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE `{COLUMN_NAME}` IS NOT NULL
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Test Results
   - id: '1305'
     test_id: '1013'
     test_type: Distinct_Value_Ct

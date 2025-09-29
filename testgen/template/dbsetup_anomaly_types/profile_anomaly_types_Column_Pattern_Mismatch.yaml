@@ -29,6 +29,53 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1345'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME},
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(3)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME},
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(5)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME},
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(7)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME},
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(9)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
   - id: '1279'
     test_id: '1007'
     test_type: Column_Pattern_Mismatch

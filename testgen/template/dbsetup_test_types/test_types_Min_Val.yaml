@@ -35,6 +35,14 @@ test_types:
     This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes senes for valid data.
   active: Y
   cat_test_conditions:
+  - id: '7016'
+    test_type: Min_Val
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6016'
     test_type: Min_Val
     sql_flavor: databricks
@@ -92,6 +100,17 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1379'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, (ABS(CAST(`{COLUMN_NAME}` AS NUMERIC)) - ABS({BASELINE_VALUE})) AS difference_from_baseline
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE CAST(`{COLUMN_NAME}` AS NUMERIC) < {BASELINE_VALUE}
+      LIMIT 500;
+    error_type: Test Results
   - id: '1313'
     test_id: '1021'
     test_type: Min_Val

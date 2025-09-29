@@ -35,6 +35,14 @@ test_types:
     Constant Match tests that a single value determined to be a constant in baseline profiling is still the only value for the column that appears in subsequent versions of the dataset. Sometimes new data or business knowledge may reveal that the value is not a constant at all, even though only one value was present at profiling. In this case, you will want to disable this test. Alternatively, you can use the Value Match test to provide a limited number of valid values for the column.
   active: Y
   cat_test_conditions:
+  - id: '7004'
+    test_type: Constant
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} != {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6004'
     test_type: Constant
     sql_flavor: databricks
@@ -92,6 +100,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1367'
+    test_id: '1007'
+    test_type: Constant
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE `{COLUMN_NAME}` <> {BASELINE_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1301'
     test_id: '1007'
     test_type: Constant

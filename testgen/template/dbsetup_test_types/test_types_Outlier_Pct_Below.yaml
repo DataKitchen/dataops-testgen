@@ -40,6 +40,14 @@ test_types:
     \ the latest dataset to capture systemic shift as well as individual outliers. "
   active: Y
   cat_test_conditions:
+  - id: '7020'
+    test_type: Outlier_Pct_Below
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT64) < {BASELINE_AVG} - 2*{BASELINE_SD} THEN 1 ELSE 0 END) / NULLIF(COUNT({COLUMN_NAME}),0)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6020'
     test_type: Outlier_Pct_Below
     sql_flavor: databricks
@@ -97,6 +105,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1383'
+    test_id: '1025'
+    test_type: Outlier_Pct_Below
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) < ({BASELINE_AVG} + (2 * {BASELINE_SD}))
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC;
+    error_type: Test Results
   - id: '1317'
     test_id: '1025'
     test_type: Outlier_Pct_Below

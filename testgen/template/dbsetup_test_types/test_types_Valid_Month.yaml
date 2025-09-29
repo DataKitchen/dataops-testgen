@@ -35,6 +35,14 @@ test_types:
   usage_notes: null
   active: N
   cat_test_conditions:
+  - id: '7033'
+    test_type: Valid_Month
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6033'
     test_type: Valid_Month
     sql_flavor: databricks

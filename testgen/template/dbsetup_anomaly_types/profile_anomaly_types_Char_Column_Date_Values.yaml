@@ -22,6 +22,31 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1350'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NOT NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      UNION ALL
+      (
+        SELECT 'Non-Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
   - id: '1284'
     test_id: '1012'
     test_type: Char_Column_Date_Values

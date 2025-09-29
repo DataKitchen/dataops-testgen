@@ -35,6 +35,14 @@ test_types:
     This tests that all values in the column match the hard-coded list provided. This is relevant when the list of allowable values is small and not expected to change often. Even if new values might occasionally be added, this test is useful for downstream data products to provide warning that assumptions and logic may need to change.
   active: Y
   cat_test_conditions:
+  - id: '7014'
+    test_type: LOV_Match
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6014'
     test_type: LOV_Match
     sql_flavor: databricks
@@ -92,6 +100,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1377'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1311'
     test_id: '1019'
     test_type: LOV_Match

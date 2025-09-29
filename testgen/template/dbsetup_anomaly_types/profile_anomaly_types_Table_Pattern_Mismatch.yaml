@@ -23,6 +23,22 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1346'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name
+      FROM information_schema.columns
+      JOIN information_schema.tables
+        ON columns.table_name = tables.table_name
+        AND columns.table_schema = tables.table_schema
+      WHERE columns.table_schema = '{TARGET_SCHEMA}'
+        AND columns.column_name = '{COLUMN_NAME}'
+        AND UPPER(tables.table_type) = 'BASE TABLE'
+      ORDER BY table_name;
+    error_type: Profile Anomaly
   - id: '1280'
     test_id: '1008'
     test_type: Table_Pattern_Mismatch

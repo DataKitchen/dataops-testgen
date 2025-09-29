@@ -21,6 +21,7 @@ class ConnectionParams(TypedDict):
     private_key: bytes
     private_key_passphrase: bytes
     http_path: str
+    service_account_key: dict[str,Any]
 
 class FlavorService:
 
@@ -37,6 +38,7 @@ class FlavorService:
     private_key = None
     private_key_passphrase = None
     http_path = None
+    service_account_key = None
     catalog = None
     warehouse = None
 
@@ -53,6 +55,7 @@ class FlavorService:
         self.http_path = connection_params.get("http_path") or ""
         self.catalog = connection_params.get("catalog") or ""
         self.warehouse = connection_params.get("warehouse") or ""
+        self.service_account_key = connection_params.get("service_account_key", None)
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):
@@ -74,6 +77,9 @@ class FlavorService:
 
     def get_connect_args(self) -> dict:
         return {"connect_timeout": 3600}
+
+    def get_engine_args(self) -> dict[str,Any]:
+        return {}
 
     def get_concat_operator(self) -> str:
         return "||"

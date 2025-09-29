@@ -17,6 +17,29 @@ profile_anomaly_types:
   dq_score_risk_factor: '1.0'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1410'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Upper Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
+        GROUP BY `{COLUMN_NAME}`
+        LIMIT 20
+      )
+      UNION ALL
+      (
+        SELECT 'Mixed Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
+          AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+        GROUP BY `{COLUMN_NAME}`
+        LIMIT 20
+      );
+    error_type: Profile Anomaly
   - id: '1262'
     test_id: '1028'
     test_type: Inconsistent_Casing

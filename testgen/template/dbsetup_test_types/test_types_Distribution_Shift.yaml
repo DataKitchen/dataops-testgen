@@ -38,6 +38,22 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1403'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver AS (
+        SELECT {CONCAT_COLUMNS} AS category,
+               CAST(COUNT(*) AS FLOAT64) / SUM(COUNT(*)) OVER() AS pct_of_total
+        FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {CONCAT_COLUMNS}
+      )
+      SELECT *
+      FROM latest_ver;
+    error_type: Test Results
   - id: '1336'
     test_id: '1503'
     test_type: Distribution_Shift
@@ -195,6 +211,10 @@ test_types:
       ORDER BY COALESCE(l.category, o.category)
     error_type: Test Results
   test_templates:
+  - id: '2503'
+    test_type: Distribution_Shift
+    sql_flavor: bigquery
+    template_name: ex_relative_entropy_bigquery.sql
   - id: '2403'
     test_type: Distribution_Shift
     sql_flavor: databricks

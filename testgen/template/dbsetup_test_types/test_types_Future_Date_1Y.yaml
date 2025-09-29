@@ -35,6 +35,14 @@ test_types:
     Future Year looks for date values in the column that extend beyond one year after the test date. This would be appropriate for transactional dates where you would expect to find dates in the  near future, but not beyond one year ahead.  Errors could indicate invalid entries or possibly dummy dates representing blank values.
   active: Y
   cat_test_conditions:
+  - id: '7011'
+    test_type: Future_Date_1Y
+    sql_flavor: bigquery
+    measure: |-
+      SUM(IF({COLUMN_NAME} > CAST(DATETIME_ADD(CAST('{RUN_DATE}' AS DATETIME), INTERVAL 1 YEAR) AS {COLUMN_TYPE}), 1, 0))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6011'
     test_type: Future_Date_1Y
     sql_flavor: databricks
@@ -92,6 +100,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1374'
+    test_id: '1016'
+    test_type: Future_Date_1Y
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE DATETIME_DIFF(`{COLUMN_NAME}`, DATE_ADD(CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), INTERVAL 365 DAY), DAY) > {THRESHOLD_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1308'
     test_id: '1016'
     test_type: Future_Date_1Y

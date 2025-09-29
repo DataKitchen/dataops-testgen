@@ -18,6 +18,18 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: null
   target_data_lookups:
+  - id: '1339'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT 20;
+    error_type: Profile Anomaly
   - id: '1273'
     test_id: '1001'
     test_type: Suggested_Type

@@ -37,6 +37,28 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1402'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM (
+        SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {COLUMN_NAME_NO_QUOTES}
+        {HAVING_CONDITION}
+        EXCEPT DISTINCT
+        SELECT {MATCH_GROUPBY_NAMES}
+        FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION}
+      ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
   - id: '1335'
     test_id: '1502'
     test_type: Combo_Match
@@ -164,6 +186,10 @@ test_types:
       ORDER BY {COLUMN_NAME_NO_QUOTES};
     error_type: Test Results
   test_templates:
+  - id: '2501'
+    test_type: Combo_Match
+    sql_flavor: bigquery
+    template_name: ex_data_match_bigquery.sql
   - id: '2401'
     test_type: Combo_Match
     sql_flavor: databricks

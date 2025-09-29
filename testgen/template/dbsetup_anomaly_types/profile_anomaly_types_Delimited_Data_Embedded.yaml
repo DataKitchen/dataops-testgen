@@ -16,6 +16,20 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1363'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$')
+        AND NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'.*\s(and|but|or|yet)\s.*')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1297'
     test_id: '1025'
     test_type: Delimited_Data_Embedded

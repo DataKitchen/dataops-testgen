@@ -16,6 +16,19 @@ profile_anomaly_types:
   dq_score_risk_factor: '1.0'
   dq_dimension: Validity
   target_data_lookups:
+  - id: '1341'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') NOT IN ('99999', '999999999', '99999-9999')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1275'
     test_id: '1003'
     test_type: Invalid_Zip_USA

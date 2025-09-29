@@ -162,7 +162,7 @@ class ConnectionsPage(Page):
                 message = "Error creating connection"
                 success = False
                 LOG.exception(message)
-            
+
             results = {
                 "success": success,
                 "message": message,
@@ -458,6 +458,12 @@ FLAVOR_OPTIONS = [
         value="synapse_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
+    ),
+    ConnectionFlavor(
+        label="Google BigQuery",
+        value="bigquery",
+        flavor="bigquery",
+        icon=get_asset_data_url("flavors/bigquery.svg"),
     ),
     ConnectionFlavor(
         label="Microsoft SQL Server",

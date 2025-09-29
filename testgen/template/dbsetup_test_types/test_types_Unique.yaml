@@ -36,6 +36,14 @@ test_types:
     This test is ideal when the database itself does not enforce a primary key constraint on the table. It serves as an independent check on uniqueness.  If's also useful when there are a small number of exceptions to uniqueness, which can be reflected in the expected threshold count of duplicates.
   active: Y
   cat_test_conditions:
+  - id: '7028'
+    test_type: Unique
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6028'
     test_type: Unique
     sql_flavor: databricks
@@ -93,6 +101,19 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1391'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      GROUP BY `{COLUMN_NAME}`
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Test Results
   - id: '1325'
     test_id: '1034'
     test_type: Unique

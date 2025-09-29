@@ -40,6 +40,14 @@ test_types:
     \ more homogeneous cohort. "
   active: Y
   cat_test_conditions:
+  - id: '7032'
+    test_type: Variability_Decrease
+    sql_flavor: bigquery
+    measure: |-
+      100.0 * STDDEV(CAST({COLUMN_NAME} AS FLOAT64)) / {BASELINE_SD}
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6032'
     test_type: Variability_Decrease
     sql_flavor: databricks
@@ -97,6 +105,15 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1395'
+    test_id: '1041'
+    test_type: Variability_Decrease
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
+      FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1329'
     test_id: '1041'
     test_type: Variability_Decrease

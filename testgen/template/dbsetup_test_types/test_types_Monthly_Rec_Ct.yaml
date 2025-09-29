@@ -36,6 +36,14 @@ test_types:
     Monthly Records tests that at least one record is present for every calendar month within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each month. A failure here would suggest missing records for the number of months identified without data. You can adjust the threshold to accept a number of month that you know legitimately have no records.
   active: Y
   cat_test_conditions:
+  - id: '7018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: bigquery
+    measure: |-
+      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), MONTH), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), MONTH), MONTH) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, MONTH))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6018'
     test_type: Monthly_Rec_Ct
     sql_flavor: databricks
@@ -93,6 +101,43 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1381'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (
+        SELECT month AS all_dates
+        FROM UNNEST(
+          GENERATE_DATE_ARRAY(
+            DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), MONTH),
+            DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}), MONTH),
+            INTERVAL 1 MONTH
+          )
+        ) AS month
+      ),
+      existing_periods AS (
+        SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), MONTH) AS period, COUNT(1) AS period_count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        GROUP BY period
+      ),
+      p AS (
+        SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month
+        FROM daterange d
+        LEFT JOIN existing_periods a ON d.all_dates = a.period
+        LEFT JOIN existing_periods b ON b.period < d.all_dates
+        LEFT JOIN existing_periods c ON c.period > d.all_dates
+        WHERE a.period IS NULL
+          AND d.all_dates BETWEEN b.period AND c.period
+        GROUP BY d.all_dates
+      )
+      SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count
+      FROM p
+      LEFT JOIN existing_periods e ON (p.prior_available_month = e.period)
+      LEFT JOIN existing_periods f ON (p.next_available_month = f.period)
+      ORDER BY p.missing_period;
+    error_type: Test Results
   - id: '1315'
     test_id: '1023'
     test_type: Monthly_Rec_Ct

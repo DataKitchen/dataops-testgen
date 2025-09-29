@@ -1,7 +1,7 @@
 /**
  * @import { FileValue } from './file_input.js';
  * @import { VanState } from '../van.min.js';
- * 
+ *
  * @typedef Flavor
  * @type {object}
  * @property {string} label
@@ -9,13 +9,13 @@
  * @property {string} icon
  * @property {string} flavor
  * @property {string} connection_string
- * 
+ *
  * @typedef ConnectionStatus
  * @type {object}
  * @property {string} message
  * @property {boolean} successful
  * @property {string?} details
- * 
+ *
  * @typedef Connection
  * @type {object}
  * @property {string} connection_id
@@ -35,23 +35,25 @@
  * @property {string?} http_path
  * @property {string?} warehouse
  * @property {ConnectionStatus?} status
- * 
+ *
  * @typedef FormState
  * @type {object}
  * @property {boolean} dirty
  * @property {boolean} valid
- * 
+ *
  * @typedef FieldsCache
  * @type {object}
  * @property {FileValue} privateKey
- * 
+ * @property {FileValue} serviceAccountKey
+ *
  * @typedef Properties
  * @type {object}
  * @property {Connection} connection
  * @property {Array.<Flavor>} flavors
  * @property {boolean} disableFlavor
  * @property {FileValue?} cachedPrivateKeyFile
- * @property {string?} dynamicConnectionUrl
+ * @property {FileValue?} cachedServiceAccountKeyFile
+ * @param {string?} dynamicConnectionUrl
  * @property {(c: Connection, state: FormState, cache?: FieldsCache) => void} onChange
  */
 import van from '../van.min.js';
@@ -82,7 +84,7 @@ const defaultPorts = {
 };
 
 /**
- * 
+ *
  * @param {Properties} props
  * @param {(any|undefined)} saveButton
  * @returns {HTMLElement}
@@ -104,6 +106,7 @@ const ConnectionForm = (props, saveButton) => {
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
     const connectionQueryChars = van.state(connection?.max_query_chars ?? 9000);
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
+    const serviceAccountKeyFile = van.state(getValue(props.cachedServiceAccountKeyFile) ?? null);
 
     const updatedConnection = van.state({
         project_code: connection.project_code,
@@ -121,6 +124,7 @@ const ConnectionForm = (props, saveButton) => {
         http_path: connection?.http_path ?? '',
         warehouse: connection?.warehouse ?? '',
         url: connection?.url ?? '',
+        service_account_key: connection?.service_account_key ?? '',
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
@@ -205,7 +209,6 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             dynamicConnectionUrl,
         ),
-
         snowflake: () => SnowflakeForm(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -228,6 +231,17 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             dynamicConnectionUrl,
         ),
+        bigquery: () => BigqueryForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, fileValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                serviceAccountKeyFile.val = fileValue;
+                setFieldValidity('bigquery_form', isValid);
+            },
+            connection,
+            getValue(props.cachedServiceAccountKeyFile) ?? null
+        ),
     };
 
     const setFieldValidity = (field, validity) => {
@@ -245,7 +259,7 @@ const ConnectionForm = (props, saveButton) => {
         const selectedFlavorCode = connectionFlavor.val;
         const previousFlavorCode = connectionFlavor.oldVal;
         const updatedConnection_ = updatedConnection.rawVal;
-        
+
         const isCustomPort = updatedConnection_?.project_port !== defaultPorts[previousFlavorCode];
         if (selectedFlavorCode !== previousFlavorCode && (!isCustomPort || !updatedConnection_?.project_port)) {
             updatedConnection.val = {...updatedConnection_, project_port: defaultPorts[selectedFlavorCode]};
@@ -270,7 +284,11 @@ const ConnectionForm = (props, saveButton) => {
         const fieldsValidity = validityPerField.val;
         const isValid = Object.keys(fieldsValidity).length > 0 &&
             Object.values(fieldsValidity).every(v => v);
-        props.onChange?.(updatedConnection.val, { dirty: dirty.val, valid: isValid }, { privateKey: privateKeyFile.rawVal });
+        props.onChange?.(
+            updatedConnection.val,
+            { dirty: dirty.val, valid: isValid },
+            { privateKey: privateKeyFile.rawVal, serviceAccountKey: serviceAccountKeyFile.rawVal }
+        );
     });
 
     return div(
@@ -735,7 +753,7 @@ const DatabricksForm = (
  * @param {VanState<Connection>} connection
  * @param {Flavor} flavor
  * @param {boolean} maskPassword
- * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
+ * @param {(params: Partial<Connection>, fileValue: FileValue, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
  * @param {string?} cachedFile
  * @param {VanState<string?>} dynamicConnectionUrl
@@ -1008,6 +1026,86 @@ const SnowflakeForm = (
                     },
                 });
             },
+        ),
+    );
+};
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, fileValue: FileValue, isValid: boolean) => void} onChange
+ * @param {Connection?} originalConnection
+ * @param {string?} originalConnection
+ * @param {FileValue?} cachedFile
+ * @returns {HTMLElement}
+ */
+const BigqueryForm = (
+    connection,
+    flavor,
+    onChange,
+    originalConnection,
+    cachedFile,
+) => {
+    const isValid = van.state(false);
+    const serviceAccountKey = van.state(connection.rawVal.service_account_key ?? null);
+    const projectId = van.state("");
+    const serviceAccountKeyFileRaw = van.state(cachedFile);
+
+    van.derive(() => {
+        projectId.val = serviceAccountKey.val?.project_id ?? '';
+        isValid.val = !!projectId.val;
+    });
+
+    van.derive(() => {
+        onChange({ service_account_key: serviceAccountKey.val }, serviceAccountKeyFileRaw.val, isValid.val);
+    });
+
+    return div(
+        {class: 'flex-column fx-gap-3 fx-flex'},
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({content: 'Service Account Key', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+
+            () => {
+                return div(
+                    { class: 'flex-column fx-gap-3' },
+                    FileInput({
+                        name: 'service_account_key',
+                        label: 'Upload service account key (.json)',
+                        placeholder: (originalConnection?.connection_id && originalConnection?.service_account_key)
+                            ? 'Drop file here or browse files to replace existing key'
+                            : undefined,
+                        value: serviceAccountKeyFileRaw,
+                        onChange: (value, state) => {
+                            let isFieldValid = state.valid;
+                            try {
+                                if (value?.content) {
+                                    serviceAccountKey.val = JSON.parse(atob(value.content.split(',')?.[1] ?? ''));
+                                }
+                            } catch (err) {
+                                console.error(err);
+                                isFieldValid = false;
+                            }
+                            serviceAccountKeyFileRaw.val = value;
+                        },
+                        validators: [
+                            sizeLimit(20 * 1024),
+                        ],
+                    }),
+                );
+            },
+
+            div(
+                { class: 'flex-row fx-gap-3 fx-flex' },
+                Input({
+                    name: 'project_id',
+                    label: 'Project ID',
+                    value: projectId,
+                    height: 38,
+                    class: 'fx-flex',
+                    disabled: true,
+                }),
+            ),
         ),
     );
 };

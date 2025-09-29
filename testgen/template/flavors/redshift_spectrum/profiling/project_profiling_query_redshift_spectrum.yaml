@@ -1,6 +1,7 @@
 ---
-strTemplate01: | 
-  SELECT
+strTemplate01_sampling: "SELECT "
+strTemplate01_else: "SELECT "
+strTemplate01_5: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
   '{TABLE_GROUPS_ID}' as table_groups_id,

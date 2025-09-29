@@ -34,6 +34,14 @@ test_types:
   usage_notes: null
   active: Y
   cat_test_conditions:
+  - id: '7023'
+    test_type: Required
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*) - COUNT({COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6023'
     test_type: Required
     sql_flavor: databricks
@@ -91,6 +99,17 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1386'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE `{COLUMN_NAME}` IS NULL
+      LIMIT 500;
+    error_type: Test Results
   - id: '1320'
     test_id: '1030'
     test_type: Required

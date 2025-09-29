@@ -78,7 +78,8 @@ CREATE TABLE connections (
    private_key BYTEA,
    private_key_passphrase BYTEA,
    http_path              VARCHAR(200),
-   warehouse              VARCHAR(200)
+   warehouse              VARCHAR(200),
+   service_account_key    BYTEA
 );
 
 CREATE TABLE table_groups

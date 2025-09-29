@@ -35,6 +35,14 @@ test_types:
     This test is better than Row Count for an incremental or windowed dataset where you would expect the row count to range within a percentage of baseline.
   active: Y
   cat_test_conditions:
+  - id: '7025'
+    test_type: Row_Ct_Pct
+    sql_flavor: bigquery
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6025'
     test_type: Row_Ct_Pct
     sql_flavor: databricks
@@ -92,6 +100,20 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1388'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH cte AS (
+        SELECT COUNT(*) AS current_count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      )
+      SELECT current_count, {BASELINE_CT} AS baseline_count,
+             ABS(ROUND(100 * (current_count - {BASELINE_CT}) / CAST({BASELINE_CT} AS FLOAT64), 2)) AS row_count_pct_difference
+      FROM cte;
+    error_type: Test Results
   - id: '1322'
     test_id: '1032'
     test_type: Row_Ct_Pct

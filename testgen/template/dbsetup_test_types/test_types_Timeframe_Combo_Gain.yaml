@@ -38,6 +38,25 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1406'
+    test_id: '1508'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_NAME_NO_QUOTES}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL 2 * {WINDOW_DAYS} DAY)
+        AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+      EXCEPT DISTINCT
+      SELECT {COLUMN_NAME_NO_QUOTES}
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM {TARGET_SCHEMA}.{TABLE_NAME}), INTERVAL {WINDOW_DAYS} DAY)
+      GROUP BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
   - id: '1263'
     test_id: '1508'
     test_type: Timeframe_Combo_Gain
@@ -134,6 +153,10 @@ test_types:
       GROUP BY {COLUMN_NAME_NO_QUOTES}
     error_type: Test Results
   test_templates:
+  - id: '2507'
+    test_type: Timeframe_Combo_Gain
+    sql_flavor: bigquery
+    template_name: ex_window_match_no_drops_bigquery.sql
   - id: '2407'
     test_type: Timeframe_Combo_Gain
     sql_flavor: databricks

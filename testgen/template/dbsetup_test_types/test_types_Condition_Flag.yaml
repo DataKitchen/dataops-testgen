@@ -36,6 +36,14 @@ test_types:
     Custom Condition is a business-rule test for a user-defined error condition based on the value of one or more columns. The condition is applied to each record within the table, and the count of records failing the condition is added up. If that count exceeds a threshold of errors, the test as a whole is failed. This test is ideal for error conditions that TestGen cannot automatically infer, and any condition that involves the values of more than one column in the same record. Performance of this test is fast, since it is performed together with other aggregate tests. Interpretation is based on the user-defined meaning of the test.
   active: Y
   cat_test_conditions:
+  - id: '7003'
+    test_type: Condition_Flag
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6003'
     test_type: Condition_Flag
     sql_flavor: databricks
@@ -93,6 +101,17 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1366'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {CUSTOM_QUERY}
+      LIMIT 500;
+    error_type: Test Results
   - id: '1300'
     test_id: '1006'
     test_type: Condition_Flag

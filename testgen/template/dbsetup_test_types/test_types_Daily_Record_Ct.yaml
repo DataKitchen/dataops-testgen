@@ -39,6 +39,14 @@ test_types:
     \ of days that you know legitimately have no records. "
   active: Y
   cat_test_conditions:
+  - id: '7005'
+    test_type: Daily_Record_Ct
+    sql_flavor: bigquery
+    measure: |-
+      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), DAY), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), DAY), DAY) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, DAY))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6005'
     test_type: Daily_Record_Ct
     sql_flavor: databricks
@@ -96,6 +104,45 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1368'
+    test_id: '1009'
+    test_type: Daily_Record_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (
+        SELECT day AS all_dates
+        FROM UNNEST(
+          GENERATE_DATE_ARRAY(
+            (SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME}),
+            (SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM {TARGET_SCHEMA}.{TABLE_NAME})
+          )
+        ) AS day
+      ),
+      existing_periods AS (
+        SELECT DISTINCT CAST(`{COLUMN_NAME}` AS DATE) AS period, COUNT(1) AS period_count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        GROUP BY period
+      ),
+      p AS (
+        SELECT d.all_dates AS missing_period,
+               MAX(b.period) AS prior_available_date,
+               MIN(c.period) AS next_available_date
+        FROM daterange d
+        LEFT JOIN existing_periods a ON d.all_dates = a.period
+        LEFT JOIN existing_periods b ON b.period < d.all_dates
+        LEFT JOIN existing_periods c ON c.period > d.all_dates
+        WHERE a.period IS NULL
+          AND d.all_dates BETWEEN b.period AND c.period
+        GROUP BY d.all_dates
+      )
+      SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count
+      FROM p
+      LEFT JOIN existing_periods e ON (p.prior_available_date = e.period)
+      LEFT JOIN existing_periods f ON (p.next_available_date = f.period)
+      ORDER BY p.missing_period
+      LIMIT 500;
+    error_type: Test Results
   - id: '1302'
     test_id: '1009'
     test_type: Daily_Record_Ct

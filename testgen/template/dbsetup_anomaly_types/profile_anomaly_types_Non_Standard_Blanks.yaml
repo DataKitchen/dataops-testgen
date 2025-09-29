@@ -17,6 +17,30 @@ profile_anomaly_types:
   dq_score_risk_factor: '1.0'
   dq_dimension: Completeness
   target_data_lookups:
+  - id: '1340'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE (
+        `{COLUMN_NAME}` IN ('.','?',' ')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'-{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'0{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'9{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'x{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'z{2,}')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('blank','error','missing','tbd','n/a','#na','none','null','unknown')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('(blank)','(error)','(missing)','(tbd)','(n/a)','(#na)','(none)','(null)','(unknown)')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('[blank]','[error]','[missing]','[tbd]','[n/a]','[#na]','[none]','[null]','[unknown]')
+        OR `{COLUMN_NAME}` = ''
+        OR `{COLUMN_NAME}` IS NULL
+      )
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
   - id: '1274'
     test_id: '1002'
     test_type: Non_Standard_Blanks

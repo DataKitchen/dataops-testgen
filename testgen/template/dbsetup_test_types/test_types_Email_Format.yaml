@@ -35,6 +35,14 @@ test_types:
   usage_notes: null
   active: Y
   cat_test_conditions:
+  - id: '7009'
+    test_type: Email_Format
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NOT REGEXP_CONTAINS(CAST({COLUMN_NAME} AS STRING), r'^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+[.])+[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6009'
     test_type: Email_Format
     sql_flavor: databricks
@@ -92,6 +100,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1372'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1306'
     test_id: '1014'
     test_type: Email_Format

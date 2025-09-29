@@ -36,6 +36,14 @@ test_types:
     Decimal Truncation tests that the fractional (decimal) part of a numeric column has not been truncated since Baseline.  This works by summing all the fractional values after the decimal point and confirming that the total is at least equal to the fractional total at baseline.  This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
   active: Y
   cat_test_conditions:
+  - id: '7006'
+    test_type: Dec_Trunc
+    sql_flavor: bigquery
+    measure: |-
+      SUM(ROUND(ABS(MOD({COLUMN_NAME}, 1)), 5)) + 1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6006'
     test_type: Dec_Trunc
     sql_flavor: databricks
@@ -93,6 +101,17 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1369'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT(CAST(`{COLUMN_NAME}` AS STRING), '.')[SAFE_OFFSET(1)]) AS decimal_scale, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      GROUP BY decimal_scale
+      LIMIT 500;
+    error_type: Test Results
   - id: '1303'
     test_id: '1011'
     test_type: Dec_Trunc

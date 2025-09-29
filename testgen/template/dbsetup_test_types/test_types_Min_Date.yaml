@@ -35,6 +35,14 @@ test_types:
     This test is appropriate for a cumulative dataset only, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates dates do not change.
   active: Y
   cat_test_conditions:
+  - id: '7015'
+    test_type: Min_Date
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < SAFE_CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6015'
     test_type: Min_Date
     sql_flavor: databricks
@@ -92,6 +100,18 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1378'
+    test_id: '1020'
+    test_type: Min_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE CAST(`{COLUMN_NAME}` AS DATE) < CAST(CAST('{BASELINE_VALUE}' AS DATETIME) AS DATE)
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
   - id: '1312'
     test_id: '1020'
     test_type: Min_Date

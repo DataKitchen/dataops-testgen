@@ -19,6 +19,20 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.66'
   dq_dimension: Accuracy
   target_data_lookups:
+  - id: '1356'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE) AS profile_run_date, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME} a
+      WHERE (CAST(`{COLUMN_NAME}` AS DATE) < DATE '1900-01-01')
+         OR (CAST(`{COLUMN_NAME}` AS DATE) > DATE_ADD(CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE), INTERVAL 30 YEAR))
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1290'
     test_id: '1018'
     test_type: Unlikely_Date_Values

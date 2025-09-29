@@ -36,6 +36,14 @@ test_types:
     Average Shift tests that the average of a numeric column has not significantly changed since baseline, when profiling was done. A significant shift may indicate errors in processing, differences in source data, or valid changes that may nevertheless impact assumptions in downstream data products. The test uses Cohen's D, a statistical technique to identify significant shifts in a value. Cohen's D measures the difference between the two averages, reporting results on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge. Depending on your data, some difference may be expected, so it's reasonable to adjust the threshold value that triggers test failure. This test works well for measures, or even for identifiers if you expect them to increment consistently. You may want to periodically adjust the expected threshold, or even the expected average value if you expect shifting over time. Consider this test along with Variability Increase. If variability rises too, process or measurement flaws could be at work. If variability remains consistent, the issue is more likely to be with the source data itself.
   active: Y
   cat_test_conditions:
+  - id: '7002'
+    test_type: Avg_Shift
+    sql_flavor: bigquery
+    measure: |-
+      ROUND(ABS((AVG(SAFE_CAST({COLUMN_NAME} AS FLOAT64)) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})-1)*POW(STDDEV({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}-1)*POW({BASELINE_SD},2)) / NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0))),3)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6002'
     test_type: Avg_Shift
     sql_flavor: databricks
@@ -93,6 +101,15 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1365'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average
+      FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1299'
     test_id: '1005'
     test_type: Avg_Shift

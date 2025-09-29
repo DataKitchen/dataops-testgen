@@ -44,6 +44,14 @@ test_types:
     \ shift, this may point to a data quality or data collection problem. "
   active: Y
   cat_test_conditions:
+  - id: '7031'
+    test_type: Variability_Increase
+    sql_flavor: bigquery
+    measure: |-
+      100.0 * STDDEV(CAST({COLUMN_NAME} AS FLOAT64)) / {BASELINE_SD}
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6031'
     test_type: Variability_Increase
     sql_flavor: databricks
@@ -101,6 +109,15 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1394'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
+      FROM {TARGET_SCHEMA}.{TABLE_NAME};
+    error_type: Test Results
   - id: '1328'
     test_id: '1040'
     test_type: Variability_Increase

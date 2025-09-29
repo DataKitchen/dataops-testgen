@@ -19,6 +19,18 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.33'
   dq_dimension: Consistency
   target_data_lookups:
+  - id: '1359'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1293'
     test_id: '1021'
     test_type: Unexpected US States

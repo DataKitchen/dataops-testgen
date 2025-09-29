@@ -19,6 +19,19 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Consistency
   target_data_lookups:
+  - id: '1396'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (
+        SELECT TRIM(val) FROM UNNEST(SPLIT(SUBSTR('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) AS val
+      )
+      GROUP BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
   - id: '1230'
     test_id: '1027'
     test_type: Variant_Coded_Values

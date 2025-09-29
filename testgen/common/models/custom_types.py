@@ -1,9 +1,13 @@
+import json
 from datetime import UTC, datetime
+from types import NoneType
 
 from sqlalchemy import Integer, String, TypeDecorator
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.encrypt import DecryptText, EncryptText
+
+JSON_TYPE = str | int | float | list | dict | NoneType
 
 
 class NullIfEmptyString(TypeDecorator):
@@ -22,12 +26,12 @@ class YNString(TypeDecorator):
         if isinstance(value, bool):
             return "Y" if value else "N"
         return value
-    
+
     def process_result_value(self, value: str | None, _dialect) -> bool | None:
         if isinstance(value, str):
             return value == "Y"
         return value
-    
+
 
 class ZeroIfEmptyInteger(TypeDecorator):
     impl = Integer
@@ -54,3 +58,12 @@ class EncryptedBytea(TypeDecorator):
 
     def process_result_value(self, value: bytes, _dialect) -> str:
         return DecryptText(value) if value is not None else value
+
+
+class EncryptedJson(EncryptedBytea):
+
+    def process_bind_param(self, value: JSON_TYPE, _dialect) -> bytes:
+        return None if value is None else super().process_bind_param(json.dumps(value), _dialect)
+
+    def process_result_value(self, value: bytes, _dialect) -> JSON_TYPE:
+        return None if value is None else json.loads(super().process_result_value(value, _dialect))

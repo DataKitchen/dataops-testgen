@@ -34,6 +34,14 @@ test_types:
     Because this tests the row count against a constant minimum threshold, it's appropriate for any dataset, as long as the number of rows doesn't radically change from refresh to refresh.  But it's not responsive to change over time. You may want to adjust the threshold periodically if you are dealing with a cumulative dataset.
   active: Y
   cat_test_conditions:
+  - id: '7024'
+    test_type: Row_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6024'
     test_type: Row_Ct
     sql_flavor: databricks
@@ -91,6 +99,21 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1387'
+    test_id: '1031'
+    test_type: Row_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH cte AS (
+        SELECT COUNT(*) AS current_count
+        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      )
+      SELECT current_count,
+             ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / CAST({THRESHOLD_VALUE} AS FLOAT64), 2)) AS row_count_pct_decrease
+      FROM cte
+      WHERE current_count < {THRESHOLD_VALUE};
+    error_type: Test Results
   - id: '1321'
     test_id: '1031'
     test_type: Row_Ct

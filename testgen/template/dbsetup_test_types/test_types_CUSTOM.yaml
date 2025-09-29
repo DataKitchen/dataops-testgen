@@ -39,6 +39,10 @@ test_types:
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:
+  - id: '2504'
+    test_type: CUSTOM
+    sql_flavor: bigquery
+    template_name: ex_custom_query_generic.sql
   - id: '2404'
     test_type: CUSTOM
     sql_flavor: databricks

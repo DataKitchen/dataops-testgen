@@ -35,6 +35,14 @@ test_types:
     This test is appropriate for character fields that are expected to appear in a consistent format. It uses pattern matching syntax as appropriate for your database:  REGEX matching if available, otherwise LIKE expressions. The expected threshold is the number of records that fail to match the defined pattern.
   active: Y
   cat_test_conditions:
+  - id: '7021'
+    test_type: Pattern_Match
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CAST(REGEXP_CONTAINS(CAST(NULLIF({COLUMN_NAME}, '') AS STRING), r'{BASELINE_VALUE}') AS INT64))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   - id: '6021'
     test_type: Pattern_Match
     sql_flavor: databricks
@@ -92,6 +100,17 @@ test_types:
     test_condition: |-
       {THRESHOLD_VALUE}
   target_data_lookups:
+  - id: '1384'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''), r'{BASELINE_VALUE}')
+      GROUP BY `{COLUMN_NAME}`;
+    error_type: Test Results
   - id: '1318'
     test_id: '1026'
     test_type: Pattern_Match

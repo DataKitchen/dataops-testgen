@@ -16,6 +16,32 @@ profile_anomaly_types:
   dq_score_risk_factor: null
   dq_dimension: Consistency
   target_data_lookups:
+  - id: '1342'
+    test_id: '1004'
+    test_type: Multiple_Types_Minor
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name,
+        CASE
+          WHEN LOWER(data_type) LIKE 'timestamp%' THEN LOWER(data_type)
+          WHEN LOWER(data_type) LIKE 'date' THEN LOWER(data_type)
+          WHEN LOWER(data_type) LIKE 'boolean' THEN 'boolean'
+          WHEN data_type = 'TEXT' THEN CONCAT('varchar(', CAST(character_maximum_length AS STRING), ')')
+          WHEN LOWER(data_type) LIKE 'char%' THEN CONCAT('char(', CAST(character_maximum_length AS STRING), ')')
+          WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint'
+          WHEN LOWER(data_type) LIKE 'num%' THEN CONCAT('numeric(', CAST(numeric_precision AS STRING), ',', CAST(numeric_scale AS STRING), ')')
+          ELSE data_type
+        END AS data_type
+      FROM information_schema.columns
+      JOIN information_schema.tables
+        ON columns.table_name = tables.table_name
+        AND columns.table_schema = tables.table_schema
+      WHERE columns.table_schema = '{TARGET_SCHEMA}'
+        AND columns.column_name = '{COLUMN_NAME}'
+        AND tables.table_type = 'BASE TABLE'
+      ORDER BY data_type, table_name;
+    error_type: Profile Anomaly
   - id: '1276'
     test_id: '1004'
     test_type: Multiple_Types_Minor

@@ -37,6 +37,35 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1405'
+    test_id: '1505'
+    test_type: Aggregate_Balance_Range
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM (
+        SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
+        FROM (
+          SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
+          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+          WHERE {SUBSET_CONDITION}
+          GROUP BY {GROUPBY_NAMES}
+          {HAVING_CONDITION}
+          UNION ALL
+          SELECT {MATCH_GROUPBY_NAMES}, NULL AS total, {MATCH_COLUMN_NAMES} AS match_total
+          FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+          WHERE {MATCH_SUBSET_CONDITION}
+          GROUP BY {MATCH_GROUPBY_NAMES}
+          {MATCH_HAVING_CONDITION}
+        ) a
+        GROUP BY {GROUPBY_NAMES}
+      ) s
+      WHERE (total IS NOT NULL AND match_total IS NULL)
+         OR (total IS NULL AND match_total IS NOT NULL)
+         OR (total NOT BETWEEN match_total + {LOWER_TOLERANCE} AND match_total + {UPPER_TOLERANCE})
+      ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
   - id: '1245'
     test_id: '1505'
     test_type: Aggregate_Balance_Range
@@ -194,6 +223,10 @@ test_types:
         ORDER BY {GROUPBY_NAMES};
     error_type: Test Results
   test_templates:
+  - id: '2510'
+    test_type: Aggregate_Balance_Range
+    sql_flavor: bigquery
+    template_name: ex_aggregate_match_range_generic.sql
   - id: '2410'
     test_type: Aggregate_Balance_Range
     sql_flavor: databricks

@@ -18,6 +18,19 @@ profile_anomaly_types:
   dq_score_risk_factor: '0.33'
   dq_dimension: Uniqueness
   target_data_lookups:
+  - id: '1354'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      GROUP BY `{COLUMN_NAME}`
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
   - id: '1288'
     test_id: '1016'
     test_type: Potential_Duplicates

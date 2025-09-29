@@ -45,6 +45,7 @@ def run_parameter_validation_queries(
 
         # Retrieve Current Project Column list
         LOG.info("CurrentStep: Retrieve Current Columns for Validation")
+        clsExecute.tg_schema = params["table_group_schema"]
         clsExecute.test_schemas = strSchemas
         lstProjectTestColumns = fetch_dict_from_db(*clsExecute.GetProjectTestValidationColumns(), use_target_db=True)
 
@@ -99,7 +100,7 @@ def run_parameter_validation_queries(
             clsExecute.message = f"Missing table: {table_name}"
             clsExecute.test_ids = test_ids
             execute_db_queries([clsExecute.FlagTestsWithFailedValidation()])
-        
+
         if invalid_tests:
             clsExecute.message = "Invalid test: schema, table, or column not defined"
             clsExecute.test_ids = invalid_tests

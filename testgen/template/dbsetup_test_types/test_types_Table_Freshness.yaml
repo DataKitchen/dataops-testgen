@@ -39,6 +39,10 @@ test_types:
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:
+  - id: '2512'
+    test_type: Table_Freshness
+    sql_flavor: bigquery
+    template_name: ex_table_changed_bigquery.sql
   - id: '2412'
     test_type: Table_Freshness
     sql_flavor: databricks

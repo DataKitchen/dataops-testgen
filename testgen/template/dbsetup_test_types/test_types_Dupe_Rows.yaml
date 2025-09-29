@@ -37,6 +37,19 @@ test_types:
   active: Y
   cat_test_conditions: []
   target_data_lookups:
+  - id: '1409'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
+      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      WHERE {SUBSET_CONDITION}
+      GROUP BY {GROUPBY_NAMES}
+      HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
   - id: '1257'
     test_id: '1510'
     test_type: Dupe_Rows
@@ -116,6 +129,10 @@ test_types:
       ORDER BY {GROUPBY_NAMES}
     error_type: Test Results
   test_templates:
+  - id: '2511'
+    test_type: Dupe_Rows
+    sql_flavor: bigquery
+    template_name: ex_dupe_rows_generic.sql
   - id: '2411'
     test_type: Dupe_Rows
     sql_flavor: databricks
