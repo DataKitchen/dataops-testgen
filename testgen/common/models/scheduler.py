@@ -4,7 +4,7 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 from cron_converter import Cron
-from sqlalchemy import Column, String, func, select
+from sqlalchemy import Boolean, Column, String, delete, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -27,6 +27,7 @@ class JobSchedule(Base):
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default={})
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)
+    active: bool = Column(Boolean, default=True)
 
     @classmethod
     def select_where(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
@@ -34,7 +35,7 @@ class JobSchedule(Base):
             select(cls.id)
             .join(TestSuite, TestSuite.test_suite == cls.kwargs["test_suite_key"].astext)
             .join(TestDefinition, TestDefinition.test_suite_id == TestSuite.id)
-            .where(cls.key == RUN_TESTS_JOB_KEY)
+            .where(cls.key == RUN_TESTS_JOB_KEY, cls.active == True)
             .group_by(cls.id, TestSuite.test_suite)
             .having(func.count(TestDefinition.id) > 0)
             .subquery()
@@ -44,10 +45,32 @@ class JobSchedule(Base):
             .join(test_definitions_count, test_definitions_count.c.id == cls.id)
             .where(*clauses)
         )
-        non_test_runs_query = select(cls).where(cls.key != RUN_TESTS_JOB_KEY, *clauses)
+        non_test_runs_query = select(cls).where(cls.key != RUN_TESTS_JOB_KEY, cls.active == True, *clauses)
         query = test_runs_query.union_all(non_test_runs_query).order_by(order_by)
 
         return get_current_session().execute(query)
+
+    @classmethod
+    def delete(cls, job_id: str | UUID) -> None:
+        query = delete(cls).where(JobSchedule.id == UUID(job_id))
+        db_session = get_current_session()
+        try:
+            db_session.execute(query)
+        except ValueError:
+            db_session.rollback()
+        else:
+            db_session.commit()
+
+    @classmethod
+    def update_active(cls, job_id: str | UUID, active: bool) -> None:
+        query = update(cls).where(JobSchedule.id == UUID(job_id)).values(active=active)
+        db_session = get_current_session()
+        try:
+            db_session.execute(query)
+        except ValueError:
+            db_session.rollback()
+        else:
+            db_session.commit()
 
     @classmethod
     def count(cls):

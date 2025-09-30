@@ -2,7 +2,6 @@ import json
 import zoneinfo
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 import cron_converter
 import cron_descriptor
@@ -14,7 +13,7 @@ from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
 from testgen.ui.session import session, temp_value
 
-
+CRON_SAMPLE_COUNT = 3
 class ScheduleDialog:
 
     title: str = ""
@@ -43,16 +42,20 @@ class ScheduleDialog:
         return st.dialog(title=self.title)(self.render)()
 
     def render(self) -> None:
+        @with_database_session
         def on_delete_sched(item):
-            with Session() as db_session:
-                try:
-                    sched, = db_session.query(JobSchedule).where(JobSchedule.id == UUID(item["id"]))
-                    db_session.delete(sched)
-                except ValueError:
-                    db_session.rollback()
-                else:
-                    db_session.commit()
-                    st.rerun(scope="fragment")
+            JobSchedule.delete(item["id"])
+            st.rerun(scope="fragment")
+
+        @with_database_session
+        def on_pause_sched(item):
+            JobSchedule.update_active(item["id"], False)
+            st.rerun(scope="fragment")
+
+        @with_database_session
+        def on_resume_sched(item):
+            JobSchedule.update_active(item["id"], True)
+            st.rerun(scope="fragment")
 
         def on_cron_sample(payload: dict[str, str]):
             try:
@@ -66,7 +69,7 @@ class ScheduleDialog:
                 )
 
                 set_cron_sample({
-                    "sample": cron_schedule.next().strftime("%a %b %-d, %-I:%M %p"),
+                    "samples": [cron_schedule.next().strftime("%a %b %-d, %-I:%M %p") for _ in range(CRON_SAMPLE_COUNT)],
                     "readable_expr": readble_cron_schedule,
                 })
             except ValueError as e:
@@ -113,6 +116,7 @@ class ScheduleDialog:
                             key=self.job_key,
                             cron_expr=cron_obj.to_string(),
                             cron_tz=cron_tz,
+                            active=True,
                             args=args,
                             kwargs=kwargs,
                         )
@@ -147,11 +151,13 @@ class ScheduleDialog:
                     "cronTz": job.cron_tz_str,
                     "sample": [
                         sample.strftime("%a %b %-d, %-I:%M %p")
-                        for sample in job.get_sample_triggering_timestamps(2)
+                        for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
                     ],
+                    "active": job.active,
                 }
                 scheduled_jobs_json.append(job_json)
 
+        testgen.css_class("l-dialog")
         testgen.testgen_component(
             "schedule_list",
             props={
@@ -163,6 +169,8 @@ class ScheduleDialog:
                 "results": results,
             },
             event_handlers={
+                "PauseSchedule": on_pause_sched,
+                "ResumeSchedule": on_resume_sched,
                 "DeleteSchedule": on_delete_sched,
             },
             on_change_handlers={
