@@ -164,7 +164,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
     const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start * 1000)) / (1000 * 60 * 60 * 24));
 
     return div(
-        { class: 'flex-row tg-overview--row', style: 'width: calc(100% - 115px);' },
+        { class: 'flex-row tg-overview--row' },
         div(
             { class: 'flex-row fx-gap-2', style: 'flex: 1 1 50%;' },
             span('Latest profile:'),
@@ -186,6 +186,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
                     run_id: tableGroup.latest_profile_id,
                 },
                 width: 150,
+                style: 'flex: 0 0 auto;',
             }),
             tableGroup.latest_anomalies_ct
             ? SummaryCounts({
@@ -198,6 +199,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
             })
             : '',
         ),
+        div({ style: 'flex: 1 1 120px;' })
     );
 };
 
