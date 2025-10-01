@@ -34,7 +34,7 @@
  */
 import van from '../van.min.js';
 import { Tooltip } from '../components/tooltip.js';
-import { SummaryBar } from '../components/summary_bar.js';
+import { SummaryCounts } from '../components/summary_counts.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
@@ -54,7 +54,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const columns = ['5%', '15%', '20%', '20%', '30%', '10%'];
+    const columns = ['5%', '15%', '15%', '20%', '35%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
 
     const pageIndex = van.state(0);
@@ -300,15 +300,13 @@ const ProfilingRunItem = (
         ),
         div(
             { class: 'pr-3', style: `flex: ${columns[4]}` },
-            item.anomaly_ct ? SummaryBar({
+            item.anomaly_ct ? SummaryCounts({
                 items: [
                     { label: 'Definite', value: item.anomalies_definite_ct, color: 'red' },
                     { label: 'Likely', value: item.anomalies_likely_ct, color: 'orange' },
                     { label: 'Possible', value: item.anomalies_possible_ct, color: 'yellow' },
                     { label: 'Dismissed', value: item.anomalies_dismissed_ct, color: 'grey' },
                 ],
-                height: 3,
-                width: 350,
             }) : '--',
             item.anomaly_ct ? Link({
                 label: `View ${item.anomaly_ct} issues`,
@@ -316,7 +314,7 @@ const ProfilingRunItem = (
                 params: { 'run_id': item.profiling_run_id },
                 underline: true,
                 right_icon: 'chevron_right',
-                style: 'margin-top: 8px;',
+                style: 'margin-top: 4px;',
                 'data-testid': 'profiling-run-item-viewissues'
             }) : null,
         ),

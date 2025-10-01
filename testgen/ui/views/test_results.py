@@ -90,7 +90,7 @@ class TestResultsPage(Page):
             [.175, .2, .2, .175, .15, .1], vertical_alignment="bottom"
         )
 
-        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
 
         filters_changed = False

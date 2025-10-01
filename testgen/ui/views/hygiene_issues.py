@@ -70,11 +70,11 @@ class HygieneIssuesPage(Page):
             ],
         )
 
-        others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.2, .2, .15, .3, .15], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.25, .2, .1, .3, .15], vertical_alignment="bottom")
         (liklihood_filter_column, table_filter_column, column_filter_column, issue_type_filter_column, action_filter_column, sort_column) = (
             st.columns([.2, .15, .2, .2, .15, .1], vertical_alignment="bottom")
         )
-        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
 
         filters_changed = False
@@ -187,21 +187,17 @@ class HygieneIssuesPage(Page):
         summaries = get_profiling_anomaly_summary(run_id)
         others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
         with others_summary_column:
-            testgen.summary_bar(
+            testgen.summary_counts(
                 items=others_summary,
                 label="Hygiene Issues",
-                height=20,
-                width=400,
             )
 
         anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
         if anomalies_pii_summary:
             with pii_summary_column:
-                testgen.summary_bar(
+                testgen.summary_counts(
                     items=anomalies_pii_summary,
-                    label="Potential PII",
-                    height=20,
-                    width=400,
+                    label="Potential PII (Risk)",
                 )
 
         selected, selected_row = fm.render_grid_select(
@@ -525,8 +521,8 @@ def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
         { "label": "Likely", "value": result.likely_ct, "color": "orange" },
         { "label": "Possible", "value": result.possible_ct, "color": "yellow" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
-        { "label": "High Risk", "value": result.pii_high_ct, "color": "red", "type": "PII" },
-        { "label": "Moderate Risk", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
+        { "label": "High", "value": result.pii_high_ct, "color": "red", "type": "PII" },
+        { "label": "Moderate", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
         { "label": "Dismissed", "value": result.pii_dismissed_ct, "color": "grey", "type": "PII" },
     ]
 

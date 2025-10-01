@@ -24,6 +24,6 @@ from testgen.ui.components.widgets.paginator import paginator
 from testgen.ui.components.widgets.select import select
 from testgen.ui.components.widgets.sidebar import sidebar
 from testgen.ui.components.widgets.sorting_selector import sorting_selector
-from testgen.ui.components.widgets.summary_bar import summary_bar
+from testgen.ui.components.widgets.summary import summary_bar, summary_counts
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.components.widgets.wizard import WizardStep, wizard
