@@ -6,3 +6,9 @@ postgresql:
   fullnameOverride: postgresql
   auth:
     database: "datakitchen"
+  image:
+    repository: bitnamilegacy/postgresql
+
+global:
+  security:
+    allowInsecureImages: true
