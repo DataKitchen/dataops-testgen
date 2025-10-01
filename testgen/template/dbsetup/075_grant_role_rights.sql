@@ -31,6 +31,7 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.projects,
     {SCHEMA_NAME}.data_table_chars,
     {SCHEMA_NAME}.data_column_chars,
+    {SCHEMA_NAME}.data_structure_log,
     {SCHEMA_NAME}.auth_users,
     {SCHEMA_NAME}.score_definitions,
     {SCHEMA_NAME}.score_definition_criteria,
