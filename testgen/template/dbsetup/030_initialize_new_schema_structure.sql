@@ -903,6 +903,7 @@ CREATE TABLE job_schedules (
     kwargs JSONB NOT NULL,
     cron_expr VARCHAR(50) NOT NULL,
     cron_tz VARCHAR(30) NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
     UNIQUE (project_code, key, args, kwargs, cron_expr, cron_tz)
 );
 

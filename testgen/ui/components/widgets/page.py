@@ -100,8 +100,8 @@ def flex_row_start(container: DeltaGenerator | None = None):
     _apply_html('<i class="flex-row flex-start"></i>', container)
 
 
-def flex_row_end(container: DeltaGenerator | None = None):
-    _apply_html('<i class="flex-row flex-end"></i>', container)
+def flex_row_end(container: DeltaGenerator | None = None, wrap: bool = False):
+    _apply_html(f'<i class="flex-row flex-end {"flex-wrap" if wrap else ""}"></i>', container)
 
 
 def flex_row_center(container: DeltaGenerator | None = None):

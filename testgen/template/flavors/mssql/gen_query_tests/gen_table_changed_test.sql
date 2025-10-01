@@ -14,7 +14,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                      AND ts.id = '{TEST_SUITE_ID}'
                      AND p.run_date::DATE <= '{AS_OF_DATE}'
                   GROUP BY r.table_groups_id),
-curprof AS      (SELECT p.profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
+curprof AS      (SELECT p.profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type, column_type,
                         distinct_value_ct, record_ct, max_value, min_value, avg_value, stdev_value, null_value_ct
                    FROM last_run lr
                  INNER JOIN profile_results p
@@ -28,7 +28,7 @@ locked AS       (SELECT schema_name, table_name
                    AND lock_refresh = 'Y'),
 -- IDs - TOP 2
 id_cols
-   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
+   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type, column_type,
                distinct_value_ct,
                ROW_NUMBER() OVER (PARTITION BY schema_name, table_name
                   ORDER BY
@@ -42,7 +42,7 @@ id_cols
            AND functional_data_type ILIKE 'ID%'),
 -- Process Date - TOP 1
 process_date_cols
-   AS (SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
+   AS (SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type, column_type,
               distinct_value_ct,
        ROW_NUMBER() OVER (PARTITION BY schema_name, table_name
           ORDER BY
@@ -57,7 +57,7 @@ process_date_cols
            AND functional_data_type ILIKE 'process%'),
 -- Transaction Date - TOP 1
 tran_date_cols
-   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
+   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type, column_type,
                distinct_value_ct,
                ROW_NUMBER() OVER (PARTITION BY schema_name, table_name
                   ORDER BY
@@ -70,7 +70,7 @@ tran_date_cols
 
 -- Numeric Measures
 numeric_cols
-   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type,
+   AS ( SELECT profile_run_id, schema_name, table_name, column_name, functional_data_type, general_type, column_type,
 /*
                -- Subscores
                distinct_value_ct * 1.0 / NULLIF(record_ct, 0)                              AS cardinality_score,
@@ -98,19 +98,19 @@ numeric_cols_ranked
           FROM numeric_cols
          WHERE change_detection_score IS NOT NULL),
 combined
-   AS ( SELECT profile_run_id, schema_name, table_name, column_name, 'ID' AS element_type, general_type, 10 + rank AS fingerprint_order
+   AS ( SELECT profile_run_id, schema_name, table_name, column_name, 'ID' AS element_type, general_type, column_type, 10 + rank AS fingerprint_order
           FROM id_cols
          WHERE rank <= 2
          UNION ALL
-        SELECT profile_run_id, schema_name, table_name, column_name, 'DATE_P' AS element_type, general_type, 20 + rank AS fingerprint_order
+        SELECT profile_run_id, schema_name, table_name, column_name, 'DATE_P' AS element_type, general_type, column_type, 20 + rank AS fingerprint_order
           FROM process_date_cols
          WHERE rank = 1
          UNION ALL
-        SELECT profile_run_id, schema_name, table_name, column_name, 'DATE_T' AS element_type, general_type, 30 + rank AS fingerprint_order
+        SELECT profile_run_id, schema_name, table_name, column_name, 'DATE_T' AS element_type, general_type, column_type, 30 + rank AS fingerprint_order
           FROM tran_date_cols
          WHERE rank = 1
          UNION ALL
-        SELECT profile_run_id, schema_name, table_name, column_name, 'MEAS' AS element_type, general_type, 40 + rank AS fingerprint_order
+        SELECT profile_run_id, schema_name, table_name, column_name, 'MEAS' AS element_type, general_type, column_type, 40 + rank AS fingerprint_order
           FROM numeric_cols_ranked
          WHERE rank = 1 ),
 newtests AS (
@@ -123,7 +123,8 @@ newtests AS (
             CASE
                WHEN general_type = 'D' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR)'
                WHEN general_type = 'A' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(COUNT(DISTINCT @@@) AS NVARCHAR) + ''|'' + CAST(SUM(LEN(@@@)) AS NVARCHAR)'
-               WHEN general_type = 'N' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(SUM(@@@) AS NVARCHAR) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS NVARCHAR) + ''|'' + CAST(ROUND(STDEV(CAST(@@@ AS FLOAT)), 5) AS NVARCHAR)'
+               WHEN general_type = 'N' AND column_type ILIKE '%int%' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(SUM(CAST(@@@ AS BIGINT)) AS NVARCHAR) + ''|'' + CAST(ROUND(AVG(CAST(@@@ AS DECIMAL(30,5))), 5) AS NVARCHAR) + ''|'' + CAST(ROUND(STDEV(CAST(@@@ AS FLOAT)), 5) AS NVARCHAR)'
+               WHEN general_type = 'N' AND column_type NOT ILIKE '%int%' THEN 'CAST(MIN(@@@) AS NVARCHAR) + ''|'' + MAX(CAST(@@@ AS NVARCHAR)) + ''|'' + CAST(SUM(@@@) AS NVARCHAR) + ''|'' + CAST(ROUND(AVG(@@@), 5) AS NVARCHAR) + ''|'' + CAST(ROUND(STDEV(CAST(@@@ AS FLOAT)), 5) AS NVARCHAR)'
             END,
             '@@@', '"' || column_name || '"'
          ),

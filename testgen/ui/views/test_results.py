@@ -39,7 +39,7 @@ from testgen.ui.queries.source_data_queries import (
     get_test_issue_source_query_custom,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
-from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
+from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
@@ -90,7 +90,7 @@ class TestResultsPage(Page):
             [.175, .2, .2, .175, .15, .1], vertical_alignment="bottom"
         )
 
-        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
 
         filters_changed = False
@@ -593,7 +593,10 @@ def render_selected_details(
             with pg_col1:
                 fm.show_subheader(selected_item["test_name_short"])
                 st.markdown(f"###### {selected_item['test_description']}")
-                st.caption(empty_if_null(selected_item["measure_uom_description"]))
+                if selected_item["measure_uom_description"]:
+                    st.caption(selected_item["measure_uom_description"])
+                if selected_item["result_message"]:
+                    st.caption(selected_item["result_message"])
                 fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled", key="test_history")
             with pg_col2:
                 ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
@@ -800,7 +803,7 @@ def source_data_dialog(selected_row):
     st.caption(selected_row["test_description"])
     
     st.markdown("#### Test Parameters")
-    testgen.caption(selected_row["input_parameters"], styles="max-height: 100px; overflow: auto;")
+    testgen.caption(selected_row["input_parameters"], styles="max-height: 75px; overflow: auto;")
 
     st.markdown("#### Result Detail")
     st.caption(selected_row["result_message"])
@@ -811,7 +814,7 @@ def source_data_dialog(selected_row):
     else:
         query = get_test_issue_source_query(selected_row)
     if query:
-        st.code(query, language="sql")
+        st.code(query, language="sql", height=100)
 
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":

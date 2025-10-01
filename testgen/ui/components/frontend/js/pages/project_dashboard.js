@@ -13,6 +13,7 @@
  * @property {number?} latest_profile_start
  * @property {number} latest_profile_table_ct
  * @property {number} latest_profile_column_ct
+ * @property {number} latest_profile_data_point_ct
  * @property {number} latest_anomalies_ct
  * @property {number} latest_anomalies_definite_ct
  * @property {number} latest_anomalies_likely_ct
@@ -36,7 +37,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
+import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
@@ -44,6 +45,7 @@ import { Link } from '../components/link.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { ScoreMetric } from '../components/score_metric.js';
+import { SummaryCounts } from '../components/summary_counts.js';
 
 const { div, h3, hr, span } = van.tags;
 
@@ -137,7 +139,9 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     ),
                     span(
                         { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
-                        `${tableGroup.latest_profile_table_ct ?? 0} tables | ${tableGroup.latest_profile_column_ct ?? 0} columns`,
+                        `${formatNumber(tableGroup.latest_profile_table_ct ?? 0)} tables | 
+                        ${formatNumber(tableGroup.latest_profile_column_ct ?? 0)} columns | 
+                        ${formatNumber(tableGroup.latest_profile_data_point_ct ?? 0)} data points`,
                     ),
                     TableGroupTestSuiteSummary(tableGroup.test_suites),
                 ),
@@ -160,8 +164,9 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
     const daysAgo = Math.round((new Date() - new Date(tableGroup.latest_profile_start * 1000)) / (1000 * 60 * 60 * 24));
 
     return div(
+        { class: 'flex-row tg-overview--row', style: 'width: calc(100% - 115px);' },
         div(
-            { class: 'flex-row fx-gap-1 mb-2' },
+            { class: 'flex-row fx-gap-2', style: 'flex: 1 1 50%;' },
             span('Latest profile:'),
             Link({
                 label: formatTimestamp(tableGroup.latest_profile_start),
@@ -171,7 +176,9 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
             daysAgo > staleProfileDays
                 ? span({ class: 'text-error' }, `(${daysAgo} days ago)`)
                 : null,
-            span('|'),
+        ),
+        div(
+            { class: 'flex-row fx-gap-5', style: 'flex: 1 1 50%;' },
             Link({
                 label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
                 href: 'profiling-runs:hygiene',
@@ -180,19 +187,17 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
                 },
                 width: 150,
             }),
-        ),
-        tableGroup.latest_anomalies_ct
-            ? SummaryBar({
+            tableGroup.latest_anomalies_ct
+            ? SummaryCounts({
                 items: [
                     { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
                     { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
                     { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
                     { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
                 ],
-                height: 3,
-                width: 350,
             })
             : '',
+        ),
     );
 };
 

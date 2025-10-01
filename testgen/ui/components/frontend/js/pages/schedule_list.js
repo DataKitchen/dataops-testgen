@@ -4,9 +4,11 @@
  * @typedef Schedule
  * @type {object}
  * @property {string} argValue
+ * @property {string} readableExpr
  * @property {string} cronExpr
  * @property {string} cronTz
  * @property {string[]} sample
+ * @property {boolean} active
  *
  * @typedef Permissions
  * @type {object}
@@ -37,7 +39,7 @@ import { CrontabInput } from '../components/crontab_input.js';
 import { timezones } from '../values.js';
 import { Alert } from '../components/alert.js';
 
-const minHeight = 380;
+const minHeight = 500;
 const { div, span, i } = van.tags;
 
 const ScheduleList = (/** @type Properties */ props) => {
@@ -66,7 +68,7 @@ const ScheduleList = (/** @type Properties */ props) => {
         expression: newScheduleForm.expression.val,
     }));
 
-    const columns = ['40%', '50%', '10%'];
+    const columns = ['25%', '45%', '20%', '10%'];
     const domId = 'schedules-table';
 
     return div(
@@ -151,10 +153,14 @@ const ScheduleList = (/** @type Properties */ props) => {
                 ),
                 span(
                     { style: `flex: ${columns[1]}` },
-                    'Cron Expression | Timezone',
+                    'Schedule | Timezone',
                 ),
                 span(
                     { style: `flex: ${columns[2]}` },
+                    'Status | Next Run',
+                ),
+                span(
+                    { style: `flex: ${columns[3]}` },
                     'Actions',
                 ),
             ),
@@ -179,42 +185,78 @@ const ScheduleListItem = (
             div(item.argValue),
         ),
         div(
-            { class: 'flex-row', style: `flex: ${columns[1]}` },
+            { style: `flex: ${columns[1]}` },
             div(
-                div(
-                    { style: 'font-family: \'Roboto Mono\', monospace; font-size: 12px' },
-                    item.cronExpr,
-                    withTooltip(
-                        i(
-                            {
-                                class: 'material-symbols-rounded text-secondary ml-1',
-                                style: 'position: relative; font-size: 16px;',
-                            },
-                            'info',
-                        ),
+                { style: 'max-width: 400px;' },
+                span(item.readableExpr),
+                withTooltip(
+                    i(
                         {
-                            text: [
-                                div({class: 'text-center mb-1'}, item.readableExpr),
-                                div({class: 'text-left'}, "Next runs:"),
-                                ...item.sample?.map(v => div({class: 'text-left'}, v))
-                            ],
+                            class: 'material-symbols-rounded text-secondary ml-1',
+                            style: 'position: relative; font-size: 16px; vertical-align: bottom; cursor: default;',
                         },
+                        'info',
                     ),
+                    { text: `Cron expression: ${item.cronExpr}` },
                 ),
-                div(
-                    { class: 'text-caption mt-1' },
-                    item.cronTz,
-                ),
+            ),
+            div(
+                { class: 'text-caption mt-1' },
+                item.cronTz,
             ),
         ),
         div(
             { style: `flex: ${columns[2]}` },
-            permissions.can_edit ? Button({
-                type: 'stroked',
-                label: 'Delete',
-                style: 'width: auto; height: 32px;',
-                onclick: () => emitEvent('DeleteSchedule', { payload: item }),
-            }) : null,
+            div(
+                { style: `color: ${item.active ? 'var(--primary-color)' : 'var(--purple)'};` },
+                item.active ? 'Active' : 'Paused',
+            ),
+            item.active ? div(
+                { class: 'flex-row mt-1' },
+                span({ class: 'text-caption' }, item.sample?.[0]),
+                withTooltip(
+                    i(
+                        {
+                            class: 'material-symbols-rounded text-secondary ml-1',
+                            style: 'position: relative; font-size: 16px; cursor: default;',
+                        },
+                        'info',
+                    ),
+                    {
+                        text: [
+                            div({class: 'text-left'}, 'Next runs:'),
+                            ...item.sample?.slice(1).map(v => div({class: 'text-left'}, v))
+                        ],
+                    },
+                ),
+            ) : null,
+        ),
+        div(
+            { class: 'flex-row fx-gap-2', style: `flex: ${columns[3]}` },
+            permissions.can_edit ? [
+                item.active 
+                    ? Button({
+                        type: 'stroked',
+                        icon: 'pause',
+                        tooltip: 'Pause schedule',
+                        style: 'height: 32px;',
+                        onclick: () => emitEvent('PauseSchedule', { payload: item }),
+                    })
+                    : Button({
+                        type: 'stroked',
+                        icon: 'play_arrow',
+                        tooltip: 'Resume schedule',
+                        style: 'height: 32px;',
+                        onclick: () => emitEvent('ResumeSchedule', { payload: item }),
+                    }),
+                Button({
+                    type: 'stroked',
+                    icon: 'delete',
+                    tooltip: 'Delete schedule',
+                    style: 'height: 32px;',
+                    onclick: () => emitEvent('DeleteSchedule', { payload: item }),
+                }),
+            ] : null,
         ),
     );
 }

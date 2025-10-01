@@ -26,7 +26,6 @@ def summary_bar(
     :param items: list of dicts with value, label, and color
     :param height: height of bar in pixels, default=24
     :param width: width of bar in pixels, default is 100% of parent
-    :param key: unique key to give the component a persisting state
     """
 
     label_div = ""
@@ -52,7 +51,7 @@ def summary_bar(
         """
 
     st.html(f"""
-            <div class="tg-summary-bar-wrapper">
+            <div>
                 {label_div}
                 <div class="tg-summary-bar" style="height: {height}px; max-width: {f'{width}px' if width else '100%'};">
                     {item_spans}
@@ -60,6 +59,53 @@ def summary_bar(
                 {caption_div}
             </div>
             """)
+    
+
+def summary_counts(
+    items: list["SummaryItem"],
+    label: str | None = None,
+) -> None:
+    """
+    Testgen component to display summary counts.
+
+    # Parameters
+    :param items: list of dicts with value, label, and color
+    """
+
+    label_div = ""
+    item_spans = ""
+    caption_div = ""
+
+    if label:
+        label_div = f"""
+        <div class="tg-summary-counts--label">
+        {label}
+        </div>
+        """
+
+    item_divs = "".join(
+        [
+            f"""
+            <div class="tg-summary-counts--item">
+                <div class="tg-summary-counts--bar" style="background-color: {COLOR_MAP.get(item["color"], item["color"])};"></div>
+                <div class="tg-summary-counts--value">
+                    <div>{item["label"]}</div>
+                    <div>{item["value"]}</div>
+                </div>
+            </div>
+            """
+            for item in items
+        ]
+    )
+
+    st.html(f"""
+    <div>
+        {label_div}
+        <div class="tg-summary-counts">
+            {item_divs}
+        </div>
+    </div>
+    """)
 
 
 class SummaryItem(typing.TypedDict):
