@@ -22,6 +22,7 @@
  * @property {string} connection_name
  * @property {string} sql_flavor
  * @property {string} sql_flavor_code
+ * @property {string} project_code
  * @property {string} project_host
  * @property {string} project_port
  * @property {string} project_db
@@ -1005,7 +1006,7 @@ const SnowflakeForm = (
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
-                                required,
+                                requiredIf(() => !originalConnection?.connection_id || !originalConnection?.private_key),
                                 sizeLimit(200 * 1024 * 1024),
                             ],
                         }),
@@ -1057,7 +1058,7 @@ const BigqueryForm = (
     });
 
     van.derive(() => {
-        onChange({ service_account_key: serviceAccountKey.val }, serviceAccountKeyFileRaw.val, isValid.val);
+        onChange({ service_account_key: serviceAccountKey.val, project_db: projectId.val }, serviceAccountKeyFileRaw.val, isValid.val);
     });
 
     return div(
@@ -1087,8 +1088,11 @@ const BigqueryForm = (
                                 isFieldValid = false;
                             }
                             serviceAccountKeyFileRaw.val = value;
+                            validityPerField['service_account_key'] = isFieldValid;
+                            isValid.val = Object.values(validityPerField).every(v => v);
                         },
                         validators: [
+                            requiredIf(() => !originalConnection?.connection_id || !originalConnection?.service_account_key),
                             sizeLimit(20 * 1024),
                         ],
                     }),
@@ -1096,15 +1100,8 @@ const BigqueryForm = (
             },
 
             div(
-                { class: 'flex-row fx-gap-3 fx-flex' },
-                Input({
-                    name: 'project_id',
-                    label: 'Project ID',
-                    value: projectId,
-                    height: 38,
-                    class: 'fx-flex',
-                    disabled: true,
-                }),
+                { class: 'text-caption text-right' },
+                `Project ID: ${projectId.val}`,
             ),
         ),
     );
