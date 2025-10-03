@@ -366,15 +366,14 @@ CREATE TABLE profile_pair_rules (
 
 
 CREATE TABLE data_structure_log (
-   project_code     VARCHAR(30),
-   connection_id    BIGINT,
-   change_date      TIMESTAMP,
-   schema_name      VARCHAR(50),
-   table_name       VARCHAR(100),
-   ordinal_position INTEGER,
-   column_name      VARCHAR(100),
-   data_type         VARCHAR(50),
-   status           VARCHAR(10)
+   log_id UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dsl_id
+         PRIMARY KEY,
+   element_id UUID,
+   change_date TIMESTAMP,
+   change VARCHAR(10),
+   old_column_type VARCHAR(50),
+   new_column_type VARCHAR(50)
 );
 
 CREATE TABLE data_table_chars (

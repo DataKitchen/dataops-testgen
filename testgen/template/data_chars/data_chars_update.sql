@@ -124,23 +124,41 @@ WITH new_chars AS (
       run_date
    FROM {SOURCE_TABLE}
    WHERE table_groups_id = :TABLE_GROUPS_ID
+),
+update_chars AS (
+   UPDATE data_column_chars
+   SET ordinal_position = n.position,
+      general_type = n.general_type,
+      column_type = n.column_type,
+      functional_data_type = COALESCE(n.functional_data_type, d.functional_data_type),
+      last_mod_date = CASE WHEN n.column_type <> d.column_type THEN n.run_date ELSE d.last_mod_date END,
+      drop_date = NULL
+   FROM new_chars n
+      INNER JOIN data_column_chars d ON (
+         n.table_groups_id = d.table_groups_id
+         AND n.schema_name = d.schema_name
+         AND n.table_name = d.table_name
+         AND n.column_name = d.column_name
+      )
+   WHERE data_column_chars.table_id = d.table_id
+      AND data_column_chars.column_name = d.column_name
+   RETURNING data_column_chars.*, d.column_type as old_column_type
 )
-UPDATE data_column_chars
-SET ordinal_position = n.position,
-   general_type = n.general_type,
-   column_type = n.column_type,
-   functional_data_type = COALESCE(n.functional_data_type, d.functional_data_type),
-   last_mod_date = CASE WHEN n.column_type <> d.column_type THEN n.run_date ELSE d.last_mod_date END,
-   drop_date = NULL
-FROM new_chars n
-   INNER JOIN data_column_chars d ON (
-      n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
-      AND n.table_name = d.table_name
-      AND n.column_name = d.column_name
-   )
-WHERE data_column_chars.table_id = d.table_id
-   AND data_column_chars.column_name = d.column_name;
+INSERT INTO data_structure_log (
+   element_id,
+   change_date,
+   change,
+   old_column_type,
+   new_column_type
+)
+SELECT u.column_id,
+   u.last_mod_date,
+   'M',
+   u.old_column_type,
+   u.column_type
+   FROM update_chars u
+   WHERE u.old_column_type <> u.column_type;
+
 
 -- Add new records
 WITH new_chars AS (
@@ -155,44 +173,58 @@ WITH new_chars AS (
       run_date
    FROM {SOURCE_TABLE}
    WHERE table_groups_id = :TABLE_GROUPS_ID
+),
+inserted_records AS (
+   INSERT INTO data_column_chars (
+         table_groups_id,
+         schema_name,
+         table_name,
+         table_id,
+         column_name,
+         ordinal_position,
+         general_type,
+         column_type,
+         functional_data_type,
+         add_date,
+         last_mod_date
+      )
+   SELECT n.table_groups_id,
+      n.schema_name,
+      n.table_name,
+      dtc.table_id,
+      n.column_name,
+      n.position,
+      n.general_type,
+      n.column_type,
+      n.functional_data_type,
+      n.run_date,
+      n.run_date
+   FROM new_chars n
+      INNER JOIN data_table_chars dtc ON (
+         n.table_groups_id = dtc.table_groups_id
+         AND n.schema_name = dtc.schema_name
+         AND n.table_name = dtc.table_name
+      )
+      LEFT JOIN data_column_chars d ON (
+         n.table_groups_id = d.table_groups_id
+         AND n.schema_name = d.schema_name
+         AND n.table_name = d.table_name
+         AND n.column_name = d.column_name
+      )
+   WHERE d.table_id IS NULL
+   RETURNING data_column_chars.*
 )
-INSERT INTO data_column_chars (
-      table_groups_id,
-      schema_name,
-      table_name,
-      table_id,
-      column_name,
-      ordinal_position,
-      general_type,
-      column_type,
-      functional_data_type,
-      add_date,
-      last_mod_date
-   )
-SELECT n.table_groups_id,
-   n.schema_name,
-   n.table_name,
-   dtc.table_id,
-   n.column_name,
-   n.position,
-   n.general_type,
-   n.column_type,
-   n.functional_data_type,
-   n.run_date,
-   n.run_date
-FROM new_chars n
-   INNER JOIN data_table_chars dtc ON (
-      n.table_groups_id = dtc.table_groups_id
-      AND n.schema_name = dtc.schema_name
-      AND n.table_name = dtc.table_name
-   )
-   LEFT JOIN data_column_chars d ON (
-      n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
-      AND n.table_name = d.table_name
-      AND n.column_name = d.column_name
-   )
-WHERE d.table_id IS NULL;
+INSERT INTO data_structure_log (
+   element_id,
+   change_date,
+   change,
+   new_column_type
+)
+SELECT i.column_id,
+   i.add_date,
+   'A',
+   i.column_type
+   FROM inserted_records i;
 
 -- Mark dropped records
 WITH new_chars AS (
@@ -209,18 +241,32 @@ last_run AS (
    FROM {SOURCE_TABLE}
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
+),
+deleted_records AS (
+   UPDATE data_column_chars
+   SET drop_date = l.last_run_date
+   FROM last_run l
+      INNER JOIN data_column_chars d ON (l.table_groups_id = d.table_groups_id)
+      LEFT JOIN new_chars n ON (
+         d.table_groups_id = n.table_groups_id
+         AND d.schema_name = n.schema_name
+         AND d.table_name = n.table_name
+         AND d.column_name = n.column_name
+      )
+   WHERE data_column_chars.table_id = d.table_id
+      AND data_column_chars.column_name = d.column_name
+      AND d.drop_date IS NULL
+      AND n.column_name IS NULL
+   RETURNING data_column_chars.*
 )
-UPDATE data_column_chars
-SET drop_date = l.last_run_date
-FROM last_run l
-   INNER JOIN data_column_chars d ON (l.table_groups_id = d.table_groups_id)
-   LEFT JOIN new_chars n ON (
-      d.table_groups_id = n.table_groups_id
-      AND d.schema_name = n.schema_name
-      AND d.table_name = n.table_name
-      AND d.column_name = n.column_name
-   )
-WHERE data_column_chars.table_id = d.table_id
-   AND data_column_chars.column_name = d.column_name
-   AND d.drop_date IS NULL
-   AND n.column_name IS NULL;
+INSERT INTO data_structure_log (
+   element_id,
+   change_date,
+   change,
+   old_column_type
+)
+SELECT del.column_id,
+   del.drop_date,
+   'D',
+   del.column_type
+   FROM deleted_records del;
