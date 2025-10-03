@@ -22,30 +22,6 @@ INNER JOIN profile_results r
    ON p.id = r.profile_run_id;
 
 
-DROP VIEW IF EXISTS v_latest_profile_anomalies;
-
-CREATE VIEW v_latest_profile_anomalies
-   AS
-WITH last_profile_date
-   AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
-         FROM profiling_runs
-       GROUP BY table_groups_id)
-SELECT r.id, r.project_code, r.table_groups_id,
-       r.profile_run_id, pr.profiling_starttime as profile_run_date,
-       r.schema_name, r.table_name, r.column_name, r.column_type,
-       t.anomaly_name, t.anomaly_description, t.issue_likelihood,
-       r.detail,
-       t.suggested_action, r.disposition
-  FROM profile_anomaly_results r
-INNER JOIN profile_anomaly_types t
-   ON r.anomaly_id = t.id
-INNER JOIN profiling_runs pr
-   ON (r.profile_run_id = pr.id)
-INNER JOIN last_profile_date l
-   ON (pr.table_groups_id = l.table_groups_id
-  AND  pr.profiling_starttime = l.last_profile_run_date);
-
-
 DROP VIEW IF EXISTS v_inactive_anomalies;
 
 CREATE VIEW v_inactive_anomalies
@@ -53,59 +29,6 @@ CREATE VIEW v_inactive_anomalies
 SELECT DISTINCT anomaly_id, table_groups_id, schema_name, table_name, column_name, column_id
   FROM profile_anomaly_results
  WHERE disposition = 'Inactive';
-
-
-DROP VIEW IF EXISTS v_profiling_runs;
-
-CREATE VIEW v_profiling_runs
- AS
-SELECT r.id as profiling_run_id,
-       r.project_code, cc.connection_name, r.connection_id, r.table_groups_id,
-       tg.table_groups_name,
-       tg.table_group_schema as schema_name,
-       r.profiling_starttime as start_time,
-       r.profiling_endtime as end_time,
-       r.status,
-       r.log_message,
-       r.table_ct,
-       r.column_ct,
-       r.anomaly_ct, r.anomaly_table_ct, r.anomaly_column_ct,
-       process_id, r.dq_score_profiling
-  FROM profiling_runs r
-INNER JOIN table_groups tg
-   ON r.table_groups_id = tg.id
-INNER JOIN connections cc
-   ON r.connection_id = cc.connection_id
-GROUP BY r.id, r.project_code, cc.connection_name, r.connection_id,
-         r.table_groups_id, tg.table_groups_name, tg.table_group_schema,
-         r.profiling_starttime, r.profiling_endtime, r.status;
-
-
-DROP VIEW IF EXISTS v_test_runs;
-
-CREATE VIEW v_test_runs
- AS
-SELECT r.id as test_run_id,
-       p.project_code,
-       p.project_name,
-       ts.test_suite,
-       r.test_starttime,
-       TO_CHAR(r.test_endtime - r.test_starttime, 'HH24:MI:SS') as duration,
-       r.status, r.log_message,
-       COUNT(*) as test_ct,
-       SUM(result_code) as passed_ct,
-       COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0) as failed_ct,
-       COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0) as warning_ct,
-       r.process_id
-  FROM test_runs r
-INNER JOIN test_suites ts
-   ON (r.test_suite_id = ts.id)
-INNER JOIN projects p
-   ON (ts.project_code = p.project_code)
-INNER JOIN test_results tr
-   ON (r.id = tr.test_run_id)
-GROUP BY r.id, p.project_code, ts.test_suite, r.test_starttime, r.test_endtime,
-         r.process_id, r.status, r.log_message, p.project_name;
 
 
 DROP VIEW IF EXISTS v_test_results;

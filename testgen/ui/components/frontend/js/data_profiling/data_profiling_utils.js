@@ -75,12 +75,14 @@
  * @property {string?} profile_run_id
  * @property {number?} profile_run_date
  * @property {boolean?} is_latest_profile
+ * @property {string?} profiling_error
  * @property {number?} has_test_runs
  * * Scores
  * @property {string?} dq_score
  * @property {string?} dq_score_profiling
  * @property {string?} dq_score_testing
  * * Value Counts
+ * @property {number?} approx_record_ct
  * @property {number} record_ct
  * @property {number} value_ct
  * @property {number} distinct_value_ct
@@ -147,9 +149,9 @@
  * @property {string} project_code
  * * Characteristics
  * @property {string} functional_table_type
+ * @property {number} approx_record_ct
  * @property {number} record_ct
  * @property {number} column_ct
- * @property {number} data_point_ct
  * @property {number} add_date
  * @property {number} last_refresh_date
  * @property {number} drop_date
@@ -231,10 +233,10 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
     });
     if (!item.profile_run_id) {
         if (item.drop_date) {
-            text = 'No profiling results for table group';
+            text = `No profiling results for ${item.type}`;
             link = null;
         } else {
-            text = 'No profiling results yet for table group.';
+            text = `No profiling results yet for ${item.type}.`;
             link = Link({
                 href: 'table-groups',
                 params: { project_code: item.project_code, connection_id: item.connection_id },

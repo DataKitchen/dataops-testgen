@@ -23,6 +23,7 @@ import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { TableGroupForm } from '../components/table_group_form.js';
 import { TableGroupTest } from '../components/table_group_test.js';
+import { TableGroupStats } from '../components/table_group_stats.js';
 import { emitEvent, getValue, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { Button } from '../components/button.js';
 import { Alert } from '../components/alert.js';
@@ -147,7 +148,6 @@ const TableGroupWizard = (props) => {
             }
 
             return TableGroupTest(
-                tableGroup.table_group_schema ?? '--',
                 props.table_group_preview,
                 {
                     onVerifyAcess: () => {
@@ -175,6 +175,7 @@ const TableGroupWizard = (props) => {
                 return RunProfilingStep(
                     stepsState.tableGroup.rawVal,
                     runProfiling,
+                    props.table_group_preview,
                     results?.success ?? false,
                 );
             });
@@ -246,10 +247,11 @@ const TableGroupWizard = (props) => {
 /**
  * @param {object} tableGroup 
  * @param {boolean} runProfiling 
+ * @param {TableGroupPreview?} preview
  * @param {boolean?} disabled
  * @returns 
  */
-const RunProfilingStep = (tableGroup, runProfiling, disabled) => {
+const RunProfilingStep = (tableGroup, runProfiling, preview, disabled) => {
     return div(
         { class: 'flex-column fx-gap-3' },
         Checkbox({
@@ -263,12 +265,18 @@ const RunProfilingStep = (tableGroup, runProfiling, disabled) => {
             disabled: disabled ?? false,
             onChange: (value) => runProfiling.val = value,
         }),
+        () => runProfiling.val && preview.val
+            ? TableGroupStats({ class: 'mt-1 mb-1' }, preview.val.stats)
+            : '',
         div(
             { class: 'flex-row fx-gap-1' },
-            Icon({}, 'info'),
-            () => runProfiling.val
-                ? i('Profiling will be performed in a background process.')
-                : i('Profiling will be skipped. You can run this step later from the Profiling Runs page.'),
+            Icon({ size: 16 }, 'info'),
+            span(
+                { class: 'text-caption' },
+                () => runProfiling.val
+                    ? 'Profiling will be performed in a background process.'
+                    : 'Profiling will be skipped. You can run this step later from the Profiling Runs page.',
+            ),
         ),
     );
 };

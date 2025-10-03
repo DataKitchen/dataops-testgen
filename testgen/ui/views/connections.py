@@ -15,7 +15,7 @@ except ImportError:
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 import testgen.ui.services.database_service as db
-from testgen.commands.run_profiling_bridge import run_profiling_in_background
+from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
@@ -148,6 +148,10 @@ class ConnectionsPage(Page):
             set_check_status(True)
             set_updated_connection(self._sanitize_connection_input(updated_connection))
 
+        def on_setup_table_group_clicked(*_args) -> None:
+            table_group_queries.reset_table_group_preview()
+            self.setup_data_configuration(project_code, connection.connection_id)
+
         results = None
         for key, value in get_updated_connection().items():
             setattr(connection, key, value)
@@ -188,7 +192,7 @@ class ConnectionsPage(Page):
             on_change_handlers={
                 "TestConnectionClicked": on_test_connection_clicked,
                 "SaveConnectionClicked": on_save_connection_clicked,
-                "SetupTableGroupClicked": lambda _: self.setup_data_configuration(project_code, connection.connection_id),
+                "SetupTableGroupClicked": on_setup_table_group_clicked,
                 "ConnectionUpdated": on_connection_updated,
             },
         )
@@ -266,6 +270,7 @@ class ConnectionsPage(Page):
             run_profiling: bool = payload.get("run_profiling", False)
 
             set_new_table_group(table_group)
+            mark_for_preview(True)
             set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
             mark_for_save(True)
@@ -328,8 +333,9 @@ class ConnectionsPage(Page):
         )
 
         table_group_preview = None
+        save_data_chars = None
         if should_preview():
-            table_group_preview = table_group_queries.get_table_group_preview(
+            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
                 table_group,
                 verify_table_access=should_verify_access(),
             )
@@ -345,6 +351,12 @@ class ConnectionsPage(Page):
                         add_monitor_test_suite=add_monitor_test_suite,
                         monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
                     )
+
+                    if save_data_chars:
+                        try:
+                            save_data_chars(table_group.id)
+                        except Exception:
+                            LOG.exception("Data characteristics refresh encountered errors")
 
                     if should_run_profiling:
                         try:

@@ -29,7 +29,7 @@ from testgen.commands.run_get_entities import (
 )
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
-from testgen.commands.run_profiling_bridge import run_profiling_queries
+from testgen.commands.run_profiling import run_profiling
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
@@ -124,10 +124,7 @@ def cli(ctx: Context, verbose: bool):
 )
 def run_profile(configuration: Configuration, table_group_id: str):
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    spinner = None
-    if not configuration.verbose:
-        spinner = MoonSpinner("Processing ... ")
-    message = run_profiling_queries(table_group_id, spinner=spinner)
+    message = run_profiling(table_group_id)
     click.echo("\n" + message)
 
 
@@ -374,10 +371,7 @@ def quick_start(
     table_group_id="0ea85e17-acbe-47fe-8394-9970725ad37d"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    spinner = None
-    if not configuration.verbose:
-        spinner = MoonSpinner("Processing ... ")
-    message = run_profiling_queries(table_group_id, spinner=spinner, minutes_offset=minutes_offset)
+    message = run_profiling(table_group_id, minutes_offset=minutes_offset)
     click.echo("\n" + message)
 
     LOG.info(f"run-test-generation with table_group_id: {table_group_id} test_suite: {settings.DEFAULT_TEST_SUITE_KEY}")

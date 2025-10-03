@@ -1,6 +1,5 @@
-SELECT '{PROJECT_CODE}'            as project_code,
-       CURRENT_TIMESTAMP                    as refresh_timestamp,
-       c.table_schema,
+SELECT
+       c.table_schema AS schema_name,
        c.table_name,
        c.column_name,
        CASE
@@ -25,7 +24,6 @@ SELECT '{PROJECT_CODE}'            as project_code,
                THEN c.data_type || COALESCE('(' || CAST(c.datetime_precision AS VARCHAR) || ')', '')
            ELSE c.data_type
        END AS db_data_type,
-       c.character_maximum_length,
        c.ordinal_position,
        CASE
            WHEN c.data_type = 'TEXT'
@@ -43,7 +41,9 @@ SELECT '{PROJECT_CODE}'            as project_code,
            ELSE
                'X'
            END AS general_type,
-       numeric_scale > 0 AS is_decimal
+       numeric_scale > 0 AS is_decimal,
+       t.row_count AS approx_record_ct
 FROM information_schema.columns c
+    LEFT JOIN information_schema.tables t ON c.table_schema = t.table_schema AND c.table_name = t.table_name
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

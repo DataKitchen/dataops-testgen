@@ -7,7 +7,7 @@ from functools import partial
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.commands.run_profiling_bridge import run_profiling_in_background
+from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
@@ -18,6 +18,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.queries import table_group_queries
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
+from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.ui.views.profiling_runs import ProfilingScheduleDialog
 
 LOG = logging.getLogger("testgen")
@@ -63,6 +64,14 @@ class TableGroupsPage(Page):
         table_groups = TableGroup.select_minimal_where(*table_group_filters)
         connections = self._get_connections(project_code)
 
+        def on_add_table_group_clicked(*_args) -> None:
+            table_group_queries.reset_table_group_preview()
+            self.add_table_group_dialog(project_code, connection_id)
+
+        def on_edit_table_group_clicked(table_group_id: str) -> None:
+            table_group_queries.reset_table_group_preview()
+            self.edit_table_group_dialog(project_code, table_group_id)
+
         return testgen.testgen_component(
             "table_group_list",
             props={
@@ -77,10 +86,10 @@ class TableGroupsPage(Page):
             },
             on_change_handlers={
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
-                "AddTableGroupClicked": partial(self.add_table_group_dialog, project_code, connection_id),
-                "EditTableGroupClicked": partial(self.edit_table_group_dialog, project_code),
+                "AddTableGroupClicked": on_add_table_group_clicked,
+                "EditTableGroupClicked": on_edit_table_group_clicked,
                 "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
-                "RunProfilingClicked": partial(self.run_profiling_dialog, project_code),
+                "RunProfilingClicked": partial(run_profiling_dialog, project_code),
                 "TableGroupsFiltered": lambda params: self.router.queue_navigation(
                     to="table-groups",
                     with_args={"project_code": project_code, **params},
@@ -90,7 +99,7 @@ class TableGroupsPage(Page):
 
     @st.dialog(title="Add Table Group")
     @with_database_session
-    def add_table_group_dialog(self, project_code: str, connection_id: str | None, *_args):
+    def add_table_group_dialog(self, project_code: str, connection_id: str | None):
         return self._table_group_wizard(
             project_code,
             connection_id=connection_id,
@@ -134,6 +143,7 @@ class TableGroupsPage(Page):
             table_group_verified: bool = payload.get("table_group_verified", False)
             run_profiling: bool = payload.get("run_profiling", False)
 
+            mark_for_preview(True)
             set_save(True)
             set_table_group(table_group)
             set_table_group_verified(table_group_verified)
@@ -182,6 +192,7 @@ class TableGroupsPage(Page):
                 setattr(table_group, key, value)
 
         table_group_preview = None
+        save_data_chars = None
 
         if is_table_group_used:
             table_group.table_group_schema = original_table_group_schema
@@ -201,7 +212,7 @@ class TableGroupsPage(Page):
             ]
 
         if should_preview():
-            table_group_preview = table_group_queries.get_table_group_preview(
+            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
                 table_group,
                 verify_table_access=should_verify_access(),
             )
@@ -217,6 +228,13 @@ class TableGroupsPage(Page):
                         add_monitor_test_suite=add_monitor_test_suite,
                         monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
                     )
+
+                    if save_data_chars:
+                        try:
+                            save_data_chars(table_group.id)
+                        except Exception:
+                            LOG.exception("Data characteristics refresh encountered errors")
+
                     if should_run_profiling():
                         try:
                             run_profiling_in_background(table_group.id)
@@ -285,52 +303,6 @@ class TableGroupsPage(Page):
             formatted_list.append(formatted_table_group)
 
         return formatted_list
-
-    @st.dialog(title="Run Profiling")
-    def run_profiling_dialog(self, project_code: str, table_group_id: str) -> None:
-        def on_go_to_profiling_runs_clicked(table_group_id: str) -> None:
-            set_navigation_params({ "project_code": project_code, "table_group_id": table_group_id })
-
-        def on_run_profiling_confirmed(*_args) -> None:
-            set_run_profiling(True)
-
-        get_navigation_params, set_navigation_params = temp_value(
-            f"table_groups:{table_group_id}:go_to_profiling_run",
-            default=None,
-        )
-        if (params := get_navigation_params()):
-            self.router.navigate(to="profiling-runs", with_args=params)
-
-        should_run_profiling, set_run_profiling = temp_value(
-            f"table_groups:{table_group_id}:run_profiling",
-            default=False,
-        )
-
-        table_group = TableGroup.get_minimal(table_group_id)
-        result = None
-        if should_run_profiling():
-            success = True
-            message = "Profiling run started"
-
-            try:
-                run_profiling_in_background(table_group_id)
-            except Exception as error:
-                success = False
-                message = f"Profiling run encountered errors: {error!s}."
-            result = {"success": success, "message": message}
-
-        return testgen.testgen_component(
-            "run_profiling_dialog",
-            props={
-                "project_code": project_code,
-                "table_group": table_group.to_dict(json_safe=True),
-                "result": result,
-            },
-            on_change_handlers={
-                "GoToProfilingRunsClicked": on_go_to_profiling_runs_clicked,
-                "RunProfilingConfirmed": on_run_profiling_confirmed,
-            },
-        )
 
     @st.dialog(title="Delete Table Group")
     @with_database_session

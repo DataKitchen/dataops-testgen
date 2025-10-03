@@ -14,10 +14,15 @@ import { formatNumber, formatTimestamp } from '../display_utils.js';
 const { div, span } = van.tags;
 
 const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) => {
+    const useApprox = item.record_ct === null;
+    const rowCount = useApprox ? item.approx_record_ct : item.record_ct;
     const attributes = [
-        { key: 'column_ct', label: 'Column Count' },
-        { key: 'record_ct', label: 'Row Count' },
-        { key: 'data_point_ct', label: 'Data Point Count' },
+        { label: 'Column Count', value: item.column_ct },
+        { label: `Row Count${useApprox ? ' †': ''}`, value: rowCount },
+        {
+            label: `Data Point Count${useApprox ? ' †': ''}`,
+            value: rowCount !== null ? (item.column_ct * rowCount) : null,
+        }
     ];
 
     return Card({
@@ -25,13 +30,16 @@ const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) 
         content: div(
             div(
                 { class: 'flex-row fx-flex-wrap fx-gap-4' },
-                attributes.map(({ key, label }) => Attribute({ 
-                    label: item[key] === 0 ? span({ class: 'text-error' }, label) : label, 
-                    value: formatNumber(item[key]),
+                attributes.map(({ label, value }) => Attribute({ 
+                    label: value === 0 ? span({ class: 'text-error' }, label) : label, 
+                    value: formatNumber(value),
                     width: 250,
                 })),
             ),
-            span({ class: 'text-caption flex-row fx-justify-content-flex-end mt-2' }, `** as of ${formatTimestamp(item.last_refresh_date)}`),
+            div({ class: 'text-caption text-right mt-1' }, `** as of ${formatTimestamp(item.last_refresh_date)}`),
+            useApprox
+                ? div({ class: 'text-caption text-right mt-1' }, '† Approximate counts based on server statistics')
+                : null,
         ),
         actionContent: Button({
             type: 'stroked',

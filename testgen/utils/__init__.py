@@ -58,6 +58,10 @@ def try_json(value: str | None, default: T | None) -> T:
         return json.loads(value)
     except:
         return default
+    
+
+def get_exception_message(exception: Exception) -> str:
+    return exception.args[0].rstrip() if exception.args and isinstance(exception.args[0], str) else str(exception)
 
 
 # https://github.com/streamlit/streamlit/issues/798#issuecomment-1647759949

@@ -1,6 +1,6 @@
 from typing import ClassVar, TypedDict
 
-from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
+from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.common import date_service, read_template_sql_file
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import replace_templated_functions
@@ -27,7 +27,7 @@ class CCATExecutionSQL:
     target_table = ""
     cat_test_params: ClassVar[CATTestParams] = {}
 
-    _rollup_scores_sql: CRollupScoresSQL = None
+    _rollup_scores_sql: RollupScoresSQL = None
 
     def __init__(self, strProjectCode, strTestSuiteId, strTestSuite, strSQLFlavor, max_query_chars, minutes_offset=0):
         # Defaults
@@ -40,9 +40,9 @@ class CCATExecutionSQL:
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
         self.minutes_offset = minutes_offset
 
-    def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
+    def _get_rollup_scores_sql(self) -> RollupScoresSQL:
         if not self._rollup_scores_sql:
-            self._rollup_scores_sql = CRollupScoresSQL(self.test_run_id, self.table_groups_id)
+            self._rollup_scores_sql = RollupScoresSQL(self.test_run_id, self.table_groups_id)
 
         return self._rollup_scores_sql
 

@@ -90,7 +90,7 @@ const TestRuns = (/** @type Properties */ props) => {
                 () => testRuns.val.length
                 ? div(
                     div(
-                        { class: 'table' },
+                        { class: 'table pb-0' },
                         () => {
                             const selectedItems = testRuns.val.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
                             const someRunSelected = selectedItems.length > 0;

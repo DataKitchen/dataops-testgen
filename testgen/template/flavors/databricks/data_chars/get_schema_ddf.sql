@@ -1,6 +1,5 @@
-SELECT '{PROJECT_CODE}' AS project_code,
-       CURRENT_TIMESTAMP AS refresh_timestamp,
-       c.table_schema,
+SELECT
+       c.table_schema AS schema_name,
        c.table_name,
        c.column_name,
        CASE
@@ -11,7 +10,6 @@ SELECT '{PROJECT_CODE}' AS project_code,
            ELSE lower(c.full_data_type)
        END AS column_type,
        c.full_data_type AS db_data_type,
-       c.character_maximum_length,
        c.ordinal_position,
        CASE
            WHEN c.data_type IN ('STRING', 'CHAR') THEN 'A'
@@ -23,7 +21,8 @@ SELECT '{PROJECT_CODE}' AS project_code,
        CASE
            WHEN c.numeric_scale > 0 THEN 1
            ELSE 0
-       END AS is_decimal
+       END AS is_decimal,
+       NULL AS approx_record_ct -- table statistics unavailable
 FROM information_schema.columns c
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

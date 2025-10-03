@@ -1,6 +1,15 @@
-SELECT '{PROJECT_CODE}'            as project_code,
-       CURRENT_TIMESTAMP           as refresh_timestamp,
-       c.table_schema,
+WITH approx_cts AS (
+    SELECT SCHEMA_NAME(o.schema_id) AS schema_name,
+        o.name AS table_name,
+        SUM(p.rows) AS approx_record_ct
+    FROM sys.objects o
+        LEFT JOIN sys.partitions p ON p.object_id = o.object_id
+    WHERE p.index_id IN (0, 1) -- 0 = heap, 1 = clustered index
+        OR p.index_id IS NULL
+    GROUP BY o.schema_id, o.name
+)
+SELECT
+       c.table_schema AS schema_name,
        c.table_name,
        c.column_name,
        CASE
@@ -21,7 +30,6 @@ SELECT '{PROJECT_CODE}'            as project_code,
                THEN c.data_type + COALESCE('(' + CAST(c.numeric_precision AS VARCHAR) + ','
                    + CAST(c.numeric_scale AS VARCHAR) + ')', '')
        ELSE c.data_type END AS db_data_type,
-       c.character_maximum_length,
        c.ordinal_position,
        CASE
            WHEN LOWER(c.data_type) LIKE '%char%'
@@ -40,7 +48,9 @@ SELECT '{PROJECT_CODE}'            as project_code,
            ELSE
                'X'
        END AS general_type,
-       CASE WHEN c.numeric_scale > 0 THEN 1 ELSE 0 END AS is_decimal
+       CASE WHEN c.numeric_scale > 0 THEN 1 ELSE 0 END AS is_decimal,
+       a.approx_record_ct AS approx_record_ct
 FROM information_schema.columns c
+    LEFT JOIN approx_cts a ON c.table_schema = a.schema_name AND c.table_name = a.table_name
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

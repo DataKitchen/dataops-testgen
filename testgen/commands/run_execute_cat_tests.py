@@ -113,8 +113,8 @@ def run_cat_test_queries(
 
             if lstCATQueries:
                 LOG.info("CurrentStep: Performing CAT Tests")
-                lstAllResults, lstResultColumnNames, intErrors = fetch_from_db_threaded(
-                    lstCATQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+                lstAllResults, lstResultColumnNames, errors = fetch_from_db_threaded(
+                    lstCATQueries, use_target_db=True, max_threads=params["max_threads"],
                 )
 
                 if lstAllResults:
@@ -125,9 +125,9 @@ def run_cat_test_queries(
                     # Parses aggregate results to individual test_result records at dk db
                     execute_db_queries([clsCATExecute.GetCATResultsParseSQL()])
                     LOG.info("Test results successfully parsed.")
-                if intErrors > 0:
+                if errors:
                     has_errors = True
-                    cat_error_msg = f"Errors were encountered executing aggregate tests. ({intErrors} errors occurred.) Please check log."
+                    cat_error_msg = f"Errors were encountered executing aggregate tests. ({len(errors)} errors occurred.) Please check log."
                     LOG.warning(cat_error_msg)
                     clsCATExecute.exception_message += cat_error_msg
         else:
