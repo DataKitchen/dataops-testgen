@@ -8,7 +8,8 @@ SELECT '{PROJECT_CODE}' AS project_code,
            WHEN LOWER(c.data_type) = 'date' THEN 'date'
            WHEN LOWER(c.data_type) = 'bool' THEN 'boolean'
            ELSE LOWER(c.data_type)
-       END AS data_type,
+       END AS column_type,
+       c.data_type AS db_data_type,
        NULL AS character_maximum_length,
        c.ordinal_position,
        CASE

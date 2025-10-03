@@ -98,7 +98,7 @@ class ProfilingResultsPage(Page):
             sortable_columns = (
                 ("Table", "LOWER(table_name)"),
                 ("Column", "LOWER(column_name)"),
-                ("Data Type", "LOWER(column_type)"),
+                ("Data Type", "LOWER(db_data_type)"),
                 ("Semantic Data Type", "semantic_data_type"),
                 ("Hygiene Issues", "hygiene_issues"),
             )
@@ -117,7 +117,7 @@ class ProfilingResultsPage(Page):
 
         selected, selected_row = fm.render_grid_select(
             df,
-            ["table_name", "column_name", "column_type", "semantic_data_type", "hygiene_issues"],
+            ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues"],
             ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues"],
             id_column="id",
             reset_pagination=filters_changed,
@@ -182,7 +182,7 @@ def get_excel_report_data(
         data = profiling_queries.get_profiling_results(run_id)
     date_service.accommodate_dataframe_to_timezone(data, st.session_state)
 
-    for key in ["column_type", "datatype_suggestion"]:
+    for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
@@ -214,7 +214,7 @@ def get_excel_report_data(
         "column_name": {"header": "Column"},
         "position": {},
         "general_type": {},
-        "column_type": {"header": "Data type"},
+        "db_data_type": {"header": "Data type"},
         "datatype_suggestion": {"header": "Suggested data type"},
         "semantic_data_type": {},
         "record_ct": {"header": "Record count"},

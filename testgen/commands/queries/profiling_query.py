@@ -22,6 +22,7 @@ class CProfilingSQL:
     col_name = ""
     col_gen_type = ""
     col_type = ""
+    db_data_type = ""
     col_ordinal_position = "0"
     col_is_decimal = ""
     col_top_freq_update = ""
@@ -99,6 +100,7 @@ class CProfilingSQL:
             "COL_NAME_SANITIZED": self.col_name.replace("'", "''"),
             "COL_GEN_TYPE": self.col_gen_type,
             "COL_TYPE": self.col_type or "",
+            "DB_DATA_TYPE": self.db_data_type or "",
             "COL_POS": self.col_ordinal_position,
             "TOP_FREQ": self.col_top_freq_update,
             "PROFILE_RUN_ID": self.profile_run_id,

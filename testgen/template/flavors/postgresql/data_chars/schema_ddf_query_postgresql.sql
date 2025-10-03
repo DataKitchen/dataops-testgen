@@ -14,7 +14,17 @@ SELECT '{PROJECT_CODE}'            as project_code,
                                                 || COALESCE( '(' || CAST(c.numeric_precision AS VARCHAR) || ','
                                                                  || CAST(c.numeric_scale AS VARCHAR) || ')', '')
            ELSE c.data_type
-       END AS data_type,
+       END AS column_type,
+       CASE
+           WHEN c.data_type ILIKE 'char%' OR c.data_type ILIKE 'bit%'
+               THEN c.data_type || '(' || CAST(c.character_maximum_length AS VARCHAR) || ')'
+           WHEN c.data_type = 'numeric'
+               THEN 'numeric' || COALESCE( '(' || CAST(c.numeric_precision AS VARCHAR) || ','
+                    || CAST(c.numeric_scale AS VARCHAR) || ')', '')
+           WHEN c.data_type ILIKE 'time%'
+               THEN c.data_type || '(' ||  CAST(c.datetime_precision AS VARCHAR) || ')'
+           ELSE c.data_type
+       END AS db_data_type,
        COALESCE(c.character_maximum_length, CASE WHEN c.data_type IN ('text', 'character varying') THEN 65535 END)
           as character_maximum_length,
        c.ordinal_position,

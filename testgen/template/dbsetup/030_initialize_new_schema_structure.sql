@@ -40,6 +40,7 @@ CREATE TABLE stg_data_chars_updates (
    position              INTEGER,
    general_type          VARCHAR(1),
    column_type           VARCHAR(50),
+   db_data_type          VARCHAR(50),
    functional_data_type  VARCHAR(50),
    record_ct             BIGINT
 );
@@ -247,6 +248,7 @@ CREATE TABLE profile_results (
    position              INTEGER,
    column_name           VARCHAR(120),
    column_type           VARCHAR(50),
+   db_data_type          VARCHAR(50),
    general_type          VARCHAR(1),
    record_ct             BIGINT,
    value_ct              BIGINT,
@@ -340,6 +342,7 @@ CREATE TABLE profile_anomaly_results (
    table_name      VARCHAR(120),
    column_name     VARCHAR(500),
    column_type     VARCHAR(50),
+   db_data_type    VARCHAR(50),
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
@@ -369,11 +372,11 @@ CREATE TABLE data_structure_log (
    log_id UUID DEFAULT gen_random_uuid()
       CONSTRAINT pk_dsl_id
          PRIMARY KEY,
-   element_id UUID,
-   change_date TIMESTAMP,
-   change VARCHAR(10),
-   old_column_type VARCHAR(50),
-   new_column_type VARCHAR(50)
+   element_id    UUID,
+   change_date   TIMESTAMP,
+   change        VARCHAR(10),
+   old_data_type VARCHAR(50),
+   new_data_type VARCHAR(50)
 );
 
 CREATE TABLE data_table_chars (
@@ -418,6 +421,7 @@ CREATE TABLE data_column_chars (
    ordinal_position       INTEGER,
    general_type           VARCHAR(1),
    column_type            VARCHAR(50),
+   db_data_type           VARCHAR(50),
    functional_data_type   VARCHAR(50),
    description            VARCHAR(1000),
    critical_data_element  BOOLEAN,

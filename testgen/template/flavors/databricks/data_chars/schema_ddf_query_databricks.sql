@@ -9,7 +9,8 @@ SELECT '{PROJECT_CODE}' AS project_code,
            WHEN lower(c.full_data_type) IN ('double', 'float') THEN 'numeric'
            WHEN lower(c.full_data_type) LIKE 'decimal%' THEN 'numeric(' || c.numeric_precision || ',' || c.numeric_scale || ')'
            ELSE lower(c.full_data_type)
-       END AS data_type,
+       END AS column_type,
+       c.full_data_type AS db_data_type,
        c.character_maximum_length,
        c.ordinal_position,
        CASE

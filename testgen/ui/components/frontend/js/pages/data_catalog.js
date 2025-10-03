@@ -17,6 +17,22 @@
  * @property {number} table_drop_date
  * @property {boolean} critical_data_element
  * @property {boolean} table_critical_data_element
+ * @property {string} data_source
+ * @property {string} source_system
+ * @property {string} source_process
+ * @property {string} business_domain
+ * @property {string} stakeholder_group
+ * @property {string} transform_level
+ * @property {string} aggregation_level
+ * @property {string} data_product
+ * @property {string} table_data_source
+ * @property {string} table_source_system
+ * @property {string} table_source_process
+ * @property {string} table_business_domain
+ * @property {string} table_stakeholder_group
+ * @property {string} table_transform_level
+ * @property {string} table_aggregation_level
+ * @property {string} table_data_product
  *
  * @typedef Permissions
  * @type {object}

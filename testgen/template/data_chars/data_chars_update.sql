@@ -120,6 +120,7 @@ WITH new_chars AS (
       position,
       general_type,
       column_type,
+      db_data_type,
       functional_data_type,
       run_date
    FROM {SOURCE_TABLE}
@@ -130,8 +131,9 @@ update_chars AS (
    SET ordinal_position = n.position,
       general_type = n.general_type,
       column_type = n.column_type,
+      db_data_type = n.db_data_type,
       functional_data_type = COALESCE(n.functional_data_type, d.functional_data_type),
-      last_mod_date = CASE WHEN n.column_type <> d.column_type THEN n.run_date ELSE d.last_mod_date END,
+      last_mod_date = CASE WHEN n.db_data_type <> d.db_data_type THEN n.run_date ELSE d.last_mod_date END,
       drop_date = NULL
    FROM new_chars n
       INNER JOIN data_column_chars d ON (
@@ -142,22 +144,22 @@ update_chars AS (
       )
    WHERE data_column_chars.table_id = d.table_id
       AND data_column_chars.column_name = d.column_name
-   RETURNING data_column_chars.*, d.column_type as old_column_type
+   RETURNING data_column_chars.*, d.db_data_type as old_data_type
 )
 INSERT INTO data_structure_log (
    element_id,
    change_date,
    change,
-   old_column_type,
-   new_column_type
+   old_data_type,
+   new_data_type
 )
 SELECT u.column_id,
    u.last_mod_date,
    'M',
-   u.old_column_type,
-   u.column_type
+   u.old_data_type,
+   u.db_data_type
    FROM update_chars u
-   WHERE u.old_column_type <> u.column_type;
+   WHERE u.old_data_type <> u.db_data_type;
 
 
 -- Add new records
@@ -169,6 +171,7 @@ WITH new_chars AS (
       position,
       general_type,
       column_type,
+      db_data_type,
       functional_data_type,
       run_date
    FROM {SOURCE_TABLE}
@@ -184,6 +187,7 @@ inserted_records AS (
          ordinal_position,
          general_type,
          column_type,
+         db_data_type,
          functional_data_type,
          add_date,
          last_mod_date
@@ -196,6 +200,7 @@ inserted_records AS (
       n.position,
       n.general_type,
       n.column_type,
+      n.db_data_type,
       n.functional_data_type,
       n.run_date,
       n.run_date
@@ -218,12 +223,12 @@ INSERT INTO data_structure_log (
    element_id,
    change_date,
    change,
-   new_column_type
+   new_data_type
 )
 SELECT i.column_id,
    i.add_date,
    'A',
-   i.column_type
+   i.db_data_type
    FROM inserted_records i;
 
 -- Mark dropped records
@@ -263,10 +268,10 @@ INSERT INTO data_structure_log (
    element_id,
    change_date,
    change,
-   old_column_type
+   old_data_type
 )
 SELECT del.column_id,
    del.drop_date,
    'D',
-   del.column_type
+   del.db_data_type
    FROM deleted_records del;
