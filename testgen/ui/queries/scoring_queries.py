@@ -35,7 +35,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             results.schema_name,
             results.table_name,
             results.column_name,
-            results.column_type,
+            results.db_data_type,
             groups.table_groups_name,
             results.disposition,
             results.profile_run_id::VARCHAR,

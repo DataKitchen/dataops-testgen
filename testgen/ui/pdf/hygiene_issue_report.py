@@ -109,7 +109,7 @@ def build_summary_table(document, hi_data):
 
         ("Profiling Date", profiling_timestamp, "Table Group", hi_data["table_groups_name"]),
         ("Database/Schema", hi_data["schema_name"], "Disposition", hi_data["disposition"] or "No Decision"),
-        ("Table", hi_data["table_name"], "Column Type", hi_data["column_type"]),
+        ("Table", hi_data["table_name"], "Data Type", hi_data["db_data_type"]),
         ("Column", hi_data["column_name"], "Semantic Data Type", hi_data["functional_data_type"]),
         (
             "Column Tags",

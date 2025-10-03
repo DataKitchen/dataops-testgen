@@ -19,6 +19,7 @@ strTemplate01_5: |
   {COL_POS} AS position,
   '{COL_NAME_SANITIZED}' AS column_name,
   '{COL_TYPE}' AS column_type,
+  '{DB_DATA_TYPE}' AS db_data_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
 strTemplate02_X: |

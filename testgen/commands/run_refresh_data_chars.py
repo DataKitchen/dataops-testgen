@@ -50,6 +50,7 @@ def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, s
         "position",
         "general_type",
         "column_type",
+        "db_data_type",
         "record_ct",
     ]
     staging_records = [
@@ -62,7 +63,8 @@ def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, s
             item["column_name"],
             item["ordinal_position"],
             item["general_type"],
-            item["data_type"],
+            item["column_type"],
+            item["db_data_type"],
             count_map.get(f"{item['table_schema']}.{item['table_name']}", 0),
         ]
         for item in ddf_results

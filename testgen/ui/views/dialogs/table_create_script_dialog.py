@@ -20,13 +20,13 @@ def generate_create_script(table_name: str, data: list[dict]) -> str | None:
     col_defs = []
     for index, col in enumerate(table_data):
         comment = (
-            f"-- WAS {col['column_type']}"
-            if isinstance(col["column_type"], str)
+            f"-- WAS {col['db_data_type']}"
+            if isinstance(col["db_data_type"], str)
             and isinstance(col["datatype_suggestion"], str)
-            and col["column_type"].lower() != col["datatype_suggestion"].lower()
+            and col["db_data_type"].lower() != col["datatype_suggestion"].lower()
             else ""
         )
-        col_type = col["datatype_suggestion"] or col["column_type"] or ""
+        col_type = col["datatype_suggestion"] or col["db_data_type"] or ""
         separator = " " if index == len(table_data) - 1 else ","
         col_defs.append(f"{col['column_name']:<{max_name}} {(col_type):<{max_type}}{separator}    {comment}")
 

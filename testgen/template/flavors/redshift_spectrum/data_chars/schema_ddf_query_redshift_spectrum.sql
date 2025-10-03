@@ -3,7 +3,8 @@ SELECT '{PROJECT_CODE}' AS project_code,
     c.schemaname AS table_schema,
     c.tablename AS table_name,
     c.columnname AS column_name,
-    c.external_type AS data_type,
+    c.external_type AS column_type,
+    c.external_type AS db_data_type,
     NULLIF(
         REGEXP_SUBSTR(c.external_type, 'char\\(([0-9]+)\\)', 1, 1, 'e'),
         ''
