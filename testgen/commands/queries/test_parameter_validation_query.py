@@ -35,7 +35,8 @@ class CTestParamValidationSQL:
             "CAT_TEST_IDS": tuple(self.test_ids or []),
             "START_TIME": self.today,
             "NOW_TIMESTAMP": date_service.get_now_as_string(),
-            "COLUMNS_TABLE": f"{self.tg_schema}.INFORMATION_SCHEMA.COLUMNS" if self.flavor == "bigquery" else "information_schema.columns"
+            "COLUMNS_TABLE": f"{self.tg_schema}.INFORMATION_SCHEMA.COLUMNS" if self.flavor == "bigquery" else "information_schema.columns",
+            "ID_SEPARATOR": "`" if self.flavor in ("databricks", "bigquery") else '"',
         }
         query = replace_params(query, params)
         return query, params

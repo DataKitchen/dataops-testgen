@@ -17,7 +17,7 @@
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(UNNEST(STRING_TO_ARRAY(column_name, ','))) as column_name
+                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(column_name, ','))), '{ID_SEPARATOR}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -26,23 +26,23 @@
          AND t.test_scope = 'referential'
          AND t.test_type NOT LIKE 'Aggregate_%'
          UNION
-         -- FROM: groupby_names (should be referential)
+         -- FROM: groupby_names
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(UNNEST(STRING_TO_ARRAY(groupby_names, ','))) as column_name
+                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(groupby_names, ','))), '{ID_SEPARATOR}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
          WHERE test_suite_id = :TEST_SUITE_ID
          AND COALESCE(test_active, 'Y') = 'Y'
-         AND t.test_scope IN ('column', 'referential')
+         AND t.test_scope IN ('column', 'referential', 'table')
          UNION
          -- FROM: window_date_column (referential)
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(UNNEST(STRING_TO_ARRAY(window_date_column, ','))) as column_name
+                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(window_date_column, ','))), '{ID_SEPARATOR}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -54,7 +54,7 @@
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
-                TRIM(UNNEST(STRING_TO_ARRAY(match_column_names, ','))) as column_name
+                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(match_column_names, ','))), '{ID_SEPARATOR}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -67,7 +67,7 @@
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
-                TRIM(UNNEST(STRING_TO_ARRAY(match_groupby_names, ','))) as column_name
+                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(match_groupby_names, ','))), '{ID_SEPARATOR}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
