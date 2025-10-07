@@ -44,6 +44,20 @@ entries:
   testgen-services:
   - apiVersion: v2
     appVersion: 1.16.0
+    created: "2025-10-07T01:50:17.99207999Z"
+    dependencies:
+    - name: postgresql
+      repository: https://charts.bitnami.com/bitnami
+      version: 16.3.0
+    description: A Helm chart for Kubernetes
+    digest: 2d65ae1cdbb62dc9fad12b20b925dbe22da6d1e2c09b4669db3a13317f5156d6
+    name: testgen-services
+    type: application
+    urls:
+    - testgen-services-0.1.1.tgz
+    version: 0.1.1
+  - apiVersion: v2
+    appVersion: 1.16.0
     created: "2025-02-28T02:35:47.102317-05:00"
     dependencies:
     - name: postgresql
@@ -56,4 +70,4 @@ entries:
     urls:
     - testgen-services-0.1.0.tgz
     version: 0.1.0
-generated: "2025-07-16T18:01:46.964498241Z"
+generated: "2025-10-07T01:50:17.992092573Z"
