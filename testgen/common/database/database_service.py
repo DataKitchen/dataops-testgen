@@ -134,8 +134,9 @@ def execute_db_queries(
     user_override: str | None = None,
     password_override: str | None = None,
     user_type: UserType = "normal",
+    suppress_logs: bool = False,
 ) -> tuple[list[Any], list[int]]:
-    LOG.info(f"DB operation: execute_db_queries on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
+    LOG.info(f"DB operation: execute_db_queries ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
 
     with _init_db_connection(use_target_db, user_override, password_override, user_type) as connection:
         return_values: list[Any] = []
@@ -144,7 +145,8 @@ def execute_db_queries(
             LOG.info("No queries to process")
         for index, (query, params) in enumerate(queries):
             LOG.debug(f"Query: {query}")
-            LOG.info(f"Processing {index + 1} of {len(queries)} queries")
+            if not suppress_logs:
+                LOG.info(f"Processing {index + 1} of {len(queries)} queries")
             transaction = connection.begin()
             result = connection.execute(text(query), params)
             row_counts.append(result.rowcount)

@@ -96,6 +96,7 @@ def _refresh_static_metadata(params_mapping):
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
+        suppress_logs=True,
     )
     import_metadata_records_from_yaml(params_mapping)
 
@@ -106,6 +107,7 @@ def _refresh_static_metadata(params_mapping):
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
+        suppress_logs=True,
     )
 
 
