@@ -7,13 +7,13 @@
 WITH latest_ver
    AS ( SELECT {CONCAT_COLUMNS} as category,
                CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-          FROM {SCHEMA_NAME}.{TABLE_NAME} v1
+          FROM "{SCHEMA_NAME}"."{TABLE_NAME}" v1
          WHERE {SUBSET_CONDITION}
          GROUP BY {COLUMN_NAME_NO_QUOTES} ),
 older_ver
    AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
                CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-          FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+          FROM "{MATCH_SCHEMA_NAME}"."{TABLE_NAME}" v2
          WHERE {MATCH_SUBSET_CONDITION}
          GROUP BY {MATCH_GROUPBY_NAMES} ),
 dataset

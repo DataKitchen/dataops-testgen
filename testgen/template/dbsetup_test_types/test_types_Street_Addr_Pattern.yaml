@@ -108,7 +108,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^[0-9]{1,5}[A-Za-z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[A-Za-z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$')
       GROUP BY `{COLUMN_NAME}`
       ORDER BY COUNT(*) DESC
@@ -120,7 +120,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
     error_type: Test Results
   - id: '1165'
     test_id: '1033'
@@ -128,7 +128,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE UPPER("{COLUMN_NAME}") NOT LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', "{COLUMN_NAME}") NOT BETWEEN 2 AND 6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE UPPER("{COLUMN_NAME}") NOT LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', "{COLUMN_NAME}") NOT BETWEEN 2 AND 6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
     error_type: Test Results
   - id: '1108'
     test_id: '1033'
@@ -136,7 +136,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
     error_type: Test Results
   - id: '1026'
     test_id: '1033'
@@ -144,7 +144,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
     error_type: Test Results
   - id: '1426'
     test_id: '1033'
@@ -152,7 +152,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
     error_type: Test Results
   - id: '1222'
     test_id: '1033'
@@ -160,6 +160,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
     error_type: Test Results
   test_templates: []

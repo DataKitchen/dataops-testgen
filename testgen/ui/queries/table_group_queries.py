@@ -3,6 +3,7 @@ from typing import TypedDict
 from sqlalchemy.engine import Row
 
 from testgen.commands.queries.profiling_query import CProfilingSQL
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -47,14 +48,17 @@ def get_table_group_preview(
                 )
 
             if verify_table_access:
+                schema_name = table_group_preview["schema"]
+                flavor_service = get_flavor_service(connection.sql_flavor)
+                quote = flavor_service.quote_character
                 for table_name in table_group_preview["tables"].keys():
                     try:
                         results = fetch_from_target_db(
                             connection, 
                             (
-                                f"SELECT 1 FROM {table_group_preview['schema']}.{table_name} LIMIT 1"
-                                if connection.sql_flavor != "mssql"
-                                else f"SELECT TOP 1 * FROM {table_group_preview['schema']}.{table_name}"
+                                f"SELECT 1 FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote} LIMIT 1"
+                                if not flavor_service.use_top
+                                else f"SELECT TOP 1 * FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}"
                             ),
                         )
                     except Exception as error:

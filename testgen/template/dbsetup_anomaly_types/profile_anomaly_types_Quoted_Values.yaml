@@ -24,7 +24,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = '"' OR LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = "'"
       GROUP BY `{COLUMN_NAME}`
       ORDER BY `{COLUMN_NAME}`
@@ -36,7 +36,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE '"%"' OR `{COLUMN_NAME}` ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE '"%"' OR `{COLUMN_NAME}` ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Profile Anomaly
   - id: '1124'
     test_id: '1010'
@@ -44,7 +44,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" LIKE '"%"' OR "{COLUMN_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" LIKE '"%"' OR "{COLUMN_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
   - id: '1067'
     test_id: '1010'
@@ -52,7 +52,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1042'
     test_id: '1010'
@@ -60,7 +60,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1442'
     test_id: '1010'
@@ -68,7 +68,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1181'
     test_id: '1010'
@@ -76,5 +76,5 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly

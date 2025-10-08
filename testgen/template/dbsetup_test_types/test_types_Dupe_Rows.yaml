@@ -44,7 +44,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE {SUBSET_CONDITION}
       GROUP BY {GROUPBY_NAMES}
       HAVING COUNT(*) > 1
@@ -57,7 +57,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
@@ -70,7 +70,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
@@ -83,7 +83,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
@@ -96,7 +96,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
@@ -109,7 +109,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
@@ -122,7 +122,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
-                 FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1

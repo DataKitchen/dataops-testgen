@@ -47,7 +47,7 @@ test_types:
       WITH latest_ver AS (
         SELECT {CONCAT_COLUMNS} AS category,
                CAST(COUNT(*) AS FLOAT64) / SUM(COUNT(*)) OVER() AS pct_of_total
-        FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
         WHERE {SUBSET_CONDITION}
         GROUP BY {CONCAT_COLUMNS}
       )
@@ -63,7 +63,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
@@ -89,7 +89,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
@@ -115,7 +115,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
@@ -141,7 +141,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
@@ -167,7 +167,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver
@@ -193,7 +193,7 @@ test_types:
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
                      COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME} v1
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
                WHERE {SUBSET_CONDITION}
                GROUP BY {COLUMN_NAME_NO_QUOTES} ),
       older_ver

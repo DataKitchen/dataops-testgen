@@ -108,7 +108,7 @@ test_types:
     lookup_query: |-
       WITH cte AS (
         SELECT COUNT(*) AS current_count
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       )
       SELECT current_count, {BASELINE_CT} AS baseline_count,
              ABS(ROUND(100 * (current_count - {BASELINE_CT}) / CAST({BASELINE_CT} AS FLOAT64), 2)) AS row_count_pct_difference
@@ -120,7 +120,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1164'
     test_id: '1032'
@@ -128,7 +128,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1107'
     test_id: '1032'
@@ -136,7 +136,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1025'
     test_id: '1032'
@@ -144,7 +144,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1425'
     test_id: '1032'
@@ -152,7 +152,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   - id: '1221'
     test_id: '1032'
@@ -160,6 +160,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      WITH CTE AS (SELECT COUNT(*) AS current_count FROM {TARGET_SCHEMA}.{TABLE_NAME}) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
     error_type: Test Results
   test_templates: []

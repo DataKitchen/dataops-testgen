@@ -1221,7 +1221,9 @@ def validate_test(test_definition, table_group: TableGroupMinimal):
 
     if test_definition["test_type"] == "Condition_Flag":
         condition = test_definition["custom_query"]
-        concat_operator = get_flavor_service(connection.sql_flavor).get_concat_operator()
+        flavor_service = get_flavor_service(connection.sql_flavor)
+        concat_operator = flavor_service.concat_operator
+        quote = flavor_service.quote_character
         query = f"""
         SELECT
             COALESCE(
@@ -1233,7 +1235,7 @@ def validate_test(test_definition, table_group: TableGroupMinimal):
                 {concat_operator} '|',
                 '<NULL>|'
             )
-        FROM {schema}.{table_name};
+        FROM {quote}{schema}{quote}.{quote}{table_name}{quote};
         """
     else:
         query = replace_params(

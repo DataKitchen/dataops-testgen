@@ -2,4 +2,5 @@ from testgen.common.database.flavor.redshift_flavor_service import RedshiftFlavo
 
 
 class RedshiftSpectrumFlavorService(RedshiftFlavorService):
-    pass
+    
+    ddf_table_ref = "tablename"

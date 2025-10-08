@@ -1,5 +1,5 @@
 from testgen.common import read_template_sql_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.utils import chunk_queries
 
@@ -46,36 +46,30 @@ class CRefreshDataCharsSQL:
 
     def _get_table_criteria(self) -> str:
         table_criteria = ""
-
-        table_ref = "c.table_name"
-        escape_clause = ""
-        escaped_underscore = "\\_"
-        if self.sql_flavor.startswith("mssql"):
-            escaped_underscore = "[_]"
-        elif self.sql_flavor == "snowflake":
-            escaped_underscore = "\\\\_"
-            escape_clause = "ESCAPE '\\\\'"
-        elif self.sql_flavor == "redshift":
-            escaped_underscore = "\\\\_"
-        elif self.sql_flavor == "redshift_spectrum":
-            table_ref = "c.tablename" 
-
+        flavor_service = get_flavor_service(self.sql_flavor)
+        
         if self.profiling_table_set:
-            table_criteria += f" AND {table_ref} IN ({self.profiling_table_set})"
+            table_criteria += f" AND c.{flavor_service.ddf_table_ref} IN ({self.profiling_table_set})"
 
         if self.profiling_include_mask:
-            include_table_names = [ item.strip().replace("_", escaped_underscore) for item in self.profiling_include_mask.split(",") ]
+            include_table_names = [
+                item.strip().replace("_", flavor_service.escaped_underscore)
+                for item in self.profiling_include_mask.split(",")
+            ]
             table_criteria += f"""
             AND (
-                {" OR ".join([ f"({table_ref} LIKE '{item}' {escape_clause})" for item in include_table_names ])}
+                {" OR ".join([ f"(c.{flavor_service.ddf_table_ref} LIKE '{item}' {flavor_service.escape_clause})" for item in include_table_names ])}
             )
             """
 
         if self.profiling_exclude_mask:
-            exclude_table_names = [ item.strip().replace("_", escaped_underscore) for item in self.profiling_exclude_mask.split(",") ]
+            exclude_table_names = [
+                item.strip().replace("_", flavor_service.escaped_underscore)
+                for item in self.profiling_exclude_mask.split(",")
+            ]
             table_criteria += f"""
             AND NOT (
-                {" OR ".join([ f"({table_ref} LIKE '{item}' {escape_clause})" for item in exclude_table_names ])}
+                {" OR ".join([ f"(c.{flavor_service.ddf_table_ref} LIKE '{item}' {flavor_service.escape_clause})" for item in exclude_table_names ])}
             )
             """
 

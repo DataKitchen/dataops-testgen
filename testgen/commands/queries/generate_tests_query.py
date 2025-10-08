@@ -2,7 +2,7 @@ import logging
 from typing import ClassVar, TypedDict
 
 from testgen.common import CleanSQL, date_service, read_template_sql_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import get_template_files
 
 LOG = logging.getLogger("testgen")
@@ -29,7 +29,10 @@ class CDeriveTestsSQL:
 
     _use_clean = False
 
-    def __init__(self):
+    def __init__(self, flavor):
+        self.sql_flavor = flavor
+        self.flavor_service = get_flavor_service(flavor)
+
         today = date_service.get_now_as_string()
         self.run_date = today
         self.as_of_date = today
@@ -47,7 +50,7 @@ class CDeriveTestsSQL:
             "GENERATION_SET": self.generation_set,
             "AS_OF_DATE": self.as_of_date,
             "DATA_SCHEMA": self.data_schema,
-            "ID_SEPARATOR": "`" if self.sql_flavor in ("databricks", "bigquery") else '"',
+            "QUOTE": self.flavor_service.quote_character,
         }
 
     def _get_query(self, template_file_name: str, sub_directory: str | None = "generation") -> tuple[str, dict]:

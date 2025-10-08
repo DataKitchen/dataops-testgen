@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.clean_sql import ConcatColumnList
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.read_file import replace_templated_functions
@@ -26,9 +26,14 @@ def get_hygiene_issue_source_query(issue_data: dict) -> str:
                 start_index += len("Columns: ")
                 column_names_str = detail_exp[start_index:]
                 columns = [col.strip() for col in column_names_str.split(",")]
-            quote = "`" if sql_flavor == "databricks" else '"'
+            quote = get_flavor_service(sql_flavor).quote_character
             queries = [
-                f"SELECT '{column}' AS column_name, MAX({quote}{column}{quote}) AS max_date_available FROM {{TARGET_SCHEMA}}.{{TABLE_NAME}}"
+                f"""
+                SELECT
+                    '{column}' AS column_name,
+                    MAX({quote}{column}{quote}) AS max_date_available
+                FROM {{QUOTE}}{{TARGET_SCHEMA}}{{QUOTE}}.{{QUOTE}}{{TABLE_NAME}}{{QUOTE}}
+                """
                 for column in columns
             ]
             sql_query = " UNION ALL ".join(queries) + " ORDER BY max_date_available DESC;"

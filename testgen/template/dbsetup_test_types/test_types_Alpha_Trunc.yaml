@@ -107,9 +107,9 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS current_max_length, {THRESHOLD_VALUE} AS previous_max_length
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}, (
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (
         SELECT MAX(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS max_length
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       ) a
       WHERE LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) = a.max_length
         AND a.max_length < {THRESHOLD_VALUE}
@@ -121,7 +121,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}` , LEN(`{COLUMN_NAME}`) as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN(`{COLUMN_NAME}`)) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN(`{COLUMN_NAME}`) = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}` , LEN(`{COLUMN_NAME}`) as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT MAX(LEN(`{COLUMN_NAME}`)) as max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) a WHERE LEN(`{COLUMN_NAME}`) = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
     error_type: Test Results
   - id: '1140'
     test_id: '1004'
@@ -129,7 +129,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} ;
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} ;
     error_type: Test Results
   - id: '1083'
     test_id: '1004'
@@ -137,7 +137,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", LENGTH("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length  FROM {TARGET_SCHEMA}.{TABLE_NAME},  (SELECT MAX(LENGTH("{COLUMN_NAME}")) as max_length  FROM {TARGET_SCHEMA}.{TABLE_NAME}) a  WHERE LENGTH("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", LENGTH("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",  (SELECT MAX(LENGTH("{COLUMN_NAME}")) as max_length  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a  WHERE LENGTH("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
     error_type: Test Results
   - id: '1001'
     test_id: '1004'
@@ -145,7 +145,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
     error_type: Test Results
   - id: '1401'
     test_id: '1004'
@@ -153,7 +153,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
     error_type: Test Results
   - id: '1197'
     test_id: '1004'
@@ -161,6 +161,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}" , LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}, (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}" , LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
     error_type: Test Results
   test_templates: []

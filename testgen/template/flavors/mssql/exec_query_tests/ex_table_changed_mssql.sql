@@ -28,6 +28,6 @@ SELECT '{TEST_TYPE}'   as test_type,
        '{SUBSET_DISPLAY}' as subset_condition,
        NULL as result_query
   FROM ( SELECT {CUSTOM_QUERY} as fingerprint
-           FROM {SCHEMA_NAME}.{TABLE_NAME} WITH (NOLOCK)
+           FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
           WHERE {SUBSET_CONDITION}
        ) test;

@@ -24,7 +24,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE CAST(`{COLUMN_NAME}` AS STRING) < 'A'
         AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), 1, 1) NOT IN ('"', ' ')
         AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), LENGTH(CAST(`{COLUMN_NAME}` AS STRING)), 1) <> '\''

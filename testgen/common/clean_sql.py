@@ -1,5 +1,7 @@
 import re
 
+from testgen.common.database.database_service import get_flavor_service
+
 
 def CleanSQL(strInput: str) -> str:
     # Use regular expression to remove comment text fenced by /*...*/
@@ -24,20 +26,22 @@ def quote_identifiers(identifiers: str, flavor: str) -> str:
         "by",
         "having",
     ]
+    flavor_service = get_flavor_service(flavor)
+    quote = flavor_service.quote_character
 
     quoted_values = []
     for value in identifiers.split(","):
         value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
+        if value.startswith(quote) and value.endswith(quote):
             quoted_values.append(value)
         elif any(
-            (flavor == "snowflake" and c.lower())
-            or (flavor != "snowflake" and c.isupper())
+            (flavor_service.default_uppercase and c.lower())
+            or (not flavor_service.default_uppercase and c.isupper())
             or c.isspace()
             or value.lower() in keywords
             for c in value
         ):
-            quoted_values.append(f'"{value}"')
+            quoted_values.append(f"{quote}{value}{quote}")
         else:
             quoted_values.append(value)
     return ", ".join(quoted_values)

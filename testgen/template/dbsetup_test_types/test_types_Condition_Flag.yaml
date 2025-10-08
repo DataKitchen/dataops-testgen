@@ -108,7 +108,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT *
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE {CUSTOM_QUERY}
       LIMIT 500;
     error_type: Test Results
@@ -118,7 +118,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE {CUSTOM_QUERY} LIMIT 500;
     error_type: Test Results
   - id: '1142'
     test_id: '1006'
@@ -126,7 +126,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY};
+      SELECT TOP 500 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY};
     error_type: Test Results
   - id: '1085'
     test_id: '1006'
@@ -134,7 +134,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
     error_type: Test Results
   - id: '1003'
     test_id: '1006'
@@ -142,7 +142,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
     error_type: Test Results
   - id: '1403'
     test_id: '1006'
@@ -150,7 +150,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
     error_type: Test Results
   - id: '1199'
     test_id: '1006'
@@ -158,6 +158,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE {CUSTOM_QUERY} LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
     error_type: Test Results
   test_templates: []
