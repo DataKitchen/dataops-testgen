@@ -56,7 +56,7 @@ test_types:
     test_type: Incr_Avg_Shift
     sql_flavor: mssql
     measure: |-
-      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(CAST(COUNT({COLUMN_NAME}) AS FLOAT) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM(CAST("{COLUMN_NAME}" AS FLOAT)) - {BASELINE_SUM}) / NULLIF(CAST(COUNT({COLUMN_NAME}) AS FLOAT) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}

@@ -164,6 +164,7 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
+        suppress_logs=True,
     )
     return
 
