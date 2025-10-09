@@ -48,7 +48,7 @@ test_types:
         SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
         FROM (
           SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-          FROM {TARGET_SCHEMA}.{TABLE_NAME}
+          FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
           WHERE {SUBSET_CONDITION}
           GROUP BY {GROUPBY_NAMES}
           {HAVING_CONDITION}
@@ -76,7 +76,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}
@@ -102,7 +102,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}
@@ -128,7 +128,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}
@@ -154,7 +154,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}
@@ -180,7 +180,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}
@@ -206,7 +206,7 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
           FROM
             ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
-                FROM {TARGET_SCHEMA}.{TABLE_NAME}
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
               WHERE {SUBSET_CONDITION}
               GROUP BY {GROUPBY_NAMES}
               {HAVING_CONDITION}

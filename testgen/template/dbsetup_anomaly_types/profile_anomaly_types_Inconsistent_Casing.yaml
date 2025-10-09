@@ -25,7 +25,7 @@ profile_anomaly_types:
     lookup_query: |-
       (
         SELECT 'Upper Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
         WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
         GROUP BY `{COLUMN_NAME}`
         LIMIT 20
@@ -33,7 +33,7 @@ profile_anomaly_types:
       UNION ALL
       (
         SELECT 'Mixed Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
-        FROM {TARGET_SCHEMA}.{TABLE_NAME}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
         WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
           AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
         GROUP BY `{COLUMN_NAME}`
@@ -46,11 +46,11 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE UPPER(`{COLUMN_NAME}`) = `{COLUMN_NAME}`
       GROUP BY `{COLUMN_NAME}` LIMIT 20)
       UNION ALL
-      (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE `{COLUMN_NAME}` <> UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` <> LOWER(`{COLUMN_NAME}`)
       GROUP BY `{COLUMN_NAME}` LIMIT 20)
     error_type: Profile Anomaly
@@ -60,11 +60,11 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      SELECT TOP 20 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}"
       UNION ALL
-      SELECT TOP 20 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      SELECT TOP 20 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}"
     error_type: Profile Anomaly
@@ -74,11 +74,11 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
     error_type: Profile Anomaly
@@ -88,11 +88,11 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
     error_type: Profile Anomaly
@@ -102,11 +102,11 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
     error_type: Profile Anomaly
@@ -116,11 +116,11 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
       UNION ALL
-      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}" LIMIT 20)
     error_type: Profile Anomaly

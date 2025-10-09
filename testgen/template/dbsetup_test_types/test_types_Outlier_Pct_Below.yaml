@@ -112,7 +112,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) < ({BASELINE_AVG} + (2 * {BASELINE_SD}))
       GROUP BY `{COLUMN_NAME}`
       ORDER BY `{COLUMN_NAME}` DESC;
@@ -123,7 +123,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE `{COLUMN_NAME}` :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;
     error_type: Test Results
   - id: '1159'
     test_id: '1025'
@@ -131,7 +131,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CAST("{COLUMN_NAME}" AS FLOAT)  < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS FLOAT)  < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1102'
     test_id: '1025'
@@ -139,7 +139,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1020'
     test_id: '1025'
@@ -147,7 +147,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1420'
     test_id: '1025'
@@ -155,7 +155,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   - id: '1216'
     test_id: '1025'
@@ -163,6 +163,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   test_templates: []

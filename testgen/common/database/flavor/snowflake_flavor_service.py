@@ -9,6 +9,10 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 class SnowflakeFlavorService(FlavorService):
 
+    escaped_underscore = "\\\\_"
+    escape_clause = "ESCAPE '\\\\'"
+    default_uppercase = True
+
     def get_connect_args(self):
         if self.connect_by_key:
             # https://docs.snowflake.com/en/developer-guide/python-connector/sqlalchemy#key-pair-authentication-support

@@ -4,6 +4,9 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class RedshiftFlavorService(FlavorService):
+
+    escaped_underscore = "\\\\_"
+
     def init(self, connection_params: dict):
         super().init(connection_params)
         # This is for connection purposes. sqlalchemy 1.4.46 uses postgresql to connect to redshift database

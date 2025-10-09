@@ -19,7 +19,7 @@ def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: s
     connection = Connection.get_by_table_group(table_group_id)
     set_target_db_params(connection.__dict__)
 
-    clsTests = CDeriveTestsSQL()
+    clsTests = CDeriveTestsSQL(connection.sql_flavor)
 
     LOG.info(f"CurrentStep: Retrieving General Parameters for Test Suite {test_suite}")
     params = get_test_generation_params(table_group_id, test_suite)
@@ -32,7 +32,6 @@ def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: s
     clsTests.test_suite_id = params["test_suite_id"] if params["test_suite_id"] else ""
     clsTests.connection_id = str(connection.connection_id)
     clsTests.table_groups_id = table_group_id
-    clsTests.sql_flavor = connection.sql_flavor
     clsTests.data_schema = params["table_group_schema"]
     if params["profiling_as_of_date"] is not None:
         clsTests.as_of_date = params["profiling_as_of_date"].strftime("%Y-%m-%d %H:%M:%S")

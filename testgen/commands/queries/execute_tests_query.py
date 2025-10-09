@@ -2,7 +2,7 @@ from typing import ClassVar, TypedDict
 
 from testgen.common import date_service, read_template_sql_file
 from testgen.common.clean_sql import CleanSQL, ConcatColumnList, quote_identifiers
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 
 
 class TestParams(TypedDict):
@@ -55,6 +55,7 @@ class CTestExecutionSQL:
     def __init__(self, strProjectCode, strFlavor, strTestSuiteId, strTestSuite, minutes_offset=0):
         self.project_code = strProjectCode
         self.flavor = strFlavor
+        self.flavor_service = get_flavor_service(strFlavor)
         self.test_suite_id = strTestSuiteId
         self.test_suite = strTestSuite
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
@@ -101,13 +102,14 @@ class CTestExecutionSQL:
             "TEST_SUITE_ID": self.test_suite_id,
             "TEST_SUITE": self.test_suite,
             "SQL_FLAVOR": self.flavor,
+            "QUOTE": self.flavor_service.quote_character,
             "TEST_RUN_ID": self.test_run_id,
             "INPUT_PARAMETERS": self._get_input_parameters(),
             "RUN_DATE": self.run_date,
             "EXCEPTION_MESSAGE": self.exception_message,
             "START_TIME": self.today,
             "PROCESS_ID": self.process_id,
-            "VARCHAR_TYPE": "STRING" if self.flavor in ("databricks", "bigquery") else "VARCHAR",
+            "VARCHAR_TYPE": self.flavor_service.varchar_type,
             "NOW_TIMESTAMP": date_service.get_now_as_string_with_offset(self.minutes_offset),
             **{key.upper(): value or "" for key, value in self.test_params.items()},
         }
@@ -128,12 +130,12 @@ class CTestExecutionSQL:
 
             subset_condition = self.test_params["subset_condition"]
             params["SUBSET_DISPLAY"] = subset_condition.replace(
-                "'", r"\'" if self.flavor == "bigquery" else "''"
+                "'", self.flavor_service.escaped_single_quote
             ) if subset_condition else ""
 
         query = replace_params(query, params)
 
-        if no_bind and self.flavor != "databricks":
+        if no_bind:
             # Adding escape character where ':' is referenced
             query = query.replace(":", "\\:")
 

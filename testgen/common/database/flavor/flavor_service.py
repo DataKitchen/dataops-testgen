@@ -25,22 +25,15 @@ class ConnectionParams(TypedDict):
 
 class FlavorService:
 
-    url = None
-    connect_by_url = None
-    username = None
-    password = None
-    host = None
-    port = None
-    dbname = None
-    flavor = None
-    dbschema = None
-    connect_by_key = None
-    private_key = None
-    private_key_passphrase = None
-    http_path = None
-    service_account_key = None
-    catalog = None
-    warehouse = None
+    concat_operator = "||"
+    quote_character = '"'
+    escaped_single_quote = "''"
+    escaped_underscore = "\\_"
+    escape_clause = ""
+    varchar_type = "VARCHAR(1000)"
+    ddf_table_ref = "table_name"
+    use_top = False
+    default_uppercase = False
 
     def init(self, connection_params: ConnectionParams):
         self.url = connection_params.get("url") or ""
@@ -80,9 +73,6 @@ class FlavorService:
 
     def get_engine_args(self) -> dict[str,Any]:
         return {}
-
-    def get_concat_operator(self) -> str:
-        return "||"
 
     def get_connection_string(self) -> str:
         if self.connect_by_url:

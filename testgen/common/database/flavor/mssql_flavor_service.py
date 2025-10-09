@@ -5,6 +5,11 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class MssqlFlavorService(FlavorService):
+
+    concat_operator = "+"
+    escaped_underscore = "[_]"
+    use_top = True
+
     def get_connection_string_head(self):
         return f"mssql+pyodbc://{self.username}:{quote_plus(self.password)}@"
 
@@ -29,6 +34,3 @@ class MssqlFlavorService(FlavorService):
         if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
             connect_args["TrustServerCertificate"] = "yes"
         return connect_args
-
-    def get_concat_operator(self):
-        return "+"

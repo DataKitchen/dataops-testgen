@@ -17,7 +17,9 @@
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(column_name, ','))), '{ID_SEPARATOR}') as column_name
+                TRIM(TRIM(UNNEST(ARRAY_REMOVE(
+                  REGEXP_SPLIT_TO_ARRAY(column_name, ',(?=(?:[^"]*"[^"]*")*[^"]*$)'),
+                 '' )), ' '), '{QUOTE}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -30,7 +32,9 @@
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(groupby_names, ','))), '{ID_SEPARATOR}') as column_name
+                TRIM(TRIM(UNNEST(ARRAY_REMOVE(
+                  REGEXP_SPLIT_TO_ARRAY(groupby_names, ',(?=(?:[^"]*"[^"]*")*[^"]*$)'),
+                 '' )), ' '), '{QUOTE}') AS column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -42,7 +46,9 @@
          SELECT cat_test_id,
                 schema_name              AS schema_name,
                 table_name               AS table_name,
-                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(window_date_column, ','))), '{ID_SEPARATOR}') as column_name
+                TRIM(TRIM(UNNEST(ARRAY_REMOVE(
+                  REGEXP_SPLIT_TO_ARRAY(window_date_column, ',(?=(?:[^"]*"[^"]*")*[^"]*$)'),
+                 '' )), ' '), '{QUOTE}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -54,7 +60,9 @@
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
-                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(match_column_names, ','))), '{ID_SEPARATOR}') as column_name
+                TRIM(TRIM(UNNEST(ARRAY_REMOVE(
+                  REGEXP_SPLIT_TO_ARRAY(match_column_names, ',(?=(?:[^"]*"[^"]*")*[^"]*$)'),
+                 '' )), ' '), '{QUOTE}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type
@@ -67,7 +75,9 @@
          SELECT cat_test_id,
                 match_schema_name              AS schema_name,
                 match_table_name               AS table_name,
-                TRIM(TRIM(UNNEST(STRING_TO_ARRAY(match_groupby_names, ','))), '{ID_SEPARATOR}') as column_name
+                TRIM(TRIM(UNNEST(ARRAY_REMOVE(
+                  REGEXP_SPLIT_TO_ARRAY(match_groupby_names, ',(?=(?:[^"]*"[^"]*")*[^"]*$)'),
+                 '' )), ' '), '{QUOTE}') as column_name
          FROM test_definitions d
          INNER JOIN test_types t
                ON d.test_type = t.test_type

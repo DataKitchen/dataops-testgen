@@ -23,7 +23,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') NOT IN ('99999', '999999999', '99999-9999')
       GROUP BY `{COLUMN_NAME}`
       ORDER BY `{COLUMN_NAME}`
@@ -35,7 +35,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Profile Anomaly
   - id: '1117'
     test_id: '1003'
@@ -43,7 +43,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
   - id: '1060'
     test_id: '1003'
@@ -51,7 +51,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1035'
     test_id: '1003'
@@ -59,7 +59,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1435'
     test_id: '1003'
@@ -67,7 +67,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly
   - id: '1174'
     test_id: '1003'
@@ -75,5 +75,5 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Profile Anomaly

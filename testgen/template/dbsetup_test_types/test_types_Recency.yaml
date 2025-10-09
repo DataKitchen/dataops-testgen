@@ -108,7 +108,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}) AS test_run_date
-      FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME})
+      FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`)
       WHERE DATETIME_DIFF(CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), col, DAY) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1319'
@@ -117,7 +117,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1161'
     test_id: '1028'
@@ -125,7 +125,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1104'
     test_id: '1028'
@@ -133,7 +133,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1022'
     test_id: '1028'
@@ -141,7 +141,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1422'
     test_id: '1028'
@@ -149,7 +149,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1218'
     test_id: '1028'
@@ -157,6 +157,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM {TARGET_SCHEMA}.{TABLE_NAME}) WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
+      SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE};
     error_type: Test Results
   test_templates: []

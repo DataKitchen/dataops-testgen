@@ -1,7 +1,7 @@
 import typing
 
 from testgen.common import CleanSQL, date_service, read_template_sql_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 
 
 class CTestParamValidationSQL:
@@ -19,6 +19,7 @@ class CTestParamValidationSQL:
 
     def __init__(self, strFlavor, strTestSuiteId):
         self.flavor = strFlavor
+        self.flavor_service = get_flavor_service(strFlavor)
         self.test_suite_id = strTestSuiteId
         self.today = date_service.get_now_as_string()
 
@@ -35,8 +36,8 @@ class CTestParamValidationSQL:
             "CAT_TEST_IDS": tuple(self.test_ids or []),
             "START_TIME": self.today,
             "NOW_TIMESTAMP": date_service.get_now_as_string(),
-            "COLUMNS_TABLE": f"{self.tg_schema}.INFORMATION_SCHEMA.COLUMNS" if self.flavor == "bigquery" else "information_schema.columns",
-            "ID_SEPARATOR": "`" if self.flavor in ("databricks", "bigquery") else '"',
+            "DATA_SCHEMA": self.tg_schema,
+            "QUOTE": self.flavor_service.quote_character,
         }
         query = replace_params(query, params)
         return query, params

@@ -17,7 +17,6 @@ class CATTestParams(TypedDict):
 class CCATExecutionSQL:
     project_code = ""
     flavor = ""
-    concat_operator = ""
     test_suite = ""
     run_date = ""
     test_run_id = ""
@@ -35,8 +34,7 @@ class CCATExecutionSQL:
         self.test_suite_id = strTestSuiteId
         self.test_suite = strTestSuite
         self.project_code = strProjectCode
-        flavor_service = get_flavor_service(strSQLFlavor)
-        self.concat_operator = flavor_service.get_concat_operator()
+        self.flavor_service = get_flavor_service(strSQLFlavor)
         self.flavor = strSQLFlavor
         self.max_query_chars = max_query_chars
         self.today = date_service.get_now_as_string_with_offset(minutes_offset)
@@ -58,9 +56,9 @@ class CCATExecutionSQL:
             "TEST_SUITE_ID": self.test_suite_id,
             "TABLE_GROUPS_ID": self.table_groups_id,
             "SQL_FLAVOR": self.flavor,
-            "ID_SEPARATOR": "`" if self.flavor in ("databricks", "bigquery") else '"',
-            "VARCHAR_TYPE": "STRING" if self.flavor == "bigquery" else "VARCHAR(1000)",
-            "CONCAT_OPERATOR": self.concat_operator,
+            "QUOTE": self.flavor_service.quote_character,
+            "VARCHAR_TYPE": self.flavor_service.varchar_type,
+            "CONCAT_OPERATOR": self.flavor_service.concat_operator,
             "SCHEMA_NAME": self.target_schema,
             "TABLE_NAME": self.target_table,
             "NOW_DATE": "GETDATE()",
@@ -74,7 +72,7 @@ class CCATExecutionSQL:
         query = replace_params(query, params)
         query = replace_templated_functions(query, self.flavor)
 
-        if no_bind and self.flavor != "databricks":
+        if no_bind:
             # Adding escape character where ':' is referenced
             query = query.replace(":", "\\:")
 

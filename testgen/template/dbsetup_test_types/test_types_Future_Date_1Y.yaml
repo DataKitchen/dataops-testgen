@@ -107,7 +107,7 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS count
-      FROM {TARGET_SCHEMA}.{TABLE_NAME}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE DATETIME_DIFF(`{COLUMN_NAME}`, DATE_ADD(CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), INTERVAL 365 DAY), DAY) > {THRESHOLD_VALUE}
       GROUP BY `{COLUMN_NAME}`
       LIMIT 500;
@@ -118,7 +118,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
     error_type: Test Results
   - id: '1150'
     test_id: '1016'
@@ -126,7 +126,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE CAST("{COLUMN_NAME}" AS DATE) >= DATEADD(DAY, 365, CONVERT(DATE, '{TEST_DATE}')) GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) >= DATEADD(DAY, 365, CONVERT(DATE, '{TEST_DATE}')) GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1093'
     test_id: '1016'
@@ -134,7 +134,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Test Results
   - id: '1011'
     test_id: '1016'
@@ -142,7 +142,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Test Results
   - id: '1411'
     test_id: '1016'
@@ -150,7 +150,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Test Results
   - id: '1207'
     test_id: '1016'
@@ -158,6 +158,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM {TARGET_SCHEMA}.{TABLE_NAME} WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
     error_type: Test Results
   test_templates: []

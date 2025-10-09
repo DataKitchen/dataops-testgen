@@ -7,6 +7,7 @@ from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
+    get_flavor_service,
     write_to_app_db,
 )
 from testgen.common.get_pipeline_parms import TestExecutionParams
@@ -18,12 +19,14 @@ STAGING_TABLE = "stg_data_chars_updates"
 def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, spinner: Spinner=None):
     LOG.info("CurrentStep: Initializing Data Characteristics Refresh")
     sql_generator = CRefreshDataCharsSQL(params, run_date, STAGING_TABLE)
+    flavor_service = get_flavor_service(params["sql_flavor"])
+    quote = flavor_service.quote_character
 
     LOG.info("CurrentStep: Getting DDF for table group")
     ddf_results = fetch_dict_from_db(*sql_generator.GetDDFQuery(), use_target_db=True)
 
     distinct_tables = {
-        f"{item['table_schema']}.{item['table_name']}"
+        f"{quote}{item['table_schema']}{quote}.{quote}{item['table_name']}{quote}"
         for item in ddf_results
     }
     if distinct_tables:
@@ -65,7 +68,7 @@ def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, s
             item["general_type"],
             item["column_type"],
             item["db_data_type"],
-            count_map.get(f"{item['table_schema']}.{item['table_name']}", 0),
+            count_map.get(f"{quote}{item['table_schema']}{quote}.{quote}{item['table_name']}{quote}", 0),
         ]
         for item in ddf_results
     ]

@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models.connection import Connection
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -45,12 +46,14 @@ def get_preview_data(
     connection = Connection.get_by_table_group(table_group_id)
 
     if connection:
-        use_top = connection.sql_flavor == "mssql"
+        flavor_service = get_flavor_service(connection.sql_flavor)
+        use_top = flavor_service.use_top
+        quote = flavor_service.quote_character
         query = f"""
         SELECT DISTINCT
             {"TOP 100" if use_top else ""}
-            {column_name or "*"}
-        FROM {schema_name}.{table_name}
+            {f"{quote}{column_name}{quote}" if column_name else "*"}
+        FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
         {"LIMIT 100" if not use_top else ""}
         """
 

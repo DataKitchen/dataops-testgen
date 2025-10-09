@@ -4,6 +4,11 @@ from testgen.common.database.flavor.flavor_service import FlavorService
 
 
 class BigqueryFlavorService(FlavorService):
+
+    quote_character = "`"
+    escaped_single_quote = "\\'"
+    varchar_type = "STRING"
+
     def get_connection_string_head(self):
         return "bigquery://"
 
