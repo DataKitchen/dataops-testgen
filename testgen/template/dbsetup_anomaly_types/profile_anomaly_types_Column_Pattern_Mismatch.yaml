@@ -25,7 +25,7 @@ profile_anomaly_types:
   suggested_action: |-
     Review the values for any data that doesn't conform to the most common pattern and correct any data errors.
   dq_score_prevalence_formula: |-
-    (p.record_ct - SPLIT_PART(p.top_patterns, '|', 1)::INT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+    (p.record_ct - SPLIT_PART(p.top_patterns, '|', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   target_data_lookups:

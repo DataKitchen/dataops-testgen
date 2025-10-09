@@ -16,7 +16,7 @@ profile_anomaly_types:
   suggested_action: |-
     Review your source data, ingestion process, and any processing steps that update this column.
   dq_score_prevalence_formula: |-
-    (NULLIF(p.record_ct, 0)::INT - SPLIT_PART(p.top_patterns, ' | ', 1)::INT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+    (NULLIF(p.record_ct, 0)::INT - SPLIT_PART(p.top_patterns, ' | ', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '1'
   dq_dimension: Validity
   target_data_lookups:
