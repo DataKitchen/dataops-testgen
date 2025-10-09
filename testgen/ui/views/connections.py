@@ -466,6 +466,12 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
     ),
     ConnectionFlavor(
+        label="Databricks",
+        value="databricks",
+        flavor="databricks",
+        icon=get_asset_data_url("flavors/databricks.svg"),
+    ),
+    ConnectionFlavor(
         label="Google BigQuery",
         value="bigquery",
         flavor="bigquery",
@@ -488,11 +494,5 @@ FLAVOR_OPTIONS = [
         value="snowflake",
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
-    ),
-    ConnectionFlavor(
-        label="Databricks",
-        value="databricks",
-        flavor="databricks",
-        icon=get_asset_data_url("flavors/databricks.svg"),
     ),
 ]

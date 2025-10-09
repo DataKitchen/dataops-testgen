@@ -23,7 +23,7 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
-from testgen.common.database.database_service import empty_cache
+from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
@@ -279,12 +279,15 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
         column_count = len(lstResult)
 
         if lstResult:
+            flavor_service = get_flavor_service(connection.sql_flavor)
+            quote = flavor_service.quote_character
+
             # Get distinct tables
             distinct_tables = set()
             for item in lstResult:
                 schema_name = item["table_schema"]
                 table_name = item["table_name"]
-                distinct_tables.add(f"{schema_name}.{table_name}")
+                distinct_tables.add(f"{quote}{schema_name}{quote}.{quote}{table_name}{quote}")
 
             # Convert the set to a list
             distinct_tables_list = list(distinct_tables)
@@ -326,16 +329,11 @@ def run_profiling_queries(table_group_id: str, username: str | None = None, spin
                 clsProfiling.parm_do_sample = "N"
 
                 if clsProfiling.profile_use_sampling == "Y":
-                    if dctSampleTables[clsProfiling.data_schema + "." + clsProfiling.data_table][0] > -1:
-                        clsProfiling.parm_sample_size = dctSampleTables[
-                            clsProfiling.data_schema + "." + clsProfiling.data_table
-                        ][0]
-                        clsProfiling.sample_ratio = dctSampleTables[
-                            clsProfiling.data_schema + "." + clsProfiling.data_table
-                        ][1]
-                        clsProfiling.sample_percent_calc = dctSampleTables[
-                            clsProfiling.data_schema + "." + clsProfiling.data_table
-                        ][2]
+                    table_identifier = f"{quote}{clsProfiling.data_schema}{quote}.{quote}{clsProfiling.data_table}{quote}"
+                    if dctSampleTables[table_identifier][0] > -1:
+                        clsProfiling.parm_sample_size = dctSampleTables[table_identifier][0]
+                        clsProfiling.sample_ratio = dctSampleTables[table_identifier][1]
+                        clsProfiling.sample_percent_calc = dctSampleTables[table_identifier][2]
                         clsProfiling.parm_do_sample = clsProfiling.profile_use_sampling
                     else:
                         clsProfiling.parm_sample_size = 0
