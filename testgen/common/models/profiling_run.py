@@ -160,14 +160,13 @@ class ProfilingRun(Entity):
                 SUM(
                     CASE
                         WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND profile_anomaly_types.issue_likelihood = 'Possible' THEN 1
+                        AND profile_anomaly_types.issue_likelihood IN ('Possible', 'Potential PII') THEN 1
                         ELSE 0
                     END
                 ) AS possible_ct,
                 SUM(
                     CASE
-                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
-                        AND profile_anomaly_types.issue_likelihood <> 'Potential PII' THEN 1
+                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                         ELSE 0
                     END
                 ) AS dismissed_ct

@@ -30,6 +30,11 @@ class Router(Singleton):
 
         current_page = st.navigation(streamlit_pages, position="hidden")
 
+        if not session.initialized:
+            # Clear cache on initial load or page refresh
+            st.cache_data.clear()
+            session.initialized = True
+
         # This hack is needed because the auth cookie is not set if navigation happens immediately after login
         # We have to navigate on the next run
         if session.auth.logging_in:

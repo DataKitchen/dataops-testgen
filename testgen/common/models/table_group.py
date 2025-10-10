@@ -143,14 +143,13 @@ class TableGroup(Entity):
                 SUM(
                     CASE
                         WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') = 'Confirmed'
-                        AND anomaly_types.issue_likelihood = 'Possible' THEN 1
+                        AND anomaly_types.issue_likelihood IN ('Possible', 'Potential PII') THEN 1
                         ELSE 0
                     END
                 ) AS possible_ct,
                 SUM(
                     CASE
-                        WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
-                        AND anomaly_types.issue_likelihood <> 'Potential PII' THEN 1
+                        WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                         ELSE 0
                     END
                 ) AS dismissed_ct
