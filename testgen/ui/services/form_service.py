@@ -316,6 +316,8 @@ function(params) {
             "hide": column not in columns,
             "headerCheckboxSelection": selection_mode == "multiple" and column == columns[0],
             "headerCheckboxSelectionFilteredOnly": selection_mode == "multiple" and column == columns[0],
+            "sortable": False,
+            "filter": False,
         }
         highlight_kwargs = {
             "cellStyle": cellstyle_jscode,

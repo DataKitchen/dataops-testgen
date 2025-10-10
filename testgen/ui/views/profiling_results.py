@@ -67,31 +67,39 @@ class ProfilingResultsPage(Page):
                 filters_changed = True
             st.session_state["profiling_results:filters"] = current_filters
 
-
+        run_columns_df = get_profiling_run_columns(run_id)
         with table_filter_column:
-            # Table Name filter
-            df = get_profiling_run_tables(run_id)
-            df = df.sort_values("table_name", key=lambda x: x.str.lower())
             table_name = testgen.select(
-                options=df,
-                value_column="table_name",
+                options=list(run_columns_df["table_name"].unique()),
                 default_value=table_name,
                 bind_to_query="table_name",
                 label="Table",
             )
 
         with column_filter_column:
-            # Column Name filter
-            df = get_profiling_run_columns(run_id, table_name)
-            df = df.sort_values("column_name", key=lambda x: x.str.lower())
+            if table_name:
+                column_options = (
+                    run_columns_df
+                    .loc[run_columns_df["table_name"] == table_name]
+                    ["column_name"]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+            else:
+                column_options = (
+                    run_columns_df
+                    .groupby("column_name")
+                    .first()
+                    .reset_index()
+                    .sort_values("column_name", key=lambda x: x.str.lower())
+                )
             column_name = testgen.select(
-                options=df,
-                value_column="column_name",
+                options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column",
-                disabled=not table_name,
-                accept_new_options=bool(table_name),
+                accept_new_options=True,
             )
 
         with sort_column:
@@ -272,27 +280,11 @@ def get_excel_report_data(
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_run_tables(profiling_run_id: str) -> pd.DataFrame:
+def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     query = """
-    SELECT DISTINCT table_name
+    SELECT table_name, column_name
     FROM profile_results
     WHERE profile_run_id = :profiling_run_id
-    ORDER BY table_name;
+    ORDER BY LOWER(table_name), LOWER(column_name);
     """
     return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
-
-
-@st.cache_data(show_spinner=False)
-def get_profiling_run_columns(profiling_run_id: str, table_name: str) -> pd.DataFrame:
-    query = """
-    SELECT DISTINCT column_name
-    FROM profile_results
-    WHERE profile_run_id = :profiling_run_id
-        AND table_name = :table_name
-    ORDER BY column_name;
-    """
-    params = {
-        "profiling_run_id": profiling_run_id,
-        "table_name": table_name or "",
-    }
-    return fetch_df_from_db(query, params)

@@ -4,7 +4,7 @@ import typing
 from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
 from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import replace_templated_functions
 
 
@@ -121,6 +121,7 @@ class CProfilingSQL:
             "CONTINGENCY_MAX_VALUES": self.contingency_max_values,
             "PROCESS_ID": self.process_id,
             "SQL_FLAVOR": self.flavor,
+            "QUOTE": get_flavor_service(self.flavor).quote_character
         }
 
     def _get_query(

@@ -1103,7 +1103,7 @@ const BigqueryForm = (
 
             div(
                 { class: 'text-caption text-right' },
-                `Project ID: ${projectId.val}`,
+                () => `Project ID: ${projectId.val}`,
             ),
         ),
     );

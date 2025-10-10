@@ -121,7 +121,6 @@ class HygieneIssuesPage(Page):
                 )
             column_name = testgen.select(
                 options=column_options,
-                value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column",
