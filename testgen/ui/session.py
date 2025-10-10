@@ -23,6 +23,7 @@ class TestgenSession(Singleton):
     # streamlit_authenticator sets this attribute implicitly
     authentication_status: bool
 
+    initialized: bool
     page_pending_cookies: st.Page  # type: ignore
     page_pending_login: str
     page_args_pending_login: dict
