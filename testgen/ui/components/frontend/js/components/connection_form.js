@@ -1052,6 +1052,8 @@ const BigqueryForm = (
     const projectId = van.state("");
     const serviceAccountKeyFileRaw = van.state(cachedFile);
 
+    const validityPerField = {};
+
     van.derive(() => {
         projectId.val = serviceAccountKey.val?.project_id ?? '';
         isValid.val = !!projectId.val;

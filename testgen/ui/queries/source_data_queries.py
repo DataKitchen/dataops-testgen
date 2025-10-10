@@ -32,7 +32,7 @@ def get_hygiene_issue_source_query(issue_data: dict) -> str:
                 SELECT
                     '{column}' AS column_name,
                     MAX({quote}{column}{quote}) AS max_date_available
-                FROM {{QUOTE}}{{TARGET_SCHEMA}}{{QUOTE}}.{{QUOTE}}{{TABLE_NAME}}{{QUOTE}}
+                FROM {quote}{{TARGET_SCHEMA}}{quote}.{quote}{{TABLE_NAME}}{quote}
                 """
                 for column in columns
             ]
