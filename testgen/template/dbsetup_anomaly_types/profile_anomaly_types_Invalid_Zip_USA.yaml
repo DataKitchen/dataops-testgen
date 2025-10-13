@@ -1,0 +1,79 @@
+profile_anomaly_types:
+  id: '1003'
+  anomaly_type: Invalid_Zip_USA
+  data_object: Column
+  anomaly_name: Invalid USA Zip Code Format
+  anomaly_description: |-
+    Some values present do not conform with the expected format of USA Zip Codes.
+  anomaly_criteria: |-
+    p.functional_data_type = 'Zip' AND (p.general_type <> 'A' OR p.filled_value_ct > 0 OR EXISTS (SELECT 1 FROM UNNEST(STRING_TO_ARRAY(p.top_patterns, ' | ')) WITH ORDINALITY AS u(val, idx) WHERE idx % 2 = 0 AND val NOT IN ('NNNNN','NNNNN-NNNN','NNNNNNNNN')))
+  detail_expression: |-
+    CASE WHEN p.general_type = 'N' THEN 'Type: ' || p.column_type ELSE '' END || CASE WHEN p.general_type = 'A' THEN 'Patterns: ' || (SELECT string_agg(val, ',') FROM UNNEST(STRING_TO_ARRAY(top_patterns, ' | ')) WITH ORDINALITY AS u(val, idx) WHERE idx % 2 = 0)  || ', Dummy Values: ' || p.filled_value_ct::VARCHAR ELSE '' END
+  issue_likelihood: Definite
+  suggested_action: |-
+    Consider correcting invalid column values or changing them to indicate a missing value if corrections cannot be made.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1341'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') NOT IN ('99999', '999999999', '99999-9999')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1275'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1117'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1060'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1035'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1435'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1174'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly

@@ -1,0 +1,162 @@
+test_types:
+  id: '1015'
+  test_type: Future_Date
+  test_name_short: Past Dates
+  test_name_long: Latest date is prior to test run date
+  test_description: |-
+    Tests that the maximum date referenced in the column is no greater than the test date, consistent with baseline data
+  except_message: |-
+    Future date found when absent in baseline data.
+  measure_uom: Future dates
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type='D'AND future_date_ct = 0
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Maximum Future Date Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Timeliness
+  health_dimension: Recency
+  threshold_description: |-
+    Expected count of future dates
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: null
+  active: Y
+  cat_test_conditions:
+  - id: '7010'
+    test_type: Future_Date
+    sql_flavor: bigquery
+    measure: |-
+      SUM(IF({COLUMN_NAME} > CAST(CAST('{RUN_DATE}' AS DATETIME) AS {COLUMN_TYPE}), 1, 0))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6010'
+    test_type: Future_Date
+    sql_flavor: databricks
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3010'
+    test_type: Future_Date
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) >= CONVERT(DATE, '{RUN_DATE}') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4010'
+    test_type: Future_Date
+    sql_flavor: postgresql
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1010'
+    test_type: Future_Date
+    sql_flavor: redshift
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7010'
+    test_type: Future_Date
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2010'
+    test_type: Future_Date
+    sql_flavor: snowflake
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - '{RUN_DATE}'::DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5010'
+    test_type: Future_Date
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) >= CAST('{RUN_DATE}' AS DATE) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1373'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE DATETIME_DIFF(`{COLUMN_NAME}`, CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}), DAY) > {THRESHOLD_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1307'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE GREATEST(0, SIGN(`{COLUMN_NAME}`::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
+    error_type: Test Results
+  - id: '1149'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) >= CONVERT(DATE, '{TEST_DATE}') GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1092'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1010'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1410'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1206'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  test_templates: []

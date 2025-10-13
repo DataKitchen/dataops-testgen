@@ -1,0 +1,216 @@
+test_types:
+  id: '1502'
+  test_type: Combo_Match
+  test_name_short: Reference Match
+  test_name_long: Column values or combinations found in reference
+  test_description: |-
+    Tests for the presence of one or a set of column values in a reference table
+  except_message: |-
+    Column value combinations are not found in reference table values.
+  measure_uom: Missing values
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: |-
+    Categorical Column List
+  column_name_help: |-
+    Specify one or more Categorical columns, separated by commas. \n\nDo not use continuous mesurements here. Do not use numeric values unless they represent discrete categories.
+  default_parm_columns: subset_condition,having_condition,match_schema_name,match_table_name,match_groupby_names,match_subset_condition,match_having_condition
+  default_parm_values: null
+  default_parm_prompts: |-
+    Record Subset Condition,Group Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns,Matching Record Subset Condition,Matching Group Subset Condition
+  default_parm_help: |-
+    Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in source table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to validate source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in reference table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: referential
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of non-matching value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test verifies that values, or combinations of values, that are present in the main table are also found in a reference table. This is a useful test for referential integrity between fact and dimension tables. You can also use it to confirm the validity of a code or category, or of combinations of values that should only be found together within each record, such as product/size/color.  An error here means that one  or more category combinations in the main table are not found in the reference table. Both tables must be present to run this test.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1402'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM (
+        SELECT {COLUMN_NAME_NO_QUOTES}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {COLUMN_NAME_NO_QUOTES}
+        {HAVING_CONDITION}
+        EXCEPT DISTINCT
+        SELECT {MATCH_GROUPBY_NAMES}
+        FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+        {MATCH_HAVING_CONDITION}
+      ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1335'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1255'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1256'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1253'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1464'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  - id: '1254'
+    test_id: '1502'
+    test_type: Combo_Match
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+        FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES}
+               {HAVING_CONDITION}
+                EXCEPT
+               SELECT {MATCH_GROUPBY_NAMES}
+                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES}
+               {MATCH_HAVING_CONDITION}
+             ) test
+      ORDER BY {COLUMN_NAME_NO_QUOTES};
+    error_type: Test Results
+  test_templates:
+  - id: '2501'
+    test_type: Combo_Match
+    sql_flavor: bigquery
+    template_name: ex_data_match_bigquery.sql
+  - id: '2401'
+    test_type: Combo_Match
+    sql_flavor: databricks
+    template_name: ex_data_match_generic.sql
+  - id: '2201'
+    test_type: Combo_Match
+    sql_flavor: mssql
+    template_name: ex_data_match_generic.sql
+  - id: '2301'
+    test_type: Combo_Match
+    sql_flavor: postgresql
+    template_name: ex_data_match_generic.sql
+  - id: '2001'
+    test_type: Combo_Match
+    sql_flavor: redshift
+    template_name: ex_data_match_generic.sql
+  - id: '2501'
+    test_type: Combo_Match
+    sql_flavor: redshift_spectrum
+    template_name: ex_data_match_generic.sql
+  - id: '2101'
+    test_type: Combo_Match
+    sql_flavor: snowflake
+    template_name: ex_data_match_generic.sql

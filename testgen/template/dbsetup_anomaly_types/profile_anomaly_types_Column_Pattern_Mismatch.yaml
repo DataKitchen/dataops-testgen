@@ -1,0 +1,126 @@
+profile_anomaly_types:
+  id: '1007'
+  anomaly_type: Column_Pattern_Mismatch
+  data_object: Column
+  anomaly_name: Pattern Inconsistency Within Column
+  anomaly_description: "Alpha-numeric string data within this column conforms to 2-4\
+    \ different patterns, with 95% matching the first pattern. This could indicate\
+    \ data errors in the remaining values. "
+  anomaly_criteria: |-
+    p.general_type = 'A'
+       AND functional_data_type NOT ILIKE 'Measurement%' AND functional_data_type NOT IN ('Category', 'Code')
+       AND p.max_length > 3
+       AND p.value_ct > (p.numeric_ct + p.filled_value_ct + p.zero_length_ct)
+       AND p.distinct_pattern_ct BETWEEN 2 AND 4
+       AND STRPOS(p.top_patterns, 'N') > 0
+       AND (
+             ( (STRPOS(p.top_patterns, 'A') > 0 OR STRPOS(p.top_patterns, 'a') > 0)
+               AND SPLIT_PART(p.top_patterns, '|', 3)::NUMERIC / SPLIT_PART(p.top_patterns, '|', 1)::NUMERIC < 0.05)
+            OR
+             SPLIT_PART(p.top_patterns, '|', 3)::NUMERIC / SPLIT_PART(p.top_patterns, '|', 1)::NUMERIC < 0.1
+        )
+  detail_expression: |-
+    'Patterns: ' || p.top_patterns
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review the values for any data that doesn't conform to the most common pattern and correct any data errors.
+  dq_score_prevalence_formula: |-
+    (p.record_ct - SPLIT_PART(p.top_patterns, '|', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1345'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`,
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(3)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`,
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(5)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`,
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(7)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      UNION ALL
+      (
+        SELECT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`,
+             (SELECT TRIM(SPLIT('{DETAIL_EXPRESSION}', '|')[SAFE_OFFSET(9)]) AS top_pattern) b
+        WHERE REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') = b.top_pattern
+        GROUP BY b.top_pattern, `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 5
+      )
+      ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1279'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 4)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC LIMIT 5) A UNION ALL SELECT B.* FROM (SELECT DISTINCT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 6)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC LIMIT 5) B UNION ALL SELECT C.* FROM (SELECT DISTINCT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 8)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC LIMIT 5) C UNION ALL SELECT D.* FROM (SELECT DISTINCT b.top_pattern, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 10)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( `{COLUMN_NAME}`::STRING, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, `{COLUMN_NAME}` ORDER BY count DESC LIMIT 5) D ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1121'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH cte AS ( SELECT TRIM(value) AS top_pattern, ROW_NUMBER() OVER (ORDER BY  CHARINDEX('| '+  TRIM(value) + ' |',  '| ' + '{DETAIL_EXPRESSION}' + ' |' ) ASC) as row_num FROM STRING_SPLIT('{DETAIL_EXPRESSION}', '|') ) SELECT DISTINCT TOP 5 c.top_pattern, a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte c WHERE c.row_num = 4 AND TRANSLATE(a."{COLUMN_NAME}" COLLATE Latin1_General_BIN,   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',   'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') = c.top_pattern GROUP BY  c.top_pattern, a."{COLUMN_NAME}" UNION ALL SELECT DISTINCT TOP 5 c.top_pattern, a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte c WHERE c.row_num = 6 AND TRANSLATE(a."{COLUMN_NAME}" COLLATE Latin1_General_BIN,   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',   'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') = c.top_pattern GROUP BY  c.top_pattern, a."{COLUMN_NAME}" UNION ALL SELECT DISTINCT TOP 5 c.top_pattern, a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte c WHERE c.row_num = 8 AND TRANSLATE(a."{COLUMN_NAME}" COLLATE Latin1_General_BIN,   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',   'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') = c.top_pattern GROUP BY  c.top_pattern, a."{COLUMN_NAME}" UNION ALL SELECT DISTINCT TOP 5 c.top_pattern, a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte c WHERE c.row_num = 10 AND TRANSLATE(a."{COLUMN_NAME}" COLLATE Latin1_General_BIN,   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',   'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') = c.top_pattern GROUP BY  c.top_pattern, a."{COLUMN_NAME}" ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1064'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 4)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC LIMIT 5 ) A UNION ALL SELECT B.* FROM (  SELECT DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 6)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC LIMIT 5 ) B UNION ALL SELECT C.* FROM (  SELECT DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 8)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC LIMIT 5 ) C UNION ALL SELECT D.* FROM (  SELECT DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 10)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC LIMIT 5) D ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1039'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count   FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",       (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 4)) AS top_pattern) b   WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern   GROUP BY b.top_pattern, "{COLUMN_NAME}"   ORDER BY count DESC       ) A  UNION ALL  SELECT B.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 6)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC       ) B  UNION ALL  SELECT C.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 8)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC       ) C  UNION ALL  SELECT D.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 10)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC  ) D  ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1439'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count   FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",       (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 4)) AS top_pattern) b   WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern   GROUP BY b.top_pattern, "{COLUMN_NAME}"   ORDER BY count DESC       ) A  UNION ALL  SELECT B.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 6)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC       ) B  UNION ALL  SELECT C.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 8)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC       ) C  UNION ALL  SELECT D.*  FROM (  SELECT TOP 5 DISTINCT b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",      (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 10)) AS top_pattern) b  WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}", '[a-z]', 'a'),'[A-Z]', 'A'),'[0-9]', 'N') = b.top_pattern  GROUP BY b.top_pattern, "{COLUMN_NAME}"  ORDER BY count DESC  ) D  ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1178'
+    test_id: '1007'
+    test_type: Column_Pattern_Mismatch
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 4)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}"::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC) A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 6)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}"::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC) B UNION ALL SELECT C.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 8)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}"::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC) C UNION ALL SELECT D.* FROM (SELECT DISTINCT TOP 5 b.top_pattern, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT trim(split_part('{DETAIL_EXPRESSION}', '|', 10)) AS top_pattern) b WHERE REGEXP_REPLACE(REGEXP_REPLACE( REGEXP_REPLACE( "{COLUMN_NAME}"::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') = b.top_pattern GROUP BY b.top_pattern, "{COLUMN_NAME}" ORDER BY count DESC) D ORDER BY top_pattern DESC, count DESC;
+    error_type: Profile Anomaly

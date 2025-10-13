@@ -1,0 +1,93 @@
+profile_anomaly_types:
+  id: '1029'
+  anomaly_type: Non_Alpha_Name_Address
+  data_object: Column
+  anomaly_name: Non-Alpha Name or Address
+  anomaly_description: |-
+    Entirely non-alphabetic values were found in a column representing an entity name or address element.
+  anomaly_criteria: |-
+    non_alpha_ct - zero_length_ct > 0 AND functional_data_type IN ('Address', 'City', 'Entity Name', 'Person Given Name', 'Person Last Name', 'Person Full Name')
+  detail_expression: |-
+    'Non-Alpha Values: ' || (non_alpha_ct - zero_length_ct)::VARCHAR || ', Semantic Type: ' || p.functional_data_type || ', Records: ' || p.record_ct::VARCHAR
+  issue_likelihood: Definite
+  suggested_action: |-
+    Non-alphabetic values are highly likely to be invalid for this kind of column. This may indicate a file format change, error in an ingestion process, or incorrect source data. Review your pipeline process and source data to determine the root-cause. If this data accurately reflects source data, and upstream corrections are not possible, consider assigning the processed value to null to reflect that data is missing.
+  dq_score_prevalence_formula: |-
+    (non_alpha_ct - zero_length_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1411'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE CAST(`{COLUMN_NAME}` AS STRING) = UPPER(CAST(`{COLUMN_NAME}` AS STRING))
+        AND CAST(`{COLUMN_NAME}` AS STRING) = LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+        AND CAST(`{COLUMN_NAME}` AS STRING) > ''
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1267'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+       WHERE `{COLUMN_NAME}` = UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` = LOWER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` > ''
+      GROUP BY `{COLUMN_NAME}` LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1265'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+      GROUP BY "{COLUMN_NAME}"
+    error_type: Profile Anomaly
+  - id: '1264'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+      GROUP BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1263'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+      GROUP BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1474'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+      GROUP BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1266'
+    test_id: '1029'
+    test_type: Non_Alpha_Name_Address
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+      GROUP BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly

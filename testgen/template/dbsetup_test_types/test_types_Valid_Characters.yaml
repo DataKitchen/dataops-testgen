@@ -1,0 +1,168 @@
+test_types:
+  id: '1043'
+  test_type: Valid_Characters
+  test_name_short: Valid Characters
+  test_name_long: Column contains no invalid characters
+  test_description: |-
+    Tests for the presence of non-printing characters, leading spaces, or surrounding quotes.
+  except_message: |-
+    Invalid characters, such as non-printing characters, leading spaces, or surrounding quotes, were found.
+  measure_uom: Invalid records
+  measure_uom_description: |-
+    Expected count of values with invalid characters
+  selection_criteria: |-
+    general_type = 'A'
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: null
+  default_parm_help: |-
+    The acceptable number of records with invalid character values present.
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Threshold Invalid Value Count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test looks for the presence of non-printing ASCII characters that are considered non-standard in basic text processing. It also identifies leading spaces and values enclosed in quotes. Values that fail this test may be artifacts of data conversion, or just more difficult to process or analyze downstream.
+  active: N
+  cat_test_conditions:
+  - id: '7036'
+    test_type: Valid_Characters
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r'[\u00A0\u200B\uFEFF\u202F\u2009\u3000\u200C]', 'X') != {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE "'%'" OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6036'
+    test_type: Valid_Characters
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3036'
+    test_type: Valid_Characters
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, NCHAR(160) || NCHAR(8203) || NCHAR(65279) || NCHAR(8239) || NCHAR(8201) || NCHAR(12288) || NCHAR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4036'
+    test_type: Valid_Characters
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1036'
+    test_type: Valid_Characters
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7036'
+    test_type: Valid_Characters
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2036'
+    test_type: Valid_Characters
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHAR(160) || CHAR(8203) || CHAR(65279) || CHAR(8239) || CHAR(8201) || CHAR(12288) || CHAR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5036'
+    test_type: Valid_Characters
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1397'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'[\u00A0\u200B\uFEFF\u202F\u2001\u3000\u2004\u200C]')
+        OR CAST(`{COLUMN_NAME}` AS STRING) LIKE ' %'
+        OR CAST(`{COLUMN_NAME}` AS STRING) LIKE '\''%'
+        OR CAST(`{COLUMN_NAME}` AS STRING) LIKE '"%'
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT 20;
+    error_type: Test Results
+  - id: '1330'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`, '.*[[:cntrl:]].*') OR `{COLUMN_NAME}`::STRING LIKE ' %' OR `{COLUMN_NAME}`::STRING LIKE '''%''' OR `{COLUMN_NAME}`::STRING LIKE '"%"' GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1235'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", NCHAR(160) || NCHAR(8203) || NCHAR(65279) || NCHAR(8239) || NCHAR(8201) || NCHAR(12288) || NCHAR(8204), 'XXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1234'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1233'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1459'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1236'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", CHAR(160) || CHAR(8203) || CHAR(65279) || CHAR(8239) || CHAR(8201) || CHAR(12288) || CHAR(8204), 'XXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' ORDER BY record_ct DESC;
+    error_type: Test Results
+  test_templates: []

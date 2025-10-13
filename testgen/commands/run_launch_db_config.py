@@ -10,6 +10,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import get_template_files
+from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
 
 LOG = logging.getLogger("testgen")
 
@@ -41,6 +42,7 @@ def _get_params_mapping() -> dict:
         "PROJECT_HOST": settings.PROJECT_DATABASE_HOST,
         "PROJECT_PW_ENCRYPTED": EncryptText(settings.PROJECT_DATABASE_PASSWORD),
         "PROJECT_HTTP_PATH": "",
+        "PROJECT_SERVICE_ACCOUNT_KEY": "",
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
         "PROFILING_TABLE_SET": settings.DEFAULT_PROFILING_TABLE_SET,
         "PROFILING_INCLUDE_MASK": settings.DEFAULT_PROFILING_INCLUDE_MASK,
@@ -84,7 +86,9 @@ def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> 
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
+        suppress_logs=True,
     )
+    import_metadata_records_from_yaml(params_mapping)
 
     ScoreDefinition.from_table_group(
         TableGroup(

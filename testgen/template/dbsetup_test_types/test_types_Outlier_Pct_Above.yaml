@@ -1,0 +1,168 @@
+test_types:
+  id: '1024'
+  test_type: Outlier_Pct_Above
+  test_name_short: Outliers Above
+  test_name_long: Consistent outlier counts over 2 SD above mean
+  test_description: |-
+    Tests that percent of outliers over 2 SD above Mean doesn't exceed threshold
+  except_message: |-
+    Percent of outliers exceeding 2 SD above the mean is greater than expected threshold.
+  measure_uom: Pct records over limit
+  measure_uom_description: null
+  selection_criteria: |-
+    functional_data_type = 'Measurement' AND distinct_value_ct > 30 AND NOT distinct_value_ct = max_value - min_value + 1 AND distinct_value_ct::FLOAT/value_ct::FLOAT > 0.1 AND stdev_value::FLOAT/avg_value::FLOAT > 0.01 AND column_name NOT ILIKE '%latitude%' AND column_name NOT ilike '%longitude%'
+  dq_score_prevalence_formula: |-
+    GREATEST(0, {RESULT_MEASURE}::FLOAT-{THRESHOLD_VALUE}::FLOAT)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_avg,baseline_sd,threshold_value
+  default_parm_values: |-
+    avg_value,stdev_value,0.05
+  default_parm_prompts: |-
+    Baseline Mean, Baseline Std Deviation, Pct Records over 2 SD
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Accuracy
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected maximum pct records over upper 2 SD limit
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: "This test counts the number of data points that may be considered\
+    \ as outliers, determined by whether their value exceeds 2 standard deviations\
+    \ above the mean at baseline.  Assuming a normal distribution, a small percentage\
+    \ (defaulted to 5%) of outliers is expected. The actual number may vary for different\
+    \ distributions. The expected threshold reflects the maximum percentage of outliers\
+    \ you expect to see.  This test uses the baseline mean rather than the mean for\
+    \ the latest dataset to capture systemic shift as well as individual outliers. "
+  active: Y
+  cat_test_conditions:
+  - id: '7019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT64) > {BASELINE_AVG} + 2*{BASELINE_SD} THEN 1 ELSE 0 END) / NULLIF(COUNT({COLUMN_NAME}),0)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: mssql
+    measure: |-
+      CAST(SUM(CASE WHEN CAST({COLUMN_NAME} AS FLOAT) > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END) AS FLOAT) / CAST(COUNT({COLUMN_NAME}) AS FLOAT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5019'
+    test_type: Outlier_Pct_Above
+    sql_flavor: trino
+    measure: |-
+      CAST(SUM(CASE WHEN CAST({COLUMN_NAME} AS REAL) > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END) AS REAL) / CAST(COUNT({COLUMN_NAME}) AS REAL)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1382'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2 * {BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE CAST(`{COLUMN_NAME}` AS FLOAT64) > ({BASELINE_AVG} + (2 * {BASELINE_SD}))
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC;
+    error_type: Test Results
+  - id: '1316'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC;
+    error_type: Test Results
+  - id: '1158'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS FLOAT) > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '1101'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '1019'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '1419'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '1215'
+    test_id: '1024'
+    test_type: Outlier_Pct_Above
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} + (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT > ({BASELINE_AVG} + (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  test_templates: []

@@ -1,0 +1,81 @@
+profile_anomaly_types:
+  id: '1016'
+  anomaly_type: Potential_Duplicates
+  data_object: Column
+  anomaly_name: Potential Duplicate Values Found
+  anomaly_description: "This column is largely unique, but some duplicate values are\
+    \ present. This pattern is uncommon and could indicate inadvertant duplication. "
+  anomaly_criteria: |-
+    p.distinct_value_ct > 1000
+       AND fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT BETWEEN 2 AND 4
+  detail_expression: |-
+    'Top Freq: ' || p.top_freq_values
+  issue_likelihood: Possible
+  suggested_action: "Review your source data and follow-up with data owners to determine\
+    \ whether this data needs to be corrected. "
+  dq_score_prevalence_formula: |-
+    (p.value_ct - p.distinct_value_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Uniqueness
+  target_data_lookups:
+  - id: '1354'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1288'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1130'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1073'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1048'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1448'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1187'
+    test_id: '1016'
+    test_type: Potential_Duplicates
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*)> 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly

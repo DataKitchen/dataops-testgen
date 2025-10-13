@@ -1,0 +1,164 @@
+test_types:
+  id: '1013'
+  test_type: Distinct_Value_Ct
+  test_name_short: Value Count
+  test_name_long: Count of distinct values has not dropped
+  test_description: |-
+    Tests that the count of unique values in the column has not changed from baseline.
+  except_message: |-
+    Count of unique values in column has changed from baseline.
+  measure_uom: Unique Values
+  measure_uom_description: null
+  selection_criteria: |-
+    distinct_value_ct between 2 and 10 AND value_ct > 50 AND functional_data_type IN ('Code', 'Category', 'Attribute', 'Description') AND NOT coalesce(top_freq_values,'') > ''
+  dq_score_prevalence_formula: |-
+    ABS({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DISTINCT_VALUE_CT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value_ct,threshold_value
+  default_parm_values: |-
+    distinct_value_ct,distinct_value_ct
+  default_parm_prompts: |-
+    Distinct Value Count at Baseline,Min Expected Value Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected distinct value count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Value Count tests that the  count of unique values present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained, or for any dataset where you would expect a set number of distinct values should be present. A failure here would indicate missing records or a change in categories or value assignment.
+  active: Y
+  cat_test_conditions:
+  - id: '7008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '!='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: databricks
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: mssql
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: trino
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1371'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE `{COLUMN_NAME}` IS NOT NULL
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1305'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1147'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '1090'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1008'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1408'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1204'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Test Results
+  test_templates: []

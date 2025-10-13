@@ -1,0 +1,166 @@
+test_types:
+  id: '1004'
+  test_type: Alpha_Trunc
+  test_name_short: Alpha Truncation
+  test_name_long: Maximum character count consistent
+  test_description: |-
+    Tests that the maximum count of characters in a column value has not dropped vs. baseline data
+  except_message: |-
+    Maximum length of values has dropped from prior expected length.
+  measure_uom: Values over max
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type ='A' AND max_length > 0 AND ( (min_length = avg_length AND max_length = avg_length) OR (numeric_ct <> value_ct ) ) AND functional_table_type NOT LIKE  '%window%' /*  The conditions below are to eliminate overlap with : LOV_Match (excluded selection criteria for this test_type),  Pattern_Match (excluded selection criteria for this test_type), Constant (excluded functional_data_type Constant and Boolean) */ AND ( (distinct_value_ct NOT BETWEEN 2 AND 10  AND functional_data_type NOT IN ( 'Constant', 'Boolean') ) AND NOT ( fn_charcount(top_patterns, E' \| ' ) = 1   AND fn_charcount(top_patterns, E' \| ' ) IS NOT NULL AND REPLACE(SPLIT_PART(top_patterns, '|' , 2), 'N' , '' ) > ''))
+  dq_score_prevalence_formula: |-
+    {VALUE_CT}::FLOAT * (FN_NORMAL_CDF(({MAX_LENGTH}::FLOAT - {AVG_LENGTH}::FLOAT) / (NULLIF({MAX_LENGTH}::FLOAT, 0) / 3)) - FN_NORMAL_CDF(({RESULT_MEASURE}::FLOAT - {AVG_LENGTH}::FLOAT) / (NULLIF({MAX_LENGTH}::FLOAT, 0) / 3)) ) /NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    FLOOR(0.95 * max_length::FLOAT)
+  default_parm_prompts: |-
+    Maximum String Length at Baseline
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Maximum length expected
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Alpha Truncation tests that the longest text value in a column hasn't become shorter than the defined threshold, initially 95% of the longest value at baseline. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
+  active: Y
+  cat_test_conditions:
+  - id: '7001'
+    test_type: Alpha_Trunc
+    sql_flavor: bigquery
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6001'
+    test_type: Alpha_Trunc
+    sql_flavor: databricks
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3001'
+    test_type: Alpha_Trunc
+    sql_flavor: mssql
+    measure: |-
+      MAX(LEN({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4001'
+    test_type: Alpha_Trunc
+    sql_flavor: postgresql
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1001'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7001'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift_spectrum
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2001'
+    test_type: Alpha_Trunc
+    sql_flavor: snowflake
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5001'
+    test_type: Alpha_Trunc
+    sql_flavor: trino
+    measure: |-
+      MAX(LENGTH({COLUMN_NAME}))
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1364'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS current_max_length, {THRESHOLD_VALUE} AS previous_max_length
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (
+        SELECT MAX(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS max_length
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      ) a
+      WHERE LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) = a.max_length
+        AND a.max_length < {THRESHOLD_VALUE}
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1298'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}` , LEN(`{COLUMN_NAME}`) as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`, (SELECT MAX(LEN(`{COLUMN_NAME}`)) as max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) a WHERE LEN(`{COLUMN_NAME}`) = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1140'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} ;
+    error_type: Test Results
+  - id: '1083'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", LENGTH("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}",  (SELECT MAX(LENGTH("{COLUMN_NAME}")) as max_length  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a  WHERE LENGTH("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1001'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1401'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1197'
+    test_id: '1004'
+    test_type: Alpha_Trunc
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}" , LEN("{COLUMN_NAME}") as current_max_length, {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} LIMIT 500;
+    error_type: Test Results
+  test_templates: []

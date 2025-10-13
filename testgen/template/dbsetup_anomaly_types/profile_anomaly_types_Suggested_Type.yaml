@@ -1,0 +1,80 @@
+profile_anomaly_types:
+  id: '1001'
+  anomaly_type: Suggested_Type
+  data_object: Column
+  anomaly_name: Suggested Data Type
+  anomaly_description: "Data stored as text all meets criteria for a more suitable\
+    \ type. "
+  anomaly_criteria: |-
+    (functional_data_type NOT IN ('Boolean', 'Flag') ) AND (column_type ILIKE '%ch
+    ar%' OR column_type ILIKE 'text') AND NOT (datatype_suggestion ILIKE '%char%' OR datatype_suggestion ILIKE 'text')
+  detail_expression: |-
+    p.datatype_suggestion::VARCHAR(200)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Consider changing the column data type to tighte
+    n controls over data ingested and to make values more efficient, consistent and suitable for downstream analysis.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: null
+  target_data_lookups:
+  - id: '1339'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT 20;
+    error_type: Profile Anomaly
+  - id: '1273'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
+    error_type: Profile Anomaly
+  - id: '1115'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Profile Anomaly
+  - id: '1058'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT 20;
+    error_type: Profile Anomaly
+  - id: '1033'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Profile Anomaly
+  - id: '1433'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Profile Anomaly
+  - id: '1172'
+    test_id: '1001'
+    test_type: Suggested_Type
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Profile Anomaly

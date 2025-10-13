@@ -1,0 +1,80 @@
+profile_anomaly_types:
+  id: '1006'
+  anomaly_type: No_Values
+  data_object: Column
+  anomaly_name: No Column Values Present
+  anomaly_description: "This column is present in the table, but no values have been\
+    \ ingested or assigned in any records. This could indicate missing data or a processing\
+    \ error. Note that this considers dummy values and zero-length values as missing\
+    \ data. "
+  anomaly_criteria: |-
+    (p.null_value_ct + p.filled_value_ct + p.zero_length_ct) = p.record_ct
+  detail_expression: |-
+    'Null: ' || p.null_value_ct::VARCHAR(10) || ', Dummy: ' || p.filled_value_ct::VARCHAR(10) || ', Zero Len: ' || p.zero_length_ct::VARCHAR(10)
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data, ingestion process, and any processing steps that update this column.
+  dq_score_prevalence_formula: |-
+    1.0
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Completeness
+  target_data_lookups:
+  - id: '1344'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1278'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1120'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1063'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1038'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1438'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1177'
+    test_id: '1006'
+    test_type: No_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly

@@ -40,6 +40,7 @@ class TableGroupSummary(EntityMinimal):
     latest_profile_start: datetime
     latest_profile_table_ct: int
     latest_profile_column_ct: int
+    latest_profile_data_point_ct: int
     latest_anomalies_ct: int
     latest_anomalies_definite_ct: int
     latest_anomalies_likely_ct: int
@@ -123,6 +124,7 @@ class TableGroup(Entity):
                 latest_run.profiling_starttime,
                 latest_run.table_ct,
                 latest_run.column_ct,
+                latest_run.dq_total_data_points,
                 latest_run.anomaly_ct,
                 SUM(
                     CASE
@@ -141,14 +143,13 @@ class TableGroup(Entity):
                 SUM(
                     CASE
                         WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') = 'Confirmed'
-                        AND anomaly_types.issue_likelihood = 'Possible' THEN 1
+                        AND anomaly_types.issue_likelihood IN ('Possible', 'Potential PII') THEN 1
                         ELSE 0
                     END
                 ) AS possible_ct,
                 SUM(
                     CASE
-                        WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
-                        AND anomaly_types.issue_likelihood <> 'Potential PII' THEN 1
+                        WHEN COALESCE(latest_anomalies.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
                         ELSE 0
                     END
                 ) AS dismissed_ct
@@ -172,6 +173,7 @@ class TableGroup(Entity):
             latest_profile.profiling_starttime AS latest_profile_start,
             latest_profile.table_ct AS latest_profile_table_ct,
             latest_profile.column_ct AS latest_profile_column_ct,
+            latest_profile.dq_total_data_points AS latest_profile_data_point_ct,
             latest_profile.anomaly_ct AS latest_anomalies_ct,
             latest_profile.definite_ct AS latest_anomalies_definite_ct,
             latest_profile.likely_ct AS latest_anomalies_likely_ct,

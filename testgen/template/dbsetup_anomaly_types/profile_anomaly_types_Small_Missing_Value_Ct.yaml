@@ -1,0 +1,75 @@
+profile_anomaly_types:
+  id: '1013'
+  anomaly_type: Small Missing Value Ct
+  data_object: Column
+  anomaly_name: Small Percentage of Missing Values Found
+  anomaly_description: |-
+    Under 3% of values in this column were found to be null, zero-length or dummy values, but values are not universally present. This could indicate unexpected missing values in a required column.
+  anomaly_criteria: |-
+    (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+      )::FLOAT / p.record_ct::FLOAT > 0.97
+       AND (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+             ) < p.record_ct
+  detail_expression: |-
+    (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+       ))::VARCHAR(20) ||
+              ' of ' || p.record_ct::VARCHAR(20) || ' blank values:  ' ||
+              ROUND(100.0 * (p.record_ct - (p.value_ct - p.zero_length_ct - CASE WHEN (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))) THEN p.filled_value_ct ELSE 0 END
+                ))::NUMERIC(18, 5)
+                       / NULLIF(p.value_ct, 0)::NUMERIC(18, 5), 2)::VARCHAR(40) || '%'
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether this data needs to be corrected, supplemented or excluded.
+  dq_score_prevalence_formula: |-
+    (p.null_value_ct + filled_value_ct + zero_length_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Completeness
+  target_data_lookups:
+  - id: '1285'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN `{COLUMN_NAME}` IN ('.', '?', ' ') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP '-{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '0{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '9{2,}'     OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'x{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'z{2,}' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN `{COLUMN_NAME}` = '' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1127'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LEN("{COLUMN_NAME}") > 1 AND ( LOWER("{COLUMN_NAME}") LIKE '%..%' OR  LOWER("{COLUMN_NAME}") LIKE '%--%' OR (LEN(REPLACE("{COLUMN_NAME}", '0', ''))= 0 ) OR (LEN(REPLACE("{COLUMN_NAME}", '9', ''))= 0 ) OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'x', ''))= 0 ) OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'z', ''))= 0 ) )  THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')  THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1070'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"  WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1  WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')  THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1  WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1045'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1445'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1184'
+    test_id: '1013'
+    test_type: Small Missing Value Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '9{2,}'     OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'x{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'z{2,}' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly

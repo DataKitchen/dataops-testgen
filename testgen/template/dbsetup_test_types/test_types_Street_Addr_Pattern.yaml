@@ -1,0 +1,165 @@
+test_types:
+  id: '1033'
+  test_type: Street_Addr_Pattern
+  test_name_short: Street Address
+  test_name_long: Enough street address entries match defined pattern
+  test_description: |-
+    Tests for percent of records matching standard street address pattern.
+  except_message: |-
+    Percent of values matching standard street address format is under expected threshold.
+  measure_uom: Percent matches
+  measure_uom_description: |-
+    Percent of records that match street address pattern
+  selection_criteria: |-
+    (std_pattern_match='STREET_ADDR') AND (avg_length <> round(avg_length)) AND (avg_embedded_spaces BETWEEN 2 AND 6) AND (avg_length < 35)
+  dq_score_prevalence_formula: |-
+    ({VALUE_CT}::FLOAT * ({RESULT_MEASURE}::FLOAT - {THRESHOLD_VALUE}::FLOAT)/100.0)/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    75
+  default_parm_prompts: |-
+    Threshold Pct that Match Address Pattern
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected percent of records that match standard street address pattern
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    The street address pattern used in this test should match the vast majority of USA addresses.  You can adjust the threshold percent of matches based on the results you are getting -- you may well want to tighten it to make the test more sensitive to invalid entries.
+  active: Y
+  cat_test_conditions:
+  - id: '7026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: bigquery
+    measure: |-
+      100.0 * SUM(CAST(REGEXP_CONTAINS(CAST({COLUMN_NAME} AS STRING), r'^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$') AS INT64)) / NULLIF(COUNT({COLUMN_NAME}),0)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: databricks
+    measure: |-
+      100.0*SUM((regexp_like({COLUMN_NAME}::STRING, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$'))::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: mssql
+    measure: |-
+      CAST(100.0*SUM(CASE WHEN UPPER({COLUMN_NAME}) LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', {COLUMN_NAME}) BETWEEN 2 AND 6 THEN 1 ELSE 0 END) as FLOAT) /CAST(COUNT({COLUMN_NAME}) AS FLOAT)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: postgresql
+    measure: |-
+      100.0*SUM(CASE WHEN {COLUMN_NAME} ~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift
+    measure: |-
+      100.0*SUM(({COLUMN_NAME} ~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$')::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift_spectrum
+    measure: |-
+      100.0*SUM(({COLUMN_NAME} ~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$')::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: snowflake
+    measure: |-
+      100.0*SUM((regexp_like({COLUMN_NAME}::VARCHAR, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$'))::BIGINT)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5026'
+    test_type: Street_Addr_Pattern
+    sql_flavor: trino
+    measure: |-
+      CAST(100.0*SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME} , '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$') = TRUE THEN 1 ELSE 0 END) AS REAL )/ CAST(COUNT({COLUMN_NAME}) AS REAL)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1389'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^[0-9]{1,5}[A-Za-z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[A-Za-z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1323'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1165'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE UPPER("{COLUMN_NAME}") NOT LIKE '[1-9]% [A-Z]% %' AND CHARINDEX(' ', "{COLUMN_NAME}") NOT BETWEEN 2 AND 6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Test Results
+  - id: '1108'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1026'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1426'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1222'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^[0-9]{1,5}[a-zA-Z]?\\s\\w{1,5}\\.?\\s?\\w*\\s?\\w*\\s[a-zA-Z]{1,6}\\.?\\s?[0-9]{0,5}[A-Z]{0,1}$') != 1 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  test_templates: []

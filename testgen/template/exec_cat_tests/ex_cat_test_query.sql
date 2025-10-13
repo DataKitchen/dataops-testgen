@@ -4,4 +4,4 @@ SELECT '{TEST_RUN_ID}' as test_run_id,
        '{CAT_SEQUENCE}' as cat_sequence,
        {TEST_MEASURES} as measure_results,
        {TEST_CONDITIONS} as test_results
-  FROM {SCHEMA_NAME}.{TABLE_NAME}
+  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}

@@ -36,7 +36,7 @@
  * @property {string} project_code
  * * Characteristics
  * @property {'A' | 'B' | 'D' | 'N' | 'T' | 'X'} general_type
- * @property {string} column_type
+ * @property {string} db_data_type
  * @property {string} functional_data_type
  * @property {string} datatype_suggestion
  * @property {number?} add_date

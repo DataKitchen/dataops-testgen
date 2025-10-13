@@ -24,10 +24,10 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
     let attributes = [];
     if (item.type === 'column') {
         attributes.push(
-            { key: 'column_type', label: 'Data Type' },
+            { key: 'db_data_type', label: 'Data Type' },
             { key: 'functional_data_type', label: `Semantic Data Type ${item.is_latest_profile ? '*' : ''}` },
         );
-        if (item.datatype_suggestion && item.datatype_suggestion.toLowerCase() !== item.column_type.toLowerCase()) {
+        if (item.datatype_suggestion && item.datatype_suggestion.toLowerCase() !== item.db_data_type.toLowerCase()) {
             attributes.push(
                 { key: 'datatype_suggestion', label: `Suggested Data Type ${item.is_latest_profile ? '*' : ''}` },
             );
@@ -58,7 +58,7 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
                     { class: 'flex-row fx-flex-wrap fx-gap-4' },
                     attributes.map(({ key, label }) => {
                         let value = item[key];
-                        if (key === 'column_type') {
+                        if (key === 'db_data_type') {
                             const { icon, iconSize } = getColumnIcon(item);
                             value = div(
                                 { class: 'flex-row' },

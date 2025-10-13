@@ -1,0 +1,164 @@
+test_types:
+  id: '1045'
+  test_type: Valid_US_Zip3
+  test_name_short: 'Valid US Zip-3  '
+  test_name_long: Valid USA Zip-3 Prefix
+  test_description: |-
+    Tests that postal codes match the 3 digit format of a regional prefix.
+  except_message: |-
+    Invalid 3-digit US Zip Code regional prefix formats found.
+  measure_uom: Invalid Zip-3 Prefix
+  measure_uom_description: |-
+    Expected count of values with invalid Zip-3 Prefix Codes
+  selection_criteria: |-
+    functional_data_type = 'Zip3'
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: null
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Threshold Invalid Zip3 Count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test looks for the presence of values that fail to match the three-digit numeric code expected for US Zip Code regional prefixes. These prefixes are often used to roll up Zip Code data to a regional level, and may be critical to anonymize detailed data and protect PID. Depending on your needs and regulatory requirements, longer zip codes could place PID at risk.
+  active: Y
+  cat_test_conditions:
+  - id: '7035'
+    test_type: Valid_US_Zip3
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r'[0-9]', '9') != '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6035'
+    test_type: Valid_US_Zip3
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3035'
+    test_type: Valid_US_Zip3
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4035'
+    test_type: Valid_US_Zip3
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1035'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7035'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2035'
+    test_type: Valid_US_Zip3
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5035'
+    test_type: Valid_US_Zip3
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1399'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') != '999'
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT 20;
+    error_type: Test Results
+  - id: '1332'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') <> '999' GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1243'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1242'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1241'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1461'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1244'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  test_templates: []

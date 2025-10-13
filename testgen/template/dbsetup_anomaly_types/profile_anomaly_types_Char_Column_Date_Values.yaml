@@ -1,0 +1,97 @@
+profile_anomaly_types:
+  id: '1012'
+  anomaly_type: Char_Column_Date_Values
+  data_object: Column
+  anomaly_name: Character Column with Mostly Date Values
+  anomaly_description: "This column is defined as alpha, but more than 95% of its\
+    \ values are dates. Dates in alpha columns might not sort correctly, and might\
+    \ contradict user expectations downstream. It's also possible that more than one\
+    \ type of information is stored in the column, making it harder to retrieve. \
+    \   "
+  anomaly_criteria: |-
+    p.general_type = 'A'
+       AND p.value_ct > p.date_ct
+       AND p.date_ct::NUMERIC > (0.95 * p.value_ct::NUMERIC)
+  detail_expression: |-
+    ' Date Ct: ' || p.date_ct || ' of ' || p.value_ct || ' (Date Percent: ' || ROUND(100.0 * p.date_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || ' )'::VARCHAR(200)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data and ingestion process. Consider whether it might be better to store the date values as a date or datetime column. If the alpha data is also significant, you could store it in a different column.
+  dq_score_prevalence_formula: |-
+    p.date_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1350'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NOT NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      UNION ALL
+      (
+        SELECT 'Non-Date' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS DATE) IS NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1284'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_DATE;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT  'Non-Date' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_DATE;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC LIMIT 10;
+    error_type: Profile Anomaly
+  - id: '1126'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT  DISTINCT TOP 10 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP 10  'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1069'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10)  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1044'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC ) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1444'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC ) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1183'
+    test_id: '1012'
+    test_type: Char_Column_Date_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT TOP 10 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly

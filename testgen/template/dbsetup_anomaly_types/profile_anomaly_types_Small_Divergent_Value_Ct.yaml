@@ -1,0 +1,72 @@
+profile_anomaly_types:
+  id: '1014'
+  anomaly_type: Small Divergent Value Ct
+  data_object: Column
+  anomaly_name: Small Percentage of Divergent Values Found
+  anomaly_description: |-
+    Under 3% of values in this column were found to be different from the most common value. This could indicate a data error.
+  anomaly_criteria: |-
+    functional_data_type <> 'Boolean' AND (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+            p.value_ct::FLOAT) > 97::FLOAT
+       AND (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+            NULLIF(p.value_ct, 0)::FLOAT) < 100::FLOAT
+  detail_expression: |-
+    'Single Value Pct: ' || ROUND(100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT
+                                       / NULLIF(p.value_ct, 0)::FLOAT)::VARCHAR(40)
+              || ', Value | Freq: ' || top_freq_values
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether this data needs to be corrected.
+  dq_score_prevalence_formula: |-
+    (p.record_ct - fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1286'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY count DESC;
+    error_type: Profile Anomaly
+  - id: '1128'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1071'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1046'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1446'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1185'
+    test_id: '1014'
+    test_type: Small Divergent Value Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly

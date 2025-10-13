@@ -1,0 +1,165 @@
+test_types:
+  id: '1032'
+  test_type: Row_Ct_Pct
+  test_name_short: Row Range
+  test_name_long: Number of rows within percent range of threshold
+  test_description: |-
+    Tests that the count of records is within a percentage above or below the baseline count.
+  except_message: |-
+    Row Count is outside of threshold percent of baseline count.
+  measure_uom: Percent of baseline
+  measure_uom_description: |-
+    Row count percent above or below baseline
+  selection_criteria: |-
+    TEMPLATE
+  dq_score_prevalence_formula: |-
+    (100.0 - {RESULT_MEASURE}::FLOAT)/100.0
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct,threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Baseline Record Count,Threshold Pct Above or Below Baseline
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: table
+  dq_dimension: Completeness
+  health_dimension: Volume
+  threshold_description: |-
+    Expected percent window below or above baseline
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is better than Row Count for an incremental or windowed dataset where you would expect the row count to range within a percentage of baseline.
+  active: Y
+  cat_test_conditions:
+  - id: '7025'
+    test_type: Row_Ct_Pct
+    sql_flavor: bigquery
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6025'
+    test_type: Row_Ct_Pct
+    sql_flavor: databricks
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3025'
+    test_type: Row_Ct_Pct
+    sql_flavor: mssql
+    measure: |-
+      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT} ) AS FLOAT)/ CAST({BASELINE_CT} AS FLOAT), 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4025'
+    test_type: Row_Ct_Pct
+    sql_flavor: postgresql
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::DECIMAL(18,4) / {BASELINE_CT}::DECIMAL(18,4), 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1025'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7025'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2025'
+    test_type: Row_Ct_Pct
+    sql_flavor: snowflake
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT})::FLOAT / {BASELINE_CT}::FLOAT, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5025'
+    test_type: Row_Ct_Pct
+    sql_flavor: trino
+    measure: |-
+      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT}) AS DECIMAL(18,4)) /CAST( {BASELINE_CT} AS DECIMAL(18,4) ), 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1388'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH cte AS (
+        SELECT COUNT(*) AS current_count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      )
+      SELECT current_count, {BASELINE_CT} AS baseline_count,
+             ABS(ROUND(100 * (current_count - {BASELINE_CT}) / CAST({BASELINE_CT} AS FLOAT64), 2)) AS row_count_pct_difference
+      FROM cte;
+    error_type: Test Results
+  - id: '1322'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1164'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(CAST(100 * (current_count - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC) ,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1107'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: NUMERIC / {BASELINE_CT} :: NUMERIC,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1025'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1425'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '1221'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  test_templates: []

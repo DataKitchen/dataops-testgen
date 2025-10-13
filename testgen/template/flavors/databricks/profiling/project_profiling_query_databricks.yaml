@@ -1,7 +1,7 @@
 ---
 strTemplate01_sampling:  "SELECT "
 strTemplate01_else:  "SELECT "
-strTemplate02_all: |
+strTemplate01_5: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
   '{TABLE_GROUPS_ID}' as table_groups_id,
@@ -11,8 +11,14 @@ strTemplate02_all: |
   {COL_POS} AS position,
   '{COL_NAME_SANITIZED}' AS column_name,
   '{COL_TYPE}' AS column_type,
+  '{DB_DATA_TYPE}' AS db_data_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
+strTemplate02_X: |
+  COUNT(`{COL_NAME}`) AS value_ct,
+  COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
+  SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
+strTemplate02_else: |
   COUNT(`{COL_NAME}`) AS value_ct,
   COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
   SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
@@ -151,7 +157,7 @@ strTemplate07_A_freq:  (  SELECT LEFT(CONCAT_WS(' | ', collect_list(val)), 1000)
   FROM (
           SELECT CAST(COUNT(*) as VARCHAR(10)) || ' | ' || `{COL_NAME}` as val,
           COUNT(*) as ct
-          FROM {DATA_SCHEMA}.{DATA_TABLE}
+          FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
           WHERE `{COL_NAME}` > ' '
           GROUP BY `{COL_NAME}`
           HAVING `{COL_NAME}` > ' '
@@ -244,7 +250,7 @@ strTemplate14_A_do_patterns:  ( SELECT COUNT(DISTINCT TRANSLATE(`{COL_NAME}`,
                                 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN'
                               )
              ) AS pattern_ct
-  FROM {DATA_SCHEMA}.{DATA_TABLE}
+  FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
  WHERE `{COL_NAME}` > ' ' )  AS distinct_pattern_ct,
   SUM(CAST(SIGN(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ',''))) AS BIGINT)) AS embedded_space_ct,
   AVG(CAST(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ','')) AS FLOAT))  AS avg_embedded_spaces,
@@ -262,23 +268,23 @@ strTemplate15_ALL:  NULL as functional_data_type,
 
 strTemplate16_ALL: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-strTemplate98_sampling: ' FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)'
+strTemplate98_sampling: ' FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)'
 
-strTemplate98_else: ' FROM {DATA_SCHEMA}.{DATA_TABLE}'
+strTemplate98_else: ' FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`'
 
 strTemplate99_N: |
      , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
-        FROM {DATA_SCHEMA}.{DATA_TABLE} LIMIT 1) pctile
+        FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` LIMIT 1) pctile
 
 strTemplate99_N_sampling: |
      , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
-        FROM {DATA_SCHEMA}.{DATA_TABLE} TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) LIMIT 1 ) pctile
+        FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) LIMIT 1 ) pctile
 
 strTemplate99_else: ' '
 

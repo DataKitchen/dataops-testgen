@@ -1,0 +1,79 @@
+profile_anomaly_types:
+  id: '1009'
+  anomaly_type: Leading_Spaces
+  data_object: Column
+  anomaly_name: Leading Spaces Found in Column Values
+  anomaly_description: |-
+    Spaces were found before data at the front of column string values. This likely contradicts user expectations and could be a sign of broader ingestion or processing errors.
+  anomaly_criteria: |-
+    p.lead_space_ct > 0
+  detail_expression: |-
+    'Cases Found: ' || p.lead_space_ct::VARCHAR(10)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data, ingestion process, and any processing steps that update this column.
+  dq_score_prevalence_formula: |-
+    p.lead_space_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1347'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^\s')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1281'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN `{COLUMN_NAME}` BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1123'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1066'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1041'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1441'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1180'
+    test_id: '1009'
+    test_type: Leading_Spaces
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly

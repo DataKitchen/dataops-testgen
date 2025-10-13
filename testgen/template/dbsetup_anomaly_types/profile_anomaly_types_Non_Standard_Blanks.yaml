@@ -1,0 +1,91 @@
+profile_anomaly_types:
+  id: '1002'
+  anomaly_type: Non_Standard_Blanks
+  data_object: Column
+  anomaly_name: Non-Standard Blank Values
+  anomaly_description: |-
+    Values representing missing data may be unexpected or inconsistent. Non-standard values may include empty strings as opposed to nulls, dummy entries such as "MISSING" or repeated characters that may have been used to bypass entry requirements, processing artifacts such as "NULL", or spreadsheet artifacts such as "NA", "ERROR".
+  anomaly_criteria: |-
+    (p.zero_length_ct > 0 OR (p.filled_value_ct > 0 AND (p.numeric_ct <> p.value_ct OR functional_data_type IN ('Phone', 'Zip'))))
+  detail_expression: |-
+    'Dummy Values: ' || p.filled_value_ct::VARCHAR || ', Empty String: ' || p.zero_length_ct::VARCHAR || ', Null: ' || p.null_value_ct::VARCHAR || ', Records: ' || p.record_ct::VARCHAR
+  issue_likelihood: Definite
+  suggested_action: |-
+    Consider cleansing the column upon ingestion to replace all variants of missing data with a standard designation, like Null.
+  dq_score_prevalence_formula: |-
+    p.filled_value_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Completeness
+  target_data_lookups:
+  - id: '1340'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE (
+        `{COLUMN_NAME}` IN ('.','?',' ')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'-{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'0{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'9{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'x{2,}')
+        OR REGEXP_CONTAINS(LOWER(CAST(`{COLUMN_NAME}` AS STRING)), r'z{2,}')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('blank','error','missing','tbd','n/a','#na','none','null','unknown')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('(blank)','(error)','(missing)','(tbd)','(n/a)','(#na)','(none)','(null)','(unknown)')
+        OR LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN ('[blank]','[error]','[missing]','[tbd]','[n/a]','[#na]','[none]','[null]','[unknown]')
+        OR `{COLUMN_NAME}` = ''
+        OR `{COLUMN_NAME}` IS NULL
+      )
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1274'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE CASE WHEN `{COLUMN_NAME}` IN ('.', '?', ' ') THEN 1 WHEN LOWER(`{COLUMN_NAME}`::STRING) REGEXP '-{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '0{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP '9{2,}'         OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'x{2,}' OR LOWER(`{COLUMN_NAME}`::STRING) REGEXP 'z{2,}' THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER(`{COLUMN_NAME}`) IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN `{COLUMN_NAME}` = '' THEN 1 WHEN `{COLUMN_NAME}` IS NULL THEN 1 ELSE 0 END = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1116'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?') OR "{COLUMN_NAME}" LIKE ' ' THEN 1 WHEN LEN("{COLUMN_NAME}") > 1 AND ( LOWER("{COLUMN_NAME}") LIKE '%..%' OR  LOWER("{COLUMN_NAME}") LIKE '%--%'  OR (LEN(REPLACE("{COLUMN_NAME}", '0', ''))= 0 )  OR (LEN(REPLACE("{COLUMN_NAME}", '9', ''))= 0 )  OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'x', ''))= 0 )  OR (LEN(REPLACE(LOWER("{COLUMN_NAME}"), 'z', ''))= 0 )   )  THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1059'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')  THEN 1  WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1034'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1  GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1434'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}") SIMILAR TO '(^.{2,}|-{2,}|0{2,}|9{2,}|x{2,}|z{2,}$)' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1  GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1173'
+    test_id: '1002'
+    test_type: Non_Standard_Blanks
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CASE WHEN "{COLUMN_NAME}" IN ('.', '?', ' ') THEN 1 WHEN LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '-{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '0{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP '9{2,}'         OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'x{2,}' OR LOWER("{COLUMN_NAME}"::VARCHAR) REGEXP 'z{2,}' THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('blank','error','missing','tbd', 'n/a','#na','none','null','unknown')           THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('(blank)','(error)','(missing)','(tbd)', '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1 WHEN LOWER("{COLUMN_NAME}") IN ('[blank]','[error]','[missing]','[tbd]', '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1 WHEN "{COLUMN_NAME}" = '' THEN 1 WHEN "{COLUMN_NAME}" IS NULL THEN 1 ELSE 0 END = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly

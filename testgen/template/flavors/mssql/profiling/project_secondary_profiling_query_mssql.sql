@@ -4,7 +4,10 @@ AS
     (SELECT "{COL_NAME}",
             COUNT(*) AS  ct,
             ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS rn
-     FROM {DATA_SCHEMA}.{DATA_TABLE}
+     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+-- TG-IF do_sample_bool
+        TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
+-- TG-ENDIF
      WHERE "{COL_NAME}" > ' '
      GROUP BY "{COL_NAME}"
     ),
@@ -29,7 +32,7 @@ SELECT '{PROJECT_CODE}' as project_code,
        (SELECT CONVERT(VARCHAR(40), HASHBYTES('MD5', STRING_AGG( NULLIF(dist_col_name,''),
                        '|') WITHIN GROUP (ORDER BY dist_col_name)), 2)  as dvh
         FROM (SELECT DISTINCT "{COL_NAME}" as dist_col_name
-              FROM {DATA_SCHEMA}.{DATA_TABLE}) a
+              FROM "{DATA_SCHEMA}"."{DATA_TABLE}") a
        ) as distinct_value_hash
 FROM consol_vals;
 

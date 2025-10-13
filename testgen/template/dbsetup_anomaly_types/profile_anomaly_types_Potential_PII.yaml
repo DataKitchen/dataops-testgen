@@ -1,0 +1,79 @@
+profile_anomaly_types:
+  id: '1100'
+  anomaly_type: Potential_PII
+  data_object: Column
+  anomaly_name: Personally Identifiable Information
+  anomaly_description: |-
+    This column contains data that could be Personally Identifiable Information (PII)
+  anomaly_criteria: |-
+    p.pii_flag > ''
+  detail_expression: |-
+    'Risk: ' || CASE LEFT(p.pii_flag, 1) WHEN 'A' THEN 'HIGH' WHEN 'B' THEN 'MODERATE' WHEN 'C' THEN 'LOW' END || ', PII Type: ' || SUBSTRING(p.pii_flag, 3)
+  issue_likelihood: Potential PII
+  suggested_action: |-
+    PII may require steps to ensure data security and compliance with relevant privacy regulations and legal requirements. You may have to classify and inventory PII, implement appropriate access controls, encrypt data, and monitor for unauthorized access. Your organization might be required to update privacy policies and train staff on data protection practices. Note that PII that is lower-risk in isolation might be high-risk in conjunction with other data.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: CASE LEFT(p.pii_flag, 1) WHEN 'A' THEN 1 WHEN 'B' THEN 0.66
+    WHEN 'C' THEN 0.33 END
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1408'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1338'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1271'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Profile Anomaly
+  - id: '1272'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1269'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1470'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1270'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly

@@ -1,0 +1,74 @@
+profile_anomaly_types:
+  id: '1020'
+  anomaly_type: Recency_Six_Months
+  data_object: Dates
+  anomaly_name: Recency - No Table Dates within 6 Months
+  anomaly_description: "Among all date columns present in the table, the most recent\
+    \ date falls 6 months to 1 year back from Profile date. "
+  anomaly_criteria: |-
+    MAX(p.max_date) >= CURRENT_DATE - INTERVAL '1 year' AND MAX(p.max_date) < CURRENT_DATE - INTERVAL '6 months'
+  detail_expression: |-
+    'Most Recent Date: ' || MAX(p.max_date)::VARCHAR
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether dates in table should be more recent.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: Timeliness
+  target_data_lookups:
+  - id: '1358'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1292'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1134'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1077'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1052'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1452'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1191'
+    test_id: '1020'
+    test_type: Recency_Six_Months
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly

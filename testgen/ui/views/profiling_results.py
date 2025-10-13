@@ -60,37 +60,53 @@ class ProfilingResultsPage(Page):
             [.3, .3, .08, .32], vertical_alignment="bottom"
         )
 
+        filters_changed = False
+        current_filters = (table_name, column_name)
+        if (query_filters := st.session_state.get("profiling_results:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
+            st.session_state["profiling_results:filters"] = current_filters
+
+        run_columns_df = get_profiling_run_columns(run_id)
         with table_filter_column:
-            # Table Name filter
-            df = get_profiling_run_tables(run_id)
-            df = df.sort_values("table_name", key=lambda x: x.str.lower())
             table_name = testgen.select(
-                options=df,
-                value_column="table_name",
+                options=list(run_columns_df["table_name"].unique()),
                 default_value=table_name,
                 bind_to_query="table_name",
                 label="Table",
             )
 
         with column_filter_column:
-            # Column Name filter
-            df = get_profiling_run_columns(run_id, table_name)
-            df = df.sort_values("column_name", key=lambda x: x.str.lower())
+            if table_name:
+                column_options = (
+                    run_columns_df
+                    .loc[run_columns_df["table_name"] == table_name]
+                    ["column_name"]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+            else:
+                column_options = (
+                    run_columns_df
+                    .groupby("column_name")
+                    .first()
+                    .reset_index()
+                    .sort_values("column_name", key=lambda x: x.str.lower())
+                )
             column_name = testgen.select(
-                options=df,
-                value_column="column_name",
+                options=column_options,
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column",
-                disabled=not table_name,
-                accept_new_options=bool(table_name),
+                accept_new_options=True,
             )
 
         with sort_column:
             sortable_columns = (
                 ("Table", "LOWER(table_name)"),
                 ("Column", "LOWER(column_name)"),
-                ("Data Type", "LOWER(column_type)"),
+                ("Data Type", "LOWER(db_data_type)"),
                 ("Semantic Data Type", "semantic_data_type"),
                 ("Hygiene Issues", "hygiene_issues"),
             )
@@ -107,27 +123,13 @@ class ProfilingResultsPage(Page):
                     sorting_columns=sorting_columns,
                 )
 
-        show_columns = [
-            "table_name",
-            "column_name",
-            "column_type",
-            "semantic_data_type",
-            "hygiene_issues",
-        ]
-        show_column_headers = [
-            "Table",
-            "Column",
-            "Data Type",
-            "Semantic Data Type",
-            "Hygiene Issues",
-        ]
-
-        selected_row = fm.render_grid_select(
+        selected, selected_row = fm.render_grid_select(
             df,
-            show_columns,
-            bind_to_query_name="selected",
-            bind_to_query_prop="id",
-            show_column_headers=show_column_headers,
+            ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues"],
+            ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues"],
+            id_column="id",
+            reset_pagination=filters_changed,
+            bind_to_query=True,
         )
 
         popover_container = export_button_column.empty()
@@ -150,19 +152,18 @@ class ProfilingResultsPage(Page):
                 css_class("tg--export-wrapper")
                 st.button(label="All results", type="tertiary", on_click=open_download_dialog)
                 st.button(label="Filtered results", type="tertiary", on_click=partial(open_download_dialog, df))
-                if selected_row:
-                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected_row)))
+                if selected:
+                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
 
 
         # Display profiling for selected row
         if not selected_row:
             st.markdown(":orange[Select a row to see profiling details.]")
         else:
-            item = selected_row[0]
-            item["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, item["table_name"], item.get("column_name"))
+            selected_row["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, selected_row["table_name"], selected_row.get("column_name"))
             testgen_component(
                 "column_profiling_results",
-                props={ "column": json.dumps(item), "data_preview": True },
+                props={ "column": json.dumps(selected_row), "data_preview": True },
                 on_change_handlers={
                     "DataPreviewClicked": lambda item: data_preview_dialog(
                         item["table_group_id"],
@@ -189,7 +190,7 @@ def get_excel_report_data(
         data = profiling_queries.get_profiling_results(run_id)
     date_service.accommodate_dataframe_to_timezone(data, st.session_state)
 
-    for key in ["column_type", "datatype_suggestion"]:
+    for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
@@ -221,7 +222,7 @@ def get_excel_report_data(
         "column_name": {"header": "Column"},
         "position": {},
         "general_type": {},
-        "column_type": {"header": "Data type"},
+        "db_data_type": {"header": "Data type"},
         "datatype_suggestion": {"header": "Suggested data type"},
         "semantic_data_type": {},
         "record_ct": {"header": "Record count"},
@@ -279,27 +280,11 @@ def get_excel_report_data(
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_run_tables(profiling_run_id: str) -> pd.DataFrame:
+def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
     query = """
-    SELECT DISTINCT table_name
+    SELECT table_name, column_name
     FROM profile_results
     WHERE profile_run_id = :profiling_run_id
-    ORDER BY table_name;
+    ORDER BY LOWER(table_name), LOWER(column_name);
     """
     return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})
-
-
-@st.cache_data(show_spinner=False)
-def get_profiling_run_columns(profiling_run_id: str, table_name: str) -> pd.DataFrame:
-    query = """
-    SELECT DISTINCT column_name
-    FROM profile_results
-    WHERE profile_run_id = :profiling_run_id
-        AND table_name = :table_name
-    ORDER BY column_name;
-    """
-    params = {
-        "profiling_run_id": profiling_run_id,
-        "table_name": table_name or "",
-    }
-    return fetch_df_from_db(query, params)

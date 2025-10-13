@@ -1,0 +1,229 @@
+test_types:
+  id: '1023'
+  test_type: Monthly_Rec_Ct
+  test_name_short: Monthly Records
+  test_name_long: At least one date per month present within date range
+  test_description: |-
+    Tests for presence of at least one date per calendar month within min/max date range, per baseline data
+  except_message: |-
+    At least one date per month expected in min/max date range.
+  measure_uom: Missing months
+  measure_uom_description: |-
+    Calendar months without date values present
+  selection_criteria: |-
+    functional_data_type ILIKE 'Transactional Date%' AND date_days_present > 1 AND functional_table_type ILIKE  '%cumulative%' AND date_months_present > 2 AND date_months_present - (datediff( 'MON' , min_date, max_date) + 1) = 0 AND future_date_ct::FLOAT / NULLIF(value_ct, 0) <= 0.75
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DATE_MONTHS_PRESENT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Threshold Count of Months without Dates
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Completeness
+  health_dimension: Volume
+  threshold_description: |-
+    Expected maximum count of calendar months without dates present
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Monthly Records tests that at least one record is present for every calendar month within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each month. A failure here would suggest missing records for the number of months identified without data. You can adjust the threshold to accept a number of month that you know legitimately have no records.
+  active: Y
+  cat_test_conditions:
+  - id: '7018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: bigquery
+    measure: |-
+      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), MONTH), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), MONTH), MONTH) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, MONTH))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: databricks
+    measure: |-
+      (MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: mssql
+    measure: |-
+      (MAX(DATEDIFF(month, {COLUMN_NAME}, CAST('{RUN_DATE}'AS DATE))) - MIN(DATEDIFF(month, {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE))) + 1) - COUNT(DISTINCT DATEDIFF(month, {COLUMN_NAME}, CAST('{RUN_DATE}'AS DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: postgresql
+    measure: |-
+      (MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};'{RUN_DATE}'::DATE%>)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: redshift
+    measure: |-
+      (MAX(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) - MIN(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) + 1) - COUNT(DISTINCT DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      (MAX(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) - MIN(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) + 1) - COUNT(DISTINCT DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: snowflake
+    measure: |-
+      (MAX(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) - MIN(DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE)) + 1) - COUNT(DISTINCT DATEDIFF(month, {COLUMN_NAME}, '{RUN_DATE}'::DATE))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: trino
+    measure: |-
+      (MAX(DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE))) - MIN(DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE))) + 1) - COUNT(DISTINCT DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE)))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1381'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (
+        SELECT month AS all_dates
+        FROM UNNEST(
+          GENERATE_DATE_ARRAY(
+            DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), MONTH),
+            DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), MONTH),
+            INTERVAL 1 MONTH
+          )
+        ) AS month
+      ),
+      existing_periods AS (
+        SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), MONTH) AS period, COUNT(1) AS period_count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        GROUP BY period
+      ),
+      p AS (
+        SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month
+        FROM daterange d
+        LEFT JOIN existing_periods a ON d.all_dates = a.period
+        LEFT JOIN existing_periods b ON b.period < d.all_dates
+        LEFT JOIN existing_periods c ON c.period > d.all_dates
+        WHERE a.period IS NULL
+          AND d.all_dates BETWEEN b.period AND c.period
+        GROUP BY d.all_dates
+      )
+      SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count
+      FROM p
+      LEFT JOIN existing_periods e ON (p.prior_available_month = e.period)
+      LEFT JOIN existing_periods f ON (p.next_available_month = f.period)
+      ORDER BY p.missing_period;
+    error_type: Test Results
+  - id: '1315'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS( SELECT explode( sequence( date_trunc('month', (SELECT MIN(`{COLUMN_NAME}`) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`)), date_trunc('month', (SELECT MAX(`{COLUMN_NAME}`) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`)), interval 1 month) ) AS all_dates ), existing_periods AS ( SELECT DISTINCT date_trunc('month', `{COLUMN_NAME}`) AS period, COUNT(1) AS period_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY date_trunc('month', `{COLUMN_NAME}`) ) SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count FROM ( SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ) p LEFT JOIN existing_periods e ON p.prior_available_month = e.period LEFT JOIN existing_periods f ON p.next_available_month = f.period ORDER BY p.missing_period;
+    error_type: Test Results
+  - id: '1157'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH
+        Pass0 as (select 1 as C union all select 1), --2 rows
+        Pass1 as (select 1 as C from Pass0 as A, Pass0 as B),--4 rows
+        Pass2 as (select 1 as C from Pass1 as A, Pass1 as B),--16 rows
+        Pass3 as (select 1 as C from Pass2 as A, Pass2 as B),--256 rows
+        Pass4 as (select 1 as C from Pass3 as A, Pass3 as B),--65536 rows
+        All_Nums as (select row_number() over(order by C) as Number from Pass4),
+        tally as (SELECT Number FROM All_Nums WHERE Number <= 45000),
+
+        date_range as (SELECT CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, MIN("{COLUMN_NAME}")), 0) AS DATE) AS min_period,
+                              CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, MAX("{COLUMN_NAME}")), 0) AS DATE) AS max_period,
+                              DATEDIFF(MONTH,
+                                       CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, MIN("{COLUMN_NAME}")), 0) AS DATE),
+                                       CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, MAX("{COLUMN_NAME}")), 0) AS DATE) ) + 1 as period_ct
+                         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" ),
+        check_periods as ( SELECT d.min_period, d.max_period, t.number,
+                                  DATEADD(MONTH, -(t.number - 1), d.max_period) AS check_period
+                             FROM date_range d
+                           INNER JOIN tally t
+                              ON (d.period_ct >= t.number) ),
+        data_by_period as (SELECT CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, "{COLUMN_NAME}"), 0) AS DATE) as data_period, COUNT(*) as record_ct
+                             FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                           GROUP BY CAST(DATEADD(MONTH, DATEDIFF(MONTH, 0, "{COLUMN_NAME}"), 0) AS DATE) ),
+        data_by_prd_with_prior_next as (SELECT check_period,
+                                               RANK() OVER (ORDER BY check_period DESC) as ranked,
+                                               ISNULL(d.record_ct, 0) as record_ct,
+                                               ISNULL(LAG(d.record_ct) OVER (ORDER BY check_period), 0) as last_record_ct,
+                                               ISNULL(LEAD(d.record_ct) OVER (ORDER BY check_period), 0) as next_record_ct
+                                          FROM check_periods c
+                                        LEFT JOIN data_by_period d
+                                          ON (c.check_period = d.data_period) )
+      SELECT check_period, record_ct,
+             CASE
+               WHEN record_ct = 0 THEN 'MISSING'
+               ELSE 'Present'
+             END as status
+        FROM data_by_prd_with_prior_next
+       WHERE record_ct = 0
+          OR last_record_ct = 0
+          OR next_record_ct = 0
+      ORDER BY check_period DESC;
+    error_type: Test Results
+  - id: '1100'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('month', MIN("{COLUMN_NAME}")) :: DATE AS all_dates  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"  UNION ALL  SELECT (d.all_dates :: DATE + INTERVAL '1 month') :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC('month', MAX("{COLUMN_NAME}")) :: DATE  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS ( SELECT DISTINCT DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE ) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_month_count, MIN(c.period) AS next_available_month, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_month_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+    error_type: Test Results
+  - id: '1018'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('month', MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" UNION ALL SELECT DATEADD(MONTH, 1, d.all_dates) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('month', MAX("{COLUMN_NAME}")) :: DATE FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS ( SELECT DISTINCT DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE ) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_month_count, MIN(c.period) AS next_available_month, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_month_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+    error_type: Test Results
+  - id: '1418'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('month', MIN("{COLUMN_NAME}")) :: DATE AS all_dates FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" UNION ALL SELECT DATEADD(MONTH, 1, d.all_dates) :: DATE AS all_dates FROM daterange d WHERE d.all_dates < (SELECT DATE_TRUNC('month', MAX("{COLUMN_NAME}")) :: DATE FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS ( SELECT DISTINCT DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE ) SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, (SELECT period_count FROM existing_periods WHERE period = MAX(b.period) ) AS prior_available_month_count, MIN(c.period) AS next_available_month, (SELECT period_count FROM existing_periods WHERE period = MIN(c.period) ) AS next_available_month_count FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates ORDER BY d.all_dates;
+    error_type: Test Results
+  - id: '1214'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('month', MIN("{COLUMN_NAME}")) :: DATE AS all_dates  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"  UNION ALL  SELECT DATEADD(MONTH, 1, d.all_dates) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC('month', MAX("{COLUMN_NAME}")) :: DATE FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS (SELECT DISTINCT DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE ) SELECT p.missing_period, p.prior_available_month, e.period_count as prior_available_month_count, p.next_available_month, f.period_count as next_available_month_count FROM (SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_month = e.period) LEFT JOIN existing_periods f ON (p.next_available_month = f.period) ORDER BY p.missing_period;
+    error_type: Test Results
+  test_templates: []

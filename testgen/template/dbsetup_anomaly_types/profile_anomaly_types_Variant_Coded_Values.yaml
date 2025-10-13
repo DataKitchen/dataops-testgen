@@ -1,0 +1,82 @@
+profile_anomaly_types:
+  id: '1027'
+  anomaly_type: Variant_Coded_Values
+  data_object: Variant
+  anomaly_name: Variant Codings for Same Values
+  anomaly_description: "This column contains more than one common variants that represent\
+    \ a single value or state. This can occur when data is integrated from multiple\
+    \ sources with different standards, or when free entry is permitted without validation.\
+    \ The variations can cause confusion and error for downstream data users and multiple\
+    \ versions of the truth. "
+  anomaly_criteria: |-
+    p.distinct_value_ct <= 20
+  detail_expression: |-
+    'Variants Found: ' || intersect_list
+  issue_likelihood: Definite
+  suggested_action: |-
+    Review your source data and ingestion process. Consider cleansing this data to standardize on a single set of definitive codes.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: Consistency
+  target_data_lookups:
+  - id: '1396'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE LOWER(CAST(`{COLUMN_NAME}` AS STRING)) IN (
+        SELECT TRIM(val) FROM UNNEST(SPLIT(SUBSTR('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) AS val
+      )
+      GROUP BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1230'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE LOWER(`{COLUMN_NAME}`) IN (SELECT TRIM(value) FROM (SELECT EXPLODE(SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', INSTR('{DETAIL_EXPRESSION}', ':') + 2), '\\|')) AS value)) GROUP BY `{COLUMN_NAME}`;
+    error_type: Profile Anomaly
+  - id: '1231'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") IN (SELECT trim(value) FROM STRING_SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', CHARINDEX(':', '{DETAIL_EXPRESSION}') + 2, 999), '|')) GROUP BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1232'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") = ANY(STRING_TO_ARRAY(SUBSTRING('{DETAIL_EXPRESSION}',  STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) GROUP BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1229'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1458'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH val_array AS (SELECT 1 as valkey, SPLIT_TO_ARRAY(SUBSTRING ('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|') vals), val_list AS ( SELECT valkey, val::VARCHAR FROM val_array v, v.vals val ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" t INNER JOIN val_list v ON (LOWER("{COLUMN_NAME}") = v.val) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1230'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE lower("{COLUMN_NAME}") IN (SELECT trim(value) FROM TABLE (FLATTEN(INPUT => SPLIT(SUBSTRING('{DETAIL_EXPRESSION}', POSITION(':', '{DETAIL_EXPRESSION}') + 2), '|'))) ) GROUP BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly

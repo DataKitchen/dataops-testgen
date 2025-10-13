@@ -1,0 +1,81 @@
+profile_anomaly_types:
+  id: '1021'
+  anomaly_type: Unexpected US States
+  data_object: Column
+  anomaly_name: Unexpected Column Contains US States
+  anomaly_description: |-
+    This column is not labeled as a state, but contains mostly US State abbreviations. This could indicate shifted or switched source data columns.
+  anomaly_criteria: |-
+    p.std_pattern_match = 'STATE_USA'
+           AND p.distinct_value_ct > 5
+           AND NOT (p.column_name = 'st' OR p.column_name ILIKE '%state%' OR p.column_name ILIKE '%_st' OR p.column_name ILIKE 'st_%')
+  detail_expression: "'Value Range: ' || p.min_text || ' thru ' || max_text || CASE\
+    \ WHEN p.top_freq_values > '' THEN ', Top Freq Values: ' || REPLACE(p.top_freq_values,\
+    \ CHR(10), ' ; ') ELSE '' END "
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether column should be populated with US states.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Consistency
+  target_data_lookups:
+  - id: '1359'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1293'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1135'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Profile Anomaly
+  - id: '1078'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1053'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1453'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1192'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly

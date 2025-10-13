@@ -1,0 +1,159 @@
+test_types:
+  id: '1510'
+  test_type: Dupe_Rows
+  test_name_short: Duplicate Rows
+  test_name_long: Rows are not duplicated in table
+  test_description: |-
+    Tests for the absence of duplicate rows based on unique combination of column values
+  except_message: |-
+    Column value combinations are duplicated in the table.
+  measure_uom: Duplicate records
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    (({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: |-
+    null
+  column_name_help: |-
+    null
+  default_parm_columns: groupby_names
+  default_parm_values: null
+  default_parm_prompts: |-
+    Columns to Compare
+  default_parm_help: |-
+    List of columns in the table that define a duplicate record when the combination of values is repeated on multiple rows
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: table
+  dq_dimension: Uniqueness
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of duplicate value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test verifies that combinations of values are not repeated within the table. By default when auto-generated, the test considers all columns to protect against duplication of entire rows. If you know the minimum columns that should constitute a unique record, such as a set of ID's, you should use those to make the test as sensitive as possible. Alternatively, if you know of columns you can always exclude, such as file_date or refresh_snapshot_id, remove them to tighten the test somewhat.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1409'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {SUBSET_CONDITION}
+      GROUP BY {GROUPBY_NAMES}
+      HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES};
+    error_type: Test Results
+  - id: '1257'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1255'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1256'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1253'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1472'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  - id: '1254'
+    test_id: '1510'
+    test_type: Dupe_Rows
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+                 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+                 WHERE {SUBSET_CONDITION}
+               GROUP BY {GROUPBY_NAMES}
+               HAVING COUNT(*) > 1
+      ORDER BY {GROUPBY_NAMES}
+    error_type: Test Results
+  test_templates:
+  - id: '2511'
+    test_type: Dupe_Rows
+    sql_flavor: bigquery
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2411'
+    test_type: Dupe_Rows
+    sql_flavor: databricks
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2211'
+    test_type: Dupe_Rows
+    sql_flavor: mssql
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2311'
+    test_type: Dupe_Rows
+    sql_flavor: postgresql
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2011'
+    test_type: Dupe_Rows
+    sql_flavor: redshift
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2511'
+    test_type: Dupe_Rows
+    sql_flavor: redshift_spectrum
+    template_name: ex_dupe_rows_generic.sql
+  - id: '2111'
+    test_type: Dupe_Rows
+    sql_flavor: snowflake
+    template_name: ex_dupe_rows_generic.sql

@@ -1,0 +1,95 @@
+profile_anomaly_types:
+  id: '1008'
+  anomaly_type: Table_Pattern_Mismatch
+  data_object: Multi-Col
+  anomaly_name: Pattern Inconsistency Across Tables
+  anomaly_description: |-
+    Alpha-numeric string data within this column matches a single pattern, but other columns with the same name have data that matches a different single pattern. Inconsistent formatting may contradict user assumptions and cause downstream errors, extra steps and inconsistent business logic.
+  anomaly_criteria: |-
+    p.general_type = 'A'
+                   AND functional_data_type NOT ILIKE 'Measurement%' AND functional_data_type NOT IN ('Category', 'Code')
+                   AND p.max_length > 3
+                   AND p.value_ct > (p.numeric_ct + p.filled_value_ct + p.zero_length_ct)
+                   AND m.max_pattern_ct = 1
+                   AND m.column_ct > 1
+                   AND SPLIT_PART(p.top_patterns, '|', 2) <> SPLIT_PART(m.very_top_pattern, '|', 2)
+                   AND SPLIT_PART(p.top_patterns, '|', 1)::NUMERIC / SPLIT_PART(m.very_top_pattern, '|', 1)::NUMERIC < 0.1
+  detail_expression: |-
+    'Patterns: ' || SPLIT_PART(p.top_patterns, '|', 2) || ', ' || SPLIT_PART(ltrim(m.very_top_pattern, '0'), '|', 2)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review the profiled patterns for the same column in other tables. You may want to add a hygiene step to your processing to make patterns consistent.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1346'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name
+      FROM information_schema.columns
+      JOIN information_schema.tables
+        ON columns.table_name = tables.table_name
+        AND columns.table_schema = tables.table_schema
+      WHERE columns.table_schema = '{TARGET_SCHEMA}'
+        AND columns.column_name = '{COLUMN_NAME}'
+        AND UPPER(tables.table_type) = 'BASE TABLE'
+      ORDER BY table_name;
+    error_type: Profile Anomaly
+  - id: '1280'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: "SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns\
+      \ JOIN information_schema.tables ON columns.table_name = tables.table_name AND\
+      \ columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'\
+      \ AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE\
+      \ TABLE' ORDER BY table_name; "
+    error_type: Profile Anomaly
+  - id: '1122'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables  ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY table_name;
+    error_type: Profile Anomaly
+  - id: '1065'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY columns.table_name;
+    error_type: Profile Anomaly
+  - id: '1040'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT column_name, table_name, data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type;
+    error_type: Profile Anomaly
+  - id: '1440'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT columnname AS column_name, tablename AS table_name, external_type AS data_type FROM svv_external_columns WHERE schemaname = '{TARGET_SCHEMA}' AND columnname = '{COLUMN_NAME}' ORDER BY external_type;
+    error_type: Profile Anomaly
+  - id: '1179'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: "SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns\
+      \ JOIN information_schema.tables ON columns.table_name = tables.table_name AND\
+      \ columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'\
+      \ AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE\
+      \ TABLE' ORDER BY table_name; "
+    error_type: Profile Anomaly

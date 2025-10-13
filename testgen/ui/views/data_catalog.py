@@ -185,7 +185,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
     data = pd.DataFrame(table_data + column_data)
     data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
 
-    for key in ["column_type", "datatype_suggestion"]:
+    for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
     for key in ["avg_embedded_spaces", "avg_length", "avg_value", "stdev_value"]:
@@ -228,7 +228,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "active_test_count": {"header": "Active tests"},
         "ordinal_position": {"header": "Position"},
         "general_type": {},
-        "column_type": {"header": "Data type"},
+        "db_data_type": {"header": "Data type"},
         "datatype_suggestion": {"header": "Suggested data type"},
         "functional_data_type": {"header": "Semantic data type"},
         "add_date": {"header": "First detected"},
@@ -396,7 +396,7 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         table_chars.table_name,
         column_chars.schema_name,
         column_chars.general_type,
-        column_chars.column_type,
+        column_chars.db_data_type,
         column_chars.functional_data_type,
         profile_results.datatype_suggestion,
         table_chars.record_ct,

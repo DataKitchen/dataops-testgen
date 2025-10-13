@@ -1,0 +1,163 @@
+test_types:
+  id: '1044'
+  test_type: Valid_US_Zip
+  test_name_short: Valid US Zip
+  test_name_long: Valid USA Postal Codes
+  test_description: |-
+    Tests that postal codes match the 5 or 9 digit standard US format
+  except_message: |-
+    Invalid US Zip Code formats found.
+  measure_uom: Invalid Zip Codes
+  measure_uom_description: |-
+    Expected count of values with invalid Zip Codes
+  selection_criteria: |-
+    functional_data_type = 'Zip'
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: null
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Threshold Invalid Value Count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: null
+  active: Y
+  cat_test_conditions:
+  - id: '7034'
+    test_type: Valid_US_Zip
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, r'[0-9]', '9') NOT IN ('99999','999999999','99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6034'
+    test_type: Valid_US_Zip
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3034'
+    test_type: Valid_US_Zip
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4034'
+    test_type: Valid_US_Zip
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1034'
+    test_type: Valid_US_Zip
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7034'
+    test_type: Valid_US_Zip
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2034'
+    test_type: Valid_US_Zip
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5034'
+    test_type: Valid_US_Zip
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1398'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') NOT IN ('99999', '999999999', '99999-9999')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY record_ct DESC
+      LIMIT 20;
+    error_type: Test Results
+  - id: '1331'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
+    error_type: Test Results
+  - id: '1239'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1238'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC  LIMIT 20;
+    error_type: Test Results
+  - id: '1237'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1460'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  - id: '1240'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+    error_type: Test Results
+  test_templates: []

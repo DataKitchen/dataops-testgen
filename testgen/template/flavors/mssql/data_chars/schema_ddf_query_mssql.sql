@@ -11,12 +11,20 @@ SELECT '{PROJECT_CODE}'            as project_code,
            WHEN c.data_type = 'char' THEN 'char(' + CAST(c.character_maximum_length AS VARCHAR) + ')'
            WHEN c.data_type = 'numeric' THEN 'numeric(' + CAST(c.numeric_precision AS VARCHAR) + ',' +
                                              CAST(c.numeric_scale AS VARCHAR) + ')'
-           ELSE c.data_type END AS data_type,
+           ELSE c.data_type END AS column_type,
+       CASE
+           WHEN c.data_type LIKE '%char' OR c.data_type LIKE '%binary'
+               THEN c.data_type + '(' + CAST(c.character_maximum_length AS VARCHAR) + ')'
+           WHEN c.data_type IN ('datetime2', 'datetimeoffset', 'time')
+               THEN c.data_type + '(' + CAST(c.datetime_precision AS VARCHAR) + ')'
+           WHEN c.data_type IN ('numeric', 'decimal')
+               THEN c.data_type + '(' + CAST(c.numeric_precision AS VARCHAR) + ','
+                   + CAST(c.numeric_scale AS VARCHAR) + ')'
+       ELSE c.data_type END AS db_data_type,
        c.character_maximum_length,
        c.ordinal_position,
        CASE
            WHEN LOWER(c.data_type) LIKE '%char%'
-               OR c.data_type LIKE '%text%'
                THEN 'A'
            WHEN c.data_type = 'bit'
                THEN 'B'

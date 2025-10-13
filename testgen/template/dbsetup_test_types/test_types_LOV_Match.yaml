@@ -1,0 +1,163 @@
+test_types:
+  id: '1019'
+  test_type: LOV_Match
+  test_name_short: Value Match
+  test_name_long: All column values present in expected list
+  test_description: |-
+    Tests that all values in the column match the list-of-values identified in baseline data.
+  except_message: |-
+    Values not matching expected List-of-Values from baseline.
+  measure_uom: Non-matching records
+  measure_uom_description: null
+  selection_criteria: |-
+    functional_data_type IN ('Boolean', 'Code', 'Category') AND top_freq_values > '' AND distinct_value_ct BETWEEN 2 and 10 AND value_ct > 5
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: |-
+    '(' || SUBSTRING( CASE WHEN SPLIT_PART(top_freq_values, '|' , 2) > '' THEN ',''' || TRIM( REPLACE ( SPLIT_PART(top_freq_values, '|' , 2), '''' , '''''' ) ) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 4) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 4), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 6) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 6), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 8) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 8), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 10) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 10), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 12) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 12), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 14) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 14), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 16) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 16), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 18) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 18), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 20) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 20), '''' , '''''' )) || '''' ELSE '' END, 2, 999) || ')',0
+  default_parm_prompts: |-
+    List of Expected Values,Threshold Error Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    List of values expected, in form ('Val1','Val2)
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This tests that all values in the column match the hard-coded list provided. This is relevant when the list of allowable values is small and not expected to change often. Even if new values might occasionally be added, this test is useful for downstream data products to provide warning that assumptions and logic may need to change.
+  active: Y
+  cat_test_conditions:
+  - id: '7014'
+    test_type: LOV_Match
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6014'
+    test_type: LOV_Match
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3014'
+    test_type: LOV_Match
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4014'
+    test_type: LOV_Match
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1014'
+    test_type: LOV_Match
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7014'
+    test_type: LOV_Match
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2014'
+    test_type: LOV_Match
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5014'
+    test_type: LOV_Match
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1377'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE}
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1311'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF(`{COLUMN_NAME}`, '') AS `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE NULLIF(`{COLUMN_NAME}`, '') NOT IN {BASELINE_VALUE} GROUP BY `{COLUMN_NAME}` LIMIT 500;
+    error_type: Test Results
+  - id: '1153'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" ;
+    error_type: Test Results
+  - id: '1096'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1014'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1414'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1210'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  test_templates: []

@@ -1,0 +1,163 @@
+test_types:
+  id: '1006'
+  test_type: Condition_Flag
+  test_name_short: Custom Condition
+  test_name_long: Column values match pre-defined condition
+  test_description: |-
+    Tests that each record in the table matches a pre-defined, custom condition
+  except_message: |-
+    Value(s) found not matching defined condition.
+  measure_uom: Values Failing
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: |-
+    Test Focus
+  column_name_help: |-
+    Specify a brief descriptor of the focus of this test that is unique within this Test Suite for the Table and Test Type. This distinguishes this test from others of the same type on the same table. Example: `Quantity Consistency` if you are testing that quantity ordered matches quantity shipped.
+  default_parm_columns: threshold_value,custom_query
+  default_parm_values: null
+  default_parm_prompts: |-
+    Threshold Error Count,Custom SQL Expression (TRUE on error)
+  default_parm_help: |-
+    The number of errors that are acceptable before test fails.|Expression should evaluate to TRUE to register an error or FALSE if no error. An expression can reference only columns in the selected table.
+  default_severity: Fail
+  run_type: CAT
+  test_scope: custom
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Count of records that don't meet test condition
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Custom Condition is a business-rule test for a user-defined error condition based on the value of one or more columns. The condition is applied to each record within the table, and the count of records failing the condition is added up. If that count exceeds a threshold of errors, the test as a whole is failed. This test is ideal for error conditions that TestGen cannot automatically infer, and any condition that involves the values of more than one column in the same record. Performance of this test is fast, since it is performed together with other aggregate tests. Interpretation is based on the user-defined meaning of the test.
+  active: Y
+  cat_test_conditions:
+  - id: '7003'
+    test_type: Condition_Flag
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6003'
+    test_type: Condition_Flag
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3003'
+    test_type: Condition_Flag
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4003'
+    test_type: Condition_Flag
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1003'
+    test_type: Condition_Flag
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7003'
+    test_type: Condition_Flag
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2003'
+    test_type: Condition_Flag
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5003'
+    test_type: Condition_Flag
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN {BASELINE_VALUE} IS NOT NULL THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1366'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {CUSTOM_QUERY}
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1300'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  - id: '1142'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY};
+    error_type: Test Results
+  - id: '1085'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  - id: '1003'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  - id: '1403'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  - id: '1199'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT 500;
+    error_type: Test Results
+  test_templates: []

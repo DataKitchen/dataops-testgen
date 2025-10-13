@@ -51,6 +51,12 @@ class ConnectionsPage(Page):
         "url",
         "http_path",
     ]
+    encrypted_fields: typing.ClassVar[list[str]] = [
+        "project_pw_encrypted",
+        "private_key",
+        "private_key_passphrase",
+        "service_account_key",
+    ]
 
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
@@ -95,25 +101,23 @@ class ConnectionsPage(Page):
 
             if updated_connection.get("connect_by_key"):
                 updated_connection["project_pw_encrypted"] = ""
-                if is_pristine(updated_connection["private_key_passphrase"]):
+                if is_pristine(updated_connection.get("private_key_passphrase")):
                     del updated_connection["private_key_passphrase"]
+                elif updated_connection.get("private_key_passphrase") == CLEAR_SENTINEL:
+                    updated_connection["private_key_passphrase"] = ""
+
+                if is_pristine(updated_connection.get("private_key")):
+                    del updated_connection["private_key"]
+                else:
+                    updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
             else:
                 updated_connection["private_key"] = ""
                 updated_connection["private_key_passphrase"] = ""
 
-            if updated_connection.get("private_key_passphrase") == CLEAR_SENTINEL:
-                updated_connection["private_key_passphrase"] = ""
-
-            if is_pristine(updated_connection.get("private_key")):
-                del updated_connection["private_key"]
-            else:
-                updated_connection["private_key"] = base64.b64decode(updated_connection["private_key"]).decode()
-
-            if is_pristine(updated_connection.get("project_pw_encrypted")):
-                del updated_connection["project_pw_encrypted"]
-
-            if updated_connection.get("project_pw_encrypted") == CLEAR_SENTINEL:
-                updated_connection["project_pw_encrypted"] = ""
+                if is_pristine(updated_connection.get("project_pw_encrypted")):
+                    del updated_connection["project_pw_encrypted"]
+                elif updated_connection.get("project_pw_encrypted") == CLEAR_SENTINEL:
+                    updated_connection["project_pw_encrypted"] = ""
 
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
@@ -162,7 +166,7 @@ class ConnectionsPage(Page):
                 message = "Error creating connection"
                 success = False
                 LOG.exception(message)
-            
+
             results = {
                 "success": success,
                 "message": message,
@@ -204,6 +208,8 @@ class ConnectionsPage(Page):
             sanitized_value = value
             if isinstance(value, str) and key in self.trim_fields:
                 sanitized_value = value.strip()
+            if isinstance(value, str) and key in self.encrypted_fields:
+                sanitized_value = value if value != "" else None
             sanitized_connection_input[key] = sanitized_value
         return sanitized_connection_input
 
@@ -442,6 +448,12 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/redshift.svg"),
     ),
     ConnectionFlavor(
+        label="Amazon Redshift Spectrum",
+        value="redshift_spectrum",
+        flavor="redshift_spectrum",
+        icon=get_asset_data_url("flavors/redshift.svg"),
+    ),
+    ConnectionFlavor(
         label="Azure SQL Database",
         value="azure_mssql",
         flavor="mssql",
@@ -452,6 +464,18 @@ FLAVOR_OPTIONS = [
         value="synapse_mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
+    ),
+    ConnectionFlavor(
+        label="Databricks",
+        value="databricks",
+        flavor="databricks",
+        icon=get_asset_data_url("flavors/databricks.svg"),
+    ),
+    ConnectionFlavor(
+        label="Google BigQuery",
+        value="bigquery",
+        flavor="bigquery",
+        icon=get_asset_data_url("flavors/bigquery.svg"),
     ),
     ConnectionFlavor(
         label="Microsoft SQL Server",
@@ -470,11 +494,5 @@ FLAVOR_OPTIONS = [
         value="snowflake",
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
-    ),
-    ConnectionFlavor(
-        label="Databricks",
-        value="databricks",
-        flavor="databricks",
-        icon=get_asset_data_url("flavors/databricks.svg"),
     ),
 ]

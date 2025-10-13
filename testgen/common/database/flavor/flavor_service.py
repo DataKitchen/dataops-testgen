@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "snowflake", "mssql", "postgresql", "databricks"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks"]
 
 
 class ConnectionParams(TypedDict):
@@ -21,24 +21,19 @@ class ConnectionParams(TypedDict):
     private_key: bytes
     private_key_passphrase: bytes
     http_path: str
+    service_account_key: dict[str,Any]
 
 class FlavorService:
 
-    url = None
-    connect_by_url = None
-    username = None
-    password = None
-    host = None
-    port = None
-    dbname = None
-    flavor = None
-    dbschema = None
-    connect_by_key = None
-    private_key = None
-    private_key_passphrase = None
-    http_path = None
-    catalog = None
-    warehouse = None
+    concat_operator = "||"
+    quote_character = '"'
+    escaped_single_quote = "''"
+    escaped_underscore = "\\_"
+    escape_clause = ""
+    varchar_type = "VARCHAR(1000)"
+    ddf_table_ref = "table_name"
+    use_top = False
+    default_uppercase = False
 
     def init(self, connection_params: ConnectionParams):
         self.url = connection_params.get("url") or ""
@@ -53,6 +48,7 @@ class FlavorService:
         self.http_path = connection_params.get("http_path") or ""
         self.catalog = connection_params.get("catalog") or ""
         self.warehouse = connection_params.get("warehouse") or ""
+        self.service_account_key = connection_params.get("service_account_key", None)
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):
@@ -75,8 +71,8 @@ class FlavorService:
     def get_connect_args(self) -> dict:
         return {"connect_timeout": 3600}
 
-    def get_concat_operator(self) -> str:
-        return "||"
+    def get_engine_args(self) -> dict[str,Any]:
+        return {}
 
     def get_connection_string(self) -> str:
         if self.connect_by_url:

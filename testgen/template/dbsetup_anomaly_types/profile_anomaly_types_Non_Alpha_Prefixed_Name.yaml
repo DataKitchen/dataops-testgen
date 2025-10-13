@@ -1,0 +1,94 @@
+profile_anomaly_types:
+  id: '1030'
+  anomaly_type: Non_Alpha_Prefixed_Name
+  data_object: Column
+  anomaly_name: Non-Alpha Prefixed Name
+  anomaly_description: |-
+    Non-alphabetic characters were found at the start of a column representing an entity name.
+  anomaly_criteria: |-
+    min_text < 'A' AND LEFT(min_text, 1) NOT IN ('"', ' ') AND RIGHT(min_text, 1) <> '''' AND functional_data_type IN ('City', 'Person Given Name', 'Person Last Name', 'Person Full Name')
+  detail_expression: |-
+    'Minimum Value: ' || min_text
+  issue_likelihood: Definite
+  suggested_action: |-
+    Values starting with a non-alphabetic character are highly likely to be invalid for this kind of column. This may indicate a file format change, error in an ingestion process, or incorrect source data. It could also indicate flagging or coding of some kind that can be broken out in a separate column in processed data. Review your pipeline process and source data to determine the root-cause. If this data accurately reflects source data, and upstream corrections are not possible, consider applying corrections directly to processed data where possible.
+  dq_score_prevalence_formula: |-
+    0.25
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1412'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE CAST(`{COLUMN_NAME}` AS STRING) < 'A'
+        AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), 1, 1) NOT IN ('"', ' ')
+        AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), LENGTH(CAST(`{COLUMN_NAME}` AS STRING)), 1) <> '\''
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1272'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE `{COLUMN_NAME}` < 'A' AND LEFT(`{COLUMN_NAME}`, 1) NOT IN ('"', ' ') AND RIGHT(`{COLUMN_NAME}`, 1) <> ''''
+      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1270'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}"
+    error_type: Profile Anomaly
+  - id: '1269'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1268'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1475'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1271'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly

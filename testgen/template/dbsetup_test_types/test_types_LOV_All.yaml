@@ -1,0 +1,163 @@
+test_types:
+  id: '1018'
+  test_type: LOV_All
+  test_name_short: Value Match All
+  test_name_long: List of expected values all present in column
+  test_description: |-
+    Tests that all values match a pipe-delimited list of expected values and that all expected values are present
+  except_message: |-
+    Column values found don't exactly match the expected list of values
+  measure_uom: Values found
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    List of Expected Values
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    List of values expected, in form ('Val1','Val2)
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This is a more restrictive form of Value Match, testing that all values in the dataset match the list provided, and also that all values present in the list appear at least once in the dataset. This would be appropriate for tables where all category values in the column are represented at least once.
+  active: Y
+  cat_test_conditions:
+  - id: '7013'
+    test_type: LOV_All
+    sql_flavor: bigquery
+    measure: |-
+      STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), '|' ORDER BY {COLUMN_NAME})
+    test_operator: '!='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6013'
+    test_type: LOV_All
+    sql_flavor: databricks
+    measure: |-
+      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3013'
+    test_type: LOV_All
+    sql_flavor: mssql
+    measure: |-
+      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4013'
+    test_type: LOV_All
+    sql_flavor: postgresql
+    measure: |-
+      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1013'
+    test_type: LOV_All
+    sql_flavor: redshift
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7013'
+    test_type: LOV_All
+    sql_flavor: redshift_spectrum
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2013'
+    test_type: LOV_All
+    sql_flavor: snowflake
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5013'
+    test_type: LOV_All
+    sql_flavor: trino
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1376'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT lov
+      FROM (
+        SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), '|' ORDER BY `{COLUMN_NAME}`) AS lov
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      )
+      WHERE lov <> '{THRESHOLD_VALUE}'
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1310'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') AS aggregated_values FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` HAVING ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  - id: '1152'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS  (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT STRING_AGG( "{COLUMN_NAME}", '|' ) WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) FROM CTE HAVING STRING_AGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) <> '{THRESHOLD_VALUE}';
+    error_type: Test Results
+  - id: '1095'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  - id: '1013'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  - id: '1413'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  - id: '1209'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT 500;
+    error_type: Test Results
+  test_templates: []

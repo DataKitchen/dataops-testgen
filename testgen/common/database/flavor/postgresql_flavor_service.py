@@ -2,4 +2,5 @@ from testgen.common.database.flavor.redshift_flavor_service import RedshiftFlavo
 
 
 class PostgresqlFlavorService(RedshiftFlavorService):
-    pass
+
+    escaped_underscore = "\\_"

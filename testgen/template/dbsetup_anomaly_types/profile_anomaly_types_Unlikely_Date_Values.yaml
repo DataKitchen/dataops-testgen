@@ -1,0 +1,83 @@
+profile_anomaly_types:
+  id: '1018'
+  anomaly_type: Unlikely_Date_Values
+  data_object: Column
+  anomaly_name: Unlikely Dates out of Typical Range
+  anomaly_description: |-
+    Some date values in this column are earlier than 1900-01-01 or later than 30 years after Profiling date.
+  anomaly_criteria: |-
+    p.general_type = 'D'
+       AND (p.min_date BETWEEN '0001-01-02'::DATE AND '1900-01-01'::DATE
+        OR p.max_date > CURRENT_DATE + INTERVAL '30 year')
+  detail_expression: |-
+    'Date Range: ' || p.min_date::VARCHAR || ' thru ' || p.max_date::VARCHAR
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether this data needs to be corrected or removed.
+  dq_score_prevalence_formula: |-
+    (COALESCE(p.before_100yr_date_ct,0)+COALESCE(p.distant_future_date_ct, 0))::FLOAT/NULLIF(p.record_ct, 0)
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Accuracy
+  target_data_lookups:
+  - id: '1356'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE) AS profile_run_date, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a
+      WHERE (CAST(`{COLUMN_NAME}` AS DATE) < DATE '1900-01-01')
+         OR (CAST(`{COLUMN_NAME}` AS DATE) > DATE_ADD(CAST(CAST('{PROFILE_RUN_DATE}' AS DATETIME) AS DATE), INTERVAL 30 YEAR))
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1290'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a WHERE (`{COLUMN_NAME}` < '1900-01-01'::DATE) OR (`{COLUMN_NAME}` > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1132'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", CAST( '{PROFILE_RUN_DATE}' AS DATE) AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < CAST('1900-01-01' AS DATE) )    OR ("{COLUMN_NAME}" > DATEADD(YEAR, 30, CAST('{PROFILE_RUN_DATE}' AS DATE ))) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Profile Anomaly
+  - id: '1075'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE  + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1050'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1450'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1189'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly

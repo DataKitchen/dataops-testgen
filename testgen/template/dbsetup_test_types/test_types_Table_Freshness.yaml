@@ -1,0 +1,69 @@
+test_types:
+  id: '1511'
+  test_type: Table_Freshness
+  test_name_short: Table Freshness
+  test_name_long: Stale Table Not Updated
+  test_description: |-
+    Confirms whether table has been updated based on data fingerprint
+  except_message: |-
+    Table has not been updated.
+  measure_uom: Was Change Detected
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  dq_score_prevalence_formula: |-
+    (({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.0'
+  column_name_prompt: |-
+    null
+  column_name_help: |-
+    null
+  default_parm_columns: history_calculation,history_lookback,subset_condition,custom_query
+  default_parm_values: null
+  default_parm_prompts: |-
+    History Aggregate,History Lookback,Record Subset Condition,Fingerprint Expression
+  default_parm_help: |-
+    Aggregate calculation to be performed on the N lookback results|Last N tests to use for history aggregate calculation|Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
+  default_severity: Log
+  run_type: QUERY
+  test_scope: table
+  dq_dimension: Recency
+  health_dimension: Recency
+  threshold_description: |-
+    Most recent prior table fingerprint
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Stale","1":"Updated"}}}'
+  usage_notes: |-
+    This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2512'
+    test_type: Table_Freshness
+    sql_flavor: bigquery
+    template_name: ex_table_changed_bigquery.sql
+  - id: '2412'
+    test_type: Table_Freshness
+    sql_flavor: databricks
+    template_name: ex_table_changed_generic.sql
+  - id: '2212'
+    test_type: Table_Freshness
+    sql_flavor: mssql
+    template_name: ex_table_changed_mssql.sql
+  - id: '2312'
+    test_type: Table_Freshness
+    sql_flavor: postgresql
+    template_name: ex_table_changed_generic.sql
+  - id: '2012'
+    test_type: Table_Freshness
+    sql_flavor: redshift
+    template_name: ex_table_changed_generic.sql
+  - id: '2512'
+    test_type: Table_Freshness
+    sql_flavor: redshift_spectrum
+    template_name: ex_table_changed_generic.sql
+  - id: '2112'
+    test_type: Table_Freshness
+    sql_flavor: snowflake
+    template_name: ex_table_changed_generic.sql

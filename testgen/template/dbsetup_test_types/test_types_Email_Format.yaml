@@ -1,0 +1,163 @@
+test_types:
+  id: '1014'
+  test_type: Email_Format
+  test_name_short: Email Format
+  test_name_long: Email is correctly formatted
+  test_description: |-
+    Tests that non-blank, non-empty email addresses match the standard format
+  except_message: |-
+    Invalid email address formats found.
+  measure_uom: Invalid emails
+  measure_uom_description: |-
+    Number of emails that do not match standard format
+  selection_criteria: |-
+    std_pattern_match='EMAIL'
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Maximum Invalid Email Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of invalid email addresses
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: null
+  active: Y
+  cat_test_conditions:
+  - id: '7009'
+    test_type: Email_Format
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN NOT REGEXP_CONTAINS(CAST({COLUMN_NAME} AS STRING), r'^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+[.])+[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6009'
+    test_type: Email_Format
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::STRING, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3009'
+    test_type: Email_Format
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} NOT LIKE '[A-Za-z0-9._''%+-]%@[A-Za-z0-9.-]%.[A-Za-z][A-Za-z]%' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4009'
+    test_type: Email_Format
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1009'
+    test_type: Email_Format
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7009'
+    test_type: Email_Format
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2009'
+    test_type: Email_Format
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN NOT REGEXP_LIKE({COLUMN_NAME}::VARCHAR, '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5009'
+    test_type: Email_Format
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME} , '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') != TRUE THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1372'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$')
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1306'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') != 1 GROUP BY `{COLUMN_NAME}` LIMIT 500;
+    error_type: Test Results
+  - id: '1148'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" NOT LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1091'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1009'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1409'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  - id: '1205'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$') != 1 GROUP BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Test Results
+  test_templates: []

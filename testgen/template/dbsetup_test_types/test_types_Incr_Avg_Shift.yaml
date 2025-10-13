@@ -1,0 +1,163 @@
+test_types:
+  id: '1017'
+  test_type: Incr_Avg_Shift
+  test_name_short: New Shift
+  test_name_long: New record mean is consistent with reference
+  test_description: |-
+    Tests for statistically-significant shift in mean of new values for column compared to average calculated at baseline.
+  except_message: |-
+    Significant shift in average of new values vs. baseline avg
+  measure_uom: Z-score of mean shift
+  measure_uom_description: |-
+    Absolute Z-score (number of SD's outside mean) of prior avg - incremental avg
+  selection_criteria: |-
+    general_type='N' AND distinct_value_ct > 10 AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%'
+  dq_score_prevalence_formula: |-
+    {RECORD_CT}::FLOAT*(1-FN_NORMAL_CDF({RESULT_MEASURE}::FLOAT))/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value_ct,baseline_sum,baseline_avg,baseline_sd,threshold_value
+  default_parm_values: |-
+    value_ct,(avg_value * value_ct)::FLOAT,avg_value,stdev_value,2
+  default_parm_prompts: |-
+    Value Count at Baseline,Sum at Baseline,Mean Value at Baseline,Std Deviation at Baseline,Threshold Max Z-Score
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Accuracy
+  health_dimension: Data Drift
+  threshold_description: |-
+    Maximum Z-Score (number of SD's beyond mean) expected
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This is a more sensitive test than Average Shift, because it calculates an incremental difference in the average of new values compared to the average of values at baseline. This is appropriate for a cumulative dataset only, because it calculates the average of new entries based on the assumption that the count and average of records present at baseline are still present at the time of the test. This test compares the mean of new values with the standard deviation of the baseline average to calculate a Z-score.  If the new mean falls outside the Z-score threshold, a shift is detected. Potential Z-score thresholds may range from 0 to 3, depending on the sensitivity you prefer.  A failed test could indicate a quality issue or a legitimate shift in new data that should be noted and assessed by business users. Consider this test along with Variability Increase. If variability rises too, process, methodology or measurement flaws could be at issue. If variability remains consistent, the problem is more likely to be with the source data itself.
+  active: Y
+  cat_test_conditions:
+  - id: '7012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: bigquery
+    measure: |-
+      COALESCE(ABS(({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME}) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD}), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: databricks
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: mssql
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM(CAST({COLUMN_NAME} AS FLOAT)) - {BASELINE_SUM}) / NULLIF(CAST(COUNT({COLUMN_NAME}) AS FLOAT) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: postgresql
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift
+    measure: |-
+      NVL(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift_spectrum
+    measure: |-
+      NVL(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: snowflake
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: trino
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(CAST(COUNT({COLUMN_NAME}) AS REAL) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1375'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average,
+             SUM(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_sum,
+             NULLIF(CAST(COUNT(`{COLUMN_NAME}`) AS FLOAT64), 0) AS current_value_count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1309'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average, SUM(`{COLUMN_NAME}` ::FLOAT) AS current_sum, NULLIF(COUNT(`{COLUMN_NAME}` )::FLOAT, 0) as current_value_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1151'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}") AS FLOAT), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1094'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1012'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1412'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1208'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

@@ -86,7 +86,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
         table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         general_type,
-        column_type,
+        db_data_type,
         functional_data_type,
         datatype_suggestion,
         -- Profile Run
@@ -347,7 +347,7 @@ def get_columns_by_condition(
         column_chars.ordinal_position,
         -- Characteristics
         column_chars.general_type,
-        column_chars.column_type,
+        column_chars.db_data_type,
         column_chars.functional_data_type,
         datatype_suggestion,
         column_chars.add_date,

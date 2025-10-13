@@ -1,0 +1,241 @@
+test_types:
+  id: '1503'
+  test_type: Distribution_Shift
+  test_name_short: Distribution Shift
+  test_name_long: Probability distribution consistent with reference
+  test_description: |-
+    Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test
+  except_message: |-
+    Divergence between two distributions exceeds specified threshold.
+  measure_uom: Divergence level (0-1)
+  measure_uom_description: |-
+    Jensen-Shannon Divergence, from 0 (identical distributions), to 1.0 (max divergence)
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: |-
+    Categorical Column List
+  column_name_help: |-
+    Specify one or more Categorical columns, separated by commas. Do not use continuous mesurements here. Do not use numeric values unless they represent discrete categories.
+  default_parm_columns: subset_condition,match_schema_name,match_table_name,match_groupby_names,match_subset_condition
+  default_parm_values: null
+  default_parm_prompts: |-
+    Record Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns to Compare,Matching Record Subset Condition
+  default_parm_help: |-
+    Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to compare counts with source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL
+  default_severity: Warning
+  run_type: QUERY
+  test_scope: referential
+  dq_dimension: Consistency
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected maximum divergence level between 0 and 1
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test measures the similarity of two sets of counts per categories, by using their proportional counts as probability distributions.  Using Jensen-Shannon divergence, a measure of relative entropy or difference between two distributions, the test assigns a score ranging from 0, meaning that the distributions are identical, to 1, meaning that the distributions are completely unrelated. This test can be used to compare datasets that may not match exactly, but should have similar distributions.  For example, it is a useful sanity check for data from different sources that you would expect to have a consistent spread, such as shipment of building materials per state and construction projects by state. Scores can be compared over time even if the distributions are not identical -- a dataset can be expected to maintain a comparable divergence score with a reference dataset over time. Both tables must be present to run this test.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1403'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver AS (
+        SELECT {CONCAT_COLUMNS} AS category,
+               CAST(COUNT(*) AS FLOAT64) / SUM(COUNT(*)) OVER() AS pct_of_total
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {CONCAT_COLUMNS}
+      )
+      SELECT *
+      FROM latest_ver;
+    error_type: Test Results
+  - id: '1336'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1259'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1260'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1257'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1465'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  - id: '1258'
+    test_id: '1503'
+    test_type: Distribution_Shift
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} )
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+        FROM latest_ver l
+      FULL JOIN older_ver o
+        ON (l.category = o.category)
+      ORDER BY COALESCE(l.category, o.category)
+    error_type: Test Results
+  test_templates:
+  - id: '2503'
+    test_type: Distribution_Shift
+    sql_flavor: bigquery
+    template_name: ex_relative_entropy_bigquery.sql
+  - id: '2403'
+    test_type: Distribution_Shift
+    sql_flavor: databricks
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2203'
+    test_type: Distribution_Shift
+    sql_flavor: mssql
+    template_name: ex_relative_entropy_mssql.sql
+  - id: '2303'
+    test_type: Distribution_Shift
+    sql_flavor: postgresql
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2003'
+    test_type: Distribution_Shift
+    sql_flavor: redshift
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2503'
+    test_type: Distribution_Shift
+    sql_flavor: redshift_spectrum
+    template_name: ex_relative_entropy_generic.sql
+  - id: '2103'
+    test_type: Distribution_Shift
+    sql_flavor: snowflake
+    template_name: ex_relative_entropy_generic.sql

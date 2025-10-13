@@ -40,6 +40,7 @@ CREATE TABLE stg_data_chars_updates (
    position              INTEGER,
    general_type          VARCHAR(1),
    column_type           VARCHAR(50),
+   db_data_type          VARCHAR(50),
    functional_data_type  VARCHAR(50),
    record_ct             BIGINT
 );
@@ -78,7 +79,8 @@ CREATE TABLE connections (
    private_key BYTEA,
    private_key_passphrase BYTEA,
    http_path              VARCHAR(200),
-   warehouse              VARCHAR(200)
+   warehouse              VARCHAR(200),
+   service_account_key    BYTEA
 );
 
 CREATE TABLE table_groups
@@ -246,6 +248,7 @@ CREATE TABLE profile_results (
    position              INTEGER,
    column_name           VARCHAR(120),
    column_type           VARCHAR(50),
+   db_data_type          VARCHAR(50),
    general_type          VARCHAR(1),
    record_ct             BIGINT,
    value_ct              BIGINT,
@@ -339,6 +342,7 @@ CREATE TABLE profile_anomaly_results (
    table_name      VARCHAR(120),
    column_name     VARCHAR(500),
    column_type     VARCHAR(50),
+   db_data_type    VARCHAR(50),
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
@@ -365,15 +369,14 @@ CREATE TABLE profile_pair_rules (
 
 
 CREATE TABLE data_structure_log (
-   project_code     VARCHAR(30),
-   connection_id    BIGINT,
-   change_date      TIMESTAMP,
-   schema_name      VARCHAR(50),
-   table_name       VARCHAR(100),
-   ordinal_position INTEGER,
-   column_name      VARCHAR(100),
-   data_type         VARCHAR(50),
-   status           VARCHAR(10)
+   log_id UUID DEFAULT gen_random_uuid()
+      CONSTRAINT pk_dsl_id
+         PRIMARY KEY,
+   element_id    UUID,
+   change_date   TIMESTAMP,
+   change        VARCHAR(10),
+   old_data_type VARCHAR(50),
+   new_data_type VARCHAR(50)
 );
 
 CREATE TABLE data_table_chars (
@@ -418,6 +421,7 @@ CREATE TABLE data_column_chars (
    ordinal_position       INTEGER,
    general_type           VARCHAR(1),
    column_type            VARCHAR(50),
+   db_data_type           VARCHAR(50),
    functional_data_type   VARCHAR(50),
    description            VARCHAR(1000),
    critical_data_element  BOOLEAN,
@@ -619,7 +623,9 @@ CREATE TABLE target_data_lookups (
    sql_flavor   VARCHAR(20)  NOT NULL,
    lookup_type  VARCHAR(10),
    lookup_query VARCHAR,
-   error_type   VARCHAR(30)  NOT NULL
+   error_type   VARCHAR(30)  NOT NULL,
+   CONSTRAINT target_data_lookups_test_id_sql_flavor_error_type_pk
+      PRIMARY KEY (test_id, sql_flavor, error_type)
 );
 
 CREATE TABLE variant_codings (
@@ -900,6 +906,7 @@ CREATE TABLE job_schedules (
     kwargs JSONB NOT NULL,
     cron_expr VARCHAR(50) NOT NULL,
     cron_tz VARCHAR(30) NOT NULL,
+    active BOOLEAN DEFAULT TRUE,
     UNIQUE (project_code, key, args, kwargs, cron_expr, cron_tz)
 );
 

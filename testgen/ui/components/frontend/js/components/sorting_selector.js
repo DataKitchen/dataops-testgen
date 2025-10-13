@@ -139,7 +139,7 @@ const SortingSelector = (/** @type {Properties} */ props) => {
             },
             Object.entries(componentState)
                 .filter(([, colState]) => colState.val.order != null)
-                .sort(([, colState]) => colState.val.order)
+                .sort(([, colStateA], [, colStateB]) => colStateA.val.order - colStateB.val.order)
                 .map(([colId,]) => activeColumnItem(colId))
         ),
         div(

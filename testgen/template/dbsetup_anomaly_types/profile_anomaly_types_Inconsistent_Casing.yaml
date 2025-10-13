@@ -1,0 +1,126 @@
+profile_anomaly_types:
+  id: '1028'
+  anomaly_type: Inconsistent_Casing
+  data_object: Column
+  anomaly_name: Inconsistent Casing
+  anomaly_description: |-
+    Casing is inconsistent for a column representing an entity name or address elements. Mixed-Case and All-Upper-Case values were found in the same column.
+  anomaly_criteria: |-
+    mixed_case_ct > 0 AND upper_case_ct > 0 AND functional_data_type IN ('Address', 'City', 'Entity Name', 'Person Given Name', 'Person Last Name', 'Person Full Name')
+  detail_expression: |-
+    'Mixed-Case: ' || p.mixed_case_ct::VARCHAR || ', All-Upper-Case: ' || p.upper_case_ct::VARCHAR || ' for Semantic Data Type: ' || p.functional_data_type || ', Records: ' || p.record_ct::VARCHAR
+  issue_likelihood: Definite
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether consistent casing should be applied at the source. If source data corrections are not possible, consider standardizing the column upon ingestion to ensure consistent casing.
+  dq_score_prevalence_formula: |-
+    LEAST(p.mixed_case_ct, p.upper_case_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1410'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Upper Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
+        GROUP BY `{COLUMN_NAME}`
+        LIMIT 20
+      )
+      UNION ALL
+      (
+        SELECT 'Mixed Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
+          AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+        GROUP BY `{COLUMN_NAME}`
+        LIMIT 20
+      );
+    error_type: Profile Anomaly
+  - id: '1262'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE UPPER(`{COLUMN_NAME}`) = `{COLUMN_NAME}`
+      GROUP BY `{COLUMN_NAME}` LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE `{COLUMN_NAME}` <> UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` <> LOWER(`{COLUMN_NAME}`)
+      GROUP BY `{COLUMN_NAME}` LIMIT 20)
+    error_type: Profile Anomaly
+  - id: '1260'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 20 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}"
+      UNION ALL
+      SELECT TOP 20 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}"
+    error_type: Profile Anomaly
+  - id: '1259'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+    error_type: Profile Anomaly
+  - id: '1258'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+    error_type: Profile Anomaly
+  - id: '1473'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+    error_type: Profile Anomaly
+  - id: '1261'
+    test_id: '1028'
+    test_type: Inconsistent_Casing
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      UNION ALL
+      (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+    error_type: Profile Anomaly

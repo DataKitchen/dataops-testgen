@@ -1,0 +1,291 @@
+test_types:
+  id: '1509'
+  test_type: Timeframe_Combo_Match
+  test_name_short: Timeframe Match
+  test_name_long: Column value combinations from latest timeframe same as prior period
+  test_description: |-
+    Tests for presence of same column values in most recent time-window vs. prior time window
+  except_message: |-
+    Column values don't match in most recent time-windows.
+  measure_uom: Mismatched values
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: |-
+    Categorical Column List
+  column_name_help: |-
+    Specify one or more Categorical columns, separated by commas. Do not use continuous measurements here. Do not use numeric values unless they represent discrete categories.
+  default_parm_columns: window_date_column,window_days,subset_condition
+  default_parm_values: null
+  default_parm_prompts: |-
+    Date Column for Time Windows,Time Window in Days,Record Subset Condition
+  default_parm_help: null
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: referential
+  dq_dimension: Consistency
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected count of non-matching value combinations
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test checks a single transactional table (such as a fact table) to verify that categorical values or combinations that are present in the most recent time window you define match those found in the prior time window of the same duration. New or missing values in the latest time window will trigger the test to fail. Use this test to confirm the consistency in the occurrence of codes or categories across successive time periods in a transactional table.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1407'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
+        EXCEPT DISTINCT
+        SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL 2 * {WINDOW_DAYS} DAY)
+          AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
+      )
+      UNION ALL
+      (
+        SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL 2 * {WINDOW_DAYS} DAY)
+          AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
+        EXCEPT DISTINCT
+        SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+          AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
+      );
+    error_type: Test Results
+  - id: '1337'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+      )
+    error_type: Test Results
+  - id: '1267'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+        AND {WINDOW_DATE_COLUMN} <  DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+        AND {WINDOW_DATE_COLUMN} < DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
+      )
+    error_type: Test Results
+  - id: '1268'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+    error_type: Test Results
+  - id: '1265'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+    error_type: Test Results
+  - id: '1469'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+    error_type: Test Results
+  - id: '1266'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |2-
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
+        AND {WINDOW_DATE_COLUMN} < (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+    error_type: Test Results
+  test_templates:
+  - id: '2508'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: bigquery
+    template_name: ex_window_match_same_bigquery.sql
+  - id: '2408'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: databricks
+    template_name: ex_window_match_same_databricks.sql
+  - id: '2208'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: mssql
+    template_name: ex_window_match_same_generic.sql
+  - id: '2308'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: postgresql
+    template_name: ex_window_match_same_postgresql.sql
+  - id: '2008'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift
+    template_name: ex_window_match_same_generic.sql
+  - id: '2508'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: redshift_spectrum
+    template_name: ex_window_match_same_generic.sql
+  - id: '2108'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: snowflake
+    template_name: ex_window_match_same_generic.sql

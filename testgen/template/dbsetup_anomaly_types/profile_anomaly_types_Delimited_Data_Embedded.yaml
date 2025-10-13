@@ -1,0 +1,80 @@
+profile_anomaly_types:
+  id: '1025'
+  anomaly_type: Delimited_Data_Embedded
+  data_object: Column
+  anomaly_name: Delimited Data Embedded in Column
+  anomaly_description: |-
+    Delimited data, separated by a common delimiter (comma, tab, pipe or caret) is present in over 80% of column values. This could indicate data that was incorrectly ingested, or data that would be better represented in parsed form.
+  anomaly_criteria: |-
+    p.std_pattern_match = 'DELIMITED_DATA'
+  detail_expression: |-
+    CASE WHEN p.top_freq_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text ELSE 'Top Freq: ' || p.top_freq_values END
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data and follow-up with data consumers to determine the most useful representation of this data.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1363'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$')
+        AND NOT REGEXP_CONTAINS(CAST(`{COLUMN_NAME}` AS STRING), r'.*\s(and|but|or|yet)\s.*')
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1297'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(`{COLUMN_NAME}`::STRING, '.*\\s(and|but|or|yet)\\s.*') GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1139'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE ( "{COLUMN_NAME}" LIKE '%,%,%,%' OR "{COLUMN_NAME}" LIKE '%|%|%|%' OR "{COLUMN_NAME}" LIKE '%^%^%^%'  OR "{COLUMN_NAME}" LIKE '%' + CHAR(9) + '%' + CHAR(9) + '%' + CHAR(9) + '%' ) AND NOT ( "{COLUMN_NAME}" LIKE '% and %' OR "{COLUMN_NAME}" LIKE '% but %' OR "{COLUMN_NAME}" LIKE '% or %'  OR "{COLUMN_NAME}" LIKE '% yet %' ) AND ISNULL(CAST(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ',', '')) as FLOAT)   / CAST(NULLIF(LEN("{COLUMN_NAME}") - LEN(REPLACE("{COLUMN_NAME}", ' ', '')), 0) as FLOAT), 1) > 0.6 GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1082'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\s(and|but|or|yet)\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1057'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1457'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$' AND "{COLUMN_NAME}" !~ '\\s(and|but|or|yet)\\s' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1196'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '.*\\s(and|but|or|yet)\\s.*') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Profile Anomaly

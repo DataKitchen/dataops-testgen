@@ -1,0 +1,79 @@
+profile_anomaly_types:
+  id: '1022'
+  anomaly_type: Unexpected Emails
+  data_object: Column
+  anomaly_name: Unexpected Column Contains Emails
+  anomaly_description: |-
+    This column is not labeled as email, but contains mostly email addresses. This could indicate shifted or switched source data columns.
+  anomaly_criteria: |-
+    p.std_pattern_match = 'EMAIL'
+           AND NOT (p.column_name ILIKE '%email%' OR p.column_name ILIKE '%addr%')
+  detail_expression: |-
+    'Value Range: ' || p.min_text || ' thru ' || max_text
+  issue_likelihood: Possible
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether column should be populated with email addresses.
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '0.33'
+  dq_dimension: Consistency
+  target_data_lookups:
+  - id: '1360'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}` DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1294'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1136'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Profile Anomaly
+  - id: '1079'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1054'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1454'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1193'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT 500;
+    error_type: Profile Anomaly

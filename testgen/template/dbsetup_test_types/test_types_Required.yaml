@@ -1,0 +1,161 @@
+test_types:
+  id: '1030'
+  test_type: Required
+  test_name_short: Required Entry
+  test_name_long: Required non-null value present
+  test_description: |-
+    Tests that a non-null value is present in each record for the column, consistent with baseline data
+  except_message: |-
+    Every record for this column is expected to be filled, but some are missing.
+  measure_uom: Missing values
+  measure_uom_description: null
+  selection_criteria: |-
+    record_ct = value_ct AND record_ct > 10
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Threshold Missing Value Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Completeness
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of missing values
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: null
+  active: Y
+  cat_test_conditions:
+  - id: '7023'
+    test_type: Required
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*) - COUNT({COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6023'
+    test_type: Required
+    sql_flavor: databricks
+    measure: |-
+      COUNT(*) - COUNT( {COLUMN_NAME} )
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3023'
+    test_type: Required
+    sql_flavor: mssql
+    measure: |-
+      COUNT(*) - COUNT( {COLUMN_NAME} )
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4023'
+    test_type: Required
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(*) - COUNT({COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1023'
+    test_type: Required
+    sql_flavor: redshift
+    measure: |-
+      COUNT(*) - COUNT( {COLUMN_NAME} )
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7023'
+    test_type: Required
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(*) - COUNT( {COLUMN_NAME} )
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2023'
+    test_type: Required
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(*) - COUNT( {COLUMN_NAME} )
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5023'
+    test_type: Required
+    sql_flavor: trino
+    measure: |-
+      COUNT(*) - COUNT({COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1386'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT *
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE `{COLUMN_NAME}` IS NULL
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1320'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL LIMIT 500;
+    error_type: Test Results
+  - id: '1162'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL;
+    error_type: Test Results
+  - id: '1105'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+    error_type: Test Results
+  - id: '1023'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+    error_type: Test Results
+  - id: '1423'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+    error_type: Test Results
+  - id: '1219'
+    test_id: '1030'
+    test_type: Required
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+    error_type: Test Results
+  test_templates: []

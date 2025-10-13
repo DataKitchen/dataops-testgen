@@ -1,0 +1,84 @@
+profile_anomaly_types:
+  id: '1015'
+  anomaly_type: Boolean_Value_Mismatch
+  data_object: Column
+  anomaly_name: Unexpected Boolean Values Found
+  anomaly_description: "This column appears to contain boolean (True/False) data,\
+    \ but unexpected values were found. This could indicate inconsistent coding for\
+    \ the same intended values, potentially leading to downstream errors or inconsistent\
+    \ business logic.  "
+  anomaly_criteria: "(distinct_value_ct > 1 AND\n\t\t     ((lower(top_freq_values)\
+    \ ILIKE '| true |%' OR lower(top_freq_values) ILIKE '| false |%') AND NOT (lower(top_freq_values)\
+    \ ILIKE '%| true |%' AND lower(top_freq_values) ILIKE '%| false |%'))\n\t\t  OR\
+    \ ((lower(top_freq_values) ILIKE '| yes |%'  OR lower(top_freq_values) ILIKE '|\
+    \ no |%'   ) AND NOT (lower(top_freq_values) ILIKE '%| yes |%'  AND lower(top_freq_values)\
+    \ ILIKE '%| no |%')) )"
+  detail_expression: |-
+    CASE WHEN p.top_freq_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text
+                ELSE 'Top Freq: ' || p.top_freq_values END
+  issue_likelihood: Likely
+  suggested_action: "Review your source data and follow-up with data owners to determine\
+    \ whether this data needs to be corrected. "
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1353'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1287'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY count DESC;
+    error_type: Profile Anomaly
+  - id: '1129'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1072'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1047'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1447'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly
+  - id: '1186'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC;
+    error_type: Profile Anomaly

@@ -1,0 +1,80 @@
+profile_anomaly_types:
+  id: '1010'
+  anomaly_type: Quoted_Values
+  data_object: Column
+  anomaly_name: Quoted Values Found in Column Values
+  anomaly_description: |-
+    Column values were found within quotes. This likely contradicts user expectations and could be a sign of broader ingestion or processing errors.
+  anomaly_criteria: |-
+    p.quoted_value_ct > 0
+  detail_expression: |-
+    'Cases Found: ' || p.quoted_value_ct::VARCHAR(10)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data, ingestion process, and any processing steps that update this column.
+  dq_score_prevalence_formula: |-
+    p.quoted_value_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1348'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = '"' OR LEFT(CAST(`{COLUMN_NAME}` AS STRING), 1) = "'"
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1282'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN `{COLUMN_NAME}` ILIKE '"%"' OR `{COLUMN_NAME}` ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1124'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" LIKE '"%"' OR "{COLUMN_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1067'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1042'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1442'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1181'
+    test_id: '1010'
+    test_type: Quoted_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" ILIKE '"%"' OR "{COLUMN_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly

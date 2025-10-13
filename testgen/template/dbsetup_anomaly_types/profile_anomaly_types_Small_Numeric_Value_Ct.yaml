@@ -1,0 +1,94 @@
+profile_anomaly_types:
+  id: '1023'
+  anomaly_type: Small_Numeric_Value_Ct
+  data_object: Column
+  anomaly_name: Unexpected Numeric Values Found
+  anomaly_description: |-
+    A small fraction (under 3%) of values in this column were found to be numeric. They could be erroneous.
+  anomaly_criteria: |-
+    p.general_type = 'A'
+       AND p.numeric_ct::FLOAT/NULLIF(p.value_ct, 0)::FLOAT < 0.03
+       AND p.numeric_ct > 0
+  detail_expression: |-
+    'Numeric Ct: ' || p.numeric_ct || ' of ' || p.value_ct || ' (Numeric Percent: ' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5)/NULLIF(p.value_ct, 0)::NUMERIC(18, 5), 2) || ' )'::VARCHAR(200)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data and follow-up with data owners to determine whether numeric values are invalid entries here.
+  dq_score_prevalence_formula: |-
+    p.numeric_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1361'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Numeric' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NOT NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      UNION ALL
+      (
+        SELECT 'Non-Numeric' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1295'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT 'Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC LIMIT 10;
+    error_type: Profile Anomaly
+  - id: '1137'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT TOP 10 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC  ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1080'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}"  ORDER BY count DESC LIMIT 10 )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1055'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1455'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1194'
+    test_id: '1023'
+    test_type: Small_Numeric_Value_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT TOP 10  'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly

@@ -1,0 +1,161 @@
+test_types:
+  id: '1005'
+  test_type: Avg_Shift
+  test_name_short: Average Shift
+  test_name_long: Column mean is consistent with reference
+  test_description: |-
+    Tests for statistically-significant shift in mean value for column from average calculated at baseline.
+  except_message: |-
+    Standardized difference between averages is over the selected threshold level.
+  measure_uom: Difference Measure
+  measure_uom_description: |-
+    Cohen's D Difference (0.20 small, 0.5 mod, 0.8 large, 1.2 very large, 2.0 huge)
+  selection_criteria: |-
+    general_type='N' AND distinct_value_ct > 10 AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%'
+  dq_score_prevalence_formula: |-
+    2.0 * (1.0 - fn_normal_cdf(ABS({RESULT_MEASURE}::FLOAT) / 2.0))
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value_ct,baseline_avg,baseline_sd,threshold_value
+  default_parm_values: |-
+    value_ct,avg_value,stdev_value,0.5::VARCHAR
+  default_parm_prompts: "Value Ct at Baseline,Mean at Baseline,Std Deviation at Baseline,Threshold\
+    \ Difference Measure "
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  health_dimension: Data Drift
+  threshold_description: |-
+    Standardized Difference Measure
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Average Shift tests that the average of a numeric column has not significantly changed since baseline, when profiling was done. A significant shift may indicate errors in processing, differences in source data, or valid changes that may nevertheless impact assumptions in downstream data products. The test uses Cohen's D, a statistical technique to identify significant shifts in a value. Cohen's D measures the difference between the two averages, reporting results on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge. Depending on your data, some difference may be expected, so it's reasonable to adjust the threshold value that triggers test failure. This test works well for measures, or even for identifiers if you expect them to increment consistently. You may want to periodically adjust the expected threshold, or even the expected average value if you expect shifting over time. Consider this test along with Variability Increase. If variability rises too, process or measurement flaws could be at work. If variability remains consistent, the issue is more likely to be with the source data itself.
+  active: Y
+  cat_test_conditions:
+  - id: '7002'
+    test_type: Avg_Shift
+    sql_flavor: bigquery
+    measure: |-
+      ROUND(ABS((AVG(SAFE_CAST({COLUMN_NAME} AS FLOAT64)) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})-1)*POW(STDDEV({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}-1)*POW({BASELINE_SD},2)) / NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0))),3)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6002'
+    test_type: Avg_Shift
+    sql_flavor: databricks
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV_SAMP({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3002'
+    test_type: Avg_Shift
+    sql_flavor: mssql
+    measure: |-
+      ABS( (AVG(CAST({COLUMN_NAME} AS FLOAT)) - CAST({BASELINE_AVG} as FLOAT)) / SQRT(((COUNT({COLUMN_NAME})-1)*POWER(STDEV(CAST({COLUMN_NAME} AS FLOAT)), 2) + ({BASELINE_VALUE_CT}-1) * POWER(CAST({BASELINE_SD} as FLOAT), 2)) /NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4002'
+    test_type: Avg_Shift
+    sql_flavor: postgresql
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1002'
+    test_type: Avg_Shift
+    sql_flavor: redshift
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME}::FLOAT)^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7002'
+    test_type: Avg_Shift
+    sql_flavor: redshift_spectrum
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*STDDEV({COLUMN_NAME})^2 + ({BASELINE_VALUE_CT}::FLOAT-1) * {BASELINE_SD}::FLOAT^2) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2002'
+    test_type: Avg_Shift
+    sql_flavor: snowflake
+    measure: |-
+      ABS( (AVG({COLUMN_NAME}::FLOAT) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})::FLOAT-1)*POWER(STDDEV({COLUMN_NAME}::FLOAT),2) + ({BASELINE_VALUE_CT}::FLOAT-1) * POWER({BASELINE_SD}::FLOAT,2)) /NULLIF(COUNT({COLUMN_NAME})::FLOAT + {BASELINE_VALUE_CT}::FLOAT, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5002'
+    test_type: Avg_Shift
+    sql_flavor: trino
+    measure: |-
+      ABS( (CAST(AVG({COLUMN_NAME} AS REAL)) - {BASELINE_AVG}) / SQRT(((CAST(COUNT({COLUMN_NAME}) AS REAL)-1)*STDDEV({COLUMN_NAME})^2 + (CAST({BASELINE_VALUE_CT} AS REAL)-1) * CAST({BASELINE_SD} AS REAL)^2) /NULLIF(CAST(COUNT({COLUMN_NAME}) AS REAL) + CAST({BASELINE_VALUE_CT} AS REAL), 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1365'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_average
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1299'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(`{COLUMN_NAME}` :: FLOAT) AS current_average FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1141'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1084'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1002'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}"::FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1402'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1198'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

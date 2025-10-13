@@ -1,0 +1,83 @@
+profile_anomaly_types:
+  id: '1024'
+  anomaly_type: Invalid_Zip3_USA
+  data_object: Column
+  anomaly_name: Invalid USA ZIP-3 Format
+  anomaly_description: |-
+    The majority of values in this column are 3-digit zips, but divergent patterns were found. This could indicate an incorrect roll-up category or a PII concern.
+  anomaly_criteria: |-
+    p.distinct_pattern_ct > 1
+       AND (p.column_name ilike '%zip%' OR p.column_name ILIKE '%postal%')
+       AND SPLIT_PART(p.top_patterns, ' | ', 2) = 'NNN'
+       AND SPLIT_PART(p.top_patterns, ' | ', 1)::FLOAT/NULLIF(value_ct, 0)::FLOAT > 0.50
+  detail_expression: |-
+    'Pattern: ' || p.top_patterns
+  issue_likelihood: Definite
+  suggested_action: |-
+    Review your source data, ingestion process, and any processing steps that update this column.
+  dq_score_prevalence_formula: |-
+    (NULLIF(p.record_ct, 0)::INT - SPLIT_PART(p.top_patterns, ' | ', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '1'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1362'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE TRANSLATE(CAST(`{COLUMN_NAME}` AS STRING), '012345678', '999999999') <> '999'
+      GROUP BY `{COLUMN_NAME}`
+      ORDER BY count DESC, `{COLUMN_NAME}`
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1296'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE TRANSLATE(`{COLUMN_NAME}`,'012345678','999999999') <> '999' GROUP BY `{COLUMN_NAME}` ORDER BY count DESC, `{COLUMN_NAME}` LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1138'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}";
+    error_type: Profile Anomaly
+  - id: '1081'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1056'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1456'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1195'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT 500;
+    error_type: Profile Anomaly

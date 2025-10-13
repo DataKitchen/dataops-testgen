@@ -1,0 +1,146 @@
+profile_anomaly_types:
+  id: '1031'
+  anomaly_type: Non_Printing_Chars
+  data_object: Column
+  anomaly_name: Non-Printing Characters
+  anomaly_description: |-
+    Non-printing characters were found embedded in a text column.
+  anomaly_criteria: |-
+    non_printing_ct > 0
+  detail_expression: |-
+    'Non-Printing Chars: ' || non_printing_ct::VARCHAR || ', Records: ' || p.record_ct::VARCHAR
+  issue_likelihood: Definite
+  suggested_action: |-
+    Embedded non-printing characters are typically stripped from data. They affect filters and aggregations, and may cause problems for downstream users who don't recognize their presence. Review your source data and follow-up with data owners to determine whether this data can be corrected upstream. If not, strip these characters from processed data.
+  dq_score_prevalence_formula: |-
+    non_printing_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '1.0'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1277'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(`{COLUMN_NAME}`,
+                '\u00a0', '\x160'),
+                '\u2009', '\x8201'),
+                '\u200b', '\x8203'),
+                '\u200c', '\x8204'),
+                '\u200d', '\x8205'),
+                '\u200e', '\x8206'),
+                '\u200f', '\x8207'),
+                '\u202f', '\x8239'),
+                '\u3000', '\x12288'),
+                '\ufeff', '\x65279') as `{COLUMN_NAME}_content`,
+             COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+       WHERE TRANSLATE(`{COLUMN_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COLUMN_NAME}`
+      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1275'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP 500 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                NCHAR(160), '\x160'),
+                NCHAR(8201), '\x8201'),
+                NCHAR(8203), '\x8203'),
+                NCHAR(8204), '\x8204'),
+                NCHAR(8205), '\x8205'),
+                NCHAR(8206), '\x8206'),
+                NCHAR(8207), '\x8207'),
+                NCHAR(8239), '\x8239'),
+                NCHAR(12288), '\x12288'),
+                NCHAR(65279), '\x65279') AS "{COLUMN_NAME}_content",
+             COUNT(*) AS record_ct
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}"
+    error_type: Profile Anomaly
+  - id: '1274'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                CHR(160), '\x160'),
+                CHR(8201), '\x8201'),
+                CHR(8203), '\x8203'),
+                CHR(8204), '\x8204'),
+                CHR(8205), '\x8205'),
+                CHR(8206), '\x8206'),
+                CHR(8207), '\x8207'),
+                CHR(8239), '\x8239'),
+                CHR(12288), '\x12288'),
+                CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
+             COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1273'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                CHR(160), '\x160'),
+                CHR(8201), '\x8201'),
+                CHR(8203), '\x8203'),
+                CHR(8204), '\x8204'),
+                CHR(8205), '\x8205'),
+                CHR(8206), '\x8206'),
+                CHR(8207), '\x8207'),
+                CHR(8239), '\x8239'),
+                CHR(12288), '\x12288'),
+                CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
+             COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1476'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                CHR(160), '\x160'),
+                CHR(8201), '\x8201'),
+                CHR(8203), '\x8203'),
+                CHR(8204), '\x8204'),
+                CHR(8205), '\x8205'),
+                CHR(8206), '\x8206'),
+                CHR(8207), '\x8207'),
+                CHR(8239), '\x8239'),
+                CHR(12288), '\x12288'),
+                CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
+             COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly
+  - id: '1276'
+    test_id: '1031'
+    test_type: Non_Printing_Chars
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+                CHR(160), '\x160'),
+                CHR(8201), '\x8201'),
+                CHR(8203), '\x8203'),
+                CHR(8204), '\x8204'),
+                CHR(8205), '\x8205'),
+                CHR(8206), '\x8206'),
+                CHR(8207), '\x8207'),
+                CHR(8239), '\x8239'),
+                CHR(12288), '\x12288'),
+                CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
+             COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+       WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+    error_type: Profile Anomaly

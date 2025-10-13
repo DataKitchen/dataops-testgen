@@ -8,7 +8,7 @@
  * @typedef CronSample
  * @type {object}
  * @property {string?} error
- * @property {string?} sample
+ * @property {string[]?} samples
  * @property {string?} readable_expr
  * 
  * @typedef InitialValue
@@ -85,8 +85,8 @@ const CrontabInput = (/** @type Options */ props) => {
             }),
         ),
         Portal(
-            {target: domId.val, align: 'right', style: 'width: 450px;', opened},
-            () => ContabEditorPortal(
+            {target: domId.val, align: 'right', style: 'width: 500px;', opened},
+            () => CrontabEditorPortal(
                 {
                     onChange: onEditorChange,
                     onClose: () => opened.val = false,
@@ -103,7 +103,7 @@ const CrontabInput = (/** @type Options */ props) => {
  * @param {import('../van.min.js').VanState<string>} expr
  * @returns {HTMLElement}
  */
-const ContabEditorPortal = ({sample, ...options}, expr) => {
+const CrontabEditorPortal = ({sample, ...options}, expr) => {
     const mode = van.state(expr.rawVal ? determineMode(expr.rawVal) : 'x_hours');
 
     const xHoursState = {
@@ -287,11 +287,6 @@ const ContabEditorPortal = ({sample, ...options}, expr) => {
                     div(
                         {class: 'flex-row fx-gap-2 mb-2'},
                         Checkbox({
-                            label: 'Sunday',
-                            checked: certainDaysState.sunday,
-                            onChange: (v) => certainDaysState.sunday.val = v,
-                        }),
-                        Checkbox({
                             label: 'Monday',
                             checked: certainDaysState.monday,
                             onChange: (v) => certainDaysState.monday.val = v,
@@ -301,22 +296,20 @@ const ContabEditorPortal = ({sample, ...options}, expr) => {
                             checked: certainDaysState.tuesday,
                             onChange: (v) => certainDaysState.tuesday.val = v,
                         }),
-                    ),
-                    div(
-                        {class: 'flex-row fx-gap-2 mb-2'},
                         Checkbox({
                             label: 'Wednesday',
                             checked: certainDaysState.wednesday,
                             onChange: (v) => certainDaysState.wednesday.val = v,
                         }),
+                    ),
+                    div(
+                        {class: 'flex-row fx-gap-2 mb-2'},
+                        
                         Checkbox({
                             label: 'Thursday',
                             checked: certainDaysState.thursday,
                             onChange: (v) => certainDaysState.thursday.val = v,
                         }),
-                    ),
-                    div(
-                        {class: 'flex-row fx-gap-2 mb-2'},
                         Checkbox({
                             label: 'Friday',
                             checked: certainDaysState.friday,
@@ -326,6 +319,11 @@ const ContabEditorPortal = ({sample, ...options}, expr) => {
                             label: 'Saturday',
                             checked: certainDaysState.saturday,
                             onChange: (v) => certainDaysState.saturday.val = v,
+                        }),
+                        Checkbox({
+                            label: 'Sunday',
+                            checked: certainDaysState.sunday,
+                            onChange: (v) => certainDaysState.sunday.val = v,
                         }),
                     ),
                     div(
@@ -370,10 +368,17 @@ const ContabEditorPortal = ({sample, ...options}, expr) => {
                 span({class: 'fx-flex'}, ''),
                 div(
                     {class: 'flex-column fx-gap-1 mt-3 text-secondary'},
-                    () => span({}, `Cron Expression: ${expr.val ?? ''}`),
-                    () => span({}, `Next Run: ${(getValue(sample) ?? {})?.sample ?? ''}`),
+                    () => span(
+                        { class: mode.val === 'custom' ? 'hidden': '' },
+                        `Cron Expression: ${expr.val ?? ''}`,
+                    ),
                     () => div(
-                        {class: 'flex-row fx-gap-1 text-caption'},
+                        { class: 'flex-column' },
+                        span('Next Runs:'),
+                        (getValue(sample) ?? {})?.samples?.map(item => span({ class: 'text-caption' }, item)),
+                    ),
+                    () => div(
+                        {class: `flex-row fx-gap-1 text-caption ${mode.val === 'custom' ? '': 'hidden'}`},
                         span({}, 'Learn more about'),
                         Link({
                             open_new: true,

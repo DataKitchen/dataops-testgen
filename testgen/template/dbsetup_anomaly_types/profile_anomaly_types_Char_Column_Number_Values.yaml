@@ -1,0 +1,97 @@
+profile_anomaly_types:
+  id: '1011'
+  anomaly_type: Char_Column_Number_Values
+  data_object: Column
+  anomaly_name: Character Column with Mostly Numeric Values
+  anomaly_description: |-
+    This column is defined as alpha, but more than 95% of its values are numeric. Numbers in alpha columns won't sort correctly, and might contradict user expectations downstream. It's also possible that more than one type of information is stored in the column, making it harder to retrieve.
+  anomaly_criteria: |-
+    p.general_type = 'A'
+       AND p.column_name NOT ILIKE '%zip%'
+       AND p.functional_data_type NOT ILIKE 'id%'
+       AND p.functional_data_type NOT ILIKE 'Period%'
+       AND p.value_ct > p.numeric_ct
+       AND p.numeric_ct::NUMERIC > (0.95 * p.value_ct::NUMERIC)
+  detail_expression: |-
+    'Numeric Ct: ' || p.numeric_ct || ' of ' || p.value_ct || ' (Numeric Percent: ' || ROUND(100.0 * p.numeric_ct::NUMERIC(18, 5) / p.value_ct::NUMERIC(18, 5), 2) || ' )'::VARCHAR(200)
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review your source data and ingestion process. Consider whether it might be better to store the numeric data in a numeric column. If the alpha data is significant, you could store it in a different column.
+  dq_score_prevalence_formula: |-
+    p.numeric_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Validity
+  target_data_lookups:
+  - id: '1349'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      (
+        SELECT 'Numeric' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NOT NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      UNION ALL
+      (
+        SELECT 'Non-Numeric' AS data_type, `{COLUMN_NAME}`, COUNT(*) AS count
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        WHERE SAFE_CAST(CAST(`{COLUMN_NAME}` AS STRING) AS FLOAT64) IS NULL
+        GROUP BY `{COLUMN_NAME}`
+        ORDER BY count DESC
+        LIMIT 10
+      )
+      ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1283'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT  'Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_NUM;`{COLUMN_NAME}`%> = 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC LIMIT 10) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Numeric' as data_type, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE <%IS_NUM;`{COLUMN_NAME}`%> != 1 GROUP BY `{COLUMN_NAME}` ORDER BY count DESC) AS B ORDER BY data_type, count DESC LIMIT 10;
+    error_type: Profile Anomaly
+  - id: '1125'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT TOP 10 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1068'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 ) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT 10 )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1043'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1443'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT TOP 10 DISTINCT 'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM  ( SELECT TOP 10 DISTINCT 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC )  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly
+  - id: '1182'
+    test_id: '1011'
+    test_type: Char_Column_Number_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (SELECT DISTINCT TOP 10  'Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS A UNION ALL SELECT B.* FROM (SELECT DISTINCT TOP 10 'Non-Numeric' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_NUM;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC) AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly

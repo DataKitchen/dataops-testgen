@@ -1,7 +1,7 @@
 import typing
 
 from testgen.common import CleanSQL, date_service, read_template_sql_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 
 
 class CTestParamValidationSQL:
@@ -13,11 +13,13 @@ class CTestParamValidationSQL:
     test_ids: typing.ClassVar = []
     exception_message = ""
     flag_val = ""
+    tg_schema = ""
 
     _use_clean = False
 
     def __init__(self, strFlavor, strTestSuiteId):
         self.flavor = strFlavor
+        self.flavor_service = get_flavor_service(strFlavor)
         self.test_suite_id = strTestSuiteId
         self.today = date_service.get_now_as_string()
 
@@ -34,6 +36,8 @@ class CTestParamValidationSQL:
             "CAT_TEST_IDS": tuple(self.test_ids or []),
             "START_TIME": self.today,
             "NOW_TIMESTAMP": date_service.get_now_as_string(),
+            "DATA_SCHEMA": self.tg_schema,
+            "QUOTE": self.flavor_service.quote_character,
         }
         query = replace_params(query, params)
         return query, params
@@ -47,7 +51,11 @@ class CTestParamValidationSQL:
 
     def GetProjectTestValidationColumns(self) -> tuple[str, dict]:
         # Runs on Target database
-        return self._get_query("ex_get_project_column_list_generic.sql", "flavors/generic/validate_tests")
+        filename = "ex_get_project_column_list.sql"
+        try:
+            return self._get_query(filename, f"flavors/{self.flavor}/validate_tests")
+        except ModuleNotFoundError:
+            return self._get_query(filename, "flavors/generic/validate_tests")
 
     def PrepFlagTestsWithFailedValidation(self) -> tuple[str, dict]:
         # Runs on App database

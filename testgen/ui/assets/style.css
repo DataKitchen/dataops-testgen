@@ -253,6 +253,10 @@ div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="st
     justify-content: center;
 }
 
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-end) {
+    flex-wrap: wrap;
+}
+
 .stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.no-flex-gap) {
     gap: unset;
 }
@@ -436,6 +440,45 @@ div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
 
 .tg-summary-bar--legend-dot::before {
     content: '⬤';
+}
+/*  */
+
+/* Summary counts component */
+.tg-summary-counts--label {
+    margin-bottom: 4px;
+}
+
+.tg-summary-counts {
+    height: 100%;
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 16px;
+}
+
+.tg-summary-counts--item {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.tg-summary-counts--bar {
+    width: 4px;
+}
+
+.tg-summary-counts--value {
+    line-height: 1.2;
+}
+
+.tg-summary-counts--value > div:first-child {
+    color: var(--caption-text-color);
+    font-size: 12px;
+}
+
+.tg-summary-counts--value > div:last-child {
+    font-size: 16px;
 }
 /*  */
 

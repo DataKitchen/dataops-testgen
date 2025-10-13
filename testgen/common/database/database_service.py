@@ -77,7 +77,7 @@ def set_target_db_params(connection_params: ConnectionParams) -> None:
 
 def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
     module_path = f"testgen.common.database.flavor.{flavor}_flavor_service"
-    class_name = f"{flavor.capitalize()}FlavorService"
+    class_name = f"{flavor.replace('_', ' ').title().replace(' ', '')}FlavorService"
     module = importlib.import_module(module_path)
     flavor_class = getattr(module, class_name)
     return flavor_class()
@@ -134,8 +134,9 @@ def execute_db_queries(
     user_override: str | None = None,
     password_override: str | None = None,
     user_type: UserType = "normal",
+    suppress_logs: bool = False,
 ) -> tuple[list[Any], list[int]]:
-    LOG.info(f"DB operation: execute_db_queries on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
+    LOG.info(f"DB operation: execute_db_queries ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
 
     with _init_db_connection(use_target_db, user_override, password_override, user_type) as connection:
         return_values: list[Any] = []
@@ -144,7 +145,8 @@ def execute_db_queries(
             LOG.info("No queries to process")
         for index, (query, params) in enumerate(queries):
             LOG.debug(f"Query: {query}")
-            LOG.info(f"Processing {index + 1} of {len(queries)} queries")
+            if not suppress_logs:
+                LOG.info(f"Processing {index + 1} of {len(queries)} queries")
             transaction = connection.begin()
             result = connection.execute(text(query), params)
             row_counts.append(result.rowcount)
@@ -357,15 +359,17 @@ def _init_target_db_connection() -> Connection:
 
     engine = engine_cache.target_db
     if not engine:
-        connection_string = flavor_service.get_connection_string()
-        connect_args = flavor_service.get_connect_args()
-
         try:
-            engine: Engine = create_engine(connection_string, connect_args=connect_args)
-            engine_cache.target_db = engine
-
+            engine: Engine = create_engine(
+                flavor_service.get_connection_string(),
+                connect_args=flavor_service.get_connect_args(),
+                **flavor_service.get_engine_args(),
+            )
         except SQLAlchemyError as e:
             raise ValueError(f"Failed to create engine for Target database '{flavor_service.dbname}' (User type = normal)") from e
+        else:
+            engine_cache.target_db = engine
+
 
     connection: Connection = engine.connect()
 

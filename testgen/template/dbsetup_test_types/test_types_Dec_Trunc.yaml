@@ -1,0 +1,168 @@
+test_types:
+  id: '1011'
+  test_type: Dec_Trunc
+  test_name_short: Decimal Truncation
+  test_name_long: Sum of fractional values at or above reference
+  test_description: |-
+    Tests for decimal truncation by confirming that the sum of fractional values in data is no less than the sum at baseline
+  except_message: |-
+    The sum of fractional values is under baseline, which may indicate decimal truncation
+  measure_uom: Fractional sum
+  measure_uom_description: |-
+    The sum of all decimal values from all data for this column
+  selection_criteria: |-
+    fractional_sum > 0 AND functional_table_type LIKE'%cumulative%'
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    ROUND(fractional_sum, 0)
+  default_parm_prompts: |-
+    Sum of Fractional Values at Baseline
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Minimum expected sum of all fractional values
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Decimal Truncation tests that the fractional (decimal) part of a numeric column has not been truncated since Baseline.  This works by summing all the fractional values after the decimal point and confirming that the total is at least equal to the fractional total at baseline.  This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
+  active: Y
+  cat_test_conditions:
+  - id: '7006'
+    test_type: Dec_Trunc
+    sql_flavor: bigquery
+    measure: |-
+      SUM(ROUND(ABS(MOD({COLUMN_NAME}, 1)), 5)) + 1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6006'
+    test_type: Dec_Trunc
+    sql_flavor: databricks
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3006'
+    test_type: Dec_Trunc
+    sql_flavor: mssql
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4006'
+    test_type: Dec_Trunc
+    sql_flavor: postgresql
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1006'
+    test_type: Dec_Trunc
+    sql_flavor: redshift
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7006'
+    test_type: Dec_Trunc
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2006'
+    test_type: Dec_Trunc
+    sql_flavor: snowflake
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5006'
+    test_type: Dec_Trunc
+    sql_flavor: trino
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1369'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT(CAST(`{COLUMN_NAME}` AS STRING), '.')[SAFE_OFFSET(1)]) AS decimal_scale, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY decimal_scale
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1303'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}`::STRING, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY decimal_scale LIMIT 500;
+    error_type: Test Results
+  - id: '1145'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (
+        SELECT LEN(SUBSTRING(CAST(ABS("{COLUMN_NAME}") % 1 AS VARCHAR), 3, LEN("{COLUMN_NAME}"))) AS decimal_scale
+        FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      )
+      SELECT DISTINCT TOP 500 decimal_scale, COUNT(*) AS count
+        FROM cte GROUP BY decimal_scale ORDER BY COUNT(*) DESC;
+    error_type: Test Results
+  - id: '1088'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT 500;
+    error_type: Test Results
+  - id: '1006'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;
+    error_type: Test Results
+  - id: '1406'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;
+    error_type: Test Results
+  - id: '1202'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT 500;
+    error_type: Test Results
+  test_templates: []

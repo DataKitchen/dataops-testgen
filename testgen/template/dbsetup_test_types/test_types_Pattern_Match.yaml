@@ -1,0 +1,162 @@
+test_types:
+  id: '1026'
+  test_type: Pattern_Match
+  test_name_short: Pattern Match
+  test_name_long: Column values match alpha-numeric pattern
+  test_description: |-
+    Tests that all values in the column match the same alpha-numeric pattern identified in baseline data
+  except_message: |-
+    Alpha values do not match consistent pattern in baseline.
+  measure_uom: Pattern Mismatches
+  measure_uom_description: null
+  selection_criteria: |-
+    (functional_data_type IN ('Attribute', 'DateTime Stamp', 'Phone') OR functional_data_type ILIKE 'ID%' OR functional_data_type ILIKE 'Period%') AND fn_charcount(top_patterns, E' \| ' ) = 1 AND REPLACE(SPLIT_PART(top_patterns, '|' , 2), 'N' , '' ) > '' AND distinct_value_ct > 10
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: |-
+    TRIM(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(SPLIT_PART(top_patterns, ' | ', 2), '([*+\-%_])', '[\1]', 'g'), 'A', '[A-Z]'), 'N', '[0-9]'), 'a', '[a-z]')),0
+  default_parm_prompts: |-
+    Pattern at Baseline,Threshold Error Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of pattern mismatches
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is appropriate for character fields that are expected to appear in a consistent format. It uses pattern matching syntax as appropriate for your database:  REGEX matching if available, otherwise LIKE expressions. The expected threshold is the number of records that fail to match the defined pattern.
+  active: Y
+  cat_test_conditions:
+  - id: '7021'
+    test_type: Pattern_Match
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CAST(REGEXP_CONTAINS(CAST(NULLIF({COLUMN_NAME}, '') AS STRING), r'{BASELINE_VALUE}') AS INT64))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6021'
+    test_type: Pattern_Match
+    sql_flavor: databricks
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(REGEXP_LIKE(NULLIF({COLUMN_NAME}::STRING, ''), '{BASELINE_VALUE}')::BIGINT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3021'
+    test_type: Pattern_Match
+    sql_flavor: mssql
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - CAST(SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') LIKE '{BASELINE_VALUE}' THEN 1 ELSE  0 END) AS BIGINT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4021'
+    test_type: Pattern_Match
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') ~ '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1021'
+    test_type: Pattern_Match
+    sql_flavor: redshift
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM((NULLIF({COLUMN_NAME}, '') SIMILAR TO '{BASELINE_VALUE}')::BIGINT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7021'
+    test_type: Pattern_Match
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM((NULLIF({COLUMN_NAME}, '') SIMILAR TO '{BASELINE_VALUE}')::BIGINT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2021'
+    test_type: Pattern_Match
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(REGEXP_LIKE(NULLIF({COLUMN_NAME}::VARCHAR, ''), '{BASELINE_VALUE}')::BIGINT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5021'
+    test_type: Pattern_Match
+    sql_flavor: trino
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN REGEXP_LIKE(NULLIF({COLUMN_NAME}, '') , '{BASELINE_VALUE}') = TRUE THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1384'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''), r'{BASELINE_VALUE}')
+      GROUP BY `{COLUMN_NAME}`;
+    error_type: Test Results
+  - id: '1318'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 GROUP BY `{COLUMN_NAME}`;
+    error_type: Test Results
+  - id: '1160'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT LIKE '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1103'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1021'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1421'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1217'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  test_templates: []

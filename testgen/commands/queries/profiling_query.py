@@ -1,9 +1,10 @@
+import re
 import typing
 
 from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
 from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
 from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import replace_templated_functions
 
 
@@ -21,6 +22,7 @@ class CProfilingSQL:
     col_name = ""
     col_gen_type = ""
     col_type = ""
+    db_data_type = ""
     col_ordinal_position = "0"
     col_is_decimal = ""
     col_top_freq_update = ""
@@ -98,6 +100,7 @@ class CProfilingSQL:
             "COL_NAME_SANITIZED": self.col_name.replace("'", "''"),
             "COL_GEN_TYPE": self.col_gen_type,
             "COL_TYPE": self.col_type or "",
+            "DB_DATA_TYPE": self.db_data_type or "",
             "COL_POS": self.col_ordinal_position,
             "TOP_FREQ": self.col_top_freq_update,
             "PROFILE_RUN_ID": self.profile_run_id,
@@ -118,6 +121,7 @@ class CProfilingSQL:
             "CONTINGENCY_MAX_VALUES": self.contingency_max_values,
             "PROCESS_ID": self.process_id,
             "SQL_FLAVOR": self.flavor,
+            "QUOTE": get_flavor_service(self.flavor).quote_character
         }
 
     def _get_query(
@@ -130,6 +134,7 @@ class CProfilingSQL:
         params = {}
 
         if query:
+            query = self._process_conditionals(query)
             if extra_params:
                 params.update(extra_params)
             params.update(self._get_params())
@@ -138,6 +143,33 @@ class CProfilingSQL:
             query = replace_templated_functions(query, self.flavor)
 
         return query, params
+
+    def _process_conditionals(self, query: str):
+        re_pattern = re.compile(r"^--\s+TG-(IF|ELSE|ENDIF)(?:\s+(\w+))?\s*$")
+        condition = None
+        updated_query = []
+        for line in query.splitlines(True):
+            if re_match := re_pattern.match(line):
+                match re_match.group(1):
+                    case "IF" if condition is None and re_match.group(2) is not None:
+                        condition = bool(getattr(self, re_match.group(2)))
+                    case "ELSE" if condition is not None:
+                        condition = not condition
+                    case "ENDIF" if condition is not None:
+                        condition = None
+                    case _:
+                        raise ValueError("Template conditional misused")
+            elif condition is not False:
+                updated_query.append(line)
+
+        if condition is not None:
+            raise ValueError("Template conditional misused")
+
+        return "".join(updated_query)
+
+    @property
+    def do_sample_bool(self):
+        return self.parm_do_sample == "Y"
 
     def GetSecondProfilingColumnsQuery(self) -> tuple[str, dict]:
         # Runs on App database
@@ -260,7 +292,12 @@ class CProfilingSQL:
         else:
             strQ += dctSnippetTemplate["strTemplate01_else"]
 
-        strQ += dctSnippetTemplate["strTemplate02_all"]
+        strQ += dctSnippetTemplate["strTemplate01_5"]
+
+        if self.col_gen_type == "X":
+            strQ += dctSnippetTemplate["strTemplate02_X"]
+        else:
+            strQ += dctSnippetTemplate["strTemplate02_else"]
 
         if self.col_gen_type in ["A", "D", "N"]:
             strQ += dctSnippetTemplate["strTemplate03_ADN"]

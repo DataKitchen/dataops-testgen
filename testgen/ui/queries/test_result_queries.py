@@ -70,6 +70,7 @@ def get_test_results(
             -- These are used in the PDF report
             tt.threshold_description, tt.usage_notes, r.test_time,
             dcc.description as column_description,
+            dcc.column_type as column_type,
             COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
             COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
             COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,

@@ -1,0 +1,165 @@
+test_types:
+  id: '1034'
+  test_type: Unique
+  test_name_short: Unique Values
+  test_name_long: Each column value is unique
+  test_description: |-
+    Tests that no values for the column are repeated in multiple records.
+  except_message: |-
+    Column values should be unique per row.
+  measure_uom: Duplicate values
+  measure_uom_description: |-
+    Count of non-unique values
+  selection_criteria: |-
+    record_ct > 500 and record_ct = distinct_value_ct and value_ct > 0
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: |-
+    0
+  default_parm_prompts: |-
+    Threshold Duplicate Value Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Uniqueness
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of duplicate values
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is ideal when the database itself does not enforce a primary key constraint on the table. It serves as an independent check on uniqueness.  If's also useful when there are a small number of exceptions to uniqueness, which can be reflected in the expected threshold count of duplicates.
+  active: Y
+  cat_test_conditions:
+  - id: '7028'
+    test_type: Unique
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6028'
+    test_type: Unique
+    sql_flavor: databricks
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3028'
+    test_type: Unique
+    sql_flavor: mssql
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4028'
+    test_type: Unique
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1028'
+    test_type: Unique
+    sql_flavor: redshift
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7028'
+    test_type: Unique
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2028'
+    test_type: Unique
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5028'
+    test_type: Unique
+    sql_flavor: trino
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1391'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      GROUP BY `{COLUMN_NAME}`
+      HAVING COUNT(*) > 1
+      ORDER BY COUNT(*) DESC
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1325'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` HAVING count > 1 ORDER BY count DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1167'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500 "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC;
+    error_type: Test Results
+  - id: '1110'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1028'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1428'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  - id: '1224'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 500;
+    error_type: Test Results
+  test_templates: []

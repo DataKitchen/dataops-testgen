@@ -1,6 +1,6 @@
-__all__ = ["AddQuotesToIdentifierCSV", "CleanSQL", "ConcatColumnList"]
-
 import re
+
+from testgen.common.database.database_service import get_flavor_service
 
 
 def CleanSQL(strInput: str) -> str:
@@ -16,7 +16,7 @@ def CleanSQL(strInput: str) -> str:
     return " ".join(parts)
 
 
-def AddQuotesToIdentifierCSV(strInput: str) -> str:
+def quote_identifiers(identifiers: str, flavor: str) -> str:
     # Keywords -- identifiers to quote
     keywords = [
         "select",
@@ -26,14 +26,22 @@ def AddQuotesToIdentifierCSV(strInput: str) -> str:
         "by",
         "having",
     ]
+    flavor_service = get_flavor_service(flavor)
+    quote = flavor_service.quote_character
 
     quoted_values = []
-    for value in strInput.split(","):
+    for value in identifiers.split(","):
         value = value.strip()
-        if value.startswith('"') and value.endswith('"'):
+        if value.startswith(quote) and value.endswith(quote):
             quoted_values.append(value)
-        elif any(c.isupper() or c.isspace() or value.lower() in keywords for c in value):
-            quoted_values.append(f'"{value}"')
+        elif any(
+            (flavor_service.default_uppercase and c.lower())
+            or (not flavor_service.default_uppercase and c.isupper())
+            or c.isspace()
+            or value.lower() in keywords
+            for c in value
+        ):
+            quoted_values.append(f"{quote}{value}{quote}")
         else:
             quoted_values.append(value)
     return ", ".join(quoted_values)

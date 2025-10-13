@@ -1,0 +1,169 @@
+test_types:
+  id: '1040'
+  test_type: Variability_Increase
+  test_name_short: Variability Increase
+  test_name_long: Variability has increased above threshold
+  test_description: |-
+    Tests that the spread or dispersion of column values has increased significantly over baseline, indicating a drop in stability of the measure.
+  except_message: |-
+    The Standard Deviation of the measure has increased beyond the defined threshold. This could signal a change in a process or a data quality issue.
+  measure_uom: Pct SD shift
+  measure_uom_description: |-
+    Percent of baseline Standard Deviation
+  selection_criteria: |-
+    general_type = 'N' AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%' AND value_ct <> distinct_value_ct AND distinct_value_ct > 10 AND stdev_value > 0 AND avg_value IS NOT NULL AND NOT (distinct_value_ct = max_value - min_value + 1 AND distinct_value_ct > 2)
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '0.75'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sd,threshold_value
+  default_parm_values: |-
+    stdev_value,120
+  default_parm_prompts: |-
+    Std Deviation at Baseline,Expected Maximum Percent
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Accuracy
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected maximum pct of baseline Standard Deviation (SD)
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: "This test looks for percent shifts in standard deviation as a measure\
+    \ of the stability of a measure over time.  A significant change could indicate\
+    \ that new values are erroneous, or that the cohort being evaluated is significantly\
+    \ different from baseline.  An increase in particular could mark new problems\
+    \ in measurement,  a more heterogeneous cohort, or that significant outliers have\
+    \ been introduced. Consider this test along with Average Shift and New Shift.\
+    \  If the average shifts as well, there may be a fundamental shift in the dataset\
+    \ or process used to collect the data point.  This might suggest a data shift\
+    \ that should be noted and assessed by business users. If the average does not\
+    \ shift, this may point to a data quality or data collection problem. "
+  active: Y
+  cat_test_conditions:
+  - id: '7031'
+    test_type: Variability_Increase
+    sql_flavor: bigquery
+    measure: |-
+      100.0 * STDDEV(CAST({COLUMN_NAME} AS FLOAT64)) / {BASELINE_SD}
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6031'
+    test_type: Variability_Increase
+    sql_flavor: databricks
+    measure: |-
+      100.0*STDDEV_SAMP({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3031'
+    test_type: Variability_Increase
+    sql_flavor: mssql
+    measure: |-
+      100.0*STDEV(CAST({COLUMN_NAME} AS FLOAT))/CAST({BASELINE_SD} AS FLOAT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4031'
+    test_type: Variability_Increase
+    sql_flavor: postgresql
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1031'
+    test_type: Variability_Increase
+    sql_flavor: redshift
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7031'
+    test_type: Variability_Increase
+    sql_flavor: redshift_spectrum
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2031'
+    test_type: Variability_Increase
+    sql_flavor: snowflake
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5031'
+    test_type: Variability_Increase
+    sql_flavor: trino
+    measure: |-
+      100.0*STDDEV(CAST({COLUMN_NAME} AS REAL))/{BASELINE_SD}
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1394'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV_POP(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_standard_deviation
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1328'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT)) as current_standard_deviation FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1170'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1113'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1031'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV("{COLUMN_NAME}"::FLOAT) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1431'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1227'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

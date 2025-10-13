@@ -44,9 +44,9 @@ class HygieneIssuesPage(Page):
         self,
         run_id: str,
         likelihood: str | None = None,
-        issue_type: str | None = None,
         table_name: str | None = None,
         column_name: str | None = None,
+        issue_type: str | None = None,
         action: str | None = None,
         **_kwargs,
     ) -> None:
@@ -70,12 +70,19 @@ class HygieneIssuesPage(Page):
             ],
         )
 
-        others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.2, .2, .15, .3, .15], vertical_alignment="bottom")
+        others_summary_column, pii_summary_column, score_column, actions_column, export_button_column = st.columns([.25, .2, .1, .3, .15], vertical_alignment="bottom")
         (liklihood_filter_column, table_filter_column, column_filter_column, issue_type_filter_column, action_filter_column, sort_column) = (
             st.columns([.2, .15, .2, .2, .15, .1], vertical_alignment="bottom")
         )
-        testgen.flex_row_end(actions_column)
+        testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
+
+        filters_changed = False
+        current_filters = (likelihood, table_name, column_name, issue_type, action)
+        if  (query_filters := st.session_state.get("hygiene_issues:filters")) != current_filters:
+            if query_filters:
+                filters_changed = True
+            st.session_state["hygiene_issues:filters"] = current_filters
 
         with liklihood_filter_column:
             likelihood = testgen.select(
@@ -114,7 +121,6 @@ class HygieneIssuesPage(Page):
                 )
             column_name = testgen.select(
                 options=column_options,
-                value_column="column_name",
                 default_value=column_name,
                 bind_to_query="column_name",
                 label="Column",
@@ -160,8 +166,10 @@ class HygieneIssuesPage(Page):
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         with actions_column:
-            str_help = "Toggle on to perform actions on multiple Hygiene Issues"
-            do_multi_select = st.toggle("Multi-Select", help=str_help)
+            multi_select = st.toggle(
+                "Multi-Select",
+                help="Toggle on to perform actions on multiple Hygiene Issues",
+            )
 
         with st.container():
             with st.spinner("Loading data ..."):
@@ -178,48 +186,27 @@ class HygieneIssuesPage(Page):
         summaries = get_profiling_anomaly_summary(run_id)
         others_summary = [summary for summary in summaries if summary.get("type") != "PII"]
         with others_summary_column:
-            testgen.summary_bar(
+            testgen.summary_counts(
                 items=others_summary,
                 label="Hygiene Issues",
-                height=20,
-                width=400,
             )
 
         anomalies_pii_summary = [summary for summary in summaries if summary.get("type") == "PII"]
         if anomalies_pii_summary:
             with pii_summary_column:
-                testgen.summary_bar(
+                testgen.summary_counts(
                     items=anomalies_pii_summary,
-                    label="Potential PII",
-                    height=20,
-                    width=400,
+                    label="Potential PII (Risk)",
                 )
 
-        lst_show_columns = [
-            "table_name",
-            "column_name",
-            "issue_likelihood",
-            "action",
-            "anomaly_name",
-            "detail",
-        ]
-
-        # Show main grid and retrieve selections
-        selected = fm.render_grid_select(
+        selected, selected_row = fm.render_grid_select(
             df_pa,
-            lst_show_columns,
-            int_height=400,
-            do_multi_select=do_multi_select,
-            bind_to_query_name="selected",
-            bind_to_query_prop="id",
-            show_column_headers=[
-                    "Table",
-                    "Column",
-                    "Likelihood",
-                    "Action",
-                    "Issue Type",
-                    "Detail"
-            ]
+            ["table_name", "column_name", "issue_likelihood", "action", "anomaly_name", "detail"],
+            ["Table", "Column", "Likelihood", "Action", "Issue Type", "Detail"],
+            id_column="id",
+            selection_mode="multiple" if multi_select else "single",
+            reset_pagination=filters_changed,
+            bind_to_query=True,
         )
 
         popover_container = export_button_column.empty()
@@ -245,22 +232,16 @@ class HygieneIssuesPage(Page):
                 if selected:
                     st.button(label="Selected issues", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
 
-        if not df_pa.empty:
-            if selected:
-                # Always show details for last selected row
-                selected_row = selected[len(selected) - 1]
-            else:
-                selected_row = None
+        # Display hygiene issue detail for selected row
+        if not selected:
+            st.markdown(":orange[Select a record to see more information.]")
+        else:
+            _, buttons_column = st.columns([0.5, 0.5])
 
-            # Display hygiene issue detail for selected row
-            if not selected_row:
-                st.markdown(":orange[Select a record to see more information.]")
-            else:
-                _, buttons_column = st.columns([0.5, 0.5])
+            with buttons_column:
+                col1, col2, col3 = st.columns([.3, .3, .3])
 
-                with buttons_column:
-                    col1, col2, col3 = st.columns([.3, .3, .3])
-
+            if selected_row:
                 with col1:
                     view_profiling_button(
                         selected_row["column_name"], selected_row["table_name"], selected_row["table_groups_id"]
@@ -277,39 +258,40 @@ class HygieneIssuesPage(Page):
                         )
                         source_data_dialog(selected_row)
 
-                with col3:
-                    if st.button(
-                            ":material/download: Issue Report",
-                            use_container_width=True,
-                            help="Generate a PDF report for each selected issue",
-                    ):
-                        MixpanelService().send_event(
-                            "download-issue-report",
-                            page=self.path,
-                            issue_count=len(selected),
+            with col3:
+                if st.button(
+                        ":material/download: Issue Report",
+                        use_container_width=True,
+                        help="Generate a PDF report for each selected issue",
+                ):
+                    MixpanelService().send_event(
+                        "download-issue-report",
+                        page=self.path,
+                        issue_count=len(selected),
+                    )
+                    dialog_title = "Download Issue Report"
+                    if len(selected) == 1:
+                        download_dialog(
+                            dialog_title=dialog_title,
+                            file_content_func=get_report_file_data,
+                            args=(selected[0],),
                         )
-                        dialog_title = "Download Issue Report"
-                        if len(selected) == 1:
-                            download_dialog(
-                                dialog_title=dialog_title,
-                                file_content_func=get_report_file_data,
-                                args=(selected[0],),
-                            )
-                        else:
-                            zip_func = zip_multi_file_data(
-                                "testgen_hygiene_issue_reports.zip",
-                                get_report_file_data,
-                                [(arg,) for arg in selected],
-                            )
-                            download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+                    else:
+                        zip_func = zip_multi_file_data(
+                            "testgen_hygiene_issue_reports.zip",
+                            get_report_file_data,
+                            [(arg,) for arg in selected],
+                        )
+                        download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
 
+            if selected_row:
                 fm.render_html_list(
                     selected_row,
                     [
                         "anomaly_name",
                         "table_name",
                         "column_name",
-                        "column_type",
+                        "db_data_type",
                         "anomaly_description",
                         "detail",
                         "likelihood_explanation",
@@ -318,8 +300,6 @@ class HygieneIssuesPage(Page):
                     "Hygiene Issue Detail",
                     int_data_width=700,
                 )
-        else:
-            st.markdown(":green[**No Hygiene Issues Found**]")
 
         cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
 
@@ -421,7 +401,7 @@ def get_profiling_anomalies(
         r.table_name,
         r.column_name,
         r.schema_name,
-        r.column_type,
+        r.db_data_type,
         t.anomaly_name,
         t.issue_likelihood,
         r.disposition,
@@ -540,8 +520,8 @@ def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
         { "label": "Likely", "value": result.likely_ct, "color": "orange" },
         { "label": "Possible", "value": result.possible_ct, "color": "yellow" },
         { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
-        { "label": "High Risk", "value": result.pii_high_ct, "color": "red", "type": "PII" },
-        { "label": "Moderate Risk", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
+        { "label": "High", "value": result.pii_high_ct, "color": "red", "type": "PII" },
+        { "label": "Moderate", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
         { "label": "Dismissed", "value": result.pii_dismissed_ct, "color": "grey", "type": "PII" },
     ]
 
@@ -591,7 +571,7 @@ def source_data_dialog(selected_row):
     st.markdown("#### SQL Query")
     query = get_hygiene_issue_source_query(selected_row)
     if query:
-        st.code(query, language="sql")
+        st.code(query, language="sql", height=100)
 
     with st.spinner("Retrieving source data..."):
         bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
@@ -610,7 +590,7 @@ def source_data_dialog(selected_row):
         if len(df_bad) == 500:
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
-        st.dataframe(df_bad, height=500, width=1050, hide_index=True)
+        st.dataframe(df_bad, width=1050, hide_index=True)
 
 
 def do_disposition_update(selected, str_new_status):

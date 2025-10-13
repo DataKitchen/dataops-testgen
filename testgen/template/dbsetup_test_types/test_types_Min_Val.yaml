@@ -1,0 +1,162 @@
+test_types:
+  id: '1021'
+  test_type: Min_Val
+  test_name_short: Minimum Value
+  test_name_long: All values at or above set minimum
+  test_description: |-
+    Tests that the minimum value present in the column is no lower than the minimum value in baseline data
+  except_message: |-
+    Minimum column value less than baseline.
+  measure_uom: Values under limit
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type='N' AND functional_data_type ILIKE 'Measure%' AND min_value IS NOT NULL AND (distinct_value_ct >= 2 OR (distinct_value_ct=2 and min_value<>0 and max_value<>1))
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: |-
+    min_value,0
+  default_parm_prompts: |-
+    Minimum Value at Baseline,Threshold Error Count
+  default_parm_help: null
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of values under limit
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes senes for valid data.
+  active: Y
+  cat_test_conditions:
+  - id: '7016'
+    test_type: Min_Val
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6016'
+    test_type: Min_Val
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3016'
+    test_type: Min_Val
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4016'
+    test_type: Min_Val
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '1016'
+    test_type: Min_Val
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7016'
+    test_type: Min_Val
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2016'
+    test_type: Min_Val
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '5016'
+    test_type: Min_Val
+    sql_flavor: trino
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1379'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, (ABS(CAST(`{COLUMN_NAME}` AS NUMERIC)) - ABS({BASELINE_VALUE})) AS difference_from_baseline
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+      WHERE CAST(`{COLUMN_NAME}` AS NUMERIC) < {BASELINE_VALUE}
+      LIMIT 500;
+    error_type: Test Results
+  - id: '1313'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1155'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP 500  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE};
+    error_type: Test Results
+  - id: '1098'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1016'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1416'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  - id: '1212'
+    test_id: '1021'
+    test_type: Min_Val
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+    error_type: Test Results
+  test_templates: []

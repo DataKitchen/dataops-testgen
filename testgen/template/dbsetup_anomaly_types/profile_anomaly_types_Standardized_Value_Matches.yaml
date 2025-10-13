@@ -1,0 +1,89 @@
+profile_anomaly_types:
+  id: '1017'
+  anomaly_type: Standardized_Value_Matches
+  data_object: Column
+  anomaly_name: Similar Values Match When Standardized
+  anomaly_description: |-
+    When column values are standardized (removing spaces, single-quotes, periods and dashes), matching values are found in other records. This may indicate that formats should be further standardized to allow consistent comparisons for merges, joins and roll-ups. It could also indicate the presence of unintended duplicates.
+  anomaly_criteria: "p.general_type = 'A' AND p.distinct_std_value_ct <> p.distinct_value_ct\
+    \ AND p.functional_data_type NOT LIKE 'Person%Name' "
+  detail_expression: |-
+    'Distinct Values: ' || p.distinct_value_ct::VARCHAR
+              || ', Standardized: ' || p.distinct_std_value_ct::VARCHAR
+  issue_likelihood: Likely
+  suggested_action: |-
+    Review standardized vs. raw data values for all matches. Correct data if values should be consistent.
+  dq_score_prevalence_formula: |-
+    (p.distinct_value_ct - p.distinct_std_value_ct)::FLOAT/NULLIF(p.value_ct, 0)
+  dq_score_risk_factor: '0.66'
+  dq_dimension: Uniqueness
+  target_data_lookups:
+  - id: '1355'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      WITH cte AS (
+        SELECT UPPER(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r"[ '\.\-\,]", '')) AS possible_standard_value,
+               COUNT(DISTINCT `{COLUMN_NAME}`) AS cnt
+        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
+        GROUP BY possible_standard_value
+        HAVING COUNT(DISTINCT `{COLUMN_NAME}`) > 1
+      )
+      SELECT DISTINCT a.`{COLUMN_NAME}`, b.possible_standard_value, COUNT(*) AS count
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a
+      JOIN cte b
+        ON UPPER(REGEXP_REPLACE(CAST(a.`{COLUMN_NAME}` AS STRING), r"[ '\.\-\,]", '')) = b.possible_standard_value
+      GROUP BY a.`{COLUMN_NAME}`, b.possible_standard_value
+      ORDER BY b.possible_standard_value ASC, count DESC
+      LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1289'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE(`{COLUMN_NAME}`, ' '',.-', '')) as possible_standard_value, COUNT(DISTINCT `{COLUMN_NAME}`) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY UPPER(TRANSLATE(`{COLUMN_NAME}`, ' '',.-', '')) HAVING COUNT(DISTINCT `{COLUMN_NAME}`) > 1 ) SELECT DISTINCT a.`{COLUMN_NAME}`, possible_standard_value, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` a, cte b WHERE UPPER(TRANSLATE(a.`{COLUMN_NAME}`, ' '',.-', '')) = b.possible_standard_value GROUP BY a.`{COLUMN_NAME}`, possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1131'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT TOP 500 UPPER(REPLACE(TRANSLATE("{COLUMN_NAME}",' '''',.-',REPLICATE(' ', LEN(' '''',.-'))),' ','')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") as distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(REPLACE(TRANSLATE("{COLUMN_NAME}",' '''',.-',REPLICATE(' ', LEN(' '''',.-'))),' ','')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(REPLACE(TRANSLATE("{COLUMN_NAME}",' '''',.-',REPLICATE(' ', LEN(' '''',.-'))),' ','')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC;
+    error_type: Profile Anomaly
+  - id: '1074'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", ' '',.-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1049'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) as possible_standard_value,                 COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", ' '',.-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1449'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) as possible_standard_value,                 COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", ' '',.-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;
+    error_type: Profile Anomaly
+  - id: '1188'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", ' '',.-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT 500;
+    error_type: Profile Anomaly
