@@ -80,12 +80,11 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId },
+        { id: wrapperId, class: 'tg-profiling-runs' },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.profiling_run_count > 0
             ? div(
-                { class: 'tg-profiling-runs' },
                 Toolbar(props, userCanEdit),
                 () => profilingRuns.val.length
                 ? div(
@@ -408,7 +407,7 @@ const ConditionalEmptyState = (
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-profiling-runs {
-    min-height: 500px;
+    min-height: 550px;
 }
 `);
 
