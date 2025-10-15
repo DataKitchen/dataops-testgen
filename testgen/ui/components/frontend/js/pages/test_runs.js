@@ -81,12 +81,11 @@ const TestRuns = (/** @type Properties */ props) => {
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId },
+        { id: wrapperId, class: 'tg-test-runs' },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.test_run_count > 0
             ? div(
-                { class: 'tg-test-runs' },
                 Toolbar(props, userCanEdit),
                 () => testRuns.val.length
                 ? div(
@@ -406,7 +405,7 @@ const ConditionalEmptyState = (
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-test-runs {
-    min-height: 500px;
+    min-height: 550px;
 }
 `);
 

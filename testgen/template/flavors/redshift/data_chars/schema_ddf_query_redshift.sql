@@ -14,9 +14,9 @@ SELECT '{PROJECT_CODE}'            as project_code,
            ELSE c.data_type END AS column_type,
        CASE
            WHEN c.data_type ILIKE 'char%'
-               THEN c.data_type || '(' || CAST(c.character_maximum_length AS VARCHAR) || ')'
+               THEN c.data_type || COALESCE('(' || CAST(c.character_maximum_length AS VARCHAR) || ')', '')
            WHEN c.data_type = 'numeric'
-               THEN 'numeric' || COALESCE( '(' || CAST(c.numeric_precision AS VARCHAR) || ','
+               THEN 'numeric' || COALESCE('(' || CAST(c.numeric_precision AS VARCHAR) || ','
                     || CAST(c.numeric_scale AS VARCHAR) || ')', '')
            ELSE c.data_type
        END AS db_data_type,
