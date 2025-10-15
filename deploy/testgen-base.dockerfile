@@ -1,4 +1,4 @@
-FROM python:3.12.7-alpine3.20
+FROM python:3.12-alpine3.22
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
@@ -14,7 +14,7 @@ RUN apk update && apk upgrade && apk add --no-cache \
     cmake \
     musl-dev \
     gfortran \
-    linux-headers=6.6-r0 \
+    linux-headers=6.14.2-r0 \
     # Tools needed for installing the MSSQL ODBC drivers \
     curl \
     gpg \
@@ -25,7 +25,7 @@ RUN apk update && apk upgrade && apk add --no-cache \
     unixodbc=2.3.12-r0 \
     unixodbc-dev=2.3.12-r0 \
     # Pinned versions for security
-    xz=5.6.2-r1
+    xz=5.8.1-r0
 
 RUN apk add --no-cache \
     --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/community \
