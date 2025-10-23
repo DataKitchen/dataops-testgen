@@ -24,6 +24,7 @@ import { Link } from '../components/link.js';
 import { Caption } from '../components/caption.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
+import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
 const { div, h4, small, span, i } = van.tags;
 
@@ -149,32 +150,37 @@ const TestSuites = (/** @type Properties */ props) => {
                                 Caption({ content: 'Description', style: 'margin-bottom: 2px;' }),
                                 span({'data-testid': 'test-suite-description'}, testSuite.test_suite_description ?? '--'),
                             ),
-                            div(
-                                { class: 'flex-column' },
-                                Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
-                                testSuite.latest_run_start
-                                ? [
-                                    Link({
-                                        href: 'test-runs:results',
-                                        params: { run_id: testSuite.latest_run_id },
-                                        label: formatTimestamp(testSuite.latest_run_start),
-                                        class: 'mb-4',
-                                    }),
-                                    SummaryBar({
-                                        items: [
-                                            { label: 'Passed', value: parseInt(testSuite.last_run_passed_ct), color: 'green' },
-                                            { label: 'Warning', value: parseInt(testSuite.last_run_warning_ct), color: 'yellow' },
-                                            { label: 'Failed', value: parseInt(testSuite.last_run_failed_ct), color: 'red' },
-                                            { label: 'Error', value: parseInt(testSuite.last_run_error_ct), color: 'brown' },
-                                            { label: 'Log', value: parseInt(testSuite.last_run_log_ct), color: 'blue' },
-                                            { label: 'Dismissed', value: parseInt(testSuite.last_run_dismissed_ct), color: 'grey' },
-                                        ],
-                                        height: 20,
-                                        width: 350,
-                                    })
-                                ]
-                                : span('--'),
-                            ),
+                            testSuite.monitoring_summary
+                                ? AnomaliesSummary(
+                                    testSuite.monitoring_summary,
+                                    Caption({ content: `Total anomalies in last ${testSuite.monitoring_summary.lookback} runs`, style: 'margin-bottom: 2px;' }),
+                                )
+                                : div(
+                                    { class: 'flex-column' },
+                                    Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
+                                    testSuite.latest_run_start
+                                        ? [
+                                            Link({
+                                                href: 'test-runs:results',
+                                                params: { run_id: testSuite.latest_run_id },
+                                                label: formatTimestamp(testSuite.latest_run_start),
+                                                class: 'mb-4',
+                                            }),
+                                            SummaryBar({
+                                                items: [
+                                                    { label: 'Passed', value: parseInt(testSuite.last_run_passed_ct), color: 'green' },
+                                                    { label: 'Warning', value: parseInt(testSuite.last_run_warning_ct), color: 'yellow' },
+                                                    { label: 'Failed', value: parseInt(testSuite.last_run_failed_ct), color: 'red' },
+                                                    { label: 'Error', value: parseInt(testSuite.last_run_error_ct), color: 'brown' },
+                                                    { label: 'Log', value: parseInt(testSuite.last_run_log_ct), color: 'blue' },
+                                                    { label: 'Dismissed', value: parseInt(testSuite.last_run_dismissed_ct), color: 'grey' },
+                                                ],
+                                                height: 20,
+                                                width: 350,
+                                            })
+                                        ]
+                                        : span('--'),
+                                ),
                             div(
                                 { class: 'flex-column' },
                                 userCanEdit

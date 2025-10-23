@@ -139,7 +139,7 @@ button.tg-button[disabled] {
     cursor: not-allowed;
 }
 
-button.tg-button > i:has(+ span) {
+button.tg-button > i:has(+ span:not(.tg-tooltip)) {
     margin-right: 8px;
 }
 

@@ -38,6 +38,7 @@ import { TestDefinitionSummary } from './pages/test_definition_summary.js';
 import { NotificationSettings } from './pages/notification_settings.js';
 import { TableMonitoringTrend } from './pages/table_monitoring_trends.js';
 import { MonitorsDashboard } from './pages/monitors_dashboard.js';
+import { TestResultsChart } from './pages/test_results_chart.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -74,6 +75,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         notification_settings: NotificationSettings,
         monitors_dashboard: MonitorsDashboard,
         table_monitoring_trends: TableMonitoringTrend,
+        test_results_chart: TestResultsChart,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {

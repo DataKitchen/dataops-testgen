@@ -81,6 +81,9 @@ body {
     --select-hover-background: rgb(240, 242, 246);
 
     --app-background-color: #f8f9fa;
+
+    --table-hover-color: #ecf0f1;
+    --table-selection-color: rgba(0,145,234,.28);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -664,4 +667,32 @@ input::-ms-clear {
 
 .text-center {
     text-align: center;
+}
+
+.visible-overflow {
+    overflow: visible;
+}
+
+.anomali-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18px;
+    background: var(--green);
+}
+
+.anomali-tag.no-value {
+    background: var(--light-grey);
+}
+
+.anomali-tag > .material-symbols-rounded {
+    color: white;
+    font-size: 20px;
+}
+
+.anomali-tag.has-anomalies {
+    padding: 1px 5px;
+    border-radius: 10px;
+    background: var(--error-color);
+    color: white;
 }

@@ -16,6 +16,11 @@
  * @property {string?} field
  * @property {('asc'|'desc')?} order
  * 
+ * @typedef SelectonOptions
+ * @type {object}
+ * @property {boolean?} multi
+ * @property {((rowIndexes: number[]) => void)?} onRowsSelected
+ * 
  * @typedef SortOptions
  * @type {object}
  * @property {string?} field
@@ -41,6 +46,7 @@
  * @property {boolean?} dynamicWidth
  * @property {SortOptions?} sort
  * @property {PaginatorOptions?} paginator
+ * @property {SelectonOptions?} selection
  */
 import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -69,8 +75,9 @@ const Table = (options, rows) => {
         return [columns];
     });
     const dataColumns = van.derive(() => getValue(headerLines)?.slice(-1)?.[0] ?? []);
-    const columnWidths = [];
     const widthSum = van.state(0);
+    const columnWidths = [];
+
     van.derive(() => {
         for (let i = 0; i < dataColumns.val.length; i++) {
             const column = dataColumns.val[i];
@@ -80,6 +87,37 @@ const Table = (options, rows) => {
         }
         widthSum.val = widthSum.val || undefined;
     });
+
+    const selectedRows = [];
+    van.derive(() => {
+        const rows_ = getValue(rows);
+        rows_.forEach((_, idx) => {
+            selectedRows[idx] = selectedRows[idx] ?? van.state(false)
+            selectedRows[idx].val = false;
+        });
+    });
+    van.derive(() => {
+        const selectedRows_ = [];
+        for (let i = 0; i < selectedRows.length; i++) {
+            if (selectedRows[i].val) {
+                selectedRows_.push(i);
+            }
+        }
+
+        options.selection?.onRowsSelected?.(selectedRows_);
+    });
+    const onRowSelected = (idx) => {
+        if (!options.selection?.multi) {
+            for (const state of selectedRows) {
+                state.val = false;
+            }
+        }
+
+        if (options.selection?.onRowsSelected) {
+            selectedRows[idx].val = !selectedRows[idx].val;
+        }
+    };
+
 
     const renderPaginator = van.derive(() => getValue(options.paginator) != undefined);
     const paginatorOptions = van.derive(() => {
@@ -115,7 +153,7 @@ const Table = (options, rows) => {
 
     return div(
         {
-            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''}`,
+            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${options.onRowsSelected ? 'tg-table-hoverable' : ''}`,
             style: () => `height: ${getValue(options.height) ? getValue(options.height) + 'px' : defaultHeight};`,
         },
         options.header,
@@ -157,6 +195,7 @@ const Table = (options, rows) => {
                     const rows_ = getValue(rows);
                     if (rows_.length <= 0 && options.emptyState) {
                         return tbody(
+                            {class: 'tg-table-empty-state-body'},
                             tr(
                                 td(
                                     {colspan: columnWidths.length},
@@ -169,7 +208,10 @@ const Table = (options, rows) => {
                     return tbody(
                         rows_.map((row, idx) =>
                             tr(
-                                {},
+                                {
+                                    class: () => selectedRows[idx].val ? 'selected' : '',
+                                    onclick: () => onRowSelected(idx),
+                                },
                                 ...getValue(dataColumns).map(column => TableCell(column, row, idx)),
                             )
                         ),
@@ -239,7 +281,6 @@ const TableHeaderColumn = (
     };
 
     const sortIcon = van.derive(() => {
-        console.log('sortOptions changed:', sortOptions.val);
         if (!isDataColumn || !column.sortable) {
             return null;
         }
@@ -386,8 +427,12 @@ stylesheet.replace(`
 }
 
 .tg-table > .tg-table-scrollable > table {
-    height: 100%;
     border-collapse: collapse;
+    border-color: var(--border-color);
+}
+
+.tg-table > .tg-table-scrollable > table:has(.tg-table-empty-state-body) {
+    height: 100%;
 }
 
 .tg-table > .tg-table-scrollable > table > thead {
@@ -436,8 +481,16 @@ stylesheet.replace(`
     background: var(--border-color);
 }
 
+.tg-table > .tg-table-scrollable > table > tbody > tr {
+    height: 40px;
+}
+
 .tg-table > .tg-table-scrollable > table > tbody > tr:not(:last-of-type) {
     border-bottom: var(--button-stroked-border);
+}
+
+.tg-table > .tg-table-scrollable > table > tbody > tr.selected {
+    background-color: var(--table-selection-color);
 }
 
 .tg-table > .tg-table-scrollable > table .tg-table-cell {
@@ -466,6 +519,10 @@ stylesheet.replace(`
 .tg-table.tg-table-dynamic-width > .tg-table-scrollable > table > tbody td {
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.tg-table.tg-table-hoverable > .tg-table-scrollable > table > tbody tr:hover {
+    background-color: var(--table-hover-color);
 }
 `);
 

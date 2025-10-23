@@ -38,6 +38,23 @@ function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
     observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});
 }
 
+/**
+ * @param {string} elementId
+ * @param {((rect: DOMRect, element: HTMLElement) => void)} callback
+ * @returns {ResizeObserver}
+ */
+function onFrameResized(elementId, callback) {
+    const observer = new ResizeObserver(() => {
+        const element = document.getElementById(elementId);
+        if (element) {
+            callback(element.getBoundingClientRect(), element);
+        }
+    });
+    observer.observe(window.frameElement);
+
+    return observer;
+}
+
 function loadStylesheet(
     /** @type string */key,
     /** @type CSSStyleSheet */stylesheet,
@@ -207,4 +224,48 @@ function checkIsRequired(validators) {
     return isRequired;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired };
+/**
+ * 
+ * @param {string} template 
+ * @param {object} context
+ */
+function renderTemplate(template, context) {
+    return template.replaceAll(/\{([a-zA-Z_$][a-zA-Z0-9_$]*(\[\d+\]|\.[a-zA-Z0-9_$]+)*)\}/g, (match, p1, p2, offset, _, groups) => {
+        return extractNestedValue(context, p1) ?? '';
+    });
+}
+
+/**
+ * Dynamically extracts a value from a nested object or array using a path string.
+ *
+ * @param {object | array} obj
+ * @param {string} path
+ * @returns {*}
+ */
+const extractNestedValue = (obj, path) => {
+    const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1');
+    const keys = normalizedPath.split('.').filter(key => key.length > 0);
+    return keys.reduce((acc, key) => {
+        if (acc === null || acc === undefined) {
+            return undefined;
+        }
+        return acc[key];
+    }, obj);
+};
+
+/**
+ * 
+ * @param {(string|number)} value 
+ * @returns {number}
+ */
+function parseDate(value) {
+    if (typeof value === 'string') {
+        return Date.parse(value);
+    } else if (typeof value === 'number') {
+        return value * 1000;
+    }
+
+    return value;
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, renderTemplate, onFrameResized, parseDate };

@@ -17,6 +17,7 @@
  * @property {string?} tooltip
  * @property {string?} tooltipPosition
  * @property {boolean?} disabled
+ * @property {((event: any) => void)?} onClick
  */
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -42,6 +43,7 @@ const Link = (/** @type Properties */ props) => {
     const href = getValue(props.href);
     const params = getValue(props.params) ?? {};
     const open_new = !!getValue(props.open_new);
+    const onClick = getValue(props.onClick);
     const showTooltip = van.state(false);
     const isExternal = /http(s)?:\/\//.test(href);
 
@@ -54,11 +56,11 @@ const Link = (/** @type Properties */ props) => {
             style: props.style,
             href: isExternal ? href : `/${href}${getQueryFromParams(params)}`,
             target: open_new ? '_blank' : '',
-            onclick: open_new ? null : (event) => {
+            onclick: open_new ? null : (onClick ?? ((event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 emitEvent('LinkClicked', { href, params });
-            },
+            })),
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },

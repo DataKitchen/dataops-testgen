@@ -1,10 +1,5 @@
 /**
- * @typedef MonitorsSummary
- * @type {object}
- * @property {number} freshness_anomalies
- * @property {number} volume_anomalies
- * @property {number} schema_anomalies
- * @property {number} quality_drift_anomalies
+ * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
  *
  * @typedef FilterOption
  * @type {object}
@@ -44,28 +39,25 @@
  *
  * @typedef Properties
  * @type {object}
- * @property {MonitorsSummary} summary
+ * @property {MonitorSummary} summary
  * @property {FilterOption[]} table_group_filter_options
+ * @property {boolean?} has_monitor_test_suite
  * @property {MonitorList} monitors
  * @property {MonitorListFilters} filters
  * @property {MonitorListSort?} sort
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes, formatDuration, humanReadableDuration, colorMap, formatNumber, viewPortUnitsToPixels } from '../display_utils.js';
-import { Card } from '../components/card.js';
+import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { formatDuration, humanReadableDuration, colorMap, formatNumber, viewPortUnitsToPixels } from '../display_utils.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
-import { Link } from '../components/link.js';
-import { SummaryBar } from '../components/summary_bar.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { ScoreMetric } from '../components/score_metric.js';
 import { Icon } from '../components/icon.js';
 import { Table } from '../components/table.js';
 import { Toggle } from '../components/toggle.js';
-import { Button } from '../components/button.js';
 import { withTooltip } from '../components/tooltip.js';
+import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
 const { div, i, span } = van.tags;
 
@@ -86,6 +78,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             onSortChange: (sort) => emitEvent('SetParamValues', { payload: { sort_field: sort.field ?? null, sort_order: sort.order ?? null } }),
         };
     });
+    const lookback = van.derive(() => getValue(props.summary)?.lookback ?? 0);
     const tablePaginator = van.derive(() => {
         const result = getValue(props.monitors);
         return {
@@ -127,7 +120,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             quality_drift: AnomalyTag(monitor.quality_drift_anomalies),
             latest_update: span(
                 {class: 'text-small text-secondary'},
-                humanReadableDuration(formatDuration(monitor.latest_update, renderTime)),
+                monitor.latest_update ? humanReadableDuration(formatDuration(monitor.latest_update, renderTime)) : '-',
             ),
             row_count: monitor.row_count ?
                 div(
@@ -172,7 +165,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     label: 'Table Group',
                     value: tableGroupFilterValue,
                     options: getValue(props.table_group_filter_options) ?? [],
-                    allowNull: true,
+                    allowNull: false,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
@@ -205,38 +198,50 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             onChange: (checked) => emitEvent('SetParamValues', {payload: {only_tables_with_anomalies: String(checked).toLowerCase()}}),
                         }),
                         span({class: 'fx-flex'}, ''),
-                        Link({
-                            href: '',
-                            params: {},
-                            open_new: true,
-                            label: 'Edit monitor suite',
-                            right_icon: 'open_in_new',
-                            right_icon_size: 13,
-                        }),
+                        getValue(props.has_monitor_test_suite)
+                            ? div(
+                                {
+                                    role: 'button',
+                                    class: 'flex-row fx-gap-1 p-2 clickable',
+                                    style: 'color: var(--link-color); width: fit-content;',
+                                    onclick: () => emitEvent('EditTestSuite', { payload: {} }),
+                                },
+                                span('Edit monitor suite'),
+                                i({class: 'material-symbols-rounded', style: 'font-size: 13px;'}, 'open_in_new'),
+                            )
+                            : null,
                     ),
                     columns: [
                         [
                             {name: 'filler_1', colspan: 2, label: ''},
-                            {name: 'anomalies', label: 'Anomalies in past 24 hours', colspan: 4, padding: 8},
-                            {name: 'changes', label: 'Changes in past 24 hours', colspan: 2, padding: 8},
+                            {name: 'anomalies', label: `Anomalies in last ${lookback.val} runs`, colspan: 2, padding: 8},
+                            {name: 'changes', label: `Changes in last ${lookback.val} runs`, colspan: 1, padding: 8},
                             {name: 'filler_2', label: ''},
                         ],
                         [
                             {name: 'table_state', label: '', align: 'center', width: 36, overflow: 'visible'},
                             {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
                             {name: 'freshness', label: 'Freshness', width: 85, align: 'left'},
-                            {name: 'volume', label: 'Volume', width: 85, align: 'left'},
+                            // {name: 'volume', label: 'Volume', width: 85, align: 'left'},
                             {name: 'schema', label: 'Schema', width: 85, align: 'left'},
-                            {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
+                            // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
                             {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
-                            {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
+                            // {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
                             {name: 'action', label: '', width: 100, align: 'center'},
                         ],
                     ],
-                    emptyState: div(
-                        {class: 'flex-row fx-justify-center empty-table-message'},
-                        span({class: 'text-secondary'}, 'No monitors match these filters'),
-                    ),
+                    emptyState: () => {
+                        let message = 'No monitors match these filters';
+                        const isTableGroupIdFilterApplied = !!getValue(props.filters).table_group_id;
+                        if (isTableGroupIdFilterApplied && !getValue(props.has_monitor_test_suite)) {
+                            message = 'The selected table group does not have a monitor test suite';
+                        }
+
+                        return div(
+                            {class: 'flex-row fx-justify-center empty-table-message'},
+                            span({class: 'text-secondary'}, message),
+                        );
+                    },
                     sort: tableSort,
                     paginator: tablePaginator,
                 },
@@ -245,35 +250,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         ),
     );
 }
-
-/**`
- * 
- * @param {MonitorsSummary} summary 
- */
-const AnomaliesSummary = (summary) => {
-    const SummaryTag = (label, value) => div(
-        {class: 'flex-row fx-gap-1'},
-        div(
-            {class: `flex-row fx-justify-center anomali-tag ${value > 0 ? 'has-anomalies' : ''}`},
-            value > 0
-                ? value
-                : i({class: 'material-symbols-rounded'}, 'check'),
-        ),
-        span({}, label),
-    );
-    
-    return div(
-        {class: 'flex-column fx-gap-2'},
-        span({class: 'text-small text-secondary'}, 'Total anomalies in past 24 hours'),
-        div(
-            {class: 'flex-row fx-gap-5'},
-            SummaryTag('Freshness', summary.freshness_anomalies),
-            SummaryTag('Volume', summary.volume_anomalies),
-            SummaryTag('Schema', summary.schema_anomalies),
-            SummaryTag('Quality Drift', summary.quality_drift_anomalies),
-        ),
-    );
-};
 
 /**
  * @param {number?} value
@@ -299,31 +275,6 @@ const AnomalyTag = (value) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.anomali-tag {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 18px;
-    background: var(--green);
-}
-
-.anomali-tag.no-value {
-    background: var(--light-grey);
-}
-
-.anomali-tag > .material-symbols-rounded {
-    color: white;
-    font-size: 20px;
-}
-
-.anomali-tag.has-anomalies {
-    width: 22px;
-    height: 18px;
-    border-radius: 10px;
-    background: var(--error-color);
-    color: white;
-}
-
 .table-added-state {
     color: ${colorMap.deepPurple};
 }

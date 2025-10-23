@@ -1,6 +1,7 @@
 /**
  * @import { FilterOption, ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
+ * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
  * 
  * @typedef TableGroupSummary
  * @type {object}
@@ -24,6 +25,7 @@
  * @property {number} latest_anomalies_dismissed_ct
  * @property {number?} latest_tests_start
  * @property {TestSuiteSummary[]} test_suites
+ * @property {MonitorSummary?} monitoring_summary
  *
  * @typedef SortOption
  * @type {object}
@@ -49,6 +51,7 @@ import { SummaryBar } from '../components/summary_bar.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { ScoreMetric } from '../components/score_metric.js';
 import { SummaryCounts } from '../components/summary_counts.js';
+import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
 const { div, h3, hr, span } = van.tags;
 
@@ -116,7 +119,11 @@ const ProjectDashboard = (/** @type Properties */ props) => {
             ? getValue(filteredTableGroups).length
                 ? div(
                     { class: 'flex-column mt-4' },
-                    getValue(filteredTableGroups).map(tableGroup => TableGroupCard(tableGroup))   
+                    getValue(filteredTableGroups).map(tableGroup =>
+                        tableGroup.monitoring_summary && (tableGroup.monitoring_summary.lookback ?? 0) > 0
+                            ? TableGroupCardWithMonitor(tableGroup)
+                            : TableGroupCard(tableGroup)
+                    )
                 )
                 : div(
                     { class: 'mt-7 text-secondary', style: 'text-align: center;' },
@@ -128,6 +135,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
+
     return Card({
         testId: 'table-group-summary-card',
         border: true,
@@ -154,6 +162,50 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
+            hr({ class: 'tg-overview--table-group-divider' }),
+            TableGroupLatestProfile(tableGroup),
+            useApprox
+                ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
+                : null,
+        )
+    });
+};
+
+const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup) => {
+    const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
+    return Card({
+        testId: 'table-group-summary-card',
+        border: true,
+        content: () => div(
+            { class: 'flex-column' },
+
+            div(
+                { class: 'flex-row fx-align-flex-start fx-justify-space-between' },
+                div(
+                    { class: 'flex-column', style: 'flex: auto;' },
+                    div(
+                        { class: 'flex-column', style: 'flex: auto;' },
+                        h3(
+                            { class: 'tg-overview--title' },
+                            tableGroup.table_groups_name,
+                        ),
+                        span(
+                            { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
+                            `${formatNumber(tableGroup.table_ct ?? 0)} tables | 
+                            ${formatNumber(tableGroup.column_ct ?? 0)} columns | 
+                            ${formatNumber(useApprox ? tableGroup.approx_record_ct : tableGroup.record_ct)} rows
+                            ${useApprox ? '*' : ''} |
+                            ${formatNumber(useApprox ? tableGroup.approx_data_point_ct : tableGroup.data_point_ct)} data points
+                            ${useApprox ? '*' : ''}`,
+                        ),
+                    ),
+                    AnomaliesSummary(tableGroup.monitoring_summary, `Monitor anomalies in last ${tableGroup.monitoring_summary.lookback} runs`),
+                ),
+                ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
+            ),
+
+            hr({ class: 'tg-overview--table-group-divider' }),
+            TableGroupTestSuiteSummary(tableGroup.test_suites),
             hr({ class: 'tg-overview--table-group-divider' }),
             TableGroupLatestProfile(tableGroup),
             useApprox

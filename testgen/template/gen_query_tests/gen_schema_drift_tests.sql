@@ -1,7 +1,7 @@
 INSERT INTO test_definitions (table_groups_id, profile_run_id, test_type, test_suite_id,
                               schema_name,
                               skip_errors, test_active, last_auto_gen_date, profiling_as_of_date)
-WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date, p.schema_name, p.profile_run_id
+WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     FROM profile_results p
                   INNER JOIN profiling_runs r
                      ON (p.profile_run_id = r.id)
@@ -12,7 +12,13 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date, p.sc
                      AND r.table_groups_id = :TABLE_GROUPS_ID ::UUID
                      AND ts.id = :TEST_SUITE_ID 
                      AND p.run_date::DATE <= :AS_OF_DATE
-                  GROUP BY r.table_groups_id, p.schema_name, p.profile_run_id),
+                  GROUP BY r.table_groups_id),
+    curprof AS (SELECT p.schema_name, p.profile_run_id
+                   FROM last_run lr
+                 INNER JOIN profile_results p
+                    ON (lr.table_groups_id = p.table_groups_id
+                    AND lr.last_run_date = p.run_date)
+                 GROUP BY p.schema_name, p.profile_run_id),
      locked AS (SELECT schema_name
                   FROM test_definitions
 				     WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
@@ -20,7 +26,7 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date, p.sc
 				       AND test_type = 'Schema_Drift'
                    AND lock_refresh = 'Y'),
      newtests AS (SELECT *
-                  FROM last_run lr
+                  FROM curprof lr
                   INNER JOIN test_types t
                      ON ('Schema_Drift' = t.test_type
                     AND   'Y' = t.active)

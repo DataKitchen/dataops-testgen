@@ -1,33 +1,34 @@
 /**
- * @typedef Point
- * @type {object}
- * @property {number} x
- * @property {number} y
+ * @import {ChartViewBox, Point} from './chart_canvas.js';
  * 
  * @typedef Options
  * @type {object}
- * @property {number} width
- * @property {number} height
- * @property {number} paddingLeft
- * @property {number} paddingRight
- * @property {Point?} nestedPosition
  * @property {number} lineWidth
  * @property {string} lineColor
  * @property {number} modsMarkerSize
  * @property {number} staleMarkerSize
+ * @property {({x1: number, y1: number, x2: number, y2: number})?} middleLine
+ * @property {Point?} nestedPosition
+ * @property {ChartViewBox?} viewBox
+ * @property {Function?} showTooltip
+ * @property {Function?} hideTooltip
+ * @property {((e: SchemaEvent) => void)} onClick
  * 
  * @typedef SchemaEvent
  * @type {object}
+ * @property {Point} point
+ * @property {number} time
  * @property {number} additions
  * @property {number} deletions
  * @property {number} modifications
- * @property {string} time
  */
 import van from '../van.min.js';
-import { colorMap } from '../display_utils.js';
+import { colorMap, formatTimestamp } from '../display_utils.js';
 import { scale } from '../axis_utils.js';
+import { getValue } from '../utils.js';
 
-const { circle, g, line, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
+const { div, span } = van.tags();
+const { circle, g, line, rect, svg } = van.tags("http://www.w3.org/2000/svg");
 
 /**
  * 
@@ -39,18 +40,40 @@ const SchemaChangesChart = (options, ...events) => {
         ...defaultOptions,
         ...(options ?? {}),
     };
-    const origin = {x: 0, y: 0};
-    const end = {x: _options.width, y: _options.height};
-    const center = {x: (origin.x + end.x) / 2, y: (origin.y + end.y) / 2};
-    const timeline = events.map(e => Date.parse(e.time));
+
+    const minX = van.state(0);
+    const minY = van.state(0);
+    const width = van.state(0);
+    const height = van.state(0);
+
+    van.derive(() => {
+        const viewBox = getValue(_options.viewBox);
+        width.val = viewBox?.width;
+        height.val = viewBox?.height;
+        minX.val = viewBox?.minX;
+        minY.val = viewBox?.minY;
+    });
+
+    // const origin = {x: 0, y: 0};
+    // const end = {x: _options.width, y: _options.height};
+    // const center = {x: (origin.x + end.x) / 2, y: (origin.y + end.y) / 2};
+
     const maxAdditions = Math.ceil(Math.max(...events.map(e => e.additions)) / 10) * 10;
     const maxDeletions = Math.ceil(Math.max(...events.map(e => e.deletions)) / 10) * 10;
     const schemaEvents = events.map(e => {
-        const xPosition = scale(Date.parse(e.time), {
-            old: {min: Math.min(...timeline), max: Math.max(...timeline)},
-            new: {min: origin.x + _options.paddingLeft, max: end.x - _options.paddingRight},
-        }, origin.x);
-        const yPosition = center.y;
+        const xPosition = e.point.x;
+        const yPosition = e.point.y;
+        const markerProps = {};
+
+        if (_options.showTooltip) {
+            markerProps.onmouseenter = () => _options.showTooltip?.(SchemaChangesChartTooltip(e), e.point);
+            markerProps.onmouseleave = () => _options.hideTooltip?.();
+        }
+
+        if (_options.onClick && (e.additions + e.deletions + e.modifications) > 0) {
+            markerProps.onclick = () => _options.onClick?.(e);
+            markerProps.style = 'cursor: pointer;';
+        }
 
         const parts = [];
         if ((e.additions + e.deletions + e.modifications) <= 0) {
@@ -67,10 +90,7 @@ const SchemaChangesChart = (options, ...events) => {
                     x1: xPosition,
                     y1: yPosition,
                     x2: xPosition,
-                    y2: scale(e.additions, {
-                        old: {min: 0, max: maxAdditions},
-                        new: {min: center.y, max: origin.y },
-                    }),
+                    y2: scale(e.additions, {old: {min: 0, max: maxAdditions}, new: {min: yPosition, max: 0 }}),
                     'stroke-width': _options.lineWidth,
                     'stroke': _options.lineColor,
                 }));
@@ -81,10 +101,7 @@ const SchemaChangesChart = (options, ...events) => {
                     x1: xPosition,
                     y1: yPosition,
                     x2: xPosition,
-                    y2: scale(e.deletions * -1, {
-                        old: {min: 0, max: maxDeletions},
-                        new: {min: center.y, max: origin.y},
-                    }, center.y),
+                    y2: scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition),
                     'stroke-width': _options.lineWidth,
                     'stroke': _options.lineColor,
                 }));
@@ -106,50 +123,55 @@ const SchemaChangesChart = (options, ...events) => {
         }
 
         return g(
-            {},
+            {...markerProps},
             ...parts,
         );
     });
+
+    const extraAttributes = {};
+    if (_options.nestedPosition) {
+        extraAttributes.x = () => (_options.nestedPosition?.rawVal || _options.nestedPosition).x;
+        extraAttributes.y = () => (_options.nestedPosition?.rawVal || _options.nestedPosition).y;
+    } else {
+        extraAttributes.viewBox = () => `${minX.val} ${minY.val} ${width.val} ${height.val}`;
+    }
 
     return svg(
         {
             width: '100%',
             height: '100%',
-            style: `overflow: visible;`,
-            ...(_options.nestedPosition ? {..._options.nestedPosition} : {viewBox: `0 0 ${_options.width} ${_options.height}`}),
+            ...extraAttributes,
         },
-        line({x1: origin.x, y1: _options.height / 2, x2: end.x, y2: _options.height / 2, stroke: colorMap.lightGrey }),
+        () => {
+            const middleLine = getValue(_options.middleLine);
+            return line({ ...middleLine, stroke: colorMap.lightGrey });
+        },
         ...schemaEvents,
     );
 };
 
 const /** @type Options */ defaultOptions = {
-    width: 600,
-    height: 200,
-    paddingLeft: 16,
-    paddingRight: 16,
     lineWidth: 3,
     lineColor: colorMap.red,
     modsMarkerSize: 8,
     staleMarkerSize: 4,
+    middleLine: undefined,
     nestedPosition: {x: 0, y: 0},
+};
 
-    // xMinSpanBetweenTicks: 10,
-    // yMinSpanBetweenTicks: 10,
-    // xAxisLeftPadding: 16,
-    // xAxisRightPadding: 16,
-    // yAxisTopPadding: 16,
-    // yAxisBottomPadding: 16,
-    // tooltipOffsetX: 10,
-    // tooltipOffsetY: 10,
-    // formatters: {
-    //     x: String,
-    //     y: String,
-    // },
-    // getters: {
-    //     x: (/** @type {Point} */ item) => item.x,
-    //     y: (/** @type {Point} */ item) => item.y,
-    // },
+/**
+ * 
+ * @param {SchemaEvent} event
+ * @returns {HTMLDivElement}
+ */
+const SchemaChangesChartTooltip = (event) => {
+    return div(
+        {class: 'flex-column'},
+        span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
+        span({class: 'text-left text-small'}, `Additions: ${event.additions}`),
+        span({class: 'text-left text-small'}, `Modifications: ${event.modifications}`),
+        span({class: 'text-left text-small'}, `Deletions: ${event.deletions}`),
+    );
 };
 
 export { SchemaChangesChart };

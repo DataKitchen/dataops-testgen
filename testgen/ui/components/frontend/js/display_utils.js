@@ -3,7 +3,10 @@ function formatTimestamp(
     /** @type boolean */ showYear,
 ) {
     if (timestamp) {
-        const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
+        let date = timestamp;
+        if (typeof timestamp === 'number') {
+            date = new Date(timestamp.toString().length === 10 ? timestamp * 1000 : timestamp);
+        }
         if (!isNaN(date)) {
             const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
             const hours = date.getHours();
@@ -17,7 +20,6 @@ function formatTimestamp(
 function formatDuration(
     /** @type Date | number | string */ startTime,
     /** @type Date | number | string */ endTime,
-    /** @type boolean | undefined */ humanReadable,
 ) {
     if (!startTime || !endTime) {
         return '--';
@@ -123,10 +125,12 @@ function viewPortUnitsToPixels(value, dim) {
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 const colorMap = {
     red: '#EF5350', // Red 400
+    redLight: '#FFB6C180', // Clear red
     redDark: '#D32F2F', // Red 700
     orange: '#FF9800', // Orange 500
     yellow: '#FDD835', // Yellow 600
     green: '#9CCC65', // Light Green 400
+    greenLight: '#90EE90FF', // Clear green
     limeGreen: '#C0CA33', // Lime Green 600
     purple: '#AB47BC', // Purple 400
     purpleLight: '#CE93D8', // Purple 200

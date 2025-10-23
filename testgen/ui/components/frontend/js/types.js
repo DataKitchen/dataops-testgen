@@ -1,4 +1,6 @@
 /**
+ * @import { MonitorSummary } from '../js/components/monitor_anomalies_summary.js';
+ * 
  * @typedef FilterOption
  * @type {object}
  * @property {string} label
@@ -38,4 +40,5 @@
  * @property {number} last_run_error_ct
  * @property {number} last_run_log_ct
  * @property {number} last_run_dismissed_ct
+ * @property {MonitorSummary?} monitoring_summary
  */

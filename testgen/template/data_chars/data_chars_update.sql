@@ -142,12 +142,18 @@ update_chars AS (
 )
 INSERT INTO data_structure_log (
    element_id,
+   table_groups_id,
+   table_name,
+   column_name,
    change_date,
    change,
    old_data_type,
    new_data_type
 )
 SELECT u.column_id,
+   u.table_groups_id,
+   u.table_name,
+   u.column_name,
    u.last_mod_date,
    'M',
    u.old_data_type,
@@ -212,11 +218,17 @@ inserted_records AS (
 )
 INSERT INTO data_structure_log (
    element_id,
+   table_groups_id,
+   table_name,
+   column_name,
    change_date,
    change,
    new_data_type
 )
 SELECT i.column_id,
+   i.table_groups_id,
+   i.table_name,
+   i.column_name,
    i.add_date,
    'A',
    i.db_data_type
@@ -257,11 +269,17 @@ deleted_records AS (
 )
 INSERT INTO data_structure_log (
    element_id,
+   table_groups_id,
+   table_name,
+   column_name,
    change_date,
    change,
    old_data_type
 )
 SELECT del.column_id,
+   del.table_groups_id,
+   del.table_name,
+   del.column_name,
    del.drop_date,
    'D',
    del.db_data_type

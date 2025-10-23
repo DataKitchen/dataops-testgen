@@ -58,7 +58,7 @@ def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: s
 
     if lstTestTypes is None:
         raise ValueError("Test Type Parameters not found")
-    elif (
+    elif len(lstTestTypes) > 0 and (
         lstTestTypes[0]["test_type"] == ""
         or lstTestTypes[0]["selection_criteria"] == ""
         or lstTestTypes[0]["default_parm_columns"] == ""
