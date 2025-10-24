@@ -1217,7 +1217,7 @@ def get_columns(table_groups_id: str) -> list[dict]:
 def validate_test(test_definition, table_group: TableGroupMinimal):
     schema = test_definition["schema_name"]
     table_name = test_definition["table_name"]
-    connection = Connection.get_by_table_group(table_group.id)
+    connection = Connection.get(table_group.connection_id)
 
     if test_definition["test_type"] == "Condition_Flag":
         condition = test_definition["custom_query"]

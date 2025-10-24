@@ -41,6 +41,7 @@ const STATUS_COLORS = {
 };
 
 const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const title = `Potential PII ${item.is_latest_profile ? '*' : ''}`;
     const attributes = [
         {
             key: 'detail', width: 150, label: 'Type',
@@ -66,12 +67,15 @@ const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Colum
         href: 'profiling-runs:hygiene',
         params: { run_id: item.profile_run_id, issue_class: 'Potential PII' },
     };
-    const noneContent = item.profile_run_id ? 'No potential PII detected' : null;
+    const noneContent = item.profile_run_id && !item.profiling_error
+        ? 'No potential PII detected'
+        : span({ class: 'text-secondary' }, `No profiling results for ${item.type}`);
 
-    return IssuesCard(props, 'Potential PII *', potentialPII, attributes, linkProps, noneContent);
+    return IssuesCard(props, title, potentialPII, attributes, linkProps, noneContent);
 };
 
 const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const title = `Hygiene Issues ${item.is_latest_profile ? '*' : ''}`;
     const attributes = [
         { key: 'anomaly_name', width: 200, label: 'Issue' },
         {
@@ -99,9 +103,11 @@ const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Colu
             column_name: item.column_name,
         },
     };
-    const noneContent = item.profile_run_id ? 'No hygiene issues detected' : null;
+    const noneContent = item.profile_run_id && !item.profiling_error
+        ? 'No hygiene issues detected'
+        : span({ class: 'text-secondary' }, `No profiling results for ${item.type}`);
 
-    return IssuesCard(props, 'Hygiene Issues *', hygieneIssues, attributes, linkProps, noneContent);
+    return IssuesCard(props, title, hygieneIssues, attributes, linkProps, noneContent);
 };
 
 const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {

@@ -7,20 +7,19 @@ WITH new_chars AS (
    SELECT table_groups_id,
       schema_name,
       table_name,
-      functional_table_type,
       run_date,
+      MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
-      functional_table_type,
       run_date
 )
 UPDATE data_table_chars
-SET functional_table_type = COALESCE(n.functional_table_type, d.functional_table_type),
+SET approx_record_ct = n.approx_record_ct,
    record_ct = n.record_ct,
    column_ct = n.column_ct,
    last_refresh_date = n.run_date,
@@ -38,34 +37,33 @@ WITH new_chars AS (
    SELECT table_groups_id,
       schema_name,
       table_name,
-      functional_table_type,
       run_date,
+      MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
-      functional_table_type,
       run_date
 )
 INSERT INTO data_table_chars (
       table_groups_id,
       schema_name,
       table_name,
-      functional_table_type,
       add_date,
       last_refresh_date,
+      approx_record_ct,
       record_ct,
       column_ct
    )
 SELECT n.table_groups_id,
    n.schema_name,
    n.table_name,
-   n.functional_table_type,
    n.run_date,
    n.run_date,
+   n.approx_record_ct,
    n.record_ct,
    n.column_ct
 FROM new_chars n
@@ -81,7 +79,7 @@ WITH new_chars AS (
    SELECT table_groups_id,
       schema_name,
       table_name
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id,
       schema_name,
@@ -90,7 +88,7 @@ WITH new_chars AS (
 last_run AS (
    SELECT table_groups_id,
       MAX(run_date) as last_run_date
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
 )
@@ -118,21 +116,17 @@ WITH new_chars AS (
       table_name,
       column_name,
       position,
-      general_type,
       column_type,
       db_data_type,
-      functional_data_type,
       run_date
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
 ),
 update_chars AS (
    UPDATE data_column_chars
    SET ordinal_position = n.position,
-      general_type = n.general_type,
       column_type = n.column_type,
       db_data_type = n.db_data_type,
-      functional_data_type = COALESCE(n.functional_data_type, d.functional_data_type),
       last_mod_date = CASE WHEN n.db_data_type <> d.db_data_type THEN n.run_date ELSE d.last_mod_date END,
       drop_date = NULL
    FROM new_chars n
@@ -172,9 +166,8 @@ WITH new_chars AS (
       general_type,
       column_type,
       db_data_type,
-      functional_data_type,
       run_date
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
 ),
 inserted_records AS (
@@ -188,7 +181,6 @@ inserted_records AS (
          general_type,
          column_type,
          db_data_type,
-         functional_data_type,
          add_date,
          last_mod_date
       )
@@ -201,7 +193,6 @@ inserted_records AS (
       n.general_type,
       n.column_type,
       n.db_data_type,
-      n.functional_data_type,
       n.run_date,
       n.run_date
    FROM new_chars n
@@ -237,13 +228,13 @@ WITH new_chars AS (
       schema_name,
       table_name,
       column_name
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
 ),
 last_run AS (
    SELECT table_groups_id,
       MAX(run_date) as last_run_date
-   FROM {SOURCE_TABLE}
+   FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
 ),

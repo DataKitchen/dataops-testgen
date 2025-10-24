@@ -125,8 +125,8 @@ class ProfilingResultsPage(Page):
 
         selected, selected_row = fm.render_grid_select(
             df,
-            ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues"],
-            ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues"],
+            ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues", "result_details"],
+            ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues", "Details"],
             id_column="id",
             reset_pagination=filters_changed,
             bind_to_query=True,
@@ -225,7 +225,7 @@ def get_excel_report_data(
         "db_data_type": {"header": "Data type"},
         "datatype_suggestion": {"header": "Suggested data type"},
         "semantic_data_type": {},
-        "record_ct": {"header": "Record count"},
+        "record_ct": {"header": "Row count"},
         "value_ct": {"header": "Value count"},
         "distinct_value_ct": {"header": "Distinct values"},
         "null_value_ct": {"header": "Null values"},
@@ -269,6 +269,7 @@ def get_excel_report_data(
         "within_1mo_date_ct": {"header": "Within 1 month"},
         "future_date_ct": {"header": "Future dates"},
         "boolean_true_ct": {"header": "Boolean true values"},
+        "result_details": {"header": "Details"},
     }
     return get_excel_file_data(
         data,

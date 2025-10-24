@@ -11,6 +11,7 @@ import van from '../van.min.js';
 import { Card } from '../components/card.js';
 import { Attribute } from '../components/attribute.js';
 import { Button } from '../components/button.js';
+import { Alert } from '../components/alert.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { PercentBar } from '../components/percent_bar.js';
 import { FrequencyBars } from '../components/frequency_bars.js';
@@ -24,6 +25,7 @@ const columnTypeFunctionMap = {
     B: BooleanColumn,
     D: DatetimeColumn,
     N: NumericColumn,
+    X: UnknownColumn,
 };
 const attributeWidth = 250;
 const percentWidth = 250;
@@ -33,16 +35,13 @@ const boxPlotWidth = 800;
 
 const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column */ item) => {
     loadStylesheet('column-distribution', stylesheet);
-    const columnFunction = columnTypeFunctionMap[item.general_type];
+    const displayType = item.profile_run_id && item.record_ct !== 0 ? item.general_type : 'X'
+    const columnFunction = columnTypeFunctionMap[displayType];
 
     return Card({
         border: props.border,
         title: `Value Distribution ${item.is_latest_profile ? '*' : ''}`,
-        content: item.profile_run_id
-            ? (item.record_ct === 0
-            ? BaseCounts(item)
-            : columnFunction?.(item))
-            : null,
+        content: columnFunction?.(item),
         actionContent: div(
             { class: 'flex-row fx-gap-3' },
             item.profile_run_id
@@ -68,13 +67,13 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
                 ])
                 : span(
                     { class: 'text-secondary' },
-                    'No profiling data available',
+                    'No profiling results for column',
                 ),
         ),
     })
 };
 
-function AlphaColumn(/** @type ColumnProfile */ item) {
+function AlphaColumn(/** @type Column */ item) {
     const standardPatternLabels = {
         STREET_ADDR: 'Street Address',
         STATE_USA: 'State (USA)',
@@ -210,7 +209,7 @@ function AlphaColumn(/** @type ColumnProfile */ item) {
     );
 }
 
-function BooleanColumn(/** @type ColumnProfile */ item) {
+function BooleanColumn(/** @type Column */ item) {
     return div(
         { class: 'flex-column fx-gap-5' },
         BaseCounts(item),
@@ -227,7 +226,7 @@ function BooleanColumn(/** @type ColumnProfile */ item) {
     );
 }
 
-function DatetimeColumn(/** @type ColumnProfile */ item) {
+function DatetimeColumn(/** @type Column */ item) {
     const total = item.record_ct;
 
     return div(
@@ -265,7 +264,7 @@ function DatetimeColumn(/** @type ColumnProfile */ item) {
     );
 }
 
-function NumericColumn(/** @type ColumnProfile */ item) {
+function NumericColumn(/** @type Column */ item) {
     return div(
         { class: 'flex-column fx-gap-5' },
         BaseCounts(item),
@@ -309,18 +308,43 @@ function NumericColumn(/** @type ColumnProfile */ item) {
     );
 }
 
-const BaseCounts = (/** @type ColumnProfile */ item) => {
-    const attributes = [
-        { key: 'record_ct', label: 'Record Count' },
-        { key: 'value_ct', label: 'Value Count' },
-    ];
+function UnknownColumn(/** @type Column */ item) {
     return div(
-        { class: 'flex-row fx-gap-4' },
-        attributes.map(({ key, label }) => Attribute({ 
-            label: item[key] === 0 ? span({ class: 'text-error' }, label) : label, 
-            value: formatNumber(item[key]),
-            width: attributeWidth,
-        })),
+        { class: 'flex-column fx-gap-3' },
+        BaseCounts(item),
+        item.profiling_error
+            ? Alert(
+                { type: 'warn', icon: 'warning' },
+                div({ style: 'font-size: 14px;' }, 'Profiling encountered an error for this column.'),
+                div({ class: 'text-primary text-code', style: 'font-size: 12px;' }, item.profiling_error),
+            )
+            : null,
+    );
+}
+
+const BaseCounts = (/** @type Column */ item) => {
+    const useApprox = item.record_ct === null;
+    const attributes = [
+        {
+            label: `Row Count${useApprox ? ' †' : ''}`,
+            value: useApprox ? item.approx_record_ct : item.record_ct,
+        }
+    ];
+    if (item.value_ct !== null) {
+        attributes.push({ label: 'Value Count', value: item.value_ct });
+    }
+    return div(
+        div(
+            { class: 'flex-row fx-gap-4' },
+            attributes.map(({ label, value }) => Attribute({ 
+                label: value === 0 ? span({ class: 'text-error' }, label) : label, 
+                value: formatNumber(value),
+                width: attributeWidth,
+            })),
+        ),
+        useApprox
+            ? div({ class: 'text-caption text-right mt-1' }, '† Approximate count based on server statistics')
+            : null,
     );
 };
 

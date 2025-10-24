@@ -30,18 +30,16 @@ CREATE TABLE stg_functional_table_updates (
 );
 
 CREATE TABLE stg_data_chars_updates (
-   project_code          VARCHAR(30),
    table_groups_id       UUID,
    run_date              TIMESTAMP,
    schema_name           VARCHAR(120),
    table_name            VARCHAR(120),
-   functional_table_type VARCHAR(50),
    column_name           VARCHAR(120),
    position              INTEGER,
    general_type          VARCHAR(1),
    column_type           VARCHAR(50),
    db_data_type          VARCHAR(50),
-   functional_data_type  VARCHAR(50),
+   approx_record_ct      BIGINT,
    record_ct             BIGINT
 );
 
@@ -134,9 +132,12 @@ CREATE TABLE profiling_runs (
    profiling_starttime     TIMESTAMP,
    profiling_endtime       TIMESTAMP,
    status                  VARCHAR(100) DEFAULT 'Running',
+   progress                JSONB,
    log_message             VARCHAR,
    table_ct                BIGINT,
    column_ct               BIGINT,
+   record_ct               BIGINT,
+   data_point_ct           BIGINT,
    anomaly_ct              BIGINT,
    anomaly_table_ct        BIGINT,
    anomaly_column_ct       BIGINT,
@@ -235,7 +236,6 @@ CREATE TABLE profile_results (
    dk_id                 BIGINT GENERATED ALWAYS AS IDENTITY,
 --       CONSTRAINT profile_results_dk_id_pk
 --          PRIMARY KEY,
-   column_id             UUID,
    project_code          VARCHAR(30),
    connection_id         BIGINT
       CONSTRAINT profile_results_connections_connection_id_fk
@@ -307,7 +307,8 @@ CREATE TABLE profile_results (
    pii_flag              VARCHAR(50),
    functional_data_type  VARCHAR(50),
    functional_table_type VARCHAR(50),
-   sample_ratio          FLOAT
+   sample_ratio          FLOAT,
+   query_error           VARCHAR(2000)
 );
 
 ALTER SEQUENCE profile_results_dk_id_seq OWNED BY profile_results.dk_id;
@@ -400,9 +401,9 @@ CREATE TABLE data_table_chars (
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
    last_refresh_date     TIMESTAMP,
+   approx_record_ct      BIGINT,
    record_ct             BIGINT,
    column_ct             BIGINT,
-   data_point_ct         BIGINT GENERATED ALWAYS AS (record_ct * column_ct) STORED,
    last_complete_profile_run_id UUID,
    last_profile_record_ct       BIGINT,
    dq_score_profiling    FLOAT,

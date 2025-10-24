@@ -21,10 +21,11 @@ from testgen.common.database.database_service import empty_cache
 from testgen.common.get_pipeline_parms import TestExecutionParams
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.session import session
 
 from .run_execute_cat_tests import run_cat_test_queries
-from .run_refresh_data_chars import run_refresh_data_chars_queries
+from .run_refresh_data_chars import run_data_chars_refresh
 from .run_test_parameter_validation import run_parameter_validation_queries
 
 LOG = logging.getLogger("testgen")
@@ -57,7 +58,7 @@ def run_test_queries(
     minutes_offset: int = 0,
     spinner: Spinner | None = None,
 ):
-    has_errors = False
+    errors = None
     error_msg = ""
 
     LOG.info("CurrentStep: Initializing Query Generator")
@@ -90,18 +91,17 @@ def run_test_queries(
 
             # Execute list, returning test results
             LOG.info("CurrentStep: Executing Non-CAT Test Queries")
-            lstTestResults, colResultNames, intErrors = fetch_from_db_threaded(
-                lstTestQueries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+            lstTestResults, colResultNames, errors = fetch_from_db_threaded(
+                lstTestQueries, use_target_db=True, max_threads=params["max_threads"],
             )
 
             # Copy test results to DK DB
             LOG.info("CurrentStep: Saving Non-CAT Test Results")
             if lstTestResults:
                 write_to_app_db(lstTestResults, colResultNames, "test_results")
-            if intErrors > 0:
-                has_errors = True
+            if errors:
                 error_msg = (
-                    f"Errors were encountered executing Referential Tests. ({intErrors} errors occurred.) "
+                    f"Errors were encountered executing Referential Tests. ({len(errors)} errors occurred.) "
                     "Please check log. "
                 )
                 LOG.warning(error_msg)
@@ -117,7 +117,7 @@ def run_test_queries(
         raise
 
     else:
-        return has_errors, error_msg
+        return bool(errors), error_msg
 
 
 def run_execution_steps_in_background(project_code, test_suite):
@@ -166,15 +166,15 @@ def run_execution_steps(
     )
 
     LOG.info("CurrentStep: Assigning Connection Parameters")
-    connection = Connection.get_by_table_group(test_exec_params["table_groups_id"])
+    table_group = TableGroup.get(test_exec_params["table_groups_id"])
+    connection = Connection.get(table_group.connection_id)
     set_target_db_params(connection.__dict__)
     test_exec_params["sql_flavor"] = connection.sql_flavor
     test_exec_params["max_query_chars"] = connection.max_query_chars
     test_exec_params["max_threads"] = connection.max_threads
 
     try:
-        LOG.info("CurrentStep: Execute Step - Data Characteristics Refresh")
-        run_refresh_data_chars_queries(test_exec_params, test_time, spinner)
+        run_data_chars_refresh(connection, table_group, test_time)
     except Exception:
         LOG.warning("Data Characteristics Refresh failed", exc_info=True, stack_info=True)
         pass

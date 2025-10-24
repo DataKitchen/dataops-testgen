@@ -3,7 +3,7 @@
  * @type {object}
  * @property {string} label
  * @property {string} value
- * @property {boolean} selected
+ * @property {boolean?} selected
  * @property {string?} icon
  *
  * @typedef Properties

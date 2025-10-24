@@ -6,14 +6,17 @@
  * @type {object}
  * @property {string} id
  * @property {string} table_groups_name
+ * @property {number} table_ct
+ * @property {number} column_ct
+ * @property {number} approx_record_ct
+ * @property {number} record_ct
+ * @property {number} approx_data_point_ct
+ * @property {number} data_point_ct
  * @property {string?} dq_score
  * @property {string?} dq_score_profiling
  * @property {string?} dq_score_testing
  * @property {string?} latest_profile_id
  * @property {number?} latest_profile_start
- * @property {number} latest_profile_table_ct
- * @property {number} latest_profile_column_ct
- * @property {number} latest_profile_data_point_ct
  * @property {number} latest_anomalies_ct
  * @property {number} latest_anomalies_definite_ct
  * @property {number} latest_anomalies_likely_ct
@@ -124,6 +127,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 }
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
+    const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
     return Card({
         testId: 'table-group-summary-card',
         border: true,
@@ -139,9 +143,12 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                     ),
                     span(
                         { class: 'text-caption mt-1 mb-3 tg-overview--subtitle' },
-                        `${formatNumber(tableGroup.latest_profile_table_ct ?? 0)} tables | 
-                        ${formatNumber(tableGroup.latest_profile_column_ct ?? 0)} columns | 
-                        ${formatNumber(tableGroup.latest_profile_data_point_ct ?? 0)} data points`,
+                        `${formatNumber(tableGroup.table_ct ?? 0)} tables | 
+                        ${formatNumber(tableGroup.column_ct ?? 0)} columns | 
+                        ${formatNumber(useApprox ? tableGroup.approx_record_ct : tableGroup.record_ct)} rows
+                        ${useApprox ? '*' : ''} |
+                        ${formatNumber(useApprox ? tableGroup.approx_data_point_ct : tableGroup.data_point_ct)} data points
+                        ${useApprox ? '*' : ''}`,
                     ),
                     TableGroupTestSuiteSummary(tableGroup.test_suites),
                 ),
@@ -149,6 +156,9 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
             ),
             hr({ class: 'tg-overview--table-group-divider' }),
             TableGroupLatestProfile(tableGroup),
+            useApprox
+                ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
+                : null,
         )
     });
 };

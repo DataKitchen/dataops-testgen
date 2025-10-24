@@ -4,7 +4,7 @@ from testgen.common import read_template_sql_file
 from testgen.common.database.database_service import replace_params
 
 
-class CRollupScoresSQL:
+class RollupScoresSQL:
     run_id: str
     table_group_id: str
 
@@ -21,13 +21,12 @@ class CRollupScoresSQL:
         query = replace_params(query, params)
         return query, params
     
-    def GetRollupScoresProfileRunQuery(self) -> tuple[str, dict]:
+    def rollup_profiling_scores(self) -> list[tuple[str, dict]]:
         # Runs on App database
-        return self._get_query("rollup_scores_profile_run.sql")
-    
-    def GetRollupScoresProfileTableGroupQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("rollup_scores_profile_table_group.sql")
+        return [
+            self._get_query("rollup_scores_profile_run.sql"),
+            self._get_query("rollup_scores_profile_table_group.sql"),
+        ]
     
     def GetRollupScoresTestRunQuery(self) -> tuple[str, dict]:
         # Runs on App database

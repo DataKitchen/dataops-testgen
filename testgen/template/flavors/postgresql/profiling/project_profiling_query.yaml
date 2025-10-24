@@ -1,7 +1,7 @@
 ---
-strTemplate01_sampling: "SELECT "
-strTemplate01_else: "SELECT "
-strTemplate01_5: |
+01_sampling: "SELECT "
+01_else: "SELECT "
+01_all: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
   '{TABLE_GROUPS_ID}' as table_groups_id,
@@ -14,26 +14,30 @@ strTemplate01_5: |
   '{DB_DATA_TYPE}' AS db_data_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
-strTemplate02_X: |
+
+02_X: |
   COUNT("{COL_NAME}") AS value_ct,
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
-strTemplate02_else: |
+02_else: |
   COUNT("{COL_NAME}") AS value_ct,
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
-strTemplate03_ADN: MIN(LENGTH(CAST("{COL_NAME}" AS TEXT)))  AS min_length,
+
+03_ADN: MIN(LENGTH(CAST("{COL_NAME}" AS TEXT)))  AS min_length,
   MAX(LENGTH(CAST("{COL_NAME}" AS TEXT)))  AS max_length,
   AVG(NULLIF(LENGTH(CAST("{COL_NAME}" AS TEXT)), 0)::FLOAT) AS avg_length,
-strTemplate03_else:  NULL as min_length,
+03_else:  NULL as min_length,
   NULL as max_length,
   NULL as avg_length,
-strTemplate04_A:  SUM(CASE
+
+04_A:  SUM(CASE
         WHEN TRIM("{COL_NAME}") ~ '^0(\.0*)?$' THEN 1 ELSE 0
       END)  AS zero_value_ct,
-strTemplate04_N:  SUM( 1 - ABS(SIGN("{COL_NAME}"::NUMERIC)) )::BIGINT AS zero_value_ct,
-strTemplate04_else: NULL as zero_value_ct,
-strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) as distinct_std_value_ct,
+04_N:  SUM( 1 - ABS(SIGN("{COL_NAME}"::NUMERIC)) )::BIGINT AS zero_value_ct,
+04_else: NULL as zero_value_ct,
+
+05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) as distinct_std_value_ct,
   SUM(CASE
         WHEN "{COL_NAME}" = '' THEN 1
                              ELSE 0
@@ -96,7 +100,7 @@ strTemplate05_A:  COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) a
                      AND LEFT("{COL_NAME}", 3) NOT BETWEEN '734' AND '749'
                      AND LEFT("{COL_NAME}", 3) <> '666' THEN 1 END)::FLOAT/COUNT("{COL_NAME}")::FLOAT > 0.9 THEN 'SSN'
   END as std_pattern_match,
-strTemplate05_else: NULL as distinct_std_value_ct,
+05_else: NULL as distinct_std_value_ct,
   NULL as zero_length_ct,
   NULL as lead_space_ct,
   NULL as quoted_value_ct,
@@ -111,7 +115,8 @@ strTemplate05_else: NULL as distinct_std_value_ct,
   NULL as numeric_ct,
   NULL as date_ct,
   NULL as std_pattern_match,
-strTemplate06_A_patterns: ( SELECT LEFT(STRING_AGG(pattern, ' | ' ORDER BY ct DESC) , 1000) AS concat_pats
+
+06_A: ( SELECT LEFT(STRING_AGG(pattern, ' | ' ORDER BY ct DESC) , 1000) AS concat_pats
       FROM (
             SELECT CAST(COUNT(*) AS VARCHAR(40)) || ' | ' || pattern AS pattern,
                    COUNT(*) AS ct
@@ -121,26 +126,15 @@ strTemplate06_A_patterns: ( SELECT LEFT(STRING_AGG(pattern, ' | ' ORDER BY ct DE
                                     '[0-9]', 'N', 'g') AS pattern
                        FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
                       WHERE "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                                                      FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {PARM_MAX_PATTERN_LENGTH}) p
+                                                      FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
             GROUP BY pattern
             HAVING pattern > ' '
             ORDER BY COUNT(*) DESC
             LIMIT 5
            ) ps) AS top_patterns,
-strTemplate06_else: NULL as top_patterns,
-strTemplate07_A_freq:  (  SELECT LEFT(STRING_AGG(val, ' | ' ORDER BY ct DESC), 1000) as concat_vals
-  FROM (
-          SELECT TOP 10 CAST(COUNT(*) as VARCHAR(10)) || ' | ' || "{COL_NAME}" as val,
-          COUNT(*) as ct
-          FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
-          WHERE "{COL_NAME}" > ' '
-          GROUP BY "{COL_NAME}"
-          HAVING "{COL_NAME}" > ' '
-          ORDER BY COUNT(*), "{COL_NAME}" DESC
-        ) ps
-  )  AS top_freq_values,
-strTemplate07_else: NULL as top_freq_values,
-strTemplate08_N: MIN("{COL_NAME}")  AS min_value,
+06_else: NULL as top_patterns,
+
+08_N: MIN("{COL_NAME}")  AS min_value,
   MIN(CASE WHEN "{COL_NAME}"::NUMERIC > 0 THEN "{COL_NAME}" ELSE NULL END)  AS min_value_over_0,
   MAX("{COL_NAME}")  AS max_value,
   AVG(CAST("{COL_NAME}"::NUMERIC AS FLOAT))  AS avg_value,
@@ -148,7 +142,7 @@ strTemplate08_N: MIN("{COL_NAME}")  AS min_value,
   MIN(pct_25) as percentile_25,
   MIN(pct_50) as percentile_50,
   MIN(pct_75) as percentile_75,
-strTemplate08_else: NULL as min_value,
+08_else: NULL as min_value,
   NULL as min_value_over_0,
   NULL as max_value,
   NULL as avg_value,
@@ -156,11 +150,11 @@ strTemplate08_else: NULL as min_value,
   NULL as percentile_25,
   NULL as percentile_50,
   NULL as percentile_75,
-strTemplate10_N_dec: SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) as fractional_sum,
 
-strTemplate10_else: NULL as fractional_sum,
+10_N_dec: SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) as fractional_sum,
+10_else: NULL as fractional_sum,
 
-strTemplate11_D:  CASE
+11_D:  CASE
          WHEN MIN("{COL_NAME}") IS NULL THEN NULL
          ELSE GREATEST(MIN("{COL_NAME}"), '0001-01-01')
        END as min_date,
@@ -199,9 +193,7 @@ strTemplate11_D:  CASE
   COUNT(DISTINCT <%DATEDIFF_DAY;"{COL_NAME}";'{RUN_DATE}'%>) as date_days_present,
   COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";'{RUN_DATE}'%>) as date_weeks_present,
   COUNT(DISTINCT <%DATEDIFF_MONTH;"{COL_NAME}";'{RUN_DATE}'%>) as date_months_present,
-
-
-strTemplate11_else:  NULL as min_date,
+11_else:  NULL as min_date,
   NULL as max_date,
   NULL as before_1yr_date_ct,
   NULL as before_5yr_date_ct,
@@ -215,12 +207,10 @@ strTemplate11_else:  NULL as min_date,
   NULL as date_weeks_present,
   NULL as date_months_present,
 
-strTemplate12_B: SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
+12_B: SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
+12_else: NULL as boolean_true_ct,
 
-strTemplate12_else: NULL as boolean_true_ct,
-
-strTemplate13_ALL: NULL AS datatype_suggestion,
-strTemplate14_A_do_patterns: ( SELECT COUNT(DISTINCT REGEXP_REPLACE( REGEXP_REPLACE( REGEXP_REPLACE(
+14_A: ( SELECT COUNT(DISTINCT REGEXP_REPLACE( REGEXP_REPLACE( REGEXP_REPLACE(
                           "{COL_NAME}", '[a-z]', 'a', 'g'),
                                       '[A-Z]', 'A', 'g'),
                                       '[0-9]', 'N', 'g')
@@ -229,38 +219,27 @@ strTemplate14_A_do_patterns: ( SELECT COUNT(DISTINCT REGEXP_REPLACE( REGEXP_REPL
     WHERE "{COL_NAME}" > ' ' ) AS distinct_pattern_ct,
   SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g')))::BIGINT) AS embedded_space_ct,
   AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g'))::FLOAT)  AS avg_embedded_spaces,
-
-strTemplate14_A_no_patterns:  NULL as distinct_pattern_ct,
-  SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g')))::BIGINT) AS embedded_space_ct,
-  AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g'))::FLOAT)  AS avg_embedded_spaces,
-
-strTemplate14_else:  NULL as distinct_pattern_ct,
+14_else:  NULL as distinct_pattern_ct,
   NULL as embedded_space_ct,
   NULL as avg_embedded_spaces,
 
-strTemplate15_ALL:  NULL as functional_data_type,
-  NULL as functional_table_type,
+16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-strTemplate16_ALL: " '{PROFILE_RUN_ID}' as profile_run_id"
+98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)'
+98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" '
 
-strTemplate98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)'
-
-strTemplate98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" '
-
-strTemplate99_N: |
+99_N: |
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
-
-strTemplate99_N_sampling: |
+99_N_sampling: |
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64) LIMIT 1) pctile
+99_else: ' '
 
-strTemplate99_else: ' '
-
-strTemplate100_sampling: ' '
+100_sampling: ' '

@@ -76,7 +76,7 @@ const IssuesTable = (
     const selectedIssues = van.state([]);
 
     return div(
-        { class: 'table', 'data-testid': 'score-issues' },
+        { class: 'table pb-0', 'data-testid': 'score-issues' },
         div(
             { class: 'flex-row fx-justify-space-between fx-align-flex-start'},
             div(

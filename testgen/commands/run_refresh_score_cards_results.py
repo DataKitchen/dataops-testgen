@@ -24,7 +24,6 @@ def run_refresh_score_cards_results(
 ):
     start_time = time.time()
     _refresh_date = refresh_date or datetime.datetime.now(datetime.UTC)
-    LOG.info("CurrentStep: Initializing scorecards results refresh")
 
     try:
         definitions = []
@@ -33,13 +32,13 @@ def run_refresh_score_cards_results(
         else:
             definitions.append(ScoreDefinition.get(str(definition_id)))
     except Exception:
-        LOG.exception("CurrentStep: Stopping scorecards results refresh after unexpected error")
+        LOG.exception("Stopping scorecards results refresh after unexpected error")
         return
 
     db_session = get_current_session()
     for definition in definitions:
         LOG.info(
-            "CurrentStep: Refreshing results for scorecard %s in project %s",
+            "Refreshing results for scorecard %s in project %s",
             definition.name,
             definition.project_code,
         )
@@ -53,8 +52,8 @@ def run_refresh_score_cards_results(
             definition.results = _score_card_to_results(fresh_score_card)
             definition.breakdown = _score_definition_to_results_breakdown(definition)
             if add_history_entry:
-                LOG.info(
-                    "CurrentStep: Adding history entry for scorecard %s in project %s",
+                LOG.debug(
+                    "Adding history entry for scorecard %s in project %s",
                     definition.name,
                     definition.project_code,
                 )
@@ -71,14 +70,9 @@ def run_refresh_score_cards_results(
                         definition.history.append(history_entry)
                         history_entry.add_as_cutoff()
             definition.save()
-            LOG.info(
-                "CurrentStep: Done refreshing scorecard %s in project %s",
-                definition.name,
-                definition.project_code,
-            )
         except Exception:
             LOG.exception(
-                "CurrentStep: Unexpected error refreshing scorecard %s in project %s",
+                "Error refreshing scorecard %s in project %s",
                 definition.name,
                 definition.project_code,
             )
@@ -90,7 +84,7 @@ def run_refresh_score_cards_results(
         scope = f"scorecard {definition_id}"
 
     end_time = time.time()
-    LOG.info("CurrentStep: Refreshing results for %s is over after %s seconds", scope, round(end_time - start_time, 2))
+    LOG.info("Refreshing results for %s done after %s seconds", scope, round(end_time - start_time, 2))
 
 
 def _score_card_to_results(score_card: ScoreCard) -> list[ScoreDefinitionResult]:
