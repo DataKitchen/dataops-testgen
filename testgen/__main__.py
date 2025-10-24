@@ -114,15 +114,14 @@ def cli(ctx: Context, verbose: bool):
 
 @register_scheduler_job
 @cli.command("run-profile", help="Generates a new profile of the table group.")
-@pass_configuration
 @click.option(
     "-tg",
     "--table-group-id",
     required=True,
     type=click.STRING,
-    help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
+    help="ID of the table group to profile. Use a table_group_id shown in list-table-groups.",
 )
-def run_profile(configuration: Configuration, table_group_id: str):
+def run_profile(table_group_id: str):
     click.echo(f"run-profile with table_group_id: {table_group_id}")
     message = run_profiling(table_group_id)
     click.echo("\n" + message)

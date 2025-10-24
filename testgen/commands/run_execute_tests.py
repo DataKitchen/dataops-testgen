@@ -58,7 +58,7 @@ def run_test_queries(
     minutes_offset: int = 0,
     spinner: Spinner | None = None,
 ):
-    has_errors = False
+    errors = None
     error_msg = ""
 
     LOG.info("CurrentStep: Initializing Query Generator")
@@ -100,7 +100,6 @@ def run_test_queries(
             if lstTestResults:
                 write_to_app_db(lstTestResults, colResultNames, "test_results")
             if errors:
-                has_errors = True
                 error_msg = (
                     f"Errors were encountered executing Referential Tests. ({len(errors)} errors occurred.) "
                     "Please check log. "
@@ -118,7 +117,7 @@ def run_test_queries(
         raise
 
     else:
-        return has_errors, error_msg
+        return bool(errors), error_msg
 
 
 def run_execution_steps_in_background(project_code, test_suite):

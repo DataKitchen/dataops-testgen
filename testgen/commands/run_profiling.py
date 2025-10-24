@@ -2,6 +2,7 @@ import logging
 import subprocess
 import threading
 from datetime import UTC, datetime
+from uuid import UUID
 
 import testgen.common.process_service as process_service
 from testgen import settings
@@ -33,7 +34,7 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
-def run_profiling_in_background(table_group_id):
+def run_profiling_in_background(table_group_id: str | UUID) -> None:
     msg = f"Triggering profiling run for table group {table_group_id}"
     if settings.IS_DEBUG:
         LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
@@ -50,7 +51,7 @@ def run_profiling_in_background(table_group_id):
 
 
 @with_database_session
-def run_profiling(table_group_id: str, username: str | None = None, minutes_offset: int = 0):
+def run_profiling(table_group_id: str | UUID, username: str | None = None, minutes_offset: int = 0) -> str:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
     
@@ -73,7 +74,7 @@ def run_profiling(table_group_id: str, username: str | None = None, minutes_offs
     profiling_run.set_progress("data_chars", "Running")
     profiling_run.save()
 
-    LOG.info(f"Profiling run: {profiling_run.id}, Connection: {connection.connection_name}, Table group: {table_group.table_groups_name}")
+    LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
         data_chars = run_data_chars_refresh(connection, table_group, profiling_run.profiling_starttime)
         distinct_tables = {(column.table_name, column.record_ct) for column in data_chars}
