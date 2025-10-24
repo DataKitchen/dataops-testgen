@@ -222,7 +222,7 @@ const Toolbar = (
     /** @type boolean */ userCanEdit,
 ) => {
     return div(
-        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4' },
+        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         () => Select({
             label: 'Table Group',
             value: getValue(props.table_group_options)?.find((op) => op.selected)?.value ?? null,

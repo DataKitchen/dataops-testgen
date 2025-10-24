@@ -2,6 +2,13 @@
  * @import { ProjectSummary } from '../types.js';
  * @import { SelectOption } from '../components/select.js';
  * 
+ * @typedef ProgressStep
+ * @type {object}
+ * @property {'data_chars'|'validation'|'QUERY'|'CAT'|'METADATA'} key
+ * @property {'Pending'|'Running'|'Completed'|'Warning'} status
+ * @property {string} label
+ * @property {string} detail
+ * 
  * @typedef TestRun
  * @type {object}
  * @property {string} test_run_id
@@ -10,6 +17,7 @@
  * @property {string} table_groups_name
  * @property {string} test_suite
  * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
+ * @property {ProgressStep[]} progress
  * @property {string} log_message
  * @property {string} process_id
  * @property {number} test_ct
@@ -34,7 +42,7 @@
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';
-import { Tooltip } from '../components/tooltip.js';
+import { withTooltip } from '../components/tooltip.js';
 import { SummaryBar } from '../components/summary_bar.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
@@ -45,10 +53,19 @@ import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
 import { Paginator } from '../components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
+import { Icon } from '../components/icon.js';
 
 const { div, i, span, strong } = van.tags;
 const PAGE_SIZE = 100;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
+const REFRESH_INTERVAL = 15000 // 15 seconds
+
+const progressStatusIcons = {
+    Pending: { color: 'grey', icon: 'more_horiz', size: 22 },
+    Running: { color: 'blue', icon: 'autoplay', size: 18 },
+    Completed: { color: 'green', icon: 'check', size: 24 },
+    Warning: { color: 'orange', icon: 'warning', size: 20 },
+};
 
 const TestRuns = (/** @type Properties */ props) => {
     loadStylesheet('testRuns', stylesheet);
@@ -63,7 +80,18 @@ const TestRuns = (/** @type Properties */ props) => {
         pageIndex.val = 0;
         return getValue(props.test_runs);
     });
-    const paginatedRuns = van.derive(() => testRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1)));
+    let refreshIntervalId = null;
+
+    const paginatedRuns = van.derive(() => {
+        const paginated = testRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1));
+        const hasActiveRuns = paginated.some(({ status }) => status === 'Running');
+        if (!refreshIntervalId && hasActiveRuns) {
+            refreshIntervalId = setInterval(() => emitEvent('RefreshData', {}), REFRESH_INTERVAL);
+        } else if (refreshIntervalId && !hasActiveRuns) {
+            clearInterval(refreshIntervalId);
+        }
+        return paginated;
+    });
 
     const selectedRuns = {};
     const initializeSelectedStates = (items) => {
@@ -188,7 +216,7 @@ const Toolbar = (
     /** @type boolean */ userCanEdit,
 ) => {
     return div(
-        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4' },
+        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         div(
             { class: 'flex-row fx-gap-4' },
             () => Select({
@@ -251,6 +279,8 @@ const TestRunItem = (
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
 ) => {
+    const runningStep = item.progress?.find((item) => item.status === 'Running');
+
     return div(
         { class: 'table-row flex-row' },
         userCanEdit
@@ -277,20 +307,37 @@ const TestRunItem = (
             ),
         ),
         div(
-            { class: 'flex-row', style: `flex: ${columns[2]}` },
+            { style: `flex: ${columns[2]}` },
             div(
+                { class: 'flex-row' },
                 TestRunStatus(item),
-                div(
+                item.status === 'Running' && item.process_id && userCanEdit ? Button({
+                    type: 'stroked',
+                    label: 'Cancel',
+                    style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
+                    onclick: () => emitEvent('RunCanceled', { payload: item }),
+                }) : null,
+            ),
+            item.test_endtime
+                ? div(
                     { class: 'text-caption mt-1' },
                     formatDuration(item.test_starttime, item.test_endtime),
+                )
+                : div(
+                    { class: 'text-caption mt-1' },
+                    runningStep 
+                        ? [
+                            div(
+                                runningStep.label,
+                                withTooltip(
+                                    Icon({ style: 'font-size: 18px; margin-left: 4px; vertical-align: middle;' }, 'info'),
+                                    { text: ProgressTooltip(item) },
+                                ),
+                            ),
+                            div(runningStep.detail),
+                        ]
+                        : '--',
                 ),
-            ),
-            item.status === 'Running' && item.process_id && userCanEdit ? Button({
-                type: 'stroked',
-                label: 'Cancel Run',
-                style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
-                onclick: () => emitEvent('RunCanceled', { payload: item }),
-            }) : null,
         ),
         div(
             { class: 'pr-3', style: `flex: ${columns[3]}` },
@@ -314,9 +361,9 @@ const TestRunItem = (
                 : '--',
         ),
     );
-}
+};
 
-function TestRunStatus(/** @type TestRun */ item) {
+const TestRunStatus = (/** @type TestRun */ item) => {
     const attributeMap = {
         Running: { label: 'Running', color: 'blue' },
         Complete: { label: 'Completed', color: '' },
@@ -324,27 +371,48 @@ function TestRunStatus(/** @type TestRun */ item) {
         Cancelled: { label: 'Canceled', color: 'purple' },
     };
     const attributes = attributeMap[item.status] || { label: 'Unknown', color: 'grey' };
+    const hasProgressError = item.progress?.some(({error}) => !!error);
     return span(
         {
             class: 'flex-row',
             style: `color: var(--${attributes.color});`,
         },
         attributes.label,
-        () => {
-            const tooltipError = van.state(false);
-            return item.status === 'Error' && item.log_message ? i(
-                {
-                    class: 'material-symbols-rounded text-secondary ml-1',
-                    style: 'position: relative; font-size: 16px;',
-                    onmouseenter: () => tooltipError.val = true,
-                    onmouseleave: () => tooltipError.val = false,
-                },
-                'info',
-                Tooltip({ text: item.log_message, show: tooltipError }),
-            ) : null;
-        },
+        item.status === 'Complete' && hasProgressError
+            ? withTooltip(
+                Icon({ style: 'font-size: 18px; margin-left: 4px; vertical-align: middle; color: var(--orange);' }, 'warning' ),
+                { text: ProgressTooltip(item) },
+            )
+            : null,
+        item.status === 'Error' && item.log_message
+            ? withTooltip(
+                Icon({ style: 'font-size: 18px; margin-left: 4px;' }, 'info'),
+                { text: item.log_message, width: 250, style: 'word-break: break-word;' },
+            )
+            : null,
     );
-}
+};
+
+const ProgressTooltip = (/** @type ProfilingRun */ item) => {
+    return div(
+        { class: 'flex-column fx-gap-1' },
+        item.progress?.map(step => {
+            const stepIcon = progressStatusIcons[step.status];
+            return div(
+                { class: 'flex-row fx-gap-1' },
+                Icon(
+                    { style: `font-size: ${stepIcon.size}px; color: var(--${stepIcon.color}); min-width: 24px;` },
+                    stepIcon.icon,
+                ),
+                div(
+                    { class: 'flex-column fx-align-flex-start text-left' },
+                    span(`${step.label}${step.detail ? (': ' + step.detail) : ''}`),
+                    span({ style: 'font-size: 12px; opacity: 0.6; margin-top: 2px; white-space: pre-wrap;' }, step.error),
+                ),
+            );
+        }),
+    );
+};
 
 const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,

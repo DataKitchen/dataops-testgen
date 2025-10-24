@@ -16,7 +16,7 @@ WITH stats AS (
     ORDER BY tr.test_time DESC
     LIMIT CASE WHEN d.history_calculation = 'Value' THEN 1 ELSE d.history_lookback END
   ) AS r ON TRUE
-  WHERE d.test_suite_id    = '{TEST_SUITE_ID}'
+  WHERE d.test_suite_id    = :TEST_SUITE_ID
     AND d.test_active      = 'Y'
     AND d.history_lookback IS NOT NULL
   GROUP BY d.id, d.history_calculation, d.history_lookback

@@ -17,6 +17,9 @@ def CleanSQL(strInput: str) -> str:
 
 
 def quote_identifiers(identifiers: str, flavor: str) -> str:
+    if not identifiers:
+        return ""
+
     # Keywords -- identifiers to quote
     keywords = [
         "select",
@@ -47,15 +50,13 @@ def quote_identifiers(identifiers: str, flavor: str) -> str:
     return ", ".join(quoted_values)
 
 
-def ConcatColumnList(str_column_list, str_null_value):
-    # Prepares SQL expression to concatenate comma-separated column list into single SQL expression
-    str_expression = ""
-    if str_column_list:
-        if "," in str_column_list:
-            # Split each comma separated column name into individual list items
-            cols = [s.strip() for s in str_column_list.split(",")]
-            str_each = [f"COALESCE({i}, '{str_null_value}')" for i in cols]
-            str_expression = "CONCAT(" + ", ".join(str_each) + ")"
+def concat_columns(columns: str, null_value: str):
+    # Prepares SQL expression to concatenate comma-separated column list
+    expression = ""
+    if columns:
+        if "," in columns:
+            column_list = [f"COALESCE({col.strip()}, '{null_value}')" for col in columns.split(",")]
+            expression = f"CONCAT({', '.join(column_list)})"
         else:
-            str_expression = str_column_list
-    return str_expression
+            expression = columns
+    return expression

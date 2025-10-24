@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import UUID
 
@@ -6,7 +7,6 @@ import streamlit as st
 
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars, RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
-from testgen.common import date_service
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -60,7 +60,7 @@ def get_table_group_preview(
             def save_data_chars(table_group_id: UUID) -> None:
                 # Unsaved table groups will not have an ID, so we have to update it after saving
                 sql_generator.table_group.id = table_group_id
-                write_data_chars(data_chars, sql_generator, date_service.get_now_as_string())
+                write_data_chars(data_chars, sql_generator, datetime.now(UTC))
 
             if verify_table_access:
                 tables_preview = table_group_preview["tables"]

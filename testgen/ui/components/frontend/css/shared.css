@@ -216,7 +216,7 @@ body {
 .text-code {
     font-family:'Courier New', Courier, monospace;
     line-height: 1.5;
-    white-space: pre;
+    white-space: pre-wrap;
 }
 /*  */
 

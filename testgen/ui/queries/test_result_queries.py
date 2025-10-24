@@ -43,19 +43,16 @@ def get_test_results(
             r.result_code as passed_ct,
             (1 - r.result_code)::INTEGER as exception_ct,
             CASE
-                WHEN result_status = 'Warning'
-                AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+                WHEN result_status = 'Warning' THEN 1
             END::INTEGER as warning_ct,
             CASE
-                WHEN result_status = 'Failed'
-                AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+                WHEN result_status = 'Failed' THEN 1
             END::INTEGER as failed_ct,
             CASE
-                WHEN result_status = 'Log'
-                AND result_message NOT ILIKE 'Inactivated%%' THEN 1
+                WHEN result_status = 'Log' THEN 1
             END::INTEGER as log_ct,
             CASE
-                WHEN result_message ILIKE 'Inactivated%%' THEN 1
+                WHEN result_status = 'Error' THEN 1
             END as execution_error_ct,
             p.project_code, r.table_groups_id::VARCHAR,
             r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,

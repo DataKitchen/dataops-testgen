@@ -5,7 +5,7 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
-from testgen.common.clean_sql import ConcatColumnList
+from testgen.common.clean_sql import concat_columns
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.test_definition import TestDefinition
@@ -111,7 +111,7 @@ def get_test_issue_source_query(issue_data: dict) -> str:
     params = {
         "TARGET_SCHEMA": issue_data["schema_name"],
         "TABLE_NAME": issue_data["table_name"],
-        "COLUMN_NAME": issue_data["column_names"],
+        "COLUMN_NAME": issue_data["column_names"], # Don't quote this - queries already have quotes
         "COLUMN_TYPE": issue_data["column_type"],
         "TEST_DATE": str(issue_data["test_date"]),
         "CUSTOM_QUERY": test_definition.custom_query,
@@ -124,18 +124,18 @@ def get_test_issue_source_query(issue_data: dict) -> str:
         "THRESHOLD_VALUE": test_definition.threshold_value,
         "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
         "GROUPBY_NAMES": test_definition.groupby_names,
-        "HAVING_CONDITION": test_definition.having_condition,
+        "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
         "MATCH_SCHEMA_NAME": test_definition.match_schema_name,
         "MATCH_TABLE_NAME": test_definition.match_table_name,
         "MATCH_COLUMN_NAMES": test_definition.match_column_names,
         "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
         "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,
-        "MATCH_HAVING_CONDITION": test_definition.match_having_condition,
+        "MATCH_HAVING_CONDITION": f"HAVING {test_definition.match_having_condition}" if test_definition.having_condition else "",
         "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
         "WINDOW_DATE_COLUMN": test_definition.window_date_column,
         "WINDOW_DAYS": test_definition.window_days,
-        "CONCAT_COLUMNS": ConcatColumnList(issue_data["column_names"], "<NULL>"),
-        "CONCAT_MATCH_GROUPBY": ConcatColumnList(test_definition.match_groupby_names, "<NULL>"),
+        "CONCAT_COLUMNS": concat_columns(issue_data["column_names"], "<NULL>"),
+        "CONCAT_MATCH_GROUPBY": concat_columns(test_definition.match_groupby_names, "<NULL>"),
     }
 
     lookup_query = replace_params(lookup_data.lookup_query, params)

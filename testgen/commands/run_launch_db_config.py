@@ -2,7 +2,7 @@ import logging
 import os
 
 from testgen import settings
-from testgen.common import create_database, date_service, execute_db_queries
+from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
@@ -22,14 +22,12 @@ def _get_latest_revision_number():
 def _get_params_mapping() -> dict:
     ui_user_encrypted_password = encrypt_ui_password(settings.PASSWORD)
 
-    now = date_service.get_now_as_string()
     return {
         "UI_USER_NAME": settings.USERNAME,
         "UI_USER_USERNAME": settings.USERNAME,
         "UI_USER_EMAIL": "",
         "UI_USER_ENCRYPTED_PASSWORD": ui_user_encrypted_password,
         "SCHEMA_NAME": get_tg_schema(),
-        "START_DATE": now,
         "PROJECT_CODE": settings.PROJECT_KEY,
         "CONNECTION_ID": 1,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,

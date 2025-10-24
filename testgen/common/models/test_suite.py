@@ -56,10 +56,8 @@ class TestSuite(Entity):
     connection_id: int = Column(BigInteger, ForeignKey("connections.connection_id"))
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     test_suite_description: str = Column(NullIfEmptyString)
-    test_action: str = Column(String)
     severity: str = Column(NullIfEmptyString)
     export_to_observability: bool = Column(YNString, default="Y")
-    test_suite_schema: str = Column(NullIfEmptyString)
     component_key: str = Column(NullIfEmptyString)
     component_type: str = Column(NullIfEmptyString)
     component_name: str = Column(NullIfEmptyString)
@@ -216,18 +214,6 @@ class TestSuite(Entity):
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
         query = """
-        DELETE FROM working_agg_cat_results
-        WHERE test_run_id IN (
-            SELECT id FROM test_runs
-            WHERE test_suite_id IN :test_suite_ids
-        );
-
-        DELETE FROM working_agg_cat_tests
-        WHERE test_run_id IN (
-            SELECT id FROM test_runs
-            WHERE test_suite_id IN :test_suite_ids
-        );
-
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;
 

@@ -1,5 +1,6 @@
 import dataclasses
 from collections.abc import Iterable
+from datetime import datetime
 
 from testgen.common import read_template_sql_file
 from testgen.common.database.database_service import get_flavor_service, replace_params
@@ -127,7 +128,7 @@ class RefreshDataCharsSQL:
         )
         return (query, None)
     
-    def get_staging_data_chars(self, data_chars: list[ColumnChars], run_date: str) -> list[list[str | bool | int]]:
+    def get_staging_data_chars(self, data_chars: list[ColumnChars], run_date: datetime) -> list[list[str | bool | int]]:
         return [
             [
                 self.table_group.id,

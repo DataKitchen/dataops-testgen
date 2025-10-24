@@ -14,7 +14,7 @@ UPDATE test_results
 INNER JOIN data_table_chars tc
   ON (r.table_groups_id = tc.table_groups_id
  AND r.table_name ILIKE tc.table_name)
- WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
+ WHERE r.test_run_id = '{RUN_ID}'::UUID
    AND test_results.id = r.id;
 
 -- PROFILED COLUMN TESTS:  Update to calculated prevalence for all fails/warnings - result_code = 0
@@ -51,7 +51,7 @@ WITH result_calc
           LEFT JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
              AND r.table_name ILIKE tc.table_name)
-         WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
+         WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
            AND r.result_measure IS NOT NULL
            AND tt.test_scope = 'column'
@@ -79,7 +79,7 @@ WITH result_calc
           INNER JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
              AND r.table_name ILIKE tc.table_name)
-         WHERE r.test_run_id = '{TEST_RUN_ID}'::UUID
+         WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
            AND r.result_measure IS NOT NULL
            AND tt.test_scope <> 'column'

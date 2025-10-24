@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars, RefreshDataCharsSQL
 from testgen.common.database.database_service import (
@@ -14,7 +15,7 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
-def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_date: str) -> list[ColumnChars]:
+def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_date: datetime) -> list[ColumnChars]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
 
     LOG.info("Getting DDF for table group")
@@ -26,6 +27,7 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
     data_chars = [ColumnChars(**column) for column in data_chars]
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}
+        LOG.info(f"Tables: {len(distinct_tables)}, Columns: {len(data_chars)}")
         count_queries = sql_generator.get_row_counts(distinct_tables)
         
         LOG.info("Getting row counts for table group")
@@ -47,7 +49,7 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
     return data_chars
 
 
-def write_data_chars(data_chars: list[ColumnChars], sql_generator: RefreshDataCharsSQL, run_date: str) -> None:
+def write_data_chars(data_chars: list[ColumnChars], sql_generator: RefreshDataCharsSQL, run_date: datetime) -> None:
     staging_results = sql_generator.get_staging_data_chars(data_chars, run_date)
 
     LOG.info("Writing data characteristics to staging")

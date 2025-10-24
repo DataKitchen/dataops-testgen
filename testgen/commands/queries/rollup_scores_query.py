@@ -12,14 +12,19 @@ class RollupScoresSQL:
         self.run_id = run_id
         self.table_group_id = str(table_group_id) if table_group_id is not None else None
 
-    def _get_query(self, template_file_name: str, sub_directory: str | None = "rollup_scores") -> tuple[str, dict]:
+    def _get_query(
+        self,
+        template_file_name: str,
+        sub_directory: str | None = "rollup_scores",
+        no_bind: bool = False,
+    ) -> tuple[str, dict]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
             "RUN_ID": self.run_id,
             "TABLE_GROUPS_ID": self.table_group_id or "",
         }
         query = replace_params(query, params)
-        return query, params
+        return query, None if no_bind else params
     
     def rollup_profiling_scores(self) -> list[tuple[str, dict]]:
         # Runs on App database
@@ -30,10 +35,10 @@ class RollupScoresSQL:
             queries.append(self._get_query("rollup_scores_profile_table_group.sql"))
         return queries
     
-    def GetRollupScoresTestRunQuery(self) -> tuple[str, dict]:
+    def rollup_test_scores(self) -> list[tuple[str, dict]]:
         # Runs on App database
-        return self._get_query("rollup_scores_test_run.sql")
-    
-    def GetRollupScoresTestTableGroupQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("rollup_scores_test_table_group.sql")
+        return [
+            self._get_query("calc_prevalence_test_results.sql", no_bind=True),
+            self._get_query("rollup_scores_test_run.sql"),
+            self._get_query("rollup_scores_test_table_group.sql"),
+        ]

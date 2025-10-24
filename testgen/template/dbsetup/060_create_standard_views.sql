@@ -61,15 +61,13 @@ SELECT p.project_name,
        r.result_code as passed_ct,
        (1 - COALESCE(r.result_code, 0))::INTEGER as exception_ct,
        CASE
-         WHEN result_status = 'Warning'
-          AND result_message NOT ILIKE 'Inactivated%' THEN 1
+         WHEN result_status = 'Warning' THEN 1
        END::INTEGER as warning_ct,
        CASE
-         WHEN result_status = 'Failed'
-          AND result_message NOT ILIKE 'Inactivated%' THEN 1
+         WHEN result_status = 'Failed' THEN 1
        END::INTEGER as failed_ct,
        CASE
-         WHEN result_message ILIKE 'Inactivated%' THEN 1
+         WHEN result_status = 'Error' THEN 1
        END as execution_error_ct,
        p.project_code,
        r.table_groups_id,
@@ -112,7 +110,6 @@ CREATE VIEW v_queued_observability_results
 SELECT
        p.project_name,
        cn.sql_flavor as component_tool,
-       ts.test_suite_schema as schema,
        cn.connection_name,
        cn.project_db,
 
