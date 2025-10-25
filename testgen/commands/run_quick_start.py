@@ -12,6 +12,9 @@ from testgen.common.database.database_service import (
     set_target_db_params,
 )
 from testgen.common.database.flavor.flavor_service import ConnectionParams
+from testgen.common.models import with_database_session
+from testgen.common.models.scores import ScoreDefinition
+from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import read_template_sql_file
 
 LOG = logging.getLogger("testgen")
@@ -134,6 +137,14 @@ def run_quick_start(delete_target_db: bool) -> None:
         ],
         use_target_db=True,
     )
+
+    score_definition = ScoreDefinition.from_table_group(
+        TableGroup(
+            project_code=settings.PROJECT_KEY,
+            table_groups_name=settings.DEFAULT_TABLE_GROUPS_NAME,
+        )
+    )
+    with_database_session(score_definition.save)()
 
 
 def run_quick_start_increment(iteration):

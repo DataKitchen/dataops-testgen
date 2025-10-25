@@ -36,6 +36,7 @@ def run_refresh_score_cards_results(
         return
 
     db_session = get_current_session()
+
     for definition in definitions:
         LOG.info(
             "Refreshing results for scorecard %s in project %s",
@@ -45,10 +46,7 @@ def run_refresh_score_cards_results(
 
         try:
             fresh_score_card = definition.as_score_card()
-            definition.results = []
-            definition.breakdown = []
-            db_session.flush([definition])
-
+            definition.clear_results()
             definition.results = _score_card_to_results(fresh_score_card)
             definition.breakdown = _score_definition_to_results_breakdown(definition)
             if add_history_entry:
@@ -58,6 +56,7 @@ def run_refresh_score_cards_results(
                     definition.project_code,
                 )
 
+                last_added_entry = None
                 historical_categories = ["score", "cde_score"]
                 for result in definition.results:
                     if result.category in historical_categories:
@@ -65,10 +64,14 @@ def run_refresh_score_cards_results(
                             definition_id=result.definition_id,
                             category=result.category,
                             score=result.score,
-                            last_run_time=_refresh_date,
+                            last_run_time=_refresh_date.replace(tzinfo=None),
                         )
-                        definition.history.append(history_entry)
-                        history_entry.add_as_cutoff()
+                        db_session.add(history_entry)
+                        db_session.flush([history_entry])
+                        last_added_entry = history_entry
+
+                if last_added_entry:
+                    last_added_entry.add_as_cutoff()
             definition.save()
         except Exception:
             LOG.exception(
