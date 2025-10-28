@@ -11,12 +11,8 @@ def run_profile_rollup_scoring_queries(project_code: str, run_id: str, table_gro
     LOG.info("CurrentStep: Initializing Profiling Scores Rollup")
     sql_generator = RollupScoresSQL(run_id, table_group_id)
 
-    queries = [sql_generator.GetRollupScoresProfileRunQuery()]
-    if table_group_id: 
-        queries.append(sql_generator.GetRollupScoresProfileTableGroupQuery())
-
     LOG.info("CurrentStep: Rolling up profiling scores")
-    execute_db_queries(queries)
+    execute_db_queries(sql_generator.rollup_profiling_scores())
     run_refresh_score_cards_results(project_code=project_code)
 
 
