@@ -54,7 +54,7 @@ def run_test_execution_in_background(test_suite_id: str | UUID):
 def run_test_execution(test_suite_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
-    
+
     LOG.info(f"Starting test run for test suite {test_suite_id}")
     time_delta = (run_date - datetime.now(UTC)) if run_date else timedelta()
 
@@ -112,9 +112,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
                     "CAT": partial(_run_cat_tests, sql_generator),
                 }
                 # Run metadata tests last so that results for other tests are available to them
-                # TODO: TURN ON WHEN ADDING METADATA TESTS
-                # for run_type in ["QUERY", "CAT", "METADATA"]:
-                for run_type in ["QUERY", "CAT"]:
+                for run_type in ["QUERY", "CAT", "METADATA"]:
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
                         run_functions[run_type](run_test_defs)
                     else:
@@ -198,7 +196,7 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
         LOG.info(f"Writing {run_type} test errors")
         for index, error in error_data.items():
             test_defs[index].errors.append(error)
-    
+
         error_results = sql_generator.get_test_errors(test_defs)
         write_to_app_db(error_results, sql_generator.result_columns, sql_generator.test_results_table)
 
@@ -219,7 +217,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
     total_count = len(test_defs)
     LOG.info(f"Aggregating CAT tests: {total_count}")
     aggregate_queries, aggregate_test_defs = sql_generator.aggregate_cat_tests(test_defs)
-    
+
     def update_aggegate_progress(progress: ThreadedProgress) -> None:
         processed_count = sum(len(aggregate_test_defs[index]) for index in progress["indexes"])
         test_run.set_progress(
@@ -251,7 +249,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
         error_test_defs: list[TestExecutionDef] = []
         for index in aggregate_errors:
             error_test_defs.extend(aggregate_test_defs[index])
-    
+
         single_queries, single_test_defs = sql_generator.aggregate_cat_tests(error_test_defs, single=True)
 
         test_run.set_progress(
@@ -260,7 +258,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
             error="Rerunning errored tests singly",
         )
         test_run.save()
-        
+
         def update_single_progress(progress: ThreadedProgress) -> None:
             test_run.set_progress(
                 "CAT",
@@ -293,7 +291,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
                 td = single_test_defs[index][0]
                 td.errors.append(error)
                 error_test_defs.append(td)
-        
+
             error_results = sql_generator.get_test_errors(error_test_defs)
             write_to_app_db(error_results, sql_generator.result_columns, sql_generator.test_results_table)
 
