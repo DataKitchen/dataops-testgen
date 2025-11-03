@@ -1,6 +1,14 @@
 ---
-01_sampling:  "SELECT "
-01_else:  "SELECT "
+01_sampling: |
+  WITH target_table AS (
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) WITH (NOLOCK)
+  )
+  SELECT
+01_else: |
+  WITH target_table AS (
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)
+  )
+  SELECT
 01_all: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
@@ -148,9 +156,9 @@
                             'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                             'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' )
                      AS pattern
-                      FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)
+                      FROM target_table
                      WHERE "{COL_NAME}" > ' ' AND ((SELECT MAX(LEN("{COL_NAME}"))
-                                                    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)) BETWEEN 3 and {MAX_PATTERN_LENGTH})) p
+                                                    FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH})) p
            GROUP BY pattern
            HAVING pattern > ' '
            ORDER BY COUNT(*) DESC
@@ -238,7 +246,7 @@
                                 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN'
                               )
              ) AS pattern_ct
-  FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)
+  FROM target_table
  WHERE "{COL_NAME}" > ' ' )  AS distinct_pattern_ct,
   SUM(CAST(SIGN(LEN(RTRIM(LTRIM("{COL_NAME}"))) - LEN(REPLACE(RTRIM(LTRIM("{COL_NAME}")),' ',''))) AS BIGINT)) AS embedded_space_ct,
   AVG(CAST(LEN(RTRIM(LTRIM("{COL_NAME}"))) - LEN(REPLACE(RTRIM(LTRIM("{COL_NAME}")),' ','')) AS FLOAT))  AS avg_embedded_spaces,
@@ -248,8 +256,7 @@
 
 16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) WITH (NOLOCK)'
-98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)'
+98_all: ' FROM target_table '
 
 99_N: |
      , (SELECT TOP 1
@@ -264,5 +271,3 @@
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) WITH (NOLOCK)) pctile
 99_else: ' '
-
-100_sampling: ' '

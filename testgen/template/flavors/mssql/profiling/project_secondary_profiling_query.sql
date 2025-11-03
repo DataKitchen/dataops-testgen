@@ -1,13 +1,17 @@
+WITH target_table AS (
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+-- TG-IF do_sample_bool
+        TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
+-- TG-ENDIF
+        WITH (NOLOCK)
+    ),
 -- Get Freqs for selected columns
-WITH ranked_vals
+ranked_vals
 AS
     (SELECT "{COL_NAME}",
             COUNT(*) AS  ct,
             ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS rn
-     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
--- TG-IF do_sample_bool
-        TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
--- TG-ENDIF
+     FROM target_table
      WHERE "{COL_NAME}" > ' '
      GROUP BY "{COL_NAME}"
     ),
@@ -31,8 +35,7 @@ SELECT '{PROJECT_CODE}' as project_code,
        REPLACE(STRING_AGG(CONVERT(NVARCHAR(max), val), '^#^') WITHIN GROUP (ORDER BY min_rn), '^#^', CHAR(10)) AS top_freq_values,
        (SELECT CONVERT(VARCHAR(40), HASHBYTES('MD5', STRING_AGG( NULLIF(dist_col_name,''),
                        '|') WITHIN GROUP (ORDER BY dist_col_name)), 2)  as dvh
-        FROM (SELECT DISTINCT "{COL_NAME}" as dist_col_name
-              FROM "{DATA_SCHEMA}"."{DATA_TABLE}") a
+        FROM (SELECT DISTINCT "{COL_NAME}" as dist_col_name FROM target_table) a
        ) as distinct_value_hash
 FROM consol_vals;
 

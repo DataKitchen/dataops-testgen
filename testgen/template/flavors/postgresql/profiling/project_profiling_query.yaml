@@ -1,6 +1,14 @@
 ---
-01_sampling: "SELECT "
-01_else: "SELECT "
+01_sampling: |
+  WITH target_table AS (
+    SELECT *  FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)
+  )
+  SELECT
+01_else: |
+  WITH target_table AS (
+    SELECT *  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  )
+  SELECT
 01_all: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
@@ -124,9 +132,9 @@
                         "{COL_NAME}", '[a-z]', 'a', 'g'),
                                     '[A-Z]', 'A', 'g'),
                                     '[0-9]', 'N', 'g') AS pattern
-                       FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+                       FROM target_table
                       WHERE "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                                                      FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
+                                                      FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
             GROUP BY pattern
             HAVING pattern > ' '
             ORDER BY COUNT(*) DESC
@@ -215,7 +223,7 @@
                                       '[A-Z]', 'A', 'g'),
                                       '[0-9]', 'N', 'g')
                 ) AS pattern_ct
-     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+     FROM target_table
     WHERE "{COL_NAME}" > ' ' ) AS distinct_pattern_ct,
   SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g')))::BIGINT) AS embedded_space_ct,
   AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REGEXP_REPLACE(TRIM("{COL_NAME}"), ' ', '', 'g'))::FLOAT)  AS avg_embedded_spaces,
@@ -225,8 +233,7 @@
 
 16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)'
-98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" '
+98_all: ' FROM target_table '
 
 99_N: |
   , (SELECT
@@ -241,5 +248,3 @@
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}"::NUMERIC) AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64) LIMIT 1) pctile
 99_else: ' '
-
-100_sampling: ' '
