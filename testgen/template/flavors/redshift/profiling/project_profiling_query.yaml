@@ -1,6 +1,14 @@
 ---
-01_sampling: "SELECT "
-01_else: "SELECT "
+01_sampling: |
+  WITH target_table AS (
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WHERE RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}
+  )
+  SELECT
+01_else: |
+  WITH target_table AS (
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  )
+  SELECT
 01_all: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
@@ -103,9 +111,9 @@
                         "{COL_NAME}", '[a-z]', 'a'),
                                     '[A-Z]', 'A'),
                                     '[0-9]', 'N') AS pattern
-                       FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+                       FROM target_table
                       WHERE "{COL_NAME}" > ' ' AND (SELECT MAX(LEN("{COL_NAME}"))
-                                                    FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
+                                                    FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
             GROUP BY pattern
             HAVING pattern > ' '
             ORDER BY COUNT(*) DESC) as ps) AS top_patterns,
@@ -169,7 +177,7 @@
                                       '[A-Z]', 'A'),
                                       '[0-9]', 'N')
                 ) AS pattern_ct
-     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+     FROM target_table
     WHERE "{COL_NAME}" > ' ' ) AS distinct_pattern_ct,
   SUM(SIGN(REGEXP_COUNT(TRIM("{COL_NAME}"), ' '))::BIGINT) AS embedded_space_ct,
   AVG(REGEXP_COUNT(TRIM("{COL_NAME}"), ' ')::FLOAT)  AS avg_embedded_spaces,
@@ -179,8 +187,7 @@
 
 16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-98_sampling: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}" '
-98_else: ' FROM "{DATA_SCHEMA}"."{DATA_TABLE}"'
+98_all: ' FROM target_table'
 
 99_N: |
   , (SELECT
@@ -195,5 +202,3 @@
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
 99_else: ' '
-
-100_sampling: 'WHERE RAND() <= 1.0 / {PROFILE_SAMPLE_RATIO}'

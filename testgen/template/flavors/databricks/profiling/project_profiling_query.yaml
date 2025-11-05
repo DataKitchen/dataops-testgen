@@ -1,6 +1,14 @@
 ---
-01_sampling:  "SELECT "
-01_else:  "SELECT "
+01_sampling: |
+  WITH target_table AS (
+    SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
+  )
+  SELECT
+01_else: |
+  WITH target_table AS (
+    SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
+  )
+  SELECT
 01_all: |
   {CONNECTION_ID} as connection_id,
   '{PROJECT_CODE}' as project_code,
@@ -146,11 +154,11 @@
                     ) AS pattern,
                     COUNT(*) AS ct,
                     ct || ' | ' || pattern AS ct_pattern
-                FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
+                FROM target_table
                 WHERE
                     trim(`{COL_NAME}`) != '' AND
                     (
-                        (SELECT MAX(LEN(`{COL_NAME}`)) FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`) BETWEEN 3 and 25
+                        (SELECT MAX(LEN(`{COL_NAME}`)) FROM target_table) BETWEEN 3 and 25
                     )
                 GROUP BY pattern
                 HAVING len(pattern) > 0
@@ -240,7 +248,7 @@
                                 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN'
                               )
              ) AS pattern_ct
-  FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
+  FROM target_table
  WHERE `{COL_NAME}` > ' ' )  AS distinct_pattern_ct,
   SUM(CAST(SIGN(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ',''))) AS BIGINT)) AS embedded_space_ct,
   AVG(CAST(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ','')) AS FLOAT))  AS avg_embedded_spaces,
@@ -250,8 +258,7 @@
 
 16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
 
-98_sampling: ' FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)'
-98_else: ' FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`'
+98_all: ' FROM target_table'
 
 99_N: |
      , (SELECT
@@ -266,5 +273,3 @@
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
         FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) LIMIT 1 ) pctile
 99_else: ' '
-
-100_sampling: ' '

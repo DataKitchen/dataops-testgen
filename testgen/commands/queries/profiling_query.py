@@ -147,7 +147,7 @@ class ProfilingSQL:
             raise ValueError("Template conditional misused")
 
         return "".join(updated_query)
-    
+
     def _get_profiling_template(self) -> dict:
         if not self._profiling_template:
             self._profiling_template = read_template_yaml_file(
@@ -250,22 +250,19 @@ class ProfilingSQL:
         query += template["12_B" if general_type == "B" else "12_else"]
         query += template["14_A" if general_type == "A" else "14_else"]
         query += template["16_all"]
-        query += template["98_sampling" if table_sampling else "98_else"]
+        query += template["98_all"]
 
         if general_type == "N":
             query += template["99_N_sampling" if table_sampling else "99_N"]
         else:
             query += template["99_else"]
 
-        if table_sampling:
-            query += template["100_sampling"]
-
         params = self._get_params(column_chars, table_sampling)
         query = replace_params(query, params)
         query = replace_templated_functions(query, self.flavor)
 
         return query, params
-    
+
     def get_profiling_errors(self, column_errors: list[tuple[ColumnChars, str]]) -> list[list[str | UUID | int]]:
         return [
             [

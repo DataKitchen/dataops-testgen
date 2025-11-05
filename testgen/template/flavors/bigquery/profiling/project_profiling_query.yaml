@@ -238,8 +238,7 @@
 
 16_all:  " '{PROFILE_RUN_ID}' as profile_run_id "
 
-98_sampling: ' FROM target_table'
-98_else: ' FROM target_table'
+98_all: ' FROM target_table'
 
 99_N: |
       ,
@@ -256,5 +255,3 @@
        APPROX_QUANTILES(`{COL_NAME}`, 100)[OFFSET(75)] AS pct_75
   FROM `{DATA_SCHEMA}.{DATA_TABLE}` LIMIT 1) pctile
 99_else: ;
-
-100_sampling: ' '
