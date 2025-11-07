@@ -18,7 +18,111 @@ test_types:
   column_name_help: null
   default_parm_columns: baseline_value,threshold_value
   default_parm_values: |-
-    '(' || SUBSTRING( CASE WHEN SPLIT_PART(top_freq_values, '|' , 2) > '' THEN ',''' || TRIM( REPLACE ( SPLIT_PART(top_freq_values, '|' , 2), '''' , '''''' ) ) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 4) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 4), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 6) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 6), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 8) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 8), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 10) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 10), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 12) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 12), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 14) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 14), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 16) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 16), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 18) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 18), '''' , '''''' )) || '''' ELSE '' END || CASE WHEN SPLIT_PART(top_freq_values, '|' , 20) > '' THEN ',''' || TRIM(REPLACE(SPLIT_PART(top_freq_values, '|' , 20), '''' , '''''' )) || '''' ELSE '' END, 2, 999) || ')',0
+    '(' || SUBSTRING(
+        CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 1) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 1), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 2) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 2), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 3) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 3), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 4) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 4), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 5) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 5), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 6) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 6), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 7) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 7), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 8) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 8), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 9) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 9), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END || CASE
+            WHEN SPLIT_PART(top_freq_values, E'\n', 10) > '' THEN ',''' || TRIM(
+                REPLACE (
+                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 10), ' | ', 1),
+                    '''',
+                    ''''''
+                ),
+                '| '
+            ) || ''''
+            ELSE ''
+        END,
+        2,
+        999
+    ) || ')',0
   default_parm_prompts: |-
     List of Expected Values,Threshold Error Count
   default_parm_help: null
