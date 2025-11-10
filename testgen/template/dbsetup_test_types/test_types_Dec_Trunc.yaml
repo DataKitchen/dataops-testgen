@@ -110,7 +110,7 @@ test_types:
       SELECT DISTINCT LENGTH(SPLIT(CAST(`{COLUMN_NAME}` AS STRING), '.')[SAFE_OFFSET(1)]) AS decimal_scale, COUNT(*) AS count
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       GROUP BY decimal_scale
-      LIMIT 500;
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1303'
     test_id: '1011'
@@ -118,7 +118,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}`::STRING, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY decimal_scale LIMIT 500;
+      SELECT DISTINCT LENGTH(SPLIT_PART(`{COLUMN_NAME}`::STRING, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '1145'
     test_id: '1011'
@@ -130,7 +130,7 @@ test_types:
         SELECT LEN(SUBSTRING(CAST(ABS("{COLUMN_NAME}") % 1 AS VARCHAR), 3, LEN("{COLUMN_NAME}"))) AS decimal_scale
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       )
-      SELECT DISTINCT TOP 500 decimal_scale, COUNT(*) AS count
+      SELECT DISTINCT TOP {LIMIT} decimal_scale, COUNT(*) AS count
         FROM cte GROUP BY decimal_scale ORDER BY COUNT(*) DESC;
     error_type: Test Results
   - id: '1088'
@@ -139,7 +139,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT 500;
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   - id: '1006'
     test_id: '1011'
@@ -147,7 +147,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1406'
     test_id: '1011'
@@ -155,7 +155,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT 500;
+      SELECT DISTINCT DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DECIMAL_SCALE("{COLUMN_NAME}" :: SUPER) LIMIT {LIMIT};
     error_type: Test Results
   - id: '1202'
     test_id: '1011'
@@ -163,6 +163,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT 500;
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

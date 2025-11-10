@@ -108,7 +108,7 @@ test_types:
       SELECT *
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE `{COLUMN_NAME}` IS NULL
-      LIMIT 500;
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1320'
     test_id: '1030'
@@ -116,7 +116,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL LIMIT 500;
+      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL LIMIT {LIMIT};
     error_type: Test Results
   - id: '1162'
     test_id: '1030'
@@ -124,7 +124,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL;
+      SELECT TOP {LIMIT} * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL;
     error_type: Test Results
   - id: '1105'
     test_id: '1030'
@@ -132,7 +132,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT};
     error_type: Test Results
   - id: '1023'
     test_id: '1030'
@@ -140,7 +140,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT};
     error_type: Test Results
   - id: '1423'
     test_id: '1030'
@@ -148,7 +148,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT};
     error_type: Test Results
   - id: '1219'
     test_id: '1030'
@@ -156,6 +156,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT 500;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

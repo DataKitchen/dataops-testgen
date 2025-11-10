@@ -53,6 +53,7 @@ test_types:
         WHERE {SUBSET_CONDITION}
           AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL 2 * {WINDOW_DAYS} DAY)
           AND {WINDOW_DATE_COLUMN} < DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
+        LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -66,7 +67,8 @@ test_types:
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
         WHERE {SUBSET_CONDITION}
           AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
-      );
+        LIMIT {LIMIT_2}
+      )
     error_type: Test Results
   - id: '1337'
     test_id: '1509'
@@ -85,6 +87,7 @@ test_types:
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -98,6 +101,7 @@ test_types:
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
     error_type: Test Results
   - id: '1267'
@@ -107,7 +111,7 @@ test_types:
     lookup_type: null
     lookup_query: |2-
               (
-      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      SELECT TOP {LIMIT_2} 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day", - {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
@@ -120,7 +124,7 @@ test_types:
       )
       UNION ALL
       (
-      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      SELECT TOP {LIMIT_2} 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
@@ -149,6 +153,7 @@ test_types:
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -162,6 +167,7 @@ test_types:
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
     error_type: Test Results
   - id: '1265'
@@ -181,6 +187,7 @@ test_types:
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -194,6 +201,7 @@ test_types:
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
     error_type: Test Results
   - id: '1469'
@@ -213,6 +221,7 @@ test_types:
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -226,6 +235,7 @@ test_types:
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
     error_type: Test Results
   - id: '1266'
@@ -245,6 +255,7 @@ test_types:
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - 2 * {WINDOW_DAYS}
         AND {WINDOW_DATE_COLUMN} <  (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -258,6 +269,7 @@ test_types:
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      LIMIT {LIMIT_2}
       )
     error_type: Test Results
   test_templates:
