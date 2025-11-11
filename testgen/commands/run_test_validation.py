@@ -39,8 +39,8 @@ def run_test_validation(sql_generator: TestExecutionSQL, test_defs: list[TestExe
             test_defs_by_id[test_id].errors.append(error)
 
     for td in test_defs:
-        # No validation needed for custom query
-        if td.test_type == "CUSTOM":
+        # No validation needed for custom query or table group tests
+        if td.test_type == "CUSTOM" or td.test_scope == "tablegroup":
             continue
 
         if td.schema_name and td.table_name and (td.column_name or td.test_scope in ["table", "custom"]):
@@ -87,9 +87,9 @@ def run_test_validation(sql_generator: TestExecutionSQL, test_defs: list[TestExe
         for identifier, test_ids in identifiers_to_check.items():
             table = (identifier[0], identifier[1])
             if table not in target_tables:
-                add_test_error(test_ids, f"Missing table: {".".join(table)}")
+                add_test_error(test_ids, f"Missing table: {'.'.join(table)}")
             elif identifier[2] and identifier not in target_columns:
-                add_test_error(test_ids, f"Missing column: {".".join(identifier)}")
+                add_test_error(test_ids, f"Missing column: {'.'.join(identifier)}")
 
     error_results = sql_generator.get_test_errors(test_defs_by_id.values())
     if error_results:

@@ -3,6 +3,7 @@ import subprocess
 import threading
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from typing import Literal
 from uuid import UUID
 
 import testgen.common.process_service as process_service
@@ -83,9 +84,9 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
         test_defs = [TestExecutionDef(**item) for item in test_defs]
-        LOG.info(f"Active test definitions: {len(test_defs)}")
 
         if test_defs:
+            LOG.info(f"Active test definitions: {len(test_defs)}")
             test_run.set_progress("validation", "Running")
             test_run.save()
 
@@ -126,6 +127,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         LOG.info("Updating test results and test run")
         test_run.save()
         execute_db_queries(sql_generator.update_test_results())
+        # Refresh needed because previous query updates the test run too
         test_run.refresh()
     except Exception as e:
         LOG.exception("Test execution encountered an error.")
@@ -162,12 +164,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     """
 
 
-def _run_tests(sql_generator: TestExecutionSQL, run_type: TestRunType, test_defs: list[TestExecutionDef]) -> None:
+def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "METADATA"], test_defs: list[TestExecutionDef]) -> None:
     test_run = sql_generator.test_run
     test_run.set_progress(run_type, "Running")
     test_run.save()
-
-    LOG.info(f"Running {run_type} tests: {len(test_defs)}")
 
     def update_test_progress(progress: ThreadedProgress) -> None:
         test_run.set_progress(
@@ -180,6 +180,7 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: TestRunType, test_defs
         )
         test_run.save()
 
+    LOG.info(f"Running {run_type} tests: {len(test_defs)}")
     test_results, result_columns, error_data = fetch_from_db_threaded(
         [sql_generator.run_query_test(td) for td in test_defs],
         use_target_db=run_type != "METADATA",
@@ -187,8 +188,8 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: TestRunType, test_defs
         progress_callback=update_test_progress,
     )
 
-    LOG.info(f"Writing {run_type} test results")
     if test_results:
+        LOG.info(f"Writing {run_type} test results")
         write_to_app_db(test_results, result_columns, sql_generator.test_results_table)
 
     if error_count := len(error_data):
@@ -217,7 +218,6 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
     total_count = len(test_defs)
     LOG.info(f"Aggregating CAT tests: {total_count}")
     aggregate_queries, aggregate_test_defs = sql_generator.aggregate_cat_tests(test_defs)
-    LOG.info(f"Running aggregated CAT test queries: {len(aggregate_queries)}")
     
     def update_aggegate_progress(progress: ThreadedProgress) -> None:
         processed_count = sum(len(aggregate_test_defs[index]) for index in progress["indexes"])
@@ -231,6 +231,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
         )
         test_run.save()
 
+    LOG.info(f"Running aggregated CAT test queries: {len(aggregate_queries)}")
     aggregate_results, _, aggregate_errors = fetch_from_db_threaded(
         aggregate_queries,
         use_target_db=True,
@@ -252,7 +253,6 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
     
         single_queries, single_test_defs = sql_generator.aggregate_cat_tests(error_test_defs, single=True)
 
-        LOG.info(f"Rerunning errored CAT tests singly: {len(single_test_defs)}")
         test_run.set_progress(
             "CAT",
             "Running",
@@ -271,6 +271,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
             )
             test_run.save()
 
+        LOG.info(f"Rerunning errored CAT tests singly: {len(single_test_defs)}")
         single_results, _, single_errors = fetch_from_db_threaded(
             single_queries,
             use_target_db=True,

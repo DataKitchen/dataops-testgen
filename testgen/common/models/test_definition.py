@@ -27,6 +27,8 @@ from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestam
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
+TestRunType = Literal["QUERY", "CAT", "METADATA"]
+TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
@@ -82,7 +84,7 @@ class TestDefinitionSummary(EntityMinimal):
     default_parm_prompts: str
     default_parm_help: str
     default_severity: str
-    test_scope: str
+    test_scope: TestScope
     usage_notes: str
 
 
@@ -133,8 +135,8 @@ class TestType(Entity):
     default_parm_prompts: str = Column(Text)
     default_parm_help: str = Column(Text)
     default_severity: str = Column(String)
-    run_type: str = Column(String)
-    test_scope: str = Column(String)
+    run_type: TestRunType = Column(String)
+    test_scope: TestScope = Column(String)
     dq_dimension: str = Column(String)
     health_dimension: str = Column(String)
     threshold_description: str = Column(String)

@@ -393,7 +393,7 @@ const TestRunStatus = (/** @type TestRun */ item) => {
     );
 };
 
-const ProgressTooltip = (/** @type ProfilingRun */ item) => {
+const ProgressTooltip = (/** @type TestRun */ item) => {
     return div(
         { class: 'flex-column fx-gap-1' },
         item.progress?.map(step => {

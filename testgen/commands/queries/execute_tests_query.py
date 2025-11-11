@@ -1,7 +1,7 @@
 import dataclasses
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Literal, TypedDict
+from typing import TypedDict
 from uuid import UUID
 
 from testgen.common import read_template_sql_file
@@ -9,10 +9,10 @@ from testgen.common.clean_sql import concat_columns
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import TestRunType, TestScope
 from testgen.common.models.test_run import TestRun
 from testgen.common.read_file import replace_templated_functions
 
-TestRunType = Literal["QUERY", "CAT", "METADATA"]
 
 @dataclasses.dataclass
 class InputParameters:
@@ -48,7 +48,7 @@ class TestExecutionDef(InputParameters):
     skip_errors: int
     custom_query: str
     run_type: TestRunType
-    test_scope: Literal["column", "referential", "table", "custom"]
+    test_scope: TestScope
     template_name: str
     measure: str
     test_operator: str
@@ -201,7 +201,7 @@ class TestExecutionSQL:
                 self._get_input_parameters(td),
                 None, # No result_code on errors
                 "Error",
-                ". ".join(td.errors)[:1000],
+                ". ".join(td.errors),
                 None, # No result_measure on errors
             ] for td in test_defs if td.errors
         ]
@@ -252,6 +252,9 @@ class TestExecutionSQL:
         aggregate_test_defs: list[list[TestExecutionDef]] = []
 
         def add_query(test_defs: list[TestExecutionDef]) -> str:
+            if not test_defs:
+                return
+
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in test_defs])} AS result_measures, "
@@ -282,16 +285,17 @@ class TestExecutionSQL:
                 current_test_defs = []
 
                 for td in test_defs:
-                    current_chars += len(td.measure_expression) + len(td.condition_expression) + 2 * len(concat_operator)
+                    td_chars = len(td.measure_expression) + len(td.condition_expression) + 2 * len(concat_operator)
                     # Add new query if current query will become bigger than character limit
-                    if current_chars > max_query_chars:
+                    if (current_chars + td_chars) > max_query_chars:
                         add_query(current_test_defs)
                         current_chars = 0
                         current_test_defs = []
+
+                    current_chars += td_chars
                     current_test_defs.append(td)
 
-                if current_test_defs:
-                    add_query(current_test_defs)
+                add_query(current_test_defs)
     
         return aggregate_queries, aggregate_test_defs
     
@@ -300,7 +304,7 @@ class TestExecutionSQL:
         aggregate_results: list[AggregateResult],
         aggregate_test_defs: list[list[TestExecutionDef]],
     ) -> list[list[UUID | str | datetime | int | None]]:
-        test_results: list[list[TestExecutionDef]] = []
+        test_results: list[list[UUID | str | datetime | int | None]] = []
         for result in aggregate_results:
             test_defs = aggregate_test_defs[result["query_index"]]
             result_measures = result["result_measures"].split("|")

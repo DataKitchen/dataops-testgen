@@ -535,7 +535,7 @@ CREATE TABLE test_results (
    result_code            INTEGER,
    severity               VARCHAR(10),
    result_status          VARCHAR(10),
-   result_message         VARCHAR(1000),
+   result_message         VARCHAR,
    result_signal          VARCHAR(1000),
    result_measure         VARCHAR(1000),
    threshold_value        VARCHAR(1000),

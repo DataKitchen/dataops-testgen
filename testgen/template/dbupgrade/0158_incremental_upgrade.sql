@@ -2,6 +2,7 @@ SET SEARCH_PATH TO {SCHEMA_NAME};
 
 DROP VIEW IF EXISTS v_latest_profile_results CASCADE;
 DROP VIEW IF EXISTS v_queued_observability_results CASCADE;
+DROP VIEW IF EXISTS v_test_results CASCADE;
 
 DROP SEQUENCE profile_results_dk_id_seq;
 DROP SEQUENCE test_definitions_cat_test_id_seq;
@@ -27,6 +28,7 @@ ALTER TABLE test_runs
     ADD COLUMN progress JSONB;
 
 ALTER TABLE test_results
+    ALTER COLUMN result_message TYPE VARCHAR,
     DROP COLUMN starttime,
     DROP COLUMN endtime,
     DROP COLUMN test_action,

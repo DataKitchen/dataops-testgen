@@ -182,6 +182,7 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
+@with_database_session
 def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None):
     click.echo(f"run-tests for suite: {test_suite_id or test_suite_key}")
     # For backward compatibility
