@@ -8,7 +8,7 @@ from uuid import UUID
 
 import testgen.common.process_service as process_service
 from testgen import settings
-from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL, TestRunType
+from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import (

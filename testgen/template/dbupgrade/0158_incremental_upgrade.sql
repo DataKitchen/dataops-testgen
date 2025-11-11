@@ -35,3 +35,10 @@ ALTER TABLE test_results
     DROP COLUMN subset_condition,
     DROP COLUMN result_error_data,
     DROP COLUMN result_query;
+
+UPDATE job_schedules
+    SET kwargs = jsonb_build_object('test_suite_id', test_suites.id)
+FROM test_suites
+WHERE job_schedules.key = 'run-tests'
+    AND job_schedules.kwargs->>'project_key' = test_suites.project_code
+    AND job_schedules.kwargs->>'test_suite_key' = test_suites.test_suite;

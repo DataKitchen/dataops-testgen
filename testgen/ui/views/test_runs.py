@@ -118,16 +118,16 @@ class TestRunScheduleDialog(ScheduleDialog):
         self.test_suites = TestSuite.select_minimal_where(TestSuite.project_code == self.project_code)
 
     def get_arg_value(self, job):
-        return job.kwargs["test_suite_key"]
+        return next(item.test_suite for item in self.test_suites if str(item.id) == job.kwargs["test_suite_id"])
 
     def get_arg_value_options(self) -> list[dict[str, str]]:
         return [
-            {"value": test_suite.test_suite, "label": test_suite.test_suite}
+            {"value": str(test_suite.id), "label": test_suite.test_suite}
             for test_suite in self.test_suites
         ]
 
     def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"project_key": self.project_code, "test_suite_key": arg_value}
+        return [], {"test_suite_id": str(arg_value)}
 
 
 def on_cancel_run(test_run: dict) -> None:
