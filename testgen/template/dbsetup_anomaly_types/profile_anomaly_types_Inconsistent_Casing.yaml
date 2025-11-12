@@ -28,7 +28,7 @@ profile_anomaly_types:
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
         WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
         GROUP BY `{COLUMN_NAME}`
-        LIMIT 20
+        LIMIT {LIMIT_2}
       )
       UNION ALL
       (
@@ -37,7 +37,7 @@ profile_anomaly_types:
         WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
           AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
         GROUP BY `{COLUMN_NAME}`
-        LIMIT 20
+        LIMIT {LIMIT_2}
       );
     error_type: Profile Anomaly
   - id: '1262'
@@ -48,11 +48,11 @@ profile_anomaly_types:
     lookup_query: |-
       (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE UPPER(`{COLUMN_NAME}`) = `{COLUMN_NAME}`
-      GROUP BY `{COLUMN_NAME}` LIMIT 20)
+      GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE `{COLUMN_NAME}` <> UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` <> LOWER(`{COLUMN_NAME}`)
-      GROUP BY `{COLUMN_NAME}` LIMIT 20)
+      GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1260'
     test_id: '1028'
@@ -60,11 +60,11 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT TOP {LIMIT_2} 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
       GROUP BY "{COLUMN_NAME}"
       UNION ALL
-      SELECT TOP 20 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT TOP {LIMIT_2} 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
       GROUP BY "{COLUMN_NAME}"
     error_type: Profile Anomaly
@@ -76,11 +76,11 @@ profile_anomaly_types:
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1258'
     test_id: '1028'
@@ -90,11 +90,11 @@ profile_anomaly_types:
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1473'
     test_id: '1028'
@@ -104,11 +104,11 @@ profile_anomaly_types:
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1261'
     test_id: '1028'
@@ -118,9 +118,9 @@ profile_anomaly_types:
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
-      GROUP BY "{COLUMN_NAME}" LIMIT 20)
+      GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly

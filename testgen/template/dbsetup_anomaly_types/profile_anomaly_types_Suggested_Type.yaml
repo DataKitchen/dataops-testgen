@@ -28,7 +28,7 @@ profile_anomaly_types:
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       GROUP BY `{COLUMN_NAME}`
       ORDER BY record_ct DESC
-      LIMIT 20;
+      LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1273'
     test_id: '1001'
@@ -36,7 +36,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT 20;
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY `{COLUMN_NAME}` ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1115'
     test_id: '1001'
@@ -44,7 +44,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
     error_type: Profile Anomaly
   - id: '1058'
     test_id: '1001'
@@ -52,7 +52,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT 20;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1033'
     test_id: '1001'
@@ -60,7 +60,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1433'
     test_id: '1001'
@@ -68,7 +68,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1172'
     test_id: '1001'
@@ -76,5 +76,5 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 20 "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC;
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Profile Anomaly

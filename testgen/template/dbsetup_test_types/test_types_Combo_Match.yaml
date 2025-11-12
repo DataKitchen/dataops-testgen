@@ -57,7 +57,8 @@ test_types:
         GROUP BY {MATCH_GROUPBY_NAMES}
         {MATCH_HAVING_CONDITION}
       ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1335'
     test_id: '1502'
@@ -78,7 +79,8 @@ test_types:
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
              ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1255'
     test_id: '1502'
@@ -86,7 +88,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT *
+      SELECT TOP {LIMIT} *
         FROM ( SELECT {COLUMN_NAME_NO_QUOTES}
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
@@ -120,7 +122,8 @@ test_types:
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
              ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1253'
     test_id: '1502'
@@ -141,7 +144,8 @@ test_types:
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
              ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1464'
     test_id: '1502'
@@ -162,7 +166,8 @@ test_types:
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
              ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1254'
     test_id: '1502'
@@ -183,7 +188,8 @@ test_types:
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
              ) test
-      ORDER BY {COLUMN_NAME_NO_QUOTES};
+      ORDER BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2501'

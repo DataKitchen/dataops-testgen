@@ -55,7 +55,8 @@ test_types:
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= DATE_SUB((SELECT MAX({WINDOW_DATE_COLUMN}) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), INTERVAL {WINDOW_DAYS} DAY)
-      GROUP BY {COLUMN_NAME_NO_QUOTES};
+      GROUP BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1263'
     test_id: '1508'
@@ -63,7 +64,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT {COLUMN_NAME_NO_QUOTES}
+      SELECT TOP {LIMIT} {COLUMN_NAME_NO_QUOTES}
         FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE {SUBSET_CONDITION}
          AND {WINDOW_DATE_COLUMN} >= DATEADD("day",  - 2 * {WINDOW_DAYS}, (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"))
@@ -94,6 +95,7 @@ test_types:
        WHERE {SUBSET_CONDITION}
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1261'
     test_id: '1508'
@@ -113,6 +115,7 @@ test_types:
        WHERE {SUBSET_CONDITION}
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1468'
     test_id: '1508'
@@ -132,6 +135,7 @@ test_types:
        WHERE {SUBSET_CONDITION}
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1262'
     test_id: '1508'
@@ -151,6 +155,7 @@ test_types:
        WHERE {SUBSET_CONDITION}
          AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
       GROUP BY {COLUMN_NAME_NO_QUOTES}
+      LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2507'

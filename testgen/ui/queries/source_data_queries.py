@@ -14,9 +14,10 @@ from testgen.ui.services.database_service import fetch_from_target_db, fetch_one
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
+DEFAULT_LIMIT = 500
 
 
-def get_hygiene_issue_source_query(issue_data: dict) -> str:
+def get_hygiene_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str:
     def generate_lookup_query(test_id: str, detail_exp: str, column_names: list[str], sql_flavor: SQLFlavor) -> str:
         if test_id in {"1019", "1020"}:
             start_index = detail_exp.find("Columns: ")
@@ -62,6 +63,9 @@ def get_hygiene_issue_source_query(issue_data: dict) -> str:
         "COLUMN_NAME": issue_data["column_name"],
         "DETAIL_EXPRESSION": issue_data["detail"],
         "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
+        "LIMIT": limit,
+        "LIMIT_2": int(limit/2),
+        "LIMIT_4": int(limit/4),
     }
 
     lookup_query = replace_params(lookup_query, params)
@@ -72,10 +76,11 @@ def get_hygiene_issue_source_query(issue_data: dict) -> str:
 @st.cache_data(show_spinner=False)
 def get_hygiene_issue_source_data(
     issue_data: dict,
-    limit: int | None = None,
+    limit: int = DEFAULT_LIMIT,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
+    lookup_query = None
     try:
-        lookup_query = get_hygiene_issue_source_query(issue_data)
+        lookup_query = get_hygiene_issue_source_query(issue_data, limit)
         if not lookup_query:
             return "NA", "Source data lookup is not available for this hygiene issue.", None, None
 
@@ -99,7 +104,7 @@ def get_hygiene_issue_source_data(
         return "ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None
 
 
-def get_test_issue_source_query(issue_data: dict) -> str:
+def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str:
     lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
     if not lookup_data or not lookup_data.lookup_query:
         return None
@@ -136,6 +141,9 @@ def get_test_issue_source_query(issue_data: dict) -> str:
         "WINDOW_DAYS": test_definition.window_days,
         "CONCAT_COLUMNS": concat_columns(issue_data["column_names"], "<NULL>"),
         "CONCAT_MATCH_GROUPBY": concat_columns(test_definition.match_groupby_names, "<NULL>"),
+        "LIMIT": limit,
+        "LIMIT_2": int(limit/2),
+        "LIMIT_4": int(limit/4),
     }
 
     lookup_query = replace_params(lookup_data.lookup_query, params)
@@ -146,14 +154,15 @@ def get_test_issue_source_query(issue_data: dict) -> str:
 @st.cache_data(show_spinner=False)
 def get_test_issue_source_data(
     issue_data: dict,
-    limit: int | None = None,
+    limit: int = DEFAULT_LIMIT,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
+    lookup_query = None
     try:
         test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
 
-        lookup_query = get_test_issue_source_query(issue_data)
+        lookup_query = get_test_issue_source_query(issue_data, limit)
         if not lookup_query:
             return "NA", "Source data lookup is not available for this test.", None, None
 

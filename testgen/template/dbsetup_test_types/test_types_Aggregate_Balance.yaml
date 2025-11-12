@@ -62,7 +62,8 @@ test_types:
         GROUP BY {GROUPBY_NAMES}
       ) s
       WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1333'
     test_id: '1500'
@@ -86,7 +87,8 @@ test_types:
                        {MATCH_HAVING_CONDITION} ) a
               GROUP BY {GROUPBY_NAMES} ) s
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1247'
     test_id: '1500'
@@ -94,7 +96,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT *
+      SELECT TOP {LIMIT} *
         FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) AS total, SUM(MATCH_TOTAL) AS MATCH_TOTAL
                  FROM
                      ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} AS total, NULL AS match_total
@@ -134,7 +136,8 @@ test_types:
                        {MATCH_HAVING_CONDITION} ) a
               GROUP BY {GROUPBY_NAMES} ) s
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1245'
     test_id: '1500'
@@ -158,7 +161,8 @@ test_types:
                        {MATCH_HAVING_CONDITION} ) a
               GROUP BY {GROUPBY_NAMES} ) s
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1462'
     test_id: '1500'
@@ -182,7 +186,8 @@ test_types:
                        {MATCH_HAVING_CONDITION} ) a
               GROUP BY {GROUPBY_NAMES} ) s
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1246'
     test_id: '1500'
@@ -206,7 +211,8 @@ test_types:
                        {MATCH_HAVING_CONDITION} ) a
               GROUP BY {GROUPBY_NAMES} ) s
        WHERE total <> match_total OR (total IS NOT NULL AND match_total IS NULL) OR (total IS NULL AND match_total IS NOT NULL)
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2506'
