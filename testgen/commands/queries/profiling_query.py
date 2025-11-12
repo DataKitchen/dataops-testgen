@@ -54,18 +54,12 @@ class ProfilingSQL:
     max_pattern_length = 25
     max_error_length = 2000
 
-    def __init__(
-        self,
-        connection: Connection,
-        table_group: TableGroup,
-        profiling_run: ProfilingRun,
-        minutes_offset: int = 0,
-    ):
+    def __init__(self, connection: Connection, table_group: TableGroup, profiling_run: ProfilingRun):
         self.connection = connection
         self.table_group = table_group
         self.profiling_run = profiling_run
+        self.run_date = profiling_run.profiling_starttime.strftime("%Y-%m-%d %H:%M:%S")
         self.flavor = connection.sql_flavor
-        self.minutes_offset = minutes_offset
         self._profiling_template: dict = None
 
     def _get_params(self, column_chars: ColumnChars | None = None, table_sampling: TableSampling | None = None) -> dict:
@@ -74,7 +68,7 @@ class ProfilingSQL:
             "CONNECTION_ID": self.connection.connection_id,
             "TABLE_GROUPS_ID": self.table_group.id,
             "PROFILE_RUN_ID": self.profiling_run.id,
-            "RUN_DATE": self.profiling_run.profiling_starttime,
+            "RUN_DATE": self.run_date,
             "SQL_FLAVOR": self.flavor,
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "PROFILE_ID_COLUMN_MASK": self.table_group.profile_id_column_mask,

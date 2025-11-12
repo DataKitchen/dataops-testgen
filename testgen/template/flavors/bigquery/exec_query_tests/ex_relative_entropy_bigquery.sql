@@ -32,8 +32,6 @@ SELECT '{TEST_TYPE}' AS test_type,
        '{TEST_SUITE_ID}' AS test_suite_id,
        '{TEST_RUN_ID}' AS test_run_id,
        '{RUN_DATE}' AS test_time,
-       '{START_TIME}' AS starttime,
-       CURRENT_TIMESTAMP AS endtime,
        '{SCHEMA_NAME}' AS schema_name,
        '{TABLE_NAME}' AS table_name,
        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
@@ -44,9 +42,7 @@ SELECT '{TEST_TYPE}' AS test_type,
        NULL as result_signal,
        CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
        CONCAT('Divergence Level: ', CAST(js_divergence AS STRING), ', Threshold: {THRESHOLD_VALUE}.') AS result_message,
-       js_divergence AS result_measure,
-       '{SUBSET_DISPLAY}' AS subset_condition,
-       NULL AS result_query
+       js_divergence AS result_measure
 FROM (
   SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
          + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) AS js_divergence

@@ -31,9 +31,10 @@ SELECT '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID as id,
         15000 as profile_sample_min_count;
 
 INSERT INTO test_suites
-   (project_code, test_suite, connection_id, table_groups_id, test_suite_description,
+   (id, project_code, test_suite, connection_id, table_groups_id, test_suite_description,
     export_to_observability, component_key, component_type)
-SELECT '{PROJECT_CODE}'     as project_code,
+SELECT '9df7489d-92b3-49f9-95ca-512160d7896f'::UUID as id,
+       '{PROJECT_CODE}'     as project_code,
        '{TEST_SUITE}'       as test_suite,
        1                    as connection_id,
        '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID as table_groups_id,

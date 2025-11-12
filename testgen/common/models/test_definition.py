@@ -6,10 +6,8 @@ from uuid import UUID
 
 import streamlit as st
 from sqlalchemy import (
-    BigInteger,
     Column,
     ForeignKey,
-    Identity,
     String,
     Text,
     TypeDecorator,
@@ -29,6 +27,8 @@ from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestam
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
+TestRunType = Literal["QUERY", "CAT", "METADATA"]
+TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
@@ -84,7 +84,7 @@ class TestDefinitionSummary(EntityMinimal):
     default_parm_prompts: str
     default_parm_help: str
     default_severity: str
-    test_scope: str
+    test_scope: TestScope
     usage_notes: str
 
 
@@ -135,8 +135,8 @@ class TestType(Entity):
     default_parm_prompts: str = Column(Text)
     default_parm_help: str = Column(Text)
     default_severity: str = Column(String)
-    run_type: str = Column(String)
-    test_scope: str = Column(String)
+    run_type: TestRunType = Column(String)
+    test_scope: TestScope = Column(String)
     dq_dimension: str = Column(String)
     health_dimension: str = Column(String)
     threshold_description: str = Column(String)
@@ -147,14 +147,12 @@ class TestType(Entity):
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"))
-    cat_test_id: int = Column(BigInteger, Identity(), primary_key=True)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"), primary_key=True)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     test_type: str = Column(String)
     test_suite_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_suites.id"), nullable=False)
     test_description: str = Column(NullIfEmptyString)
-    test_action: str = Column(String)
     schema_name: str = Column(String)
     table_name: str = Column(NullIfEmptyString)
     column_name: str = Column(NullIfEmptyString)
@@ -203,12 +201,10 @@ class TestDefinition(Entity):
     _minimal_columns = TestDefinitionMinimal.__annotations__.keys()
     _update_exclude_columns = (
         id,
-        cat_test_id,
         table_groups_id,
         profile_run_id,
         test_type,
         test_suite_id,
-        test_action,
         schema_name,
         test_mode,
         watch_level,
@@ -272,6 +268,7 @@ class TestDefinition(Entity):
         )
         UPDATE test_definitions
         SET {status_type} = :value
+            {", test_definition_status = NULL" if status_type == "test_active" and value else ""}
         FROM test_definitions td
             INNER JOIN selected ON (td.id = selected.id::UUID)
         WHERE td.id = test_definitions.id;
@@ -331,7 +328,6 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
-        id_columns = (cls.id, cls.cat_test_id)
         modified_columns = [cls.table_groups_id, cls.profile_run_id, cls.test_suite_id]
 
         select_columns = [
@@ -352,7 +348,7 @@ class TestDefinition(Entity):
             select_columns.append(literal(target_column_name).label("column_name"))
 
         other_columns = [
-            column for column in cls.__table__.columns if column not in modified_columns and column not in id_columns
+            column for column in cls.__table__.columns if column not in modified_columns and column != cls.id
         ]
         select_columns.extend(other_columns)
 

@@ -1,7 +1,8 @@
 import logging
+from datetime import UTC, datetime
 from typing import ClassVar, TypedDict
 
-from testgen.common import CleanSQL, date_service, read_template_sql_file
+from testgen.common import CleanSQL, read_template_sql_file
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import get_template_files
 
@@ -33,7 +34,7 @@ class CDeriveTestsSQL:
         self.sql_flavor = flavor
         self.flavor_service = get_flavor_service(flavor)
 
-        today = date_service.get_now_as_string()
+        today = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         self.run_date = today
         self.as_of_date = today
 

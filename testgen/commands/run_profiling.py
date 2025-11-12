@@ -1,7 +1,7 @@
 import logging
 import subprocess
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import testgen.common.process_service as process_service
@@ -9,12 +9,11 @@ from testgen import settings
 from testgen.commands.queries.profiling_query import HygieneIssueType, ProfilingSQL, TableSampling
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.commands.run_execute_tests import run_execution_steps_in_background
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common import (
-    date_service,
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
@@ -51,11 +50,12 @@ def run_profiling_in_background(table_group_id: str | UUID) -> None:
 
 
 @with_database_session
-def run_profiling(table_group_id: str | UUID, username: str | None = None, minutes_offset: int = 0) -> str:
+def run_profiling(table_group_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
     
     LOG.info(f"Starting profiling run for table group {table_group_id}")
+    time_delta = (run_date - datetime.now(UTC)) if run_date else timedelta()
 
     LOG.info("Retrieving connection and table group parameters")
     table_group = TableGroup.get(table_group_id)
@@ -67,7 +67,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, minut
         project_code=table_group.project_code,
         connection_id=connection.connection_id,
         table_groups_id=table_group.id,
-        profiling_starttime=date_service.get_now_as_string_with_offset(minutes_offset),
+        profiling_starttime=datetime.now(UTC) + time_delta,
         process_id=process_service.get_current_process_id(),
     )
     profiling_run.init_progress()
@@ -86,7 +86,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, minut
         profiling_run.data_point_ct = sum(column.record_ct for column in data_chars)
 
         if data_chars:
-            sql_generator = ProfilingSQL(connection, table_group, profiling_run, minutes_offset=minutes_offset)
+            sql_generator = ProfilingSQL(connection, table_group, profiling_run)
 
             _run_column_profiling(sql_generator, data_chars)
             _run_frequency_analysis(sql_generator)
@@ -99,43 +99,33 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, minut
             LOG.info("No columns were selected to profile.")
     except Exception as e:
         LOG.exception("Profiling encountered an error.")
-        LOG.info("Updating profiling run record")
+        LOG.info("Setting profiling run status to Error")
         profiling_run.log_message = get_exception_message(e)
-        profiling_run.profiling_endtime = date_service.get_now_as_string_with_offset(minutes_offset)
+        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
     else:
-        LOG.info("Updating profiling run record")
-        profiling_run.profiling_endtime = date_service.get_now_as_string_with_offset(minutes_offset)
+        LOG.info("Setting profiling run status to Completed")
+        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
 
-        LOG.info("Rolling up profiling scores")
-        execute_db_queries(
-            RollupScoresSQL(profiling_run.id, table_group.id).rollup_profiling_scores(),
-        )
-        run_refresh_score_cards_results(
-            project_code=table_group.project_code,
-            add_history_entry=True,
-            refresh_date=date_service.parse_now(profiling_run.profiling_starttime),
-        )
+        _rollup_profiling_scores(profiling_run, table_group)
 
         if bool(table_group.monitor_test_suite_id) and not table_group.last_complete_profile_run_id:
-            _generate_monitor_tests(table_group.project_code, table_group_id, table_group.monitor_test_suite_id)
+            _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
     finally:
-        if not minutes_offset:
-            end_time = date_service.parse_now(profiling_run.profiling_endtime)
-            MixpanelService().send_event(
-                "run-profiling",
-                source=settings.ANALYTICS_JOB_SOURCE,
-                username=username,
-                sql_flavor=connection.sql_flavor_code,
-                sampling=table_group.profile_use_sampling,
-                table_count=profiling_run.table_ct or 0,
-                column_count=profiling_run.column_ct or 0,
-                run_duration=(end_time - date_service.parse_now(profiling_run.profiling_starttime)).total_seconds(),
-                scoring_duration=(datetime.now(UTC) - end_time).total_seconds(),
-            )
+        MixpanelService().send_event(
+            "run-profiling",
+            source=settings.ANALYTICS_JOB_SOURCE,
+            username=username,
+            sql_flavor=connection.sql_flavor_code,
+            sampling=table_group.profile_use_sampling,
+            table_count=profiling_run.table_ct or 0,
+            column_count=profiling_run.column_ct or 0,
+            run_duration=(profiling_run.profiling_endtime - profiling_run.profiling_starttime).total_seconds(),
+            scoring_duration=(datetime.now(UTC) + time_delta - profiling_run.profiling_endtime).total_seconds(),
+        )
 
     return f"""
         {"Profiling encountered an error. Check log for details." if profiling_run.status == "Error" else "Profiling completed."}
@@ -148,7 +138,7 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
 
-    LOG.info("Running column profiling queries")
+    LOG.info(f"Running column profiling queries: {len(data_chars)}")
     table_group = sql_generator.table_group
     sampling_params: dict[str, TableSampling] = {}
     sample_percent = (
@@ -235,7 +225,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
         frequency_columns = fetch_dict_from_db(*sql_generator.get_frequency_analysis_columns())
 
         if frequency_columns:
-            LOG.info("Running frequency analysis queries")
+            LOG.info(f"Running frequency analysis queries: {len(frequency_columns)}")
 
             def update_frequency_progress(progress: ThreadedProgress) -> None:
                 profiling_run.set_progress(
@@ -304,8 +294,23 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
         profiling_run.set_progress("hygiene_issues", "Completed")
 
 
+def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGroup) -> None:
+    try:
+        LOG.info("Rolling up profiling scores")
+        execute_db_queries(
+            RollupScoresSQL(profiling_run.id, table_group.id).rollup_profiling_scores(),
+        )
+        run_refresh_score_cards_results(
+            project_code=table_group.project_code,
+            add_history_entry=True,
+            refresh_date=profiling_run.profiling_starttime,
+        )
+    except Exception:
+        LOG.exception("Error rolling up profiling scores")
+
+
 @with_database_session
-def _generate_monitor_tests(project_code: str, table_group_id: str, test_suite_id: str) -> None:
+def _generate_monitor_tests(table_group_id: str, test_suite_id: str) -> None:
     try:
         monitor_test_suite = TestSuite.get(test_suite_id)
         if not monitor_test_suite:
@@ -313,6 +318,6 @@ def _generate_monitor_tests(project_code: str, table_group_id: str, test_suite_i
         else:
             LOG.info("Generating monitor tests")
             run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
-            run_execution_steps_in_background(project_code, monitor_test_suite.test_suite)
+            run_test_execution_in_background(test_suite_id)
     except Exception:
         LOG.exception("Error generating monitor tests")

@@ -372,7 +372,7 @@ class TableGroup(Entity):
                     cron_expr="0 * * * *",
                     cron_tz=monitor_schedule_timezone,
                     args=[],
-                    kwargs={"project_key": self.project_code, "test_suite_key": test_suite.test_suite},
+                    kwargs={"test_suite_id": test_suite.id},
                 )
                 db_session.add(schedule_job)
 

@@ -1,28 +1,10 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pandas as pd
 
 
-def get_today_as_string():
-    return datetime.utcnow().strftime("%Y-%m-%d")
-
-
-def get_now_as_string():
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def parse_now(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-
-
-def get_now_as_string_with_offset(minutes_offset):
-    ret = datetime.utcnow()
-    ret = ret + timedelta(minutes=minutes_offset)
-    return ret.strftime("%Y-%m-%d %H:%M:%S")
-
-
 def get_now_as_iso_timestamp():
-    return as_iso_timestamp(datetime.utcnow())
+    return as_iso_timestamp(datetime.now(UTC))
 
 
 def as_iso_timestamp(date: datetime) -> str | None:
@@ -47,14 +29,6 @@ def accommodate_dataframe_to_timezone(df, streamlit_session, time_columns=None):
             df[time_column] = df[time_column].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def create_timezoned_column_in_dataframe(streamlit_session, df, new_column_name, existing_column_name):
-    if new_column_name and existing_column_name and "browser_timezone" in streamlit_session:
-        timezone = streamlit_session["browser_timezone"]
-        df[new_column_name] = (
-            df[existing_column_name].dt.tz_localize("UTC").dt.tz_convert(timezone).dt.strftime("%Y-%m-%d %H:%M:%S")
-        )
-
-
 def get_timezoned_timestamp(streamlit_session, value, dateformat="%b %-d, %-I:%M %p"):
     ret = None
     if value and "browser_timezone" in streamlit_session:
@@ -67,22 +41,5 @@ def get_timezoned_timestamp(streamlit_session, value, dateformat="%b %-d, %-I:%M
 
 
 def get_timezoned_now(streamlit_session):
-    value = datetime.utcnow()
+    value = datetime.now(UTC)
     return get_timezoned_timestamp(streamlit_session, value)
-
-
-def get_formatted_duration(duration: str | None) -> str:
-    if not duration:
-        return "--"
-
-    hour, minute, second = duration.split(":")
-    formatted = ""
-    if int(hour):
-        formatted += f"{int(hour)!s}h"
-    if int(minute):
-        formatted += f" {int(minute)!s}m"
-    if int(second):
-        formatted += f" {int(second)!s}s"
-
-    formatted = formatted.strip() or "< 1s"
-    return formatted

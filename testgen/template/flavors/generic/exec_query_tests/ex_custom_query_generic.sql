@@ -3,8 +3,6 @@ SELECT '{TEST_TYPE}'   as test_type,
        '{TEST_SUITE_ID}' as test_suite_id,
        '{TEST_RUN_ID}' as test_run_id,
        '{RUN_DATE}'    as test_time,
-       '{START_TIME}'  as starttime,
-       CURRENT_TIMESTAMP       as endtime,
        '{SCHEMA_NAME}' as schema_name,
        '{TABLE_NAME}'  as table_name,
        CASE
@@ -31,9 +29,7 @@ SELECT '{TEST_TYPE}'   as test_type,
                       )
         ELSE 'No errors found.'
        END AS result_message,
-       COUNT(*) as result_measure,
-       NULL as subset_condition,
-       NULL as result_query
+       COUNT(*) as result_measure
   FROM (
         {CUSTOM_QUERY}
        ) TEST;

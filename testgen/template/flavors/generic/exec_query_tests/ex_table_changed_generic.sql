@@ -3,8 +3,6 @@ SELECT '{TEST_TYPE}'   as test_type,
        '{TEST_SUITE_ID}' as test_suite_id,
        '{TEST_RUN_ID}' as test_run_id,
        '{RUN_DATE}'    as test_time,
-       '{START_TIME}'  as starttime,
-       CURRENT_TIMESTAMP       as endtime,
        '{SCHEMA_NAME}' as schema_name,
        '{TABLE_NAME}'  as table_name,
        '{COLUMN_NAME_NO_QUOTES}' as column_names,
@@ -24,9 +22,7 @@ SELECT '{TEST_TYPE}'   as test_type,
         WHEN fingerprint = '{BASELINE_VALUE}'
           THEN 0
           ELSE 1
-       END as result_measure,
-       '{SUBSET_DISPLAY}' as subset_condition,
-       NULL as result_query
+       END as result_measure
   FROM ( SELECT {CUSTOM_QUERY} as fingerprint
            FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
           WHERE {SUBSET_CONDITION}

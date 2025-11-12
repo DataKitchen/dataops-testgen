@@ -166,7 +166,7 @@ class ThreadedProgress(TypedDict):
     processed: int
     errors: int
     total: int
-
+    indexes: list[int]
 
 def fetch_from_db_threaded(
     queries: list[tuple[str, dict | None]],
@@ -200,6 +200,7 @@ def fetch_from_db_threaded(
 
     query_count = len(queries)
     processed_count = 0
+    processed_indexes: list[int] = []
     max_threads = max(1, min(10, max_threads))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
@@ -216,8 +217,14 @@ def fetch_from_db_threaded(
                 error_data[index] = error
 
             processed_count += 1
+            processed_indexes.append(index)
             if progress_callback:
-                progress_callback({"processed": processed_count, "errors": len(error_data), "total": query_count})
+                progress_callback({
+                    "processed": processed_count,
+                    "errors": len(error_data),
+                    "total": query_count,
+                    "indexes": processed_indexes,
+                })
             LOG.debug(f"Processed {processed_count} of {query_count} threaded queries")
 
     # Flatten nested lists
