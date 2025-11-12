@@ -60,6 +60,7 @@ dependencies = [
     "streamlit-pydantic==0.6.0",
     "cron-converter==1.2.1",
     "cron-descriptor==2.0.5",
+    "pybars3==0.9.7",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",
