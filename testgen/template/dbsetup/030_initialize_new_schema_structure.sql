@@ -70,6 +70,7 @@ CREATE TABLE connections (
    url VARCHAR(200) default '',
    connect_by_url BOOLEAN default FALSE,
    connect_by_key BOOLEAN DEFAULT FALSE,
+   connect_with_identity BOOLEAN DEFAULT FALSE,
    private_key BYTEA,
    private_key_passphrase BYTEA,
    http_path              VARCHAR(200),

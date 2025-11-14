@@ -119,6 +119,10 @@ class ConnectionsPage(Page):
                 elif updated_connection.get("project_pw_encrypted") == CLEAR_SENTINEL:
                     updated_connection["project_pw_encrypted"] = ""
 
+            if updated_connection.get("connect_with_identity"):
+                updated_connection["project_user"] = ""
+                updated_connection["project_pw_encrypted"] = ""
+
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
             set_save(True)
@@ -142,6 +146,10 @@ class ConnectionsPage(Page):
                 del updated_connection["private_key_passphrase"]
             elif updated_connection.get("private_key_passphrase") == CLEAR_SENTINEL:
                 updated_connection["private_key_passphrase"] = ""
+
+            if updated_connection.get("connect_with_identity"):
+                updated_connection["project_user"] = ""
+                updated_connection["project_pw_encrypted"] = ""
 
             updated_connection["sql_flavor"] = self._get_sql_flavor_from_value(updated_connection["sql_flavor_code"]).flavor
 
