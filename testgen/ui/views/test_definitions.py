@@ -6,7 +6,7 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import and_, asc, func, or_, tuple_
+from sqlalchemy import and_, asc, desc, func, or_, tuple_
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -74,7 +74,7 @@ class TestDefinitionsPage(Page):
             ],
         )
 
-        table_filter_column, column_filter_column, test_filter_column, table_actions_column = st.columns([.3, .3, .3, .4], vertical_alignment="bottom")
+        table_filter_column, column_filter_column, test_filter_column, sort_column, table_actions_column = st.columns([.2, .2, .2, .1, .25], vertical_alignment="bottom")
         testgen.flex_row_end(table_actions_column)
 
         actions_column, disposition_column = st.columns([.5, .5])
@@ -123,6 +123,15 @@ class TestDefinitionsPage(Page):
                 label="Test Type",
             )
 
+        with sort_column:
+            sortable_columns = (
+                ("Table", "table_name"),
+                ("Column", "column_name"),
+                ("Test Type", "test_type"),
+            )
+            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            sorting_columns = testgen.sorting_selector(sortable_columns, default)
+
         if user_can_disposition:
             with disposition_column:
                 multi_select = st.toggle("Multi-Select", help="Toggle on to perform actions on multiple test definitions")
@@ -142,7 +151,7 @@ class TestDefinitionsPage(Page):
 
         with st.container():
             with st.spinner("Loading data ..."):
-                df = get_test_definitions(test_suite, table_name, column_name, test_type)
+                df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns)
 
         selected, selected_test_def = render_grid(df, multi_select, filters_changed)
 
@@ -1147,6 +1156,7 @@ def get_test_definitions(
     table_name: str | None = None,
     column_name: str | None = None,
     test_type: str | None = None,
+    sorting_columns: list[str] | None = None,
 ) -> pd.DataFrame:
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
@@ -1155,7 +1165,15 @@ def get_test_definitions(
         clauses.append(TestDefinition.column_name.ilike(column_name))
     if test_type:
         clauses.append(TestDefinition.test_type == test_type)
-    test_definitions = TestDefinition.select_where(*clauses)
+    
+    sort_funcs = {"ASC": asc, "DESC": desc}
+    test_definitions = TestDefinition.select_where(
+        *clauses,
+        order_by=tuple([
+            sort_funcs[direction](func.lower(getattr(TestDefinition, attribute)))
+            for (attribute, direction) in sorting_columns
+        ]) if sorting_columns else None,
+    )
 
     df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
