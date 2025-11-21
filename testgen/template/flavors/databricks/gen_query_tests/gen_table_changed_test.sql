@@ -121,9 +121,16 @@ newtests
                         CASE
                           WHEN general_type = 'D' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || COUNT(DISTINCT @@@)::STRING'
                           WHEN general_type = 'A' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || COUNT(DISTINCT @@@)::STRING || ''|'' || SUM(LENGTH(@@@))::STRING'
-                          WHEN general_type = 'N' THEN 'MIN(@@@)::STRING || ''|'' || MAX(@@@::STRING) || ''|'' || SUM(@@@)::STRING || ''|'' || ROUND(AVG(@@@), 5)::STRING || ''|'' || ROUND(STDDEV(@@@::FLOAT), 5)::STRING'
+                          WHEN general_type = 'N' THEN 'CONCAT_WS(''|'',
+                              COUNT(@@@)::STRING,
+                              COUNT(DISTINCT MOD((COALESCE(@@@,0)::DECIMAL(38,6) * 1000000)::DECIMAL(38,0), 1000003))::STRING,
+                              COALESCE((MIN(@@@)::DECIMAL(38,6))::STRING, ''''),
+                              COALESCE((MAX(@@@)::DECIMAL(38,6))::STRING, ''''),
+                              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000007)), 0), 1000000007)::STRING, ''''),
+                              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000009)), 0), 1000000009)::STRING, '''')
+                           )'
                         END,
-                        '@@@', '"' || column_name || '"'),
+                        '@@@', '`' || column_name || '`'),
                         ' || ''|'' || '
                         ORDER BY element_type, fingerprint_order, column_name) as fingerprint
         FROM combined

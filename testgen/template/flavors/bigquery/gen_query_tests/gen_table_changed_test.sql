@@ -124,7 +124,14 @@ newtests AS (
                   WHEN general_type = 'A' THEN
                        'CAST(MIN(@@@) AS STRING) || "|" || CAST(MAX(@@@) AS STRING) || "|" || CAST(COUNT(DISTINCT @@@) AS STRING) || "|" || CAST(SUM(LENGTH(@@@)) AS STRING)'
                   WHEN general_type = 'N' THEN
-                       'CAST(MIN(@@@) AS STRING) || "|" || CAST(MAX(@@@) AS STRING) || "|" || CAST(SUM(@@@) AS STRING) || "|" || CAST(ROUND(AVG(@@@), 5) AS STRING) || "|" || CAST(ROUND(STDDEV(CAST(@@@ AS FLOAT64)), 5) AS STRING)'
+                     'ARRAY_TO_STRING([
+                        CAST(COUNT(@@@) AS STRING),
+                        CAST(COUNT(DISTINCT MOD(CAST(COALESCE(@@@,0) AS NUMERIC) * 1000000, CAST(1000003 AS NUMERIC))) AS STRING),
+                        COALESCE(CAST(ROUND(MIN(CAST(@@@ AS NUMERIC)), 6) AS STRING), ''''),
+                        COALESCE(CAST(ROUND(MAX(CAST(@@@ AS NUMERIC)), 6) AS STRING), ''''),
+                        CAST(MOD(COALESCE(SUM(MOD(CAST(ABS(COALESCE(@@@,0)) AS NUMERIC) * 1000000, CAST(1000000007 AS NUMERIC))), CAST(0 AS NUMERIC)), CAST(1000000007 AS NUMERIC)) AS STRING),
+                        CAST(MOD(COALESCE(SUM(MOD(CAST(ABS(COALESCE(@@@,0)) AS NUMERIC) * 1000000, CAST(1000000009 AS NUMERIC))), CAST(0 AS NUMERIC)), CAST(1000000009 AS NUMERIC)) AS STRING)
+                     ], ''|'', '''')'
                 END,
                 '@@@', '`' || column_name || '`'),
               ' || "|" || '
