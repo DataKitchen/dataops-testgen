@@ -61,6 +61,7 @@ dependencies = [
     "cron-converter==1.2.1",
     "cron-descriptor==2.0.5",
     "pybars3==0.9.7",
+    "azure-identity==1.25.1",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==18.1.0",

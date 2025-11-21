@@ -48,7 +48,6 @@ RUN apk del \
     cmake \
     musl-dev \
     gfortran \
-    curl \
     gpg \
     linux-headers \
     openblas-dev \
