@@ -705,7 +705,7 @@ const AzureMSSQLForm = (
                 if (_connectWithIdentity) {
                     return div(
                         {class: 'flex-row p-4 fx-justify-center text-secondary'},
-                        'Configured Microsoft Entra ID credentials will be used',
+                        'Microsoft Entra ID credentials configured on host machine will be used',
                     );
                 }
 

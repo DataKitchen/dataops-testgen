@@ -35,7 +35,7 @@ class MssqlFlavorService(FlavorService):
             })
 
         if self.sql_flavor_code == "synapse_mssql":
-            connection_url = connection_url.update_query_dict({"autocommit": True})
+            connection_url = connection_url.update_query_dict({"autocommit": "True"})
 
         return connection_url.render_as_string(hide_password=False)
 
