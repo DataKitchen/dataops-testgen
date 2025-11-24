@@ -106,7 +106,7 @@ const ConnectionForm = (props, saveButton) => {
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
-    const connectionQueryChars = van.state(connection?.max_query_chars ?? 9000);
+    const connectionQueryChars = van.state(connection?.max_query_chars ?? 20000);
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
     const serviceAccountKeyFile = van.state(getValue(props.cachedServiceAccountKeyFile) ?? null);
 
@@ -131,7 +131,7 @@ const ConnectionForm = (props, saveButton) => {
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
-        max_query_chars: connectionQueryChars.rawVal ?? 9000,
+        max_query_chars: connectionQueryChars.rawVal ?? 20000,
     });
     const dynamicConnectionUrl = van.state(props.dynamicConnectionUrl?.rawVal ?? '');
 
@@ -337,7 +337,7 @@ const ConnectionForm = (props, saveButton) => {
                     hint: 'Some tests are consolidated into queries for maximum performance. Default values should be retained unless test queries are failing.',
                     value: connectionQueryChars.rawVal,
                     min: 500,
-                    max: 14000,
+                    max: 50000,
                     onChange: (value) => connectionQueryChars.val = value,
                 }),
             ),
