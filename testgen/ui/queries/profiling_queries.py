@@ -400,10 +400,10 @@ def get_columns_by_condition(
         table_chars.approx_record_ct,
         {COLUMN_PROFILING_FIELDS}
     FROM data_column_chars column_chars
-        {"""
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
+        {"""
         LEFT JOIN table_groups ON (
             column_chars.table_groups_id = table_groups.id
         )
