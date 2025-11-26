@@ -4,6 +4,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
+from testgen.common.models.settings import PersistedSetting
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -22,7 +23,6 @@ from testgen.ui.pdf.style import (
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
 from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
-from testgen.utils import get_base_url
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
@@ -139,7 +139,7 @@ def build_summary_table(document, hi_data):
         ),
         (
             Paragraph(
-                f"""<a href="{get_base_url()}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
+                f"""<a href="{PersistedSetting.get("BASE_URL")}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

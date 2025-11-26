@@ -2,11 +2,11 @@
  * @import { ProjectSummary } from '../types.js';
  * @import { TableGroup } from '../components/table_group_form.js';
  * @import { Connection } from '../components/connection_form.js';
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
@@ -26,11 +26,10 @@ import { getValue, emitEvent, loadStylesheet, resizeFrameHeightToElement, resize
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 import { Select } from '../components/select.js';
 import { Icon } from '../components/icon.js';
-import { withTooltip } from '../components/tooltip.js';
 import { Input } from '../components/input.js';
-import { caseInsensitiveSort } from '../display_utils.js';
+import { TruncatedText } from '../components/truncated_text.js';
 
-const { div, h4, i, span } = van.tags;
+const { div, h4, span } = van.tags;
 
 /**
  * @param {Properties} props
@@ -114,7 +113,7 @@ const TableGroupList = (props) => {
                                                 Caption({content: 'Explicit Table List', style: 'margin-bottom: 4px;'}),
                                                 tableGroup.profiling_table_set
                                                     ? TruncatedText(
-                                                        {max: 3},
+                                                        {max: 3, tooltipPosition: 'top-right'},
                                                         ...tableGroup.profiling_table_set.split(',').map(t => t.trim())
                                                     )
                                                     : '--',
@@ -211,12 +210,12 @@ const TableGroupList = (props) => {
 }
 
 /**
- * 
+ *
  * @param {Permissions} permissions
  * @param {Connection[]} connections
  * @param {string?} selectedConnection
  * @param {string?} tableGroupNameFilter
- * @returns 
+ * @returns
  */
 const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFilter) => {
     const connection = van.state(selectedConnection || null);
@@ -281,34 +280,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
         )
     );
 }
-
-/**
- * @typedef TruncatedTextOptions
- * @type {object}
- * @property {number} max
- * @property {string?} class
- * 
- * @param {TruncatedTextOptions} options
- * @param {string[]} children
- */
-const TruncatedText = ({ max, ...options }, ...children) => {
-    const sortedChildren = [...children.sort((a, b) => a.length - b.length)];
-    const tooltipText = children.sort(caseInsensitiveSort).join(', ');
-
-    return div(
-        { class: () => `${options.class ?? ''}`, style: 'position: relative;' },
-        span(sortedChildren.slice(0, max).join(', ')),
-        sortedChildren.length > max
-            ? withTooltip(
-                i({class: 'text-caption'}, ` + ${sortedChildren.length - max} more`),
-                {
-                    text: tooltipText,
-                    position: 'top-right',
-                }
-            )
-            : '',
-    );
-};
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`

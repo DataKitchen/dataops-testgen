@@ -1,0 +1,60 @@
+import enum
+from collections import defaultdict
+from uuid import UUID, uuid4
+
+from sqlalchemy import Column, Enum, ForeignKey, Text, or_, select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql.functions import coalesce
+
+from testgen.common.models import get_current_session
+from testgen.common.models.entity import Entity
+
+
+class TestResultStatus(enum.Enum):
+    Error = "Error"
+    Log = "Log"
+    Passed = "Passed"
+    Warning = "Warning"
+    Failed = "Failed"
+
+
+TestResultDiffType = tuple[TestResultStatus, TestResultStatus, list[UUID]]
+
+
+class TestResult(Entity):
+    __tablename__ = "test_results"
+
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, nullable=False, default=uuid4)
+
+    test_suite_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_suites.id"), nullable=False)
+    test_run_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_runs.id"), nullable=False)
+    test_definition_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_definitions.id"), nullable=False)
+    test_type: str = Column(Text, ForeignKey("test_types.test_type"), nullable=False)
+
+    status: TestResultStatus = Column("result_status", Enum(TestResultStatus))
+    message: str = Column("result_message", Text, nullable=False)
+    table_name: str = Column(Text, nullable=False)
+    column_names: str = Column(Text, nullable=False)
+
+    # Note: not all table columns are implemented by this entity
+
+    @classmethod
+    def diff(cls, test_run_id_a: UUID, test_run_id_b: UUID) -> list[TestResultDiffType]:
+        alias_a = aliased(cls)
+        alias_b = aliased(cls)
+        query = select(
+            alias_a.status, alias_b.status, coalesce(alias_a.test_definition_id, alias_b.test_definition_id),
+        ).join(
+            alias_b, (alias_a.test_definition_id == alias_b.test_definition_id), isouter=True, full=True,
+        ).where(
+            or_(alias_a.test_run_id == test_run_id_a, alias_a.test_run_id.is_(None)),
+            or_(alias_b.test_run_id == test_run_id_b, alias_b.test_run_id.is_(None)),
+            alias_a.status != alias_b.status,
+        )
+
+        diff = defaultdict(list)
+        for run_a_status, run_b_status, result_id in get_current_session().execute(query):
+            diff[(run_a_status, run_b_status)].append(result_id)
+
+        return [(*statuses, id_list) for statuses, id_list in diff.items()]

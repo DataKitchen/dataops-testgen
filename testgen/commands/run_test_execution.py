@@ -25,6 +25,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
@@ -128,6 +129,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         execute_db_queries(sql_generator.update_test_results())
         # Refresh needed because previous query updates the test run too
         test_run.refresh()
+
     except Exception as e:
         LOG.exception("Test execution encountered an error.")
         LOG.info("Setting test run status to Error")
@@ -147,6 +149,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
 
         _rollup_test_scores(test_run, table_group)
     finally:
+        send_test_run_notifications(test_run)
         MixpanelService().send_event(
             "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,

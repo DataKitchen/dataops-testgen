@@ -10,6 +10,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from testgen.common.models.settings import PersistedSetting
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -31,7 +32,6 @@ from testgen.ui.queries.source_data_queries import get_test_issue_source_data, g
 from testgen.ui.queries.test_result_queries import (
     get_test_result_history,
 )
-from testgen.utils import get_base_url
 
 SECTION_MIN_AVAILABLE_HEIGHT = 120
 
@@ -152,7 +152,7 @@ def build_summary_table(document, tr_data):
         ),
         (
             Paragraph(
-                f"""<a href="{get_base_url()}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}">
+                f"""<a href="{PersistedSetting.get("BASE_URL")}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

@@ -3,11 +3,13 @@
 // https://cdn.jsdelivr.net/npm/vanjs-ui@0.10.0/dist/van-ui.nomodule.js
 
 /**
+ * @typedef {'top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left'} TooltipPosition
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} text
  * @property {boolean} show
- * @property {('top-left' | 'top' | 'top-right' | 'right' | 'bottom-right' | 'bottom' | 'bottom-left' | 'left')?} position
+ * @property {TooltipPosition?} position
  * @property {number} width
  * @property {string?} style
  */

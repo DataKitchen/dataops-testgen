@@ -8,6 +8,7 @@ import streamlit as st
 import testgen.ui.navigation.page
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.project import Project
+from testgen.common.models.settings import PersistedSetting
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -25,14 +26,19 @@ class Router(Singleton):
         self._routes = {route.path: route(self) for route in routes} if routes else {}
         self._pending_navigation: dict | None = None
 
+    def _init_session(self):
+        # Clear cache on initial load or page refresh
+        st.cache_data.clear()
+
+        PersistedSetting.set("BASE_URL", st.context.url)
+
     def run(self) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
 
         current_page = st.navigation(streamlit_pages, position="hidden")
 
         if not session.initialized:
-            # Clear cache on initial load or page refresh
-            st.cache_data.clear()
+            self._init_session()
             session.initialized = True
 
         # This hack is needed because the auth cookie is not set if navigation happens immediately after login

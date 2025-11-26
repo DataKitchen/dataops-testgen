@@ -1,18 +1,26 @@
 import logging
 import typing
+import uuid
 from collections.abc import Iterable
-from functools import partial
+from functools import partial, wraps
 
 import streamlit as st
 
 import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_settings import (
+    NotificationSettings,
+    NotificationSettingsValidationError,
+    TestRunNotificationSettings,
+    TestRunNotificationTrigger,
+)
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
@@ -85,6 +93,7 @@ class TestRunsPage(Page):
             on_change_handlers={
                 "FilterApplied": on_test_runs_filtered,
                 "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
+                "RunNotificationClicked": lambda *_: TestRunNotificationSettingsDialog(project_code).open(),
                 "RunTestsClicked": lambda *_: run_tests_dialog(project_code, None, test_suite_id),
                 "RefreshData": refresh_data,
                 "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
@@ -105,6 +114,122 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     TestRun.select_summary.clear()
+
+
+class TestRunNotificationSettingsDialog:
+
+    title: str = "Manage Email Notifications"
+
+    def __init__(self, project_code: str):
+        self.project_code: str = project_code
+        self.get_result, self.set_result = temp_value("notification_settings_dialog:result")
+
+    def open(self) -> None:
+        return st.dialog(title=self.title)(self.render)()
+
+    @staticmethod
+    def event_handler(*, success_message=None, error_message="Something went wrong."):
+
+        def decorator(method):
+
+            @wraps(method)
+            def wrapper(self, *args, **kwargs):
+                try:
+                    with_database_session(method)(self, *args, **kwargs)
+                except NotificationSettingsValidationError as e:
+                    self.set_result({"success": False, "message": str(e)})
+                except Exception:
+                    LOG.exception("Action %s failed with:", method.__name__)
+                    self.set_result({"success": False, "message": error_message})
+                else:
+                    self.set_result({"success": True, "message": success_message})
+
+                st.rerun(scope="fragment")
+
+            return wrapper
+        return decorator
+
+    @event_handler(success_message="Notification added")
+    def on_add_item(self, item):
+        TestRunNotificationSettings.create(
+            project_code=self.project_code,
+            test_suite_id=item["scope"],
+            recipients=item["recipients"],
+            trigger=TestRunNotificationTrigger(item["trigger"]),
+        )
+
+    @event_handler(success_message="Notification deleted")
+    def on_delete_item(self, item):
+        if ns := NotificationSettings.get(item["id"]):
+            ns.delete()
+
+    def _update_item(self, item):
+        ns = NotificationSettings.get(item["id"])
+        for key, value in item.items():
+            if key in ("recipients", "enabled") and value != getattr(ns, key):
+                setattr(ns, key, value)
+            if key == "trigger" and ns.trigger.value != value:
+                ns.trigger = TestRunNotificationTrigger(value)
+            if key == "scope" and ns.test_suite_id != (uuid.UUID(value) if value else value):
+                ns.test_suite_id = value
+        ns.save()
+
+    @event_handler(success_message="Notification updated")
+    def on_update_item(self, item):
+        self._update_item(item)
+
+    @event_handler()
+    def on_pause_item(self, item):
+        self._update_item({"id": item["id"], "enabled": False})
+
+    @event_handler()
+    def on_resume_item(self, item):
+        self._update_item({"id": item["id"], "enabled": True})
+
+    @with_database_session
+    def render(self) -> None:
+        user_can_edit = session.auth.user_has_permission("edit")
+
+        ns_json_list = []
+        for ns in TestRunNotificationSettings.select(project_code=self.project_code):
+            ns_json = {
+                "id": str(ns.id),
+                "enabled": ns.enabled,
+                "recipients": ns.recipients,
+                "trigger": ns.trigger.value,
+                "scope": str(ns.test_suite_id) if ns.test_suite_id else None,
+            }
+            ns_json_list.append(ns_json)
+
+        test_suite_options = [
+            (str(ts.id), ts.test_suite)
+            for ts in TestSuite.select_minimal_where(TestSuite.project_code == self.project_code)
+        ]
+        test_suite_options.insert(0, (None, "All Test Suites"))
+
+        trigger_options = [(t.value, t.value.replace("_", " ").title()) for t in TestRunNotificationTrigger]
+
+        result = self.get_result()
+
+        testgen.css_class("m-dialog")
+        testgen.testgen_component(
+            "notification_settings",
+            props={
+                "items": ns_json_list,
+                "scope_label": "Test Suite",
+                "scope_options": test_suite_options,
+                "trigger_options": trigger_options,
+                "permissions": {"can_edit": user_can_edit},
+                "result": result,
+            },
+            event_handlers={
+                "AddNotification": self.on_add_item,
+                "UpdateNotification": self.on_update_item,
+                "DeleteNotification": self.on_delete_item,
+                "PauseNotification": self.on_pause_item,
+                "ResumeNotification": self.on_resume_item,
+            },
+        )
 
 
 class TestRunScheduleDialog(ScheduleDialog):
@@ -134,6 +259,7 @@ def on_cancel_run(test_run: dict) -> None:
     process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
         TestRun.cancel_run(test_run["test_run_id"])
+        send_test_run_notifications(TestRun.get(test_run["test_run_id"]))
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -182,10 +308,10 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
                         process_status, _ = process_service.kill_test_run(to_int(test_run.process_id))
                         if process_status:
                             TestRun.cancel_run(test_run.test_run_id)
+                            send_test_run_notifications(TestRun.get(test_run.test_run_id))
                 TestRun.cascade_delete(test_run_ids)
             st.rerun()
         except Exception:
             LOG.exception("Failed to delete test run")
             result = {"success": False, "message": "Unable to delete the test run, try again."}
             st.rerun(scope="fragment")
-            
