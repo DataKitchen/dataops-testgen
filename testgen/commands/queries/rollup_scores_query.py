@@ -35,10 +35,16 @@ class RollupScoresSQL:
             queries.append(self._get_query("rollup_scores_profile_table_group.sql"))
         return queries
     
-    def rollup_test_scores(self) -> list[tuple[str, dict]]:
+    def rollup_test_scores(self, update_prevalence: bool = False, update_table_group: bool = False) -> list[tuple[str, dict]]:
         # Runs on App database
-        return [
-            self._get_query("calc_prevalence_test_results.sql", no_bind=True),
-            self._get_query("rollup_scores_test_run.sql"),
-            self._get_query("rollup_scores_test_table_group.sql"),
-        ]
+        queries = []
+
+        if update_prevalence:
+            queries.append(self._get_query("calc_prevalence_test_results.sql", no_bind=True))
+
+        queries.append(self._get_query("rollup_scores_test_run.sql"))
+
+        if update_table_group:
+            queries.append(self._get_query("rollup_scores_test_table_group.sql"))
+
+        return queries

@@ -314,7 +314,7 @@ const ProfilingRunItem = (
                 ) 
                 : div(
                     { class: 'text-caption mt-1' },
-                    runningStep 
+                    item.status === 'Running' && runningStep 
                         ? [
                             div(
                                 runningStep.label,
@@ -352,7 +352,7 @@ const ProfilingRunItem = (
                     )
                     : null,
             ),
-            item.status !== 'Running' && item.column_ct ? Link({
+            item.status === 'Complete' && item.column_ct ? Link({
                 label: 'View results',
                 href: 'profiling-runs:results',
                 params: { 'run_id': item.id },

@@ -9,7 +9,7 @@ from testgen.ui.services.database_service import fetch_all_from_db
 @st.cache_data(show_spinner="Loading data :gray[:small[(This might take a few minutes)]] ...")
 def get_all_score_cards(project_code: str) -> list["ScoreCard"]:
     results = [
-        definition.as_cached_score_card()
+        definition.as_cached_score_card(include_definition=True)
         for definition in ScoreDefinition.all(project_code=project_code, last_history_items=50)
     ]
     return results

@@ -80,7 +80,7 @@ class ScoreDetailsPage(Page):
         issues = None
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
             user_can_edit = session.auth.user_has_permission("edit")
-            score_card = format_score_card(score_definition.as_cached_score_card())
+            score_card = format_score_card(score_definition.as_cached_score_card(include_definition=True))
             if score_type not in typing.get_args(ScoreTypes):
                 score_type = None
             if not score_type:
