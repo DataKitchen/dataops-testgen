@@ -38,12 +38,23 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
 
     const sortedBy = van.state('name');
     const filterTerm = van.state('');
+
+    const scoreToNumber = (score) => score ? (score.startsWith('>') ? 99.99 : Number(score)) : 101;
+    const sortFunctions = {
+        name: (a, b) => caseInsensitiveSort(a.name, b.name),
+        score: (a, b) => {
+            const scoreA = Math.min(scoreToNumber(a.score), scoreToNumber(a.cde_score));
+            const scoreB = Math.min(scoreToNumber(b.score), scoreToNumber(b.cde_score));
+            return scoreA - scoreB;
+        },
+    };
+
     const scores = van.derive(() => {
         const sort = getValue(sortedBy) ?? 'name';
         const filter = getValue(filterTerm) ?? '';
         return getValue(props.scores)
             .filter(score => caseInsensitiveIncludes(score.name, filter))
-            .sort((a, b) => caseInsensitiveSort(a[sort], b[sort]));
+            .sort(sortFunctions[sort]);
     });
 
     return div(
