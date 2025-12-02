@@ -308,8 +308,9 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
 def _rollup_test_scores(test_run: TestRun, table_group: TableGroup) -> None:
     try:
         LOG.info("Rolling up test scores")
+        sql_generator = RollupScoresSQL(test_run.id, table_group.id)
         execute_db_queries(
-            RollupScoresSQL(test_run.id, table_group.id).rollup_test_scores(),
+            sql_generator.rollup_test_scores(update_prevalence=True, update_table_group=True),
         )
         run_refresh_score_cards_results(
             project_code=table_group.project_code,
