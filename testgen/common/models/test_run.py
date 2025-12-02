@@ -1,12 +1,13 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple
-from uuid import UUID
+from typing import Literal, NamedTuple, TypedDict
+from uuid import UUID, uuid4
 
 import streamlit as st
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, String, Text, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
@@ -15,6 +16,15 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
+ProgressKey = Literal["data_chars", "validation", "QUERY", "CAT", "METADATA"]
+ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
+
+class ProgressStep(TypedDict):
+    key: ProgressKey
+    status: ProgressStatus
+    label: str
+    detail: str
+    error: str
 
 
 @dataclass
@@ -37,6 +47,7 @@ class TestRunSummary(EntityMinimal):
     table_groups_name: str
     test_suite: str
     status: TestRunStatus
+    progress: list[ProgressStep]
     process_id: int
     log_message: str
     test_ct: int
@@ -57,13 +68,13 @@ class LatestTestRun(NamedTuple):
 class TestRun(Entity):
     __tablename__ = "test_runs"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, nullable=False)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, nullable=False, default=uuid4)
     test_suite_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_suites.id"), nullable=False)
     test_starttime: datetime = Column(postgresql.TIMESTAMP)
     test_endtime: datetime = Column(postgresql.TIMESTAMP)
     status: TestRunStatus = Column(String, default="Running")
+    progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
     log_message: str = Column(Text)
-    duration: str = Column(String)
     test_ct: int = Column(Integer)
     passed_ct: int = Column(Integer)
     failed_ct: int = Column(Integer)
@@ -187,6 +198,7 @@ class TestRun(Entity):
             table_groups.table_groups_name,
             test_suites.test_suite,
             test_runs.status,
+            test_runs.progress,
             test_runs.process_id,
             test_runs.log_message,
             test_runs.test_ct,
@@ -233,8 +245,8 @@ class TestRun(Entity):
         cls.clear_cache()
 
     @classmethod
-    def update_status(cls, run_id: str | UUID, status: TestRunStatus) -> None:
-        query = update(cls).where(cls.id == run_id).values(status=status)
+    def cancel_run(cls, run_id: str | UUID) -> None:
+        query = update(cls).where(cls.id == run_id).values(status="Cancelled", test_endtime=datetime.now(UTC))
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()
@@ -243,12 +255,6 @@ class TestRun(Entity):
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
         query = """
-        DELETE FROM working_agg_cat_results
-        WHERE test_run_id IN :test_run_ids;
-
-        DELETE FROM working_agg_cat_tests
-        WHERE test_run_id IN :test_run_ids;
-
         DELETE FROM test_results
         WHERE test_run_id IN :test_run_ids;
         """
@@ -263,5 +269,24 @@ class TestRun(Entity):
         cls.get_minimal.clear()
         cls.select_summary.clear()
 
-    def save(self) -> None:
-        raise NotImplementedError
+    def init_progress(self) -> None:
+        self._progress = {
+            "data_chars": {"label": "Refreshing data catalog"},
+            "validation": {"label": "Validating test definitions"},
+            "QUERY": {"label": "Running query tests"},
+            "CAT": {"label": "Running aggregated tests"},
+            # TODO: TURN ON WHEN ADDING METADATA TESTS
+            # "METADATA": {"label": "Running metadata tests"},
+        }
+        for key in self._progress:
+            self._progress[key].update({"key": key, "status": "Pending"})
+
+    def set_progress(self, key: ProgressKey, status: ProgressStatus, detail: str | None = None, error: str | None = None) -> None:
+        self._progress[key]["status"] = status
+        if detail:
+            self._progress[key]["detail"] = detail
+        if error:
+            self._progress[key]["error"] = error
+
+        self.progress = list(self._progress.values())
+        flag_modified(self, "progress")

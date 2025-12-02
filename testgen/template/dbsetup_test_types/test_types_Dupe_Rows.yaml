@@ -48,7 +48,8 @@ test_types:
       WHERE {SUBSET_CONDITION}
       GROUP BY {GROUPBY_NAMES}
       HAVING COUNT(*) > 1
-      ORDER BY {GROUPBY_NAMES};
+      ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1257'
     test_id: '1510'
@@ -62,6 +63,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1255'
     test_id: '1510'
@@ -69,7 +71,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
+      SELECT TOP {LIMIT} {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
                GROUP BY {GROUPBY_NAMES}
@@ -88,6 +90,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1253'
     test_id: '1510'
@@ -101,6 +104,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1472'
     test_id: '1510'
@@ -114,6 +118,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1254'
     test_id: '1510'
@@ -127,6 +132,7 @@ test_types:
                GROUP BY {GROUPBY_NAMES}
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
+      LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2511'

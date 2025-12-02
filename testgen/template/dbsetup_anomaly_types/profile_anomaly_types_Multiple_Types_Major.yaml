@@ -40,7 +40,8 @@ profile_anomaly_types:
       WHERE columns.table_schema = '{TARGET_SCHEMA}'
         AND columns.column_name = '{COLUMN_NAME}'
         AND tables.table_type = 'BASE TABLE'
-      ORDER BY data_type, table_name;
+      ORDER BY data_type, table_name
+      LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1277'
     test_id: '1005'
@@ -48,7 +49,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS STRING) || ',' || CAST(numeric_scale AS STRING) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS STRING) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS STRING) || ',' || CAST(numeric_scale AS STRING) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1119'
     test_id: '1005'
@@ -56,7 +57,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 column_name, columns.table_name, CASE WHEN data_type = 'datetime' THEN 'datetime' WHEN data_type = 'datetime2' THEN 'datetime' WHEN data_type = 'varchar' THEN 'varchar(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'char' THEN 'char(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'numeric' THEN 'numeric(' + CAST(numeric_precision AS VARCHAR) + ',' + CAST(numeric_scale AS VARCHAR) + ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+      SELECT TOP {LIMIT} column_name, columns.table_name, CASE WHEN data_type = 'datetime' THEN 'datetime' WHEN data_type = 'datetime2' THEN 'datetime' WHEN data_type = 'varchar' THEN 'varchar(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'char' THEN 'char(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'numeric' THEN 'numeric(' + CAST(numeric_precision AS VARCHAR) + ',' + CAST(numeric_scale AS VARCHAR) + ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
     error_type: Profile Anomaly
   - id: '1062'
     test_id: '1005'
@@ -64,7 +65,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character'  THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns  JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'  AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY data_type, table_name;
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character'  THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns  JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'  AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY data_type, table_name LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1037'
     test_id: '1005'
@@ -72,7 +73,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT column_name, table_name,  CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying'     THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name;
+      SELECT DISTINCT column_name, table_name,  CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying'     THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns WHERE table_schema = '{TARGET_SCHEMA}'   AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1437'
     test_id: '1005'
@@ -80,7 +81,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT columnname AS column_name, tablename AS table_name, external_type AS data_type FROM svv_external_columns WHERE schemaname = '{TARGET_SCHEMA}' AND columnname = '{COLUMN_NAME}' ORDER BY external_type, tablename;
+      SELECT DISTINCT columnname AS column_name, tablename AS table_name, external_type AS data_type FROM svv_external_columns WHERE schemaname = '{TARGET_SCHEMA}' AND columnname = '{COLUMN_NAME}' ORDER BY external_type, tablename LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1176'
     test_id: '1005'
@@ -88,5 +89,5 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' || CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' || CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name LIMIT {LIMIT};
     error_type: Profile Anomaly

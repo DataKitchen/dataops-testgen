@@ -118,22 +118,22 @@ class TestRunScheduleDialog(ScheduleDialog):
         self.test_suites = TestSuite.select_minimal_where(TestSuite.project_code == self.project_code)
 
     def get_arg_value(self, job):
-        return job.kwargs["test_suite_key"]
+        return next(item.test_suite for item in self.test_suites if str(item.id) == job.kwargs["test_suite_id"])
 
     def get_arg_value_options(self) -> list[dict[str, str]]:
         return [
-            {"value": test_suite.test_suite, "label": test_suite.test_suite}
+            {"value": str(test_suite.id), "label": test_suite.test_suite}
             for test_suite in self.test_suites
         ]
 
     def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"project_key": self.project_code, "test_suite_key": arg_value}
+        return [], {"test_suite_id": str(arg_value)}
 
 
 def on_cancel_run(test_run: dict) -> None:
     process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
-        TestRun.update_status(test_run["test_run_id"], "Cancelled")
+        TestRun.cancel_run(test_run["test_run_id"])
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -181,7 +181,7 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
                     if test_run.status == "Running":
                         process_status, _ = process_service.kill_test_run(to_int(test_run.process_id))
                         if process_status:
-                            TestRun.update_status(test_run.test_run_id, "Cancelled")
+                            TestRun.cancel_run(test_run.test_run_id)
                 TestRun.cascade_delete(test_run_ids)
             st.rerun()
         except Exception:

@@ -12,9 +12,9 @@ from itertools import groupby
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, select, text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, delete, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import aliased, attributes, relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, get_current_session
@@ -79,7 +79,7 @@ class ScoreDefinition(Base):
     criteria: ScoreDefinitionCriteria = relationship(
         "ScoreDefinitionCriteria",
         cascade="all, delete-orphan",
-        lazy="joined",
+        lazy="select",
         uselist=False,
         single_parent=True,
     )
@@ -93,7 +93,7 @@ class ScoreDefinition(Base):
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
-        lazy="joined",
+        lazy="select",
     )
     history: Iterable[ScoreDefinitionResultHistoryEntry] = relationship(
         "ScoreDefinitionResultHistoryEntry",
@@ -136,16 +136,50 @@ class ScoreDefinition(Base):
         project_code: str | None = None,
         name_filter: str | None = None,
         sorted_by: str | None = "name",
+        last_history_items: int = 0,
     ) -> Iterable[Self]:
         definitions = []
         db_session = get_current_session()
-        query = select(ScoreDefinition)
+        query = select(ScoreDefinition).options()
         if name_filter:
             query = query.where(ScoreDefinition.name.ilike(f"%{name_filter}%"))
         if project_code:
             query = query.where(ScoreDefinition.project_code == project_code)
+
         query = query.order_by(text(sorted_by))
         definitions = db_session.scalars(query).unique().all()
+        definitions_map = {}
+
+        if last_history_items > 0:
+            for definition in definitions:
+                definitions_map[str(definition.id)] = definition
+                db_session.expunge(definition)
+                attributes.set_committed_value(definition, "history", [])
+
+            HistoryEntry = aliased(ScoreDefinitionResultHistoryEntry)
+            history_subquery = select(
+                HistoryEntry.definition_id,
+                HistoryEntry.category,
+                HistoryEntry.score,
+                HistoryEntry.last_run_time,
+                func.row_number().over(
+                    partition_by=HistoryEntry.definition_id,
+                    order_by=HistoryEntry.last_run_time.desc(),
+                )
+                .label("rn"),
+            ).subquery()
+            history_query = select(history_subquery).where(history_subquery.c.rn <= last_history_items)
+
+            history_entries = db_session.execute(history_query).unique().all()
+            for entry in history_entries:
+                if (definition := definitions_map.get(str(entry.definition_id))):
+                    definition.history.append(ScoreDefinitionResultHistoryEntry(
+                        definition_id=entry.definition_id,
+                        category=entry.category,
+                        score=entry.score,
+                        last_run_time=entry.last_run_time,
+                    ))
+
         return definitions
 
     def save(self) -> None:
@@ -160,6 +194,23 @@ class ScoreDefinition(Base):
         db_session.add(self)
         db_session.delete(self)
         db_session.commit()
+
+    def clear_results(self) -> None:
+        db_session = get_current_session()
+
+        delete_results_query = delete(ScoreDefinitionResult).where(
+            ScoreDefinitionResult.definition_id == self.id
+        )
+        delete_breakdown_query = delete(ScoreDefinitionBreakdownItem).where(
+            ScoreDefinitionBreakdownItem.definition_id == self.id
+        )
+
+        db_session.execute(delete_results_query)
+        db_session.execute(delete_breakdown_query)
+        db_session.flush()
+
+        self.results = []
+        self.breakdown = []
 
     def as_score_card(self) -> ScoreCard:
         """
@@ -223,7 +274,7 @@ class ScoreDefinition(Base):
             "definition": self,
         }
 
-    def as_cached_score_card(self) -> ScoreCard:
+    def as_cached_score_card(self, include_definition: bool = False) -> ScoreCard:
         """Reads the cached values to build a scorecard"""
         root_keys: list[str] = ["score", "profiling_score", "testing_score", "cde_score"]
         score_card: ScoreCard = {
@@ -232,7 +283,7 @@ class ScoreDefinition(Base):
             "name": self.name,
             "categories": [],
             "history": [],
-            "definition": self,
+            "definition": self if include_definition else None,
         }
 
         for result in sorted(self.results, key=lambda r: r.category):

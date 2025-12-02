@@ -36,7 +36,7 @@ profile_anomaly_types:
                 '\ufeff', '\x65279') as `{COLUMN_NAME}_content`,
              COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
        WHERE TRANSLATE(`{COLUMN_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COLUMN_NAME}`
-      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500
+      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1275'
     test_id: '1031'
@@ -44,7 +44,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
+      SELECT TOP {LIMIT} REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}",
                 NCHAR(160), '\x160'),
                 NCHAR(8201), '\x8201'),
                 NCHAR(8203), '\x8203'),
@@ -79,7 +79,7 @@ profile_anomaly_types:
                 CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
              COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1273'
     test_id: '1031'
@@ -100,7 +100,7 @@ profile_anomaly_types:
                 CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
              COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1476'
     test_id: '1031'
@@ -121,7 +121,7 @@ profile_anomaly_types:
                 CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
              COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1276'
     test_id: '1031'
@@ -142,5 +142,5 @@ profile_anomaly_types:
                 CHR(65279), '\x65279') as "{COLUMN_NAME}_content",
              COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}"
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly

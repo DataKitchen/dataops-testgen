@@ -121,7 +121,12 @@ newtests
                         CASE
                           WHEN general_type = 'D' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR'
                           WHEN general_type = 'A' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || COUNT(DISTINCT @@@)::VARCHAR || ''|'' || SUM(LENGTH(@@@))::VARCHAR'
-                          WHEN general_type = 'N' THEN 'MIN(@@@)::VARCHAR || ''|'' || MAX(@@@::VARCHAR) || ''|'' || SUM(@@@)::VARCHAR || ''|'' || ROUND(AVG(@@@), 5)::VARCHAR || ''|'' || ROUND(STDDEV(@@@::FLOAT), 5)::VARCHAR'
+                          WHEN general_type = 'N' THEN 'COUNT(@@@)::VARCHAR || ''|'' ||
+                              COUNT(DISTINCT MOD((COALESCE(@@@,0)::DECIMAL(38,6) * 1000000)::DECIMAL(38,0), 1000003))::VARCHAR || ''|'' ||
+                              COALESCE((MIN(@@@)::DECIMAL(38,6))::VARCHAR, '''') || ''|'' ||
+                              COALESCE((MAX(@@@)::DECIMAL(38,6))::VARCHAR, '''') || ''|'' ||
+                              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000007)), 0), 1000000007)::VARCHAR, '''') || ''|'' ||
+                              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000009)), 0), 1000000009)::VARCHAR, '''')'
                         END,
                         '@@@', '"' || column_name || '"'),
                         ' || ''|'' || '

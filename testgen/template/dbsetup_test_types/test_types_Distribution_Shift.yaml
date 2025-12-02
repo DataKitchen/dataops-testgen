@@ -52,7 +52,8 @@ test_types:
         GROUP BY {CONCAT_COLUMNS}
       )
       SELECT *
-      FROM latest_ver;
+      FROM latest_ver
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1336'
     test_id: '1503'
@@ -79,6 +80,7 @@ test_types:
       FULL JOIN older_ver o
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1259'
     test_id: '1503'
@@ -98,13 +100,13 @@ test_types:
                 FROM {MATCH_SCHEMA_NAME}.{TABLE_NAME} v2
                WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES} )
-      SELECT COALESCE(l.category, o.category) AS category,
+      SELECT TOP {LIMIT} COALESCE(l.category, o.category) AS category,
              o.pct_of_total AS old_pct,
              l.pct_of_total AS new_pct
         FROM latest_ver l
       FULL JOIN older_ver o
         ON (l.category = o.category)
-      ORDER BY COALESCE(l.category, o.category)
+      ORDER BY COALESCE(l.category, o.category);
     error_type: Test Results
   - id: '1260'
     test_id: '1503'
@@ -131,6 +133,7 @@ test_types:
       FULL JOIN older_ver o
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1257'
     test_id: '1503'
@@ -157,6 +160,7 @@ test_types:
       FULL JOIN older_ver o
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1465'
     test_id: '1503'
@@ -183,6 +187,7 @@ test_types:
       FULL JOIN older_ver o
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1258'
     test_id: '1503'
@@ -209,6 +214,7 @@ test_types:
       FULL JOIN older_ver o
         ON (l.category = o.category)
       ORDER BY COALESCE(l.category, o.category)
+      LIMIT {LIMIT};
     error_type: Test Results
   test_templates:
   - id: '2503'

@@ -1,83 +1,59 @@
 import logging
+from datetime import datetime
 
-from progress.spinner import Spinner
-
-from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
+from testgen.commands.queries.refresh_data_chars_query import ColumnChars, RefreshDataCharsSQL
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
-    get_flavor_service,
     write_to_app_db,
 )
-from testgen.common.get_pipeline_parms import TestExecutionParams
+from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup
+from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
-STAGING_TABLE = "stg_data_chars_updates"
 
 
-def run_refresh_data_chars_queries(params: TestExecutionParams, run_date: str, spinner: Spinner=None):
-    LOG.info("CurrentStep: Initializing Data Characteristics Refresh")
-    sql_generator = CRefreshDataCharsSQL(params, run_date, STAGING_TABLE)
-    flavor_service = get_flavor_service(params["sql_flavor"])
-    quote = flavor_service.quote_character
+def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_date: datetime) -> list[ColumnChars]:
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
 
-    LOG.info("CurrentStep: Getting DDF for table group")
-    ddf_results = fetch_dict_from_db(*sql_generator.GetDDFQuery(), use_target_db=True)
-
-    distinct_tables = {
-        f"{quote}{item['table_schema']}{quote}.{quote}{item['table_name']}{quote}"
-        for item in ddf_results
-    }
-    if distinct_tables:
-        count_queries = sql_generator.GetRecordCountQueries(distinct_tables)
+    LOG.info("Getting DDF for table group")
+    try:
+        data_chars = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+    except Exception as e:
+        raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
+    
+    data_chars = [ColumnChars(**column) for column in data_chars]
+    if data_chars:
+        distinct_tables = {column.table_name for column in data_chars}
+        LOG.info(f"Tables: {len(distinct_tables)}, Columns: {len(data_chars)}")
+        count_queries = sql_generator.get_row_counts(distinct_tables)
         
-        LOG.info("CurrentStep: Getting record counts for table group")
-        count_results, _, error_count = fetch_from_db_threaded(
-            count_queries, use_target_db=True, max_threads=params["max_threads"], spinner=spinner
+        LOG.info("Getting row counts for table group")
+        count_results, _, error_data = fetch_from_db_threaded(
+            count_queries, use_target_db=True, max_threads=connection.max_threads,
         )
-        if error_count:
-            LOG.warning(f"{error_count} errors were encountered while retrieving record counts.")
+
+        count_map = dict(count_results)
+        for column in data_chars:
+            column.record_ct = count_map.get(column.table_name)
+
+        write_data_chars(data_chars, sql_generator, run_date)
+
+        if error_data:
+            raise RuntimeError(f"Error refreshing row counts for data catalog. {next(iter(error_data.values()))}")
     else:
-        count_results = []
-        LOG.warning("No tables detected in table group. Skipping retrieval of record counts")
+        LOG.warning("No tables detected in table group")
 
-    count_map = dict(count_results)
-    staging_columns = [
-        "project_code",
-        "table_groups_id",
-        "run_date",
-        "schema_name",
-        "table_name",
-        "column_name",
-        "position",
-        "general_type",
-        "column_type",
-        "db_data_type",
-        "record_ct",
-    ]
-    staging_records = [
-        [
-            item["project_code"],
-            params["table_groups_id"],
-            run_date,
-            item["table_schema"],
-            item["table_name"],
-            item["column_name"],
-            item["ordinal_position"],
-            item["general_type"],
-            item["column_type"],
-            item["db_data_type"],
-            count_map.get(f"{quote}{item['table_schema']}{quote}.{quote}{item['table_name']}{quote}", 0),
-        ]
-        for item in ddf_results
-    ]
+    return data_chars
 
-    LOG.info("CurrentStep: Writing data characteristics to staging")
-    write_to_app_db(staging_records, staging_columns, STAGING_TABLE)
 
-    LOG.info("CurrentStep: Refreshing data characteristics and deleting staging")
-    execute_db_queries([
-        sql_generator.GetDataCharsUpdateQuery(),
-        sql_generator.GetStagingDeleteQuery(),
-    ])
+def write_data_chars(data_chars: list[ColumnChars], sql_generator: RefreshDataCharsSQL, run_date: datetime) -> None:
+    staging_results = sql_generator.get_staging_data_chars(data_chars, run_date)
+
+    LOG.info("Writing data characteristics to staging")
+    write_to_app_db(staging_results, sql_generator.staging_columns, sql_generator.staging_table)
+
+    LOG.info("Refreshing data characteristics and deleting staging")
+    execute_db_queries(sql_generator.update_data_chars(run_date))

@@ -1,13 +1,14 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple
-from uuid import UUID
+from typing import Literal, NamedTuple, TypedDict
+from uuid import UUID, uuid4
 
 import streamlit as st
 from sqlalchemy import BigInteger, Column, Float, Integer, String, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
@@ -16,7 +17,15 @@ from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
 ProfilingRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
+ProgressKey = Literal["data_chars", "col_profiling", "freq_analysis", "hygiene_issues"]
+ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
 
+class ProgressStep(TypedDict):
+    key: ProgressKey
+    status: ProgressStatus
+    label: str
+    detail: str
+    error: str
 
 @dataclass
 class ProfilingRunMinimal(EntityMinimal):
@@ -32,16 +41,19 @@ class ProfilingRunMinimal(EntityMinimal):
 
 @dataclass
 class ProfilingRunSummary(EntityMinimal):
-    profiling_run_id: UUID
-    start_time: datetime
-    end_time: datetime
+    id: UUID
+    profiling_starttime: datetime
+    profiling_endtime: datetime
     table_groups_name: str
     status: ProfilingRunStatus
+    progress: list[ProgressStep] 
     process_id: int
     log_message: str
-    schema_name: str
+    table_group_schema: str
     table_ct: int
     column_ct: int
+    record_ct: int
+    data_point_ct: int
     anomaly_ct: int
     anomalies_definite_ct: int
     anomalies_likely_ct: int
@@ -58,16 +70,19 @@ class LatestProfilingRun(NamedTuple):
 class ProfilingRun(Entity):
     __tablename__ = "profiling_runs"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True)
+    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String, nullable=False)
     connection_id: str = Column(BigInteger, nullable=False)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), nullable=False)
     profiling_starttime: datetime = Column(postgresql.TIMESTAMP)
     profiling_endtime: datetime = Column(postgresql.TIMESTAMP)
     status: ProfilingRunStatus = Column(String, default="Running")
+    progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
     log_message: str = Column(String)
     table_ct: int = Column(BigInteger)
     column_ct: int = Column(BigInteger)
+    record_ct: int = Column(BigInteger)
+    data_point_ct: int = Column(BigInteger)
     anomaly_ct: int = Column(BigInteger)
     anomaly_table_ct: int = Column(BigInteger)
     anomaly_column_ct: int = Column(BigInteger)
@@ -176,28 +191,32 @@ class ProfilingRun(Entity):
                 )
             GROUP BY profile_anomaly_results.profile_run_id
         )
-        SELECT v_profiling_runs.profiling_run_id,
-            v_profiling_runs.start_time,
-            v_profiling_runs.end_time,
-            v_profiling_runs.table_groups_name,
-            v_profiling_runs.status,
-            v_profiling_runs.process_id,
-            v_profiling_runs.log_message,
-            v_profiling_runs.schema_name,
-            v_profiling_runs.table_ct,
-            v_profiling_runs.column_ct,
-            v_profiling_runs.anomaly_ct,
+        SELECT profiling_runs.id,
+            profiling_runs.profiling_starttime,
+            profiling_runs.profiling_endtime,
+            table_groups.table_groups_name,
+            profiling_runs.status,
+            profiling_runs.progress,
+            profiling_runs.process_id,
+            profiling_runs.log_message,
+            table_groups.table_group_schema,
+            profiling_runs.table_ct,
+            profiling_runs.column_ct,
+            profiling_runs.record_ct,
+            profiling_runs.data_point_ct,
+            profiling_runs.anomaly_ct,
             profile_anomalies.definite_ct AS anomalies_definite_ct,
             profile_anomalies.likely_ct AS anomalies_likely_ct,
             profile_anomalies.possible_ct AS anomalies_possible_ct,
             profile_anomalies.dismissed_ct AS anomalies_dismissed_ct,
-            v_profiling_runs.dq_score_profiling
-        FROM v_profiling_runs
-            LEFT JOIN profile_anomalies ON (v_profiling_runs.profiling_run_id = profile_anomalies.profile_run_id)
-        WHERE project_code = :project_code
-            {"AND v_profiling_runs.table_groups_id = :table_group_id" if table_group_id else ""}
-            {"AND v_profiling_runs.profiling_run_id IN :profiling_run_ids" if profiling_run_ids else ""}
-        ORDER BY start_time DESC;
+            profiling_runs.dq_score_profiling
+        FROM profiling_runs
+            LEFT JOIN table_groups ON (profiling_runs.table_groups_id = table_groups.id)
+            LEFT JOIN profile_anomalies ON (profiling_runs.id = profile_anomalies.profile_run_id)
+        WHERE profiling_runs.project_code = :project_code
+            {"AND profiling_runs.table_groups_id = :table_group_id" if table_group_id else ""}
+            {"AND profiling_runs.id IN :profiling_run_ids" if profiling_run_ids else ""}
+        ORDER BY profiling_starttime DESC;
         """
         params = {
             "project_code": project_code,
@@ -225,8 +244,8 @@ class ProfilingRun(Entity):
         cls.clear_cache()
 
     @classmethod
-    def update_status(cls, run_id: str | UUID, status: ProfilingRunStatus) -> None:
-        query = update(cls).where(cls.id == run_id).values(status=status)
+    def cancel_run(cls, run_id: str | UUID) -> None:
+        query = update(cls).where(cls.id == run_id).values(status="Cancelled", profiling_endtime=datetime.now(UTC))
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()
@@ -256,5 +275,22 @@ class ProfilingRun(Entity):
         cls.select_minimal_where.clear()
         cls.select_summary.clear()
 
-    def save(self) -> None:
-        raise NotImplementedError
+    def init_progress(self) -> None:
+        self._progress = {
+            "data_chars": {"label": "Refreshing data catalog"},
+            "col_profiling": {"label": "Profiling columns"},
+            "freq_analysis": {"label": "Running frequency analysis"},
+            "hygiene_issues": {"label": "Detecting hygiene issues"},
+        }
+        for key in self._progress:
+            self._progress[key].update({"key": key, "status": "Pending"})
+
+    def set_progress(self, key: ProgressKey, status: ProgressStatus, detail: str | None = None, error: str | None = None) -> None:
+        self._progress[key]["status"] = status
+        if detail:
+            self._progress[key]["detail"] = detail
+        if error:
+            self._progress[key]["error"] = error
+
+        self.progress = list(self._progress.values())
+        flag_modified(self, "progress")

@@ -105,14 +105,12 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
     connection_id = selected_test_suite.connection_id if mode == "edit" else None
     table_groups_id = selected_test_suite.table_groups_id if mode == "edit" else None
     test_suite_description = empty_if_null(selected_test_suite.test_suite_description) if mode == "edit" else ""
-    test_action = empty_if_null(selected_test_suite.test_action) if mode == "edit" else ""
     try:
         severity_index = severity_options.index(selected_test_suite.severity) if mode == "edit" else 0
     except ValueError:
         severity_index = 0
     export_to_observability = selected_test_suite.export_to_observability if mode == "edit" else False
     dq_score_exclude = selected_test_suite.dq_score_exclude if mode == "edit" else False
-    test_suite_schema = empty_if_null(selected_test_suite.test_suite_schema) if mode == "edit" else ""
     component_key = empty_if_null(selected_test_suite.component_key) if mode == "edit" else ""
     component_type = empty_if_null(selected_test_suite.component_type) if mode == "edit" else "dataset"
     component_name = empty_if_null(selected_test_suite.component_name) if mode == "edit" else ""
@@ -140,7 +138,6 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
             "test_suite_description": left_column.text_input(
                 label="Test Suite Description", max_chars=40, value=test_suite_description
             ),
-            "test_action": test_action,
             "severity": right_column.selectbox(
                 label="Severity",
                 options=severity_options,
@@ -148,7 +145,6 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
                 index=severity_index,
                 help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
             ),
-            "test_suite_schema": test_suite_schema,
             "export_to_observability": left_column.checkbox(
                 "Export to Observability",
                 value=export_to_observability,

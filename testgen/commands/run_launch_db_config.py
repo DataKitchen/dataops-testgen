@@ -2,13 +2,11 @@ import logging
 import os
 
 from testgen import settings
-from testgen.common import create_database, date_service, execute_db_queries
+from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
-from testgen.common.models.scores import ScoreDefinition
-from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import get_template_files
 from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
 
@@ -24,14 +22,12 @@ def _get_latest_revision_number():
 def _get_params_mapping() -> dict:
     ui_user_encrypted_password = encrypt_ui_password(settings.PASSWORD)
 
-    now = date_service.get_now_as_string()
     return {
         "UI_USER_NAME": settings.USERNAME,
         "UI_USER_USERNAME": settings.USERNAME,
         "UI_USER_EMAIL": "",
         "UI_USER_ENCRYPTED_PASSWORD": ui_user_encrypted_password,
         "SCHEMA_NAME": get_tg_schema(),
-        "START_DATE": now,
         "PROJECT_CODE": settings.PROJECT_KEY,
         "CONNECTION_ID": 1,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
@@ -86,16 +82,8 @@ def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> 
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",
-        suppress_logs=True,
     )
     import_metadata_records_from_yaml(params_mapping)
-
-    ScoreDefinition.from_table_group(
-        TableGroup(
-            project_code=settings.PROJECT_KEY,
-            table_groups_name=settings.DEFAULT_TABLE_GROUPS_NAME,
-        )
-    ).save()
 
 
 def get_app_db_params_mapping() -> dict:

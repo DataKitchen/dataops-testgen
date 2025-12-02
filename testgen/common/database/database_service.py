@@ -2,15 +2,13 @@ import concurrent.futures
 import csv
 import importlib
 import logging
-import queue as qu
-import threading
+from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
 
 import psycopg2.sql
-from progress.spinner import Spinner
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import LegacyRow, RowMapping
 from sqlalchemy.engine.base import Connection, Engine
@@ -29,6 +27,7 @@ from testgen.common.credentials import (
 from testgen.common.database import FilteredStringIO
 from testgen.common.database.flavor.flavor_service import ConnectionParams, FlavorService, SQLFlavor
 from testgen.common.read_file import get_template_files
+from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
@@ -95,7 +94,7 @@ def create_database(
     drop_existing: bool = False,
     drop_users_and_roles: bool = False,
 ) -> None:
-    LOG.info("DB operation: create_database on App database (User type = database_admin)")
+    LOG.debug("DB operation: create_database on App database (User type = database_admin)")
 
     connection = _init_db_connection(
         user_override=params["TESTGEN_ADMIN_USER"],
@@ -134,19 +133,16 @@ def execute_db_queries(
     user_override: str | None = None,
     password_override: str | None = None,
     user_type: UserType = "normal",
-    suppress_logs: bool = False,
 ) -> tuple[list[Any], list[int]]:
-    LOG.info(f"DB operation: execute_db_queries ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
+    LOG.debug(f"DB operation: execute_db_queries ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = {user_type})")
 
     with _init_db_connection(use_target_db, user_override, password_override, user_type) as connection:
         return_values: list[Any] = []
         row_counts: list[int] = []
         if not queries:
-            LOG.info("No queries to process")
+            LOG.debug("No queries to process")
         for index, (query, params) in enumerate(queries):
-            LOG.debug(f"Query: {query}")
-            if not suppress_logs:
-                LOG.info(f"Processing {index + 1} of {len(queries)} queries")
+            LOG.debug(f"Query {index + 1} of {len(queries)}: {query}")
             transaction = connection.begin()
             result = connection.execute(text(query), params)
             row_counts.append(result.rowcount)
@@ -166,55 +162,80 @@ def execute_db_queries(
     return return_values, row_counts
 
 
+class ThreadedProgress(TypedDict):
+    processed: int
+    errors: int
+    total: int
+    indexes: list[int]
+
 def fetch_from_db_threaded(
     queries: list[tuple[str, dict | None]],
     use_target_db: bool = False,
-    max_threads: int | None = None,
-    spinner: Spinner | None = None,
-) -> tuple[list[LegacyRow], list[str], int]:
-    LOG.info(f"DB operation: fetch_from_db_threaded on {'Target' if use_target_db else 'App'} database (User type = normal)")
+    max_threads: int = 4,
+    progress_callback: Callable[[ThreadedProgress], None] | None = None,
+) -> tuple[list[LegacyRow], list[str], dict[int, str]]:
+    LOG.debug(f"DB operation: fetch_from_db_threaded ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = normal)")
 
-    result_data = []
+    def fetch_data(query: str, params: dict | None, index: int) -> tuple[list[LegacyRow], list[str], int, str | None]:
+        LOG.debug(f"Query: {query}")
+        row_data: list[LegacyRow] = []
+        column_names: list[str] = []
+        error = None
+
+        try:
+            with _init_db_connection(use_target_db) as connection:
+                result = connection.execute(text(query), params)
+                LOG.debug(f"{result.rowcount} records retrieved")
+                row_data = result.fetchall()
+                column_names = list(result.keys())
+        except Exception as e:
+            error = get_exception_message(e)
+            LOG.exception(f"Failed to execute threaded query: {query}")
+
+        return row_data, column_names, index, error
+    
+    result_data: list[LegacyRow] = []
     result_columns: list[str] = []
-    error_count = 0
+    error_data: dict[int, str] = {}
 
-    if not max_threads or max_threads < 1 or max_threads > 10:
-        max_threads = 4
-
-    queue = qu.Queue()
-    for item in queries:
-        queue.put(item)
-
-    threaded_fetch = _ThreadedFetch(use_target_db, threading.Lock())
+    query_count = len(queries)
+    processed_count = 0
+    processed_indexes: list[int] = []
+    max_threads = max(1, min(10, max_threads))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        try:
-            futures = []
-            while not queue.empty():
-                query, params = queue.get()
-                futures.append(executor.submit(threaded_fetch, query, params))
+        futures = [
+            executor.submit(fetch_data, query, params, index)
+            for index, (query, params) in enumerate(queries)
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            row_data, column_names, index, error = future.result()
+            if row_data:
+                result_data.append(row_data)
+                result_columns = column_names
+            if error:
+                error_data[index] = error
 
-            for future in futures:
-                row_data, column_names, has_errors = future.result()
-                if spinner:
-                    spinner.next()
-                error_count += 1 if has_errors else 0
-                if row_data:
-                    result_data.append(row_data)
-                    result_columns = column_names
-
-        except Exception:
-            LOG.exception("Failed to execute threaded queries")
+            processed_count += 1
+            processed_indexes.append(index)
+            if progress_callback:
+                progress_callback({
+                    "processed": processed_count,
+                    "errors": len(error_data),
+                    "total": query_count,
+                    "indexes": processed_indexes,
+                })
+            LOG.debug(f"Processed {processed_count} of {query_count} threaded queries")
 
     # Flatten nested lists
     result_data = [element for sublist in result_data for element in sublist]
-    return result_data, result_columns, error_count
+    return result_data, result_columns, error_data
 
 
 def fetch_list_from_db(
     query: str, params: dict | None = None, use_target_db: bool = False
 ) -> tuple[list[LegacyRow], list[str]]:
-    LOG.info(f"DB operation: fetch_list_from_db on {'Target' if use_target_db else 'App'} database (User type = normal)")
+    LOG.debug(f"DB operation: fetch_list_from_db on {'Target' if use_target_db else 'App'} database (User type = normal)")
 
     with _init_db_connection(use_target_db) as connection:
         LOG.debug(f"Query: {query}")
@@ -229,7 +250,7 @@ def fetch_list_from_db(
 def fetch_dict_from_db(
     query: str, params: dict | None = None, use_target_db: bool = False
 ) -> list[RowMapping]:
-    LOG.info(f"DB operation: fetch_dict_from_db on {'Target' if use_target_db else 'App'} database (User type = normal)")
+    LOG.debug(f"DB operation: fetch_dict_from_db on {'Target' if use_target_db else 'App'} database (User type = normal)")
 
     with _init_db_connection(use_target_db) as connection:
         LOG.debug(f"Query: {query}")
@@ -239,8 +260,8 @@ def fetch_dict_from_db(
         return [row._mapping for row in result]
 
 
-def write_to_app_db(data: list[LegacyRow], column_names: list[str], table_name: str) -> None:
-    LOG.info("DB operation: write_to_app_db on App database (User type = normal)")
+def write_to_app_db(data: list[LegacyRow], column_names: Iterable[str], table_name: str) -> None:
+    LOG.debug("DB operation: write_to_app_db on App database (User type = normal)")
 
     # use_raw is required to make use of the copy_expert method for fast batch ingestion
     connection = _init_db_connection(use_raw=True)
@@ -384,37 +405,3 @@ def _init_target_db_connection() -> Connection:
             )
 
     return connection
-
-
-class _ThreadedFetch:
-    def __init__(self, use_target_db: bool, count_lock: threading.Lock):
-        self.use_target_db = use_target_db
-        self.count_lock = count_lock
-        self.count = 0
-
-    def __call__(self, query: str, params: dict | None = None) -> tuple[list[LegacyRow], list[str], bool]:
-        LOG.debug(f"Query: {query}")
-        column_names: list[str] = []
-        row_data: list = None
-        has_errors = False
-
-        with self.count_lock:
-            self.count += 1
-            i = self.count
-
-        try:
-            with _init_db_connection(self.use_target_db) as connection:
-                try:
-                    result = connection.execute(text(query), params)
-                    LOG.debug(f"{result.rowcount} records retrieved")
-                    row_data = result.fetchall()
-                    if not column_names:
-                        column_names = result.keys()
-                    LOG.info(f"Processed threaded query {i} on thread {threading.current_thread().name}")
-                except Exception:
-                    LOG.exception(f"Failed to execute threaded query: {query}")
-                    has_errors = True
-        except Exception as e:
-            raise ValueError(f"Failed to execute threaded query: {e}") from e
-        else:
-            return row_data, list(column_names), has_errors

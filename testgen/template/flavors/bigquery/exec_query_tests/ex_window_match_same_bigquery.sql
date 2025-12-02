@@ -3,8 +3,6 @@ SELECT '{TEST_TYPE}' AS test_type,
        '{TEST_SUITE_ID}' AS test_suite_id,
        '{TEST_RUN_ID}' AS test_run_id,
        '{RUN_DATE}' AS test_time,
-       '{START_TIME}' AS starttime,
-       CURRENT_TIMESTAMP AS endtime,
        '{SCHEMA_NAME}' AS schema_name,
        '{TABLE_NAME}' AS table_name,
        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
@@ -26,13 +24,11 @@ SELECT '{TEST_TYPE}' AS test_type,
            )
          ELSE 'No errors found.'
        END AS result_message,
-       COUNT(*) AS result_measure,
-       '{SUBSET_DISPLAY}' AS subset_condition,
-       NULL AS result_query
+       COUNT(*) AS result_measure
 FROM (
   -- Values in the prior timeframe but not in the latest
   (
-    SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME}
+    SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
     FROM `{SCHEMA_NAME}.{TABLE_NAME}`
     WHERE {SUBSET_CONDITION}
       AND {WINDOW_DATE_COLUMN} >= DATE_ADD(
@@ -40,7 +36,7 @@ FROM (
             INTERVAL -{WINDOW_DAYS} DAY
           )
     EXCEPT DISTINCT
-    SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME}
+    SELECT 'Prior Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
     FROM `{SCHEMA_NAME}.{TABLE_NAME}`
     WHERE {SUBSET_CONDITION}
       AND {WINDOW_DATE_COLUMN} >= DATE_ADD(
@@ -55,7 +51,7 @@ FROM (
   UNION ALL
   -- Values in the latest timeframe but not in the prior
   (
-    SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME}
+    SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
     FROM `{SCHEMA_NAME}.{TABLE_NAME}`
     WHERE {SUBSET_CONDITION}
       AND {WINDOW_DATE_COLUMN} >= DATE_ADD(
@@ -67,7 +63,7 @@ FROM (
             INTERVAL -{WINDOW_DAYS} DAY
           )
     EXCEPT DISTINCT
-    SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME}
+    SELECT 'Latest Timeframe' AS missing_from, {COLUMN_NAME_NO_QUOTES}
     FROM `{SCHEMA_NAME}.{TABLE_NAME}`
     WHERE {SUBSET_CONDITION}
       AND {WINDOW_DATE_COLUMN} >= DATE_ADD(

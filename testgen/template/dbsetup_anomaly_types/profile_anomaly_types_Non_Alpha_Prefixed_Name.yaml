@@ -30,7 +30,7 @@ profile_anomaly_types:
         AND SUBSTR(CAST(`{COLUMN_NAME}` AS STRING), LENGTH(CAST(`{COLUMN_NAME}` AS STRING)), 1) <> '\''
       GROUP BY `{COLUMN_NAME}`
       ORDER BY `{COLUMN_NAME}`
-      LIMIT 500;
+      LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1272'
     test_id: '1030'
@@ -40,7 +40,7 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE `{COLUMN_NAME}` < 'A' AND LEFT(`{COLUMN_NAME}`, 1) NOT IN ('"', ' ') AND RIGHT(`{COLUMN_NAME}`, 1) <> ''''
-      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT 500
+      GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1270'
     test_id: '1030'
@@ -48,7 +48,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 500 "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
       GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}"
     error_type: Profile Anomaly
@@ -60,7 +60,7 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1268'
     test_id: '1030'
@@ -70,7 +70,7 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1475'
     test_id: '1030'
@@ -80,7 +80,7 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
        WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1271'
     test_id: '1030'
@@ -90,5 +90,5 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
-      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT 500
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly

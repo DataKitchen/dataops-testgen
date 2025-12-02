@@ -1,7 +1,6 @@
 SELECT
 	project_name,
 	component_tool,
-	"schema",
 	connection_name,
 	project_db,
 	sample_min_count,

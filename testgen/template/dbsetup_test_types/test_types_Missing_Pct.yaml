@@ -110,7 +110,7 @@ test_types:
       SELECT *
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE `{COLUMN_NAME}` IS NULL OR CAST(`{COLUMN_NAME}` AS STRING) = ''
-      LIMIT 10;
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1314'
     test_id: '1022'
@@ -118,7 +118,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` :: VARCHAR(255) = '' LIMIT 10;
+      SELECT * FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   - id: '1156'
     test_id: '1022'
@@ -126,7 +126,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 10 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR CAST("{COLUMN_NAME}" AS VARCHAR(255)) = '';
+      SELECT TOP {LIMIT} * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR CAST("{COLUMN_NAME}" AS VARCHAR(255)) = '';
     error_type: Test Results
   - id: '1099'
     test_id: '1022'
@@ -134,7 +134,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT 10;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   - id: '1017'
     test_id: '1022'
@@ -142,7 +142,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 10 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   - id: '1417'
     test_id: '1022'
@@ -150,7 +150,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 10 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   - id: '1213'
     test_id: '1022'
@@ -158,6 +158,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT TOP 10 * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' ;
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

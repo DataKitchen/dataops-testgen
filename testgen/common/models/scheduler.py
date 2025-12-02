@@ -4,7 +4,7 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 from cron_converter import Cron
-from sqlalchemy import Boolean, Column, String, delete, func, select, update
+from sqlalchemy import Boolean, Column, String, cast, delete, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -33,10 +33,10 @@ class JobSchedule(Base):
     def select_where(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
         test_definitions_count = (
             select(cls.id)
-            .join(TestSuite, TestSuite.test_suite == cls.kwargs["test_suite_key"].astext)
+            .join(TestSuite, TestSuite.id == cast(cls.kwargs["test_suite_id"].astext, postgresql.UUID))
             .join(TestDefinition, TestDefinition.test_suite_id == TestSuite.id)
             .where(cls.key == RUN_TESTS_JOB_KEY, cls.active == True)
-            .group_by(cls.id, TestSuite.test_suite)
+            .group_by(cls.id, TestSuite.id)
             .having(func.count(TestDefinition.id) > 0)
             .subquery()
         )

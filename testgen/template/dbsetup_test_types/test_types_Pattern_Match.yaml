@@ -109,7 +109,8 @@ test_types:
       SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE NOT REGEXP_CONTAINS(NULLIF(CAST(`{COLUMN_NAME}` AS STRING), ''), r'{BASELINE_VALUE}')
-      GROUP BY `{COLUMN_NAME}`;
+      GROUP BY `{COLUMN_NAME}`
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1318'
     test_id: '1026'
@@ -117,7 +118,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 GROUP BY `{COLUMN_NAME}`;
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE REGEXP_LIKE(NULLIF(`{COLUMN_NAME}`::STRING, ''),'{BASELINE_VALUE}') != 1 GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Test Results
   - id: '1160'
     test_id: '1026'
@@ -125,7 +126,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT LIKE '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT LIKE '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1103'
     test_id: '1026'
@@ -133,7 +134,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1021'
     test_id: '1026'
@@ -141,7 +142,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1421'
     test_id: '1026'
@@ -149,7 +150,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   - id: '1217'
     test_id: '1026'
@@ -157,6 +158,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

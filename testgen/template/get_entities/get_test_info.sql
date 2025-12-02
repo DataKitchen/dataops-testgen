@@ -4,7 +4,6 @@ Alternative: project-code, connection-id
 Optional: last_auto_run_date (==test-gen-run-id==), schema-name, table-name, column-name*/
 
     SELECT ts.project_code as project_key,
-           td.cat_test_id,
            ts.test_suite as test_suite_key,
            td.test_type,
            COALESCE(td.test_description, tt.test_description) as test_description,

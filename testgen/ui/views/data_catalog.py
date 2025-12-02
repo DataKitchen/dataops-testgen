@@ -113,7 +113,7 @@ class DataCatalogPage(Page):
                 "RunProfilingClicked": partial(
                     run_profiling_dialog,
                     project_code,
-                    selected_table_group,
+                    selected_table_group.id,
                 ),
                 "TableGroupSelected": on_table_group_selected,
                 "ItemSelected": on_item_selected,
@@ -234,7 +234,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "add_date": {"header": "First detected"},
         "last_mod_date": {"header": "Modification detected"},
         "drop_date": {"header": "Drop detected"},
-        "record_ct": {"header": "Record count"},
+        "record_ct": {"header": "Row count"},
         "value_ct": {"header": "Value count"},
         "distinct_value_ct": {"header": "Distinct values"},
         "null_value_ct": {"header": "Null values"},

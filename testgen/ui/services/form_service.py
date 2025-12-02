@@ -261,7 +261,11 @@ function(params) {
     selected_column, paginator_column = st.columns([.5, .5])
     with paginator_column:
         def on_page_change():
-            st.session_state[f"{key}_page_change"] = True
+            # Ignore the on_change event fired during paginator initialization
+            if st.session_state.get(f"{key}_paginator_loaded", False):
+                st.session_state[f"{key}_page_change"] = True
+            else:
+                st.session_state[f"{key}_paginator_loaded"] = True
 
         page_index = testgen.paginator(
             count=len(df),

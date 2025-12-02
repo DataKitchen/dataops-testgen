@@ -4,13 +4,12 @@ import signal
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 import click
 from click.core import Context
-from progress.spinner import MoonSpinner
 
 from testgen import settings
-from testgen.commands.run_execute_tests import run_execution_steps
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_get_entities import (
     run_get_results,
@@ -29,8 +28,9 @@ from testgen.commands.run_get_entities import (
 )
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
-from testgen.commands.run_profiling_bridge import run_profiling_queries
+from testgen.commands.run_profiling import run_profiling
 from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
+from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.common import (
@@ -45,6 +45,7 @@ from testgen.common import (
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_suite import TestSuite
 from testgen.scheduler import register_scheduler_job, run_scheduler
 from testgen.utils import plugins
 
@@ -114,20 +115,16 @@ def cli(ctx: Context, verbose: bool):
 
 @register_scheduler_job
 @cli.command("run-profile", help="Generates a new profile of the table group.")
-@pass_configuration
 @click.option(
     "-tg",
     "--table-group-id",
     required=True,
     type=click.STRING,
-    help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
+    help="ID of the table group to profile. Use a table_group_id shown in list-table-groups.",
 )
-def run_profile(configuration: Configuration, table_group_id: str):
+def run_profile(table_group_id: str):
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    spinner = None
-    if not configuration.verbose:
-        spinner = MoonSpinner("Processing ... ")
-    message = run_profiling_queries(table_group_id, spinner=spinner)
+    message = run_profiling(table_group_id)
     click.echo("\n" + message)
 
 
@@ -164,9 +161,16 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
 @register_scheduler_job
 @cli.command("run-tests", help="Performs tests defined for a test suite.")
 @click.option(
+    "-t",
+    "--test-suite-id",
+    required=False,
+    type=click.STRING,
+    help="ID of the test suite to run. Use a test_suite_id shown in list-test-suites.",
+)
+@click.option(
     "-pk",
     "--project-key",
-    help="The identifier for a TestGen project. Use a project_key shown in list-projects.",
+    help="DEPRECATED. Use --test-suite-id instead.",
     required=False,
     type=click.STRING,
     default=settings.PROJECT_KEY,
@@ -174,17 +178,22 @@ def run_test_generation(configuration: Configuration, table_group_id: str, test_
 @click.option(
     "-ts",
     "--test-suite-key",
-    help="The identifier for a test suite. Use a test_suite_key shown in list-test-suites.",
+    help="DEPRECATED. Use --test-suite-id instead.",
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
-@pass_configuration
-def run_tests(configuration: Configuration, project_key: str, test_suite_key: str):
-    click.echo(f"run-tests for suite: {test_suite_key}")
-    spinner = None
-    if not configuration.verbose:
-        spinner = MoonSpinner("Processing ... ")
-    message = run_execution_steps(project_key, test_suite_key, spinner=spinner)
+@with_database_session
+def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None):
+    click.echo(f"run-tests for suite: {test_suite_id or test_suite_key}")
+    # For backward compatibility
+    if not test_suite_id:
+        test_suites = TestSuite.select_minimal_where(
+            TestSuite.project_code == project_key,
+            TestSuite.test_suite == test_suite_key,
+        )
+        if test_suites:
+            test_suite_id = test_suites[0].id
+    message = run_test_execution(test_suite_id)
     click.echo("\n" + message)
 
 
@@ -370,27 +379,27 @@ def quick_start(
 
     click.echo("loading initial data")
     run_quick_start_increment(0)
-    minutes_offset = -30*24*60 # 1 month ago
-    table_group_id="0ea85e17-acbe-47fe-8394-9970725ad37d"
+    now_date = datetime.now(UTC)
+    time_delta = timedelta(days=-30) # 1 month ago
+    table_group_id = "0ea85e17-acbe-47fe-8394-9970725ad37d"
+    test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    spinner = None
-    if not configuration.verbose:
-        spinner = MoonSpinner("Processing ... ")
-    message = run_profiling_queries(table_group_id, spinner=spinner, minutes_offset=minutes_offset)
+    message = run_profiling(table_group_id, run_date=now_date + time_delta) 
     click.echo("\n" + message)
 
     LOG.info(f"run-test-generation with table_group_id: {table_group_id} test_suite: {settings.DEFAULT_TEST_SUITE_KEY}")
     message = run_test_gen_queries(table_group_id, settings.DEFAULT_TEST_SUITE_KEY)
     click.echo("\n" + message)
 
-    run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
+    run_test_execution(test_suite_id, run_date=now_date + time_delta)
 
-    for iteration in range(1, 4):
-        click.echo(f"Running iteration: {iteration} / 3")
-        minutes_offset = -10*24*60 * (3-iteration)
+    total_iterations = 3
+    for iteration in range(1, total_iterations + 1):
+        click.echo(f"Running iteration: {iteration} / {total_iterations}")
+        run_date = now_date + timedelta(days=-10 * (total_iterations - iteration)) # 10 day increments
         run_quick_start_increment(iteration)
-        run_execution_steps(settings.PROJECT_KEY, settings.DEFAULT_TEST_SUITE_KEY, minutes_offset=minutes_offset)
+        run_test_execution(test_suite_id, run_date=run_date)
 
     click.echo("Quick start has successfully finished.")
 

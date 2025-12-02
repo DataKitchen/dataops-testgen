@@ -4,8 +4,6 @@ SELECT
 	test_suite as test_suite_key,
 	connection_id,
 	test_suite_description,
-	test_action as default_test_action,
-	test_suite_schema,
 	component_key,
 	component_type
  FROM test_suites

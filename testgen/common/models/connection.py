@@ -62,6 +62,7 @@ class Connection(Entity):
     http_path: str = Column(String)
     warehouse: str = Column(String)
     service_account_key: JSON_TYPE = Column(EncryptedJson)
+    connect_with_identity: bool = Column(Boolean, default=False)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)

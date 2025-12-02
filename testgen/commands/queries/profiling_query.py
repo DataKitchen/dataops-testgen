@@ -1,158 +1,133 @@
+import dataclasses
 import re
-import typing
+from uuid import UUID
 
-from testgen.commands.queries.refresh_data_chars_query import CRefreshDataCharsSQL
-from testgen.commands.queries.rollup_scores_query import CRollupScoresSQL
-from testgen.common import date_service, read_template_sql_file, read_template_yaml_file
-from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.commands.queries.refresh_data_chars_query import ColumnChars
+from testgen.common import read_template_sql_file, read_template_yaml_file
+from testgen.common.database.database_service import replace_params
+from testgen.common.models.connection import Connection
+from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
 
 
-class CProfilingSQL:
-    dctSnippetTemplate: typing.ClassVar = {}
+@dataclasses.dataclass
+class TableSampling:
+    table_name: str
+    sample_count: int
+    sample_ratio: float
+    sample_percent: float
 
-    project_code = ""
-    connection_id = ""
-    table_groups_id = ""
-    flavor = ""
-    run_date = ""
-    data_schema = ""
-    data_table = ""
 
-    col_name = ""
-    col_gen_type = ""
-    col_type = ""
-    db_data_type = ""
-    col_ordinal_position = "0"
-    col_is_decimal = ""
-    col_top_freq_update = ""
+@dataclasses.dataclass
+class HygieneIssueType:
+    id: str
+    anomaly_type: str
+    data_object: str
+    anomaly_criteria: str
+    detail_expression: str
+    dq_score_prevalence_formula: str
+    dq_score_risk_factor: str
 
-    parm_table_set = None
-    parm_table_include_mask = None
-    parm_table_exclude_mask = None
-    parm_do_patterns = "Y"
-    parm_max_pattern_length = 25
-    parm_do_freqs = "Y"
-    parm_do_sample = "N"
-    parm_sample_size = 0
-    profile_run_id = ""
-    profile_id_column_mask = ""
-    profile_sk_column_mask = ""
-    profile_use_sampling = ""
-    profile_flag_cdes = False
-    profile_sample_percent = ""
-    profile_sample_min_count = ""
 
-    sampling_table = ""
-    sample_ratio = ""
-    sample_percent_calc = ""
+class ProfilingSQL:
 
-    process_id = None
+    profiling_results_table = "profile_results"
+    frequency_staging_table = "stg_secondary_profile_updates"
+    error_columns = (
+        "project_code",
+        "connection_id",
+        "table_groups_id",
+        "schema_name",
+        "profile_run_id",
+        "run_date",
+        "table_name",
+        "column_name",
+        "position",
+        "column_type",
+        "general_type",
+        "db_data_type",
+        "record_ct",
+        "query_error",
+    )
 
-    contingency_max_values = "4"
-    contingency_columns = ""
+    max_pattern_length = 25
+    max_error_length = 2000
 
-    exception_message = ""
-    minutes_offset = 0
+    def __init__(self, connection: Connection, table_group: TableGroup, profiling_run: ProfilingRun):
+        self.connection = connection
+        self.table_group = table_group
+        self.profiling_run = profiling_run
+        self.run_date = profiling_run.profiling_starttime.strftime("%Y-%m-%d %H:%M:%S")
+        self.flavor = connection.sql_flavor
+        self._profiling_template: dict = None
 
-    _data_chars_sql: CRefreshDataCharsSQL = None
-    _rollup_scores_sql: CRollupScoresSQL = None
-
-    def __init__(self, strProjectCode, flavor, minutes_offset=0):
-        self.flavor = flavor
-        self.project_code = strProjectCode
-        # Defaults
-        self.run_date = date_service.get_now_as_string_with_offset(minutes_offset)
-        self.today = date_service.get_now_as_string_with_offset(minutes_offset)
-        self.minutes_offset = minutes_offset
-
-    def _get_data_chars_sql(self) -> CRefreshDataCharsSQL:
-        if not self._data_chars_sql:
-            params = {
-                "project_code": self.project_code,
-                "sql_flavor": self.flavor,
-                "table_group_schema": self.data_schema,
-                "table_groups_id": self.table_groups_id,
-                "max_query_chars": None,
-                "profiling_table_set": self.parm_table_set,
-                "profiling_include_mask": self.parm_table_include_mask,
-                "profiling_exclude_mask": self.parm_table_exclude_mask,
-            }
-            self._data_chars_sql = CRefreshDataCharsSQL(params, self.run_date, "v_latest_profile_results")
-
-        return self._data_chars_sql
-
-    def _get_rollup_scores_sql(self) -> CRollupScoresSQL:
-        if not self._rollup_scores_sql:
-            self._rollup_scores_sql = CRollupScoresSQL(self.profile_run_id, self.table_groups_id)
-
-        return self._rollup_scores_sql
-
-    def _get_params(self) -> dict:
-        return {
-            "PROJECT_CODE": self.project_code,
-            "CONNECTION_ID": self.connection_id,
-            "TABLE_GROUPS_ID": self.table_groups_id,
+    def _get_params(self, column_chars: ColumnChars | None = None, table_sampling: TableSampling | None = None) -> dict:
+        params = {
+            "PROJECT_CODE": self.table_group.project_code,
+            "CONNECTION_ID": self.connection.connection_id,
+            "TABLE_GROUPS_ID": self.table_group.id,
+            "PROFILE_RUN_ID": self.profiling_run.id,
             "RUN_DATE": self.run_date,
-            "DATA_SCHEMA": self.data_schema,
-            "DATA_TABLE": self.data_table,
-            "COL_NAME": self.col_name,
-            "COL_NAME_SANITIZED": self.col_name.replace("'", "''"),
-            "COL_GEN_TYPE": self.col_gen_type,
-            "COL_TYPE": self.col_type or "",
-            "DB_DATA_TYPE": self.db_data_type or "",
-            "COL_POS": self.col_ordinal_position,
-            "TOP_FREQ": self.col_top_freq_update,
-            "PROFILE_RUN_ID": self.profile_run_id,
-            "PROFILE_ID_COLUMN_MASK": self.profile_id_column_mask,
-            "PROFILE_SK_COLUMN_MASK": self.profile_sk_column_mask,
-            "START_TIME": self.today,
-            "NOW_TIMESTAMP": date_service.get_now_as_string_with_offset(minutes_offset=self.minutes_offset),
-            "EXCEPTION_MESSAGE": self.exception_message,
-            "SAMPLING_TABLE": self.sampling_table,
-            "SAMPLE_SIZE": int(self.parm_sample_size),
-            "PROFILE_USE_SAMPLING": self.profile_use_sampling,
-            "PROFILE_SAMPLE_PERCENT": self.profile_sample_percent,
-            "PROFILE_SAMPLE_MIN_COUNT": self.profile_sample_min_count,
-            "PROFILE_SAMPLE_RATIO": self.sample_ratio,
-            "SAMPLE_PERCENT_CALC": self.sample_percent_calc,
-            "PARM_MAX_PATTERN_LENGTH": self.parm_max_pattern_length,
-            "CONTINGENCY_COLUMNS": self.contingency_columns,
-            "CONTINGENCY_MAX_VALUES": self.contingency_max_values,
-            "PROCESS_ID": self.process_id,
             "SQL_FLAVOR": self.flavor,
-            "QUOTE": get_flavor_service(self.flavor).quote_character
+            "DATA_SCHEMA": self.table_group.table_group_schema,
+            "PROFILE_ID_COLUMN_MASK": self.table_group.profile_id_column_mask,
+            "PROFILE_SK_COLUMN_MASK": self.table_group.profile_sk_column_mask,
+            "MAX_PATTERN_LENGTH": self.max_pattern_length,
         }
+        if column_chars:
+            params.update({
+                "DATA_TABLE": column_chars.table_name,
+                "COL_NAME": column_chars.column_name,
+                "COL_NAME_SANITIZED": column_chars.column_name.replace("'", "''"),
+                "COL_GEN_TYPE": column_chars.general_type,
+                "COL_TYPE": column_chars.column_type,
+                "DB_DATA_TYPE": column_chars.db_data_type,
+                "COL_POS": column_chars.ordinal_position,
+            })
+        if table_sampling:
+            params.update({
+                "SAMPLING_TABLE": table_sampling.table_name,
+                "SAMPLE_SIZE": table_sampling.sample_count,
+                "PROFILE_SAMPLE_RATIO": table_sampling.sample_ratio,
+                "SAMPLE_PERCENT_CALC": table_sampling.sample_percent,
+            })
+        return params
 
     def _get_query(
         self,
         template_file_name: str,
         sub_directory: str | None = "profiling",
         extra_params: dict | None = None,
+        column_chars: ColumnChars | None = None,
+        table_sampling: TableSampling | None = None,
     ) -> tuple[str | None, dict]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {}
 
         if query:
-            query = self._process_conditionals(query)
+            query = self._process_conditionals(query, extra_params)
+            params.update(self._get_params(column_chars, table_sampling))
             if extra_params:
                 params.update(extra_params)
-            params.update(self._get_params())
 
             query = replace_params(query, params)
             query = replace_templated_functions(query, self.flavor)
 
         return query, params
 
-    def _process_conditionals(self, query: str):
+    def _process_conditionals(self, query: str, extra_params: dict | None = None) -> str:
         re_pattern = re.compile(r"^--\s+TG-(IF|ELSE|ENDIF)(?:\s+(\w+))?\s*$")
         condition = None
         updated_query = []
         for line in query.splitlines(True):
             if re_match := re_pattern.match(line):
                 match re_match.group(1):
-                    case "IF" if condition is None and re_match.group(2) is not None:
-                        condition = bool(getattr(self, re_match.group(2)))
+                    case "IF" if condition is None and (variable := re_match.group(2)) is not None:
+                        result = extra_params.get(variable)
+                        if result is None:
+                            result = getattr(self, variable, None)
+                        condition = bool(result)
                     case "ELSE" if condition is not None:
                         condition = not condition
                     case "ENDIF" if condition is not None:
@@ -167,67 +142,55 @@ class CProfilingSQL:
 
         return "".join(updated_query)
 
-    @property
-    def do_sample_bool(self):
-        return self.parm_do_sample == "Y"
+    def _get_profiling_template(self) -> dict:
+        if not self._profiling_template:
+            self._profiling_template = read_template_yaml_file(
+                "project_profiling_query.yaml",
+                sub_directory=f"flavors/{self.flavor}/profiling",
+            )
+        return self._profiling_template
 
-    def GetSecondProfilingColumnsQuery(self) -> tuple[str, dict]:
+    def get_frequency_analysis_columns(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("secondary_profiling_columns.sql")
 
-    def GetSecondProfilingUpdateQuery(self) -> tuple[str, dict]:
+    def update_frequency_analysis_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
-        return self._get_query("secondary_profiling_update.sql")
+        return [
+            self._get_query("secondary_profiling_update.sql"),
+            self._get_query("secondary_profiling_delete.sql"),
+        ]
 
-    def GetSecondProfilingStageDeleteQuery(self) -> tuple[str, dict]:
+    def update_profiling_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
-        return self._get_query("secondary_profiling_delete.sql")
+        queries = [
+            self._get_query("datatype_suggestions.sql"),
+            self._get_query("functional_datatype.sql"),
+            self._get_query("functional_tabletype_stage.sql"),
+            self._get_query("functional_tabletype_update.sql"),
+            self._get_query("pii_flag.sql"),
+        ]
+        if self.table_group.profile_flag_cdes:
+            queries.append(self._get_query("cde_flagger_query.sql"))
+        return queries
 
-    def GetDataTypeSuggestionUpdateQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("datatype_suggestions.sql")
-
-    def GetFunctionalDataTypeUpdateQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("functional_datatype.sql")
-
-    def GetFunctionalTableTypeStageQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("functional_tabletype_stage.sql")
-
-    def GetFunctionalTableTypeUpdateQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("functional_tabletype_update.sql")
-
-    def GetPIIFlagUpdateQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("pii_flag.sql")
-
-    def GetAnomalyStatsRefreshQuery(self) -> tuple[str, dict]:
+    def update_hygiene_issue_counts(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("refresh_anomalies.sql")
 
-    def GetAnomalyScoringRollupRunQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_rollup_scores_sql().GetRollupScoresProfileRunQuery()
-
-    def GetAnomalyScoringRollupTableGroupQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_rollup_scores_sql().GetRollupScoresProfileTableGroupQuery()
-
-    def GetAnomalyTestTypesQuery(self) -> tuple[str, dict]:
+    def get_hygiene_issue_types(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("profile_anomaly_types_get.sql")
 
-    def GetAnomalyTestQuery(self, test_type: dict) -> tuple[str, dict] | None:
+    def detect_hygiene_issue(self, issue_type: HygieneIssueType) -> tuple[str, dict] | None:
         # Runs on App database
         extra_params = {
-            "ANOMALY_ID": test_type["id"],
-            "DETAIL_EXPRESSION": test_type["detail_expression"],
-            "ANOMALY_CRITERIA": test_type["anomaly_criteria"],
+            "ANOMALY_ID": issue_type.id,
+            "DETAIL_EXPRESSION": issue_type.detail_expression,
+            "ANOMALY_CRITERIA": issue_type.anomaly_criteria,
         }
 
-        match test_type["data_object"]:
+        match issue_type.data_object:
             case "Column":
                 query, params = self._get_query("profile_anomalies_screen_column.sql", extra_params=extra_params)
             case "Multi-Col":
@@ -243,157 +206,87 @@ class CProfilingSQL:
 
         return query, params
 
-    def GetAnomalyScoringQuery(self, test_type: dict) -> tuple[str, dict]:
+    def update_hygiene_issue_prevalence(self, issue_type: HygieneIssueType) -> tuple[str, dict]:
         # Runs on App database
         query = read_template_sql_file("profile_anomaly_scoring.sql", sub_directory="profiling")
         params = {
-            "PROFILE_RUN_ID": self.profile_run_id,
-            "ANOMALY_ID": test_type["id"],
-            "PREV_FORMULA": test_type["dq_score_prevalence_formula"],
-            "RISK": test_type["dq_score_risk_factor"],
+            "PROFILE_RUN_ID": self.profiling_run.id,
+            "ANOMALY_ID": issue_type.id,
+            "PREV_FORMULA": issue_type.dq_score_prevalence_formula,
+            "RISK": issue_type.dq_score_risk_factor,
         }
         query = replace_params(query, params)
         return query, params
 
-    def GetDataCharsRefreshQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_data_chars_sql().GetDataCharsUpdateQuery()
-
-    def GetCDEFlaggerQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("cde_flagger_query.sql")
-
-    def GetProfileRunInfoRecordsQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("project_profile_run_record_insert.sql")
-
-    def GetProfileRunInfoRecordUpdateQuery(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("project_profile_run_record_update.sql")
-
-    def GetDDFQuery(self) -> tuple[str, dict]:
+    def run_column_profiling(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
         # Runs on Target database
-        return self._get_data_chars_sql().GetDDFQuery()
+        template = self._get_profiling_template()
+        general_type = column_chars.general_type
 
-    def GetProfilingQuery(self) -> tuple[str, dict]:
-        # Runs on Target database
-        if not self.dctSnippetTemplate:
-            self.dctSnippetTemplate = read_template_yaml_file(
-                f"project_profiling_query_{self.flavor}.yaml", sub_directory=f"flavors/{self.flavor}/profiling"
-            )
+        query = ""
+        query += template["01_sampling" if table_sampling else "01_else"]
+        query += template["01_all"]
+        query += template["02_X" if general_type == "X" else "02_else"]
+        query += template["03_ADN" if general_type in ["A", "D", "N"] else "03_else"]
 
-        dctSnippetTemplate = self.dctSnippetTemplate
-
-        # Assemble in function
-        strQ = ""
-
-        if self.parm_do_sample == "Y":
-            strQ += dctSnippetTemplate["strTemplate01_sampling"]
+        if general_type == "A":
+            query += template["04_A"]
+        elif general_type == "N":
+            query += template["04_N"]
         else:
-            strQ += dctSnippetTemplate["strTemplate01_else"]
+            query += template["04_else"]
 
-        strQ += dctSnippetTemplate["strTemplate01_5"]
+        query += template["05_A" if general_type == "A" else "05_else"]
+        query += template["06_A" if general_type == "A" else "06_else"]
+        query += template["08_N" if general_type == "N" else "08_else"]
+        query += template["10_N_dec" if general_type == "N" and column_chars.is_decimal == True else "10_else"]
+        query += template["11_D" if general_type == "D" else "11_else"]
+        query += template["12_B" if general_type == "B" else "12_else"]
+        query += template["14_A" if general_type == "A" else "14_else"]
+        query += template["16_all"]
+        query += template["98_all"]
 
-        if self.col_gen_type == "X":
-            strQ += dctSnippetTemplate["strTemplate02_X"]
+        if general_type == "N":
+            query += template["99_N_sampling" if table_sampling else "99_N"]
         else:
-            strQ += dctSnippetTemplate["strTemplate02_else"]
+            query += template["99_else"]
 
-        if self.col_gen_type in ["A", "D", "N"]:
-            strQ += dctSnippetTemplate["strTemplate03_ADN"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate03_else"]
-
-        if self.col_gen_type == "A":
-            strQ += dctSnippetTemplate["strTemplate04_A"]
-        elif self.col_gen_type == "N":
-            strQ += dctSnippetTemplate["strTemplate04_N"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate04_else"]
-
-        if self.col_gen_type == "A":
-            strQ += dctSnippetTemplate["strTemplate05_A"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate05_else"]
-
-        if self.col_gen_type == "A" and self.parm_do_patterns == "Y":
-            strQ += dctSnippetTemplate["strTemplate06_A_patterns"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate06_else"]
-
-        strQ += dctSnippetTemplate["strTemplate07_else"]
-
-        if self.col_gen_type == "N":
-            strQ += dctSnippetTemplate["strTemplate08_N"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate08_else"]
-
-        if self.col_gen_type == "N" and self.col_is_decimal == True:
-            strQ += dctSnippetTemplate["strTemplate10_N_dec"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate10_else"]
-
-        if self.col_gen_type == "D":
-            strQ += dctSnippetTemplate["strTemplate11_D"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate11_else"]
-        if self.col_gen_type == "B":
-            strQ += dctSnippetTemplate["strTemplate12_B"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate12_else"]
-
-        strQ += dctSnippetTemplate["strTemplate13_ALL"]
-
-        if self.col_gen_type == "A":
-            if self.parm_do_patterns == "Y":
-                strQ += dctSnippetTemplate["strTemplate14_A_do_patterns"]
-            else:
-                strQ += dctSnippetTemplate["strTemplate14_A_no_patterns"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate14_else"]
-
-        strQ += dctSnippetTemplate["strTemplate15_ALL"]
-
-        strQ += dctSnippetTemplate["strTemplate16_ALL"]
-
-        if self.parm_do_sample == "Y":
-            strQ += dctSnippetTemplate["strTemplate98_sampling"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate98_else"]
-
-        if self.col_gen_type == "N":
-            if self.parm_do_sample == "Y":
-                strQ += dctSnippetTemplate["strTemplate99_N_sampling"]
-            else:
-                strQ += dctSnippetTemplate["strTemplate99_N"]
-        else:
-            strQ += dctSnippetTemplate["strTemplate99_else"]
-
-        if self.parm_do_sample == "Y":
-            strQ += dctSnippetTemplate["strTemplate100_sampling"]
-
-        params = self._get_params()
-        query = replace_params(strQ, params)
+        params = self._get_params(column_chars, table_sampling)
+        query = replace_params(query, params)
         query = replace_templated_functions(query, self.flavor)
 
         return query, params
 
-    def GetSecondProfilingQuery(self) -> tuple[str, dict]:
-        # Runs on Target database
-        return self._get_query(f"project_secondary_profiling_query_{self.flavor}.sql", f"flavors/{self.flavor}/profiling")
+    def get_profiling_errors(self, column_errors: list[tuple[ColumnChars, str]]) -> list[list[str | UUID | int]]:
+        return [
+            [
+                self.table_group.project_code,
+                self.connection.connection_id,
+                self.table_group.id,
+                self.table_group.table_group_schema,
+                self.profiling_run.id,
+                self.profiling_run.profiling_starttime,
+                column_chars.table_name,
+                column_chars.column_name.replace("'", "''"),
+                column_chars.ordinal_position,
+                column_chars.column_type,
+                "X",
+                column_chars.db_data_type,
+                column_chars.record_ct,
+                error[:self.max_error_length],
+            ] for column_chars, error in column_errors
+        ]
 
-    def GetTableSampleCount(self) -> tuple[str, dict]:
+    def run_frequency_analysis(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
         # Runs on Target database
-        return self._get_query(f"project_get_table_sample_count_{self.flavor}.sql", f"flavors/{self.flavor}/profiling")
+        return self._get_query(
+            "project_secondary_profiling_query.sql",
+            f"flavors/{self.flavor}/profiling",
+            extra_params={"do_sample_bool": table_sampling is not None},
+            column_chars=column_chars,
+            table_sampling=table_sampling,
+        )
 
-    def GetContingencyColumns(self) -> tuple[str, dict]:
+    def update_sampled_profiling_results(self, table_sampling: TableSampling) -> tuple[str, dict]:
         # Runs on App database
-        return self._get_query("contingency_columns.sql")
-
-    def GetContingencyCounts(self) -> tuple[str, dict]:
-        # Runs on Target database
-        return self._get_query("contingency_counts.sql", "flavors/generic/profiling")
-
-    def UpdateProfileResultsToEst(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("project_update_profile_results_to_estimates.sql")
+        return self._get_query("project_update_profile_results_to_estimates.sql", table_sampling=table_sampling)

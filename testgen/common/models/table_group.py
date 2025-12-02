@@ -31,16 +31,32 @@ class TableGroupMinimal(EntityMinimal):
 
 
 @dataclass
+class TableGroupStats(EntityMinimal):
+    id: UUID
+    table_groups_name: str
+    table_group_schema: str
+    table_ct: int
+    column_ct: int
+    approx_record_ct: int
+    record_ct: int
+    approx_data_point_ct: int
+    data_point_ct: int
+
+
+@dataclass
 class TableGroupSummary(EntityMinimal):
     id: UUID
     table_groups_name: str
+    table_ct: int
+    column_ct: int
+    approx_record_ct: int
+    record_ct: int
+    approx_data_point_ct: int
+    data_point_ct: int
     dq_score_profiling: float
     dq_score_testing: float
     latest_profile_id: UUID
     latest_profile_start: datetime
-    latest_profile_table_ct: int
-    latest_profile_column_ct: int
-    latest_profile_data_point_ct: int
     latest_anomalies_ct: int
     latest_anomalies_definite_ct: int
     latest_anomalies_likely_ct: int
@@ -113,18 +129,61 @@ class TableGroup(Entity):
     ) -> Iterable[TableGroupMinimal]:
         results = cls._select_columns_where(cls._minimal_columns, *clauses, order_by=order_by)
         return [TableGroupMinimal(**row) for row in results]
+    
+    @classmethod
+    @st.cache_data(show_spinner=False)
+    def select_stats(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TableGroupStats]:
+        query = f"""
+        WITH stats AS (
+            SELECT table_groups_id,
+                COUNT(*) AS table_ct,
+                SUM(column_ct) AS column_ct,
+                SUM(approx_record_ct) AS approx_record_ct,
+                SUM(record_ct) AS record_ct,
+                SUM(column_ct * approx_record_ct) AS approx_data_point_ct,
+                SUM(column_ct * record_ct) AS data_point_ct
+            FROM data_table_chars
+            GROUP BY table_groups_id
+        )
+        SELECT groups.id,
+            groups.table_groups_name,
+            groups.table_group_schema,
+            stats.table_ct,
+            stats.column_ct,
+            stats.approx_record_ct,
+            stats.record_ct,
+            stats.approx_data_point_ct,
+            stats.data_point_ct
+        FROM table_groups AS groups
+            LEFT JOIN stats ON (groups.id = stats.table_groups_id)
+        WHERE groups.project_code = :project_code
+            {"AND groups.id = :table_group_id" if table_group_id else ""}
+        ORDER BY LOWER(groups.table_groups_name);
+        """
+        params = {"project_code": project_code, "table_group_id": table_group_id}
+        db_session = get_current_session()
+        results = db_session.execute(text(query), params).mappings().all()
+        return [TableGroupStats(**row) for row in results]
 
     @classmethod
     @st.cache_data(show_spinner=False)
     def select_summary(cls, project_code: str, for_dashboard: bool = False) -> Iterable[TableGroupSummary]:
         query = f"""
-        WITH latest_profile AS (
+        WITH stats AS (
+            SELECT table_groups_id,
+                COUNT(*) AS table_ct,
+                SUM(column_ct) AS column_ct,
+                SUM(approx_record_ct) AS approx_record_ct,
+                SUM(record_ct) AS record_ct,
+                SUM(column_ct * approx_record_ct) AS approx_data_point_ct,
+                SUM(column_ct * record_ct) AS data_point_ct
+            FROM data_table_chars
+            GROUP BY table_groups_id
+        ),
+        latest_profile AS (
             SELECT latest_run.table_groups_id,
                 latest_run.id,
                 latest_run.profiling_starttime,
-                latest_run.table_ct,
-                latest_run.column_ct,
-                latest_run.dq_total_data_points,
                 latest_run.anomaly_ct,
                 SUM(
                     CASE
@@ -167,19 +226,23 @@ class TableGroup(Entity):
         )
         SELECT groups.id,
             groups.table_groups_name,
+            stats.table_ct,
+            stats.column_ct,
+            stats.approx_record_ct,
+            stats.record_ct,
+            stats.approx_data_point_ct,
+            stats.data_point_ct,
             groups.dq_score_profiling,
             groups.dq_score_testing,
             latest_profile.id AS latest_profile_id,
             latest_profile.profiling_starttime AS latest_profile_start,
-            latest_profile.table_ct AS latest_profile_table_ct,
-            latest_profile.column_ct AS latest_profile_column_ct,
-            latest_profile.dq_total_data_points AS latest_profile_data_point_ct,
             latest_profile.anomaly_ct AS latest_anomalies_ct,
             latest_profile.definite_ct AS latest_anomalies_definite_ct,
             latest_profile.likely_ct AS latest_anomalies_likely_ct,
             latest_profile.possible_ct AS latest_anomalies_possible_ct,
             latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct
         FROM table_groups AS groups
+            LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
         WHERE groups.project_code = :project_code
             {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
@@ -309,7 +372,7 @@ class TableGroup(Entity):
                     cron_expr="0 * * * *",
                     cron_tz=monitor_schedule_timezone,
                     args=[],
-                    kwargs={"project_key": self.project_code, "test_suite_key": test_suite.test_suite},
+                    kwargs={"test_suite_id": test_suite.id},
                 )
                 db_session.add(schedule_job)
 

@@ -109,7 +109,7 @@ test_types:
       SELECT DISTINCT `{COLUMN_NAME}`, (ABS(CAST(`{COLUMN_NAME}` AS NUMERIC)) - ABS({BASELINE_VALUE})) AS difference_from_baseline
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       WHERE CAST(`{COLUMN_NAME}` AS NUMERIC) < {BASELINE_VALUE}
-      LIMIT 500;
+      LIMIT {LIMIT};
     error_type: Test Results
   - id: '1313'
     test_id: '1021'
@@ -117,7 +117,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` < {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1155'
     test_id: '1021'
@@ -125,7 +125,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP 500  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE};
+      SELECT DISTINCT TOP {LIMIT}  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE};
     error_type: Test Results
   - id: '1098'
     test_id: '1021'
@@ -133,7 +133,7 @@ test_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1016'
     test_id: '1021'
@@ -141,7 +141,7 @@ test_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1416'
     test_id: '1021'
@@ -149,7 +149,7 @@ test_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1212'
     test_id: '1021'
@@ -157,6 +157,6 @@ test_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT 500;
+      SELECT DISTINCT  "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < {BASELINE_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

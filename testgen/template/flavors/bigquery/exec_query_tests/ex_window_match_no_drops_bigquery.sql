@@ -4,8 +4,6 @@ SELECT
     '{TEST_SUITE_ID}' AS test_suite_id,
     '{TEST_RUN_ID}' AS test_run_id,
     '{RUN_DATE}' AS test_time,
-    '{START_TIME}' AS starttime,
-    CURRENT_TIMESTAMP AS endtime,
     '{SCHEMA_NAME}' AS schema_name,
     '{TABLE_NAME}' AS table_name,
     '{COLUMN_NAME_NO_QUOTES}' AS column_names,
@@ -25,9 +23,7 @@ SELECT
       )
       ELSE 'No errors found.'
     END AS result_message,
-    COUNT(*) AS result_measure,
-    '{SUBSET_DISPLAY}' AS subset_condition,
-    NULL AS result_query
+    COUNT(*) AS result_measure
     FROM (
       SELECT {COLUMN_NAME_NO_QUOTES}
       FROM `{SCHEMA_NAME}.{TABLE_NAME}`

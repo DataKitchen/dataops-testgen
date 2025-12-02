@@ -374,7 +374,7 @@ from env variable: `OBSERVABILITY_API_KEY`
 
 OBSERVABILITY_VERIFY_SSL: bool = os.getenv("TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL", "yes").lower() in ["yes", "true"]
 """
-When False, exporting events to your instance of Observabilty will skip
+When False, exporting events to your instance of Observability will skip
 SSL verification.
 
 from env variable: `TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL`
@@ -383,7 +383,7 @@ defaults to: `True`
 
 OBSERVABILITY_EXPORT_LIMIT: int = int(os.getenv("TG_OBSERVABILITY_EXPORT_MAX_QTY", "5000"))
 """
-When exporting to your instance of Observabilty, the maximum number of
+When exporting to your instance of Observability, the maximum number of
 events that will be sent to the events API on a single export.
 
 from env variable: `TG_OBSERVABILITY_EXPORT_MAX_QTY`
@@ -392,7 +392,7 @@ defaults to: `5000`
 
 OBSERVABILITY_DEFAULT_COMPONENT_TYPE: str = os.getenv("OBSERVABILITY_DEFAULT_COMPONENT_TYPE", "dataset")
 """
-When exporting to your instance of Observabilty, the type of event that
+When exporting to your instance of Observability, the type of event that
 will be sent to the events API.
 
 from env variable: `OBSERVABILITY_DEFAULT_COMPONENT_TYPE`
@@ -401,7 +401,7 @@ defaults to: `dataset`
 
 OBSERVABILITY_DEFAULT_COMPONENT_KEY: str = os.getenv("OBSERVABILITY_DEFAULT_COMPONENT_KEY", "default")
 """
-When exporting to your instance of Observabilty, the key sent to the
+When exporting to your instance of Observability, the key sent to the
 events API to identify the components.
 
 from env variable: `OBSERVABILITY_DEFAULT_COMPONENT_KEY`
@@ -474,4 +474,29 @@ Random key used to sign/verify the authentication token
 ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT: int = os.getenv("TG_ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT", 50)
 """
 Limit the number of records used to generate the PDF with test results and hygiene issue reports.
+"""
+
+EMAIL_FROM_ADDRESS: str | None = os.getenv("TG_EMAIL_FROM_ADDRESS")
+"""
+Email: Sender address
+"""
+
+SMTP_ENDPOINT: str | None = os.getenv("TG_SMTP_ENDPOINT")
+"""
+Email: SMTP endpoint
+"""
+
+SMTP_PORT: int | None = int(os.getenv("TG_SMTP_PORT", 0)) or None
+"""
+Email: SMTP port
+"""
+
+SMTP_USERNAME: str | None = os.getenv("TG_SMTP_USERNAME")
+"""
+Email: SMTP username
+"""
+
+SMTP_PASSWORD: str | None = os.getenv("TG_SMTP_PASSWORD")
+"""
+Email: SMTP password
 """

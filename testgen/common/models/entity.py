@@ -138,6 +138,10 @@ class Entity(Base):
     @classmethod
     def columns(cls) -> list[str]:
         return list(cls.__annotations__.keys())
+    
+    def refresh(self) -> None:
+        db_session = get_current_session()
+        db_session.refresh(self)
 
     def save(self) -> None:
         is_new = self.id is None

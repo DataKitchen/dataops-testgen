@@ -1,84 +1,72 @@
 import time
+from uuid import UUID
 
 import streamlit as st
 
-from testgen.commands.run_profiling_bridge import run_profiling_in_background
-from testgen.common.models import with_database_session
-from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.commands.run_profiling import run_profiling_in_background
+from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
-from testgen.ui.session import session
-from testgen.utils import to_dataframe
+from testgen.ui.navigation.router import Router
+from testgen.ui.session import session, temp_value
 
-LINK_KEY = "run_profiling_dialog:keys:go-to-runs"
 LINK_HREF = "profiling-runs"
 
 
 @st.dialog(title="Run Profiling")
-@with_database_session
-def run_profiling_dialog(project_code: str, table_group: TableGroupMinimal | None = None, default_table_group_id: str | None = None) -> None:
-    if table_group:
-        table_group_id: str = str(table_group.id)
-        table_group_name: str = table_group.table_groups_name
-    else:
-        table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-        table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
-        table_group_id: str = testgen.select(
-            label="Table Group",
-            options=table_groups_df,
-            value_column="id",
-            display_column="table_groups_name",
-            default_value=default_table_group_id,
-            required=True,
-            placeholder="Select table group to profile",
-        )
-        if table_group_id:
-            table_group_name: str = table_groups_df.loc[table_groups_df["id"] == table_group_id, "table_groups_name"].iloc[0]
-        testgen.whitespace(1)
+def run_profiling_dialog(project_code: str, table_group_id: str | UUID | None = None, allow_selection: bool = False) -> None:
+    if not table_group_id and not allow_selection:
+        raise ValueError("Table Group ID must be specified when selection is not allowed")
 
-    if table_group_id:        
-        with st.container():
-            st.markdown(f"Execute profiling for the table group **{table_group_name}**?")
-            st.markdown(":material/info: _Profiling will be performed in a background process._")
+    def on_go_to_profiling_runs_clicked(table_group_id: str) -> None:
+        set_navigation_params({"project_code": project_code, "table_group_id": table_group_id})
 
-        if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:run-tests-show-cli"):
-            st.code(f"testgen run-profile --table-group-id {table_group_id}", language="shellSession")
+    def on_run_profiling_confirmed(table_group: dict) -> None:
+        set_table_group(table_group)
+        set_run_profiling(True)
 
-    button_container = st.empty()
-    status_container = st.empty()
+    get_navigation_params, set_navigation_params = temp_value("run_profiling_dialog:go_to_profiling_run", default=None)
+    if params := get_navigation_params():
+        Router().navigate(to=LINK_HREF, with_args=params)
 
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            profile_button = st.button("Run Profiling", use_container_width=True, disabled=not table_group_id)
+    should_run_profiling, set_run_profiling = temp_value("run_profiling_dialog:run_profiling", default=False)
+    get_table_group, set_table_group = temp_value("run_profiling_dialog:table_group", default=None)
 
-    if profile_button:
-        button_container.empty()
-        status_container.info("Starting profiling run ...")
+    table_groups = TableGroup.select_stats(
+        project_code=project_code,
+        table_group_id=table_group_id if not allow_selection else None,
+    )
+
+    result = None
+    if should_run_profiling():
+        selected_table_group = get_table_group()
+        success = True
+        message = f"Profiling run started for table group '{selected_table_group['table_groups_name']}'."
+        show_link = session.current_page != LINK_HREF
 
         try:
-            run_profiling_in_background(table_group_id)
-        except Exception as e:
-            status_container.error(f"Profiling run encountered errors: {e!s}.")
+            run_profiling_in_background(selected_table_group["id"])
+        except Exception as error:
+            success = False
+            message = f"Profiling run could not be started: {error!s}."
+            show_link = False
+        result = {"success": success, "message": message, "show_link": show_link}
 
-    # The second condition is needed for the link to work
-    if profile_button or st.session_state.get(LINK_KEY):
-        with status_container.container():
-            st.success(
-                f"Profiling run started for table group **{table_group_name}**."
-            )
+    testgen.testgen_component(
+        "run_profiling_dialog",
+        props={
+            "table_groups": [table_group.to_dict(json_safe=True) for table_group in table_groups],
+            "selected_id": str(table_group_id),
+            "allow_selection": allow_selection,
+            "result": result,
+        },
+        on_change_handlers={
+            "GoToProfilingRunsClicked": on_go_to_profiling_runs_clicked,
+            "RunProfilingConfirmed": on_run_profiling_confirmed,
+        },
+    )
 
-            if session.current_page != LINK_HREF:
-                testgen.link(
-                    label="Go to Profiling Runs",
-                    href=LINK_HREF,
-                    params={ "project_code": project_code, "table_group": table_group_id },
-                    right_icon="chevron_right",
-                    underline=False,
-                    height=40,
-                    key=LINK_KEY,
-                    style="margin-left: auto; border-radius: 4px; border: var(--button-stroked-border); padding: 8px 8px 8px 16px; color: var(--primary-color)",
-                )
-            else:
-                time.sleep(2)
-                st.cache_data.clear()
-                st.rerun()
+    if result and result["success"] and not result["show_link"]:
+        time.sleep(2)
+        ProfilingRun.select_summary.clear()
+        st.rerun()

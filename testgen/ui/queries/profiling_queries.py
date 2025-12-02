@@ -92,6 +92,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
         -- Profile Run
         profile_run_id::VARCHAR,
         run_date AS profile_run_date,
+        query_error AS profiling_error,
         {COLUMN_PROFILING_FIELDS},
         -- Extra fields for sorting and exporting
         position,
@@ -103,7 +104,8 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
             WHERE profile_run_id = profile_results.profile_run_id
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
-        ) THEN 'Yes' END AS hygiene_issues
+        ) THEN 'Yes' END AS hygiene_issues,
+        CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details
     FROM profile_results
     WHERE profile_run_id = :profiling_run_id
         AND table_name ILIKE :table_name
@@ -200,9 +202,9 @@ def get_tables_by_condition(
         table_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
         functional_table_type,
-        record_ct,
+        approx_record_ct,
+        table_chars.record_ct,
         table_chars.column_ct,
-        data_point_ct,
         add_date,
         last_refresh_date,
         drop_date,
@@ -368,6 +370,7 @@ def get_columns_by_condition(
         column_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         run_date AS profile_run_date,
         TRUE AS is_latest_profile,
+        query_error AS profiling_error,
         {"""
         -- Has Test Runs
         EXISTS(
@@ -394,12 +397,13 @@ def get_columns_by_condition(
         column_chars.dq_score_profiling,
         column_chars.dq_score_testing,
         """ if include_scores else ""}
+        table_chars.approx_record_ct,
         {COLUMN_PROFILING_FIELDS}
     FROM data_column_chars column_chars
-        {"""
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
+        {"""
         LEFT JOIN table_groups ON (
             column_chars.table_groups_id = table_groups.id
         )

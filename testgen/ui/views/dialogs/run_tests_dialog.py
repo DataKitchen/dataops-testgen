@@ -2,7 +2,7 @@ import time
 
 import streamlit as st
 
-from testgen.commands.run_execute_tests import run_execution_steps_in_background
+from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
@@ -42,7 +42,7 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
 
         if testgen.expander_toggle(expand_label="Show CLI command", key="run_tests_dialog:keys:show-cli"):
             st.code(
-                f"testgen run-tests --project-key {project_code} --test-suite-key '{test_suite_name}'",
+                f"testgen run-tests --test-suite-id {test_suite_id}",
                 language="shellSession"
             )
 
@@ -60,7 +60,7 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
         status_container.info("Starting test run ...")
 
         try:
-            run_execution_steps_in_background(project_code, test_suite_name)
+            run_test_execution_in_background(test_suite_id)
         except Exception as e:
             status_container.error(f"Test run encountered errors: {e!s}.")
 

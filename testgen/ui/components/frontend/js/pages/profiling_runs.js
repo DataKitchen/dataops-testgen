@@ -2,18 +2,29 @@
  * @import { ProjectSummary } from '../types.js';
  * @import { SelectOption } from '../components/select.js';
  * 
+ * 
+ * @typedef ProgressStep
+ * @type {object}
+ * @property {'data_chars'|'col_profiling'|'freq_analysis'|'hygiene_issues'} key
+ * @property {'Pending'|'Running'|'Completed'|'Warning'} status
+ * @property {string} label
+ * @property {string} detail
+ * 
  * @typedef ProfilingRun
  * @type {object}
- * @property {string} profiling_run_id
- * @property {number} start_time
- * @property {number} end_time
+ * @property {string} id
+ * @property {number} profiling_starttime
+ * @property {number} profiling_endtime
  * @property {string} table_groups_name
  * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
+ * @property {ProgressStep[]} progress
  * @property {string} log_message
  * @property {string} process_id
- * @property {string} schema_name
+ * @property {string} table_group_schema
  * @property {number} column_ct
  * @property {number} table_ct
+ * @property {number} record_ct
+ * @property {number} data_point_ct
  * @property {number} anomaly_ct
  * @property {number} anomalies_definite_ct
  * @property {number} anomalies_likely_ct
@@ -33,28 +44,37 @@
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';
-import { Tooltip } from '../components/tooltip.js';
+import { withTooltip } from '../components/tooltip.js';
 import { SummaryCounts } from '../components/summary_counts.js';
 import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { formatTimestamp, formatDuration } from '../display_utils.js';
+import { formatTimestamp, formatDuration, formatNumber } from '../display_utils.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
 import { Paginator } from '../components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
+import { Icon } from '../components/icon.js';
 
 const { div, i, span, strong } = van.tags;
 const PAGE_SIZE = 100;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
+const REFRESH_INTERVAL = 15000 // 15 seconds
+
+const progressStatusIcons = {
+    Pending: { color: 'grey', icon: 'more_horiz', size: 22 },
+    Running: { color: 'blue', icon: 'autoplay', size: 18 },
+    Completed: { color: 'green', icon: 'check', size: 24 },
+    Warning: { color: 'orange', icon: 'warning', size: 20 },
+};
 
 const ProfilingRuns = (/** @type Properties */ props) => {
     loadStylesheet('profilingRuns', stylesheet);
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const columns = ['5%', '15%', '15%', '20%', '35%', '10%'];
+    const columns = ['5%', '15%', '20%', '20%', '30%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
 
     const pageIndex = van.state(0);
@@ -62,13 +82,24 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         pageIndex.val = 0;
         return getValue(props.profiling_runs);
     });
-    const paginatedRuns = van.derive(() => profilingRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1)));
+    let refreshIntervalId = null;
+
+    const paginatedRuns = van.derive(() => {
+        const paginated = profilingRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1));
+        const hasActiveRuns = paginated.some(({ status }) => status === 'Running');
+        if (!refreshIntervalId && hasActiveRuns) {
+            refreshIntervalId = setInterval(() => emitEvent('RefreshData', {}), REFRESH_INTERVAL);
+        } else if (refreshIntervalId && !hasActiveRuns) {
+            clearInterval(refreshIntervalId);
+        }
+        return paginated;
+    });
 
     const selectedRuns = {};
     const initializeSelectedStates = (items) => {
         for (const profilingRun of items) {
-            if (selectedRuns[profilingRun.profiling_run_id] == undefined) {
-                selectedRuns[profilingRun.profiling_run_id] = van.state(false);
+            if (selectedRuns[profilingRun.id] == undefined) {
+                selectedRuns[profilingRun.id] = van.state(false);
             }
         }
     };
@@ -80,19 +111,18 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId },
+        { id: wrapperId, class: 'tg-profiling-runs' },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.profiling_run_count > 0
             ? div(
-                { class: 'tg-profiling-runs' },
                 Toolbar(props, userCanEdit),
                 () => profilingRuns.val.length
                 ? div(
                     div(
-                        { class: 'table' },
+                        { class: 'table pb-0' },
                         () => {
-                            const selectedItems = profilingRuns.val.filter(i => selectedRuns[i.profiling_run_id]?.val ?? false);
+                            const selectedItems = profilingRuns.val.filter(i => selectedRuns[i.id]?.val ?? false);
                             const someRunSelected = selectedItems.length > 0;
                             const tooltipText = !someRunSelected ? 'No runs selected' : undefined;
 
@@ -112,7 +142,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                     tooltipPosition: 'bottom-left',
                                     disabled: !someRunSelected,
                                     width: 'auto',
-                                    onclick: () => emitEvent('RunsDeleted', { payload: selectedItems.map(i => i.profiling_run_id) }),
+                                    onclick: () => emitEvent('RunsDeleted', { payload: selectedItems.map(i => i.id) }),
                                 }),
                             );
                         },
@@ -120,7 +150,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                             { class: 'table-header flex-row' },
                             () => {
                                 const items = profilingRuns.val;
-                                const selectedItems = items.filter(i => selectedRuns[i.profiling_run_id]?.val ?? false);
+                                const selectedItems = items.filter(i => selectedRuns[i.id]?.val ?? false);
                                 const allSelected = selectedItems.length === items.length;
                                 const partiallySelected = selectedItems.length > 0 && selectedItems.length < items.length;
 
@@ -134,7 +164,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                         ? Checkbox({
                                             checked: allSelected,
                                             indeterminate: partiallySelected,
-                                            onChange: (checked) => items.forEach(item => selectedRuns[item.profiling_run_id].val = checked),
+                                            onChange: (checked) => items.forEach(item => selectedRuns[item.id].val = checked),
                                             testId: 'select-all-profiling-run',
                                         })
                                         : '',
@@ -153,7 +183,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                 'Schema',
                             ),
                             span(
-                                { style: `flex: ${columns[4]}` },
+                                { style: `flex: ${columns[4]}`, class: 'tg-profiling-runs--issues' },
                                 'Hygiene Issues',
                             ),
                             span(
@@ -162,7 +192,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.profiling_run_id], userCanEdit)),
+                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit)),
                         ),
                     ),
                     Paginator({
@@ -192,7 +222,7 @@ const Toolbar = (
     /** @type boolean */ userCanEdit,
 ) => {
     return div(
-        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4' },
+        { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         () => Select({
             label: 'Table Group',
             value: getValue(props.table_group_options)?.find((op) => op.selected)?.value ?? null,
@@ -243,6 +273,8 @@ const ProfilingRunItem = (
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
 ) => {
+    const runningStep = item.progress?.find((item) => item.status === 'Running');
+
     return div(
         { class: 'table-row flex-row', 'data-testid': 'profiling-run-item' },
         userCanEdit
@@ -257,49 +289,79 @@ const ProfilingRunItem = (
             : '',
         div(
             { style: `flex: ${columns[1]}` },
-            div({ 'data-testid': 'profiling-run-item-starttime' }, formatTimestamp(item.start_time)),
+            div({ 'data-testid': 'profiling-run-item-starttime' }, formatTimestamp(item.profiling_starttime)),
             div(
                 { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-tablegroup' },
                 item.table_groups_name,
             ),
         ),
         div(
-            { class: 'flex-row', style: `flex: ${columns[2]}` },
+            { style: `flex: ${columns[2]}` },
             div(
+                { class: 'flex-row' },
                 ProfilingRunStatus(item),
-                div(
-                    { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
-                    formatDuration(item.start_time, item.end_time),
-                ),
+                item.status === 'Running' && item.process_id && userCanEdit ? Button({
+                    type: 'stroked',
+                    label: 'Cancel',
+                    style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
+                    onclick: () => emitEvent('RunCanceled', { payload: item }),
+                }) : null,
             ),
-            item.status === 'Running' && item.process_id && userCanEdit ? Button({
-                type: 'stroked',
-                label: 'Cancel Run',
-                style: 'width: auto; height: 32px; color: var(--purple); margin-left: 16px;',
-                onclick: () => emitEvent('RunCanceled', { payload: item }),
-            }) : null,
+            item.profiling_endtime 
+                ? div(
+                    { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
+                    formatDuration(item.profiling_starttime, item.profiling_endtime),
+                ) 
+                : div(
+                    { class: 'text-caption mt-1' },
+                    item.status === 'Running' && runningStep 
+                        ? [
+                            div(
+                                runningStep.label,
+                                withTooltip(
+                                    Icon({ style: 'font-size: 18px; margin-left: 4px; vertical-align: middle;' }, 'info'),
+                                    { text: ProgressTooltip(item) },
+                                ),
+                            ),
+                            div(runningStep.detail),
+                        ]
+                        : '--',
+                ),
         ),
         div(
             { style: `flex: ${columns[3]}` },
-            div({ 'data-testid': 'profiling-run-item-schema' }, item.schema_name),
+            div({ 'data-testid': 'profiling-run-item-schema' }, item.table_group_schema),
             div(
                 {
                     class: 'text-caption mt-1 mb-1',
                     style: item.status === 'Complete' && !item.column_ct ? 'color: var(--red);' : '',
                     'data-testid': 'profiling-run-item-counts',
                 },
-                item.status === 'Complete' ? `${item.table_ct || 0} tables, ${item.column_ct || 0} columns` : null,
+                item.column_ct !== null 
+                    ? div(
+                        `${formatNumber(item.table_ct || 0)} tables, ${formatNumber(item.column_ct || 0)} columns`,
+                        item.record_ct !== null ?
+                            withTooltip(
+                                Icon({ style: 'font-size: 16px; margin-left: 4px; vertical-align: middle;' }, 'more' ),
+                                { text: [
+                                    div(`${formatNumber(item.record_ct || 0)} records`),
+                                    div(`${formatNumber(item.data_point_ct || 0)} data points`),
+                                ] },
+                            )
+                            : null,
+                    )
+                    : null,
             ),
-            item.column_ct ? Link({
+            item.status === 'Complete' && item.column_ct ? Link({
                 label: 'View results',
                 href: 'profiling-runs:results',
-                params: { 'run_id': item.profiling_run_id },
+                params: { 'run_id': item.id },
                 underline: true,
                 right_icon: 'chevron_right',
             }) : null,
         ),
         div(
-            { class: 'pr-3', style: `flex: ${columns[4]}` },
+            { class: 'pr-3 tg-profiling-runs--issues', style: `flex: ${columns[4]}` },
             item.anomaly_ct ? SummaryCounts({
                 items: [
                     { label: 'Definite', value: item.anomalies_definite_ct, color: 'red' },
@@ -311,7 +373,7 @@ const ProfilingRunItem = (
             item.anomaly_ct ? Link({
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
-                params: { 'run_id': item.profiling_run_id },
+                params: { 'run_id': item.id },
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 4px;',
@@ -327,7 +389,7 @@ const ProfilingRunItem = (
     );
 }
 
-function ProfilingRunStatus(/** @type ProfilingRun */ item) {
+const ProfilingRunStatus = (/** @type ProfilingRun */ item) => {
     const attributeMap = {
         Running: { label: 'Running', color: 'blue' },
         Complete: { label: 'Completed', color: '' },
@@ -335,6 +397,7 @@ function ProfilingRunStatus(/** @type ProfilingRun */ item) {
         Cancelled: { label: 'Canceled', color: 'purple' },
     };
     const attributes = attributeMap[item.status] || { label: 'Unknown', color: 'grey' };
+    const hasProgressError = item.progress?.some(({error}) => !!error);
     return span(
         {
             class: 'flex-row',
@@ -342,21 +405,41 @@ function ProfilingRunStatus(/** @type ProfilingRun */ item) {
             'data-testid': 'profiling-run-item-status'
         },
         attributes.label,
-        () => {
-            const tooltipError = van.state(false);
-            return item.status === 'Error' && item.log_message ? i(
-                {
-                    class: 'material-symbols-rounded text-secondary ml-1 profiling-runs--info',
-                    style: 'position: relative; font-size: 16px;',
-                    onmouseenter: () => tooltipError.val = true,
-                    onmouseleave: () => tooltipError.val = false,
-                },
-                'info',
-                Tooltip({ text: item.log_message, show: tooltipError }),
-            ) : null;
-        },
+        item.status === 'Complete' && hasProgressError
+            ? withTooltip(
+                Icon({ style: 'font-size: 18px; margin-left: 4px; vertical-align: middle; color: var(--orange);' }, 'warning' ),
+                { text: ProgressTooltip(item) },
+            )
+            : null,
+        item.status === 'Error' && item.log_message
+            ? withTooltip(
+                Icon({ style: 'font-size: 18px; margin-left: 4px;' }, 'info'),
+                { text: item.log_message, width: 250, style: 'word-break: break-word;' },
+            )
+            : null,
     );
-}
+};
+
+const ProgressTooltip = (/** @type ProfilingRun */ item) => {
+    return div(
+        { class: 'flex-column fx-gap-1' },
+        item.progress?.map(step => {
+            const stepIcon = progressStatusIcons[step.status];
+            return div(
+                { class: 'flex-row fx-gap-1' },
+                Icon(
+                    { style: `font-size: ${stepIcon.size}px; color: var(--${stepIcon.color}); min-width: 24px;` },
+                    stepIcon.icon,
+                ),
+                div(
+                    { class: 'flex-column fx-align-flex-start text-left' },
+                    span(`${step.label}${step.detail ? (': ' + step.detail) : ''}`),
+                    span({ style: 'font-size: 12px; opacity: 0.6; margin-top: 2px;' }, step.error),
+                ),
+            );
+        }),
+    );
+};
 
 const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
@@ -408,7 +491,11 @@ const ConditionalEmptyState = (
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-profiling-runs {
-    min-height: 500px;
+    min-height: 550px;
+}
+
+.tg-profiling-runs--issues {
+    min-width: 310px;
 }
 `);
 

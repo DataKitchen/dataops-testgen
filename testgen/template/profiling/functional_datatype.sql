@@ -590,4 +590,30 @@ WHERE profile_run_id = :PROFILE_RUN_ID
    AND (TRIM(SPLIT_PART(top_patterns, '|', 4)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 2)
    AND (TRIM(SPLIT_PART(top_patterns, '|', 6)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 3);
 
+--- Update column characteristics ---
+
+WITH new_chars AS (
+   SELECT table_groups_id,
+      schema_name,
+      table_name,
+      column_name,
+      general_type,
+      functional_data_type
+   FROM profile_results
+   WHERE table_groups_id = :TABLE_GROUPS_ID
+     AND profile_run_id = :PROFILE_RUN_ID
+)
+UPDATE data_column_chars
+SET general_type = n.general_type,
+  functional_data_type = COALESCE(n.functional_data_type, d.functional_data_type)
+FROM new_chars n
+  INNER JOIN data_column_chars d ON (
+      n.table_groups_id = d.table_groups_id
+      AND n.schema_name = d.schema_name
+      AND n.table_name = d.table_name
+      AND n.column_name = d.column_name
+  )
+WHERE data_column_chars.table_id = d.table_id
+  AND data_column_chars.column_name = d.column_name;
+
 --- END OF QUERY ---

@@ -75,7 +75,7 @@ class DataProfilingPage(Page):
             on_change_handlers={
                 "FilterApplied": on_profiling_runs_filtered,
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
-                "RunProfilingClicked": lambda *_: run_profiling_dialog(project_code, None, table_group_id),
+                "RunProfilingClicked": lambda *_: run_profiling_dialog(project_code, table_group_id, allow_selection=True),
                 "RefreshData": refresh_data,
                 "RunsDeleted": partial(on_delete_runs, project_code, table_group_id),
             },
@@ -122,7 +122,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
 def on_cancel_run(profiling_run: dict) -> None:
     process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
-        ProfilingRun.update_status(profiling_run["profiling_run_id"], "Cancelled")
+        ProfilingRun.cancel_run(profiling_run["id"])
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -171,7 +171,7 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
                     if profiling_run.status == "Running":
                         process_status, _ = process_service.kill_profile_run(to_int(profiling_run.process_id))
                         if process_status:
-                            ProfilingRun.update_status(profiling_run.profiling_run_id, "Cancelled")
+                            ProfilingRun.cancel_run(profiling_run.id)
                 ProfilingRun.cascade_delete(profiling_run_ids)
             st.rerun()
         except Exception:

@@ -31,6 +31,7 @@
  * @property {boolean} connect_by_url
  * @property {string?} url
  * @property {boolean} connect_by_key
+ * @property {boolean} connect_with_identity
  * @property {string?} private_key
  * @property {string?} private_key_passphrase
  * @property {string?} http_path
@@ -105,7 +106,7 @@ const ConnectionForm = (props, saveButton) => {
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
-    const connectionQueryChars = van.state(connection?.max_query_chars ?? 9000);
+    const connectionQueryChars = van.state(connection?.max_query_chars ?? 20000);
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
     const serviceAccountKeyFile = van.state(getValue(props.cachedServiceAccountKeyFile) ?? null);
 
@@ -126,10 +127,11 @@ const ConnectionForm = (props, saveButton) => {
         warehouse: connection?.warehouse ?? '',
         url: connection?.url ?? '',
         service_account_key: connection?.service_account_key ?? '',
+        connect_with_identity: connection?.connect_with_identity ?? false,
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
-        max_query_chars: connectionQueryChars.rawVal ?? 9000,
+        max_query_chars: connectionQueryChars.rawVal ?? 20000,
     });
     const dynamicConnectionUrl = van.state(props.dynamicConnectionUrl?.rawVal ?? '');
 
@@ -335,7 +337,7 @@ const ConnectionForm = (props, saveButton) => {
                     hint: 'Some tests are consolidated into queries for maximum performance. Default values should be retained unless test queries are failing.',
                     value: connectionQueryChars.rawVal,
                     min: 500,
-                    max: 14000,
+                    max: 50000,
                     onChange: (value) => connectionQueryChars.val = value,
                 }),
             ),
@@ -550,7 +552,197 @@ const RedshiftSpectrumForm = RedshiftForm;
 
 const PostgresqlForm = RedshiftForm;
 
-const AzureMSSQLForm = RedshiftForm;
+const AzureMSSQLForm = (
+    connection,
+    flavor,
+    onChange,
+    originalConnection,
+    dynamicConnectionUrl,
+) => {
+    const isValid = van.state(true);
+    const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
+    const connectionHost = van.state(connection.rawVal.project_host ?? '');
+    const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
+    const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
+    const connectionUsername = van.state(connection.rawVal.project_user ?? '');
+    const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
+    const connectionUrl = van.state(connection.rawVal?.url ?? '');
+    const connectWithIdentity = van.state(connection.rawVal?.connect_with_identity ?? '');
+
+    const validityPerField = {};
+
+    van.derive(() => {
+        onChange({
+            project_host: connectionHost.val,
+            project_port: connectionPort.val,
+            project_db: connectionDatabase.val,
+            project_user: connectionUsername.val,
+            project_pw_encrypted: connectionPassword.val,
+            connect_by_url: connectByUrl.val,
+            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
+            connect_by_key: false,
+            connect_with_identity: connectWithIdentity.val,
+        }, isValid.val);
+    });
+
+    van.derive(() => {
+        const newUrlValue = (dynamicConnectionUrl.val ?? '').replace(extractPrefix(dynamicConnectionUrl.rawVal), '');
+        if (!connectByUrl.rawVal) {
+            connectionUrl.val = newUrlValue;
+        }
+    });
+
+    return div(
+        {class: 'flex-column fx-gap-3 fx-flex'},
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+            RadioGroup({
+                label: 'Connect by',
+                options: [
+                    {
+                        label: 'Host',
+                        value: false,
+                    },
+                    {
+                        label: 'URL',
+                        value: true,
+                    },
+                ],
+                value: connectByUrl,
+                onChange: (value) => connectByUrl.val = value,
+                layout: 'inline',
+            }),
+            div(
+                { class: 'flex-row fx-gap-3 fx-flex' },
+                Input({
+                    name: 'db_host',
+                    label: 'Host',
+                    value: connectionHost,
+                    class: 'fx-flex',
+                    disabled: connectByUrl,
+                    onChange: (value, state) => {
+                        connectionHost.val = value;
+                        validityPerField['db_host'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        maxLength(250),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
+                }),
+                Input({
+                    name: 'db_port',
+                    label: 'Port',
+                    value: connectionPort,
+                    type: 'number',
+                    disabled: connectByUrl,
+                    onChange: (value, state) => {
+                        connectionPort.val = value;
+                        validityPerField['db_port'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        minLength(3),
+                        maxLength(5),
+                        requiredIf(() => !connectByUrl.val),
+                    ],
+                })
+            ),
+            Input({
+                name: 'db_name',
+                label: 'Database',
+                value: connectionDatabase,
+                disabled: connectByUrl,
+                onChange: (value, state) => {
+                    connectionDatabase.val = value;
+                    validityPerField['db_name'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                validators: [
+                    maxLength(100),
+                    requiredIf(() => !connectByUrl.val),
+                ],
+            }),
+            () => div(
+                { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
+                Input({
+                    label: 'URL',
+                    value: connectionUrl,
+                    class: 'fx-flex',
+                    name: 'url_suffix',
+                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
+                    disabled: !connectByUrl.val,
+                    onChange: (value, state) => {
+                        connectionUrl.val = value;
+                        validityPerField['url_suffix'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        requiredIf(() => connectByUrl.val),
+                    ],
+                }),
+            ),
+        ),
+
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({content: 'Authentication', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+
+            RadioGroup({
+                label: 'Connection Strategy',
+                options: [
+                    {label: 'Connect By Password', value: false},
+                    {label: 'Connect with Managed Identity', value: true},
+                ],
+                value: connectWithIdentity,
+                onChange: (value) => connectWithIdentity.val = value,
+                layout: 'inline',
+            }),
+
+            () => {
+                const _connectWithIdentity = connectWithIdentity.val;
+                if (_connectWithIdentity) {
+                    return div(
+                        {class: 'flex-row p-4 fx-justify-center text-secondary'},
+                        'Microsoft Entra ID credentials configured on host machine will be used',
+                    );
+                }
+
+                return div(
+                    {class: 'flex-column fx-gap-1'},
+                    Input({
+                        name: 'db_user',
+                        label: 'Username',
+                        value: connectionUsername,
+                        onChange: (value, state) => {
+                            connectionUsername.val = value;
+                            validityPerField['db_user'] = state.valid;
+                            isValid.val = Object.values(validityPerField).every(v => v);
+                        },
+                        validators: [
+                            requiredIf(() => !connectWithIdentity.val),
+                            maxLength(50),
+                        ],
+                    }),
+                    Input({
+                        name: 'password',
+                        label: 'Password',
+                        value: connectionPassword,
+                        type: 'password',
+                        passwordSuggestions: false,
+                        placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
+                        onChange: (value, state) => {
+                            connectionPassword.val = value;
+                            validityPerField['password'] = state.valid;
+                            isValid.val = Object.values(validityPerField).every(v => v);
+                        },
+                    }),
+                )
+            },
+        ),
+    );
+};
 
 const SynapseMSSQLForm = RedshiftForm;
 
@@ -1110,11 +1302,19 @@ const BigqueryForm = (
 };
 
 function extractPrefix(url) {
-    const parts = (url ?? '').split('@');
-    if (!parts[0]) {
+    if (!url) {
         return '';
     }
-    return `${parts[0]}@`;
+
+    if (url.includes('@')) {
+        const parts = url.split('@');
+        if (!parts[0]) {
+            return '';
+        }
+        return `${parts[0]}@`;
+    }
+
+    return url.slice(0, url.indexOf('://') + 3);
 }
 
 function shouldRefreshUrl(previous, current) {
@@ -1122,7 +1322,7 @@ function shouldRefreshUrl(previous, current) {
         return false;
     }
 
-    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse'];
+    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse', 'connect_with_identity'];
     return fields.some((fieldName) => previous[fieldName] !== current[fieldName]);
 }
 

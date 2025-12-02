@@ -22,6 +22,8 @@ class ConnectionParams(TypedDict):
     private_key_passphrase: bytes
     http_path: str
     service_account_key: dict[str,Any]
+    connect_with_identity: bool
+    sql_flavor_code: str
 
 class FlavorService:
 
@@ -49,6 +51,8 @@ class FlavorService:
         self.catalog = connection_params.get("catalog") or ""
         self.warehouse = connection_params.get("warehouse") or ""
         self.service_account_key = connection_params.get("service_account_key", None)
+        self.connect_with_identity = connection_params.get("connect_with_identity") or False
+        self.sql_flavor_code = connection_params.get("sql_flavor_code") or self.flavor
 
         password = connection_params.get("project_pw_encrypted", None)
         if isinstance(password, memoryview) or isinstance(password, bytes):

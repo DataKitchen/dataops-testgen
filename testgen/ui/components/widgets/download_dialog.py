@@ -1,5 +1,6 @@
 import tempfile
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from io import BytesIO
 from typing import TypedDict
 from zipfile import ZipFile
@@ -54,7 +55,11 @@ def get_excel_file_data(
             
             # Timestamp
             worksheet.write("A3", "Exported on", details_key_format)
-            worksheet.write("B3", date_service.get_timezoned_now(st.session_state), details_value_format)
+            worksheet.write(
+                "B3",
+                date_service.get_timezoned_timestamp(st.session_state, datetime.utcnow()),
+                details_value_format,
+            )
 
             # Details
             if details:

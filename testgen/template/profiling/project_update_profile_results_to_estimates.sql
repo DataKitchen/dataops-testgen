@@ -24,8 +24,8 @@ set sample_ratio = :PROFILE_SAMPLE_RATIO,
     future_date_ct = ROUND(future_date_ct * :PROFILE_SAMPLE_RATIO, 0),
     boolean_true_ct = ROUND(boolean_true_ct * :PROFILE_SAMPLE_RATIO, 0)
 where profile_run_id = :PROFILE_RUN_ID
-and schema_name = TRIM(SPLIT_PART(:SAMPLING_TABLE, '.', 1), :QUOTE)
-and table_name = TRIM(SPLIT_PART(:SAMPLING_TABLE, '.', 2), :QUOTE)
+and schema_name = :DATA_SCHEMA
+and table_name = :SAMPLING_TABLE
 and sample_ratio IS NULL;
 
 
