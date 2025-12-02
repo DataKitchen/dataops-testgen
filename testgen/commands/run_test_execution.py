@@ -95,7 +95,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             test_run.set_progress(
                 "validation",
                 "Warning" if invalid_count else "Completed",
-                error=f"{invalid_count} test{'s' if invalid_count > 1 else ''} had errors" if invalid_count else None,
+                error=f"{invalid_count} test{'s' if invalid_count > 1 else ''} had errors. See details in results." if invalid_count else None,
             )
 
             if valid_test_defs:
@@ -118,6 +118,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
                         run_functions[run_type](run_test_defs)
                     else:
+                        test_run.set_progress(run_type, "Completed")
                         LOG.info(f"No {run_type} tests to run")
             else:
                 LOG.info("No valid tests to run")
@@ -174,7 +175,7 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
             run_type,
             "Running",
             detail=f"{progress['processed']} of {progress['total']}",
-            error=f"{progress['errors']} test{'s' if progress['errors'] > 1 else ''} had errors"
+            error=f"{progress['errors']} test{'s' if progress['errors'] > 1 else ''} had errors. See details in results."
             if progress["errors"]
             else None,
         )
@@ -299,7 +300,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
     test_run.set_progress(
         "CAT",
         "Warning" if error_count else "Completed",
-        error=f"{error_count} test{'s' if error_count > 1 else ''} had errors"
+        error=f"{error_count} test{'s' if error_count > 1 else ''} had errors. See details in results."
         if error_count
         else None,
     )
