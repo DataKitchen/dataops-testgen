@@ -245,8 +245,8 @@ class TestRun(Entity):
         cls.clear_cache()
 
     @classmethod
-    def update_status(cls, run_id: str | UUID, status: TestRunStatus) -> None:
-        query = update(cls).where(cls.id == run_id).values(status=status)
+    def cancel_run(cls, run_id: str | UUID) -> None:
+        query = update(cls).where(cls.id == run_id).values(status="Cancelled", test_endtime=datetime.now(UTC))
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()

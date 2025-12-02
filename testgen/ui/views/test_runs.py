@@ -133,7 +133,7 @@ class TestRunScheduleDialog(ScheduleDialog):
 def on_cancel_run(test_run: dict) -> None:
     process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
-        TestRun.update_status(test_run["test_run_id"], "Cancelled")
+        TestRun.cancel_run(test_run["test_run_id"])
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -181,7 +181,7 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
                     if test_run.status == "Running":
                         process_status, _ = process_service.kill_test_run(to_int(test_run.process_id))
                         if process_status:
-                            TestRun.update_status(test_run.test_run_id, "Cancelled")
+                            TestRun.cancel_run(test_run.test_run_id)
                 TestRun.cascade_delete(test_run_ids)
             st.rerun()
         except Exception:

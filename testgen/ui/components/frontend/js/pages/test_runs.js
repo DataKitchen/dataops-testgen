@@ -325,7 +325,7 @@ const TestRunItem = (
                 )
                 : div(
                     { class: 'text-caption mt-1' },
-                    runningStep 
+                    item.status === 'Running' && runningStep 
                         ? [
                             div(
                                 runningStep.label,
