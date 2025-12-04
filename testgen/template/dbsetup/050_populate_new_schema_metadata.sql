@@ -23,7 +23,8 @@ VALUES  ('Monitor', 'Recency'),
         ('Monitor', 'Daily_Record_Ct'),
         ('Monitor', 'Monthly_Rec_Ct'),
         ('Monitor', 'Weekly_Rec_Ct'),
-        ('Monitor', 'Table_Freshness');
+        ('Monitor', 'Table_Freshness'),
+        ('Monitor', 'Schema_Drift');
 
 
 TRUNCATE TABLE test_templates;

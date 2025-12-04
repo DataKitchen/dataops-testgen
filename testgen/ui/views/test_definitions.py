@@ -297,7 +297,7 @@ def render_selected_details(selected_test: dict, table_group: TableGroupMinimal)
         "export_to_observability",
     ]
 
-    additional_columns = [val.strip() for val in selected_test["default_parm_columns"].split(",")]
+    additional_columns = [val.strip() for val in selected_test["default_parm_columns"].split(",")] if selected_test["default_parm_columns"] else []
     columns = columns + additional_columns
     labels = labels + additional_columns
     labels = list(map(snake_case_to_title_case, labels))
@@ -391,7 +391,7 @@ def show_test_form(
 
     # run type
     run_type = selected_test_type_row["run_type"]  # Can be "QUERY" or "CAT"
-    test_scope = selected_test_type_row["test_scope"]  # Can be "column", "table", "referential", "custom"
+    test_scope = selected_test_type_row["test_scope"]  # Can be "column", "table", "referential", "custom", "tablegroup"
 
     # test_description
     test_description = empty_if_null(selected_test_def["test_description"]) if mode == "edit" else ""
@@ -475,7 +475,7 @@ def show_test_form(
     export_to_observability_index = export_to_observability_options.index(export_to_observability)
 
     # dynamic attributes
-    dynamic_attributes_raw = selected_test_type_row["default_parm_columns"]
+    dynamic_attributes_raw = selected_test_type_row["default_parm_columns"] or ""
     dynamic_attributes = dynamic_attributes_raw.split(",")
 
     dynamic_attributes_labels_raw = selected_test_type_row["default_parm_prompts"]
@@ -617,14 +617,15 @@ def show_test_form(
     has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
     left_column, right_column = st.columns([0.5, 0.5]) if has_match_attributes else (st.container(), None)
 
-    # schema_name
     test_definition["schema_name"] = left_column.text_input(
-        label="Schema", max_chars=100, value=schema_name, disabled=True
-    )
+            label="Schema", max_chars=100, value=schema_name, disabled=True
+        )
 
     # table_name
     table_column_list = get_columns(table_groups_id)
-    if test_scope == "custom":
+    if test_scope == "tablegroup":
+        test_definition["table_name"] = None
+    elif test_scope == "custom":
         test_definition["table_name"] = left_column.text_input(
             label="Table", max_chars=100, value=table_name, disabled=False
         )
@@ -643,7 +644,7 @@ def show_test_form(
         )
 
     column_name_label = None
-    if test_scope == "table":
+    if test_scope in ("table", "tablegroup"):
         test_definition["column_name"] = None
     elif test_scope in ("referential", "custom"):
         column_name_label = selected_test_type_row["column_name_prompt"] if selected_test_type_row["column_name_prompt"] else "Test Focus"
@@ -670,7 +671,7 @@ def show_test_form(
     leftover_attributes = dynamic_attributes.copy()
 
     def render_dynamic_attribute(attribute: str, container: DeltaGenerator):
-        if not attribute in dynamic_attributes:
+        if not attribute in dynamic_attributes or not attribute:
             return
 
         choice_fields = {
@@ -762,7 +763,8 @@ def show_test_form(
         for attribute in ["match_schema_name", "match_table_name", "match_column_names"]:
             render_dynamic_attribute(attribute, right_column)
 
-    st.divider()
+    if test_scope != "tablegroup":
+        st.divider()
 
     mid_left_column, mid_right_column = st.columns([0.5, 0.5])
 
@@ -954,11 +956,19 @@ def prompt_for_test_type():
     col0, col1, col2, col3, col4, col5 = st.columns([0.1, 0.2, 0.2, 0.2, 0.2, 0.1])
     col0.write("Show Types")
 
+    include_referential=col1.checkbox(":green[⧉] Referential", True),
+    include_table=col2.checkbox(":green[⊞] Table", True),
+    include_column=col3.checkbox(":green[≣] Column", True),
+    include_custom=col4.checkbox(":green[⛭] Custom", True),
+    # always exclude tablegroup scopes from showing
+    include_all = not any(include_referential, include_table, include_column, include_custom)
+
     df = run_test_type_lookup_query(
-        include_referential=col1.checkbox(":green[⧉] Referential", True),
-        include_table=col2.checkbox(":green[⊞] Table", True),
-        include_column=col3.checkbox(":green[≣] Column", True),
-        include_custom=col4.checkbox(":green[⛭] Custom", True),
+        include_referential=include_referential or include_all,
+        include_table=include_table or include_all,
+        include_column=include_column or include_all,
+        include_custom=include_custom or include_all,
+        include_tablegroup=False,
     )
     lst_choices = df["select_name"].tolist()
 
@@ -1089,12 +1099,14 @@ def run_test_type_lookup_query(
     include_table: bool = True,
     include_column: bool = True,
     include_custom: bool = True,
+    include_tablegroup: bool = True,
 ) -> pd.DataFrame:
     scope_map = {
         "referential": include_referential,
         "table": include_table,
         "column": include_column,
         "custom": include_custom,
+        "tablegroup": include_tablegroup,
     }
     scopes = [ key for key, include in scope_map.items() if include ]
 
@@ -1112,6 +1124,7 @@ def run_test_type_lookup_query(
             WHEN 'custom' THEN '⛭ '
             WHEN 'table' THEN '⊞ '
             WHEN 'column' THEN '≣ '
+            WHEN 'tablegroup' THEN '▦ '
             ELSE '? '
         END
         || tt.test_name_short
@@ -1131,7 +1144,8 @@ def run_test_type_lookup_query(
             WHEN 'custom' THEN 2
             WHEN 'table' THEN 3
             WHEN 'column' THEN 4
-            ELSE 5
+            WHEN 'tablegroup' THEN 5
+            ELSE 6
         END,
         tt.test_name_short;
     """
@@ -1165,7 +1179,7 @@ def get_test_definitions(
         clauses.append(TestDefinition.column_name.ilike(column_name))
     if test_type:
         clauses.append(TestDefinition.test_type == test_type)
-    
+
     sort_funcs = {"ASC": asc, "DESC": desc}
     test_definitions = TestDefinition.select_where(
         *clauses,
@@ -1203,7 +1217,7 @@ def get_test_definitions_collision(
     target_table_group_id: str,
     target_test_suite_id: str,
 ) -> pd.DataFrame:
-    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None]
+    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
     column_tests = [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,

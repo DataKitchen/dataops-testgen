@@ -275,8 +275,7 @@ class TestRun(Entity):
             "validation": {"label": "Validating test definitions"},
             "QUERY": {"label": "Running query tests"},
             "CAT": {"label": "Running aggregated tests"},
-            # TODO: TURN ON WHEN ADDING METADATA TESTS
-            # "METADATA": {"label": "Running metadata tests"},
+            "METADATA": {"label": "Running metadata tests"},
         }
         for key in self._progress:
             self._progress[key].update({"key": key, "status": "Pending"})
