@@ -1,4 +1,5 @@
 import json
+import typing
 from datetime import datetime
 from functools import partial
 from io import BytesIO
@@ -13,7 +14,14 @@ from testgen.commands.run_refresh_score_cards_results import (
 )
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.models.scores import ScoreCategory, ScoreDefinition, ScoreDefinitionCriteria, SelectedIssue
+from testgen.common.models.scores import (
+    Categories,
+    ScoreCategory,
+    ScoreDefinition,
+    ScoreDefinitionCriteria,
+    ScoreTypes,
+    SelectedIssue,
+)
 from testgen.common.models.test_run import TestRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -46,7 +54,7 @@ class ScoreExplorerPage(Page):
         category: str | None = None,
         filters: str | None = None,
         breakdown_category: str | None = None,
-        breakdown_score_type: str | None = "score",
+        breakdown_score_type: str | None = None,
         drilldown: str | None = None,
         definition_id: str | None = None,
         project_code: str | None = None,
@@ -65,19 +73,14 @@ class ScoreExplorerPage(Page):
                 )
                 return
 
-            if not breakdown_category and original_score_definition.category:
-                breakdown_category = original_score_definition.category.value
-
             project_code = original_score_definition.project_code
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
+
         testgen.page_header(page_title, breadcrumbs=[
             {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
             {"label": last_breadcrumb},
         ])
-
-        if not breakdown_category:
-            breakdown_category = ScoreCategory.dq_dimension.value
 
         score_breakdown = None
         issues = None
@@ -117,9 +120,21 @@ class ScoreExplorerPage(Page):
                         group_by_field=filter_by_columns != "true",
                     )
 
-            score_card = None
-            if score_definition:
-                score_card = score_definition.as_score_card()
+            score_card = score_definition.as_score_card()
+
+            if not breakdown_category or breakdown_category not in typing.get_args(Categories):
+                breakdown_category = (
+                    score_definition.category.value
+                    if score_definition.category 
+                    else ScoreCategory.dq_dimension.value
+                )
+
+            if not breakdown_score_type or breakdown_score_type not in typing.get_args(ScoreTypes):
+                breakdown_score_type = (
+                    "cde_score"
+                    if score_definition.cde_score and not score_definition.total_score
+                    else "score"
+                )
 
             if score_definition.criteria.has_filters() and not drilldown:
                 score_breakdown = format_score_card_breakdown(
@@ -129,7 +144,7 @@ class ScoreExplorerPage(Page):
                     ),
                     breakdown_category,
                 )
-            if score_card and drilldown:
+            if drilldown:
                 issues = format_score_card_issues(
                     score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
                     breakdown_category,
