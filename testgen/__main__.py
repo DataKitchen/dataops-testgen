@@ -385,7 +385,7 @@ def quick_start(
     test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    message = run_profiling(table_group_id, run_date=now_date + time_delta) 
+    message = run_profiling(table_group_id, run_date=now_date + time_delta)
     click.echo("\n" + message)
 
     LOG.info(f"run-test-generation with table_group_id: {table_group_id} test_suite: {settings.DEFAULT_TEST_SUITE_KEY}")
@@ -640,8 +640,6 @@ def list_ui_plugins():
 def run_ui():
     from testgen.ui.scripts import patch_streamlit
 
-    status_code: int = -1
-
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
     patch_streamlit.patch(force=True)
@@ -656,25 +654,29 @@ def run_ui():
 
     cancel_all_running()
 
-    try:
-        app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
-        status_code = subprocess.check_call(
-            [  # noqa: S607
-                "streamlit",
-                "run",
-                app_file,
-                "--browser.gatherUsageStats=false",
-                "--client.showErrorDetails=none",
-                "--client.toolbarMode=minimal",
-                f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
-                f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
-                "--",
-                f"{'--debug' if settings.IS_DEBUG else ''}",
-            ],
-            env={**os.environ, "TG_JOB_SOURCE": "UI"}
-        )
-    except Exception:
-        LOG.exception(f"Testgen UI exited with status code {status_code}")
+    app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
+    process= subprocess.Popen(
+        [  # noqa: S607
+            "streamlit",
+            "run",
+            app_file,
+            "--browser.gatherUsageStats=false",
+            "--client.showErrorDetails=none",
+            "--client.toolbarMode=minimal",
+            f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
+            f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
+            "--",
+            f"{'--debug' if settings.IS_DEBUG else ''}",
+        ],
+        env={**os.environ, "TG_JOB_SOURCE": "UI"}
+    )
+    def term_ui(signum, _):
+        LOG.info(f"Sending termination signal {signum} to Testgen UI")
+        process.send_signal(signum)
+    signal.signal(signal.SIGINT, term_ui)
+    signal.signal(signal.SIGTERM, term_ui)
+    status_code = process.wait()
+    LOG.log(logging.ERROR if status_code != 0 else logging.INFO, f"Testgen UI exited with status code {status_code}")
 
 
 @cli.command("run-app", help="Runs TestGen's application modules")
