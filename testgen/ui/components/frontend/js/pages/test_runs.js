@@ -1,6 +1,5 @@
 /**
- * @import { ProjectSummary } from '../types.js';
- * @import { SelectOption } from '../components/select.js';
+ * @import { FilterOption, ProjectSummary } from '../types.js';
  * 
  * @typedef ProgressStep
  * @type {object}
@@ -37,8 +36,8 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {TestRun[]} test_runs
- * @property {SelectOption[]} table_group_options
- * @property {SelectOption[]} test_suite_options
+ * @property {FilterOption[]} table_group_options
+ * @property {FilterOption[]} test_suite_options
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';

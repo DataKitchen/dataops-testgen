@@ -1,7 +1,6 @@
 /**
- * @import { ProjectSummary } from '../types.js';
+ * @import { FilterOption, ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
- * @import { SelectOption } from '../components/select.js';
  *
  * @typedef Permissions
  * @type {object}
@@ -11,7 +10,7 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {TestSuiteSummary} test_suites
- * @property {SelectOption[]} table_group_filter_options
+ * @property {FilterOption[]} table_group_filter_options
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';

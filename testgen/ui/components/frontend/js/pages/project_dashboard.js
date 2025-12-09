@@ -1,5 +1,5 @@
 /**
- * @import { ProjectSummary } from '../types.js';
+ * @import { FilterOption, ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
  * 
  * @typedef TableGroupSummary
