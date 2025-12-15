@@ -66,14 +66,19 @@ class ScoreDetailsPage(Page):
             ],
         )
 
-        if category not in typing.get_args(Categories):
-            category = None
+        if not category or category not in typing.get_args(Categories):
+            category = (
+                score_definition.category.value
+                if score_definition.category 
+                else ScoreCategory.dq_dimension.value
+            )
 
-        if not category and score_definition.category:
-            category = score_definition.category.value
-
-        if not category:
-            category = ScoreCategory.dq_dimension.value
+        if not score_type or score_type not in typing.get_args(ScoreTypes):
+            score_type = (
+                "cde_score"
+                if score_definition.cde_score and not score_definition.total_score
+                else "score"
+            )
 
         score_card = None
         score_breakdown = None
@@ -81,10 +86,6 @@ class ScoreDetailsPage(Page):
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
             user_can_edit = session.auth.user_has_permission("edit")
             score_card = format_score_card(score_definition.as_cached_score_card(include_definition=True))
-            if score_type not in typing.get_args(ScoreTypes):
-                score_type = None
-            if not score_type:
-                score_type = "cde_score" if score_card["cde_score"] and not score_card["score"] else "score"
             if not drilldown:
                 score_breakdown = ScoreDefinitionBreakdownItem.filter(
                     definition_id=definition_id,

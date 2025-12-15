@@ -6,7 +6,7 @@ from uuid import UUID
 
 from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns
-from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.database.database_service import get_flavor_service, get_tg_schema, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
@@ -107,7 +107,7 @@ class TestExecutionSQL:
             "TEST_SUITE_ID": self.test_run.test_suite_id,
             "TEST_RUN_ID": self.test_run.id,
             "RUN_DATE": self.run_date,
-            "SQL_FLAVOR": self.flavor,         
+            "SQL_FLAVOR": self.flavor,
             "VARCHAR_TYPE": self.flavor_service.varchar_type,
             "QUOTE": quote,
         }
@@ -116,7 +116,9 @@ class TestExecutionSQL:
             params.update({
                 "TEST_TYPE": test_def.test_type,
                 "TEST_DEFINITION_ID": test_def.id,
+                "APP_SCHEMA_NAME": get_tg_schema(),
                 "SCHEMA_NAME": test_def.schema_name,
+                "TABLE_GROUPS_ID": self.table_group.id,
                 "TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
@@ -146,7 +148,7 @@ class TestExecutionSQL:
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
                 "CUSTOM_QUERY": test_def.custom_query,
                 "COLUMN_TYPE": test_def.column_type,
-                "INPUT_PARAMETERS": self._get_input_parameters(test_def),                
+                "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
         return params
 
@@ -169,11 +171,11 @@ class TestExecutionSQL:
             query = query.replace(":", "\\:")
 
         return query, None if no_bind else params
-    
+
     def get_active_test_definitions(self) -> tuple[dict]:
         # Runs on App database
         return self._get_query("get_active_test_definitions.sql")
-    
+
     def get_target_identifiers(self, schemas: Iterable[str]) -> tuple[str, dict]:
         # Runs on Target database
         filename = "get_target_identifiers.sql"
@@ -185,7 +187,7 @@ class TestExecutionSQL:
             return self._get_query(filename, f"flavors/{self.connection.sql_flavor}/validate_tests", extra_params=params)
         except ModuleNotFoundError:
             return self._get_query(filename, "flavors/generic/validate_tests", extra_params=params)
-        
+
     def get_test_errors(self, test_defs: list[TestExecutionDef]) -> list[list[UUID | str | datetime]]:
         return [
             [
@@ -205,15 +207,15 @@ class TestExecutionSQL:
                 None, # No result_measure on errors
             ] for td in test_defs if td.errors
         ]
-    
+
     def disable_invalid_test_definitions(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("disable_invalid_test_definitions.sql")
-    
+
     def update_historic_thresholds(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("update_historic_thresholds.sql")
-    
+
     def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict]:
         # Runs on Target database
         folder = "generic" if test_def.template_name.endswith("_generic.sql") else self.flavor
@@ -225,7 +227,7 @@ class TestExecutionSQL:
             extra_params={"DATA_SCHEMA": test_def.schema_name},
             test_def=test_def,
         )
-    
+
     def aggregate_cat_tests(
         self,
         test_defs: list[TestExecutionDef],
@@ -265,7 +267,7 @@ class TestExecutionSQL:
 
             aggregate_queries.append((query, None))
             aggregate_test_defs.append(test_defs)
-        
+
         if single:
             for td in test_defs:
                 # Add separate query for each test
@@ -296,9 +298,9 @@ class TestExecutionSQL:
                     current_test_defs.append(td)
 
                 add_query(current_test_defs)
-    
+
         return aggregate_queries, aggregate_test_defs
-    
+
     def get_cat_test_results(
         self,
         aggregate_results: list[AggregateResult],
@@ -309,7 +311,7 @@ class TestExecutionSQL:
             test_defs = aggregate_test_defs[result["query_index"]]
             result_measures = result["result_measures"].split("|")
             result_codes = result["result_codes"].split(",")
-            
+
             for index, td in enumerate(test_defs):
                 test_results.append([
                     self.test_run.id,
@@ -329,7 +331,7 @@ class TestExecutionSQL:
                 ])
 
         return test_results
-    
+
     def update_test_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
         return [

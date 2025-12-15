@@ -454,11 +454,15 @@ def show_test_def_detail(test_definition_id: str, test_suite: TestSuiteMinimal):
             dynamic_attributes_labels_raw = ""
         dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
-        dynamic_attributes_raw = test_definition.default_parm_columns
-        dynamic_attributes_fields = dynamic_attributes_raw.split(",")
-        dynamic_attributes_values = attrgetter(*dynamic_attributes_fields)(test_definition)\
-            if len(dynamic_attributes_fields) > 1\
-            else (getattr(test_definition, dynamic_attributes_fields[0]),)
+        dynamic_attributes_raw = test_definition.default_parm_columns or ""
+        if not dynamic_attributes_raw:
+            dynamic_attributes_fields = []
+            dynamic_attributes_values = []
+        else:
+            dynamic_attributes_fields = dynamic_attributes_raw.split(",")
+            dynamic_attributes_values = attrgetter(*dynamic_attributes_fields)(test_definition)\
+                if len(dynamic_attributes_fields) > 1\
+                else (getattr(test_definition, dynamic_attributes_fields[0]),)
 
         for field_name in dynamic_attributes_fields[len(dynamic_attributes_labels):]:
             dynamic_attributes_labels.append(snake_case_to_title_case(field_name))

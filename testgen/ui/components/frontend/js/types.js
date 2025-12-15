@@ -1,4 +1,10 @@
 /**
+ * @typedef FilterOption
+ * @type {object}
+ * @property {string} label
+ * @property {string} value
+ * @property {boolean} selected
+ * 
  * @typedef ProjectSummary
  * @type {object}
  * @property {string} project_code

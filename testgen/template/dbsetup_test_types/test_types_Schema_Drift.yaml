@@ -1,0 +1,63 @@
+test_types:
+  id: '1512'
+  test_type: Schema_Drift
+  test_name_short: Schema Drift
+  test_name_long: Table Schema Changed
+  test_description: |-
+    Checks whether table schema has changed
+  except_message: |-
+    Table schema has changed.
+  measure_uom: Was Schema Change Detected
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: null
+  default_parm_values: null
+  default_parm_prompts: null
+  default_parm_help: null
+  default_severity: Warning
+  run_type: METADATA
+  test_scope: tablegroup
+  dq_dimension: null
+  health_dimension: null
+  threshold_description: null
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"No Changes","1":"Changes"}}}'
+  usage_notes: |-
+    This test compares the current table column types with previous data, to check whether the table schema has changed. This test allows you to track any changes to the table structure.
+  active: N
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2514'
+    test_type: Schema_Drift
+    sql_flavor: bigquery
+    template_name: ex_schema_drift_generic.sql
+  - id: '2414'
+    test_type: Schema_Drift
+    sql_flavor: databricks
+    template_name: ex_schema_drift_generic.sql
+  - id: '2214'
+    test_type: Schema_Drift
+    sql_flavor: mssql
+    template_name: ex_schema_drift_generic.sql
+  - id: '2314'
+    test_type: Schema_Drift
+    sql_flavor: postgresql
+    template_name: ex_schema_drift_generic.sql
+  - id: '2014'
+    test_type: Schema_Drift
+    sql_flavor: redshift
+    template_name: ex_schema_drift_generic.sql
+  - id: '2614'
+    test_type: Schema_Drift
+    sql_flavor: redshift_spectrum
+    template_name: ex_schema_drift_generic.sql
+  - id: '2114'
+    test_type: Schema_Drift
+    sql_flavor: snowflake
+    template_name: ex_schema_drift_generic.sql
