@@ -14,6 +14,12 @@ class BaseNotificationTemplate(BaseEmailTemplate):
     def truncate_helper(self, length: int, text: str):
         return text if len(text) <= length else f"{text[:length-1]}…"
 
+    def get_main_content_template(self) -> str:
+        raise NotImplementedError
+
+    def get_extra_css_template(self) -> str:
+        return ""
+
     def get_body_template(self) -> str:
         return """
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
@@ -165,6 +171,8 @@ class BaseNotificationTemplate(BaseEmailTemplate):
     .footer__padding {
       height: 32px;
     }
+
+    {{>extra_css}}
 
     @media screen and (max-width: 600px) {
       .background__cell {

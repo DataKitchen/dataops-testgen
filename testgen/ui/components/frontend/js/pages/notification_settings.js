@@ -3,7 +3,9 @@
  *
  * @typedef NotificationItem
  * @type {object}
- * @property {String} scope
+ * @property {String?} scope
+ * @property {String?} total_score_threshold
+ * @property {String?} cde_score_threshold
  * @property {string[]} recipients
  * @property {string} trigger
  * @property {boolean} enabled
@@ -19,11 +21,14 @@
  *
  * @typedef Properties
  * @type {object}
+ * @property {String} event
  * @property {NotificationItem[]} items
  * @property {Permissions} permissions
  * @property {String} scope_label
  * @property {import('../components/select.js').Option[]} scope_options
  * @property {import('../components/select.js').Option[]} trigger_options
+ * @property {Boolean} cde_enabled;
+ * @property {Boolean} total_enabled;
  * @property {Result?} result
  */
 import van from '../van.min.js';
@@ -36,6 +41,8 @@ import { Alert } from '../components/alert.js';
 import { Textarea } from '../components/textarea.js';
 import { Icon } from '../components/icon.js';
 import { TruncatedText } from '../components/truncated_text.js';
+import { Input } from "../components/input.js";
+import { numberBetween } from "../form_validators.js";
 
 const minHeight = 500;
 const { div, span, i } = van.tags;
@@ -50,6 +57,9 @@ const NotificationSettings = (/** @type Properties */ props) => {
         return items;
     });
 
+    const event = getValue(props.event);
+    const cdeScoreEnabled = getValue(props.cde_enabled);
+    const totalScoreEnabled = getValue(props.total_enabled);
     const scopeOptions = getValue(props.scope_options);
 
     const scopeLabel = (scope) => {
@@ -68,7 +78,9 @@ const NotificationSettings = (/** @type Properties */ props) => {
         id: van.state(null),
         scope: van.state(null),
         recipientsString: van.state(''),
-        trigger: van.state(triggerOptions[0][0]),
+        trigger: van.state(triggerOptions ? triggerOptions[0][0] : null),
+        totalScoreThreshold: van.state(0),
+        cdeScoreThreshold: van.state(0),
         isEdit: van.state(false),
     };
 
@@ -76,7 +88,9 @@ const NotificationSettings = (/** @type Properties */ props) => {
         newNotificationItemForm.id.val = null ;
         newNotificationItemForm.scope.val = null;
         newNotificationItemForm.recipientsString.val = '';
-        newNotificationItemForm.trigger.val = triggerOptions[0][0];
+        newNotificationItemForm.trigger.val = triggerOptions ? triggerOptions[0][0]: null;
+        newNotificationItemForm.totalScoreThreshold.val = 0;
+        newNotificationItemForm.cdeScoreThreshold.val = 0;
         newNotificationItemForm.isEdit.val = false;
     }
 
@@ -88,22 +102,37 @@ const NotificationSettings = (/** @type Properties */ props) => {
 
     const NotificationItem = (
         /** @type NotificationItem */ item,
-        /** @type string[] */ columns,
+        /** @type number[] */ columns,
         /** @type Permissions */ permissions,
     ) => {
         return div(
             { class: () => `table-row flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
-            div(
-                { style: `flex: ${columns[0]}` },
-                div(scopeLabel(item.scope)),
-                div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+            ...(event === 'score_drop'
+                ? [
+                    div(
+                        { style: `flex: ${columns[0] / 2}%`, class: 'score-threshold' },
+                        'Total:',
+                        span(totalScoreEnabled ? item.total_score_threshold.padStart(6, ' ') : '    --'),
+                    ),
+                    div(
+                        { style: `flex: ${columns[0] / 2}%`, class: 'score-threshold' },
+                        'CDE:',
+                        span(cdeScoreEnabled ? item.cde_score_threshold.padStart(6, ' ') : '    --'),
+                    ),
+                ] : [
+                    div(
+                        { style: `flex: ${columns[0]}%` },
+                        div(scopeLabel(item.scope)),
+                        div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+                    ),
+                ]
             ),
             div(
-                { style: `flex: ${columns[1]}` },
+                { style: `flex: ${columns[1]}%` },
                 TruncatedText({ max: 6 }, ...item.recipients),
             ),
             div(
-                { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}` },
+                { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
                 permissions.can_edit
                 ? (newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id
                 ? div(
@@ -133,11 +162,16 @@ const NotificationSettings = (/** @type Properties */ props) => {
                         tooltip: 'Edit notification',
                         style: 'height: 32px;',
                         onclick: () => {
+                            newNotificationItemForm.isEdit.val = true;
                             newNotificationItemForm.id.val = item.id;
                             newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
-                            newNotificationItemForm.scope.val = item.scope;
-                            newNotificationItemForm.trigger.val = item.trigger;
-                            newNotificationItemForm.isEdit.val = true;
+                            if (event === 'score_drop') {
+                                newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
+                                newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
+                            } else {
+                                newNotificationItemForm.scope.val = item.scope;
+                                newNotificationItemForm.trigger.val = item.trigger;
+                            }
                         },
                     }),
                     Button({
@@ -153,7 +187,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         );
     }
 
-    const columns = ['30%', '50%', '20%'];
+    const columns = [30, 50, 20];
     const domId = 'notifications-table';
 
     return div(
@@ -170,24 +204,49 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 { class: 'flex-row fx-gap-4 fx-align-flex-start' },
                 div(
                     { class: 'flex-column fx-gap-2', style: 'flex: 40%' },
-                    () => Select({
-                        label: getValue(props.scope_label),
-                        options: scopeOptions.map(([value, label]) => ({
-                            label: label, value: value
-                        })),
-                        value: newNotificationItemForm.scope,
-                        onChange: (value) => newNotificationItemForm.scope.val = value,
-                        portalClass: 'short-select-portal',
-                    }),
-                    () => Select({
-                        label: 'When',
-                        options: triggerOptions.map(([value, label]) => ({
-                            label: label, value: value
-                        })),
-                        value: newNotificationItemForm.trigger,
-                        onChange: (value) => newNotificationItemForm.trigger.val = value,
-                        portalClass: 'short-select-portal',
-                    }),
+                    ...(event === 'score_drop' ? [
+                        () => Input({
+                            label: 'Total Score Threshold',
+                            value: newNotificationItemForm.totalScoreThreshold,
+                            type: 'number',
+                            step: 0.1,
+                            onChange: (value) => newNotificationItemForm.totalScoreThreshold.val = value,
+                            disabled: ! totalScoreEnabled,
+                            validators: [
+                                numberBetween(0, 100, 1),
+                            ],
+                        }),
+                        () => Input({
+                            label: 'CDE Score Threshold',
+                            value: newNotificationItemForm.cdeScoreThreshold,
+                            type: 'number',
+                            step: 0.1,
+                            onChange: (value) => newNotificationItemForm.cdeScoreThreshold.val = value,
+                            disabled: ! cdeScoreEnabled,
+                            validators: [
+                                numberBetween(0, 100, 1),
+                            ],
+                        }),
+                    ] : [
+                        () => Select({
+                            label: getValue(props.scope_label),
+                            options: scopeOptions.map(([value, label]) => ({
+                                label: label, value: value
+                            })),
+                            value: newNotificationItemForm.scope,
+                            onChange: (value) => newNotificationItemForm.scope.val = value,
+                            portalClass: 'short-select-portal',
+                        }),
+                        () => Select({
+                            label: 'When',
+                            options: triggerOptions.map(([value, label]) => ({
+                                label: label, value: value
+                            })),
+                            value: newNotificationItemForm.trigger,
+                            onChange: (value) => newNotificationItemForm.trigger.val = value,
+                            portalClass: 'short-select-portal',
+                        }),
+                    ]),
                 ),
                 div(
                     { style: 'flex: 60%; height: 100%' },
@@ -222,7 +281,14 @@ const NotificationSettings = (/** @type Properties */ props) => {
                                 id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
                                 scope: newNotificationItemForm.scope.val,
                                 recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))],
-                                trigger: newNotificationItemForm.trigger.val,
+                                ...(event === 'score_drop' ?
+                                    {
+                                        total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,
+                                        cde_score_threshold: newNotificationItemForm.cdeScoreThreshold.val,
+                                    } : {
+                                        trigger: newNotificationItemForm.trigger.val,
+                                    }
+                                ),
                             }
                         }
                     ),
@@ -231,7 +297,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
         () => {
             const result = getValue(props.result);
-            return result
+            return result?.message
                 ? div( // Wrapper div needed, otherwise new Alert does not appear after closing previous one
                         Alert({
                         type: result.success ? 'success' : 'error',
@@ -247,15 +313,15 @@ const NotificationSettings = (/** @type Properties */ props) => {
             div(
                 { class: 'table-header flex-row' },
                 span(
-                    { style: `flex: ${columns[0]}` },
-                    props.scope_label.val + ' | Trigger',
+                    { style: `flex: ${columns[0]}%` },
+                    event === 'score_drop' ? 'Score minimum thresholds' : (props.scope_label.val + ' | Trigger'),
                 ),
                 span(
-                    { style: `flex: ${columns[1]}` },
+                    { style: `flex: ${columns[1]}%` },
                     'Recipients',
                 ),
                 span(
-                    { style: `flex: ${columns[2]}` },
+                    { style: `flex: ${columns[2]}%` },
                     'Actions',
                 ),
             ),
@@ -278,6 +344,15 @@ stylesheet.replace(`
 }
 .short-select-portal {
     max-height: 250px !important;
+}
+.score-threshold {
+    text-align: right;
+    padding-right: 20px;
+}
+.score-threshold span {
+    font-family: Menlo, Consolas, Monaco, "Courier New", monospace;
+    white-space: pre;
+    display: inline-block;
 }
 `);
 

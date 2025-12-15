@@ -40,7 +40,7 @@ class BaseEmailTemplate:
         helpers = {
             op.replace("_", ""): functools.partial(op_helper, op)
             for op in (
-                "eq", "ge", "gt", "le", "lt", "add", "sub", "and_", "or_",
+                "eq", "ge", "gt", "le", "lt", "add", "sub", "and_", "or_", "contains",
             )
         }
 

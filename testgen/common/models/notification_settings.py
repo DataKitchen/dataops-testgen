@@ -1,6 +1,7 @@
 import enum
 import re
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import ClassVar, Self
 from uuid import UUID, uuid4
 
@@ -30,7 +31,7 @@ class TestRunNotificationTrigger(enum.Enum):
 class NotificationEvent(enum.Enum):
     test_run = "test_run"
     profiling_run = "profiling_run"
-    scorecard_update = "scorecard_update"
+    score_drop = "score_drop"
 
 
 class NotificationSettingsValidationError(Exception):
@@ -165,7 +166,7 @@ class TestRunNotificationSettings(NotificationSettings):
 
     @trigger.setter
     def trigger(self, trigger: TestRunNotificationTrigger) -> None:
-        self.settings["trigger"] = trigger.value
+        self.settings = {"trigger": trigger.value}
 
     def _validate_settings(self):
         if not isinstance(self.trigger, TestRunNotificationTrigger):
@@ -197,8 +198,57 @@ class ProfileRunNotificationSettings(NotificationSettings):
     }
 
 
-class ScorecardUpdateNotificationSettings(NotificationSettings):
+class ScoreDropNotificationSettings(NotificationSettings):
 
     __mapper_args__: ClassVar = {
-        "polymorphic_identity": NotificationEvent.scorecard_update,
+        "polymorphic_identity": NotificationEvent.score_drop,
     }
+
+    @staticmethod
+    def _value_to_threshold(value: Decimal | float | None):
+        return str(Decimal(value).quantize(Decimal("0.1"))) if value is not None else None
+
+    @property
+    def total_score_threshold(self) -> Decimal | None:
+        return Decimal(self.settings["total_threshold"]) if self.settings.get("total_threshold") else None
+
+    @total_score_threshold.setter
+    def total_score_threshold(self, value: Decimal | float | None) -> None:
+        self.settings = {**self.settings, "total_threshold": self._value_to_threshold(value)}
+
+    @property
+    def cde_score_threshold(self) -> Decimal | None:
+        return Decimal(self.settings["cde_threshold"]) if self.settings.get("cde_threshold") else None
+
+    @cde_score_threshold.setter
+    def cde_score_threshold(self, value: Decimal | float | None) -> None:
+        self.settings = {**self.settings, "cde_threshold": self._value_to_threshold(value)}
+
+    def _validate_settings(self):
+        if not (self.total_score_threshold or self.cde_score_threshold):
+            raise NotificationSettingsValidationError("At least one score threshold must be set.")
+        for score, label in ((self.total_score_threshold, "Total"), (self.cde_score_threshold, "CDE")):
+            if score is not None and not 0 <= score <= 100:
+                raise NotificationSettingsValidationError(f"The {label} score threshold must be between 0 and 100")
+
+    @classmethod
+    def create(
+            cls,
+            project_code: str,
+            score_definition_id: UUID | None,
+            recipients: list[str],
+            total_score_threshold: float | Decimal | None,
+            cde_score_threshold: float | Decimal | None,
+    ) -> Self:
+        ns = cls(
+            event=NotificationEvent.score_drop,
+            project_code=project_code,
+            score_definition_id=score_definition_id,
+            recipients=recipients,
+            settings={
+                "total_threshold": cls._value_to_threshold(total_score_threshold),
+                "cde_threshold": cls._value_to_threshold(cde_score_threshold),
+            },
+        )
+        ns.save()
+        return ns
