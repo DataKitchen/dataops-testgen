@@ -961,7 +961,7 @@ def prompt_for_test_type():
     include_column=col3.checkbox(":green[≣] Column", True),
     include_custom=col4.checkbox(":green[⛭] Custom", True),
     # always exclude tablegroup scopes from showing
-    include_all = not any(include_referential, include_table, include_column, include_custom)
+    include_all = not any([include_referential, include_table, include_column, include_custom])
 
     df = run_test_type_lookup_query(
         include_referential=include_referential or include_all,

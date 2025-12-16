@@ -111,7 +111,7 @@ class CliScheduler(Scheduler):
                 for job in self._running_jobs:
                     job.send_signal(signum)
             else:
-                LOG.info("Received signal %s for the fist time, starting the shutdown process.", sig.name)
+                LOG.info("Received signal %s for the first time, starting the shutdown process.", sig.name)
                 interrupted.set()
 
         signal.signal(signal.SIGINT, sig_handler)
