@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "4.38.6"
+version = "4.38.7"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
