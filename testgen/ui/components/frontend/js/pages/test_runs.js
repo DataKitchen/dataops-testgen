@@ -243,11 +243,11 @@ const Toolbar = (
                 icon: 'notifications',
                 type: 'stroked',
                 label: 'Notifications',
-                tooltip: 'Configure email notifications',
+                tooltip: 'Configure email notifications for test runs',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--dk-card-background);',
-                onclick: () => emitEvent('RunNotificationClicked', {}),
+                onclick: () => emitEvent('RunNotificationsClicked', {}),
             }),
             Button({
                 icon: 'today',

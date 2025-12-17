@@ -93,7 +93,7 @@ class TestRunsPage(Page):
             on_change_handlers={
                 "FilterApplied": on_test_runs_filtered,
                 "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
-                "RunNotificationClicked": lambda *_: TestRunNotificationSettingsDialog(project_code).open(),
+                "RunNotificationsClicked": lambda *_: TestRunNotificationSettingsDialog(project_code).open(),
                 "RunTestsClicked": lambda *_: run_tests_dialog(project_code, None, test_suite_id),
                 "RefreshData": refresh_data,
                 "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
@@ -207,7 +207,13 @@ class TestRunNotificationSettingsDialog:
         ]
         test_suite_options.insert(0, (None, "All Test Suites"))
 
-        trigger_options = [(t.value, t.value.replace("_", " ").title()) for t in TestRunNotificationTrigger]
+        trigger_labels = {
+            TestRunNotificationTrigger.always.value: "Always",
+            TestRunNotificationTrigger.on_failures.value: "On test failures",
+            TestRunNotificationTrigger.on_warnings.value: "On test failures and warnings",
+            TestRunNotificationTrigger.on_changes.value: "On new test failures and warnings",
+        }
+        trigger_options = [(t.value, trigger_labels[t.value]) for t in TestRunNotificationTrigger]
 
         result = self.get_result()
 
