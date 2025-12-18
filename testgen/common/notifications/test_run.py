@@ -18,7 +18,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
 
     def get_subject_template(self) -> str:
         return (
-            "[TestGen] Test Run {{test_run.status}}: {{test_run.test_suite}}"
+            "[TestGen] Test Run {{format_status test_run.status}}: {{test_run.test_suite}}"
             "{{#with test_run}}"
             '{{#if failed_ct}} | {{failed_ct}} {{pluralize failed_ct "failure" "failures"}}{{/if}}'
             '{{#if warning_ct}} | {{warning_ct}} {{pluralize warning_ct "warning" "warnings"}}{{/if}}'
@@ -27,7 +27,12 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
         )
 
     def get_title_template(self):
-        return "Test Run {{ test_run.status }}"
+        return """
+          TestGen Test Run - <span class="
+          {{#if (eq test_run.status 'Error')}} text-red {{/if}}
+          {{#if (eq test_run.status 'Cancelled')}} text-purple {{/if}}
+          ">{{format_status test_run.status}}</span>
+        """
 
     def get_main_content_template(self):
         return """
@@ -38,112 +43,146 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 cellspacing="0"
                 border="0">
                 <tr>
-                  <td colspan="4" class="summary__title">
-                    {{ test_run.project_name }} <b>|</b>
-                    {{ test_run.table_groups_name }} <b>|</b>
-                    {{ test_run.test_suite }} <b>|</b>
-                    Test Run <a
-                      href="{{ test_run_url }}"
-                      target="_blank">
-                      {{truncate 8 test_run_id}}
-                    </a>
-                  </td>
+                  <td class="summary__label">Project</td>
+                  <td class="summary__value">{{test_run.project_name}}</td>
                 </tr>
                 <tr>
-                  <td colspan="4" class="summary__subtitle">
-                    {{#if (eq test_run.status 'Complete')}}
-                        {{#if (eq notification_trigger 'on_changes')}}
-                            The test results from this run are different from the previous run.
-                        {{/if}}
-                        {{#if (eq notification_trigger 'on_failures')}}
-                            There are failures or errors among the test results.
-                        {{/if}}
-                        {{#if (eq notification_trigger 'on_warnings')}}
-                            There are failures, warnings or errors among the test results.
-                        {{/if}}
-                    {{/if}}
-                    {{#if (eq test_run.status 'Error')}}
-                        The test run did not complete successfully
-                    {{/if}}
-                    {{#if (eq test_run.status 'Cancelled')}}
-                        The test run has been cancelled
-                    {{/if}}
-                  </td>
+                  <td class="summary__label">Table Group</td>
+                  <td class="summary__value">{{test_run.table_groups_name}}</td>
+                </tr>
+                <tr>
+                  <td class="summary__label">Test Suite</td>
+                  <td class="summary__value"><b>{{test_run.test_suite}}</b></td>
                 </tr>
                 <tr>
                   <td class="summary__label">Start Time</td>
                   <td class="summary__value">{{format_dt test_run.test_starttime}}</td>
-                  {{#if (eq test_run.status 'Complete')}}
-                  <td class="summary__label">Passed</td>
-                  <td class="summary__value_mono">{{ test_run.passed_ct }}</td>
-                  {{/if}}
                 </tr>
                 <tr>
-                  <td class="summary__label">End Time</td>
-                  <td class="summary__value">{{format_dt test_run.test_endtime}}</td>
-                  {{#if (eq test_run.status 'Complete')}}
-                  <td class="summary__label">Failed</td>
-                  <td class="summary__value_mono">{{ test_run.failed_ct }}</td>
-                  {{/if}}
+                  <td class="summary__label">Duration</td>
+                  <td class="summary__value">{{format_duration test_run.test_starttime test_run.test_endtime}}</td>
                 </tr>
-                {{#if (eq test_run.status 'Complete')}}
-                <tr>
-                  <td class="summary__label"></td>
-                  <td class="summary__value"></td>
-                  <td class="summary__label">Warning</td>
-                  <td class="summary__value_mono">{{ test_run.warning_ct }}</td>
-                </tr>
-                <tr>
-                  <td class="summary__label"></td>
-                  <td class="summary__value"></td>
-                  <td class="summary__label">Error</td>
-                  <td class="summary__value_mono">{{ test_run.error_ct }}</td>
-                </tr>
-                <tr>
-                  <td class="summary__label">Score</td>
-                  <td class="summary__value_mono">{{ test_run.dq_score_testing_decimal }}</td>
-                  <td class="summary__label">Log</td>
-                  <td class="summary__value_mono">{{ test_run.log_ct }}</td>
-                </tr>
-                <tr>
-                  <td class="summary__label">Total Tests</td>
-                  <td class="summary__value_mono">{{ test_run.test_ct }}</td>
-                  <td class="summary__label">Dismissed</td>
-                  <td class="summary__value_mono">{{ test_run.dismissed_ct }}</td>
-                </tr>
-                {{/if}}
               </table>
+            </div>
+            <div class="summary">
               <table
                 role="presentation"
                 cellpadding="2"
                 cellspacing="0"
                 border="0">
-                {{#each test_result_summary}}
-                    {{>result_table .}}
-                {{/each}}
+                <tr>
+                  <td class="summary__title">Results Summary</td>
+                  {{#if (eq test_run.status 'Complete')}}
+                  <td align="right">
+                    <a class="link" href="{{test_run_url}}" target="_blank">View on TestGen &gt;</a>
+                  </td>
+                  {{/if}}
+                </tr>
+                <tr>
+                  <td class="summary__subtitle">
+                    {{#if (eq test_run.status 'Complete')}}
+                        {{#if (eq notification_trigger 'on_changes')}}
+                            Test run has new failures, warnings, or errors.
+                        {{/if}}
+                        {{#if (eq notification_trigger 'on_failures')}}
+                            Test run has failures or errors.
+                        {{/if}}
+                        {{#if (eq notification_trigger 'on_warnings')}}
+                            Test run has failures, warnings, or errors.
+                        {{/if}}
+                    {{/if}}
+                    {{#if (eq test_run.status 'Error')}}
+                        Test execution encountered an error.
+                    {{/if}}
+                    {{#if (eq test_run.status 'Cancelled')}}
+                        Test run was canceled.
+                    {{/if}}
+                  </td>
+                </tr>
+                {{#if (eq test_run.status 'Complete')}}
+                <tr>
+                  <td colspan="2" style="padding-top: 12px; padding-bottom: 12px;">
+                    <div class="tg-summary-bar">
+                      <span class="tg-summary-bar--item bg-green" style="width: {{percentage test_run.passed_ct test_run.test_ct}}%;"></span>
+                      <span class="tg-summary-bar--item bg-yellow" style="width: {{percentage test_run.warning_ct test_run.test_ct}}%;"></span>
+                      <span class="tg-summary-bar--item bg-red" style="width: {{percentage test_run.failed_ct test_run.test_ct}}%;"></span>
+                      <span class="tg-summary-bar--item bg-brown" style="width: {{percentage test_run.error_ct test_run.test_ct}}%;"></span>
+                      <span class="tg-summary-bar--item bg-blue" style="width: {{percentage test_run.log_ct test_run.test_ct}}%;"></span>
+                    </div>
+                    <div class="tg-summary-bar--caption">
+                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-green">&#9679;</span>Passed: {{test_run.passed_ct}}</div>
+                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-yellow">&#9679;</span>Warning: {{test_run.warning_ct}}</div>
+                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-red">&#9679;</span>Failed: {{test_run.failed_ct}}</div>
+                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-brown">&#9679;</span>Error: {{test_run.error_ct}}</div>
+                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-blue">&#9679;</span>Log: {{test_run.log_ct}}</div>
+                    </div>
+                  </td>
+                </tr>
+                {{/if}}
+                {{#if (eq test_run.status 'Error')}}
+                <tr>
+                  <td><div class="code">{{test_run.log_message}}</div></td>
+                </tr>
+                {{/if}}
               </table>
-            </div>"""
+            </div>
+            {{#each test_result_summary}}
+              {{>result_table .}}
+            {{/each}}
+        """
 
     def get_result_table_template(self):
         return """
-          {{#if length }}
-            <tr class="summary_section">
-              <td class="summary__label" colspan="2">{{label}}</td>
-              <td class="summary__value" colspan="3" style="font-size: 8pt; text-align: right;">
-                {{#if truncated}}
-                Showing {{length}} out of {{total}} {{label}}
-                {{/if}}
-              </td>
-            </tr>
-            {{#each result_list}}
+          {{#if total}}
+          <div class="summary" style="padding-left: 4px;">
+            <table
+              role="presentation"
+              cellpadding="2"
+              cellspacing="0"
+              border="0">
               <tr>
-                <td>{{#if is_new}}<span style="color: red">&#9679;</span>{{/if}}</td>
-                <td><code>{{table_name}}</code></td>
-                <td><code>{{truncate 30 column_names}}</code></td>
-                <td>{{test_type}}</td>
-                <td style="word-break: break-all;">{{truncate 50 message}}</td>
+                <td></td>
+                <td colspan="2" class="summary__title
+                {{#if (eq status 'Failed')}} text-red {{/if}}
+                {{#if (eq status 'Warning')}} text-orange {{/if}}
+                {{#if (eq status 'Error')}} text-brown {{/if}}
+                ">{{label}}</td>
+                <td colspan="2" align="right">
+                  <a class="link" href="{{test_run_url}}&status={{status}}" target="_blank">
+                    View {{total}} {{label}} &gt;
+                  </a>
+                </td>
               </tr>
-            {{/each}}
+              <tr class="summary__header">
+                <td></td>
+                <td>Table</td>
+                <td>Columns/Focus</td>
+                <td>Test Type</td>
+                <td>Details</td>
+              </tr>
+              {{#each result_list}}
+                <tr>
+                  <td style="width: 4px;">{{#if is_new}}<span class="text-purple">&#9679;</span>{{/if}}</td>
+                  <td>{{truncate 30 table_name}}</td>
+                  <td>{{truncate 30 column_names}}</code></td>
+                  <td>{{test_type}}</td>
+                  <td style="word-break: break-all;">{{truncate 50 message}}</td>
+                </tr>
+              {{/each}}
+              <tr>
+                <td></td>
+                <td colspan="2" class="summary__caption">
+                  {{#if truncated}}
+                  + {{truncated}} more
+                  {{/if}}
+                </td>
+                <td colspan="2" align="right" class="summary__caption">
+                  <span class="text-purple" style="margin-right: 4px; font-style: normal;">&#9679;</span>
+                  indicates new {{label}}
+                </td>
+              </tr>
+            </table>
+          </div>
           {{/if}}
         """
 
@@ -179,9 +218,9 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     result_list_by_status = {}
     summary_statuses = (
-        (TestResultStatus.Failed, "Failures"),
-        (TestResultStatus.Warning, "Warnings"),
-        (TestResultStatus.Error, "Errors"),
+        (TestResultStatus.Failed, "failures"),
+        (TestResultStatus.Warning, "warnings"),
+        (TestResultStatus.Error, "errors"),
     )
 
     if test_run.status == "Complete":
@@ -237,10 +276,9 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
             {
                 "status": status.value,
                 "label": label,
-                "length": len(result_list),
                 "total": test_run.ct_by_status[status],
+                "truncated": test_run.ct_by_status[status] - len(result_list),
                 "result_list": result_list,
-                "truncated": len(result_list) < test_run.ct_by_status[status],
             }
             for status, label in summary_statuses
             if (result_list := result_list_by_status.get(status, None))

@@ -1,7 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
@@ -61,11 +60,6 @@ class TestRunSummary(EntityMinimal):
     log_ct: int
     dismissed_ct: int
     dq_score_testing: float
-
-    @property
-    def dq_score_testing_decimal(self):
-        return Decimal(self.dq_score_testing * 100).quantize(Decimal(".1"))
-
 
 class LatestTestRun(NamedTuple):
     id: str

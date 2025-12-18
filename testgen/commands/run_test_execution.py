@@ -137,6 +137,8 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_run.test_endtime = datetime.now(UTC) + time_delta
         test_run.status = "Error"
         test_run.save()
+
+        send_test_run_notifications(test_run)
     else:
         LOG.info("Setting test run status to Completed")
         test_run.test_endtime = datetime.now(UTC) + time_delta
@@ -147,9 +149,9 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
 
+        send_test_run_notifications(test_run)
         _rollup_test_scores(test_run, table_group)
     finally:
-        send_test_run_notifications(test_run)
         MixpanelService().send_event(
             "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,
