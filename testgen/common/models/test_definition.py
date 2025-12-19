@@ -67,6 +67,7 @@ class TestDefinitionSummary(EntityMinimal):
     match_having_condition: str
     custom_query: str
     history_calculation: str
+    history_calculation_upper: str
     history_lookback: int
     test_active: str
     test_definition_status: str
@@ -179,6 +180,7 @@ class TestDefinition(Entity):
     match_groupby_names: str = Column(NullIfEmptyString)
     match_having_condition: str = Column(NullIfEmptyString)
     history_calculation: str = Column(NullIfEmptyString)
+    history_calculation_upper: str = Column(NullIfEmptyString)
     history_lookback: int = Column(ZeroIfEmptyInteger, default=0)
     test_mode: str = Column(String)
     custom_query: str = Column(QueryString)

@@ -1,0 +1,168 @@
+test_types:
+  id: '1514'
+  test_type: Metric_Trend
+  test_name_short: Metric Trend
+  test_name_long: Aggregate metric is within tolerance range
+  test_description: |-
+    Tests that aggregate metric of all or subset of records in a table is within derived tolerance range.
+  except_message: |-
+    Aggregate metric is outside expected range.
+  measure_uom: Aggregate metric
+  measure_uom_description: null
+  selection_criteria: null
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: custom_query,history_calculation,history_calculation_upper,history_lookback,subset_condition
+  default_parm_values: null
+  default_parm_prompts: Metric Expression,Lower Bound,Upper Bound,Result Lookback,Subset Condition
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: table
+  dq_dimension: null
+  health_dimension: null
+  threshold_description: |-
+    Expected aggregate metric range.
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test compares the aggregate metric of all or a subset of records in a table against a derived tolerance range.
+  active: Y
+  cat_test_conditions:
+  - id: '2516'
+    test_type: Metric_Trend
+    sql_flavor: bigquery
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2416'
+    test_type: Metric_Trend
+    sql_flavor: databricks
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2216'
+    test_type: Metric_Trend
+    sql_flavor: mssql
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2316'
+    test_type: Metric_Trend
+    sql_flavor: postgresql
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2016'
+    test_type: Metric_Trend
+    sql_flavor: redshift
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2616'
+    test_type: Metric_Trend
+    sql_flavor: redshift_spectrum
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2116'
+    test_type: Metric_Trend
+    sql_flavor: snowflake
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  target_data_lookups:
+  - id: '1484'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1485'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1486'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1487'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1488'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1489'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1490'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

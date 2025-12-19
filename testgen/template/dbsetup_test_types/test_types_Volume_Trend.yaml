@@ -1,0 +1,169 @@
+test_types:
+  id: '1513'
+  test_type: Volume_Trend
+  test_name_short: Volume Trend
+  test_name_long: Number of rows is within tolerance range
+  test_description: |-
+    Tests that row count of all or subset of records in a table is within derived tolerance range.
+  except_message: |-
+    Row count is outside expected range.
+  measure_uom: Row count
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: history_calculation,history_calculation_upper,history_lookback,subset_condition,custom_query
+  default_parm_values: null
+  default_parm_prompts: Lower Bound,Upper Bound,Result Lookback,Subset Condition,Query
+  default_parm_help: null
+  default_severity: Warning
+  run_type: CAT
+  test_scope: table
+  dq_dimension: Completeness
+  health_dimension: Volume
+  threshold_description: |-
+    Expected row count range.
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test compares the row count of all or a subset of records in a table against a derived tolerance range.
+  active: Y
+  cat_test_conditions:
+  - id: '2515'
+    test_type: Volume_Trend
+    sql_flavor: bigquery
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2415'
+    test_type: Volume_Trend
+    sql_flavor: databricks
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2215'
+    test_type: Volume_Trend
+    sql_flavor: mssql
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2315'
+    test_type: Volume_Trend
+    sql_flavor: postgresql
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2015'
+    test_type: Volume_Trend
+    sql_flavor: redshift
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2615'
+    test_type: Volume_Trend
+    sql_flavor: redshift_spectrum
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2115'
+    test_type: Volume_Trend
+    sql_flavor: snowflake
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  target_data_lookups:
+  - id: '1477'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1478'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1479'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1480'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1481'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1482'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1483'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

@@ -124,16 +124,19 @@ class TestExecutionSQL:
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
                 "SKIP_ERRORS": test_def.skip_errors or 0,
+                "CUSTOM_QUERY": test_def.custom_query,
                 "BASELINE_CT": test_def.baseline_ct,
                 "BASELINE_UNIQUE_CT": test_def.baseline_unique_ct,
                 "BASELINE_VALUE": test_def.baseline_value,
                 "BASELINE_VALUE_CT": test_def.baseline_value_ct,
-                "THRESHOLD_VALUE": test_def.threshold_value,
+                "THRESHOLD_VALUE": test_def.threshold_value or 0,
                 "BASELINE_SUM": test_def.baseline_sum,
                 "BASELINE_AVG": test_def.baseline_avg,
                 "BASELINE_SD": test_def.baseline_sd,
-                "LOWER_TOLERANCE": test_def.lower_tolerance,
-                "UPPER_TOLERANCE": test_def.upper_tolerance,
+                "LOWER_TOLERANCE": test_def.lower_tolerance or "NULL",
+                "UPPER_TOLERANCE": test_def.upper_tolerance or "NULL",
+                # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
+                # since the latter may contain the former
                 "SUBSET_CONDITION": test_def.subset_condition or "1=1",
                 "GROUPBY_NAMES": test_def.groupby_names,
                 "HAVING_CONDITION": f"HAVING {test_def.having_condition}" if test_def.having_condition else "",
@@ -146,7 +149,6 @@ class TestExecutionSQL:
                 "MATCH_GROUPBY_NAMES": test_def.match_groupby_names,
                 "CONCAT_MATCH_GROUPBY": concat_columns(test_def.match_groupby_names, self.null_value) if test_def.match_groupby_names else "",
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
-                "CUSTOM_QUERY": test_def.custom_query,
                 "COLUMN_TYPE": test_def.column_type,
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
@@ -212,9 +214,9 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("disable_invalid_test_definitions.sql")
 
-    def update_historic_thresholds(self) -> tuple[str, dict]:
+    def update_history_calc_thresholds(self) -> tuple[str, dict]:
         # Runs on App database
-        return self._get_query("update_historic_thresholds.sql")
+        return self._get_query("update_history_calc_thresholds.sql")
 
     def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict]:
         # Runs on Target database
@@ -253,7 +255,12 @@ class TestExecutionSQL:
                 measure = replace_templated_functions(measure, self.flavor)
                 td.measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{self.null_value}|')"
 
-                condition = replace_params(f"{td.measure}{td.test_operator}{td.test_condition}", params)
+                condition = (
+                    f"{td.measure} {td.test_operator} {td.test_condition}"
+                    if "BETWEEN" in td.test_operator
+                    else f"{td.measure}{td.test_operator}{td.test_condition}"
+                )
+                condition = replace_params(condition, params)
                 condition = replace_templated_functions(condition, self.flavor)
                 td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
 
