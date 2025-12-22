@@ -11,6 +11,9 @@ class BaseNotificationTemplate(BaseEmailTemplate):
 
     def pluralize_helper(self, count: int, singular: str, plural: str) -> str:
         return singular if count == 1 else plural
+    
+    def format_number_helper(self, number: int | float) -> str:
+        return f"{number:,}"
 
     def format_dt_helper(self, dt: datetime) -> str:
         return dt.strftime("%b %d, %-I:%M %p UTC")
@@ -158,11 +161,6 @@ class BaseNotificationTemplate(BaseEmailTemplate):
       height: 20px;
     }
 
-    .summary__header td {
-      font-size: 12px;
-      color: rgba(0, 0, 0, 0.6);
-    }
-
     .summary__value {
       padding-left: 8px;
     }
@@ -198,6 +196,11 @@ class BaseNotificationTemplate(BaseEmailTemplate):
 
     .footer__padding {
       height: 32px;
+    }
+
+    .text-caption {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.6);
     }
 
     .text-green {
@@ -270,45 +273,6 @@ class BaseNotificationTemplate(BaseEmailTemplate):
 
     .border-red {
       border-color: #EF5350;
-    }
-
-    .tg-summary-bar {
-      height: 10px;
-      max-width: 350px;
-      display: flex;
-      flex-flow: row nowrap;
-      align-items: flex-start;
-      justify-content: flex-start;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .tg-summary-bar--item {
-      height: 100%;
-    }
-
-    .tg-summary-bar--caption {
-      margin-top: 4px;
-      display: flex;
-      flex-flow: row wrap;
-      align-items: center;
-      color: var(--caption-text-color);
-      font-size: 13px;
-      font-style: italic;
-      line-height: 1;
-    }
-
-    .tg-summary-bar--legend {
-      display: flex;
-      flex-flow: row nowrap;
-      align-items: center;
-      width: auto;
-      margin-right: 8px;
-    }
-
-    .tg-summary-bar--legend-dot {
-      margin-right: 2px;
-      font-style: normal;
     }
 
     {{>extra_css}}
