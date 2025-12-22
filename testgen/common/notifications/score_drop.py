@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import ScoreDropNotificationSettings
+from testgen.common.models.project import Project
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.notifications.notifications import BaseNotificationTemplate
@@ -14,6 +15,15 @@ LOG = logging.getLogger("testgen")
 
 
 class ScoreDropEmailTemplate(BaseNotificationTemplate):
+    
+    def score_color_helper(self, score: float) -> str:
+        if score >= 0.96:
+            return "green"
+        if score >= 0.91:
+            return "yellow"
+        if score >= 0.86:
+            return "orange"
+        return "red"
 
     def get_subject_template(self) -> str:
         return (
@@ -22,7 +32,7 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
         )
 
     def get_title_template(self):
-        return "{{ definition.name }} Quality Score Dropped"
+        return "Quality Score dropped below threshold"
 
     def get_main_content_template(self):
         return """
@@ -33,43 +43,73 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
                 cellspacing="0"
                 border="0">
                 <tr>
-                  <td colspan="2" align="right">
+                  <td class="summary__label">Project</td>
+                  <td class="summary__value">{{project_name}}</td>
+                  <td align="right">
                     <a class="link" href="{{scorecard_url}}" target="_blank">View on TestGen &gt;</a>
                   </td>
                 </tr>
-                {{#each diff}}
                 <tr>
-                  <td class="summary__label">{{ label }} Score</td>
-                  <td class="summary__value_score">
-                    <span>{{ format_score prev }}</span>
-                    <span style="font-size: 24px;">&rarr;</span>
-                    <span>{{ format_score current }}</span>
-                    <span class="threshold {{#if notify}}notify{{/if}}">&darr;{{ threshold }}</span>
+                  <td class="summary__label">Scorecard</td>
+                  <td class="summary__value"><b>{{definition.name}}</b></td>
+                </tr>
+                <tr>
+                  <td class="summary__subtitle" colspan="2" style="padding-top: 8px; padding-bottom: 12px;">
+                  {{#each diff}}
+                  {{#if notify}}
+                  <div>{{label}} score dropped below <u>{{threshold}}</u>.</div>
+                  {{/if}}
+                  {{/each}}
                   </td>
                 </tr>
+              </table>
+              <table
+                role="presentation"
+                cellpadding="2"
+                cellspacing="0"
+                border="0"
+                style="width: auto;">
+                <tr>
+                {{#each diff}}
+                  <td width="100" height="100" class="score border-{{score_color current}}">
+                      <div class="score__value">{{format_score current}}</div>
+                      <div class="score__label">{{label}} Score</div>
+                      {{#if decrease}}
+                      <div class="text-red">&darr; {{format_score decrease}}</div>
+                      {{/if}}
+                      {{#if increase}}
+                      <div class="text-green">&uarr; {{format_score increase}}</div>
+                      {{/if}}
+                  </td>
+                  <td width="16"></td>
                 {{/each}}
+                </tr>
               </table>
             </div>"""
 
     def get_extra_css_template(self) -> str:
         return """
-            .summary__value_score span {
-              padding-left: 8px;
-              font-family: Menlo, Consolas, Monaco, "Courier New", monospace;
-              font-size: 16px;
-              white-space: pre;
-          }
+            .score {
+              display: block;
+              width: 100px; 
+              height: 100px; 
+              border-radius: 50%; 
+              border-width: 4px; 
+              border-style: solid;
+              text-align: center;
+              font-size: 14px;
+            }
 
-          .summary__value_score span.threshold {
-              font-size: 12px;
-              text-color: #CCC;
-          }
+            .score__value {
+              margin-top: 22px;
+              margin-bottom: 2px;
+              font-size: 18px;
+            }
 
-          .summary__value_score span.notify {
-              color: #F44;
-          }
-
-
+            .score__label {
+              font-size: 14px;
+              color: rgba(0, 0, 0, 0.6);
+            }
         """
 
 
@@ -81,14 +121,19 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
         return
 
     query = select(
-        ScoreDropNotificationSettings
+        ScoreDropNotificationSettings,
+        Project.project_name,
+    ).join(
+        Project, ScoreDropNotificationSettings.project_code == Project.project_code
     ).where(
         ScoreDropNotificationSettings.enabled.is_(True),
         ScoreDropNotificationSettings.score_definition_id.in_({d.id for d, *_ in notification_data}),
     )
     ns_per_score_id = defaultdict(list)
-    for ns in get_current_session().scalars(query):
+    project_name = None
+    for (ns, project_name) in get_current_session().execute(query).fetchall():
         ns_per_score_id[ns.score_definition_id].append(ns)
+        project_name = project_name
 
     diff_per_score_id = defaultdict(list)
     for definition, *data in notification_data:
@@ -113,6 +158,8 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                     "prev": diff[0],
                     "current": diff[1],
                     "threshold": threshold_by_cat[cat],
+                    "decrease": max(diff[0] - diff[1], 0),
+                    "increase": max(diff[1] - diff[0], 0),
                     "notify": (
                         diff[0] > diff[1]
                         and threshold_by_cat[cat] is not None
@@ -126,6 +173,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                 continue
 
             context = {
+                "project_name": project_name,
                 "definition": definition,
                 "scorecard_url": "".join(
                     (

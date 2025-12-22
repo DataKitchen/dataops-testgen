@@ -256,6 +256,22 @@ class BaseNotificationTemplate(BaseEmailTemplate):
       background-color: #AB47BC;
     }
 
+    .border-green {
+      border-color: #9CCC65;
+    }
+
+    .border-yellow {
+      border-color: #FDD835;
+    }
+
+    .border-orange {
+      border-color: #FF9800;
+    }
+
+    .border-red {
+      border-color: #EF5350;
+    }
+
     .tg-summary-bar {
       height: 10px;
       max-width: 350px;
