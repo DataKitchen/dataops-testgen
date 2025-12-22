@@ -9,9 +9,9 @@ from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.notifications import BaseNotificationTemplate
+from testgen.utils import log_and_swallow_exception
 
 LOG = logging.getLogger("testgen")
-
 
 
 class TestRunEmailTemplate(BaseNotificationTemplate):
@@ -187,6 +187,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
         """
 
 
+@log_and_swallow_exception
 @with_database_session
 def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_status_min=5):
 
@@ -200,7 +201,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
     if test_run.status in ("Error", "Cancelled"):
         triggers.update(TestRunNotificationTrigger)
     else:
-        if previous_run := TestRun.get_previous(test_run):
+        if previous_run := test_run.get_previous():
             for _, status, td_id_list in TestResult.diff(previous_run.id, test_run.id):
                 if status in (TestResultStatus.Failed, TestResultStatus.Warning, TestResultStatus.Error):
                     changed_td_id_list.extend(td_id_list)

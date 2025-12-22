@@ -1,6 +1,5 @@
 import logging
 from collections import defaultdict
-from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -9,23 +8,17 @@ from testgen.common.models.notification_settings import ScoreDropNotificationSet
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.notifications.notifications import BaseNotificationTemplate
+from testgen.utils import log_and_swallow_exception
 
 LOG = logging.getLogger("testgen")
 
 
 class ScoreDropEmailTemplate(BaseNotificationTemplate):
 
-    def format_score_helper(self, score):
-        if score is None:
-            str_value = "--"
-        else:
-            str_value = str(Decimal(score * 100).quantize(Decimal("0.1" if score < 1 else "1")))
-        return str_value.rjust(4)
-
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Quality Score Dropped: {{ definition.name }}"
-            "{{#each diff}}{{#if notify}} | {{ label }}: {{ current }}{{/if}}{{/each}}"
+            "{{#each diff}}{{#if notify}} | {{ label }}: {{ format_score current }}{{/if}}{{/each}}"
         )
 
     def get_title_template(self):
@@ -39,6 +32,11 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
                 cellpadding="2"
                 cellspacing="0"
                 border="0">
+                <tr>
+                  <td colspan="2" align="right">
+                    <a class="link" href="{{scorecard_url}}" target="_blank">View on TestGen &gt;</a>
+                  </td>
+                </tr>
                 {{#each diff}}
                 <tr>
                   <td class="summary__label">{{ label }} Score</td>
@@ -75,6 +73,7 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
         """
 
 
+@log_and_swallow_exception
 @with_database_session
 def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition, str, float, float]]):
 
@@ -128,7 +127,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
 
             context = {
                 "definition": definition,
-                "definition_url": "".join(
+                "scorecard_url": "".join(
                     (
                         PersistedSetting.get("BASE_URL", ""),
                         "/quality-dashboard:score-details?definition_id=",
@@ -144,6 +143,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                 LOG.exception("Failed sending test run email notifications")
 
 
+@log_and_swallow_exception
 def collect_score_notification_data(
         notification_data: list[tuple[ScoreDefinition, str, float, float]],
         definition: ScoreDefinition,

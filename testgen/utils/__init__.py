@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import wraps
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,6 +17,8 @@ from uuid import UUID
 import pandas as pd
 
 T = TypeVar("T")
+
+LOG = logging.getLogger("testgen")
 
 
 def to_int(value: float | int) -> int:
@@ -225,3 +229,15 @@ def friendly_score_impact(impact: float) -> str:
         return "> 99.99"
 
     return str(rounded)
+
+
+def log_and_swallow_exception(func):
+
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            try:
+                func(*args, **kwargs)
+            except Exception:
+                LOG.exception("Error executing '%s.%s':", func.__module__, func.__name__)
+
+        return wrapped

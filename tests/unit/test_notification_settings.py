@@ -114,7 +114,7 @@ def select_summary_mock():
         ("Cancelled", 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
     ]
 )
-def test_sent_test_run_notification(
+def test_send_test_run_notification(
         test_run_status,
         failed_ct,
         warning_ct,

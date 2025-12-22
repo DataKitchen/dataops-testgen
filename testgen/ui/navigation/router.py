@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -30,7 +31,11 @@ class Router(Singleton):
         # Clear cache on initial load or page refresh
         st.cache_data.clear()
 
-        PersistedSetting.set("BASE_URL", st.context.url)
+        try:
+            parsed_url = urlparse(st.context.url)
+            PersistedSetting.set("BASE_URL", f"{parsed_url.scheme}://{parsed_url.netloc}")
+        except Exception as e:
+            LOG.exception("Error capturing the base URL")
 
     def run(self) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
