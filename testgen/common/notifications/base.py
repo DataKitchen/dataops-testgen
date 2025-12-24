@@ -43,6 +43,7 @@ class BaseEmailTemplate:
                 "eq", "ge", "gt", "le", "lt", "add", "sub", "and_", "or_", "contains",
             )
         }
+        helpers["len"] = lambda _, *args: len(*args)
 
         for name, func in inspect.getmembers(self.__class__, predicate=callable):
             if (match := re.match(r"get_(\w+)_template", name)) and match.group(1) not in ("subject", "body"):

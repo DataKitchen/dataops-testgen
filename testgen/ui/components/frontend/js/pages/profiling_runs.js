@@ -1,13 +1,13 @@
 /**
- * @import { FilterOption, ProjectSummary } from '../types.js'; * 
- * 
+ * @import { FilterOption, ProjectSummary } from '../types.js'; *
+ *
  * @typedef ProgressStep
  * @type {object}
  * @property {'data_chars'|'col_profiling'|'freq_analysis'|'hygiene_issues'} key
  * @property {'Pending'|'Running'|'Completed'|'Warning'} status
  * @property {string} label
  * @property {string} detail
- * 
+ *
  * @typedef ProfilingRun
  * @type {object}
  * @property {string} id
@@ -29,7 +29,7 @@
  * @property {number} anomalies_possible_ct
  * @property {number} anomalies_dismissed_ct
  * @property {string} dq_score_profiling
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
@@ -233,6 +233,16 @@ const Toolbar = (
         div(
             { class: 'flex-row fx-gap-4' },
             Button({
+                icon: 'notifications',
+                type: 'stroked',
+                label: 'Notifications',
+                tooltip: 'Configure email notifications for profiling runs',
+                tooltipPosition: 'bottom',
+                width: 'fit-content',
+                style: 'background: var(--dk-card-background);',
+                onclick: () => emitEvent('RunNotificationsClicked', {}),
+            }),
+            Button({
                 icon: 'today',
                 type: 'stroked',
                 label: 'Profiling Schedules',
@@ -305,14 +315,14 @@ const ProfilingRunItem = (
                     onclick: () => emitEvent('RunCanceled', { payload: item }),
                 }) : null,
             ),
-            item.profiling_endtime 
+            item.profiling_endtime
                 ? div(
                     { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
                     formatDuration(item.profiling_starttime, item.profiling_endtime),
-                ) 
+                )
                 : div(
                     { class: 'text-caption mt-1' },
-                    item.status === 'Running' && runningStep 
+                    item.status === 'Running' && runningStep
                         ? [
                             div(
                                 runningStep.label,
@@ -335,7 +345,7 @@ const ProfilingRunItem = (
                     style: item.status === 'Complete' && !item.column_ct ? 'color: var(--red);' : '',
                     'data-testid': 'profiling-run-item-counts',
                 },
-                item.column_ct !== null 
+                item.column_ct !== null
                     ? div(
                         `${formatNumber(item.table_ct || 0)} tables, ${formatNumber(item.column_ct || 0)} columns`,
                         item.record_ct !== null ?

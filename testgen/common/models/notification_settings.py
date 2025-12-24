@@ -2,7 +2,7 @@ import enum
 import re
 from collections.abc import Iterable
 from decimal import Decimal
-from typing import ClassVar, Self
+from typing import ClassVar, Generic, Self, TypeVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, String, and_, or_, select
@@ -20,11 +20,18 @@ SENTINEL_TYPE = type("Sentinel", (object,), {})
 
 SENTINEL = SENTINEL_TYPE()
 
+TriggerT = TypeVar("TriggerT", bound=Enum)
+
 
 class TestRunNotificationTrigger(enum.Enum):
     always = "always"
     on_failures = "on_failures"
     on_warnings = "on_warnings"
+    on_changes = "on_changes"
+
+
+class ProfilingRunNotificationTrigger(enum.Enum):
+    always = "always"
     on_changes = "on_changes"
 
 
@@ -154,23 +161,29 @@ class NotificationSettings(Entity):
         super().save()
 
 
-class TestRunNotificationSettings(NotificationSettings):
+class RunNotificationSettings(NotificationSettings, Generic[TriggerT]):
+    __abstract__ = True
+    trigger_enum: ClassVar[type[TriggerT]]
+
+    @property
+    def trigger(self) -> TriggerT | None:
+        return self.trigger_enum(self.settings["trigger"]) if "trigger" in self.settings else None
+
+    @trigger.setter
+    def trigger(self, trigger: TriggerT) -> None:
+        self.settings = {"trigger": trigger.value}
+
+    def _validate_settings(self):
+        if not isinstance(self.trigger, self.trigger_enum):
+            raise NotificationSettingsValidationError("Invalid notification trigger.")
+
+
+class TestRunNotificationSettings(RunNotificationSettings[TestRunNotificationTrigger]):
 
     __mapper_args__: ClassVar = {
         "polymorphic_identity": NotificationEvent.test_run,
     }
-
-    @property
-    def trigger(self) -> TestRunNotificationTrigger | None:
-        return TestRunNotificationTrigger(self.settings["trigger"]) if "trigger" in self.settings else None
-
-    @trigger.setter
-    def trigger(self, trigger: TestRunNotificationTrigger) -> None:
-        self.settings = {"trigger": trigger.value}
-
-    def _validate_settings(self):
-        if not isinstance(self.trigger, TestRunNotificationTrigger):
-            raise NotificationSettingsValidationError("Invalid test run notification trigger.")
+    trigger_enum = TestRunNotificationTrigger
 
     @classmethod
     def create(
@@ -191,11 +204,30 @@ class TestRunNotificationSettings(NotificationSettings):
         return ns
 
 
-class ProfileRunNotificationSettings(NotificationSettings):
+class ProfilingRunNotificationSettings(RunNotificationSettings[ProfilingRunNotificationTrigger]):
 
     __mapper_args__: ClassVar = {
         "polymorphic_identity": NotificationEvent.profiling_run,
     }
+    trigger_enum = ProfilingRunNotificationTrigger
+
+    @classmethod
+    def create(
+            cls,
+            project_code: str,
+            table_group_id: UUID | None,
+            recipients: list[str],
+            trigger: ProfilingRunNotificationTrigger,
+    ) -> Self:
+        ns = cls(
+            event=NotificationEvent.profiling_run,
+            project_code=project_code,
+            table_group_id=table_group_id,
+            recipients=recipients,
+            settings={"trigger": trigger.value}
+        )
+        ns.save()
+        return ns
 
 
 class ScoreDropNotificationSettings(NotificationSettings):
