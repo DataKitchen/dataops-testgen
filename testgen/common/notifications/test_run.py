@@ -20,9 +20,9 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
         return (
             "[TestGen] Test Run {{format_status test_run.status}}: {{test_run.test_suite}}"
             "{{#with test_run}}"
-            '{{#if failed_ct}} | {{failed_ct}} {{pluralize failed_ct "failure" "failures"}}{{/if}}'
-            '{{#if warning_ct}} | {{warning_ct}} {{pluralize warning_ct "warning" "warnings"}}{{/if}}'
-            '{{#if error_ct}} | {{error_ct}} {{pluralize error_ct "error" "errors"}}{{/if}}'
+            '{{#if failed_ct}} | {{format_number failed_ct}} {{pluralize failed_ct "failure" "failures"}}{{/if}}'
+            '{{#if warning_ct}} | {{format_number warning_ct}} {{pluralize warning_ct "warning" "warnings"}}{{/if}}'
+            '{{#if error_ct}} | {{format_number error_ct}} {{pluralize error_ct "error" "errors"}}{{/if}}'
             "{{/with}}"
         )
 
@@ -102,19 +102,36 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 {{#if (eq test_run.status 'Complete')}}
                 <tr>
                   <td colspan="2" style="padding-top: 12px; padding-bottom: 12px;">
-                    <div class="tg-summary-bar">
-                      <span class="tg-summary-bar--item bg-green" style="width: {{percentage test_run.passed_ct test_run.test_ct}}%;"></span>
-                      <span class="tg-summary-bar--item bg-yellow" style="width: {{percentage test_run.warning_ct test_run.test_ct}}%;"></span>
-                      <span class="tg-summary-bar--item bg-red" style="width: {{percentage test_run.failed_ct test_run.test_ct}}%;"></span>
-                      <span class="tg-summary-bar--item bg-brown" style="width: {{percentage test_run.error_ct test_run.test_ct}}%;"></span>
-                      <span class="tg-summary-bar--item bg-blue" style="width: {{percentage test_run.log_ct test_run.test_ct}}%;"></span>
-                    </div>
+                    <table cellspacing="0" cellpadding="0" class="tg-summary-bar">
+                      <tr>
+                        <td class="bg-green" style="width: {{percentage test_run.passed_ct test_run.test_ct}}%;">&nbsp;</td>
+                        <td class="bg-yellow" style="width: {{percentage test_run.warning_ct test_run.test_ct}}%;">&nbsp;</td>
+                        <td class="bg-red" style="width: {{percentage test_run.failed_ct test_run.test_ct}}%;">&nbsp;</td>
+                        <td class="bg-brown" style="width: {{percentage test_run.error_ct test_run.test_ct}}%;">&nbsp;</td>
+                        <td class="bg-blue" style="width: {{percentage test_run.log_ct test_run.test_ct}}%;">&nbsp;</td>
+                      </tr>
+                    </table>
                     <div class="tg-summary-bar--caption">
-                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-green">&#9679;</span>Passed: {{test_run.passed_ct}}</div>
-                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-yellow">&#9679;</span>Warning: {{test_run.warning_ct}}</div>
-                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-red">&#9679;</span>Failed: {{test_run.failed_ct}}</div>
-                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-brown">&#9679;</span>Error: {{test_run.error_ct}}</div>
-                      <div class="tg-summary-bar--legend"><span class="tg-summary-bar--legend-dot text-blue">&#9679;</span>Log: {{test_run.log_ct}}</div>
+                      <span class="tg-summary-bar--legend">
+                        <span class="tg-summary-bar--legend-dot text-green">&#9679;</span>
+                        Passed: {{format_number test_run.passed_ct}}
+                      </span>
+                      <span class="tg-summary-bar--legend">
+                        <span class="tg-summary-bar--legend-dot text-yellow">&#9679;</span>
+                        Warning: {{format_number test_run.warning_ct}}
+                      </span>
+                      <span class="tg-summary-bar--legend">
+                        <span class="tg-summary-bar--legend-dot text-red">&#9679;</span>
+                        Failed: {{format_number test_run.failed_ct}}
+                      </span>
+                      <span class="tg-summary-bar--legend">
+                        <span class="tg-summary-bar--legend-dot text-brown">&#9679;</span>
+                        Error: {{format_number test_run.error_ct}}
+                      </span>
+                      <span class="tg-summary-bar--legend">
+                        <span class="tg-summary-bar--legend-dot text-blue">&#9679;</span>
+                        Log: {{format_number test_run.log_ct}}
+                      </span>
                     </div>
                   </td>
                 </tr>
@@ -149,11 +166,11 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 ">{{label}}</td>
                 <td colspan="2" align="right">
                   <a class="link" href="{{test_run_url}}&status={{status}}" target="_blank">
-                    View {{total}} {{label}} &gt;
+                    View {{format_number total}} {{label}} &gt;
                   </a>
                 </td>
               </tr>
-              <tr class="summary__header">
+              <tr class="text-caption">
                 <td></td>
                 <td>Table</td>
                 <td>Columns/Focus</td>
@@ -184,6 +201,40 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
             </table>
           </div>
           {{/if}}
+        """
+    
+    def get_extra_css_template(self) -> str:
+        return """
+          .tg-summary-bar {
+            width: 350px;
+            border-radius: 4px;
+            overflow: hidden;
+          }
+
+          .tg-summary-bar td {
+            height: 10px;
+            padding: 0;
+            line-height: 10px;
+            font-size: 0;
+          }
+
+          .tg-summary-bar--caption {
+            margin-top: 4px;
+            color: var(--caption-text-color);
+            font-size: 13px;
+            font-style: italic;
+            line-height: 1;
+          }
+
+          .tg-summary-bar--legend {
+            width: auto;
+            margin-right: 8px;
+          }
+
+          .tg-summary-bar--legend-dot {
+            margin-right: 2px;
+            font-style: normal;
+          }
         """
 
 

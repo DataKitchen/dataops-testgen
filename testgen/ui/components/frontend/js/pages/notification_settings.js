@@ -45,7 +45,7 @@ import { Input } from "../components/input.js";
 import { numberBetween } from "../form_validators.js";
 
 const minHeight = 500;
-const { div, span, i } = van.tags;
+const { div, span, b } = van.tags;
 
 const NotificationSettings = (/** @type Properties */ props) => {
     loadStylesheet('notification-settings', stylesheet);
@@ -105,28 +105,21 @@ const NotificationSettings = (/** @type Properties */ props) => {
         /** @type number[] */ columns,
         /** @type Permissions */ permissions,
     ) => {
+        const showTotalScore = totalScoreEnabled && item.total_score_threshold !== '0.0';
+        const showCdeScore = cdeScoreEnabled && item.cde_score_threshold !== '0.0';
         return div(
             { class: () => `table-row flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
-            ...(event === 'score_drop'
-                ? [
-                    div(
-                        { style: `flex: ${columns[0] / 2}%`, class: 'score-threshold' },
-                        'Total:',
-                        span(totalScoreEnabled ? item.total_score_threshold.padStart(6, ' ') : '    --'),
-                    ),
-                    div(
-                        { style: `flex: ${columns[0] / 2}%`, class: 'score-threshold' },
-                        'CDE:',
-                        span(cdeScoreEnabled ? item.cde_score_threshold.padStart(6, ' ') : '    --'),
-                    ),
-                ] : [
-                    div(
-                        { style: `flex: ${columns[0]}%` },
-                        div(scopeLabel(item.scope)),
-                        div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
-                    ),
-                ]
-            ),
+            event === 'score_drop'
+                ? div(
+                    { style: `flex: ${columns[0]}%`, class: 'flex-column fx-gap-1 score-threshold' },
+                    showTotalScore ? div('Total score: ', b(item.total_score_threshold)) : '',
+                    showCdeScore ? div(`${showTotalScore ? 'or ' : ''}CDE score: `, b(item.cde_score_threshold)) : '',
+                )
+                : div(
+                    { style: `flex: ${columns[0]}%` },
+                    div(scopeLabel(item.scope)),
+                    div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+                ),
             div(
                 { style: `flex: ${columns[1]}%` },
                 TruncatedText({ max: 6 }, ...item.recipients),
@@ -205,28 +198,30 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 div(
                     { class: 'flex-column fx-gap-2', style: 'flex: 40%' },
                     ...(event === 'score_drop' ? [
-                        () => Input({
-                            label: 'Total Score Threshold',
-                            value: newNotificationItemForm.totalScoreThreshold,
-                            type: 'number',
-                            step: 0.1,
-                            onChange: (value) => newNotificationItemForm.totalScoreThreshold.val = value,
-                            disabled: ! totalScoreEnabled,
-                            validators: [
-                                numberBetween(0, 100, 1),
-                            ],
-                        }),
-                        () => Input({
-                            label: 'CDE Score Threshold',
-                            value: newNotificationItemForm.cdeScoreThreshold,
-                            type: 'number',
-                            step: 0.1,
-                            onChange: (value) => newNotificationItemForm.cdeScoreThreshold.val = value,
-                            disabled: ! cdeScoreEnabled,
-                            validators: [
-                                numberBetween(0, 100, 1),
-                            ],
-                        }),
+                        () => totalScoreEnabled 
+                            ? Input({
+                                label: 'When total score drops below',
+                                value: newNotificationItemForm.totalScoreThreshold,
+                                type: 'number',
+                                step: 0.1,
+                                onChange: (value) => newNotificationItemForm.totalScoreThreshold.val = value,
+                                validators: [
+                                    numberBetween(0, 100, 1),
+                                ],
+                            })
+                            : '',
+                        () => cdeScoreEnabled
+                            ? Input({
+                                label: `${totalScoreEnabled ? 'or w' : 'W'}hen CDE score drops below`,
+                                value: newNotificationItemForm.cdeScoreThreshold,
+                                type: 'number',
+                                step: 0.1,
+                                onChange: (value) => newNotificationItemForm.cdeScoreThreshold.val = value,
+                                validators: [
+                                    numberBetween(0, 100, 1),
+                                ],
+                            })
+                            : '',
                     ] : [
                         () => Select({
                             label: getValue(props.scope_label),
@@ -314,7 +309,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 { class: 'table-header flex-row' },
                 span(
                     { style: `flex: ${columns[0]}%` },
-                    event === 'score_drop' ? 'Score minimum thresholds' : (props.scope_label.val + ' | Trigger'),
+                    event === 'score_drop' ? 'Score Drop Threshold' : `${props.scope_label.val} | Trigger`,
                 ),
                 span(
                     { style: `flex: ${columns[1]}%` },
@@ -345,14 +340,8 @@ stylesheet.replace(`
 .short-select-portal {
     max-height: 250px !important;
 }
-.score-threshold {
-    text-align: right;
-    padding-right: 20px;
-}
-.score-threshold span {
-    font-family: Menlo, Consolas, Monaco, "Courier New", monospace;
-    white-space: pre;
-    display: inline-block;
+.score-threshold b {
+    font-weight: 500;
 }
 `);
 

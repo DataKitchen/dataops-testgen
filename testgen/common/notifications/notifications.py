@@ -161,11 +161,6 @@ class BaseNotificationTemplate(BaseEmailTemplate):
       height: 20px;
     }
 
-    .summary__header td {
-      font-size: 12px;
-      color: rgba(0, 0, 0, 0.6);
-    }
-
     .summary__value {
       padding-left: 8px;
     }
@@ -201,6 +196,11 @@ class BaseNotificationTemplate(BaseEmailTemplate):
 
     .footer__padding {
       height: 32px;
+    }
+
+    .text-caption {
+      font-size: 12px;
+      color: rgba(0, 0, 0, 0.6);
     }
 
     .text-green {
@@ -259,43 +259,20 @@ class BaseNotificationTemplate(BaseEmailTemplate):
       background-color: #AB47BC;
     }
 
-    .tg-summary-bar {
-      height: 10px;
-      max-width: 350px;
-      display: flex;
-      flex-flow: row nowrap;
-      align-items: flex-start;
-      justify-content: flex-start;
-      border-radius: 4px;
-      overflow: hidden;
+    .border-green {
+      border-color: #9CCC65;
     }
 
-    .tg-summary-bar--item {
-      height: 100%;
+    .border-yellow {
+      border-color: #FDD835;
     }
 
-    .tg-summary-bar--caption {
-      margin-top: 4px;
-      display: flex;
-      flex-flow: row wrap;
-      align-items: center;
-      color: var(--caption-text-color);
-      font-size: 13px;
-      font-style: italic;
-      line-height: 1;
+    .border-orange {
+      border-color: #FF9800;
     }
 
-    .tg-summary-bar--legend {
-      display: flex;
-      flex-flow: row nowrap;
-      align-items: center;
-      width: auto;
-      margin-right: 8px;
-    }
-
-    .tg-summary-bar--legend-dot {
-      margin-right: 2px;
-      font-style: normal;
+    .border-red {
+      border-color: #EF5350;
     }
 
     {{>extra_css}}
