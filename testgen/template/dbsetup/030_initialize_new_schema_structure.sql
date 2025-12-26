@@ -865,7 +865,7 @@ INSERT INTO tg_revision (component, revision)
 VALUES  ('metadata_db', 0);
 
 CREATE TABLE notification_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- or uuid_generate_v4()
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_code VARCHAR(30) NOT NULL,
 
     event VARCHAR(20) NOT NULL,

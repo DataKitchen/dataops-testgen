@@ -1,6 +1,6 @@
 /**
 * @import { FilterOption, ProjectSummary } from '../types.js';
- * 
+ *
  * @typedef ProgressStep
  * @type {object}
  * @property {'data_chars'|'validation'|'QUERY'|'CAT'|'METADATA'} key

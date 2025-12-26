@@ -15,7 +15,7 @@ LOG = logging.getLogger("testgen")
 
 
 class ScoreDropEmailTemplate(BaseNotificationTemplate):
-    
+
     def score_color_helper(self, score: float) -> str:
         if score >= 0.96:
             return "green"
@@ -91,10 +91,10 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
         return """
             .score {
               display: block;
-              width: 100px; 
-              height: 100px; 
-              border-radius: 50%; 
-              border-width: 4px; 
+              width: 100px;
+              height: 100px;
+              border-radius: 50%;
+              border-width: 4px;
               border-style: solid;
               text-align: center;
               font-size: 14px;

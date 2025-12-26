@@ -1,7 +1,7 @@
 import logging
 from urllib.parse import quote
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
@@ -57,7 +57,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__label">Table Group</td>
-                  <td class="summary__value">{{table_groups_name}}</td>
+                  <td class="summary__value"><b>{{table_groups_name}}</b>   </td>
                   <td class="summary__label">Tables</td>
                   <td class="summary__value">{{format_number profiling_run.table_ct}}</td>
                 </tr>
@@ -70,8 +70,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 <tr>
                   <td class="summary__label">Duration</td>
                   <td class="summary__value">{{format_duration profiling_run.start_time profiling_run.end_time}}</td>
-                  <td class="summary__label">Datapoints</td>
-                  <td class="summary__value">{{format_number profiling_run.datapoint_ct}}</td>
                 </tr>
               </table>
             </div>
@@ -257,14 +255,12 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         HygieneIssue.select_with_diff(
             profiling_run.id,
             previous_run.id if previous_run else None,
-            or_(HygieneIssue.disposition.is_(None), HygieneIssue.disposition != "Dismissed"),
             limit=result_list_ct,
         )
     )
 
-    new_issue_count = sum(1 for _, is_new in issues if is_new)
     triggers = {ProfilingRunNotificationTrigger.always}
-    if profiling_run.status in ("Error", "Cancelled") or new_issue_count:
+    if profiling_run.status in ("Error", "Cancelled") or {None, True} & {is_new for _, is_new in issues}:
         triggers.add(ProfilingRunNotificationTrigger.on_changes)
 
     notifications = [ns for ns in notifications if ns.trigger in triggers]
@@ -276,37 +272,36 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
     )
 
     hygiene_issues_summary = []
-    if profiling_run.status == "Complete":
-        counts = HygieneIssue.select_count_by_priority(profiling_run.id)
-        for priority, likelihood, label in (
-                ("Definite", "Definite", "Definite Hygiene Issues"),
-                ("Likely", "Likely", "Likely Hygiene Issues"),
-                ("Possible", "Possible", "Possible Hygiene Issues"),
-                ("High", "Potential PII", "Potential PII - High risk"),
-                ("Moderate", "Potential PII", "Potential PII - Moderate risk"),
-        ):
-            context_issues = [
-                {
-                    "is_new": is_new,
-                    "detail": issue.detail,
-                    "table_name": issue.table_name,
-                    "column_name": issue.column_name,
-                    "issue_name": issue.type_.name,
-                }
-                for issue, is_new in issues
-                if issue.priority == priority
-            ]
+    counts = HygieneIssue.select_count_by_priority(profiling_run.id)
+    for priority, likelihood, label in (
+            ("Definite", "Definite", "Definite Hygiene Issues"),
+            ("Likely", "Likely", "Likely Hygiene Issues"),
+            ("Possible", "Possible", "Possible Hygiene Issues"),
+            ("High", "Potential PII", "Potential PII - High risk"),
+            ("Moderate", "Potential PII", "Potential PII - Moderate risk"),
+    ):
+        context_issues = [
+            {
+                "is_new": is_new,
+                "detail": issue.detail,
+                "table_name": issue.table_name,
+                "column_name": issue.column_name,
+                "issue_name": issue.type_.name,
+            }
+            for issue, is_new in issues
+            if issue.priority == priority
+        ]
 
-            hygiene_issues_summary.append(
-                {
-                    "label": label,
-                    "priority": priority,
-                    "url": f"{profiling_run_issues_url}&likelihood={quote(likelihood)}",
-                    "count": counts[priority],
-                    "issues": context_issues,
-                    "truncated": counts[priority].active - len(context_issues),
-                }
-            )
+        hygiene_issues_summary.append(
+            {
+                "label": label,
+                "priority": priority,
+                "url": f"{profiling_run_issues_url}&likelihood={quote(likelihood)}",
+                "count": counts[priority],
+                "issues": context_issues,
+                "truncated": counts[priority].active - len(context_issues),
+            }
+        )
 
     labels_query = (
         select(Project.project_name, TableGroup.table_groups_name, TableGroup.table_group_schema)
@@ -327,9 +322,8 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "log_message": profiling_run.log_message,
             "table_ct": profiling_run.table_ct,
             "column_ct": profiling_run.column_ct,
-            "datapoint_ct": profiling_run.dq_total_data_points,
         },
-        "new_issue_count": new_issue_count,
+        "new_issue_count": sum(1 for _, is_new in issues if is_new),
         "hygiene_issues_summary": hygiene_issues_summary,
         **dict(get_current_session().execute(labels_query).one()),
     }

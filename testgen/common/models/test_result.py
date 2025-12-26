@@ -2,7 +2,7 @@ import enum
 from collections import defaultdict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Enum, ForeignKey, Text, or_, select
+from sqlalchemy import Column, Enum, ForeignKey, String, or_, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.functions import coalesce
@@ -30,12 +30,12 @@ class TestResult(Entity):
     test_suite_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_suites.id"), nullable=False)
     test_run_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_runs.id"), nullable=False)
     test_definition_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_definitions.id"), nullable=False)
-    test_type: str = Column(Text, ForeignKey("test_types.test_type"), nullable=False)
+    test_type: str = Column(String, ForeignKey("test_types.test_type"), nullable=False)
 
     status: TestResultStatus = Column("result_status", Enum(TestResultStatus))
-    message: str = Column("result_message", Text, nullable=False)
-    table_name: str = Column(Text, nullable=False)
-    column_names: str = Column(Text, nullable=False)
+    message: str = Column("result_message", String, nullable=False)
+    table_name: str = Column(String, nullable=False)
+    column_names: str = Column(String, nullable=False)
 
     # Note: not all table columns are implemented by this entity
 

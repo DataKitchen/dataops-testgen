@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ForeignKey, String, and_, case, false, select
+from sqlalchemy import Column, ForeignKey, String, and_, case, null, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased, relationship
@@ -19,11 +19,11 @@ PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
 @dataclass
 class IssueCount:
     total: int = 0
-    dismissed: int = 0
+    inactive: int = 0
 
     @property
     def active(self):
-        return self.total - self.dismissed
+        return self.total - self.inactive
 
 
 class HygieneIssueType(Base):
@@ -83,8 +83,8 @@ class HygieneIssue(Entity):
         count_query = (
             select(
                 cls.priority,
-                func.count().label("total"),
-                func.count(cls.disposition == "Dismissed").label("dismissed"),
+                func.count(),
+                func.count(cls.disposition.in_(("Dismissed", "Inactive"))),
             )
             .select_from(cls)
             .join(HygieneIssueType)
@@ -92,8 +92,8 @@ class HygieneIssue(Entity):
             .group_by(cls.priority)
         )
         result = {
-            priority: IssueCount(active, dismissed)
-            for priority, active, dismissed in get_current_session().execute(count_query)
+            priority: IssueCount(total, inactive)
+            for priority, total, inactive in get_current_session().execute(count_query)
         }
         for p in ("Definite", "Likely", "Possible", "High", "Moderate"):
             result.setdefault(p, IssueCount())
@@ -113,11 +113,11 @@ class HygieneIssue(Entity):
             (cls.priority == "Low", 6),
             else_=7,
         )
-        missing_col = (other.id.is_(None) if other_profiling_run_id else false()).label("missing")
+        is_new_col = (other.id.is_(None) if other_profiling_run_id else null()).label("is_new")
         query = (
             select(
                 cls,
-                missing_col,
+                is_new_col,
             )
             .outerjoin(
                 other,
@@ -136,7 +136,7 @@ class HygieneIssue(Entity):
                 cls.profile_run_id == profiling_run_id,
                 *where_clauses
             ).order_by(
-                missing_col.desc(),
+                is_new_col.desc(),
                 order_weight,
             ).limit(
                 limit,

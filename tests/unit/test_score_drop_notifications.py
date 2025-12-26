@@ -157,23 +157,25 @@ def test_send_score_drop_notifications(
         (score_definition, "score", total_prev, total_fresh),
         (score_definition, "cde_score", cde_prev, cde_fresh)
     ]
-    db_session_mock().scalars.return_value = ns_select_result
+    db_session_mock().execute().fetchall.return_value = [(ns, "Test Project") for ns in ns_select_result]
 
     send_score_drop_notifications(data)
 
+    expected_common_diff = {"threshold": ANY,  "increase": ANY, "decrease": ANY}
     expected_total_diff = {
-        "category": "score", "label": "Total", "prev": total_prev, "current": total_fresh, "threshold": ANY,
+        "category": "score", "label": "Total", "prev": total_prev, "current": total_fresh, **expected_common_diff
     }
     expected_cde_diff = {
-        "category": "cde_score", "label": "CDE", "prev": cde_prev, "current": cde_fresh, "threshold": ANY,
+        "category": "cde_score", "label": "CDE", "prev": cde_prev, "current": cde_fresh, **expected_common_diff
     }
     send_mock.assert_has_calls(
         [
             call(
                 [ANY],
                 {
+                    "project_name": "Test Project",
                     "definition": score_definition,
-                    "definition_url": "http://localhost:8501/quality-dashboard:score-details?definition_id=sd-1",
+                    "scorecard_url": "http://tg-base-url/quality-dashboard:score-details?definition_id=sd-1",
                     "diff": [
                         {**expected_total_diff, "notify": total_triggers},
                         {**expected_cde_diff, "notify": cde_triggers},

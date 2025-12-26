@@ -258,6 +258,16 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
         div(
             { class: 'flex-row fx-gap-4' },
             Button({
+                icon: 'notifications',
+                type: 'stroked',
+                label: 'Notifications',
+                tooltip: 'Configure email notifications for profiling runs',
+                tooltipPosition: 'bottom',
+                width: 'fit-content',
+                style: 'background: var(--dk-card-background);',
+                onclick: () => emitEvent('RunNotificationsClicked', {}),
+            }),
+            Button({
                 icon: 'today',
                 type: 'stroked',
                 label: 'Profiling Schedules',

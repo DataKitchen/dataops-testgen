@@ -10,6 +10,7 @@ from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_querie
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -26,7 +27,6 @@ from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data
 from testgen.ui.services.database_service import (
     execute_db_query,
     fetch_df_from_db,
-    fetch_one_from_db,
 )
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
@@ -490,39 +490,26 @@ def get_anomaly_disposition(profile_run_id: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def get_profiling_anomaly_summary(profile_run_id: str) -> list[dict]:
-    query = """
-    SELECT
-        schema_name,
-        COUNT(DISTINCT s.table_name) as table_ct,
-        COUNT(DISTINCT s.column_name) as column_ct,
-        COUNT(*) as issue_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                    AND t.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) as definite_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                    AND t.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) as likely_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed'
-                    AND t.issue_likelihood = 'Possible' THEN 1 ELSE 0 END) as possible_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed')
-                        IN ('Dismissed', 'Inactive')
-                    AND t.issue_likelihood <> 'Potential PII' THEN 1 ELSE 0 END) as dismissed_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: HIGH%%' THEN 1 ELSE 0 END) as pii_high_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') = 'Confirmed' AND t.issue_likelihood = 'Potential PII' AND s.detail LIKE 'Risk: MODERATE%%' THEN 1 ELSE 0 END) as pii_moderate_ct,
-        SUM(CASE WHEN COALESCE(s.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') AND t.issue_likelihood = 'Potential PII' THEN 1 ELSE 0 END) as pii_dismissed_ct
-    FROM profile_anomaly_results s
-    LEFT JOIN profile_anomaly_types t ON (s.anomaly_id = t.id)
-    WHERE s.profile_run_id = :profile_run_id
-    GROUP BY schema_name;
-    """
-    result = fetch_one_from_db(query, {"profile_run_id": profile_run_id})
+
+    count_by_priority = HygieneIssue.select_count_by_priority(profile_run_id)
 
     return [
-        { "label": "Definite", "value": result.definite_ct, "color": "red" },
-        { "label": "Likely", "value": result.likely_ct, "color": "orange" },
-        { "label": "Possible", "value": result.possible_ct, "color": "yellow" },
-        { "label": "Dismissed", "value": result.dismissed_ct, "color": "grey" },
-        { "label": "High", "value": result.pii_high_ct, "color": "red", "type": "PII" },
-        { "label": "Moderate", "value": result.pii_moderate_ct, "color": "orange", "type": "PII" },
-        { "label": "Dismissed", "value": result.pii_dismissed_ct, "color": "grey", "type": "PII" },
+        {"label": "Definite", "value": count_by_priority["Definite"].active, "color": "red"},
+        {"label": "Likely", "value": count_by_priority["Likely"].active, "color": "orange"},
+        {"label": "Possible", "value": count_by_priority["Possible"].active, "color": "yellow"},
+        {
+            "label": "Dismissed",
+            "value": sum(count_by_priority[p].inactive for p in ("Definite", "Likely", "Possible")),
+            "color": "grey",
+        },
+        {"label": "High", "value": count_by_priority["High"].active, "color": "red", "type": "PII"},
+        {"label": "Moderate", "value": count_by_priority["Moderate"].active, "color": "orange", "type": "PII"},
+        {
+            "label": "Dismissed",
+            "value": sum(count_by_priority[p].inactive for p in ("High", "Moderate")),
+            "color": "grey",
+            "type": "PII",
+        },
     ]
 
 
@@ -564,7 +551,7 @@ def source_data_dialog(selected_row):
 
     st.markdown(f"#### {selected_row['anomaly_name']}")
     st.caption(selected_row["anomaly_description"])
-    
+
     st.markdown("#### Hygiene Issue Detail")
     st.caption(selected_row["detail"])
 

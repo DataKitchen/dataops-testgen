@@ -202,7 +202,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
           </div>
           {{/if}}
         """
-    
+
     def get_extra_css_template(self) -> str:
         return """
           .tg-summary-bar {
@@ -247,16 +247,15 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
         return
 
     changed_td_id_list = []
-    triggers = {TestRunNotificationTrigger.always}
+    if previous_run := test_run.get_previous():
+        for _, status, td_id_list in TestResult.diff(previous_run.id, test_run.id):
+            if status in (TestResultStatus.Failed, TestResultStatus.Warning, TestResultStatus.Error):
+                changed_td_id_list.extend(td_id_list)
 
+    triggers = {TestRunNotificationTrigger.always}
     if test_run.status in ("Error", "Cancelled"):
         triggers.update(TestRunNotificationTrigger)
     else:
-        if previous_run := test_run.get_previous():
-            for _, status, td_id_list in TestResult.diff(previous_run.id, test_run.id):
-                if status in (TestResultStatus.Failed, TestResultStatus.Warning, TestResultStatus.Error):
-                    changed_td_id_list.extend(td_id_list)
-
         if test_run.error_ct + test_run.failed_ct:
             triggers.update({TestRunNotificationTrigger.on_failures, TestRunNotificationTrigger.on_warnings})
         elif test_run.warning_ct:
@@ -275,42 +274,41 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
         (TestResultStatus.Error, "errors"),
     )
 
-    if test_run.status == "Complete":
-        changed_case = case(
-            (TestResult.test_definition_id.in_(changed_td_id_list), literal(True)),
-            else_=literal(False),
+    changed_case = case(
+        (TestResult.test_definition_id.in_(changed_td_id_list), literal(True)),
+        else_=literal(False),
+    )
+    result_count_by_status = {
+        status: min(result_status_min, test_run.ct_by_status[status])
+        for status, _ in summary_statuses
+    }
+
+    for status, _ in summary_statuses:
+        result_count_by_status[status] += min(
+            (
+                result_list_ct - sum(result_count_by_status.values()),
+                test_run.ct_by_status[status] - result_count_by_status[status],
+            )
         )
-        result_count_by_status = {
-            status: min(result_status_min, test_run.ct_by_status[status])
-            for status, _ in summary_statuses
-        }
 
-        for status, _ in summary_statuses:
-            result_count_by_status[status] += min(
-                (
-                    result_list_ct - sum(result_count_by_status.values()),
-                    test_run.ct_by_status[status] - result_count_by_status[status],
-                )
+        if not result_count_by_status[status]:
+            continue
+
+        query = (
+            select(
+                TestResult.table_name,
+                TestResult.column_names,
+                TestResult.message,
+                changed_case.label("is_new"),
+                TestType.test_name_short.label("test_type"),
             )
+            .join(TestType, TestType.test_type == TestResult.test_type)
+            .where(TestResult.test_run_id == test_run.id, TestResult.status == status)
+            .order_by(changed_case.desc())
+            .limit(result_count_by_status[status])
+        )
 
-            if not result_count_by_status[status]:
-                continue
-
-            query = (
-                select(
-                    TestResult.table_name,
-                    TestResult.column_names,
-                    TestResult.message,
-                    changed_case.label("is_new"),
-                    TestType.test_name_short.label("test_type"),
-                )
-                .join(TestType, TestType.test_type == TestResult.test_type)
-                .where(TestResult.test_run_id == test_run.id, TestResult.status == status)
-                .order_by(changed_case.desc())
-                .limit(result_count_by_status[status])
-            )
-
-            result_list_by_status[status] = [{**r} for r in get_current_session().execute(query)]
+        result_list_by_status[status] = [{**r} for r in get_current_session().execute(query)]
 
     tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
 

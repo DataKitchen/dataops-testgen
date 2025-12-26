@@ -19,7 +19,7 @@ from testgen.ui.queries import table_group_queries
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.ui.views.profiling_runs import ProfilingScheduleDialog
+from testgen.ui.views.profiling_runs import ProfilingScheduleDialog, manage_notifications
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Table Groups"
@@ -86,6 +86,7 @@ class TableGroupsPage(Page):
             },
             on_change_handlers={
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
+                "RunNotificationsClicked": manage_notifications(project_code),
                 "AddTableGroupClicked": on_add_table_group_clicked,
                 "EditTableGroupClicked": on_edit_table_group_clicked,
                 "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
@@ -299,7 +300,7 @@ class TableGroupsPage(Page):
                     "name": connection["connection_name"],
                     "flavor": asdict(flavor),
                 }
-    
+
             formatted_list.append(formatted_table_group)
 
         return formatted_list

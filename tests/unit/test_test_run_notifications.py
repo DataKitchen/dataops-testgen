@@ -78,12 +78,6 @@ def diff_mock():
 
 
 @pytest.fixture
-def db_exec_mock():
-    with patch("testgen.common.notifications.test_run.get_current_session") as mock:
-        yield mock().execute
-
-
-@pytest.fixture
 def select_mock():
     with patch("testgen.common.notifications.test_run.select") as mock:
         yield mock
@@ -108,10 +102,12 @@ def select_summary_mock():
             "always", "on_failures", "on_warnings", "on_changes",
         ]),
         ("Complete", 0, 0, 50, {"error": 50}, 0, 0, 20, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Complete", 50, 0, 0, {}, 20, 0, 0, ["always", "on_failures", "on_warnings"]),
+        ("Complete", 50, 0, 0, None, 20, 0, 0, ["always", "on_failures", "on_warnings"]),
         ("Complete", 50, 0, 10, {"failed": 5}, 15, 0, 5, ["always", "on_failures", "on_warnings", "on_changes"]),
         ("Error", 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        ("Error", 20, 10, 0, None, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
         ("Cancelled", 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        ("Cancelled", 30, 20, 0, {}, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
     ]
 )
 def test_send_test_run_notification(
@@ -128,7 +124,7 @@ def test_send_test_run_notification(
         get_prev_mock,
         diff_mock,
         send_mock,
-        db_exec_mock,
+        db_session_mock,
         select_mock,
         select_summary_mock,
 ):
@@ -136,21 +132,33 @@ def test_send_test_run_notification(
     test_run = TestRun(
         id="tr-id",
         status=test_run_status,
+        test_suite_id="ts-id",
         failed_ct=failed_ct,
         warning_ct=warning_ct,
         error_ct=error_ct,
     )
 
-    db_exec_mock.side_effect = [
+    db_session_mock.execute.side_effect = [
         [{} for _ in range(ct)]
         for ct in (failed_expected, warning_expected, error_expected)
         if ct > 0
     ]
-    diff_mock.return_value = create_diff(**diff_mock_args)
+    if diff_mock_args is None:
+        get_prev_mock.return_value = None
+    else:
+        diff_mock.return_value = create_diff(**diff_mock_args)
+        get_prev_mock.return_value = TestRun(id="tr-prev-id")
     summary = object()
     select_summary_mock.return_value = [summary]
 
     send_test_run_notifications(test_run)
+
+    ns_select_patched.assert_called_once_with(enabled=True, test_suite_id="ts-id")
+
+    if diff_mock_args is None:
+        diff_mock.assert_not_called()
+    else:
+        diff_mock.assert_called_once_with("tr-prev-id", "tr-id")
 
     select_mock.assert_has_calls(
         [
@@ -163,7 +171,7 @@ def test_send_test_run_notification(
 
     expected_context = {
         "test_run": summary,
-        "test_run_url": "http://localhost:8501/test-runs/test-runs:results?run_id=tr-id",
+        "test_run_url": "http://tg-base-url/test-runs:results?run_id=tr-id",
         "test_run_id": "tr-id",
         "test_result_summary": ANY,
     }
@@ -189,7 +197,7 @@ def test_send_test_run_notification(
             result_list = test_result_summary.pop(0)
             assert result_list["status"] == status.value
             assert result_list["label"]
-            assert result_list["length"] == expected
+            assert result_list["truncated"] == total - expected
             assert result_list["total"] == total
             assert len(result_list["result_list"]) == expected
     assert not test_result_summary

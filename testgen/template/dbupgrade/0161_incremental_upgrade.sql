@@ -1,7 +1,7 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
 CREATE TABLE notification_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),  -- or uuid_generate_v4()
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_code VARCHAR(30) NOT NULL,
 
     event VARCHAR(20) NOT NULL,

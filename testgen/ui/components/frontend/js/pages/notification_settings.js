@@ -1,6 +1,4 @@
 /**
- * @import {CronSample} from '../components/crontab_input.js'
- *
  * @typedef NotificationItem
  * @type {object}
  * @property {String?} scope
@@ -198,7 +196,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 div(
                     { class: 'flex-column fx-gap-2', style: 'flex: 40%' },
                     ...(event === 'score_drop' ? [
-                        () => totalScoreEnabled 
+                        () => totalScoreEnabled
                             ? Input({
                                 label: 'When total score drops below',
                                 value: newNotificationItemForm.totalScoreThreshold,

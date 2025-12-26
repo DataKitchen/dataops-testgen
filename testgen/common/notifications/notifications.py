@@ -12,11 +12,11 @@ class BaseNotificationTemplate(BaseEmailTemplate):
     def pluralize_helper(self, count: int, singular: str, plural: str) -> str:
         return singular if count == 1 else plural
 
-    def format_number_helper(self, number: int | float, fmt: str = "{:,}") -> str:
-        return fmt.format(number)
+    def format_number_helper(self, number: int) -> str:
+        return "" if number is None else f"{number:,}"
 
     def format_dt_helper(self, dt: datetime) -> str:
-        return dt.strftime("%b %d, %-I:%M %p UTC")
+        return "" if dt is None else dt.strftime("%b %d, %-I:%M %p UTC")
 
     def format_duration_helper(self, start_time: datetime, end_time: datetime) -> str:
         total_seconds = abs(end_time - start_time).total_seconds()
