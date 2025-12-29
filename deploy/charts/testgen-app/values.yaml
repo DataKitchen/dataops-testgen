@@ -1,12 +1,12 @@
 # Default values for testgen.
 
 testgen:
-  databaseHost: "postgresql"
+  databaseHost: "postgres"
   databaseName: "datakitchen"
   databaseSchema: "tgapp"
   databaseUser: "postgres"
   databasePasswordSecret:
-    name: "postgresql"
+    name: "services-secret"
     key: "postgres-password"
   authSecrets:
     create: true
@@ -15,6 +15,13 @@ testgen:
   uiPassword:
   trustTargetDatabaseCertificate: false
   observabilityVerifySsl: true
+  emailNotifications:
+    fromAddress:
+    smtp:
+      endpoint:
+      port:
+      username:
+      password:
   labels:
 
 cliHooks:

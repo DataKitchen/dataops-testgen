@@ -31,6 +31,18 @@
   value: {{ .Values.testgen.trustTargetDatabaseCertificate | ternary "yes" "no" | quote }}
 - name: TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL
   value: {{ .Values.testgen.observabilityVerifySsl | ternary "yes" "no" | quote }}
+{{- with .Values.testgen.emailNotifications }}
+- name: TG_SMTP_ENDPOINT
+  value: {{ .smtp.endpoint | quote }}
+- name: TG_SMTP_PORT
+  value: {{ .smtp.port | quote }}
+- name: TG_SMTP_USERNAME
+  value: {{ .smtp.username | quote }}
+- name: TG_SMTP_PASSWORD
+  value: {{ .smtp.password | quote }}
+- name: TG_EMAIL_FROM_ADDRESS
+  value: {{ .fromAddress | quote }}
+{{- end -}}
 {{- end -}}
 
 {{- define "testgen.hookEnvironment" -}}
