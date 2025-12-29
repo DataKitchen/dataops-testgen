@@ -208,7 +208,7 @@ class BaseNotificationTemplate(BaseEmailTemplate):
     }
 
     .text-yellow {
-      color: #FDD835;
+      color: #FBC02D;
     }
 
     .text-orange {

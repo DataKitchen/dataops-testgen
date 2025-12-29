@@ -25,7 +25,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
         return (
             "[TestGen] Profiling Run {{format_status profiling_run.status}}: {{table_groups_name}}"
             "{{#if new_issue_count}}"
-            '| {{new_issue_count}} new hygiene {{pluralize new_issue_count "issue" "issues"}}'
+            ' | {{format_number new_issue_count}} new hygiene {{pluralize new_issue_count "issue" "issues"}}'
             "{{/if}}"
         )
 
@@ -51,7 +51,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td class="summary__label">Schema</td>
                   <td class="summary__value">{{table_group_schema}}</td>
                   <td align="right">
-                    <a class="link" href="{{profiling_run.results_url}}" target="_blank">View Results on TestGen &gt;</a>
+                    <a class="link" href="{{profiling_run.results_url}}" target="_blank">View results on TestGen &gt;</a>
                   </td>
 
                 </tr>
@@ -83,7 +83,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td class="summary__title">Issues Summary</td>
                   {{#if (eq profiling_run.status 'Complete')}}
                   <td align="right">
-                    <a class="link" href="{{profiling_run.issues_url}}" target="_blank">View Issues on TestGen &gt;</a>
+                    <a class="link" href="{{profiling_run.issues_url}}" target="_blank">View {{format_number issue_count}} issues &gt;</a>
                   </td>
                   {{/if}}
                 </tr>
@@ -91,10 +91,12 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td class="summary__subtitle">
                     {{#if (eq profiling_run.status 'Complete')}}
                         {{#if (eq notification_trigger 'on_changes')}}
-                            Profiling run has new hygiene issues.
+                            Profiling run detected new hygiene issues.
                         {{/if}}
                         {{#if (eq notification_trigger 'always')}}
-                            Profiling run has finished.
+                            {{#if issue_count}}
+                                Profiling run detected hygiene issues.
+                            {{/if}}
                         {{/if}}
                     {{/if}}
                     {{#if (eq profiling_run.status 'Error')}}
@@ -156,7 +158,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
               border="0">
               <tr>
                 <td></td>
-                <td colspan="2" class="summary-title
+                <td colspan="2" class="summary__title
                 {{#if (eq priority 'Definite')}} text-red {{/if}}
                 {{#if (eq priority 'Likely')}} text-orange {{/if}}
                 {{#if (eq priority 'Possible')}} text-yellow {{/if}}
@@ -165,12 +167,12 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 ">{{label}}</td>
                 <td colspan="2" align="right">
                   <a class="link" href="{{url}}" target="_blank">
-                    View {{count.total}} {{label}} &gt;
+                    View {{format_number count.total}} {{label}} &gt;
                   </a>
                 </td>
               </tr>
               {{#if (len issues)}}
-              <tr class="summary__header">
+              <tr class="text-caption">
                 <td></td>
                 <td>Table</td>
                 <td>Columns</td>
@@ -195,7 +197,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </td>
                 <td colspan="2" align="right" class="summary__caption">
                   <span class="text-purple" style="margin-right: 4px; font-style: normal;">&#9679;</span>
-                  indicates new {{label}}
+                  indicates new issues
                 </td>
               </tr>
               {{/if}}
@@ -206,38 +208,26 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
 
     def get_extra_css_template(self) -> str:
         return """
-            .tg-summary-header td  {
-              padding: 10px 0 10px 0;
-              font-size: 14px;
-              text-color: rgba(0, 0, 0, 0.54);
-            }
-            .tg-summary-counts td {
-              height: 32px;
-              border-left-width: 4px;
-              border-left-style: solid;
-              padding-left: 8px;
-              padding-right: 24px;
-              line-height: 1.2;
-            }
-            .tg-summary-counts-label {
-              font-size: 12px;
-              text-color: rgba(0, 0, 0, 0.54);
-            }
-            .tg-summary-counts-count {
-              font-size: 16px;
-            }
-            .border-yellow {
-              border-color: #FDD835;
-            }
-
-            .border-orange {
-              border-color: #FF9800;
-            }
-
-            .border-red {
-              border-color: #EF5350;
-            }
-
+          .tg-summary-header td  {
+            padding: 10px 0 10px 0;
+            font-size: 14px;
+            text-color: rgba(0, 0, 0, 0.54);
+          }
+          .tg-summary-counts td {
+            height: 32px;
+            border-left-width: 4px;
+            border-left-style: solid;
+            padding-left: 8px;
+            padding-right: 24px;
+            line-height: 1.2;
+          }
+          .tg-summary-counts-label {
+            font-size: 12px;
+            text-color: rgba(0, 0, 0, 0.54);
+          }
+          .tg-summary-counts-count {
+            font-size: 16px;
+          }
         """
 
 
@@ -274,11 +264,11 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
     hygiene_issues_summary = []
     counts = HygieneIssue.select_count_by_priority(profiling_run.id)
     for priority, likelihood, label in (
-            ("Definite", "Definite", "Definite Hygiene Issues"),
-            ("Likely", "Likely", "Likely Hygiene Issues"),
-            ("Possible", "Possible", "Possible Hygiene Issues"),
-            ("High", "Potential PII", "Potential PII - High risk"),
-            ("Moderate", "Potential PII", "Potential PII - Moderate risk"),
+            ("Definite", "Definite", "definite issues"),
+            ("Likely", "Likely", "likely issues"),
+            ("Possible", "Possible", "possible issues"),
+            ("High", "Potential PII", "potential PII - high risk"),
+            ("Moderate", "Potential PII", "potential PII - moderate risk"),
     ):
         context_issues = [
             {
@@ -323,6 +313,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "table_ct": profiling_run.table_ct,
             "column_ct": profiling_run.column_ct,
         },
+        "issue_count": len(issues),
         "new_issue_count": sum(1 for _, is_new in issues if is_new),
         "hygiene_issues_summary": hygiene_issues_summary,
         **dict(get_current_session().execute(labels_query).one()),
