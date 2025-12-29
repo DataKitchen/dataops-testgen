@@ -245,7 +245,7 @@ const Toolbar = (
             Button({
                 icon: 'today',
                 type: 'stroked',
-                label: 'Profiling Schedules',
+                label: 'Schedules',
                 tooltip: 'Manage when profiling should run for table groups',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',

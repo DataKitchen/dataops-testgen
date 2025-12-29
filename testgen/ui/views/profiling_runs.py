@@ -147,7 +147,7 @@ class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
         table_group_options.insert(0, (None, "All Table Groups"))
         trigger_labels = {
             ProfilingRunNotificationTrigger.always.value: "Always",
-            ProfilingRunNotificationTrigger.on_changes.value: "On new hygiene issues found",
+            ProfilingRunNotificationTrigger.on_changes.value: "On new hygiene issues",
         }
         trigger_options = [(t.value, trigger_labels[t.value]) for t in ProfilingRunNotificationTrigger]
         return {
