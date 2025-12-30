@@ -46,6 +46,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.scheduler import register_scheduler_job, run_scheduler
 from testgen.utils import plugins
@@ -648,7 +649,8 @@ def run_ui():
     @with_database_session
     def cancel_all_running():
         try:
-            ProfilingRun.cancel_all_running()
+            for profiling_run_id in ProfilingRun.cancel_all_running():
+                send_profiling_run_notifications(ProfilingRun.get(profiling_run_id))
             for test_run_id in TestRun.cancel_all_running():
                 send_test_run_notifications(TestRun.get(test_run_id))
         except Exception:

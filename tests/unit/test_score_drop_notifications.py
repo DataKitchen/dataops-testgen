@@ -49,12 +49,6 @@ def send_mock():
 
 
 @pytest.fixture
-def db_session_mock():
-    with patch("testgen.common.notifications.score_drop.get_current_session") as mock:
-        yield mock
-
-
-@pytest.fixture
 def select_mock():
     with patch("testgen.common.notifications.score_drop.select") as mock:
         yield mock
@@ -127,7 +121,7 @@ def test_send_score_drop_notifications_no_match(
     ]
     for ns in ns_select_result:
         ns.score_definition_id = "sd-x"
-    db_session_mock().scalars.return_value = ns_select_result
+    db_session_mock.execute().fetchall.return_value = ns_select_result
 
     send_score_drop_notifications(data)
 
@@ -157,7 +151,7 @@ def test_send_score_drop_notifications(
         (score_definition, "score", total_prev, total_fresh),
         (score_definition, "cde_score", cde_prev, cde_fresh)
     ]
-    db_session_mock().execute().fetchall.return_value = [(ns, "Test Project") for ns in ns_select_result]
+    db_session_mock.execute().fetchall.return_value = [(ns, "Test Project") for ns in ns_select_result]
 
     send_score_drop_notifications(data)
 

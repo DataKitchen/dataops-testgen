@@ -16,6 +16,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
@@ -169,6 +170,7 @@ def on_cancel_run(profiling_run: dict) -> None:
     process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
         ProfilingRun.cancel_run(profiling_run["id"])
+        send_profiling_run_notifications(ProfilingRun.get(profiling_run["id"]))
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -218,6 +220,7 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
                         process_status, _ = process_service.kill_profile_run(to_int(profiling_run.process_id))
                         if process_status:
                             ProfilingRun.cancel_run(profiling_run.id)
+                            send_profiling_run_notifications(ProfilingRun.get(profiling_run.id))
                 ProfilingRun.cascade_delete(profiling_run_ids)
             st.rerun()
         except Exception:

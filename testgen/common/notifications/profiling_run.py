@@ -24,8 +24,8 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Profiling Run {{format_status profiling_run.status}}: {{table_groups_name}}"
-            "{{#if new_issue_count}}"
-            ' | {{format_number new_issue_count}} new hygiene {{pluralize new_issue_count "issue" "issues"}}'
+            "{{#if issue_count}}"
+            ' | {{format_number issue_count}} hygiene {{pluralize issue_count "issue" "issues"}}'
             "{{/if}}"
         )
 
@@ -313,8 +313,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "table_ct": profiling_run.table_ct,
             "column_ct": profiling_run.column_ct,
         },
-        "issue_count": len(issues),
-        "new_issue_count": sum(1 for _, is_new in issues if is_new),
+        "issue_count": sum(c.total for c in counts.values()),
         "hygiene_issues_summary": hygiene_issues_summary,
         **dict(get_current_session().execute(labels_query).one()),
     }

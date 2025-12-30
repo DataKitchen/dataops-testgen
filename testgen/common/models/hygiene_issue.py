@@ -107,11 +107,10 @@ class HygieneIssue(Entity):
         order_weight = case(
             (cls.priority == "Definite", 1),
             (cls.priority == "Likely", 2),
-            (cls.priority == "Possible", 5),
-            (cls.priority == "High", 2),
-            (cls.priority == "Moderate", 4),
-            (cls.priority == "Low", 6),
-            else_=7,
+            (cls.priority == "Possible", 3),
+            (cls.priority == "High", 4),
+            (cls.priority == "Moderate", 5),
+            else_=6,
         )
         is_new_col = (other.id.is_(None) if other_profiling_run_id else null()).label("is_new")
         query = (
