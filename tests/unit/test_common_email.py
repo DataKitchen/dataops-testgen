@@ -2,7 +2,7 @@ from unittest.mock import ANY, call, patch
 
 import pytest
 
-from testgen.common.email import BaseEmailTemplate, EmailTemplateException
+from testgen.common.notifications.base import BaseEmailTemplate, EmailTemplateException
 
 
 class TestEmailTemplate(BaseEmailTemplate):
@@ -16,13 +16,13 @@ class TestEmailTemplate(BaseEmailTemplate):
 
 @pytest.fixture
 def smtp_mock():
-    with patch("testgen.common.email.smtplib.SMTP_SSL") as mock:
+    with patch("testgen.common.notifications.base.smtplib.SMTP_SSL") as mock:
         yield mock
 
 
 @pytest.fixture
 def def_settings():
-    with patch("testgen.common.email.settings") as mock:
+    with patch("testgen.common.notifications.base.settings") as mock:
         mock.EMAIL_FROM_ADDRESS = "from@email"
         mock.SMTP_ENDPOINT = "smtp-endpoint"
         mock.SMTP_PORT = 333

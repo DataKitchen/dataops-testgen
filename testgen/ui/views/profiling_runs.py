@@ -8,16 +8,22 @@ import streamlit as st
 import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_settings import (
+    ProfilingRunNotificationSettings,
+    ProfilingRunNotificationTrigger,
+)
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.utils import friendly_score, to_int
@@ -74,6 +80,7 @@ class DataProfilingPage(Page):
             },
             on_change_handlers={
                 "FilterApplied": on_profiling_runs_filtered,
+                "RunNotificationsClicked": manage_notifications(project_code),
                 "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
                 "RunProfilingClicked": lambda *_: run_profiling_dialog(project_code, table_group_id, allow_selection=True),
                 "RefreshData": refresh_data,
@@ -119,10 +126,51 @@ class ProfilingScheduleDialog(ScheduleDialog):
         return [], {"table_group_id": str(arg_value)}
 
 
+class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
+
+    def _item_to_model_attrs(self, item: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        return {
+            "trigger": ProfilingRunNotificationTrigger(item["trigger"]),
+            "table_group_id": item["scope"],
+        }
+
+    def _model_to_item_attrs(self, model: ProfilingRunNotificationSettings) -> dict[str, typing.Any]:
+        return {
+            "trigger": model.trigger.value if model.trigger else None,
+            "scope": str(model.table_group_id) if model.table_group_id else None,
+        }
+
+    def _get_component_props(self) -> dict[str, typing.Any]:
+        table_group_options = [
+            (str(tg.id), tg.table_groups_name)
+            for tg in TableGroup.select_minimal_where(TableGroup.project_code == self.ns_attrs["project_code"])
+        ]
+        table_group_options.insert(0, (None, "All Table Groups"))
+        trigger_labels = {
+            ProfilingRunNotificationTrigger.always.value: "Always",
+            ProfilingRunNotificationTrigger.on_changes.value: "On new hygiene issues",
+        }
+        trigger_options = [(t.value, trigger_labels[t.value]) for t in ProfilingRunNotificationTrigger]
+        return {
+            "scope_label": "Table Group",
+            "scope_options": table_group_options,
+            "trigger_options": trigger_options,
+        }
+
+
+def manage_notifications(project_code):
+
+    def open_dialog(*_):
+        ProfilingRunNotificationSettingsDialog(ProfilingRunNotificationSettings, {"project_code": project_code}).open(),
+
+    return open_dialog
+
+
 def on_cancel_run(profiling_run: dict) -> None:
     process_status, process_message = process_service.kill_profile_run(to_int(profiling_run["process_id"]))
     if process_status:
         ProfilingRun.cancel_run(profiling_run["id"])
+        send_profiling_run_notifications(ProfilingRun.get(profiling_run["id"]))
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -172,6 +220,7 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
                         process_status, _ = process_service.kill_profile_run(to_int(profiling_run.process_id))
                         if process_status:
                             ProfilingRun.cancel_run(profiling_run.id)
+                            send_profiling_run_notifications(ProfilingRun.get(profiling_run.id))
                 ProfilingRun.cascade_delete(profiling_run_ids)
             st.rerun()
         except Exception:

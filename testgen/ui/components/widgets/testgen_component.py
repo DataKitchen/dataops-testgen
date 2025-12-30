@@ -21,6 +21,7 @@ AvailablePages = typing.Literal[
     "connections",
     "table_group_wizard",
     "help_menu",
+    "notification_settings",
 ]
 
 

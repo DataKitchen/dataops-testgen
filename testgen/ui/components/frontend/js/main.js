@@ -35,6 +35,7 @@ import { TableGroupDeleteConfirmation } from './pages/table_group_delete_confirm
 import { RunProfilingDialog } from './pages/run_profiling_dialog.js';
 import { ConfirmationDialog } from './pages/confirmation_dialog.js';
 import { TestDefinitionSummary } from './pages/test_definition_summary.js';
+import { NotificationSettings } from './pages/notification_settings.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -68,6 +69,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         run_profiling_dialog: RunProfilingDialog,
         confirm_dialog: ConfirmationDialog,
         test_definition_summary: TestDefinitionSummary,
+        notification_settings: NotificationSettings,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {

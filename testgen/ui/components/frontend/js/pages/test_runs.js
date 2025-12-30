@@ -1,13 +1,13 @@
 /**
- * @import { FilterOption, ProjectSummary } from '../types.js';
- * 
+* @import { FilterOption, ProjectSummary } from '../types.js';
+ *
  * @typedef ProgressStep
  * @type {object}
  * @property {'data_chars'|'validation'|'QUERY'|'CAT'|'METADATA'} key
  * @property {'Pending'|'Running'|'Completed'|'Warning'} status
  * @property {string} label
  * @property {string} detail
- * 
+ *
  * @typedef TestRun
  * @type {object}
  * @property {string} test_run_id
@@ -240,9 +240,19 @@ const Toolbar = (
         div(
             { class: 'flex-row fx-gap-4' },
             Button({
+                icon: 'notifications',
+                type: 'stroked',
+                label: 'Notifications',
+                tooltip: 'Configure email notifications for test runs',
+                tooltipPosition: 'bottom',
+                width: 'fit-content',
+                style: 'background: var(--dk-card-background);',
+                onclick: () => emitEvent('RunNotificationsClicked', {}),
+            }),
+            Button({
                 icon: 'today',
                 type: 'stroked',
-                label: 'Test Run Schedules',
+                label: 'Schedules',
                 tooltip: 'Manage when test suites should run',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
@@ -324,7 +334,7 @@ const TestRunItem = (
                 )
                 : div(
                     { class: 'text-caption mt-1' },
-                    item.status === 'Running' && runningStep 
+                    item.status === 'Running' && runningStep
                         ? [
                             div(
                                 runningStep.label,

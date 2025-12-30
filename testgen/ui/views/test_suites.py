@@ -18,7 +18,7 @@ from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.ui.views.test_runs import TestRunScheduleDialog
+from testgen.ui.views.test_runs import TestRunScheduleDialog, manage_notifications
 from testgen.utils import to_dataframe
 
 PAGE_ICON = "rule"
@@ -47,7 +47,7 @@ class TestSuitesPage(Page):
         user_can_edit = session.auth.user_has_permission("edit")
         test_suites = TestSuite.select_summary(project_code, table_group_id)
         project_summary = Project.get_summary(project_code)
-        
+
         testgen.testgen_component(
             "test_suites",
             props={
@@ -72,6 +72,7 @@ class TestSuitesPage(Page):
                 "EditActionClicked": partial(edit_test_suite_dialog, project_code, table_groups),
                 "DeleteActionClicked": delete_test_suite_dialog,
                 "RunTestsClicked": lambda test_suite_id: run_tests_dialog(project_code, TestSuite.get_minimal(test_suite_id)),
+                "RunNotificationsClicked": manage_notifications(project_code),
                 "GenerateTestsClicked": lambda test_suite_id: generate_tests_dialog(TestSuite.get_minimal(test_suite_id)),
             },
         )
