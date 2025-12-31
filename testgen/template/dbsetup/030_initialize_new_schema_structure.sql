@@ -39,6 +39,15 @@ CREATE TABLE stg_data_chars_updates (
    record_ct             BIGINT
 );
 
+CREATE TABLE stg_test_definition_updates (
+   test_suite_id      UUID,
+   test_definition_id UUID,
+   run_date           TIMESTAMP,
+   lower_tolerance    VARCHAR(1000),
+   upper_tolerance    VARCHAR(1000),
+   prediction         JSONB
+);
+
 CREATE TABLE projects (
    id                    UUID DEFAULT gen_random_uuid(),
    project_code          VARCHAR(30) NOT NULL
@@ -161,6 +170,8 @@ CREATE TABLE test_suites (
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN default FALSE,
    view_mode               VARCHAR(20) DEFAULT NULL,
+   predict_sensitivity     VARCHAR(6),
+   predict_min_lookback    INTEGER,
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
 );
@@ -205,6 +216,7 @@ CREATE TABLE test_definitions (
    history_calculation    VARCHAR(1000),
    history_calculation_upper VARCHAR(1000),
    history_lookback       INTEGER,
+   prediction             JSONB,
    test_mode              VARCHAR(20),
    custom_query           VARCHAR,
    test_active            VARCHAR(10) DEFAULT 'Y':: CHARACTER VARYING,

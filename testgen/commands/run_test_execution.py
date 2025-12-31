@@ -11,6 +11,7 @@ from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -155,6 +156,12 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         if not is_monitor:
             _rollup_test_scores(test_run, table_group)
     finally:
+        scoring_endtime = datetime.now(UTC) + time_delta
+        try:
+            TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
+        except Exception:
+            LOG.exception("Error predicting test thresholds")
+            
         MixpanelService().send_event(
             "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,
@@ -163,7 +170,8 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             monitor=is_monitor,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            scoring_duration=(datetime.now(UTC) + time_delta - test_run.test_endtime).total_seconds(),
+            scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
+            prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
         )
 
     return f"""

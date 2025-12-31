@@ -83,7 +83,7 @@ const TableGroupForm = (props) => {
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
     const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
-    const addMonitorTestSuite = van.state(tableGroup.add_monitor_test_suite ?? false);
+    const addMonitorTestSuite = van.state(tableGroup.add_monitor_test_suite ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
     const profileSamplePercent = van.state(tableGroup.profile_sample_percent ?? 30);
     const profileSampleMinCount = van.state(tableGroup.profile_sample_min_count ?? 15000);
