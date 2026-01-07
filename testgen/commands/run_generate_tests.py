@@ -28,7 +28,7 @@ def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: s
     # Set static parms
     clsTests.project_code = params["project_code"]
     clsTests.test_suite = test_suite
-    clsTests.generation_set = generation_set if generation_set is not None else ""
+    clsTests.generation_set = generation_set if generation_set is not None else "Standard"
     clsTests.test_suite_id = params["test_suite_id"] if params["test_suite_id"] else ""
     clsTests.connection_id = str(connection.connection_id)
     clsTests.table_groups_id = table_group_id

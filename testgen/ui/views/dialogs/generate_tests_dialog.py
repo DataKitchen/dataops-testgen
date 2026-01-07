@@ -8,8 +8,6 @@ from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 
-ALL_TYPES_LABEL = "All Test Types"
-
 
 @st.dialog(title="Generate Tests")
 @with_database_session
@@ -22,12 +20,12 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
     generation_sets = get_generation_set_choices()
 
     if generation_sets:
-        generation_sets.insert(0, ALL_TYPES_LABEL)
-
+        try:
+            default_generation_set = generation_sets.index("Standard")
+        except ValueError:
+            default_generation_set = 0
         with st.container():
-            selected_set = st.selectbox("Generation Set", generation_sets)
-            if selected_set == ALL_TYPES_LABEL:
-                selected_set = ""
+            selected_set = st.selectbox("Generation Set", generation_sets, index=default_generation_set)
 
     test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(test_suite_id)
     if test_ct:
@@ -55,7 +53,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}'",
+            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}' --generation-set '{selected_set}'",
             language="shellSession",
         )
 
@@ -86,7 +84,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     result = fetch_one_from_db(
         """
-        SELECT 
+        SELECT
             COUNT(*) AS test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) AS unlocked_test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' AND td.last_manual_update IS NOT NULL THEN 1 ELSE 0 END) AS unlocked_edits_ct
