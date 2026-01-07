@@ -600,7 +600,7 @@ def render_selected_details(
                 if selected_item["measure_uom_description"]:
                     st.caption(selected_item["measure_uom_description"])
                 if selected_item["result_message"]:
-                    st.caption(selected_item["result_message"])
+                    st.caption(selected_item["result_message"].replace("*", "\\*"))
                 fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled", key="test_history")
             with pg_col2:
                 ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
@@ -809,8 +809,9 @@ def source_data_dialog(selected_row):
     st.markdown("#### Test Parameters")
     testgen.caption(selected_row["input_parameters"], styles="max-height: 75px; overflow: auto;")
 
-    st.markdown("#### Result Detail")
-    st.caption(selected_row["result_message"])
+    if selected_row["result_message"]:
+        st.markdown("#### Result Detail")
+        st.caption(selected_row["result_message"].replace("*", "\\*"))
 
     st.markdown("#### SQL Query")
     if selected_row["test_type"] == "CUSTOM":
