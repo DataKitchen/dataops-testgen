@@ -1,7 +1,8 @@
 import logging
 import typing
+from decimal import Decimal
 from io import BytesIO
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pandas as pd
 import streamlit as st
@@ -9,6 +10,11 @@ import streamlit as st
 from testgen.commands.run_refresh_score_cards_results import run_recalculate_score_card
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_settings import (
+    NotificationEvent,
+    NotificationSettings,
+    ScoreDropNotificationSettings,
+)
 from testgen.common.models.scores import (
     Categories,
     ScoreCategory,
@@ -24,6 +30,7 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
@@ -69,7 +76,7 @@ class ScoreDetailsPage(Page):
         if not category or category not in typing.get_args(Categories):
             category = (
                 score_definition.category.value
-                if score_definition.category 
+                if score_definition.category
                 else ScoreCategory.dq_dimension.value
             )
 
@@ -80,7 +87,6 @@ class ScoreDetailsPage(Page):
                 else "score"
             )
 
-        score_card = None
         score_breakdown = None
         issues = None
         with st.spinner(text="Loading data :gray[:small[(This might take a few minutes)]] ..."):
@@ -114,6 +120,7 @@ class ScoreDetailsPage(Page):
             },
             event_handlers={
                 "DeleteScoreRequested": delete_score_card,
+                "EditNotifications": manage_notifications(score_definition),
             },
             on_change_handlers={
                 "CategoryChanged": select_category,
@@ -205,6 +212,16 @@ def delete_score_card(definition_id: str) -> None:
         Router().navigate("quality-dashboard", { "project_code": score_definition.project_code })
 
 
+def manage_notifications(score_definition):
+    def open_dialog(*_):
+        ScoreDropNotificationSettingsDialog(
+            ScoreDropNotificationSettings,
+            ns_attrs={"project_code": score_definition.project_code, "score_definition_id": score_definition.id},
+            component_props={"cde_enabled": score_definition.cde_score, "total_enabled": score_definition.total_score},
+        ).open()
+    return open_dialog
+
+
 def recalculate_score_history(definition_id: str) -> None:
     try:
         score_definition = ScoreDefinition.get(definition_id)
@@ -213,3 +230,28 @@ def recalculate_score_history(definition_id: str) -> None:
     except:
         LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
         st.toast("Recalculating the trend failed. Try again", icon=":material/error:")
+
+
+class ScoreDropNotificationSettingsDialog(NotificationSettingsDialogBase):
+
+    title = "Scorecard Notifications"
+
+    def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
+        model_data = {
+            attr: Decimal(item[attr])
+            for attr in ("total_score_threshold", "cde_score_threshold")
+            if attr in item
+        }
+        return model_data
+
+    def _model_to_item_attrs(self, model: NotificationSettings) -> dict[str, Any]:
+        item_data = {
+            attr: str(getattr(model, attr))
+            for attr in ("total_score_threshold", "cde_score_threshold")
+        }
+        return item_data
+
+    def _get_component_props(self) -> dict[str, Any]:
+        return {
+            "event": NotificationEvent.score_drop.value,
+        }

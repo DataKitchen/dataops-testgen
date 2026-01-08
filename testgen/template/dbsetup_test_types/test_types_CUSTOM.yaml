@@ -23,7 +23,7 @@ test_types:
   default_parm_prompts: |-
     Custom SQL Query Returning Error Records
   default_parm_help: |-
-    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. \n\nA query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.
+    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.
   default_severity: Fail
   run_type: QUERY
   test_scope: custom

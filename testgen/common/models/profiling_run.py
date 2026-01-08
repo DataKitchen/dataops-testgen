@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple, TypedDict
+from typing import Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -46,7 +46,7 @@ class ProfilingRunSummary(EntityMinimal):
     profiling_endtime: datetime
     table_groups_name: str
     status: ProfilingRunStatus
-    progress: list[ProgressStep] 
+    progress: list[ProgressStep]
     process_id: int
     log_message: str
     table_group_schema: str
@@ -148,7 +148,10 @@ class ProfilingRun(Entity):
     @classmethod
     @st.cache_data(show_spinner=False)
     def select_summary(
-        cls, project_code: str, table_group_id: str | UUID | None = None, profiling_run_ids: list[str] | None = None
+        cls,
+        project_code: str,
+        table_group_id: str | UUID | None = None,
+        profiling_run_ids: list[str|UUID] | None = None,
     ) -> Iterable[ProfilingRunSummary]:
         if (table_group_id and not is_uuid4(table_group_id)) or (
             profiling_run_ids and not all(is_uuid4(run_id) for run_id in profiling_run_ids)
@@ -234,14 +237,18 @@ class ProfilingRun(Entity):
         return process_count > 0
 
     @classmethod
-    def cancel_all_running(cls) -> None:
+    def cancel_all_running(cls) -> list[UUID]:
         query = (
-            update(cls).where(cls.status == "Running").values(status="Cancelled", profiling_endtime=datetime.now(UTC))
+            update(cls)
+            .where(cls.status == "Running")
+            .values(status="Cancelled", profiling_endtime=datetime.now(UTC))
+            .returning(cls.id)
         )
         db_session = get_current_session()
-        db_session.execute(query)
+        rows = db_session.execute(query)
         db_session.commit()
         cls.clear_cache()
+        return [r.id for r in rows]
 
     @classmethod
     def cancel_run(cls, run_id: str | UUID) -> None:
@@ -294,3 +301,16 @@ class ProfilingRun(Entity):
 
         self.progress = list(self._progress.values())
         flag_modified(self, "progress")
+
+    def get_previous(self) -> Self | None:
+        query = (
+            select(ProfilingRun)
+            .where(
+                ProfilingRun.table_groups_id == self.table_groups_id,
+                ProfilingRun.status == "Complete",
+                ProfilingRun.profiling_starttime < self.profiling_starttime,
+            )
+            .order_by(desc(ProfilingRun.profiling_starttime))
+            .limit(1)
+        )
+        return get_current_session().scalar(query)

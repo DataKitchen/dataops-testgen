@@ -44,8 +44,12 @@ from testgen.common import (
 )
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.base import smtp_configured
+from testgen.common.notifications.profiling_run import send_profiling_run_notifications
+from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.scheduler import register_scheduler_job, run_scheduler
 from testgen.utils import plugins
 
@@ -645,14 +649,18 @@ def run_ui():
     patch_streamlit.patch(force=True)
 
     @with_database_session
-    def cancel_all_running():
+    def init_ui():
         try:
-            ProfilingRun.cancel_all_running()
-            TestRun.cancel_all_running()
+            for profiling_run_id in ProfilingRun.cancel_all_running():
+                send_profiling_run_notifications(ProfilingRun.get(profiling_run_id))
+            for test_run_id in TestRun.cancel_all_running():
+                send_test_run_notifications(TestRun.get(test_run_id))
         except Exception:
             LOG.warning("Failed to cancel 'Running' profiling/test runs")
 
-    cancel_all_running()
+        PersistedSetting.set("SMTP_CONFIGURED", smtp_configured())
+
+    init_ui()
 
     app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
     process= subprocess.Popen(

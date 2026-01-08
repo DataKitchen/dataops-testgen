@@ -14,7 +14,7 @@ function required(value) {
 }
 
 /**
- * @param {(v: any) => bool} condition 
+ * @param {(v: any) => bool} condition
  * @returns {Validator}
  */
 function requiredIf(condition) {
@@ -37,8 +37,8 @@ function noSpaces(value) {
 }
 
 /**
- * 
- * @param {number} min 
+ *
+ * @param {number} min
  * @returns {Validator}
  */
 function minLength(min) {
@@ -51,8 +51,8 @@ function minLength(min) {
 }
 
 /**
- * 
- * @param {number} max 
+ *
+ * @param {number} max
  * @returns {Validator}
  */
 function maxLength(max) {
@@ -65,9 +65,42 @@ function maxLength(max) {
 }
 
 /**
+ * @param {number} min
+ * @param {number} max
+ * @param {number} [precision]
+ * @returns {Validator}
+ */
+function numberBetween(min, max, precision = null) {
+    return (value) => {
+        const valueNumber = parseFloat(value);
+        if (isNaN(valueNumber)) {
+            return 'Value must be a numeric type.';
+        }
+
+        if (valueNumber < min || valueNumber > max) {
+            return `Value must be between ${min} and ${max}.`;
+        }
+
+        if (precision !== null) {
+            const strValue = value.toString();
+            const decimalPart = strValue.includes('.') ? strValue.split('.')[1] : '';
+
+            if (decimalPart.length > precision) {
+                if (precision === 0) {
+                    return 'Value must be an integer.';
+                } else {
+                    return `Value must have at most ${precision} digits after the decimal point.`;
+                }
+            }
+        }
+    };
+}
+
+
+/**
  * To use with FileInput, enforce a cap on file size
  * allowed to upload.
- * 
+ *
  * @param {number} limit
  * @returns {Validator}
  */
@@ -90,6 +123,7 @@ function sizeLimit(limit) {
 export {
     maxLength,
     minLength,
+    numberBetween,
     noSpaces,
     required,
     requiredIf,

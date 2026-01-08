@@ -1,22 +1,24 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import wraps
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from testgen.common.models.scores import ScoreCard
 
 import json
-import urllib.parse
 from typing import Any, TypeVar
 from uuid import UUID
 
 import pandas as pd
-import streamlit as st
 
 T = TypeVar("T")
+
+LOG = logging.getLogger("testgen")
 
 
 def to_int(value: float | int) -> int:
@@ -42,9 +44,9 @@ def to_dataframe(
 
 
 def is_uuid4(value: str) -> bool:
-    if isinstance(value, UUID): 
+    if isinstance(value, UUID):
         return True
-    
+
     try:
         uuid = UUID(value, version=4)
     except Exception:
@@ -58,16 +60,10 @@ def try_json(value: str | None, default: T | None) -> T:
         return json.loads(value)
     except:
         return default
-    
+
 
 def get_exception_message(exception: Exception) -> str:
     return exception.args[0].rstrip() if exception.args and isinstance(exception.args[0], str) else str(exception)
-
-
-# https://github.com/streamlit/streamlit/issues/798#issuecomment-1647759949
-def get_base_url() -> str:
-    session = st.runtime.get_instance()._session_mgr.list_active_sessions()[0]
-    return urllib.parse.urlunparse([session.client.request.protocol, session.client.request.host, "", "", "", ""])
 
 
 def make_json_safe(value: Any) -> str | bool | int | float | None:
@@ -102,7 +98,7 @@ def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -
     chunked_queries.append(current_chunk)
 
     return chunked_queries
-    
+
 
 def score(profiling_score_: float, tests_score_: float) -> float:
     tests_score = _pandas_default(tests_score_, 0.0)
@@ -209,7 +205,7 @@ def friendly_score(score: float) -> str:
     score = 100 * score
     if score == 100:
         return "100"
-    
+
     rounded = round(score, 1)
     if rounded == 0:
         return "< 0.1"
@@ -225,7 +221,7 @@ def friendly_score_impact(impact: float) -> str:
 
     if impact == 100:
         return "100"
-    
+
     rounded = round(impact, 2)
     if rounded == 0:
         return "< 0.01"
@@ -233,3 +229,15 @@ def friendly_score_impact(impact: float) -> str:
         return "> 99.99"
 
     return str(rounded)
+
+
+def log_and_swallow_exception(func):
+
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            try:
+                func(*args, **kwargs)
+            except Exception:
+                LOG.exception("Error executing '%s.%s':", func.__module__, func.__name__)
+
+        return wrapped

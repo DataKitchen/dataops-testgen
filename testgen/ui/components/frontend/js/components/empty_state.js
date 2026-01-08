@@ -54,6 +54,10 @@ const EMPTY_STATE_MESSAGE = {
         line1: 'Track data quality scores',
         line2: 'Filter or select columns to assess the quality of your data assets across different categories.',
     },
+    notifications: {
+        line1: '',
+        line2: 'Configure an SMTP email server for TestGen to get alerts on profiling runs, test runs, and quality scorecards.',
+    },
 };
 
 const EmptyState = (/** @type Properties */ props) => {

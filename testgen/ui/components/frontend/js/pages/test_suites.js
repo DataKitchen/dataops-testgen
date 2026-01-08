@@ -60,9 +60,19 @@ const TestSuites = (/** @type Properties */ props) => {
                     div(
                         { class: 'flex-row fx-gap-4' },
                         Button({
+                            icon: 'notifications',
+                            type: 'stroked',
+                            label: 'Notifications',
+                            tooltip: 'Configure email notifications for test runs',
+                            tooltipPosition: 'bottom',
+                            width: 'fit-content',
+                            style: 'background: var(--dk-card-background);',
+                            onclick: () => emitEvent('RunNotificationsClicked', {}),
+                        }),
+                        Button({
                             icon: 'today',
                             type: 'stroked',
-                            label: 'Test Run Schedules',
+                            label: 'Schedules',
                             tooltip: 'Manage when test suites should run',
                             tooltipPosition: 'bottom',
                             width: 'fit-content',

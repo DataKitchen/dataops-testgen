@@ -3,6 +3,7 @@
  * @type {object}
  * @property {string} title
  * @property {string?} testId
+ * @property {bool} expanded
  */
 
 import van from '../van.min.js';
@@ -12,14 +13,14 @@ import { Icon } from './icon.js';
 const { div, span } = van.tags;
 
 /**
- * 
+ *
  * @param  {Options} options
- * @param  {...HTMLElement} children 
+ * @param  {...HTMLElement} children
  */
 const ExpansionPanel = (options, ...children) => {
     loadStylesheet('expansion-panel', stylesheet);
 
-    const expanded = van.state(false);
+    const expanded = van.state(options.expanded ?? false);
     const icon = van.derive(() => expanded.val ? 'keyboard_arrow_up' : 'keyboard_arrow_down');
     const expansionClass = van.derive(() => expanded.val ? '' : 'collapsed');
 

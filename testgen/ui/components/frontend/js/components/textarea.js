@@ -13,6 +13,8 @@
  * @property {function(string, InputState)?} onChange
  * @property {string?} style
  * @property {string?} class
+ * @property {number?} width
+ * @property {number?} height
  * @property {string?} testId
  */
 import van from '../van.min.js';

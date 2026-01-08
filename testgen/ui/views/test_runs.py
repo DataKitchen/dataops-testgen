@@ -2,23 +2,30 @@ import logging
 import typing
 from collections.abc import Iterable
 from functools import partial
+from typing import Any
 
 import streamlit as st
 
 import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_settings import (
+    TestRunNotificationSettings,
+    TestRunNotificationTrigger,
+)
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score, to_int
@@ -85,6 +92,7 @@ class TestRunsPage(Page):
             on_change_handlers={
                 "FilterApplied": on_test_runs_filtered,
                 "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
+                "RunNotificationsClicked": manage_notifications(project_code),
                 "RunTestsClicked": lambda *_: run_tests_dialog(project_code, None, test_suite_id),
                 "RefreshData": refresh_data,
                 "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
@@ -105,6 +113,50 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     TestRun.select_summary.clear()
+
+
+def manage_notifications(project_code):
+
+    def open_dialog(*_):
+        TestRunNotificationSettingsDialog(TestRunNotificationSettings, {"project_code": project_code}).open(),
+
+    return open_dialog
+
+
+class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
+
+    title = "Test Run Notifications"
+
+    def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "trigger": TestRunNotificationTrigger(item["trigger"]),
+            "test_suite_id": item["scope"],
+        }
+
+    def _model_to_item_attrs(self, model: TestRunNotificationSettings) -> dict[str, Any]:
+        return {
+            "trigger": model.trigger.value if model.trigger else None,
+            "scope": str(model.test_suite_id) if model.test_suite_id else None,
+        }
+
+    def _get_component_props(self) -> dict[str, Any]:
+        test_suite_options = [
+            (str(ts.id), ts.test_suite)
+            for ts in TestSuite.select_minimal_where(TestSuite.project_code == self.ns_attrs["project_code"])
+        ]
+        test_suite_options.insert(0, (None, "All Test Suites"))
+        trigger_labels = {
+            TestRunNotificationTrigger.always.value: "Always",
+            TestRunNotificationTrigger.on_failures.value: "On test failures",
+            TestRunNotificationTrigger.on_warnings.value: "On test failures and warnings",
+            TestRunNotificationTrigger.on_changes.value: "On new test failures and warnings",
+        }
+        trigger_options = [(t.value, trigger_labels[t.value]) for t in TestRunNotificationTrigger]
+        return {
+            "scope_label": "Test Suite",
+            "scope_options": test_suite_options,
+            "trigger_options": trigger_options,
+        }
 
 
 class TestRunScheduleDialog(ScheduleDialog):
@@ -134,6 +186,7 @@ def on_cancel_run(test_run: dict) -> None:
     process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
     if process_status:
         TestRun.cancel_run(test_run["test_run_id"])
+        send_test_run_notifications(TestRun.get(test_run["test_run_id"]))
 
     fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
 
@@ -182,10 +235,10 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
                         process_status, _ = process_service.kill_test_run(to_int(test_run.process_id))
                         if process_status:
                             TestRun.cancel_run(test_run.test_run_id)
+                            send_test_run_notifications(TestRun.get(test_run.test_run_id))
                 TestRun.cascade_delete(test_run_ids)
             st.rerun()
         except Exception:
             LOG.exception("Failed to delete test run")
             result = {"success": False, "message": "Unable to delete the test run, try again."}
             st.rerun(scope="fragment")
-            

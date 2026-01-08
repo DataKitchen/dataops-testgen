@@ -1,12 +1,12 @@
 /**
  * @import { Properties as TooltipProperties } from './tooltip.js';
  * @import { Validator } from '../form_validators.js';
- * 
+ *
  * @typedef InputState
  * @type {object}
  * @property {boolean} valid
  * @property {string[]} errors
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string?} id
@@ -32,6 +32,7 @@
  * @property {string?} class
  * @property {string?} testId
  * @property {any?} prefix
+ * @property {number} step
  * @property {Array<Validator>?} validators
  */
 import van from '../van.min.js';
@@ -136,6 +137,7 @@ const Input = (/** @type Properties */ props) => {
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(inputType.val === 'number' ? {step: getValue(props.step)} : {}),
                 ...(props.readonly ? {readonly: true} : {}),
                 ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),
                 placeholder: () => getValue(props.placeholder) ?? '',
@@ -187,7 +189,7 @@ const Input = (/** @type Properties */ props) => {
                 );
             },
         ),
-        () => 
+        () =>
             isDirty.val && firstError.val
                 ? small({ class: 'tg-input--error' }, firstError)
                 : '',

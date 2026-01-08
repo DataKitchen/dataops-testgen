@@ -25,6 +25,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
@@ -81,6 +82,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
 
         sql_generator = TestExecutionSQL(connection, table_group, test_run)
 
+        # Update the thresholds before retrieving the test definitions in the next steps
+        LOG.info("Updating historic test thresholds")
+        execute_db_queries([sql_generator.update_historic_thresholds()])
+
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
         test_defs = [TestExecutionDef(**item) for item in test_defs]
@@ -99,9 +104,6 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             )
 
             if valid_test_defs:
-                LOG.info("Updating historic test thresholds")
-                execute_db_queries([sql_generator.update_historic_thresholds()])
-
                 column_types = {(col.schema_name, col.table_name, col.column_name): col.column_type for col in data_chars}
                 for td in valid_test_defs:
                     td.column_type = column_types.get((td.schema_name, td.table_name, td.column_name))
@@ -128,6 +130,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         execute_db_queries(sql_generator.update_test_results())
         # Refresh needed because previous query updates the test run too
         test_run.refresh()
+
     except Exception as e:
         LOG.exception("Test execution encountered an error.")
         LOG.info("Setting test run status to Error")
@@ -135,6 +138,8 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_run.test_endtime = datetime.now(UTC) + time_delta
         test_run.status = "Error"
         test_run.save()
+
+        send_test_run_notifications(test_run)
     else:
         LOG.info("Setting test run status to Completed")
         test_run.test_endtime = datetime.now(UTC) + time_delta
@@ -145,6 +150,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
 
+        send_test_run_notifications(test_run)
         _rollup_test_scores(test_run, table_group)
     finally:
         MixpanelService().send_event(

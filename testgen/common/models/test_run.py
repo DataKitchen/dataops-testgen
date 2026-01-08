@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple, TypedDict
+from typing import Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -12,6 +12,7 @@ from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
 
@@ -46,6 +47,7 @@ class TestRunSummary(EntityMinimal):
     test_endtime: datetime
     table_groups_name: str
     test_suite: str
+    project_name: str
     status: TestRunStatus
     progress: list[ProgressStep]
     process_id: int
@@ -58,7 +60,6 @@ class TestRunSummary(EntityMinimal):
     log_ct: int
     dismissed_ct: int
     dq_score_testing: float
-
 
 class LatestTestRun(NamedTuple):
     id: str
@@ -129,11 +130,35 @@ class TestRun(Entity):
             return LatestTestRun(str(result["id"]), result["test_starttime"])
         return None
 
+    def get_previous(self) -> Self | None:
+        query = (
+            select(TestRun)
+            .join(TestSuite)
+            .where(
+                TestRun.test_suite_id == self.test_suite_id,
+                TestRun.status == "Complete",
+                TestRun.test_starttime < self.test_starttime,
+            )
+            .order_by(desc(TestRun.test_starttime))
+            .limit(1)
+        )
+        return get_current_session().scalar(query)
+
+    @property
+    def ct_by_status(self):
+        return {
+            TestResultStatus.Error: self.error_ct,
+            TestResultStatus.Failed: self.failed_ct,
+            TestResultStatus.Warning: self.warning_ct,
+            TestResultStatus.Log: self.log_ct,
+            TestResultStatus.Passed: self.passed_ct,
+        }
+
     @classmethod
     @st.cache_data(show_spinner=False)
     def select_summary(
         cls,
-        project_code: str,
+        project_code: str | None = None,
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
         test_run_ids: list[str] | None = None,
@@ -197,6 +222,7 @@ class TestRun(Entity):
             test_runs.test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
+            projects.project_name,
             test_runs.status,
             test_runs.progress,
             test_runs.process_id,
@@ -214,8 +240,9 @@ class TestRun(Entity):
             INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
             INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
             INNER JOIN projects ON (test_suites.project_code = projects.project_code)
-        WHERE test_suites.project_code = :project_code
-            {"AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
+        WHERE TRUE
+            {" AND test_suites.project_code = :project_code" if project_code else ""}
+            {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}
             {" AND test_runs.id IN :test_run_ids" if test_run_ids else ""}
         ORDER BY test_runs.test_starttime DESC;
@@ -237,12 +264,18 @@ class TestRun(Entity):
         return process_count > 0
 
     @classmethod
-    def cancel_all_running(cls) -> None:
-        query = update(cls).where(cls.status == "Running").values(status="Cancelled", test_endtime=datetime.now(UTC))
+    def cancel_all_running(cls) -> list[UUID]:
+        query = (
+            update(cls)
+            .where(cls.status == "Running")
+            .values(status="Cancelled", test_endtime=datetime.now(UTC))
+            .returning(cls.id)
+        )
         db_session = get_current_session()
-        db_session.execute(query)
+        rows = db_session.execute(query)
         db_session.commit()
         cls.clear_cache()
+        return [r.id for r in rows]
 
     @classmethod
     def cancel_run(cls, run_id: str | UUID) -> None:

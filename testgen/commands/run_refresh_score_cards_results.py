@@ -11,6 +11,7 @@ from testgen.common.models.scores import (
     ScoreDefinitionResult,
     ScoreDefinitionResultHistoryEntry,
 )
+from testgen.common.notifications.score_drop import collect_score_notification_data, send_score_drop_notifications
 
 LOG = logging.getLogger("testgen")
 
@@ -26,16 +27,16 @@ def run_refresh_score_cards_results(
     _refresh_date = refresh_date or datetime.datetime.now(datetime.UTC)
 
     try:
-        definitions = []
         if not definition_id:
             definitions = ScoreDefinition.all(project_code=project_code)
         else:
-            definitions.append(ScoreDefinition.get(str(definition_id)))
+            definitions = [ScoreDefinition.get(str(definition_id))]
     except Exception:
         LOG.exception("Stopping scorecards results refresh after unexpected error")
         return
 
     db_session = get_current_session()
+    score_notification_data = []
 
     for definition in definitions:
         LOG.info(
@@ -46,6 +47,9 @@ def run_refresh_score_cards_results(
 
         try:
             fresh_score_card = definition.as_score_card()
+
+            collect_score_notification_data(score_notification_data, definition, fresh_score_card)
+
             definition.clear_results()
             definition.results = _score_card_to_results(fresh_score_card)
             definition.breakdown = _score_definition_to_results_breakdown(definition)
@@ -88,6 +92,8 @@ def run_refresh_score_cards_results(
 
     end_time = time.time()
     LOG.info("Refreshing results for %s done after %s seconds", scope, round(end_time - start_time, 2))
+
+    send_score_drop_notifications(score_notification_data)
 
 
 def _score_card_to_results(score_card: ScoreCard) -> list[ScoreDefinitionResult]:

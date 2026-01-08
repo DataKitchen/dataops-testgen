@@ -27,6 +27,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
@@ -53,7 +54,7 @@ def run_profiling_in_background(table_group_id: str | UUID) -> None:
 def run_profiling(table_group_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
-    
+
     LOG.info(f"Starting profiling run for table group {table_group_id}")
     time_delta = (run_date - datetime.now(UTC)) if run_date else timedelta()
 
@@ -104,11 +105,15 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
+
+        send_profiling_run_notifications(profiling_run)
     else:
         LOG.info("Setting profiling run status to Completed")
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
+
+        send_profiling_run_notifications(profiling_run)
 
         _rollup_profiling_scores(profiling_run, table_group)
 
