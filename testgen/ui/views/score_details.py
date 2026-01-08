@@ -234,6 +234,8 @@ def recalculate_score_history(definition_id: str) -> None:
 
 class ScoreDropNotificationSettingsDialog(NotificationSettingsDialogBase):
 
+    title = "Scorecard Notifications"
+
     def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
         model_data = {
             attr: Decimal(item[attr])

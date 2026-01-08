@@ -8,6 +8,7 @@ import streamlit as st
 
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import NotificationSettings, NotificationSettingsValidationError
+from testgen.common.models.settings import PersistedSetting
 from testgen.ui.components import widgets
 from testgen.ui.session import session, temp_value
 
@@ -121,6 +122,7 @@ class NotificationSettingsDialogBase:
         widgets.testgen_component(
             "notification_settings",
             props={
+                "smtp_configured": PersistedSetting.get("SMTP_CONFIGURED"),
                 "items": ns_json_list,
                 "event": self.ns_class.__mapper_args__["polymorphic_identity"].value,
                 "permissions": {"can_edit": user_can_edit},

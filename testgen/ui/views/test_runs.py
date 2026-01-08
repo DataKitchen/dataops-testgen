@@ -125,6 +125,8 @@ def manage_notifications(project_code):
 
 class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
+    title = "Test Run Notifications"
+
     def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
         return {
             "trigger": TestRunNotificationTrigger(item["trigger"]),
