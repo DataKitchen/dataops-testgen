@@ -72,7 +72,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const columns = ['5%', '15%', '20%', '20%', '30%', '10%'];
+    const columns = ['5%', '20%', '15%', '20%', '30%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
 
     const pageIndex = van.state(0);
@@ -118,7 +118,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                 () => profilingRuns.val.length
                 ? div(
                     div(
-                        { class: 'table pb-0' },
+                        { class: 'table pb-0', style: 'overflow-y: auto;' },
                         () => {
                             const selectedItems = profilingRuns.val.filter(i => selectedRuns[i.id]?.val ?? false);
                             const someRunSelected = selectedItems.length > 0;
@@ -157,7 +157,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                 }
 
                                 return span(
-                                    { style: `flex: ${columns[0]}` },
+                                    { style: `flex: 0 0 ${columns[0]}` },
                                     userCanEdit
                                         ? Checkbox({
                                             checked: allSelected,
@@ -169,23 +169,23 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                 );
                             },
                             span(
-                                { style: `flex: ${columns[1]}` },
+                                { style: `flex: 0 0 ${columns[1]}` },
                                 'Start Time | Table Group',
                             ),
                             span(
-                                { style: `flex: ${columns[2]}` },
+                                { style: `flex: 0 0 ${columns[2]}` },
                                 'Status | Duration',
                             ),
                             span(
-                                { style: `flex: ${columns[3]}` },
+                                { style: `flex: 0 0 ${columns[3]}` },
                                 'Schema',
                             ),
                             span(
-                                { style: `flex: ${columns[4]}`, class: 'tg-profiling-runs--issues' },
+                                { style: `flex: 0 0 ${columns[4]}`, class: 'tg-profiling-runs--issues' },
                                 'Hygiene Issues',
                             ),
                             span(
-                                { style: `flex: ${columns[5]}` },
+                                { style: `flex: 0 0 ${columns[5]}` },
                                 'Profiling Score',
                             ),
                         ),
@@ -287,7 +287,7 @@ const ProfilingRunItem = (
         { class: 'table-row flex-row', 'data-testid': 'profiling-run-item' },
         userCanEdit
             ? div(
-                { style: `flex: ${columns[0]}; font-size: 16px;` },
+                { style: `flex: 0 0 ${columns[0]}; font-size: 16px;` },
                 Checkbox({
                     checked: selected,
                     onChange: (checked) => selected.val = checked,
@@ -296,7 +296,7 @@ const ProfilingRunItem = (
             )
             : '',
         div(
-            { style: `flex: ${columns[1]}` },
+            { style: `flex: 0 0 ${columns[1]}; max-width: ${columns[1]}; word-wrap: break-word;` },
             div({ 'data-testid': 'profiling-run-item-starttime' }, formatTimestamp(item.profiling_starttime)),
             div(
                 { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-tablegroup' },
@@ -304,7 +304,7 @@ const ProfilingRunItem = (
             ),
         ),
         div(
-            { style: `flex: ${columns[2]}` },
+            { style: `flex: 0 0 ${columns[2]};  max-width: ${columns[2]};` },
             div(
                 { class: 'flex-row' },
                 ProfilingRunStatus(item),
@@ -337,7 +337,7 @@ const ProfilingRunItem = (
                 ),
         ),
         div(
-            { style: `flex: ${columns[3]}` },
+            { style: `flex: 0 0 ${columns[3]}; max-width: ${columns[3]};` },
             div({ 'data-testid': 'profiling-run-item-schema' }, item.table_group_schema),
             div(
                 {
@@ -369,7 +369,7 @@ const ProfilingRunItem = (
             }) : null,
         ),
         div(
-            { class: 'pr-3 tg-profiling-runs--issues', style: `flex: ${columns[4]}` },
+            { class: 'pr-3 tg-profiling-runs--issues', style: `flex: 0 0 ${columns[4]};  max-width: ${columns[4]};` },
             item.anomaly_ct ? SummaryCounts({
                 items: [
                     { label: 'Definite', value: item.anomalies_definite_ct, color: 'red' },
@@ -389,7 +389,7 @@ const ProfilingRunItem = (
             }) : null,
         ),
         div(
-            { style: `flex: ${columns[5]}; font-size: 16px;` },
+            { style: `flex: 0 0 ${columns[5]};  max-width: ${columns[5]}; font-size: 16px;` },
             item.column_ct && item.dq_score_profiling
                 ? item.dq_score_profiling
                 : '--',

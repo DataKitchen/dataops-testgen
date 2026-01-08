@@ -82,6 +82,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
 
         sql_generator = TestExecutionSQL(connection, table_group, test_run)
 
+        # Update the thresholds before retrieving the test definitions in the next steps
+        LOG.info("Updating historic test thresholds")
+        execute_db_queries([sql_generator.update_historic_thresholds()])
+
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
         test_defs = [TestExecutionDef(**item) for item in test_defs]
@@ -100,9 +104,6 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             )
 
             if valid_test_defs:
-                LOG.info("Updating historic test thresholds")
-                execute_db_queries([sql_generator.update_historic_thresholds()])
-
                 column_types = {(col.schema_name, col.table_name, col.column_name): col.column_type for col in data_chars}
                 for td in valid_test_defs:
                     td.column_type = column_types.get((td.schema_name, td.table_name, td.column_name))

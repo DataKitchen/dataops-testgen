@@ -483,11 +483,12 @@ def show_test_form(
     if dynamic_attributes_labels_raw:
         dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
 
-    dynamic_attributes_help_raw = selected_test_type_row["default_parm_help"]
-    if not dynamic_attributes_help_raw:
-        dynamic_attributes_help_raw = "No help is available"
     # Split on pipe -- could contain commas
-    dynamic_attributes_help = dynamic_attributes_help_raw.split("|")
+    dynamic_attributes_help = (
+        selected_test_type_row["default_parm_help"].split("|")
+        if selected_test_type_row["default_parm_help"]
+        else None
+    )
 
     if mode == "edit":
         st.text_input(label="Test Type", value=test_type_display, disabled=True),
@@ -700,7 +701,7 @@ def show_test_form(
         help_text = (
             dynamic_attributes_help[index]
             if dynamic_attributes_help and len(dynamic_attributes_help) > index
-            else "Help text is not available."
+            else None
         )
 
         if attribute == "custom_query":
@@ -710,7 +711,7 @@ def show_test_form(
             elif test_type == "CUSTOM":
                 custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
 
-            test_definition[attribute] = st.text_area(
+            test_definition[attribute] = container.text_area(
                 label=label_text,
                 value=custom_query,
                 placeholder=custom_query_placeholder,
@@ -766,6 +767,7 @@ def show_test_form(
     if test_scope != "tablegroup":
         st.divider()
 
+    mid_container = st.container()
     mid_left_column, mid_right_column = st.columns([0.5, 0.5])
 
     if has_match_attributes:
@@ -775,7 +777,7 @@ def show_test_form(
                 render_dynamic_attribute(f"match_{attribute}", mid_right_column)
 
     if "custom_query" in dynamic_attributes:
-        render_dynamic_attribute("custom_query", mid_left_column)
+        render_dynamic_attribute("custom_query", mid_container)
 
     total_length = len(leftover_attributes)
     half_length = round(total_length / 2)
@@ -953,13 +955,13 @@ def validate_form(test_scope, test_definition, column_name_label):
 
 def prompt_for_test_type():
 
-    col0, col1, col2, col3, col4, col5 = st.columns([0.1, 0.2, 0.2, 0.2, 0.2, 0.1])
+    col0, col1, col2, col3, col4 = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
     col0.write("Show Types")
 
-    include_referential=col1.checkbox(":green[⧉] Referential", True),
-    include_table=col2.checkbox(":green[⊞] Table", True),
-    include_column=col3.checkbox(":green[≣] Column", True),
-    include_custom=col4.checkbox(":green[⛭] Custom", True),
+    include_referential=col1.checkbox(":green[⧉] Referential", True)
+    include_table=col2.checkbox(":green[⊞] Table", True)
+    include_column=col3.checkbox(":green[≣] Column", True)
+    include_custom=col4.checkbox(":green[⛭] Custom", True)
     # always exclude tablegroup scopes from showing
     include_all = not any([include_referential, include_table, include_column, include_custom])
 
