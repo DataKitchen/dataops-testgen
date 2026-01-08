@@ -49,7 +49,7 @@ class TestExecutionDef(InputParameters):
     custom_query: str
     run_type: TestRunType
     test_scope: TestScope
-    template_name: str
+    template: str
     measure: str
     test_operator: str
     test_condition: str
@@ -218,15 +218,22 @@ class TestExecutionSQL:
 
     def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict]:
         # Runs on Target database
-        folder = "generic" if test_def.template_name.endswith("_generic.sql") else self.flavor
-        return self._get_query(
-            test_def.template_name,
-            f"flavors/{folder}/exec_query_tests",
-            no_bind=True,
-            # Final replace in CUSTOM_QUERY
-            extra_params={"DATA_SCHEMA": test_def.schema_name},
-            test_def=test_def,
-        )
+        if test_def.template.startswith("@"):
+            folder = "generic" if test_def.template.endswith("_generic.sql") else self.flavor
+            return self._get_query(
+                test_def.template,
+                f"flavors/{folder}/exec_query_tests",
+                no_bind=True,
+                # Final replace in CUSTOM_QUERY
+                extra_params={"DATA_SCHEMA": test_def.schema_name},
+                test_def=test_def,
+            )
+        else:
+            query = test_def.template
+            params = self._get_params(test_def)
+            params.update({"DATA_SCHEMA": test_def.schema_name})
+            query = replace_params(query, params)
+            return query, params
 
     def aggregate_cat_tests(
         self,

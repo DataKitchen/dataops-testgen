@@ -42,28 +42,273 @@ test_types:
   - id: '2504'
     test_type: CUSTOM
     sql_flavor: bigquery
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2404'
     test_type: CUSTOM
     sql_flavor: databricks
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2204'
     test_type: CUSTOM
     sql_flavor: mssql
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2304'
     test_type: CUSTOM
     sql_flavor: postgresql
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2004'
     test_type: CUSTOM
     sql_flavor: redshift
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2504'
     test_type: CUSTOM
     sql_flavor: redshift_spectrum
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;
   - id: '2104'
     test_type: CUSTOM
     sql_flavor: snowflake
-    template_name: ex_custom_query_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             CASE
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               ELSE '{COLUMN_NAME_NO_QUOTES}'
+             END as column_names,
+          '{SKIP_ERRORS}' as threshold_value,
+          {SKIP_ERRORS} as skip_errors,
+          /*  TODO:  'custom_query= {CUSTOM_QUERY_ESCAPED}' as input_parameters,  */
+          'Skip_Errors={SKIP_ERRORS}' as input_parameters,
+             NULL as result_signal,
+          CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              {CUSTOM_QUERY}
+             ) TEST;

@@ -478,7 +478,7 @@ CREATE TABLE test_templates (
       CONSTRAINT test_templates_test_types_test_type_fk
          REFERENCES test_types,
    sql_flavor    VARCHAR(20)  NOT NULL,
-   template_name VARCHAR(400),
+   template VARCHAR,
    CONSTRAINT test_templates_test_type_sql_flavor_pk
       PRIMARY KEY (test_type, sql_flavor)
 );
