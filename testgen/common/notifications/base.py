@@ -24,6 +24,10 @@ MANDATORY_SETTINGS = (
 )
 
 
+def smtp_configured() -> bool:
+    return all(getattr(settings, setting_name) is not None for setting_name in MANDATORY_SETTINGS)
+
+
 class EmailTemplateException(Exception):
     pass
 

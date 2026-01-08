@@ -66,7 +66,6 @@ class TestResult(Entity):
                     alias_a.test_definition_id == alias_b.test_definition_id,
                 ),
             ),
-            isouter=True,
             full=True,
         ).where(
             or_(alias_a.test_run_id == test_run_id_a, alias_a.test_run_id.is_(None)),

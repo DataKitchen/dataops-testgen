@@ -19,6 +19,7 @@
  *
  * @typedef Properties
  * @type {object}
+ * @property {Boolean} smtp_configured
  * @property {String} event
  * @property {NotificationItem[]} items
  * @property {Permissions} permissions
@@ -39,8 +40,9 @@ import { Alert } from '../components/alert.js';
 import { Textarea } from '../components/textarea.js';
 import { Icon } from '../components/icon.js';
 import { TruncatedText } from '../components/truncated_text.js';
-import { Input } from "../components/input.js";
-import { numberBetween } from "../form_validators.js";
+import { Input } from '../components/input.js';
+import { numberBetween } from '../form_validators.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 
 const minHeight = 500;
 const { div, span, b } = van.tags;
@@ -48,6 +50,20 @@ const { div, span, b } = van.tags;
 const NotificationSettings = (/** @type Properties */ props) => {
     loadStylesheet('notification-settings', stylesheet);
     window.testgen.isPage = true;
+
+    if (!getValue(props.smtp_configured)) {
+        Streamlit.setFrameHeight(400);
+        return EmptyState({
+            label: 'Email server not configured.',
+            message: EMPTY_STATE_MESSAGE.notifications,
+            class: 'notifications--empty',
+            link: {
+                label: 'View documentation',
+                href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
+                open_new: true,
+            },
+        });
+    }
 
     const nsItems = van.derive(() => {
         const items = getValue(props.items);
@@ -329,6 +345,9 @@ const NotificationSettings = (/** @type Properties */ props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.notifications--empty.tg-empty-state {
+    margin-top: 0;
+}
 .notifications--editing-row {
     background-color: var(--select-hover-background);
 }
