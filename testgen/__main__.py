@@ -152,7 +152,7 @@ def run_profile(table_group_id: str):
     "--generation-set",
     help="A defined subset of tests to generate for your purpose. Use a generation_set defined for your project.",
     required=False,
-    default=None,
+    default="Standard",
 )
 @pass_configuration
 def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str, generation_set: str):
