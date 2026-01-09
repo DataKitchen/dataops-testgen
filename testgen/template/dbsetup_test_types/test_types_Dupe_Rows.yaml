@@ -9,7 +9,8 @@ test_types:
     Column value combinations are duplicated in the table.
   measure_uom: Duplicate records
   measure_uom_description: null
-  selection_criteria: null
+  selection_criteria: |-
+    TEMPLATE
   dq_score_prevalence_formula: |-
     (({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'
