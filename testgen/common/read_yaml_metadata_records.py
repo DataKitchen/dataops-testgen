@@ -63,6 +63,9 @@ TEST_TYPES_LITERAL_FIELDS = {
     "target_data_lookups": [
         "lookup_query",
     ],
+    "test_templates": [
+        "template",
+    ],
 }
 
 

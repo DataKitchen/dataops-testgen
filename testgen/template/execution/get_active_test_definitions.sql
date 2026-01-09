@@ -28,7 +28,7 @@ SELECT td.id,
     custom_query,
     tt.run_type,
     tt.test_scope,
-    tm.template_name,
+    tm.template,
     c.measure,
     c.test_operator,
     c.test_condition
