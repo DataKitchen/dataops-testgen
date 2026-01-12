@@ -11,6 +11,7 @@ from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -63,6 +64,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     test_suite = TestSuite.get(test_suite_id)
     table_group = TableGroup.get(test_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
+    is_monitor = test_suite_id == table_group.monitor_test_suite_id
     set_target_db_params(connection.__dict__)
 
     LOG.info("Creating test run record")
@@ -83,8 +85,8 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         sql_generator = TestExecutionSQL(connection, table_group, test_run)
 
         # Update the thresholds before retrieving the test definitions in the next steps
-        LOG.info("Updating historic test thresholds")
-        execute_db_queries([sql_generator.update_historic_thresholds()])
+        LOG.info("Updating test thresholds based on history calculations")
+        execute_db_queries([sql_generator.update_history_calc_thresholds()])
 
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
@@ -151,16 +153,25 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.save()
 
         send_test_run_notifications(test_run)
-        _rollup_test_scores(test_run, table_group)
+        if not is_monitor:
+            _rollup_test_scores(test_run, table_group)
     finally:
+        scoring_endtime = datetime.now(UTC) + time_delta
+        try:
+            TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
+        except Exception:
+            LOG.exception("Error predicting test thresholds")
+            
         MixpanelService().send_event(
             "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,
             username=username,
             sql_flavor=connection.sql_flavor_code,
+            monitor=is_monitor,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            scoring_duration=(datetime.now(UTC) + time_delta - test_run.test_endtime).total_seconds(),
+            scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
+            prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
         )
 
     return f"""

@@ -369,10 +369,10 @@ class TableGroup(Entity):
                 schedule_job = JobSchedule(
                     project_code=self.project_code,
                     key=RUN_TESTS_JOB_KEY,
-                    cron_expr="0 * * * *",
+                    cron_expr="0 */12 * * *",
                     cron_tz=monitor_schedule_timezone,
                     args=[],
-                    kwargs={"test_suite_id": test_suite.id},
+                    kwargs={"test_suite_id": str(test_suite.id)},
                 )
                 db_session.add(schedule_job)
 

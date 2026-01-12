@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import typing
 from datetime import datetime
@@ -438,12 +439,12 @@ def show_test_form(
     baseline_unique_ct = empty_if_null(selected_test_def["baseline_unique_ct"]) if mode == "edit" else ""
     baseline_value = empty_if_null(selected_test_def["baseline_value"]) if mode == "edit" else ""
     baseline_value_ct = empty_if_null(selected_test_def["baseline_value_ct"]) if mode == "edit" else ""
-    threshold_value = selected_test_def["threshold_value"] or 0 if mode == "edit" else 0
+    threshold_value = empty_if_null(selected_test_def["threshold_value"]) if mode == "edit" else ""
     baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
     baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
     baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
-    lower_tolerance = selected_test_def["lower_tolerance"] or 0 if mode == "edit" else 0
-    upper_tolerance = selected_test_def["upper_tolerance"] or 0 if mode == "edit" else 0
+    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else ""
+    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else ""
     subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
     groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
     having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
@@ -454,8 +455,9 @@ def show_test_form(
     match_subset_condition = empty_if_null(selected_test_def["match_subset_condition"]) if mode == "edit" else ""
     match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
     match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
-    window_days = selected_test_def["window_days"] or 0 if mode == "edit" else 0
+    window_days = empty_if_null(selected_test_def["window_days"]) if mode == "edit" else ""
     history_calculation = empty_if_null(selected_test_def["history_calculation"]) if mode == "edit" else ""
+    history_calculation_upper = empty_if_null(selected_test_def["history_calculation_upper"]) if mode == "edit" else ""
     history_lookback = empty_if_null(selected_test_def["history_lookback"]) if mode == "edit" else ""
 
     # export_to_observability
@@ -553,6 +555,7 @@ def show_test_form(
         "match_having_condition": match_having_condition,
         "window_days": window_days,
         "history_calculation": history_calculation,
+        "history_calculation_upper": history_calculation_upper,
         "history_lookback": history_lookback,
     }
 
@@ -675,15 +678,14 @@ def show_test_form(
         if not attribute in dynamic_attributes or not attribute:
             return
 
-        choice_fields = {
-            "history_calculation": ["Value", "Minimum", "Maximum", "Sum", "Average"],
-        }
         float_numeric_attributes = ["lower_tolerance", "upper_tolerance"]
         if test_type != "LOV_All":
             float_numeric_attributes.append("threshold_value")
         int_numeric_attributes = ["history_lookback"]
 
         default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
+        if attribute == "history_lookback":
+            default_value = 10
         value = (
             selected_test_def[attribute]
             if mode == "edit" and selected_test_def[attribute] is not None
@@ -705,19 +707,22 @@ def show_test_form(
         )
 
         if attribute == "custom_query":
-            custom_query_placeholder = None
-            if test_type == "Condition_Flag":
-                custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
-            elif test_type == "CUSTOM":
-                custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
+            if test_type == "Volume_Trend":
+                test_definition[attribute] = "COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)"
+            else:
+                custom_query_placeholder = None
+                if test_type == "Condition_Flag":
+                    custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
+                elif test_type == "CUSTOM":
+                    custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
 
-            test_definition[attribute] = container.text_area(
-                label=label_text,
-                value=custom_query,
-                placeholder=custom_query_placeholder,
-                height=150 if test_type == "CUSTOM" else 75,
-                help=help_text,
-            )
+                test_definition[attribute] = container.text_area(
+                    label=label_text,
+                    value=custom_query,
+                    placeholder=custom_query_placeholder,
+                    height=150 if test_type == "CUSTOM" else 75,
+                    help=help_text,
+                )
         elif attribute in float_numeric_attributes:
             test_definition[attribute] = container.number_input(
                 label=label_text,
@@ -726,32 +731,73 @@ def show_test_form(
                 help=help_text,
             )
         elif attribute in int_numeric_attributes:
-            max_value = None
-            if (
-                attribute == "history_lookback"
-                and int(value) <= 1
-                and (
-                    not test_definition.get("history_calculation")
-                    or test_definition.get("history_calculation") == "Value"
-                )
-            ):
-                max_value = 1
+            min_value = 0
+            placeholder = None
+            disabled = False
+            if attribute == "history_lookback":
+                min_value = 1
+                if test_definition.get("history_calculation") == "PREDICT":
+                    value = None
+                    placeholder = "Max"
+                    disabled = True
+                
+                if test_definition.get("history_calculation") == "Value" and (
+                    "history_calculation_upper" not in dynamic_attributes
+                    or test_definition.get("history_calculation_upper") == "Value"
+                ):
+                    value = 1
+                    disabled = True
+            
             test_definition[attribute] = container.number_input(
                 label=label_text,
                 step=1,
-                value=int(value),
-                max_value=max_value,
-                min_value=0,
+                value=int(value) if value is not None else None,
+                min_value=min_value,
+                placeholder=placeholder,
                 help=help_text,
+                disabled=disabled,
             )
-        elif attribute in choice_fields:
+        elif attribute in ["history_calculation", "history_calculation_upper"]:
+            predict_label = "Use Prediction Model"
+            options = ["Value", "Minimum", "Maximum", "Sum", "Average", "Expression"]
+            if attribute == "history_calculation":
+                options.append(predict_label)
+
+            default = value
+            disabled = False
+            match = re.search(r"^EXPR:\[(.+)\]$", value)
+            expression = None
+            if value and match:
+                default = "Expression"
+                expression = match.group(1)
+            elif value == "PREDICT":
+                default = predict_label
+
+            if attribute == "history_calculation_upper" and test_definition["history_calculation"] == "PREDICT":
+                default = None
+                disabled = True
+
             with container:
-                test_definition[attribute] = testgen.select(
+                selection = testgen.select(
                     label_text,
-                    choice_fields[attribute],
+                    options=options,
                     required=True,
-                    default_value=value,
+                    default_value=default,
+                    disabled=disabled,
                 )
+
+            if selection == "Expression":
+                expression = st.text_input(
+                    label=f"{label_text} Expression",
+                    max_chars=900,
+                    value=expression,
+                    # help="", // TODO
+                )
+                test_definition[attribute] = f"EXPR:[{expression}]"
+            elif selection == predict_label:
+                test_definition[attribute] = "PREDICT"
+            else:
+                test_definition[attribute] = selection
         else:
             test_definition[attribute] = container.text_input(
                 label=label_text,

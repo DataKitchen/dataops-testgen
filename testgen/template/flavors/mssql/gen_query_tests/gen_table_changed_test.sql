@@ -9,10 +9,10 @@ WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     INNER JOIN test_suites ts
                        ON p.project_code = ts.project_code
                       AND p.connection_id = ts.connection_id
-                   WHERE p.project_code = '{PROJECT_CODE}'
-                     AND r.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                     AND ts.id = '{TEST_SUITE_ID}'
-                     AND p.run_date::DATE <= '{AS_OF_DATE}'
+                   WHERE p.project_code = :PROJECT_CODE
+                     AND r.table_groups_id = :TABLE_GROUPS_ID ::UUID
+                     AND ts.id = :TEST_SUITE_ID
+                     AND p.run_date::DATE <= :AS_OF_DATE
                   GROUP BY r.table_groups_id),
 curprof AS      (SELECT p.profile_run_id, p.schema_name, p.table_name, p.column_name, p.functional_data_type,
                         p.general_type, p.distinct_value_ct, p.record_ct, p.max_value, p.min_value,
@@ -23,8 +23,8 @@ curprof AS      (SELECT p.profile_run_id, p.schema_name, p.table_name, p.column_
                     AND lr.last_run_date = p.run_date) ),
 locked AS       (SELECT schema_name, table_name
                   FROM test_definitions
-				     WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
-                   AND test_suite_id = '{TEST_SUITE_ID}'
+				     WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
+                   AND test_suite_id = :TEST_SUITE_ID
 				       AND test_type = 'Table_Freshness'
                    AND lock_refresh = 'Y'),
 -- IDs - TOP 2
@@ -95,7 +95,7 @@ numeric_cols
 numeric_cols_ranked
    AS ( SELECT *,
                ROW_NUMBER() OVER (PARTITION BY schema_name, table_name
-                  ORDER BY change_detection_score DESC, column_name) as rank
+                  ORDER BY change_detection_score DESC, column_name) AS rank
           FROM numeric_cols
          WHERE change_detection_score IS NOT NULL),
 combined
@@ -137,34 +137,33 @@ newtests AS (
          ),
          ' + ''|'' + '
          ORDER BY element_type, fingerprint_order, column_name
-      ) as fingerprint
+      ) AS fingerprint
    FROM combined
    GROUP BY profile_run_id, schema_name, table_name
 )
-SELECT '{TABLE_GROUPS_ID}'::UUID as table_groups_id,
+SELECT :TABLE_GROUPS_ID ::UUID AS table_groups_id,
        n.profile_run_id,
        'Table_Freshness' AS test_type,
-       '{TEST_SUITE_ID}' AS test_suite_id,
+       :TEST_SUITE_ID AS test_suite_id,
        n.schema_name, n.table_name,
-       0 as skip_errors, 'Y' as test_active,
-       
-       '{RUN_DATE}'::TIMESTAMP as last_auto_gen_date,
-       '{AS_OF_DATE}'::TIMESTAMP as profiling_as_of_date,
-       'N' as lock_refresh,
-       'Value' as history_calculation,
-       1 as history_lookback,
-       fingerprint as custom_query
+       0 AS skip_errors, 'Y' AS test_active,
+       :RUN_DATE ::TIMESTAMP AS last_auto_gen_date,
+       :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date,
+       'N' AS lock_refresh,
+       'Value' AS history_calculation,
+       1 AS history_lookback,
+       fingerprint AS custom_query
 FROM newtests n
 INNER JOIN test_types t
    ON ('Table_Freshness' = t.test_type
-  AND   'Y' = t.active)
+  AND 'Y' = t.active)
 LEFT JOIN generation_sets s
    ON (t.test_type = s.test_type
-  AND  '{GENERATION_SET}' = s.generation_set)
+  AND :GENERATION_SET = s.generation_set)
 LEFT JOIN locked l
   ON (n.schema_name = l.schema_name
- AND  n.table_name = l.table_name)
+ AND n.table_name = l.table_name)
 WHERE (s.generation_set IS NOT NULL
-   OR  '{GENERATION_SET}' = '')
+   OR :GENERATION_SET = '')
   AND l.schema_name IS NULL;
 

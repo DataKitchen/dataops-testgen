@@ -39,11 +39,7 @@ VALUES  ('Standard', 'Alpha_Trunc'),
         ('Standard', 'Pattern_Match'),
         ('Standard', 'Recency'),
         ('Standard', 'Required'),
-        ('Standard', 'Row_Ct'),
-        ('Standard', 'Row_Ct_Pct'),
-        ('Standard', 'Schema_Drift'),
         ('Standard', 'Street_Addr_Pattern'),
-        ('Standard', 'Table_Freshness'),
         ('Standard', 'US_State'),
         ('Standard', 'Unique'),
         ('Standard', 'Unique_Pct'),
@@ -54,14 +50,9 @@ VALUES  ('Standard', 'Alpha_Trunc'),
         ('Standard', 'Variability_Decrease'),
         ('Standard', 'Variability_Increase'),
         ('Standard', 'Weekly_Rec_Ct'),
-        ('Monitor', 'Recency'),
-        ('Monitor', 'Row_Ct'),
-        ('Monitor', 'Row_Ct_Pct'),
-        ('Monitor', 'Daily_Record_Ct'),
-        ('Monitor', 'Monthly_Rec_Ct'),
-        ('Monitor', 'Weekly_Rec_Ct'),
+        ('Monitor', 'Schema_Drift'),
         ('Monitor', 'Table_Freshness'),
-        ('Monitor', 'Schema_Drift');
+        ('Monitor', 'Volume_Trend');
 
 
 TRUNCATE TABLE test_templates;

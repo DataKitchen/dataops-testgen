@@ -30,6 +30,7 @@ def to_int(value: float | int) -> int:
 def to_dataframe(
     data: Iterable[Any],
     columns: list[str] | None = None,
+    coerce_float: bool = False,
 ) -> pd.DataFrame:
     records = []
     for item in data:
@@ -40,7 +41,7 @@ def to_dataframe(
         else:
             row = dict(item)
         records.append(row)
-    return pd.DataFrame.from_records(records, columns=columns)
+    return pd.DataFrame.from_records(records, columns=columns, coerce_float=coerce_float)
 
 
 def is_uuid4(value: str) -> bool:

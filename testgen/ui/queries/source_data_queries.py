@@ -124,9 +124,11 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "BASELINE_CT": test_definition.baseline_ct,
         "BASELINE_AVG": test_definition.baseline_avg,
         "BASELINE_SD": test_definition.baseline_sd,
-        "LOWER_TOLERANCE": test_definition.lower_tolerance,
-        "UPPER_TOLERANCE": test_definition.upper_tolerance,
-        "THRESHOLD_VALUE": test_definition.threshold_value,
+        "LOWER_TOLERANCE": test_definition.lower_tolerance or "NULL",
+        "UPPER_TOLERANCE": test_definition.upper_tolerance or "NULL",
+        "THRESHOLD_VALUE": test_definition.threshold_value or 0,
+        # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
+        # since the latter may contain the former
         "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
         "GROUPBY_NAMES": test_definition.groupby_names,
         "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
@@ -138,7 +140,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "MATCH_HAVING_CONDITION": f"HAVING {test_definition.match_having_condition}" if test_definition.having_condition else "",
         "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
         "WINDOW_DATE_COLUMN": test_definition.window_date_column,
-        "WINDOW_DAYS": test_definition.window_days,
+        "WINDOW_DAYS": test_definition.window_days or 0,
         "CONCAT_COLUMNS": concat_columns(issue_data["column_names"], "<NULL>"),
         "CONCAT_MATCH_GROUPBY": concat_columns(test_definition.match_groupby_names, "<NULL>"),
         "LIMIT": limit,

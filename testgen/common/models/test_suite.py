@@ -1,10 +1,11 @@
+import enum
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, String, asc, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -13,6 +14,11 @@ from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
+
+class PredictSensitivity(enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
 
 @dataclass
 class TestSuiteMinimal(EntityMinimal):
@@ -64,6 +70,8 @@ class TestSuite(Entity):
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
     view_mode: str | None = Column(NullIfEmptyString, default=None)
+    predict_sensitivity: PredictSensitivity | None = Column(String, Enum(PredictSensitivity))
+    predict_min_lookback: int | None = Column(Integer)
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()

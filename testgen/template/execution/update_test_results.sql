@@ -22,7 +22,22 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
     ),
     result_message = COALESCE(
       r.result_message,
-      tt.measure_uom || ': ' || r.result_measure::VARCHAR || ', Threshold: ' || d.threshold_value::VARCHAR || (
+      tt.measure_uom || ': ' || r.result_measure::VARCHAR || (
+        CASE
+          WHEN d.threshold_value IS NOT NULL THEN ', Threshold: ' || d.threshold_value::VARCHAR
+          ELSE ''
+        END
+      ) || (
+        CASE
+          WHEN d.lower_tolerance IS NOT NULL THEN ', Lower Bound: ' || d.lower_tolerance::VARCHAR
+          ELSE ''
+        END
+      ) || (
+        CASE
+          WHEN d.upper_tolerance IS NOT NULL THEN ', Upper Bound: ' || d.upper_tolerance::VARCHAR
+          ELSE ''
+        END
+      ) || (
         CASE
           WHEN r.skip_errors > 0 THEN 'Errors Ignored: ' || r.skip_errors::VARCHAR
           ELSE ''
