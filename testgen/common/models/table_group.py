@@ -28,6 +28,7 @@ class TableGroupMinimal(EntityMinimal):
     profiling_exclude_mask: str
     profile_use_sampling: bool
     profiling_delay_days: str
+    monitor_test_suite_id: UUID | None
 
 
 @dataclass
@@ -62,6 +63,10 @@ class TableGroupSummary(EntityMinimal):
     latest_anomalies_likely_ct: int
     latest_anomalies_possible_ct: int
     latest_anomalies_dismissed_ct: int
+    monitor_test_suite_id: UUID | None
+    monitor_lookback: int | None
+    monitor_freshness_anomalies: int | None
+    monitor_schema_anomalies: int | None
 
 
 class TableGroup(Entity):
@@ -223,6 +228,34 @@ class TableGroup(Entity):
                     anomaly_types.id = latest_anomalies.anomaly_id
                 )
             GROUP BY latest_run.id
+        ),
+        ranked_test_runs AS (
+            SELECT
+                test_runs.id as id,
+                ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
+            FROM table_groups
+            INNER JOIN test_runs
+                ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
+            WHERE table_groups.project_code = :project_code
+                AND table_groups.monitor_test_suite_id IS NOT NULL
+            ORDER BY test_runs.test_suite_id, test_runs.test_starttime
+        ),
+        monitor_tables AS (
+            SELECT
+                results.table_groups_id AS table_group_id,
+                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+                SUM(CASE WHEN results.test_type = 'Table_Freshness' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS freshness_anomalies,
+                SUM(CASE WHEN results.test_type = 'Schema_Drift' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS schema_anomalies,
+                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update
+            FROM ranked_test_runs
+            INNER JOIN v_test_results AS results
+                ON (results.test_run_id = ranked_test_runs.id)
+            INNER JOIN test_suites
+                ON (test_suites.id = results.test_suite_id)
+            WHERE results.project_code = :project_code
+                AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
+                AND results.table_name IS NOT NULL
+            GROUP BY results.table_groups_id, COALESCE(test_suites.monitor_lookback, 1)
         )
         SELECT groups.id,
             groups.table_groups_name,
@@ -240,10 +273,15 @@ class TableGroup(Entity):
             latest_profile.definite_ct AS latest_anomalies_definite_ct,
             latest_profile.likely_ct AS latest_anomalies_likely_ct,
             latest_profile.possible_ct AS latest_anomalies_possible_ct,
-            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct
+            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct,
+            groups.monitor_test_suite_id AS monitor_test_suite_id,
+            monitor_tables.lookback AS monitor_lookback,
+            monitor_tables.freshness_anomalies AS monitor_freshness_anomalies,
+            monitor_tables.schema_anomalies AS monitor_schema_anomalies
         FROM table_groups AS groups
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
+            LEFT JOIN monitor_tables ON (groups.id = monitor_tables.table_group_id)
         WHERE groups.project_code = :project_code
             {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
         """

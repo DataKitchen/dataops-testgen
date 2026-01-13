@@ -43,7 +43,7 @@ from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
-from testgen.utils import friendly_score
+from testgen.utils import friendly_score, str_to_timestamp
 
 PAGE_PATH = "test-runs:results"
 
@@ -608,7 +608,8 @@ def render_selected_details(
                     if dfh.empty:
                         st.write("Test history not available.")
                     else:
-                        write_history_graph(dfh)
+                        # write_history_graph(dfh)
+                        write_history_chart_v2(dfh)
                 with ut_tab2:
                     show_test_def_detail(selected_item["test_definition_id_current"], test_suite)
 
@@ -657,6 +658,16 @@ def write_history_graph(data: pd.DataFrame):
         case "binary_chart":
             render_binary_chart(data, **chart_params)
         case _: render_line_chart(data, **chart_params)
+
+
+def write_history_chart_v2(data: pd.DataFrame):
+    data["test_date"] = data["test_date"].apply(str_to_timestamp)
+    return testgen.testgen_component(
+        "test_results_chart",
+        props={
+            "data": data.to_dict("records"),
+        },
+    )
 
 
 def render_line_chart(dfh: pd.DataFrame, **_params: dict) -> None:

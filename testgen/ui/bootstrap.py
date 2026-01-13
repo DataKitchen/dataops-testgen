@@ -11,6 +11,7 @@ from testgen.ui.views.connections import ConnectionsPage
 from testgen.ui.views.data_catalog import DataCatalogPage
 from testgen.ui.views.hygiene_issues import HygieneIssuesPage
 from testgen.ui.views.login import LoginPage
+from testgen.ui.views.monitors_dashboard import MonitorsDashboardPage
 from testgen.ui.views.profiling_results import ProfilingResultsPage
 from testgen.ui.views.profiling_runs import DataProfilingPage
 from testgen.ui.views.project_dashboard import ProjectDashboardPage
@@ -42,6 +43,7 @@ BUILTIN_PAGES: list[type[Page]] = [
     TestSuitesPage,
     TestDefinitionsPage,
     ProjectSettingsPage,
+    MonitorsDashboardPage,
 ]
 
 LOG = logging.getLogger("testgen")

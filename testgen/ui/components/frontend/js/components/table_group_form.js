@@ -358,6 +358,15 @@ const SettingsForm = (
                     onChange: (value) => addScorecardDefinition.val = value,
                 })
                 : null,
+            () => !options.editMode
+                ? Checkbox({
+                    name: 'add_monitor_test_suite',
+                    label: 'Add monitor test suite',
+                    help: 'Add a new test suite with monitor generation set for this table group',
+                    checked: addMonitorTestSuite,
+                    onChange: (value) => addMonitorTestSuite.val = value,
+                })
+                : null,
         ),
         Input({
             name: 'profiling_delay_days',

@@ -20,7 +20,7 @@ class ColumnChars:
     db_data_type: str = None
     is_decimal: bool = False
     approx_record_ct: int = None
-    record_ct: int = None
+    record_ct: int = 0
 
 
 class RefreshDataCharsSQL:

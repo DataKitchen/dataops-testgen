@@ -20,6 +20,7 @@
  * @property {string?} style
  * @property {string?} testId
  * @property {number?} portalClass
+ * @property {('top' | 'bottom')?} portalPosition
  * @property {boolean?} filterable
  * @property {('normal' | 'inline')?} triggerStyle
  */
@@ -170,7 +171,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
 
         Portal(
-            {target: domId.val, targetRelative: true, opened},
+            {target: domId.val, targetRelative: true, position: props.portalPosition?.val ?? props?.portalPosition, opened},
             () => div(
                 {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,

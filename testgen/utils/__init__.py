@@ -27,6 +27,17 @@ def to_int(value: float | int) -> int:
     return 0
 
 
+def str_to_timestamp(value: str) -> int:
+    try:
+        return int(datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp())
+    except:
+        ...
+    try:
+        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp())
+    except:
+        ...
+
+
 def to_dataframe(
     data: Iterable[Any],
     columns: list[str] | None = None,

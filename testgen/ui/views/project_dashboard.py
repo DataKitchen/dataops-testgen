@@ -50,6 +50,7 @@ class ProjectDashboardPage(Page):
                             test_suite.to_dict(json_safe=True)
                             for test_suite in test_suites
                             if test_suite.table_groups_id == table_group.id
+                                and test_suite.id != table_group.monitor_test_suite_id
                         ],
                         "latest_tests_start": make_json_safe(
                             max(
@@ -65,6 +66,13 @@ class ProjectDashboardPage(Page):
                         "dq_score": friendly_score(score(table_group.dq_score_profiling, table_group.dq_score_testing)),
                         "dq_score_profiling": friendly_score(table_group.dq_score_profiling),
                         "dq_score_testing": friendly_score(table_group.dq_score_testing),
+                        "monitoring_summary": {
+                            "project_code": project_code,
+                            "table_group_id": str(table_group.id),
+                            "lookback": table_group.monitor_lookback or 0,
+                            "freshness_anomalies": table_group.monitor_freshness_anomalies or 0,
+                            "schema_anomalies": table_group.monitor_schema_anomalies or 0,
+                        } if table_group.monitor_test_suite_id else None,
                     }
                     for table_group in table_groups
                 ],

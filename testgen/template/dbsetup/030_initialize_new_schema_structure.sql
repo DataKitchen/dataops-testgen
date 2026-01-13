@@ -172,6 +172,8 @@ CREATE TABLE test_suites (
    view_mode               VARCHAR(20) DEFAULT NULL,
    predict_sensitivity     VARCHAR(6),
    predict_min_lookback    INTEGER,
+   monitor_lookback        INTEGER DEFAULT NULL,
+
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
 );
@@ -368,14 +370,17 @@ CREATE TABLE profile_pair_rules (
 
 
 CREATE TABLE data_structure_log (
-   log_id UUID DEFAULT gen_random_uuid()
-      CONSTRAINT pk_dsl_id
-         PRIMARY KEY,
-   element_id    UUID,
-   change_date   TIMESTAMP,
-   change        VARCHAR(10),
-   old_data_type VARCHAR(50),
-   new_data_type VARCHAR(50)
+   log_id UUID       DEFAULT gen_random_uuid()
+                        CONSTRAINT pk_dsl_id
+                        PRIMARY KEY,
+   table_groups_id   UUID,
+   element_id        UUID,
+   table_name        VARCHAR(120),
+   column_name       VARCHAR(120),
+   change_date       TIMESTAMP,
+   change            VARCHAR(10),
+   old_data_type     VARCHAR(50),
+   new_data_type     VARCHAR(50)
 );
 
 CREATE TABLE data_table_chars (

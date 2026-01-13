@@ -3,7 +3,10 @@ function formatTimestamp(
     /** @type boolean */ showYear,
 ) {
     if (timestamp) {
-        const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp);
+        let date = timestamp;
+        if (typeof timestamp === 'number') {
+            date = new Date(timestamp.toString().length === 10 ? timestamp * 1000 : timestamp);
+        }
         if (!isNaN(date)) {
             const months = [ 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' ];
             const hours = date.getHours();
@@ -35,6 +38,25 @@ function formatDuration(
     .join(' ');
 
     return formatted.trim() || '< 1s';
+}
+
+function humanReadableDuration(/** @type string */ duration) {
+    if (duration === '< 1s') {
+        return 'Less than 1 second ago';
+    }
+
+    const biggestPart = duration.split(' ')[0];
+
+    const durationUnit = biggestPart.slice(-1)[0];
+    const durationValule = biggestPart.replace(durationUnit, '');
+    const unitTemplates = {
+        d: (/** @type number */ value) => `${value} day${value === 1 ? '' : 's'} ago`,
+        h: (/** @type number */ value) => `${value} hour${value === 1 ? '' : 's'} ago`,
+        m: (/** @type number */ value) => `${value} minute${value === 1 ? '' : 's'} ago`,
+        s: (/** @type number */ value) => `${value} second${value === 1 ? '' : 's'} ago`,
+    };
+
+    return unitTemplates[durationUnit](durationValule);
 }
 
 function formatNumber(/** @type number | string */ number, /** @type number */ decimals = 3) {
@@ -82,23 +104,47 @@ const caseInsensitiveIncludes = (/** @type string */ value, /** @type string */ 
     return !search;
 }
 
+/**
+ * Convert viewport units to pixels using the current
+ * window's `innerHeight` and defaulting to the top window's
+ * `innerHeight` when needed.
+ * 
+ * @param {number} value
+ * @param {('height'|'width')} dim
+ * @returns {number}
+ */
+function viewPortUnitsToPixels(value, dim) {
+    if (typeof value !== 'number') {
+        return 0;
+    }
+
+    const viewPortSize = window[`inner${capitalize(dim)}`] || window.top[`inner${capitalize(dim)}`];
+    return (value / 100) * viewPortSize;
+}
+
 // https://m2.material.io/design/color/the-color-system.html#tools-for-picking-colors
 const colorMap = {
     red: '#EF5350', // Red 400
+    redLight: '#FFB6C180', // Clear red
+    redDark: '#D32F2F', // Red 700
     orange: '#FF9800', // Orange 500
     yellow: '#FDD835', // Yellow 600
     green: '#9CCC65', // Light Green 400
+    greenLight: '#90EE90FF', // Clear green
     limeGreen: '#C0CA33', // Lime Green 600
     purple: '#AB47BC', // Purple 400
     purpleLight: '#CE93D8', // Purple 200
+    deepPurple: '#9575CD', // Deep Purple 300
     blue: '#2196F3', // Blue 500
     blueLight: '#90CAF9', // Blue 200
     indigo: '#5C6BC0', // Indigo 400
     teal: '#26A69A', // Teal 400
+    tealDark: '#009688', // Teal 500
     brown: '#8D6E63', // Brown 400
     brownLight: '#D7CCC8', // Brown 100
     brownDark: '#4E342E', // Brown 800
     grey: '#BDBDBD', // Gray 400
+    lightGrey: '#E0E0E0', // Gray 300
     empty: 'var(--empty)', // Light: Gray 200, Dark: Gray 800
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
     emptyTeal: 'var(--empty-teal)',
@@ -114,6 +160,8 @@ export {
     humanReadableSize,
     caseInsensitiveSort,
     caseInsensitiveIncludes,
+    humanReadableDuration,
+    viewPortUnitsToPixels,
     colorMap,
     DISABLED_ACTION_TEXT,
 };

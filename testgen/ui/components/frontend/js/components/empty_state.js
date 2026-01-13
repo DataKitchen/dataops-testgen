@@ -58,6 +58,10 @@ const EMPTY_STATE_MESSAGE = {
         line1: '',
         line2: 'Configure an SMTP email server for TestGen to get alerts on profiling runs, test runs, and quality scorecards.',
     },
+    monitors: {
+        line1: 'Generate monitor test suites',
+        line2: 'Automatically generate tests ...',
+    },
 };
 
 const EmptyState = (/** @type Properties */ props) => {
