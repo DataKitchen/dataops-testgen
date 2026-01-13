@@ -226,35 +226,6 @@ function checkIsRequired(validators) {
 
 /**
  * 
- * @param {string} template 
- * @param {object} context
- */
-function renderTemplate(template, context) {
-    return template.replaceAll(/\{([a-zA-Z_$][a-zA-Z0-9_$]*(\[\d+\]|\.[a-zA-Z0-9_$]+)*)\}/g, (match, p1, p2, offset, _, groups) => {
-        return extractNestedValue(context, p1) ?? '';
-    });
-}
-
-/**
- * Dynamically extracts a value from a nested object or array using a path string.
- *
- * @param {object | array} obj
- * @param {string} path
- * @returns {*}
- */
-const extractNestedValue = (obj, path) => {
-    const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1');
-    const keys = normalizedPath.split('.').filter(key => key.length > 0);
-    return keys.reduce((acc, key) => {
-        if (acc === null || acc === undefined) {
-            return undefined;
-        }
-        return acc[key];
-    }, obj);
-};
-
-/**
- * 
  * @param {(string|number)} value 
  * @returns {number}
  */
@@ -268,4 +239,4 @@ function parseDate(value) {
     return value;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, renderTemplate, onFrameResized, parseDate };
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };

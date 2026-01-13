@@ -51,10 +51,6 @@ class TestSuiteSummary(EntityMinimal):
     last_run_error_ct: int
     last_run_log_ct: int
     last_run_dismissed_ct: int
-    monitor_lookback: int | None
-    monitor_freshness_anomalies: int | None
-    monitor_schema_anomalies: int | None
-
 
 class TestSuite(Entity):
     __tablename__ = "test_suites"
@@ -72,10 +68,10 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
-    view_mode: str | None = Column(NullIfEmptyString, default=None)
+    is_monitor: bool = Column(Boolean, default=False)
+    monitor_lookback: int | None = Column(Integer, default=None)
     predict_sensitivity: PredictSensitivity | None = Column(String, Enum(PredictSensitivity))
     predict_min_lookback: int | None = Column(Integer)
-    monitor_lookback: int | None = Column(Integer, default=None)
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
@@ -161,36 +157,6 @@ class TestSuite(Entity):
                 COUNT(*) AS count
             FROM test_definitions
             GROUP BY test_suite_id
-        ),
-        ranked_test_runs AS (
-            SELECT
-                test_runs.id as id,
-                ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-            FROM table_groups
-            INNER JOIN test_runs
-                ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-            WHERE table_groups.project_code = :project_code
-                AND table_groups.monitor_test_suite_id IS NOT NULL
-                {"AND table_groups.id = :table_group_id" if table_group_id else ""}
-            ORDER BY test_runs.test_suite_id, test_runs.test_starttime
-        ),
-        monitor_tables AS (
-            SELECT
-                test_suites.id AS test_suite_id,
-                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
-                SUM(CASE WHEN results.test_type = 'Table_Freshness' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS freshness_anomalies,
-                SUM(CASE WHEN results.test_type = 'Schema_Drift' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS schema_anomalies,
-                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update
-            FROM ranked_test_runs
-            INNER JOIN v_test_results AS results
-                ON (results.test_run_id = ranked_test_runs.id)
-            INNER JOIN test_suites
-                ON (test_suites.id = results.test_suite_id)
-            WHERE results.project_code = :project_code
-                {"AND results.table_groups_id = :table_group_id" if table_group_id else ""}
-                AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
-                AND results.table_name IS NOT NULL
-            GROUP BY test_suites.id, COALESCE(test_suites.monitor_lookback, 1)
         )
         SELECT
             suites.id,
@@ -211,10 +177,7 @@ class TestSuite(Entity):
             last_run.failed_ct AS last_run_failed_ct,
             last_run.error_ct AS last_run_error_ct,
             last_run.log_ct AS last_run_log_ct,
-            last_run.dismissed_ct AS last_run_dismissed_ct,
-            monitor_tables.lookback AS monitor_lookback,
-            monitor_tables.freshness_anomalies AS monitor_freshness_anomalies,
-            monitor_tables.schema_anomalies AS monitor_schema_anomalies
+            last_run.dismissed_ct AS last_run_dismissed_ct
         FROM test_suites AS suites
         LEFT JOIN last_run
             ON (suites.id = last_run.test_suite_id)
@@ -224,9 +187,8 @@ class TestSuite(Entity):
             ON (connections.connection_id = suites.connection_id)
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
-        LEFT JOIN monitor_tables
-            ON (monitor_tables.test_suite_id = suites.id)
-        WHERE suites.project_code = :project_code
+        WHERE suites.is_monitor IS NOT TRUE
+            AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
         ORDER BY LOWER(suites.test_suite);
         """

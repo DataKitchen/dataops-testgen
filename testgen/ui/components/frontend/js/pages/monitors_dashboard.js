@@ -1,11 +1,6 @@
 /**
  * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
- *
- * @typedef FilterOption
- * @type {object}
- * @property {string} value
- * @property {string} label
- * @property {boolean} selected
+ * @import { FilterOption, ProjectSummary } from '../types.js';
  * 
  * @typedef Monitor
  * @type {object}
@@ -36,20 +31,27 @@
  * @type {object}
  * @property {string?} sort_field
  * @property {('asc'|'desc')?} sort_order
+ * 
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_edit
  *
  * @typedef Properties
  * @type {object}
+ * @property {ProjectSummary} project_summary
  * @property {MonitorSummary} summary
  * @property {FilterOption[]} table_group_filter_options
  * @property {boolean?} has_monitor_test_suite
  * @property {MonitorList} monitors
  * @property {MonitorListFilters} filters
  * @property {MonitorListSort?} sort
+ * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { formatDuration, humanReadableDuration, colorMap, formatNumber, viewPortUnitsToPixels } from '../display_utils.js';
+import { Button } from '../components/button.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
@@ -78,7 +80,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             onSortChange: (sort) => emitEvent('SetParamValues', { payload: { sort_field: sort.field ?? null, sort_order: sort.order ?? null } }),
         };
     });
-    const lookback = van.derive(() => getValue(props.summary)?.lookback ?? 0);
     const tablePaginator = van.derive(() => {
         const result = getValue(props.monitors);
         return {
@@ -145,19 +146,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         }));
     });
 
-    const itemsCount = props.monitors.val?.items?.length;
-    const notFiltersApplied = Object.values(props.filters.val ?? {}).every(f => !f);
-    if (itemsCount <= 0 && notFiltersApplied) {
-        return EmptyState({
-            icon: 'apps_outage',
-            label: 'No active monitors yet',
-            message: EMPTY_STATE_MESSAGE.monitors,
-        });
-    }
+    const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
+    const projectSummary = getValue(props.project_summary);
 
-    return div(
-        {style: 'height: 100%;'},
-        div(
+    return projectSummary.table_group_count > 0
+        ? div(
             {style: 'height: 100%;'},
             div(
                 { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
@@ -171,10 +164,12 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
                 }),
                 span({class: 'fx-flex'}),
-                AnomaliesSummary(getValue(props.summary)),
+                () => getValue(props.has_monitor_test_suite) 
+                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies')
+                    : '',
                 span({class: 'fx-flex'}),
             ),
-            Table(
+            () => getValue(props.has_monitor_test_suite) ? Table(
                 {
                     header: () => div(
                         {class: 'flex-row fx-gap-3 p-4 pt-2 pb-2'},
@@ -198,57 +193,52 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             onChange: (checked) => emitEvent('SetParamValues', {payload: {only_tables_with_anomalies: String(checked).toLowerCase()}}),
                         }),
                         span({class: 'fx-flex'}, ''),
-                        getValue(props.has_monitor_test_suite)
-                            ? div(
-                                {
-                                    role: 'button',
-                                    class: 'flex-row fx-gap-1 p-2 clickable',
-                                    style: 'color: var(--link-color); width: fit-content;',
-                                    onclick: () => emitEvent('EditTestSuite', { payload: {} }),
-                                },
-                                span('Edit monitor suite'),
-                                i({class: 'material-symbols-rounded', style: 'font-size: 13px;'}, 'open_in_new'),
-                            )
-                            : null,
+                        userCanEdit
+                            ? Button({
+                                icon: 'edit',
+                                iconSize: 18,
+                                label: 'Edit monitor settings',
+                                color: 'basic',
+                                width: 'auto',
+                                onclick: () => emitEvent('EditTestSuite', { payload: {} }),
+                            })
+                            : '',
                     ),
-                    columns: [
-                        [
-                            {name: 'filler_1', colspan: 2, label: ''},
-                            {name: 'anomalies', label: `Anomalies in last ${lookback.val} runs`, colspan: 2, padding: 8},
-                            {name: 'changes', label: `Changes in last ${lookback.val} runs`, colspan: 1, padding: 8},
-                            {name: 'filler_2', label: ''},
-                        ],
-                        [
-                            {name: 'table_state', label: '', align: 'center', width: 36, overflow: 'visible'},
-                            {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
-                            {name: 'freshness', label: 'Freshness', width: 85, align: 'left'},
-                            // {name: 'volume', label: 'Volume', width: 85, align: 'left'},
-                            {name: 'schema', label: 'Schema', width: 85, align: 'left'},
-                            // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
-                            {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
-                            // {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
-                            {name: 'action', label: '', width: 100, align: 'center'},
-                        ],
-                    ],
-                    emptyState: () => {
-                        let message = 'No monitors match these filters';
-                        const isTableGroupIdFilterApplied = !!getValue(props.filters).table_group_id;
-                        if (isTableGroupIdFilterApplied && !getValue(props.has_monitor_test_suite)) {
-                            message = 'The selected table group does not have a monitor test suite';
-                        }
-
-                        return div(
-                            {class: 'flex-row fx-justify-center empty-table-message'},
-                            span({class: 'text-secondary'}, message),
-                        );
+                    columns: () => {
+                        const lookback = getValue(props.summary)?.lookback ?? 0;
+                        const numRuns = lookback === 1 ? 'run' : `${lookback} runs`;
+                        return [
+                            [
+                                {name: 'filler_1', colspan: 2, label: ''},
+                                {name: 'anomalies', label: `Anomalies in last ${numRuns}`, colspan: 2, padding: 8},
+                                {name: 'changes', label: `Changes in last ${numRuns}`, colspan: 1, padding: 8},
+                                {name: 'filler_2', label: ''},
+                            ],
+                            [
+                                {name: 'table_state', label: '', align: 'center', width: 36, overflow: 'visible'},
+                                {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
+                                {name: 'freshness', label: 'Freshness', width: 85, align: 'left'},
+                                // {name: 'volume', label: 'Volume', width: 85, align: 'left'},
+                                {name: 'schema', label: 'Schema', width: 85, align: 'left'},
+                                // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
+                                {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
+                                // {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
+                                {name: 'action', label: '', width: 100, align: 'center'},
+                            ],
+                        ];
                     },
+                    emptyState: div(
+                        {class: 'flex-row fx-justify-center empty-table-message'},
+                        span({class: 'text-secondary'}, 'No tables found matching filters'),
+                    ),
                     sort: tableSort,
                     paginator: tablePaginator,
                 },
                 tableRows,
-            ),
-        ),
-    );
+            )
+            : ConditionalEmptyState(projectSummary, userCanEdit),
+        )
+        : ConditionalEmptyState(projectSummary, userCanEdit);
 }
 
 /**
@@ -268,9 +258,50 @@ const AnomalyTag = (value) => {
     });
 
     return div(
-        {class: `anomali-tag ${(value != undefined && value > 0) ? 'has-anomalies' : ''} ${value == undefined ? 'no-value' : ''}`},
+        {class: `anomaly-tag ${(value != undefined && value > 0) ? 'has-anomalies' : ''} ${value == undefined ? 'no-value' : ''}`},
         content,
     );
+};
+
+/**
+ * @param {ProjectSummary} projectSummary
+ * @param {boolean} userCanEdit
+ */
+const ConditionalEmptyState = (projectSummary, userCanEdit) => {
+    let args = {
+        label: 'No monitors yet for table group',
+        message: EMPTY_STATE_MESSAGE.monitors,
+        // TODO: Add action
+    }
+    if (projectSummary.connection_count <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.connection,
+            link: {
+                label: 'Go to Connections',
+                href: 'connections',
+                params: { project_code: projectSummary.project_code },
+            },
+        };
+    } else if (projectSummary.table_group_count <= 0) {
+        args = {
+            label: 'Your project is empty',
+            message: EMPTY_STATE_MESSAGE.tableGroup,
+            link: {
+                label: 'Go to Table Groups',
+                href: 'table-groups',
+                params: {
+                    project_code: projectSummary.project_code,
+                    connection_id: projectSummary.default_connection_id,
+                },
+            },
+        };
+    }
+    
+    return EmptyState({
+        icon: 'apps_outage',
+        ...args,
+    });
 };
 
 const stylesheet = new CSSStyleSheet();

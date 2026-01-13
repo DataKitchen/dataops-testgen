@@ -240,8 +240,7 @@ class TestRun(Entity):
             INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
             INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
             INNER JOIN projects ON (test_suites.project_code = projects.project_code)
-        WHERE TRUE
-            AND (table_groups.monitor_test_suite_id IS NULL OR test_runs.test_suite_id != table_groups.monitor_test_suite_id)
+        WHERE test_suites.is_monitor IS NOT TRUE
             {" AND test_suites.project_code = :project_code" if project_code else ""}
             {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}

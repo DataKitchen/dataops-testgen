@@ -52,19 +52,7 @@ class TestSuitesPage(Page):
             "test_suites",
             props={
                 "project_summary": project_summary.to_dict(json_safe=True),
-                "test_suites": [
-                    {
-                        **test_suite.to_dict(json_safe=True),
-                        "monitoring_summary": {
-                            "project_code": test_suite.project_code,
-                            "table_group_id": str(test_suite.table_groups_id),
-                            "lookback": test_suite.monitor_lookback or 0,
-                            "freshness_anomalies": test_suite.monitor_freshness_anomalies or 0,
-                            "schema_anomalies": test_suite.monitor_schema_anomalies or 0,
-                        } if test_suite.monitor_lookback is not None else None,
-                    }
-                    for test_suite in test_suites
-                ],
+                "test_suites": [test_suite.to_dict(json_safe=True) for test_suite in test_suites],
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),
@@ -128,7 +116,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
     component_type = empty_if_null(selected_test_suite.component_type) if mode == "edit" else "dataset"
     component_name = empty_if_null(selected_test_suite.component_name) if mode == "edit" else ""
 
-    is_monitor_suite = mode == "edit" and (table_groups_df["monitor_test_suite_id"] == test_suite_id).any()
+    is_monitor_suite = mode == "edit" and selected_test_suite.is_monitor
 
     left_column, right_column = st.columns([0.50, 0.50])
     expander = st.expander("", expanded=True)
@@ -165,7 +153,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
                 value=selected_test_suite.monitor_lookback,
                 step=1,
                 min_value=1,
-                max_value=24,
+                max_value=200,
                 help="Number of runs to retrieve when displaying this test suite's monitored changes",
             ) if is_monitor_suite else None,
             "monitor_lookback_spacer": right_column.container(
