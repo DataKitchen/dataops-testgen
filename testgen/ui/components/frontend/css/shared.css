@@ -673,7 +673,7 @@ input::-ms-clear {
     overflow: visible;
 }
 
-.anomali-tag {
+.anomaly-tag {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -681,16 +681,16 @@ input::-ms-clear {
     background: var(--green);
 }
 
-.anomali-tag.no-value {
+.anomaly-tag.no-value {
     background: var(--light-grey);
 }
 
-.anomali-tag > .material-symbols-rounded {
+.anomaly-tag > .material-symbols-rounded {
     color: white;
     font-size: 20px;
 }
 
-.anomali-tag.has-anomalies {
+.anomaly-tag.has-anomalies {
     padding: 1px 5px;
     border-radius: 10px;
     background: var(--error-color);

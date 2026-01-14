@@ -48,7 +48,7 @@ function humanReadableDuration(/** @type string */ duration) {
     const biggestPart = duration.split(' ')[0];
 
     const durationUnit = biggestPart.slice(-1)[0];
-    const durationValule = biggestPart.replace(durationUnit, '');
+    const durationValue = Number(biggestPart.replace(durationUnit, ''));
     const unitTemplates = {
         d: (/** @type number */ value) => `${value} day${value === 1 ? '' : 's'} ago`,
         h: (/** @type number */ value) => `${value} hour${value === 1 ? '' : 's'} ago`,
@@ -56,7 +56,7 @@ function humanReadableDuration(/** @type string */ duration) {
         s: (/** @type number */ value) => `${value} second${value === 1 ? '' : 's'} ago`,
     };
 
-    return unitTemplates[durationUnit](durationValule);
+    return unitTemplates[durationUnit](durationValue);
 }
 
 function formatNumber(/** @type number | string */ number, /** @type number */ decimals = 3) {

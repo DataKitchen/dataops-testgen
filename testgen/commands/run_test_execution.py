@@ -64,7 +64,6 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     test_suite = TestSuite.get(test_suite_id)
     table_group = TableGroup.get(test_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
-    is_monitor = test_suite_id == table_group.monitor_test_suite_id
     set_target_db_params(connection.__dict__)
 
     LOG.info("Creating test run record")
@@ -153,7 +152,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.save()
 
         send_test_run_notifications(test_run)
-        if not is_monitor:
+        if not test_suite.is_monitor:
             _rollup_test_scores(test_run, table_group)
     finally:
         scoring_endtime = datetime.now(UTC) + time_delta
@@ -167,7 +166,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             source=settings.ANALYTICS_JOB_SOURCE,
             username=username,
             sql_flavor=connection.sql_flavor_code,
-            monitor=is_monitor,
+            monitor=test_suite.is_monitor,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
             scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),

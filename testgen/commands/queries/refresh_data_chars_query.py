@@ -20,7 +20,9 @@ class ColumnChars:
     db_data_type: str = None
     is_decimal: bool = False
     approx_record_ct: int = None
-    record_ct: int = 0
+    # This should not default to 0 since we don't always retrieve actual row counts
+    # UI relies on the null value to know that the approx_record_ct should be displayed instead
+    record_ct: int = None
 
 
 class RefreshDataCharsSQL:

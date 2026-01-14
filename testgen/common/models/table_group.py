@@ -395,12 +395,13 @@ class TableGroup(Entity):
             if add_monitor_test_suite:
                 test_suite = TestSuite(
                     project_code=self.project_code,
-                    test_suite=f"{self.table_groups_name} Monitor",
+                    test_suite=f"{self.table_groups_name} Monitors",
                     connection_id=self.connection_id,
                     table_groups_id=self.id,
                     export_to_observability=False,
                     dq_score_exclude=True,
-                    view_mode="Monitor",
+                    is_monitor=True,
+                    monitor_lookback=14,
                 )
                 test_suite.save()
 

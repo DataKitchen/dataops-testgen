@@ -6,7 +6,8 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.models import with_database_session
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.project import Project
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -50,41 +51,50 @@ class MonitorsDashboardPage(Page):
             "monitors-dashboard",
         )
 
+        project_summary = Project.get_summary(project_code)
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-        selected_table_group_id = table_group_id or (str(table_groups[0].id) if table_groups else None)
-        selected_table_group = TableGroup.get_minimal(selected_table_group_id or "")
 
+        if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
+            table_group_id = str(table_groups[0].id) if table_groups else None
+
+        selected_table_group = None
+        monitored_tables_page = []
+        all_monitored_tables_count = 0
+        monitor_changes_summary = None
+                    
         current_page = int(current_page)
         items_per_page = int(items_per_page)
         page_start = current_page * items_per_page
 
-        monitored_tables_page = get_monitor_changes_by_tables(
-            project_code,
-            table_group_id=selected_table_group_id,
-            table_name_filter=table_name_filter,
-            only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
-            sort_field=sort_field,
-            sort_order=sort_order,
-            limit=int(items_per_page),
-            offset=page_start,
-        )
-        all_monitored_tables_count = count_monitor_changes_by_tables(
-            project_code,
-            table_group_id=selected_table_group_id,
-            table_name_filter=table_name_filter,
-            only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
-        )
-        monitor_changes_summary = summarize_monitor_changes(project_code, table_group_id=selected_table_group_id)
+        if table_group_id:
+            selected_table_group = next(item for item in table_groups if str(item.id) == table_group_id)
+
+            monitored_tables_page = get_monitor_changes_by_tables(
+                table_group_id,
+                table_name_filter=table_name_filter,
+                only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+                sort_field=sort_field,
+                sort_order=sort_order,
+                limit=int(items_per_page),
+                offset=page_start,
+            )
+            all_monitored_tables_count = count_monitor_changes_by_tables(
+                table_group_id,
+                table_name_filter=table_name_filter,
+                only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+            )
+            monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
         return testgen.testgen_component(
             "monitors_dashboard",
             props={
+                "project_summary": project_summary.to_dict(json_safe=True),
                 "summary": monitor_changes_summary,
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),
                         "label": table_group.table_groups_name,
-                        "selected": str(selected_table_group_id) == str(table_group.id),
+                        "selected": str(table_group_id) == str(table_group.id),
                     } for table_group in table_groups
                 ],
                 "monitors": {
@@ -94,7 +104,7 @@ class MonitorsDashboardPage(Page):
                     "total_count": all_monitored_tables_count,
                 },
                 "filters": {
-                    "table_group_id": selected_table_group_id,
+                    "table_group_id": table_group_id,
                     "table_name_filter": table_name_filter,
                     "only_tables_with_anomalies": only_tables_with_anomalies,
                 },
@@ -103,20 +113,21 @@ class MonitorsDashboardPage(Page):
                     "sort_order": sort_order,
                 } if sort_field and sort_order else None,
                 "has_monitor_test_suite": bool(selected_table_group and selected_table_group.monitor_test_suite_id),
+                "permissions": {
+                    "can_edit": session.auth.user_has_permission("edit"),
+                },
             },
             on_change_handlers={
-                "OpenMonitoringTrends": lambda payload: open_table_trends(project_code, payload),
+                "OpenMonitoringTrends": lambda payload: open_table_trends(selected_table_group, payload),
                 "SetParamValues": lambda payload: set_param_values(payload),
-                "EditTestSuite": lambda *_: edit_monitor_test_suite(project_code, selected_table_group_id),
+                "EditTestSuite": lambda *_: edit_monitor_test_suite(project_code, selected_table_group),
             },
         )
 
 
 @st.cache_data(show_spinner=False)
 def get_monitor_changes_by_tables(
-    project_code: str,
-    *,
-    table_group_id: str | None = None,
+    table_group_id: str,
     table_name_filter: str | None = None,
     only_tables_with_anomalies: bool = False,
     sort_field: str | None = None,
@@ -125,8 +136,7 @@ def get_monitor_changes_by_tables(
     offset: int | None = None,
 ) -> list[dict]:
     query, params = _monitor_changes_by_tables_query(
-        project_code,
-        table_group_id=table_group_id,
+        table_group_id,
         table_name_filter=table_name_filter,
         only_tables_with_anomalies=only_tables_with_anomalies,
         sort_field=sort_field,
@@ -143,15 +153,12 @@ def get_monitor_changes_by_tables(
 
 @st.cache_data(show_spinner=False)
 def count_monitor_changes_by_tables(
-    project_code: str,
-    *,
-    table_group_id: str | None = None,
+    table_group_id: str,
     table_name_filter: str | None = None,
     only_tables_with_anomalies: bool = False,
 ) -> int:
     query, params = _monitor_changes_by_tables_query(
-        project_code,
-        table_group_id=table_group_id,
+        table_group_id,
         table_name_filter=table_name_filter,
         only_tables_with_anomalies=only_tables_with_anomalies,
     )
@@ -161,15 +168,8 @@ def count_monitor_changes_by_tables(
 
 
 @st.cache_data(show_spinner=False)
-def summarize_monitor_changes(
-    project_code: str,
-    *,
-    table_group_id: str | None = None,
-) -> dict:
-    query, params = _monitor_changes_by_tables_query(
-        project_code,
-        table_group_id=table_group_id,
-    )
+def summarize_monitor_changes(table_group_id: str) -> dict:
+    query, params = _monitor_changes_by_tables_query(table_group_id)
     count_query = f"""
     SELECT
         lookback,
@@ -188,9 +188,7 @@ def summarize_monitor_changes(
 
 
 def _monitor_changes_by_tables_query(
-    project_code: str,
-    *,
-    table_group_id: str | None = None,
+    table_group_id: str,
     table_name_filter: str | None = None,
     only_tables_with_anomalies: bool = False,
     sort_field: str | None = None,
@@ -207,8 +205,7 @@ def _monitor_changes_by_tables_query(
             FROM table_groups
             INNER JOIN test_runs
                 ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-            WHERE table_groups.project_code = :project_code
-                AND table_groups.monitor_test_suite_id IS NOT NULL
+            WHERE table_groups.id = :table_group_id
             ORDER BY test_runs.test_suite_id, test_runs.test_starttime
         ),
         monitor_tables AS (
@@ -224,10 +221,9 @@ def _monitor_changes_by_tables_query(
                 ON (results.test_run_id = ranked_test_runs.id)
             INNER JOIN test_suites
                 ON (test_suites.id = results.test_suite_id)
-            WHERE results.project_code = :project_code
+            WHERE results.table_groups_id = :table_group_id
                 AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
                 AND results.table_name IS NOT NULL
-                {"AND results.table_groups_id = :table_group_id" if table_group_id else ''}
                 {"AND results.table_name ILIKE :table_name_filter" if table_name_filter else ''}
             GROUP BY results.table_groups_id, results.table_name, COALESCE(test_suites.monitor_lookback, 1)
         )
@@ -241,7 +237,6 @@ def _monitor_changes_by_tables_query(
     """
 
     params = {
-        "project_code": project_code,
         "table_group_id": table_group_id,
         "table_name_filter": f"%{table_name_filter.replace('_', '\\_')}%" if table_name_filter else None,
         "sort_field": sort_field,
@@ -256,15 +251,12 @@ def set_param_values(payload: dict) -> None:
     Router().set_query_params(payload)
 
 
-def edit_monitor_test_suite(project_code: str, table_group_id: str | None = None):
-    if table_group_id:
-        table_group = TableGroup.get_minimal(table_group_id)
-        if table_group and table_group.monitor_test_suite_id:
-            edit_test_suite_dialog(project_code, [table_group], table_group.monitor_test_suite_id)
+def edit_monitor_test_suite(project_code: str, table_group: TableGroupMinimal | None = None):
+    if table_group and table_group.monitor_test_suite_id:
+        edit_test_suite_dialog(project_code, [table_group], table_group.monitor_test_suite_id)
 
 
-def open_table_trends(project_code: str, payload: dict):
-    table_group_id = payload.get("table_group_id")
+def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
 
@@ -272,22 +264,14 @@ def open_table_trends(project_code: str, payload: dict):
     def show_dialog():
         testgen.css_class("l-dialog")
 
-        table_group = TableGroup.get_minimal(table_group_id)
         selected_data_point = get_selected_data_point()
         data_structure_logs = None
         if selected_data_point:
             data_structure_logs = get_data_structure_logs(
-                project_code=project_code,
-                table_name=table_name,
-                test_suite_id=table_group.monitor_test_suite_id,
-                time=selected_data_point,
+                table_group.monitor_test_suite_id, table_name, selected_data_point,
             )
 
-        events = get_monitor_events_for_table(
-            project_code,
-            table_name=table_name,
-            test_suite_id=table_group.monitor_test_suite_id,
-        )
+        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
 
         testgen.testgen_component(
             "table_monitoring_trends",
@@ -309,12 +293,7 @@ def open_table_trends(project_code: str, payload: dict):
 
 
 @st.cache_data(show_spinner=False)
-def get_monitor_events_for_table(
-    project_code: str,
-    *,
-    table_name: str,
-    test_suite_id: str,
-) -> dict:
+def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     query = f"""
     WITH ranked_test_runs AS ({_ranked_test_runs_query()}),
     test_filters AS (
@@ -365,8 +344,7 @@ def get_monitor_events_for_table(
             AND data_structure_log.change_date BETWEEN ranked_test_runs.start AND ranked_test_runs.end
             AND data_structure_log.table_name = :table_name
         )
-    WHERE test_suites.project_code = :project_code
-        AND test_suites.id = :test_suite_id
+    WHERE test_suites.id = :test_suite_id
         AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
     GROUP BY data_structure_log.table_name, ranked_test_runs.start, data_structure_log.change_date, ranked_test_runs.position
 
@@ -374,7 +352,6 @@ def get_monitor_events_for_table(
     """
 
     params = {
-        "project_code": project_code,
         "table_name": table_name,
         "test_suite_id": test_suite_id,
     }
@@ -397,7 +374,7 @@ def get_monitor_events_for_table(
 
 
 @st.cache_data(show_spinner=False)
-def get_data_structure_logs(project_code: str, *, table_name: str, test_suite_id: str, time: int):
+def get_data_structure_logs(test_suite_id: str, table_name: str, time: int):
     query = f"""
         WITH ranked_test_runs AS ({_ranked_test_runs_query()})
         SELECT
@@ -415,13 +392,11 @@ def get_data_structure_logs(project_code: str, *, table_name: str, test_suite_id
                 AND data_structure_log.change_date BETWEEN ranked_test_runs.start AND ranked_test_runs.end
                 AND data_structure_log.table_name = :table_name
             )
-        WHERE test_suites.project_code = :project_code
-            AND test_suites.id = :test_suite_id
+        WHERE test_suites.id = :test_suite_id
             AND COALESCE(data_structure_log.change_date, ranked_test_runs.start)::timestamp(0) = :change_time ::timestamp(0)
             AND data_structure_log.change IS NOT NULL
     """
     params = {
-        "project_code": project_code,
         "test_suite_id": str(test_suite_id),
         "table_name": table_name,
         "change_time": datetime.datetime.fromtimestamp(time, datetime.UTC).isoformat(),
@@ -443,10 +418,9 @@ def _ranked_test_runs_query():
                 - INTERVAL '1' MINUTE
             ) AS "end",
             ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-        FROM table_groups
+        FROM test_suites
         INNER JOIN test_runs
-            ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-        WHERE table_groups.project_code = :project_code
-            AND table_groups.monitor_test_suite_id = :test_suite_id
+            ON (test_suites.id = test_runs.test_suite_id)
+        WHERE test_suites.id = :test_suite_id
         ORDER BY test_runs.test_suite_id, test_runs.test_starttime
     """

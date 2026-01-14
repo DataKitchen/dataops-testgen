@@ -18,11 +18,11 @@ const { a, div, i, span } = van.tags;
  * @param {MonitorSummary} summary 
  * @param {any?} topLabel
  */
-const AnomaliesSummary = (summary, topLabel) => {
+const AnomaliesSummary = (summary, label = 'Anomalies') => {
     const SummaryTag = (label, value) => div(
         {class: 'flex-row fx-gap-1'},
         div(
-            {class: `flex-row fx-justify-center anomali-tag ${value > 0 ? 'has-anomalies' : ''}`},
+            {class: `flex-row fx-justify-center anomaly-tag ${value > 0 ? 'has-anomalies' : ''}`},
             value > 0
                 ? value
                 : i({class: 'material-symbols-rounded'}, 'check'),
@@ -30,14 +30,9 @@ const AnomaliesSummary = (summary, topLabel) => {
         span({}, label),
     );
 
-    let label = `Total anomalies in last ${summary.lookback} runs`;
-    if (summary.lookback === 1) {
-        label = `Anomalies in last run`;
-    }
+    const numRuns = summary.lookback === 1 ? 'run' : `${summary.lookback} runs`;
+    const labelElement = span({class: 'text-small text-secondary'}, `${label} in last ${numRuns}`);
 
-    const labelElement = (topLabel && typeof topLabel !== 'string')
-        ? topLabel
-        : span({class: 'text-small text-secondary'}, topLabel || label);
     const contentElement = div(
         {class: 'flex-row fx-gap-5'},
         SummaryTag('Freshness', summary.freshness_anomalies),

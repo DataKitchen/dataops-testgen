@@ -261,7 +261,7 @@ const TableMonitoringTrend = (props) => {
           style: `overflow: visible;`,
         },
 
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small' }, 'Freshness'),
+        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Freshness'),
         FreshnessChart(
           {
             width: chartsWidth,
@@ -275,7 +275,7 @@ const TableMonitoringTrend = (props) => {
         ),
         DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
 
-        // Schena Chart Selection Highlight
+        // Schema Chart Selection Highlight
         () => {
           const selection = schemaChartSelection.val;
           if (selection) {
@@ -293,7 +293,7 @@ const TableMonitoringTrend = (props) => {
 
           return g();
         },
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small' }, 'Schema'),
+        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Schema'),
         SchemaChangesChart(
           {
             width: chartsWidth,

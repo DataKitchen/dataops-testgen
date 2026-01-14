@@ -58,12 +58,7 @@ class TestRunsPage(Page):
             project_summary = Project.get_summary(project_code)
             test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id)
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            table_groups_monitors = [tg.monitor_test_suite_id for tg in table_groups if tg.monitor_test_suite_id]
-            test_suites = [
-                test_suite
-                for test_suite in TestSuite.select_minimal_where(TestSuite.project_code == project_code)
-                if test_suite.id not in table_groups_monitors
-            ]
+            test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
 
         testgen_component(
             "test_runs",

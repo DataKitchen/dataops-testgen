@@ -199,7 +199,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup) =>
                             ${useApprox ? '*' : ''}`,
                         ),
                     ),
-                    AnomaliesSummary(tableGroup.monitoring_summary, `Monitor anomalies in last ${tableGroup.monitoring_summary.lookback} runs`),
+                    AnomaliesSummary(tableGroup.monitoring_summary, 'Monitor anomalies'),
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),

@@ -55,6 +55,7 @@ WITH result_calc
            AND result_code = 0
            AND r.result_measure IS NOT NULL
            AND tt.test_scope = 'column'
+           AND tt.dq_score_prevalence_formula IS NOT NULL
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
 UPDATE test_results
    SET dq_record_ct = c.dq_record_ct,
@@ -83,6 +84,7 @@ WITH result_calc
            AND result_code = 0
            AND r.result_measure IS NOT NULL
            AND tt.test_scope <> 'column'
+           AND tt.dq_score_prevalence_formula IS NOT NULL
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
 UPDATE test_results
    SET dq_record_ct = c.dq_record_ct,
