@@ -2,12 +2,11 @@
  * @import {Point} from '../components/chart_canvas.js';
  * @import {FreshnessEvent} from '../components/freshness_chart.js';
  * @import {SchemaEvent} from '../components/schema_changes_chart.js';
- * @import {MonitoringEvent} from '../components/monitoring_sparkline.js';
  * 
- * @typedef LineChart
+ * @typedef MonitoringEvent
  * @type {object}
- * @property {string} label
- * @property {MonitoringEvent[]} events
+ * @property {number} time
+ * @property {number} record_count
  * 
  * @typedef DataStructureLog
  * @type {object}
@@ -34,6 +33,7 @@ import { Tooltip } from '../components/tooltip.js';
 import { Icon } from '../components/icon.js';
 import { DualPane } from '../components/dual_pane.js';
 import { Button } from '../components/button.js';
+import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '../components/monitoring_sparkline.js';
 
 const { div, span } = van.tags;
 const { circle, clipPath, defs, foreignObject, g, line, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
@@ -43,6 +43,7 @@ const chartsWidth = 700;
 const chartsYAxisWidth = 104;
 const fresshnessChartHeight = 25;
 const schemaChartHeight = 80;
+const volumeTrendChartHeight = 80;
 const paddingLeft = 16;
 const paddingRight = 16;
 const timeTickFormatter = new Intl.DateTimeFormat('en-US', {
@@ -67,8 +68,8 @@ const TableMonitoringTrend = (props) => {
     + (spacing * 2)
     + fresshnessChartHeight
     + (spacing * 3)
-    // + volumeChartHeight
-    // + (spacing * 3)
+    + volumeTrendChartHeight
+    + (spacing * 3)
     + schemaChartHeight
     // + (spacing * 3)
     // + (lineChartHeight * lineCharts.length)
@@ -91,13 +92,14 @@ const TableMonitoringTrend = (props) => {
 
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
 
   const rawTimeline = schemaChangeEvents.map(e => e.time).sort();
-  const dataRange = { min: rawTimeline[0], max: rawTimeline[rawTimeline.length - 1] };
+  const dateRange = { min: rawTimeline[0], max: rawTimeline[rawTimeline.length - 1] };
   const timeline = [
-    dataRange.min,
+    dateRange.min,
     ...getAdaptiveTimeTicks(rawTimeline.slice(2, rawTimeline.length - 2), 5, 8),
-    dataRange.max,
+    dateRange.max,
   ];
 
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
@@ -106,7 +108,7 @@ const TableMonitoringTrend = (props) => {
     status: e.status,
     time: e.time,
     point: {
-      x: scale(e.time, { old: dataRange, new: { min: origin.x, max: end.x } }, origin.x),
+      x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: fresshnessChartHeight / 2,
     },
   }));
@@ -114,7 +116,7 @@ const TableMonitoringTrend = (props) => {
     const itemColor = getFreshnessEventColor(e);
     const key = `${e.changed}-${itemColor}`;
     if (!legendItems[key]) {
-      const position = `translate(0,${20 * (idx + 1)})`;
+      const position = `translate(0,${20 * (Object.keys(legendItems).length + 1)})`;
       legendItems[key] = e.changed
         ? g(
           { transform: position },
@@ -176,7 +178,7 @@ const TableMonitoringTrend = (props) => {
     deletions: e.deletions,
     modifications: e.modifications,
     point: {
-      x: scale(e.time, { old: dataRange, new: { min: origin.x, max: end.x } }, origin.x),
+      x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: schemaChartHeight / 2,
     },
   }));
@@ -185,6 +187,18 @@ const TableMonitoringTrend = (props) => {
   const shouldShowSidebar = van.state(false);
   const schemaChartSelection = van.state(null);
   van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
+
+  const volumes = volumeTrendEvents.map((e) => e.record_count);
+  const volumeRange = {min: Math.min(...volumes), max: Math.max(...volumes)};
+  if (volumeRange.min === volumeRange.max) {
+    volumeRange.max = volumeRange.max + 100;
+  }
+  const parsedVolumeTrendEvents = volumeTrendEvents.map((e) => ({
+    originalX: e.time,
+    originalY: e.record_count,
+    x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+    y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
+  }));
 
   let tooltipText = '';
   const shouldShowTooltip = van.state(false);
@@ -275,17 +289,39 @@ const TableMonitoringTrend = (props) => {
         ),
         DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
 
-        // Schema Chart Selection Highlight
+        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small' }, 'Volume'),
+        MonitoringSparklineChart(
+          {
+            width: chartsWidth,
+            height: schemaChartHeight,
+            nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
+            lineWidth: 2,
+            attributes: {style: 'overflow: visible;'},
+          },
+          ...parsedVolumeTrendEvents,
+        ),
+        MonitoringSparklineMarkers(
+          {
+            color: 'transparent',
+            transform: `translate(0, ${positionTracking.volumeTrendChart})`,
+            showTooltip: showTooltip.bind(null, 0 + volumeTrendChartHeight / 2),
+            hideTooltip,
+          },
+          parsedVolumeTrendEvents,
+        ),
+        DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: volumeTrendChartHeight }) }, end),
+
+        // Schena Chart Selection Highlight
         () => {
           const selection = schemaChartSelection.val;
           if (selection) {
             const width = 10;
-            const height = schemaChartHeight + 4 * spacing;
+            const height = schemaChartHeight + 3 * spacing;
             return rect({
               width: width,
               height: height,
               x: selection.point.x - (width / 2),
-              y: selection.point.y + positionTracking.schemaChangesChart - 1 * spacing - (height / 2),
+              y: selection.point.y + positionTracking.schemaChangesChart - 1.5 * spacing - (height / 2),
               fill: colorMap.empty,
               style: `transform-box: fill-box; transform-origin: center;`,
             });
@@ -324,7 +360,7 @@ const TableMonitoringTrend = (props) => {
           timeline.map((value, idx) => {
             const label = timeTickFormatter.format(new Date(value));
             const xPosition = scale(value, {
-              old: dataRange,
+              old: dateRange,
               new: { min: origin.x, max: end.x },
             }, origin.x);
 
@@ -365,8 +401,15 @@ const TableMonitoringTrend = (props) => {
 
           // Freshness Chart Y axis
           g(
-            { transform: `translate(24, ${positionTracking.freshnessChart + (fresshnessChartHeight / 2) - 35 /* ~ height of this element */})` },
+            { transform: `translate(24, ${positionTracking.freshnessChart + (fresshnessChartHeight / 2) - 35})` },
             ...freshessChartLegendItems,
+          ),
+
+          // Volume Chart Y axis
+          g(
+            { transform: `translate(40, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
+            text({ x: 60, y: 35, class: 'text-small', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, volumeRange.min),
+            text({ x: 60, y: -35, class: 'text-small', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, volumeRange.max),
           ),
 
           // Schema Chart Y axis

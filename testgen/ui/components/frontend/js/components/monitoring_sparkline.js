@@ -10,6 +10,7 @@
  * @property {number} markerSize
  * @property {Point?} nestedPosition
  * @property {number[]?} yAxisTicks
+ * @property {Object?} attributes
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
@@ -36,13 +37,13 @@ const MonitoringSparklineChart = (options, ...points) => {
 
     van.derive(() => {
         const viewBox = getValue(_options.viewBox);
-        width.val = viewBox.width;
-        height.val = viewBox.height;
-        minX.val = viewBox.minX;
-        minY.val = viewBox.minY;
+        width.val = viewBox?.width;
+        height.val = viewBox?.height;
+        minX.val = viewBox?.minX;
+        minY.val = viewBox?.minY;
     });
 
-    const extraAttributes = {};
+    const extraAttributes = {...(_options.attributes ?? {})};
     if (_options.nestedPosition) {
         extraAttributes.x = () => (_options.nestedPosition?.rawVal || _options.nestedPosition).x;
         extraAttributes.y = () => (_options.nestedPosition?.rawVal || _options.nestedPosition).y;
@@ -72,7 +73,7 @@ const MonitoringSparklineChart = (options, ...points) => {
  */
 const MonitoringSparklineMarkers = (options, points) => {
     return g(
-        {},
+        {transform: options.transform ?? undefined},
         ...points.map((point) => {
             return circle({
                 cx: point.x,
@@ -90,6 +91,7 @@ const /** @type Options */ defaultOptions = {
     lineColor: colorMap.blueLight,
     lineWidth: 3,
     yAxisTicks: undefined,
+    attributes: {},
 };
 const defaultMarkerSize = 3;
 const defaultMarkerColor = colorMap.blueLight;

@@ -13,6 +13,7 @@
  * @property {number?} quality_drift_anomalies
  * @property {string?} latest_update
  * @property {number?} row_count
+ * @property {number?} previous_row_count
  * 
  * @typedef MonitorList
  * @type {object}
@@ -92,58 +93,67 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
     const tableRows = van.derive(() => {
         const result = getValue(props.monitors);
         renderTime = new Date();
-        return result.items.map(monitor => ({
-            table_state: ['added', 'deleted'].includes(monitor.table_state)
-                ? (
-                    monitor.table_state === 'added'
-                        ? withTooltip(
-                            Icon({classes: 'table-added-state', filled: true}, 'add_box'),
-                            {
-                                text: 'Table added',
-                                width: 85,
-                                position: 'bottom-right',
-                            },
-                        )
-                        : withTooltip(
-                            Icon({classes: 'table-deleted-state', filled: true}, 'indeterminate_check_box'),
-                            {
-                                text: 'Table deleted',
-                                width: 85,
-                                position: 'bottom-right',
-                            },
-                        )
-                )
-                : undefined,
-            table_name: span({}, monitor.table_name),
-            freshness: AnomalyTag(monitor.freshness_anomalies),
-            volume: AnomalyTag(monitor.volume_anomalies),
-            schema: AnomalyTag(monitor.schema_anomalies),
-            quality_drift: AnomalyTag(monitor.quality_drift_anomalies),
-            latest_update: span(
-                {class: 'text-small text-secondary'},
-                monitor.latest_update ? humanReadableDuration(formatDuration(monitor.latest_update, renderTime)) : '-',
-            ),
-            row_count: monitor.row_count ?
-                div(
-                    {class: 'flex-row fx-gap-1'},
-                    i(
-                        {class: 'material-symbols-rounded', style: `font-size: 16px; color: ${monitor.row_count > 0 ? colorMap.tealDark : colorMap.redDark}`},
-                        monitor.row_count > 0 ? 'arrow_upward' : 'arrow_downward',
-                    ),
-                    span({class: 'text-small text-secondary'}, formatNumber(monitor.row_count)),
-                )
-                : span({class: 'text-small text-secondary'}, '-'),
-            action: div(
-                {
-                    role: 'button',
-                    class: 'flex-row fx-gap-1 p-2 clickable',
-                    style: 'color: var(--link-color); width: fit-content;',
-                    onclick: () => emitEvent('OpenMonitoringTrends', { payload: { table_group_id: monitor.table_group_id, table_name: monitor.table_name }})
-                },
-                span('View'),
-                i({class: 'material-symbols-rounded', style: 'font-size: 18px;'}, 'insights'),
-            ),
-        }));
+        return result.items.map(monitor => {
+            let rowCountIcon = monitor.row_count > (monitor.previous_row_count ?? 0) ? 'arrow_upward' : 'arrow_downward';
+            let rowCountColor = monitor.row_count > (monitor.previous_row_count ?? 0) ? colorMap.tealDark : colorMap.redDark;
+            if (monitor.row_count === (monitor.previous_row_count ?? 0)) {
+                rowCountIcon = 'equal';
+                rowCountColor = colorMap.brown;
+            }
+
+            return {
+                table_state: ['added', 'deleted'].includes(monitor.table_state)
+                    ? (
+                        monitor.table_state === 'added'
+                            ? withTooltip(
+                                Icon({classes: 'table-added-state', filled: true}, 'add_box'),
+                                {
+                                    text: 'Table added',
+                                    width: 85,
+                                    position: 'bottom-right',
+                                },
+                            )
+                            : withTooltip(
+                                Icon({classes: 'table-deleted-state', filled: true}, 'indeterminate_check_box'),
+                                {
+                                    text: 'Table deleted',
+                                    width: 85,
+                                    position: 'bottom-right',
+                                },
+                            )
+                    )
+                    : undefined,
+                table_name: span({}, monitor.table_name),
+                freshness: AnomalyTag(monitor.freshness_anomalies),
+                volume: AnomalyTag(monitor.volume_anomalies),
+                schema: AnomalyTag(monitor.schema_anomalies),
+                quality_drift: AnomalyTag(monitor.quality_drift_anomalies),
+                latest_update: span(
+                    {class: 'text-small text-secondary'},
+                    monitor.latest_update ? humanReadableDuration(formatDuration(monitor.latest_update, renderTime)) : '-',
+                ),
+                row_count: monitor.row_count ?
+                    div(
+                        {class: 'flex-row fx-gap-1'},
+                        i(
+                            {class: 'material-symbols-rounded', style: `font-size: 16px; color: ${rowCountColor};`},
+                            rowCountIcon,
+                        ),
+                        span({class: 'text-small text-secondary'}, formatNumber(monitor.row_count)),
+                    )
+                    : span({class: 'text-small text-secondary'}, '-'),
+                action: div(
+                    {
+                        role: 'button',
+                        class: 'flex-row fx-gap-1 p-2 clickable',
+                        style: 'color: var(--link-color); width: fit-content;',
+                        onclick: () => emitEvent('OpenMonitoringTrends', { payload: { table_group_id: monitor.table_group_id, table_name: monitor.table_name }})
+                    },
+                    span('View'),
+                    i({class: 'material-symbols-rounded', style: 'font-size: 18px;'}, 'insights'),
+                ),
+            };
+        });
     });
 
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
@@ -218,11 +228,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 {name: 'table_state', label: '', align: 'center', width: 36, overflow: 'visible'},
                                 {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
                                 {name: 'freshness', label: 'Freshness', width: 85, align: 'left'},
-                                // {name: 'volume', label: 'Volume', width: 85, align: 'left'},
+                                {name: 'volume', label: 'Volume', width: 85, align: 'left'},
                                 {name: 'schema', label: 'Schema', width: 85, align: 'left'},
                                 // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
                                 {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
-                                // {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
+                                {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true},
                                 {name: 'action', label: '', width: 100, align: 'center'},
                             ],
                         ];
