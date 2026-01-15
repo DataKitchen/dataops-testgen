@@ -113,7 +113,7 @@ function getAdaptiveTimeTicks(dates, minTicks, maxTicks) {
     }
 
     if (typeof dates[0] === 'number') {
-        dates = dates.map(d => new Date(d));
+        dates = dates.map(d => new Date(d * 1000));
     }
 
     const timestamps = dates.map(d => d.getTime());

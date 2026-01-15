@@ -27,6 +27,10 @@ def to_int(value: float | int) -> int:
     return 0
 
 
+def to_sql_timestamp(value: datetime):
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def str_to_timestamp(value: str) -> int:
     try:
         return int(datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp())

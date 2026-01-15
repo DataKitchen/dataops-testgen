@@ -1,8 +1,7 @@
-import datetime
 import logging
+from datetime import UTC, datetime
 from typing import ClassVar, Literal
 
-import pandas as pd
 import streamlit as st
 
 from testgen.common.models import with_database_session
@@ -12,9 +11,10 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.test_suites import edit_test_suite_dialog
+from testgen.utils import make_json_safe
 
 PAGE_ICON = "apps_outage"
 PAGE_TITLE = "Monitors"
@@ -89,7 +89,7 @@ class MonitorsDashboardPage(Page):
             "monitors_dashboard",
             props={
                 "project_summary": project_summary.to_dict(json_safe=True),
-                "summary": monitor_changes_summary,
+                "summary": make_json_safe(monitor_changes_summary),
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),
@@ -98,7 +98,7 @@ class MonitorsDashboardPage(Page):
                     } for table_group in table_groups
                 ],
                 "monitors": {
-                    "items": monitored_tables_page,
+                    "items": make_json_safe(monitored_tables_page),
                     "current_page": current_page,
                     "items_per_page": items_per_page,
                     "total_count": all_monitored_tables_count,
@@ -118,6 +118,7 @@ class MonitorsDashboardPage(Page):
                 },
             },
             on_change_handlers={
+                "OpenSchemaChanges": lambda payload: open_schema_changes(selected_table_group, payload),
                 "OpenMonitoringTrends": lambda payload: open_table_trends(selected_table_group, payload),
                 "SetParamValues": lambda payload: set_param_values(payload),
                 "EditTestSuite": lambda *_: edit_monitor_test_suite(project_code, selected_table_group),
@@ -145,10 +146,8 @@ def get_monitor_changes_by_tables(
         offset=offset,
     )
 
-    results = fetch_df_from_db(query, params)
-    results["latest_update"] = pd.Series(results["latest_update"].apply(lambda dt: dt.tz_localize("UTC").isoformat() if not pd.isna(dt) else None), dtype="object")
-
-    return results.replace({pd.NaT: None}).to_dict("records")
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
@@ -173,7 +172,10 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
     count_query = f"""
     SELECT
         lookback,
+        MIN(lookback_start) AS lookback_start,
+        MAX(lookback_end) AS lookback_end,
         SUM(freshness_anomalies)::INTEGER AS freshness_anomalies,
+        SUM(volume_anomalies)::INTEGER AS volume_anomalies,
         SUM(schema_anomalies)::INTEGER AS schema_anomalies
     FROM ({query}) AS subquery
     GROUP BY lookback
@@ -197,49 +199,103 @@ def _monitor_changes_by_tables_query(
     offset: int | None = None,
 ) -> tuple[str, dict]:
     query = f"""
-    WITH
-        ranked_test_runs AS (
-            SELECT
-                test_runs.id as id,
-                ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-            FROM table_groups
-            INNER JOIN test_runs
-                ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-            WHERE table_groups.id = :table_group_id
-            ORDER BY test_runs.test_suite_id, test_runs.test_starttime
-        ),
-        monitor_tables AS (
-            SELECT
-                results.table_groups_id::text AS table_group_id,
-                results.table_name,
-                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
-                SUM(CASE WHEN results.test_type = 'Table_Freshness' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS freshness_anomalies,
-                SUM(CASE WHEN results.test_type = 'Schema_Drift' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS schema_anomalies,
-                SUM(CASE WHEN results.test_type = 'Volume_Trend' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS volume_anomalies,
-                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update,
-                ARRAY_AGG(results.result_measure ORDER BY results.test_date DESC) FILTER (WHERE results.test_type = 'Volume_Trend') AS row_count_history
-            FROM ranked_test_runs
-            INNER JOIN v_test_results AS results
-                ON (results.test_run_id = ranked_test_runs.id)
-            INNER JOIN test_suites
-                ON (test_suites.id = results.test_suite_id)
-            WHERE results.table_groups_id = :table_group_id
-                AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
-                AND results.table_name IS NOT NULL
-                {"AND results.table_name ILIKE :table_name_filter" if table_name_filter else ''}
-            GROUP BY results.table_groups_id, results.table_name, COALESCE(test_suites.monitor_lookback, 1)
-        )
+    WITH ranked_test_runs AS (
+        SELECT
+            test_runs.id,
+            test_runs.test_starttime,
+            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
+        FROM table_groups
+        INNER JOIN test_runs
+            ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
+        INNER JOIN test_suites
+            ON (table_groups.monitor_test_suite_id = test_suites.id)
+        WHERE table_groups.id = :table_group_id
+    ),
+    monitor_results AS (
+        SELECT 
+            results.test_time,
+            results.table_name,
+            results.test_type,
+            results.result_code,
+            ranked_test_runs.lookback,
+            ranked_test_runs.position,
+            ranked_test_runs.test_starttime,
+            CASE WHEN results.test_type = 'Table_Freshness' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
+            CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
+            CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
+            CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
+            CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
+            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
+            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
+            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods
+        FROM ranked_test_runs
+        INNER JOIN test_results AS results
+            ON (results.test_run_id = ranked_test_runs.id)
+        -- Also capture 1 run before the lookback to get baseline results
+        WHERE ranked_test_runs.position <= ranked_test_runs.lookback + 1
+            AND results.table_name IS NOT NULL
+            {"AND results.table_name ILIKE :table_name_filter" if table_name_filter else ''}
+    ),
+    monitor_tables AS (
+        SELECT
+            :table_group_id AS table_group_id,
+            table_name,
+            lookback,
+            SUM(freshness_anomaly) AS freshness_anomalies,
+            SUM(volume_anomaly) AS volume_anomalies,
+            SUM(schema_anomaly) AS schema_anomalies,
+            MAX(test_time) FILTER (WHERE test_type = 'Table_Freshness' AND result_code = 0) AS latest_update,
+            MAX(row_count) FILTER (WHERE position = 1) AS row_count,
+            SUM(col_adds) AS column_adds,
+            SUM(col_drops) AS column_drops,
+            SUM(col_mods) AS column_mods,
+            CASE
+                -- Mark as Dropped if latest Schema Drift result for the table indicates it was dropped
+                WHEN (ARRAY_AGG(table_change ORDER BY test_time DESC) FILTER (WHERE table_change IS NOT NULL))[1] = 'D'
+                    THEN 'dropped'
+                -- Only mark as Added if latest change does not indicate a drop
+                WHEN MAX(CASE WHEN table_change = 'A' THEN 1 ELSE 0 END) = 1
+                    THEN 'added'
+                WHEN SUM(schema_anomaly) > 0
+                    THEN 'modified'
+                ELSE NULL
+            END AS table_state
+        FROM monitor_results
+        -- Only aggregate within lookback runs
+        WHERE position <= lookback
+        GROUP BY table_name, lookback
+    ),
+    table_bounds AS (
+        SELECT 
+            table_name,
+            MIN(position) AS min_position,
+            MAX(position) AS max_position
+        FROM monitor_results
+        GROUP BY table_name
+    ),
+    baseline_tables AS (
+        SELECT
+            monitor_results.table_name,
+            MIN(monitor_results.test_starttime) FILTER (
+                WHERE monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
+            ) AS lookback_start,
+            MAX(monitor_results.test_starttime) FILTER (
+                WHERE monitor_results.position = GREATEST(1, table_bounds.min_position)
+            ) AS lookback_end,
+            MAX(monitor_results.row_count) FILTER (
+                WHERE monitor_results.test_type = 'Volume_Trend'
+                AND monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
+            ) AS previous_row_count
+        FROM monitor_results
+        JOIN table_bounds ON monitor_results.table_name = table_bounds.table_name
+        GROUP BY monitor_results.table_name
+    )
     SELECT
-        table_group_id,
-        table_name,
-        lookback,
-        freshness_anomalies,
-        schema_anomalies,
-        volume_anomalies,
-        latest_update,
-        row_count_history[1]::INTEGER AS "row_count",
-        row_count_history[LEAST(lookback, cardinality(row_count_history))]::INTEGER AS previous_row_count
+        monitor_tables.*,
+        baseline_tables.*
     FROM monitor_tables
+    LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
     {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ''}
     {f"ORDER BY {sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else ''}
     {"LIMIT :limit" if limit else ''}
@@ -266,6 +322,31 @@ def edit_monitor_test_suite(project_code: str, table_group: TableGroupMinimal | 
         edit_test_suite_dialog(project_code, [table_group], table_group.monitor_test_suite_id)
 
 
+def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
+    table_name = payload.get("table_name")
+    start_time = payload.get("start_time")
+    end_time = payload.get("end_time")
+
+    @with_database_session
+    def show_dialog():
+        testgen.css_class("s-dialog")
+
+        data_structure_logs = get_data_structure_logs(
+            table_group.id, table_name, start_time, end_time,
+        )
+
+        testgen.testgen_component(
+            "schema_changes_list",
+            props={
+                "window_start": start_time,
+                "window_end": end_time,
+                "data_structure_logs": make_json_safe(data_structure_logs),
+            },
+        )
+
+    return st.dialog(title=f"Table: {table_name}")(show_dialog)()
+
+
 def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
@@ -278,7 +359,7 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
         data_structure_logs = None
         if selected_data_point:
             data_structure_logs = get_data_structure_logs(
-                table_group.monitor_test_suite_id, table_name, selected_data_point,
+                table_group.id, table_name, *selected_data_point,
             )
 
         events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
@@ -286,8 +367,8 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
         testgen.testgen_component(
             "table_monitoring_trends",
             props={
-                **events,
-                "data_structure_logs": data_structure_logs,
+                **make_json_safe(events),
+                "data_structure_logs": make_json_safe(data_structure_logs),
             },
             on_change_handlers={
                 "ShowDataStructureLogs": on_show_data_structure_logs,
@@ -296,7 +377,9 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
 
     def on_show_data_structure_logs(payload):
         try:
-            set_selected_data_point(float(payload.get("time")) / 1000)
+            set_selected_data_point(
+                (float(payload.get("start_time")) / 1000, float(payload.get("end_time")) / 1000)
+            )
         except: pass  # noqa: S110
 
     return st.dialog(title=f"Table: {table_name}")(show_dialog)()
@@ -304,62 +387,30 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
 
 @st.cache_data(show_spinner=False)
 def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
-    query = f"""
-    WITH ranked_test_runs AS ({_ranked_test_runs_query()}),
-    test_filters AS (
-        SELECT * FROM (
-            VALUES
-                ('{test_suite_id}'::uuid, '{table_name}'::varchar, 'Table_Freshness'::varchar),
-                ('{test_suite_id}'::uuid, '{table_name}'::varchar, 'Volume_Trend'::varchar)
-        ) AS tt(test_suite_id, table_name, test_type)
+    query = """
+    WITH ranked_test_runs AS (
+        SELECT
+            test_runs.id,
+            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
+        FROM test_suites
+        INNER JOIN test_runs
+            ON (test_suites.id = test_runs.test_suite_id)
+        WHERE test_suites.id = :test_suite_id
     )
-    SELECT
-        COALESCE(results.test_time, ranked_test_runs.start) AS test_time,
-        test_filters.test_type,
-        results.result_signal,
+    SELECT 
+        results.test_time,
+        results.test_type,
+        results.result_code,
         COALESCE(results.result_status, 'Log') AS result_status,
-        COALESCE(results.result_measure, '0') AS result_measure
+        results.result_signal
     FROM ranked_test_runs
-    LEFT JOIN test_suites
-        ON (test_suites.id = ranked_test_runs.test_suite_id)
-    LEFT JOIN test_filters
-        ON (test_filters.test_suite_id = test_suites.id)
-    LEFT JOIN test_results AS results
-        ON (
-            results.test_run_id = ranked_test_runs.id
-            AND results.table_name = test_filters.table_name
-            AND results.test_type = test_filters.test_type
-        )
-    WHERE ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
-
-    UNION
-
-    SELECT
-        COALESCE(data_structure_log.change_date, ranked_test_runs.start) AS test_time,
-        'Schema_Drift' AS test_type,
-        (
-            SUM(CASE WHEN data_structure_log.change = 'A' THEN 1 ELSE 0 END)::varchar
-            || '|'
-            || SUM(CASE WHEN data_structure_log.change = 'M' THEN 1 ELSE 0 END)::varchar
-            || '|'
-            || SUM(CASE WHEN data_structure_log.change = 'D' THEN 1 ELSE 0 END)::varchar
-        ) AS result_signal,
-        'Log' AS result_status,
-        '' AS result_measure
-    FROM ranked_test_runs
-    LEFT JOIN test_suites
-        ON (test_suites.id = ranked_test_runs.test_suite_id)
-    LEFT JOIN data_structure_log
-        ON (
-            data_structure_log.table_groups_id = test_suites.table_groups_id
-            AND data_structure_log.change_date BETWEEN ranked_test_runs.start AND ranked_test_runs.end
-            AND data_structure_log.table_name = :table_name
-        )
-    WHERE test_suites.id = :test_suite_id
-        AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
-    GROUP BY data_structure_log.table_name, ranked_test_runs.start, data_structure_log.change_date, ranked_test_runs.position
-
-    ORDER BY test_time ASC
+    INNER JOIN test_results AS results
+        ON (results.test_run_id = ranked_test_runs.id)
+    WHERE ranked_test_runs.position <= ranked_test_runs.lookback
+        AND results.table_name = :table_name
+        AND results.test_type in ('Table_Freshness', 'Volume_Trend', 'Schema_Drift')
+    ORDER BY results.test_time ASC;
     """
 
     params = {
@@ -367,75 +418,53 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         "test_suite_id": test_suite_id,
     }
 
-    results = fetch_df_from_db(query, params)
-    results["test_time"] = pd.Series(results["test_time"].apply(lambda dt: dt.tz_localize("UTC").isoformat() if not pd.isna(dt) else None), dtype="object")
-    results = results.replace({pd.NaT: None})
+    results = fetch_all_from_db(query, params)
+    results = [ dict(row) for row in results ]
 
     return {
         "freshness_events": [
-            {"changed": int(event["result_measure"]) == 1, "expected": None, "status": event["result_status"], "time": event["test_time"]}
-            for event in results[results["test_type"] == "Table_Freshness"].to_dict("records")
-        ],
-        "schema_events": [
-            {"additions": counts[0], "modifications": counts[1], "deletions": counts[2], "time": event["test_time"]}
-            for event in results[results["test_type"] == "Schema_Drift"].to_dict("records")
-            if (counts := (event["result_signal"] or "0|0|0").split("|") or True)
+            {"changed": event["result_code"] is not None and int(event["result_code"]) == 0, "expected": None, "status": event["result_status"], "time": event["test_time"]}
+            for event in results if event["test_type"] == "Table_Freshness"
         ],
         "volume_events": [
-            {"record_count": int(event["result_measure"]), "time": event["test_time"]}
-            for event in results[results["test_type"] == "Volume_Trend"].to_dict("records")
+            {"record_count": int(event["result_signal"] or 0), "time": event["test_time"]}
+            for event in results if event["test_type"] == "Volume_Trend"
+        ],
+        "schema_events": [
+            {
+                "additions": signals[1],
+                "deletions": signals[2],
+                "modifications": signals[3],
+                "time": event["test_time"],
+                "window_start": datetime.fromisoformat(signals[4]),
+            }
+            for event in results if event["test_type"] == "Schema_Drift"
+            and (signals := (event["result_signal"] or "|0|0|0|").split("|") or True)
         ],
     }
 
 
 @st.cache_data(show_spinner=False)
-def get_data_structure_logs(test_suite_id: str, table_name: str, time: int):
-    query = f"""
-        WITH ranked_test_runs AS ({_ranked_test_runs_query()})
-        SELECT
-            data_structure_log.change_date,
-            data_structure_log.change,
-            data_structure_log.old_data_type,
-            data_structure_log.new_data_type,
-            data_structure_log.column_name
-        FROM ranked_test_runs
-        LEFT JOIN test_suites
-            ON (test_suites.id = ranked_test_runs.test_suite_id)
-        LEFT JOIN data_structure_log
-            ON (
-                data_structure_log.table_groups_id = test_suites.table_groups_id
-                AND data_structure_log.change_date BETWEEN ranked_test_runs.start AND ranked_test_runs.end
-                AND data_structure_log.table_name = :table_name
-            )
-        WHERE test_suites.id = :test_suite_id
-            AND COALESCE(data_structure_log.change_date, ranked_test_runs.start)::timestamp(0) = :change_time ::timestamp(0)
-            AND data_structure_log.change IS NOT NULL
+def get_data_structure_logs(table_group_id: str, table_name: str, start_time: str, end_time: str):
+    query = """
+    SELECT
+        change_date,
+        change,
+        old_data_type,
+        new_data_type,
+        column_name
+    FROM data_structure_log
+    WHERE table_groups_id = :table_group_id
+        AND table_name = :table_name
+        AND change_date > :start_time ::TIMESTAMP
+        AND change_date <= :end_time ::TIMESTAMP;
     """
     params = {
-        "test_suite_id": str(test_suite_id),
+        "table_group_id": str(table_group_id),
         "table_name": table_name,
-        "change_time": datetime.datetime.fromtimestamp(time, datetime.UTC).isoformat(),
+        "start_time": datetime.fromtimestamp(start_time, UTC),
+        "end_time": datetime.fromtimestamp(end_time, UTC),
     }
 
-    results = fetch_df_from_db(query, params)
-    results["change_date"] = pd.Series(results["change_date"].apply(lambda dt: dt.tz_localize("UTC").isoformat() if not pd.isna(dt) else None), dtype="object")
-
-    return results.to_dict("records")
-
-def _ranked_test_runs_query():
-    return """
-        SELECT
-            test_runs.id as id,
-            test_runs.test_suite_id,
-            test_runs.test_starttime AS "start",
-            (
-                COALESCE(LEAD(test_runs.test_starttime) OVER (ORDER BY test_runs.test_suite_id, test_runs.test_starttime ASC), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
-                - INTERVAL '1' MINUTE
-            ) AS "end",
-            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-        FROM test_suites
-        INNER JOIN test_runs
-            ON (test_suites.id = test_runs.test_suite_id)
-        WHERE test_suites.id = :test_suite_id
-        ORDER BY test_runs.test_suite_id, test_runs.test_starttime
-    """
+    results = fetch_all_from_db(query, params)
+    return [ dict(row) for row in results ]

@@ -5,6 +5,7 @@ from typing import ClassVar, TypedDict
 from testgen.common import CleanSQL, read_template_sql_file
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.read_file import get_template_files
+from testgen.utils import to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 
@@ -34,7 +35,7 @@ class CDeriveTestsSQL:
         self.sql_flavor = flavor
         self.flavor_service = get_flavor_service(flavor)
 
-        today = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        today = datetime.now(UTC)
         self.run_date = today
         self.as_of_date = today
 
@@ -45,11 +46,11 @@ class CDeriveTestsSQL:
             "SQL_FLAVOR": self.sql_flavor,
             "CONNECTION_ID": self.connection_id,
             "TABLE_GROUPS_ID": self.table_groups_id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
             "TEST_SUITE": self.test_suite,
             "TEST_SUITE_ID": self.test_suite_id,
             "GENERATION_SET": self.generation_set,
-            "AS_OF_DATE": self.as_of_date,
+            "AS_OF_DATE": to_sql_timestamp(self.as_of_date),
             "DATA_SCHEMA": self.data_schema,
             "QUOTE": self.flavor_service.quote_character,
         }

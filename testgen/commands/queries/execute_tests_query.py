@@ -12,6 +12,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
 from testgen.common.models.test_run import TestRun
 from testgen.common.read_file import replace_templated_functions
+from testgen.utils import to_sql_timestamp
 
 
 @dataclasses.dataclass
@@ -90,7 +91,7 @@ class TestExecutionSQL:
         self.connection = connection
         self.table_group = table_group
         self.test_run = test_run
-        self.run_date = test_run.test_starttime.strftime("%Y-%m-%d %H:%M:%S")
+        self.run_date = test_run.test_starttime
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 
@@ -106,7 +107,7 @@ class TestExecutionSQL:
         params = {
             "TEST_SUITE_ID": self.test_run.test_suite_id,
             "TEST_RUN_ID": self.test_run.id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "VARCHAR_TYPE": self.flavor_service.varchar_type,
             "QUOTE": quote,

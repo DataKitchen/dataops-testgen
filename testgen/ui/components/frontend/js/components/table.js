@@ -308,7 +308,7 @@ const TableHeaderColumn = (
             },
         },
         () => div(
-            {class: 'flex-row fx-gap-2'},
+            {class: 'flex-row fx-gap-2', style: 'display: inline-flex'},
             span(column.label),
             sortIcon.val,
         ),
@@ -364,7 +364,7 @@ const Paginatior = (
     const lastPage = (Math.floor(totalItems / itemsPerPage) + (totalItems % itemsPerPage > 0) - 1);
 
     return div(
-        {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-4'} text-secondary`},
+        {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
         span({class: 'mr-2'}, 'Rows per page:'),
         Select({
             triggerStyle: 'inline',

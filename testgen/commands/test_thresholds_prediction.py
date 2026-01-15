@@ -11,7 +11,7 @@ from testgen.common.database.database_service import (
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.common.read_file import read_template_sql_file
 from testgen.common.time_series_service import NotEnoughData, get_arima_forecast
-from testgen.utils import to_dataframe
+from testgen.utils import to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 
@@ -55,7 +55,7 @@ class TestThresholdsPrediction:
                 history = history.set_index("test_time")
 
                 test_prediction = [self.test_suite.id, test_def_id, self.run_date]
-                if len(history) >= self.test_suite.predict_min_lookback:
+                if len(history) >= (self.test_suite.predict_min_lookback or 1):
                     try:
                         forecast = get_arima_forecast(
                             history,
@@ -93,7 +93,7 @@ class TestThresholdsPrediction:
     ) -> tuple[str, dict]:
         params = {
             "TEST_SUITE_ID": self.test_suite.id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
         }
         query = read_template_sql_file(template_file_name, sub_directory)
         query = replace_params(query, params)

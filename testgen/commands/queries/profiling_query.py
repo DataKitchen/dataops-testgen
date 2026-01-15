@@ -9,6 +9,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
+from testgen.utils import to_sql_timestamp
 
 
 @dataclasses.dataclass
@@ -58,7 +59,7 @@ class ProfilingSQL:
         self.connection = connection
         self.table_group = table_group
         self.profiling_run = profiling_run
-        self.run_date = profiling_run.profiling_starttime.strftime("%Y-%m-%d %H:%M:%S")
+        self.run_date = profiling_run.profiling_starttime
         self.flavor = connection.sql_flavor
         self._profiling_template: dict = None
 
@@ -68,7 +69,7 @@ class ProfilingSQL:
             "CONNECTION_ID": self.connection.connection_id,
             "TABLE_GROUPS_ID": self.table_group.id,
             "PROFILE_RUN_ID": self.profiling_run.id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "PROFILE_ID_COLUMN_MASK": self.table_group.profile_id_column_mask,

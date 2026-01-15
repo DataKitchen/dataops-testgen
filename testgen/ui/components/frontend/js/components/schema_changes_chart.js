@@ -17,10 +17,11 @@
  * @typedef SchemaEvent
  * @type {object}
  * @property {Point} point
- * @property {number} time
+ * @property {string | number} time
  * @property {number} additions
  * @property {number} deletions
  * @property {number} modifications
+ * @property {string | number} window_start
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';

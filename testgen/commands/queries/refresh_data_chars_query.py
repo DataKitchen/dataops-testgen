@@ -6,7 +6,7 @@ from testgen.common import read_template_sql_file
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
-from testgen.utils import chunk_queries
+from testgen.utils import chunk_queries, to_sql_timestamp
 
 
 @dataclasses.dataclass
@@ -134,7 +134,7 @@ class RefreshDataCharsSQL:
         return [
             [
                 self.table_group.id,
-                run_date,
+                to_sql_timestamp(run_date),
                 column.schema_name,
                 column.table_name,
                 column.column_name,
@@ -148,9 +148,9 @@ class RefreshDataCharsSQL:
             for column in data_chars
         ]
     
-    def update_data_chars(self, run_date: str) -> list[tuple[str, dict]]:
+    def update_data_chars(self, run_date: datetime) -> list[tuple[str, dict]]:
         # Runs on App database
-        params = {"RUN_DATE": run_date}
+        params = {"RUN_DATE": to_sql_timestamp(run_date)}
         return [
             self._get_query("data_chars_update.sql", extra_params=params),
             self._get_query("data_chars_staging_delete.sql", extra_params=params),

@@ -39,6 +39,7 @@ import { NotificationSettings } from './pages/notification_settings.js';
 import { TableMonitoringTrend } from './pages/table_monitoring_trends.js';
 import { MonitorsDashboard } from './pages/monitors_dashboard.js';
 import { TestResultsChart } from './pages/test_results_chart.js';
+import { SchemaChangesList } from './components/schema_changes_list.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
@@ -76,6 +77,7 @@ const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props)
         monitors_dashboard: MonitorsDashboard,
         table_monitoring_trends: TableMonitoringTrend,
         test_results_chart: TestResultsChart,
+        schema_changes_list: SchemaChangesList,
     };
 
     if (Object.keys(window.testgen.plugins).includes(id)) {
