@@ -215,7 +215,9 @@ def _monitor_changes_by_tables_query(
                 COALESCE(test_suites.monitor_lookback, 1) AS lookback,
                 SUM(CASE WHEN results.test_type = 'Table_Freshness' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS freshness_anomalies,
                 SUM(CASE WHEN results.test_type = 'Schema_Drift' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS schema_anomalies,
-                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update
+                SUM(CASE WHEN results.test_type = 'Volume_Trend' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS volume_anomalies,
+                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update,
+                ARRAY_AGG(results.result_measure ORDER BY results.test_date DESC) FILTER (WHERE results.test_type = 'Volume_Trend') AS row_count_history
             FROM ranked_test_runs
             INNER JOIN v_test_results AS results
                 ON (results.test_run_id = ranked_test_runs.id)
@@ -228,9 +230,17 @@ def _monitor_changes_by_tables_query(
             GROUP BY results.table_groups_id, results.table_name, COALESCE(test_suites.monitor_lookback, 1)
         )
     SELECT
-        *
+        table_group_id,
+        table_name,
+        lookback,
+        freshness_anomalies,
+        schema_anomalies,
+        volume_anomalies,
+        latest_update,
+        row_count_history[1]::INTEGER AS "row_count",
+        row_count_history[LEAST(lookback, cardinality(row_count_history))]::INTEGER AS previous_row_count
     FROM monitor_tables
-    {"WHERE (freshness_anomalies + schema_anomalies) > 0" if only_tables_with_anomalies else ''}
+    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ''}
     {f"ORDER BY {sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else ''}
     {"LIMIT :limit" if limit else ''}
     {"OFFSET :offset" if offset else ''}
@@ -299,7 +309,8 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     test_filters AS (
         SELECT * FROM (
             VALUES
-                ('{test_suite_id}'::uuid, '{table_name}'::varchar, 'Table_Freshness'::varchar)
+                ('{test_suite_id}'::uuid, '{table_name}'::varchar, 'Table_Freshness'::varchar),
+                ('{test_suite_id}'::uuid, '{table_name}'::varchar, 'Volume_Trend'::varchar)
         ) AS tt(test_suite_id, table_name, test_type)
     )
     SELECT
@@ -369,6 +380,10 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
             {"additions": counts[0], "modifications": counts[1], "deletions": counts[2], "time": event["test_time"]}
             for event in results[results["test_type"] == "Schema_Drift"].to_dict("records")
             if (counts := (event["result_signal"] or "0|0|0").split("|") or True)
+        ],
+        "volume_events": [
+            {"record_count": int(event["result_measure"]), "time": event["test_time"]}
+            for event in results[results["test_type"] == "Volume_Trend"].to_dict("records")
         ],
     }
 
