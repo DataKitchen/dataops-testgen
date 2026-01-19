@@ -69,8 +69,11 @@ class ProjectDashboardPage(Page):
                             "project_code": project_code,
                             "table_group_id": str(table_group.id),
                             "lookback": table_group.monitor_lookback or 1,
+                            "lookback_start": make_json_safe(table_group.monitor_lookback_start),
+                            "lookback_end": make_json_safe(table_group.monitor_lookback_end),
                             "freshness_anomalies": table_group.monitor_freshness_anomalies or 0,
                             "schema_anomalies": table_group.monitor_schema_anomalies or 0,
+                            "volume_anomalies": table_group.monitor_volume_anomalies or 0,
                         } if table_group.monitor_test_suite_id else None,
                     }
                     for table_group in table_groups

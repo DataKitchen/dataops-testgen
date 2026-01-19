@@ -6,10 +6,13 @@
  * @property {number} schema_anomalies
  * @property {number} quality_drift_anomalies
  * @property {number} lookback
+ * @property {number} lookback_start
+ * @property {number} lookback_end
  * @property {string?} project_code
  * @property {string?} table_group_id
  */
 import { emitEvent } from '../utils.js';
+import { formatDuration, humanReadableDuration } from '../display_utils.js';
 import van from '../van.min.js';
 
 const { a, div, i, span } = van.tags;
@@ -31,12 +34,14 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
     );
 
     const numRuns = summary.lookback === 1 ? 'run' : `${summary.lookback} runs`;
+    // TODO: Display lookback duration?
+    // const duration = humanReadableDuration(formatDuration(summary.lookback_start, new Date()))
     const labelElement = span({class: 'text-small text-secondary'}, `${label} in last ${numRuns}`);
 
     const contentElement = div(
         {class: 'flex-row fx-gap-5'},
         SummaryTag('Freshness', summary.freshness_anomalies),
-        // SummaryTag('Volume', summary.volume_anomalies),
+        SummaryTag('Volume', summary.volume_anomalies),
         SummaryTag('Schema', summary.schema_anomalies),
         // SummaryTag('Quality Drift', summary.quality_drift_anomalies),
     );

@@ -65,8 +65,11 @@ class TableGroupSummary(EntityMinimal):
     latest_anomalies_dismissed_ct: int
     monitor_test_suite_id: UUID | None
     monitor_lookback: int | None
+    monitor_lookback_start: datetime | None
+    monitor_lookback_end: datetime | None
     monitor_freshness_anomalies: int | None
     monitor_schema_anomalies: int | None
+    monitor_volume_anomalies: int | None
 
 
 class TableGroup(Entity):
@@ -231,31 +234,42 @@ class TableGroup(Entity):
         ),
         ranked_test_runs AS (
             SELECT
-                test_runs.id as id,
+                table_groups.id AS table_group_id,
+                test_runs.id,
+                test_runs.test_starttime,
+                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
                 ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
             FROM table_groups
             INNER JOIN test_runs
                 ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
+            INNER JOIN test_suites
+                ON (table_groups.monitor_test_suite_id = test_suites.id)
             WHERE table_groups.project_code = :project_code
-                AND table_groups.monitor_test_suite_id IS NOT NULL
-            ORDER BY test_runs.test_suite_id, test_runs.test_starttime
         ),
         monitor_tables AS (
             SELECT
-                results.table_groups_id AS table_group_id,
-                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
-                SUM(CASE WHEN results.test_type = 'Table_Freshness' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS freshness_anomalies,
-                SUM(CASE WHEN results.test_type = 'Schema_Drift' THEN COALESCE(results.failed_ct, 0) ELSE 0 END) AS schema_anomalies,
-                MAX(results.test_date) FILTER (WHERE results.test_type = 'Table_Freshness' AND results.result_measure = 1) AS latest_update
+                ranked_test_runs.table_group_id,
+                SUM(CASE WHEN results.test_type = 'Table_Freshness' AND results.result_code = 0 THEN 1 ELSE 0 END) AS freshness_anomalies,
+                SUM(CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END) AS schema_anomalies,
+                SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies
             FROM ranked_test_runs
-            INNER JOIN v_test_results AS results
+            INNER JOIN test_results AS results
                 ON (results.test_run_id = ranked_test_runs.id)
-            INNER JOIN test_suites
-                ON (test_suites.id = results.test_suite_id)
-            WHERE results.project_code = :project_code
-                AND ranked_test_runs.position <= COALESCE(test_suites.monitor_lookback, 1)
+            WHERE ranked_test_runs.position <= ranked_test_runs.lookback
                 AND results.table_name IS NOT NULL
-            GROUP BY results.table_groups_id, COALESCE(test_suites.monitor_lookback, 1)
+            GROUP BY ranked_test_runs.table_group_id
+        ),
+        lookback_windows AS (
+            SELECT
+                table_group_id,
+                lookback,
+                MIN(test_starttime) FILTER (WHERE position = LEAST(lookback + 1, max_position)) AS lookback_start,
+                MAX(test_starttime) FILTER (WHERE position = 1) AS lookback_end
+            FROM (
+                SELECT *, MAX(position) OVER (PARTITION BY table_group_id) as max_position
+                FROM ranked_test_runs
+            )
+            GROUP BY table_group_id, lookback
         )
         SELECT groups.id,
             groups.table_groups_name,
@@ -275,13 +289,17 @@ class TableGroup(Entity):
             latest_profile.possible_ct AS latest_anomalies_possible_ct,
             latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct,
             groups.monitor_test_suite_id AS monitor_test_suite_id,
-            monitor_tables.lookback AS monitor_lookback,
+            lookback_windows.lookback AS monitor_lookback,
+            lookback_windows.lookback_start AS monitor_lookback_start,
+            lookback_windows.lookback_end AS monitor_lookback_end,
             monitor_tables.freshness_anomalies AS monitor_freshness_anomalies,
-            monitor_tables.schema_anomalies AS monitor_schema_anomalies
+            monitor_tables.schema_anomalies AS monitor_schema_anomalies,
+            monitor_tables.volume_anomalies AS monitor_volume_anomalies
         FROM table_groups AS groups
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
             LEFT JOIN monitor_tables ON (groups.id = monitor_tables.table_group_id)
+            LEFT JOIN lookback_windows ON (groups.id = lookback_windows.table_group_id)
         WHERE groups.project_code = :project_code
             {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
         """
@@ -402,6 +420,7 @@ class TableGroup(Entity):
                     dq_score_exclude=True,
                     is_monitor=True,
                     monitor_lookback=14,
+                    predict_min_lookback=30,
                 )
                 test_suite.save()
 

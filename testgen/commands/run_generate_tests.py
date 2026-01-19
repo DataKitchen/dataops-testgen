@@ -34,7 +34,7 @@ def run_test_gen_queries(table_group_id: str, test_suite: str, generation_set: s
     clsTests.table_groups_id = table_group_id
     clsTests.data_schema = params["table_group_schema"]
     if params["profiling_as_of_date"] is not None:
-        clsTests.as_of_date = params["profiling_as_of_date"].strftime("%Y-%m-%d %H:%M:%S")
+        clsTests.as_of_date = params["profiling_as_of_date"]
 
     if params["test_suite_id"]:
         clsTests.test_suite_id = params["test_suite_id"]

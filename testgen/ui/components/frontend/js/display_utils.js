@@ -42,7 +42,7 @@ function formatDuration(
 
 function humanReadableDuration(/** @type string */ duration) {
     if (duration === '< 1s') {
-        return 'Less than 1 second ago';
+        return 'Less than 1 second';
     }
 
     const biggestPart = duration.split(' ')[0];
@@ -50,10 +50,10 @@ function humanReadableDuration(/** @type string */ duration) {
     const durationUnit = biggestPart.slice(-1)[0];
     const durationValue = Number(biggestPart.replace(durationUnit, ''));
     const unitTemplates = {
-        d: (/** @type number */ value) => `${value} day${value === 1 ? '' : 's'} ago`,
-        h: (/** @type number */ value) => `${value} hour${value === 1 ? '' : 's'} ago`,
-        m: (/** @type number */ value) => `${value} minute${value === 1 ? '' : 's'} ago`,
-        s: (/** @type number */ value) => `${value} second${value === 1 ? '' : 's'} ago`,
+        d: (/** @type number */ value) => `${value} day${value === 1 ? '' : 's'}`,
+        h: (/** @type number */ value) => `${value} hour${value === 1 ? '' : 's'}`,
+        m: (/** @type number */ value) => `${value} minute${value === 1 ? '' : 's'}`,
+        s: (/** @type number */ value) => `${value} second${value === 1 ? '' : 's'}`,
     };
 
     return unitTemplates[durationUnit](durationValue);

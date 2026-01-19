@@ -1,7 +1,7 @@
 INSERT INTO test_definitions (table_groups_id, profile_run_id, test_type, test_suite_id,
                               schema_name, table_name,
                               skip_errors, test_active, last_auto_gen_date, profiling_as_of_date,
-                              history_calculation, history_calculation_upper, history_lookback, subset_condition, custom_query)
+                              history_calculation, history_lookback, subset_condition, custom_query)
 WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
                     FROM profile_results p
                   INNER JOIN profiling_runs r
@@ -45,8 +45,7 @@ SELECT :TABLE_GROUPS_ID ::UUID AS table_groups_id,
        0 AS skip_errors, 'Y' AS test_active,
        :RUN_DATE ::TIMESTAMP AS last_auto_gen_date,
        :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date,
-       'EXPR:[0.9*{AVERAGE}]' AS history_calculation,
-       'EXPR:[1.1*{AVERAGE}]' AS history_calculation_upper,
+       'PREDICT' AS history_calculation,
        5 AS history_lookback,
        '1=1' AS subset_condition,
        'COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)' AS custom_query

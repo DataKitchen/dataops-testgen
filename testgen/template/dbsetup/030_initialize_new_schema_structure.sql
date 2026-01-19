@@ -374,7 +374,8 @@ CREATE TABLE data_structure_log (
                         CONSTRAINT pk_dsl_id
                         PRIMARY KEY,
    table_groups_id   UUID,
-   element_id        UUID,
+   table_id          UUID,
+   column_id         UUID,
    table_name        VARCHAR(120),
    column_name       VARCHAR(120),
    change_date       TIMESTAMP,
@@ -770,6 +771,10 @@ CREATE INDEX ix_tr_pc_sctc_tt
 
 CREATE INDEX ix_tr_ts_tctt
    ON test_results(test_suite_id, table_name, column_names, test_type);
+
+-- Index data_structure_log
+CREATE INDEX ix_dsl_tg_tcd 
+   ON data_structure_log (table_groups_id, table_name, change_date);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -- PROFILING OPTIMIZATION

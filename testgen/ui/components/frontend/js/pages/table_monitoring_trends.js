@@ -2,18 +2,12 @@
  * @import {Point} from '../components/chart_canvas.js';
  * @import {FreshnessEvent} from '../components/freshness_chart.js';
  * @import {SchemaEvent} from '../components/schema_changes_chart.js';
+ * @import {DataStructureLog} from '../components/schema_changes_list.js';
  * 
  * @typedef MonitoringEvent
  * @type {object}
  * @property {number} time
  * @property {number} record_count
- * 
- * @typedef DataStructureLog
- * @type {object}
- * @property {('A'|'D'|'M')} change
- * @property {string} old_data_type
- * @property {string} new_data_type
- * @property {string} column_name
  * 
  * @typedef Properties
  * @type {object}
@@ -24,13 +18,13 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, parseDate, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { FreshnessChart, getFreshnessEventColor } from '../components/freshness_chart.js';
 import { colorMap } from '../display_utils.js';
 import { SchemaChangesChart } from '../components/schema_changes_chart.js';
+import { SchemaChangesList } from '../components/schema_changes_list.js';
 import { getAdaptiveTimeTicks, scale } from '../axis_utils.js';
 import { Tooltip } from '../components/tooltip.js';
-import { Icon } from '../components/icon.js';
 import { DualPane } from '../components/dual_pane.js';
 import { Button } from '../components/button.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '../components/monitoring_sparkline.js';
@@ -90,11 +84,12 @@ const TableMonitoringTrend = (props) => {
     return verticalPosition;
   };
 
-  const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
-  const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
-  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: Date.parse(e.time) }));
+  const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
+  const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
 
-  const rawTimeline = schemaChangeEvents.map(e => e.time).sort();
+  const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents].map(e => e.time);
+  const rawTimeline = [...new Set(allTimes)].sort();
   const dateRange = { min: rawTimeline[0], max: rawTimeline[rawTimeline.length - 1] };
   const timeline = [
     dateRange.min,
@@ -177,6 +172,7 @@ const TableMonitoringTrend = (props) => {
     additions: e.additions,
     deletions: e.deletions,
     modifications: e.modifications,
+    window_start: e.window_start,
     point: {
       x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: schemaChartHeight / 2,
@@ -252,7 +248,7 @@ const TableMonitoringTrend = (props) => {
   };
 
   const getDataStructureLogs = (/** @type {SchemaEvent} */ event) => {
-    emitEvent('ShowDataStructureLogs', { payload: { time: event.time } });
+    emitEvent('ShowDataStructureLogs', { payload: { start_time: event.window_start, end_time: event.time } });
     shouldShowSidebar.val = true;
     schemaChartSelection.val = event;
   };
@@ -289,7 +285,7 @@ const TableMonitoringTrend = (props) => {
         ),
         DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
 
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small' }, 'Volume'),
+        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Volume'),
         MonitoringSparklineChart(
           {
             width: chartsWidth,
@@ -311,7 +307,7 @@ const TableMonitoringTrend = (props) => {
         ),
         DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: volumeTrendChartHeight }) }, end),
 
-        // Schena Chart Selection Highlight
+        // Schema Chart Selection Highlight
         () => {
           const selection = schemaChartSelection.val;
           if (selection) {
@@ -441,21 +437,22 @@ const TableMonitoringTrend = (props) => {
 
     () => {
       const _shouldShowSidebar = shouldShowSidebar.val;
-      const dataStructureLogs = getValue(props.data_structure_logs) ?? [];
+      const selection = schemaChartSelection.val;
       if (!_shouldShowSidebar) {
         return span();
       }
 
       return div(
         { id: 'data-structure-logs-sidebar', class: 'flex-column data-structure-logs-sidebar' },
-        span({ class: 'mb-4', style: 'min-width: 150px;' }, 'Schema Changes'),
-        div(
-          { class: 'flex-column fx-gap-1 fx-flex log-list mb-4' },
-          ...dataStructureLogs.map(log => StructureLogEntry(log)),
-        ),
+        SchemaChangesList({
+          data_structure_logs: props.data_structure_logs,
+          window_start: selection.window_start,
+          window_end: selection.time,
+        }),
         Button({
           label: 'Hide',
-          style: 'margin-top: auto;',
+          style: 'margin-top: 8px; width: auto; align-self: flex-end;',
+          icon: 'double_arrow',
           onclick: () => {
             shouldShowSidebar.val = false;
             schemaChartSelection.val = null;
@@ -474,47 +471,6 @@ const DividerLine = (start, end) => {
   return line({ x1: start.x, y1: start.y, x2: end.x + paddingRight, y2: start.y, stroke: colorMap.lightGrey });
 }
 
-const StructureLogEntry = (/** @type {DataStructureLog} */ log) => {
-  if (log.change === 'A') {
-    return div(
-      { class: 'flex-row fx-gap-1' },
-      Icon({ size: 20, classes: 'schema-added-icon' }, 'add'),
-      div(
-        { class: 'column-info flex-column' },
-        span(log.column_name),
-        span(log.new_data_type),
-      ),
-    );
-  } else if (log.change === 'D') {
-    return div(
-      { class: 'flex-row fx-gap-1' },
-      Icon({ size: 20, classes: 'schema-deleted-icon' }, 'remove'),
-      div(
-        { class: 'column-info flex-column' },
-        span({ class: 'truncate-text' }, log.column_name),
-      ),
-    );
-  } else if (log.change === 'M') {
-    return div(
-      { class: 'flex-row fx-gap-1' },
-      span({ class: 'schema-modified-icon' }, ''),
-      div(
-        { class: 'column-info flex-column' },
-        span({ class: 'truncate-text' }, log.column_name),
-
-        div(
-          { class: 'flex-row fx-gap-1' },
-          span({ class: 'truncate-text' }, log.old_data_type),
-          Icon({ size: 10 }, 'arrow_right_alt'),
-          span({ class: 'truncate-text' }, log.new_data_type),
-        ),
-      ),
-    );
-  }
-
-  return null;
-}
-
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
   .table-monitoring-trend-wrapper {
@@ -529,57 +485,7 @@ stylesheet.replace(`
 
   .data-structure-logs-sidebar {
     align-self: stretch;
-  }
-
-  .data-structure-logs-sidebar > .log-list {
-    overflow-y: auto;
-  }
-
-  .column-info {
-    color: var(--secondary-text-color);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
-
-  .column-info span {
-    font-family: 'Courier New', Courier, monospace;
-
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
-
-  .column-info > span:first-child {
-    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
-  }
-
-  .schema-added-icon {
-    color: var(--green);
-  }
-
-  .schema-deleted-icon {
-    color: var(--red);
-  }
-
-  .schema-modified-icon {
-    width: 10px;
-    min-width: 10px;
-    height: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-        
-  .schema-modified-icon:after {
-    content: "";
-    width: 7px;
-    height: 7px;
-    display: inline-block;
-    border: 1px solid var(--blue);
-    box-sizing: border-box;
-    transform: rotate(45deg);
-    background-color: var(--blue);
+    max-height: 500px;
   }
 `);
 
