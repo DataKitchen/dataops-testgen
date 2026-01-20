@@ -333,7 +333,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
             tooltip: 'Download columns to Excel',
             tooltipPosition: 'left',
             width: 'fit-content',
-            style: 'background: var(--dk-card-background);',
+            style: 'background: var(--button-generic-background-color);',
             onclick: () => exportOptionsOpened.val = !exportOptionsOpened.val,
         }),
         Portal(
@@ -733,7 +733,7 @@ const ConditionalEmptyState = (
             color: 'primary',
             label: 'Run Profiling',
             width: 'fit-content',
-            style: 'margin: auto; background: background: var(--dk-card-background);',
+            style: 'margin: auto; background: var(--button-generic-background-color);',
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',

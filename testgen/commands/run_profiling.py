@@ -12,7 +12,6 @@ from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
-from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -323,6 +322,5 @@ def _generate_monitor_tests(table_group_id: str, test_suite_id: str) -> None:
         else:
             LOG.info("Generating monitor tests")
             run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
-            run_test_execution_in_background(test_suite_id)
     except Exception:
         LOG.exception("Error generating monitor tests")

@@ -96,7 +96,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
         { id: wrapperId, class: 'flex-column tg-overview' },
         () => getValue(tableGroups).length
             ? div(
-                { class: 'flex-row fx-align-flex-end fx-gap-4' },
+                { class: 'flex-row fx-align-flex-end fx-gap-3' },
                 Input({
                     width: 230,
                     style: 'font-size: 14px;',

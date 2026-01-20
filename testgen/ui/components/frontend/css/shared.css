@@ -204,6 +204,10 @@ body {
     font-size: 13px;
 }
 
+.text-large {
+    font-size: 16px;
+}
+
 .text-caption {
     font-size: 12px;
     color: var(--caption-text-color);

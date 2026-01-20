@@ -277,7 +277,7 @@ const Toolbar = (
                 { class: 'flex-column' },
                 span({ class: 'text-caption mb-1' }, 'Filter by'),
                 div(
-                    { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                    { class: 'flex-row fx-flex-wrap fx-gap-3' },
                     () => {
                         const filters_ = getValue(filters);
                         const filterValues_ = getValue(filterValues);
@@ -286,7 +286,7 @@ const Toolbar = (
                         }
     
                         return div(
-                            { class: 'flex-row fx-flex-wrap fx-gap-4' },
+                            { class: 'flex-row fx-flex-wrap fx-gap-3' },
                             filters_.map(({ key, field, value, others }, idx) => {
                                 renderedFilters[key] = renderedFilters[key] ?? (
                                     filterByColumns.val
@@ -409,11 +409,10 @@ const Toolbar = (
                 ),
             ),
             userCanEdit ? div(
-                { class: 'flex-row fx-align-flex-end' },
+                { class: 'flex-row fx-align-flex-end fx-gap-3' },
                 Input({
                     label: 'Scorecard Name',
                     height: 40,
-                    style: 'margin-right: 16px;',
                     value: scoreName,
                     testId: 'scorecard-name-input',
                     onChange: debounce((name) => scoreName.val = name, 300),
@@ -443,7 +442,7 @@ const Toolbar = (
                         label: 'Cancel',
                         type: 'stroked',
                         color: 'warn',
-                        style: 'width: auto; margin-left: 16px;',
+                        style: 'width: auto;',
                         onclick: () => emitEvent('LinkClicked', { href, params }),
                     });
                 },

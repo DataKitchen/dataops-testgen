@@ -167,7 +167,10 @@ class TestRunScheduleDialog(ScheduleDialog):
     test_suites: Iterable[TestSuiteMinimal] | None = None
 
     def init(self) -> None:
-        self.test_suites = TestSuite.select_minimal_where(TestSuite.project_code == self.project_code)
+        self.test_suites = TestSuite.select_minimal_where(
+            TestSuite.project_code == self.project_code,
+            TestSuite.is_monitor.isnot(True),
+        )
 
     def get_arg_value(self, job):
         return next(item.test_suite for item in self.test_suites if str(item.id) == job.kwargs["test_suite_id"])
@@ -214,7 +217,6 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
     testgen.testgen_component(
         "confirm_dialog",
         props={
-            "project_code": project_code,
             "message": message,
             "constraint": constraint,
             "button_label": "Delete",

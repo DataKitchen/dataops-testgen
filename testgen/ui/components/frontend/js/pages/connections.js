@@ -119,7 +119,7 @@ stylesheet.replace(`
 .tg-connections--link {
     margin-left: auto;
     border-radius: 4px;
-    background: var(--dk-card-background);
+    background: var(--button-generic-background-color);
     border: var(--button-stroked-border);
     padding: 8px 8px 8px 16px;
     color: var(--primary-color) !important;

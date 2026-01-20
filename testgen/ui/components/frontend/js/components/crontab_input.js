@@ -1,15 +1,11 @@
 /**
+ * @import { CronSample } from '../types.js';
+ * 
  * @typedef EditOptions
  * @type {object}
  * @property {CronSample?} sample
  * @property {(expr: string) => void} onChange
  * @property {(() => void)?} onClose
- * 
- * @typedef CronSample
- * @type {object}
- * @property {string?} error
- * @property {string[]?} samples
- * @property {string?} readable_expr
  * 
  * @typedef InitialValue
  * @type {object}
@@ -23,6 +19,7 @@
  * @property {string?} class
  * @property {CronSample?} sample
  * @property {InitialValue?} value
+ * @property {('x_hours'|'x_days'|'certain_days'|'custom'))[]?} modes
  * @property {((expr: string) => void)?} onChange
  */
 import { getRandomId, getValue, loadStylesheet } from '../utils.js';
@@ -67,6 +64,7 @@ const CrontabInput = (/** @type Options */ props) => {
         {
             id: domId,
             class: () => `tg-crontab-input ${getValue(props.class) ?? ''}`,
+            style: 'position: relative',
             'data-testid': getValue(props.testId) ?? null,
         },
         div(
@@ -85,12 +83,13 @@ const CrontabInput = (/** @type Options */ props) => {
             }),
         ),
         Portal(
-            {target: domId.val, align: 'right', style: 'width: 500px;', opened},
+            {target: domId.val, targetRelative: true, align: 'right', style: 'width: 500px;', opened},
             () => CrontabEditorPortal(
                 {
                     onChange: onEditorChange,
                     onClose: () => opened.val = false,
                     sample: props.sample,
+                    modes: props.modes,
                 },
                 expression,
             ),
@@ -186,34 +185,34 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
             { class: 'tg-crontab-editor-content flex-row' },
             div(
                 { class: 'tg-crontab-editor-left flex-column' },
-                span(
+                !options.modes || options.modes.includes('x_hours') ? span(
                     {
                         class: () => `tg-crontab-editor-mode p-4 ${mode.val === 'x_hours' ? 'selected' : ''}`,
                         onclick: () => mode.val = 'x_hours',
                     },
                     'Every x hours',
-                ),
-                span(
+                ) : null,
+                !options.modes || options.modes.includes('x_days') ? span(
                     {
                         class: () => `tg-crontab-editor-mode p-4 ${mode.val === 'x_days' ? 'selected' : ''}`,
                         onclick: () => mode.val = 'x_days',
                     },
                     'Every x days',
-                ),
-                span(
+                ) : null,
+                !options.modes || options.modes.includes('certain_days') ? span(
                     {
                         class: () => `tg-crontab-editor-mode p-4 ${mode.val === 'certain_days' ? 'selected' : ''}`,
                         onclick: () => mode.val = 'certain_days',
                     },
                     'On certain days',
-                ),
-                span(
+                ) : null,
+                !options.modes || options.modes.includes('custom') ? span(
                     {
                         class: () => `tg-crontab-editor-mode p-4 ${mode.val === 'custom' ? 'selected' : ''}`,
                         onclick: () => mode.val = 'custom',
                     },
                     'Custom',
-                ),
+                ) : null,
             ),
             div(
                 { class: 'tg-crontab-editor-right flex-column p-4 fx-flex' },

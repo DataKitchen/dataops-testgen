@@ -1,6 +1,12 @@
 /**
  * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
- * @import { FilterOption, ProjectSummary } from '../types.js';
+ * @import { CronSample, FilterOption, ProjectSummary } from '../types.js';
+ * 
+ * @typedef Schedule
+ * @type {object}
+ * @property {boolean} active
+ * @property {string} cron_tz
+ * @property {CronSample} cron_sample
  * 
  * @typedef Monitor
  * @type {object}
@@ -45,7 +51,8 @@
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
- * @property {MonitorSummary} summary
+ * @property {MonitorSummary?} summary
+ * @property {Schedule?} schedule
  * @property {FilterOption[]} table_group_filter_options
  * @property {boolean?} has_monitor_test_suite
  * @property {MonitorList} monitors
@@ -109,7 +116,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 quality_drift: AnomalyTag(monitor.quality_drift_anomalies),
                 latest_update: span(
                     {class: 'text-small text-secondary'},
-                    monitor.latest_update ? `${humanReadableDuration(formatDuration(monitor.latest_update, renderTime))} ago` : '-',
+                    monitor.latest_update ? `${humanReadableDuration(formatDuration(monitor.latest_update, renderTime), true)} ago` : '-',
                 ),
                 row_count: rowCountChange !== 0 ?
                     withTooltip(
@@ -135,8 +142,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     withTooltip(
                         div(
                             {
-                                class: 'flex-row fx-gap-1 clickable',
-                                style: 'position: relative; display: inline-flex;',
+                                class: 'flex-row fx-gap-1 schema-changes',
                                 onclick: () => {
                                     const summary = getValue(props.summary);
                                     emitEvent('OpenSchemaChanges', { payload: { 
@@ -207,7 +213,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         ? div(
             {style: 'height: 100%;'},
             div(
-                { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
+                { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
                 Select({
                     label: 'Table Group',
                     value: tableGroupFilterValue,
@@ -217,11 +223,44 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
                 }),
-                span({class: 'fx-flex'}),
-                () => getValue(props.has_monitor_test_suite) 
-                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies')
+                () => {
+                    const summary = getValue(props.summary);
+                    return getValue(props.has_monitor_test_suite) && summary?.lookback
+                        ? AnomaliesSummary(summary, 'Total anomalies')
+                        : '';
+                },
+                () => getValue(props.has_monitor_test_suite) && userCanEdit
+                    ? div(
+                        {class: 'flex-row fx-gap-3'},
+                        // Button({
+                        //     icon: 'notifications',
+                        //     tooltip: 'Configure email notifications for table group monitors',
+                        //     tooltipPosition: 'bottom-left',
+                        //     color: 'basic',
+                        //     type: 'stroked',
+                        //     style: 'background: var(--button-generic-background-color);', 
+                        //     onclick: () => emitEvent('EditNotifications', {}),
+                        // }),
+                        Button({
+                            icon: 'settings',
+                            tooltip: 'Edit monitor settings for table group',
+                            tooltipPosition: 'bottom-left',
+                            color: 'basic',
+                            type: 'stroked',
+                            style: 'background: var(--button-generic-background-color);', 
+                            onclick: () => emitEvent('EditMonitorSettings', {}),
+                        }),
+                        Button({
+                            icon: 'delete',
+                            tooltip: 'Delete all monitors for table group',
+                            tooltipPosition: 'bottom-left',
+                            color: 'basic',
+                            type: 'stroked',
+                            style: 'background: var(--button-generic-background-color);', 
+                            onclick: () => emitEvent('DeleteMonitorSuite', {}),
+                        }),
+                    )
                     : '',
-                span({class: 'fx-flex'}),
             ),
             () => getValue(props.has_monitor_test_suite) ? Table(
                 {
@@ -247,18 +286,33 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             onChange: (checked) => emitEvent('SetParamValues', {payload: {only_tables_with_anomalies: String(checked).toLowerCase()}}),
                         }),
                         span({class: 'fx-flex'}, ''),
-                        userCanEdit
-                            ? Button({
-                                icon: 'edit',
-                                iconSize: 18,
-                                label: 'Edit monitor settings',
-                                color: 'basic',
-                                type: 'stroked',
-                                width: 'auto',
-                                style: 'height: 36px;', 
-                                onclick: () => emitEvent('EditTestSuite', { payload: {} }),
-                            })
-                            : '',
+                        () => {
+                            const schedule = getValue(props.schedule);
+                            console.log(schedule)
+                            if (schedule && !schedule.active) {
+                                return div(
+                                    { class: 'flex-row fx-gap-1' },
+                                    Icon({ style: 'font-size: 16px; color: var(--purple);' }, 'info'),
+                                    span(
+                                        { style: 'color: var(--purple);' },
+                                        'Monitor schedule is paused.',
+                                    ),
+                                );
+                            };
+                            if (schedule && schedule.cron_sample.samples) {
+                                return withTooltip(
+                                    span(
+                                        { class: 'text-caption', style: 'position: relative;' },
+                                        `Next run: ${schedule.cron_sample.samples[0]}`,
+                                    ),
+                                    {
+                                        text: `Schedule: ${schedule.cron_sample.readable_expr} (${schedule.cron_tz})`,
+                                        width: 150,
+                                    },
+                                );
+                            }
+                            return '';
+                        },
                     ),
                     columns: () => {
                         const lookback = getValue(props.summary)?.lookback ?? 0;
@@ -285,7 +339,12 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     },
                     emptyState: div(
                         {class: 'flex-row fx-justify-center empty-table-message'},
-                        span({class: 'text-secondary'}, 'No tables found matching filters'),
+                        span(
+                            {class: 'text-secondary'},
+                            getValue(props.summary)?.lookback
+                                ? 'No tables found matching filters'
+                                : 'No monitor results yet for table group',
+                        ),
                     ),
                     sort: tableSort,
                     paginator: tablePaginator,
@@ -327,7 +386,15 @@ const ConditionalEmptyState = (projectSummary, userCanEdit) => {
     let args = {
         label: 'No monitors yet for table group',
         message: EMPTY_STATE_MESSAGE.monitors,
-        // TODO: Add action
+        button: Button({
+            type: 'stroked',
+            icon: 'settings',
+            label: 'Configure Monitors',
+            color: 'primary',
+            style: 'width: unset;',
+            disabled: !userCanEdit,
+            onclick: () => emitEvent('EditMonitorSettings', {}),
+        }),
     }
     if (projectSummary.connection_count <= 0) {
         args = {
@@ -382,6 +449,23 @@ stylesheet.replace(`
 .tg-table-cell.schema,
 .tg-table-cell.schema_changes {
     border-right: 1px dashed var(--border-color);
+}
+
+.tg-table-cell.schema_changes {
+    padding-right: 0;
+    padding-left: 0;
+}
+
+.schema-changes {
+    position: relative;
+    display: inline-flex;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.schema-changes:hover {
+    background: var(--select-hover-background);
 }
 
 .tg-icon.schema-icon--add {

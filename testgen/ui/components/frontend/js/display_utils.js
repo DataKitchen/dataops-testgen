@@ -27,7 +27,17 @@ function formatDuration(
 
     const startDate = new Date(typeof startTime === 'number' ? startTime * 1000 : startTime);
     const endDate = new Date(typeof endTime === 'number' ? endTime * 1000 : endTime);
+
     const totalSeconds = Math.floor((endDate.getTime() - startDate.getTime()) / 1000);
+    return formatDurationSeconds(totalSeconds);
+}
+
+function formatDurationSeconds(
+    /** @type number */ totalSeconds,
+) {
+    if (!totalSeconds) {
+        return '--';
+    }
 
     let formatted = [
         { value: Math.floor(totalSeconds / (3600 * 24)), unit: 'd' },
@@ -40,15 +50,12 @@ function formatDuration(
     return formatted.trim() || '< 1s';
 }
 
-function humanReadableDuration(/** @type string */ duration) {
+function humanReadableDuration(/** @type string */ duration, /** @type boolean */ round = false) {
     if (duration === '< 1s') {
         return 'Less than 1 second';
     }
 
-    const biggestPart = duration.split(' ')[0];
-
-    const durationUnit = biggestPart.slice(-1)[0];
-    const durationValue = Number(biggestPart.replace(durationUnit, ''));
+    
     const unitTemplates = {
         d: (/** @type number */ value) => `${value} day${value === 1 ? '' : 's'}`,
         h: (/** @type number */ value) => `${value} hour${value === 1 ? '' : 's'}`,
@@ -56,7 +63,21 @@ function humanReadableDuration(/** @type string */ duration) {
         s: (/** @type number */ value) => `${value} second${value === 1 ? '' : 's'}`,
     };
 
-    return unitTemplates[durationUnit](durationValue);
+    if (round) {
+        const biggestPart = duration.split(' ')[0];
+        const durationUnit = biggestPart.slice(-1)[0];
+        const durationValue = Number(biggestPart.replace(durationUnit, ''));
+        return unitTemplates[durationUnit](durationValue);
+    }
+
+    return duration
+        .split(' ')
+        .map(part => {
+            const unit = part.slice(-1)[0];
+            const value = Number(part.replace(unit, ''));
+            return unitTemplates[unit](value);
+        })
+        .join(' ');
 }
 
 function formatNumber(/** @type number | string */ number, /** @type number */ decimals = 3) {
@@ -155,6 +176,7 @@ const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action
 export {
     formatTimestamp,
     formatDuration,
+    formatDurationSeconds,
     formatNumber,
     capitalize,
     humanReadableSize,

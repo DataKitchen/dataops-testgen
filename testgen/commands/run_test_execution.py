@@ -162,11 +162,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             LOG.exception("Error predicting test thresholds")
             
         MixpanelService().send_event(
-            "run-tests",
+            "run-monitors" if test_suite.is_monitor else "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,
             username=username,
             sql_flavor=connection.sql_flavor_code,
-            monitor=test_suite.is_monitor,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
             scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
