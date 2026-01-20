@@ -116,8 +116,6 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
     component_type = empty_if_null(selected_test_suite.component_type) if mode == "edit" else "dataset"
     component_name = empty_if_null(selected_test_suite.component_name) if mode == "edit" else ""
 
-    is_monitor_suite = mode == "edit" and selected_test_suite.is_monitor
-
     left_column, right_column = st.columns([0.50, 0.50])
     expander = st.expander("", expanded=True)
     with expander:
@@ -148,18 +146,6 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
                 index=severity_index,
                 help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
             ),
-            "monitor_lookback": left_column.number_input(
-                label="Monitoring Lookback",
-                value=selected_test_suite.monitor_lookback,
-                step=1,
-                min_value=1,
-                max_value=200,
-                help="Number of runs to retrieve when displaying this test suite's monitored changes",
-            ) if is_monitor_suite else None,
-            "monitor_lookback_spacer": right_column.container(
-                height=68,
-                border=False,
-            ) if is_monitor_suite else None,
             "export_to_observability": left_column.checkbox(
                 "Export to Observability",
                 value=export_to_observability,

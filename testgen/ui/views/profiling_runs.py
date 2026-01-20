@@ -201,7 +201,6 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
     testgen.testgen_component(
         "confirm_dialog",
         props={
-            "project_code": project_code,
             "message": message,
             "constraint": constraint,
             "button_label": "Delete",
