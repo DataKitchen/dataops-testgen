@@ -60,7 +60,7 @@ INSERT INTO job_schedules
     (id, project_code, key, args, kwargs, cron_expr, cron_tz, active)
 SELECT 'eac9d722-d06a-4b1f-b8c4-bb2854bd4cfd'::UUID AS id,
        '{PROJECT_CODE}'                             AS project_code,
-       'run-tests'                                  AS key,
+       'run-monitors'                               AS key,
        '[]'::JSONB                                  AS args,
        '{"test_suite_id": "823a1fef-9b6d-48d5-9d0f-2db9812cc318"}'::JSONB AS kwargs,
        '0 */12 * * *'                               AS cron_expr,

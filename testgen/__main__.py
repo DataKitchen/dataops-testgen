@@ -201,6 +201,22 @@ def run_tests(test_suite_id: str | None = None, project_key: str | None = None, 
     click.echo("\n" + message)
 
 
+@register_scheduler_job
+@cli.command("run-monitors", help="Performs tests defined for a monitor suite.")
+@click.option(
+    "-t",
+    "--test-suite-id",
+    required=True,
+    type=click.STRING,
+    help="ID of the monitor suite to run.",
+)
+@with_database_session
+def run_monitors(monitor_suite_id: str):
+    click.echo(f"run-monitors for suite: {monitor_suite_id}")
+    message = run_test_execution(monitor_suite_id)
+    click.echo("\n" + message)
+
+
 @cli.command("list-profiles", help="Lists all profile runs for a table group.")
 @click.option(
     "-tg",

@@ -91,18 +91,16 @@ class ScheduleDialog:
                 if is_form_valid:
                     cron_obj = cron_converter.Cron(cron_expr)
                     args, kwargs = self.get_job_arguments(arg_value)
-                    with Session() as db_session:
-                        sched_model = JobSchedule(
-                            project_code=self.project_code,
-                            key=self.job_key,
-                            cron_expr=cron_obj.to_string(),
-                            cron_tz=cron_tz,
-                            active=True,
-                            args=args,
-                            kwargs=kwargs,
-                        )
-                        db_session.add(sched_model)
-                        db_session.commit()
+                    sched_model = JobSchedule(
+                        project_code=self.project_code,
+                        key=self.job_key,
+                        cron_expr=cron_obj.to_string(),
+                        cron_tz=cron_tz,
+                        active=True,
+                        args=args,
+                        kwargs=kwargs,
+                    )
+                    with_database_session(sched_model.save)()
                 else:
                     success = False
                     message = "Complete all the fields before adding the schedule"

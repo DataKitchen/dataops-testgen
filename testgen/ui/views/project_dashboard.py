@@ -68,7 +68,7 @@ class ProjectDashboardPage(Page):
                         "monitoring_summary": {
                             "project_code": project_code,
                             "table_group_id": str(table_group.id),
-                            "lookback": table_group.monitor_lookback or 1,
+                            "lookback": table_group.monitor_lookback,
                             "lookback_start": make_json_safe(table_group.monitor_lookback_start),
                             "lookback_end": make_json_safe(table_group.monitor_lookback_end),
                             "freshness_anomalies": table_group.monitor_freshness_anomalies or 0,

@@ -11,7 +11,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
-from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
+from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
 
@@ -29,6 +29,7 @@ class TableGroupMinimal(EntityMinimal):
     profile_use_sampling: bool
     profiling_delay_days: str
     monitor_test_suite_id: UUID | None
+    last_complete_profile_run_id: UUID | None
 
 
 @dataclass
@@ -268,7 +269,7 @@ class TableGroup(Entity):
             FROM (
                 SELECT *, MAX(position) OVER (PARTITION BY table_group_id) as max_position
                 FROM ranked_test_runs
-            )
+            ) pos
             GROUP BY table_group_id, lookback
         )
         SELECT groups.id,
@@ -426,13 +427,13 @@ class TableGroup(Entity):
 
                 schedule_job = JobSchedule(
                     project_code=self.project_code,
-                    key=RUN_TESTS_JOB_KEY,
+                    key=RUN_MONITORS_JOB_KEY,
                     cron_expr="0 */12 * * *",
                     cron_tz=monitor_schedule_timezone,
                     args=[],
                     kwargs={"test_suite_id": str(test_suite.id)},
                 )
-                db_session.add(schedule_job)
+                schedule_job.save()
 
                 self.monitor_test_suite_id = test_suite.id
                 db_session.execute(
