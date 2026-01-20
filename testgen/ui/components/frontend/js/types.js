@@ -7,6 +7,12 @@
  * @property {string} value
  * @property {boolean} selected
  * 
+ * @typedef CronSample
+ * @type {object}
+ * @property {string?} error
+ * @property {string[]?} samples
+ * @property {string?} readable_expr
+ * 
  * @typedef ProjectSummary
  * @type {object}
  * @property {string} project_code

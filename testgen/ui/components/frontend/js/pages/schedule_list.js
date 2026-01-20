@@ -1,5 +1,5 @@
 /**
- * @import {CronSample} from '../components/crontab_input.js'
+ * @import { CronSample } from '../types.js'
  * 
  * @typedef Schedule
  * @type {object}
