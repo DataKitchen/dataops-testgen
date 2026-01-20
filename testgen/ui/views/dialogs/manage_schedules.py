@@ -12,6 +12,7 @@ from testgen.common.models import Session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
 from testgen.ui.session import session, temp_value
+from testgen.ui.utils import get_cron_sample_handler
 
 CRON_SAMPLE_COUNT = 3
 class ScheduleDialog:
@@ -57,26 +58,6 @@ class ScheduleDialog:
             JobSchedule.update_active(item["id"], True)
             st.rerun(scope="fragment")
 
-        def on_cron_sample(payload: dict[str, str]):
-            try:
-                cron_expr = payload["cron_expr"]
-                cron_tz = payload.get("tz", "America/New_York")
-
-                cron_obj = cron_converter.Cron(cron_expr)
-                cron_schedule = cron_obj.schedule(datetime.now(zoneinfo.ZoneInfo(cron_tz)))
-                readble_cron_schedule = cron_descriptor.get_description(
-                    cron_expr,
-                )
-
-                set_cron_sample({
-                    "samples": [cron_schedule.next().strftime("%a %b %-d, %-I:%M %p") for _ in range(CRON_SAMPLE_COUNT)],
-                    "readable_expr": readble_cron_schedule,
-                })
-            except ValueError as e:
-                set_cron_sample({"error": str(e)})
-            except Exception as e:
-                set_cron_sample({"error": "Error validating the Cron expression"})
-
         def on_add_schedule(payload: dict[str, str]):
             set_arg_value(payload["arg_value"])
             set_timezone(payload["cron_tz"])
@@ -85,7 +66,7 @@ class ScheduleDialog:
             set_should_save(True)
 
         user_can_edit = session.auth.user_has_permission("edit")
-        cron_sample_result, set_cron_sample = temp_value("schedule_dialog:cron_expr_validation", default={})
+        cron_sample_result, on_cron_sample = get_cron_sample_handler("schedule_dialog:cron_expr_validation", sample_count=CRON_SAMPLE_COUNT)
         get_arg_value, set_arg_value = temp_value("schedule_dialog:new:arg_value", default=None)
         get_timezone, set_timezone = temp_value("schedule_dialog:new:timezone", default=None)
         get_cron_expr, set_cron_expr = temp_value("schedule_dialog:new:cron_expr", default=None)
