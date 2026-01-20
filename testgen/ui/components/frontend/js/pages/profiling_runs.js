@@ -231,7 +231,7 @@ const Toolbar = (
             onChange: (value) => emitEvent('FilterApplied', { payload: { table_group_id: value } }),
         }),
         div(
-            { class: 'flex-row fx-gap-4' },
+            { class: 'flex-row fx-gap-3' },
             Button({
                 icon: 'notifications',
                 type: 'stroked',
@@ -239,7 +239,7 @@ const Toolbar = (
                 tooltip: 'Configure email notifications for profiling runs',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunNotificationsClicked', {}),
             }),
             Button({
@@ -249,7 +249,7 @@ const Toolbar = (
                 tooltip: 'Manage when profiling should run for table groups',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunSchedulesClicked', {}),
             }),
             userCanEdit
@@ -258,16 +258,16 @@ const Toolbar = (
                     type: 'stroked',
                     label: 'Run Profiling',
                     width: 'fit-content',
-                    style: 'background: var(--dk-card-background);',
+                    style: 'background: var(--button-generic-background-color);',
                     onclick: () => emitEvent('RunProfilingClicked', {}),
                 })
                 : '',
             Button({
-                type: 'icon',
+                type: 'stroked',
                 icon: 'refresh',
                 tooltip: 'Refresh profiling runs list',
                 tooltipPosition: 'left',
-                style: 'border: var(--button-stroked-border); border-radius: 4px;',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RefreshData', {}),
                 testId: 'profiling-runs-refresh',
             }),
@@ -461,7 +461,7 @@ const ConditionalEmptyState = (
             color: 'primary',
             label: 'Run Profiling',
             width: 'fit-content',
-            style: 'margin: auto; background: var(--dk-card-background);',
+            style: 'margin: auto; background: var(--button-generic-background-color);',
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',

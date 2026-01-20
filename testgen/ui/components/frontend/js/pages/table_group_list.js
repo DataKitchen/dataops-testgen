@@ -230,7 +230,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
         div(
-            {class: 'flex-row fx-align-flex-end fx-gap-4'},
+            {class: 'flex-row fx-align-flex-end fx-gap-3'},
             (getValue(connections) ?? [])?.length > 1
                 ? Select({
                     testId: 'connection-select',
@@ -256,7 +256,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
             }),
         ),
         div(
-            { class: 'flex-row fx-gap-4' },
+            { class: 'flex-row fx-gap-3' },
             Button({
                 icon: 'notifications',
                 type: 'stroked',
@@ -264,7 +264,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 tooltip: 'Configure email notifications for profiling runs',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunNotificationsClicked', {}),
             }),
             Button({
@@ -274,7 +274,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 tooltip: 'Manage when profiling should run for table groups',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunSchedulesClicked', {}),
             }),
             permissions.can_edit

@@ -207,7 +207,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         ? div(
             {style: 'height: 100%;'},
             div(
-                { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4' },
+                { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
                 Select({
                     label: 'Table Group',
                     value: tableGroupFilterValue,
