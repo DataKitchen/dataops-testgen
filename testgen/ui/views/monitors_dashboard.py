@@ -4,16 +4,19 @@ from typing import ClassVar, Literal
 
 import streamlit as st
 
+from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.session import session, temp_value
-from testgen.ui.views.test_suites import edit_test_suite_dialog
+from testgen.ui.utils import get_cron_sample, get_cron_sample_handler
 from testgen.utils import make_json_safe
 
 PAGE_ICON = "apps_outage"
@@ -58,16 +61,24 @@ class MonitorsDashboardPage(Page):
             table_group_id = str(table_groups[0].id) if table_groups else None
 
         selected_table_group = None
+        monitor_schedule = None
         monitored_tables_page = []
         all_monitored_tables_count = 0
         monitor_changes_summary = None
-                    
+        
         current_page = int(current_page)
         items_per_page = int(items_per_page)
         page_start = current_page * items_per_page
 
         if table_group_id:
             selected_table_group = next(item for item in table_groups if str(item.id) == table_group_id)
+            monitor_suite_id = selected_table_group.monitor_test_suite_id
+
+            if monitor_suite_id:
+                monitor_schedule = JobSchedule.get(
+                    JobSchedule.key == RUN_MONITORS_JOB_KEY,
+                    JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
+                )
 
             monitored_tables_page = get_monitor_changes_by_tables(
                 table_group_id,
@@ -90,6 +101,11 @@ class MonitorsDashboardPage(Page):
             props={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "summary": make_json_safe(monitor_changes_summary),
+                "schedule": {
+                    "active": monitor_schedule.active,
+                    "cron_tz": monitor_schedule.cron_tz,
+                    "cron_sample": get_cron_sample(monitor_schedule.cron_expr, monitor_schedule.cron_tz, 1)
+                } if monitor_schedule else None,
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),
@@ -112,7 +128,7 @@ class MonitorsDashboardPage(Page):
                     "sort_field": sort_field,
                     "sort_order": sort_order,
                 } if sort_field and sort_order else None,
-                "has_monitor_test_suite": bool(selected_table_group and selected_table_group.monitor_test_suite_id),
+                "has_monitor_test_suite": bool(selected_table_group and monitor_suite_id),
                 "permissions": {
                     "can_edit": session.auth.user_has_permission("edit"),
                 },
@@ -121,7 +137,9 @@ class MonitorsDashboardPage(Page):
                 "OpenSchemaChanges": lambda payload: open_schema_changes(selected_table_group, payload),
                 "OpenMonitoringTrends": lambda payload: open_table_trends(selected_table_group, payload),
                 "SetParamValues": lambda payload: set_param_values(payload),
-                "EditTestSuite": lambda *_: edit_monitor_test_suite(project_code, selected_table_group),
+                # "EditNotifications": lambda *_: manage_notifications(project_code, selected_table_group),
+                "EditMonitorSettings": lambda *_: edit_monitor_settings(selected_table_group, monitor_schedule),
+                "DeleteMonitorSuite": lambda *_: delete_monitor_suite(selected_table_group),
             },
         )
 
@@ -317,9 +335,134 @@ def set_param_values(payload: dict) -> None:
     Router().set_query_params(payload)
 
 
-def edit_monitor_test_suite(project_code: str, table_group: TableGroupMinimal | None = None):
-    if table_group and table_group.monitor_test_suite_id:
-        edit_test_suite_dialog(project_code, [table_group], table_group.monitor_test_suite_id)
+def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule | None):
+    monitor_suite_id = table_group.monitor_test_suite_id
+
+    @with_database_session
+    def show_dialog():
+        if monitor_suite_id:
+            monitor_suite = TestSuite.get(monitor_suite_id)
+        else:
+            monitor_suite = TestSuite(
+                project_code=table_group.project_code,
+                test_suite=f"{table_group.table_groups_name} Monitors",
+                connection_id=table_group.connection_id,
+                table_groups_id=table_group.id,
+                export_to_observability=False,
+                dq_score_exclude=True,
+                is_monitor=True,
+            )
+
+        def on_save_settings_clicked(payload: dict) -> None:
+            set_save(True)
+            set_schedule(payload["schedule"])
+            set_monitor_suite(payload["monitor_suite"])
+
+        cron_sample_result, on_cron_sample = get_cron_sample_handler("monitors:cron_expr_validation", sample_count=0)
+        should_save, set_save = temp_value(f"monitors:save:{monitor_suite_id}", default=False)
+        get_schedule, set_schedule = temp_value(f"monitors:updated_schedule:{monitor_suite_id}", default={})
+        get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})
+
+        if should_save():
+            for key, value in get_monitor_suite().items():
+                setattr(monitor_suite, key, value)
+
+            is_new = not monitor_suite.id
+            monitor_suite.save()
+
+            new_schedule_config = get_schedule()
+            if ( # Check if schedule has to be created/recreated
+                not schedule
+                or schedule.cron_tz != new_schedule_config["cron_tz"]
+                or schedule.cron_expr != new_schedule_config["cron_expr"]
+            ):
+                if schedule:
+                    JobSchedule.delete(schedule.id)
+
+                new_schedule = JobSchedule(
+                    project_code=table_group.project_code,
+                    key=RUN_MONITORS_JOB_KEY,
+                    args=[],
+                    kwargs={"test_suite_id": str(monitor_suite.id)},
+                    **new_schedule_config,
+                )
+                new_schedule.save()
+
+            elif schedule.active != new_schedule_config["active"]: # Only active status changed
+                JobSchedule.update_active(schedule.id, new_schedule_config["active"])
+
+            if is_new:
+                updated_table_group = TableGroup.get(table_group.id)
+                updated_table_group.monitor_test_suite_id = monitor_suite.id
+                updated_table_group.save()
+                run_test_gen_queries(table_group.id, monitor_suite.test_suite, "Monitor")
+
+            st.rerun()
+        
+        testgen.testgen_component(
+            "edit_monitor_settings",
+            props={
+                "table_group": table_group.to_dict(json_safe=True),
+                "monitor_suite": monitor_suite.to_dict(json_safe=True),
+                "schedule": {
+                    "cron_tz": schedule.cron_tz,
+                    "cron_expr": schedule.cron_expr,
+                    "active": schedule.active,
+                } if schedule else None,
+                "cron_sample": cron_sample_result(),
+            },
+            on_change_handlers={
+                "SaveSettingsClicked": on_save_settings_clicked,
+                "GetCronSample": on_cron_sample,
+            },
+        )
+
+    return st.dialog(title="Edit Monitor Settings" if monitor_suite_id else "Configure Monitors")(show_dialog)()
+
+
+@st.dialog(title="Delete Monitors")
+@with_database_session
+def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
+    def on_delete_confirmed(*_args) -> None:
+        set_delete_confirmed(True)
+
+    message = f"Are you sure you want to delete all monitors for the table group '{table_group.table_groups_name}'?"
+    constraint = {
+        "warning": "All monitor configuration and historical results will be deleted.",
+        "confirmation": "Yes, delete all monitors and historical results.",
+    }
+
+    result, set_result = temp_value(f"monitors:result-value:{table_group.id}", default=None)
+    delete_confirmed, set_delete_confirmed = temp_value(f"monitors:confirm-delete:{table_group.id}", default=False)
+
+    testgen.testgen_component(
+        "confirm_dialog",
+        props={
+            "message": message,
+            "constraint": constraint,
+            "button_label": "Delete",
+            "button_color": "warn",
+            "result": result(),
+        },
+        on_change_handlers={
+            "ActionConfirmed": on_delete_confirmed,
+        },
+    )
+
+    if delete_confirmed():
+        try:
+            with st.spinner("Deleting monitors ..."):
+                monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
+                TestSuite.cascade_delete([monitor_suite.id])
+            st.rerun()
+            st.cache_data.clear()
+        except Exception:
+            LOG.exception("Failed to delete monitor suite")
+            set_result({
+                "success": False,
+                "message": "Unable to delete monitors for the table group, try again.",
+            })
+            st.rerun(scope="fragment")
 
 
 def open_schema_changes(table_group: TableGroupMinimal, payload: dict):

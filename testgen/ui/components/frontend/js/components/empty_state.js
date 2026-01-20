@@ -60,7 +60,7 @@ const EMPTY_STATE_MESSAGE = {
     },
     monitors: {
         line1: 'Monitor your tables',
-        line2: 'Configure freshness, volume, and schema monitors on your data to detect anomalies.',
+        line2: 'Set up freshness, volume, and schema monitors on your data to detect anomalies.',
     },
 };
 
