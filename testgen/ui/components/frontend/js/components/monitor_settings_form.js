@@ -42,11 +42,10 @@ import { CrontabInput } from './crontab_input.js';
 import { Icon } from './icon.js';
 import { Link } from './link.js';
 import { numberBetween, required } from '../form_validators.js';
-import { timezones } from '../values.js';
+import { timezones, holidayCodes } from '../values.js';
 import { formatDurationSeconds, humanReadableDuration } from '../display_utils.js';
 
 const { div, span } = van.tags;
-const holidayCodes = ['USA', 'NYSE', 'Canada', 'UK'];
 
 /**
  * 
