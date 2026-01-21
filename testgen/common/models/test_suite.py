@@ -69,9 +69,11 @@ class TestSuite(Entity):
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
     is_monitor: bool = Column(Boolean, default=False)
-    monitor_lookback: int | None = Column(Integer, default=None)
-    predict_sensitivity: PredictSensitivity | None = Column(String, Enum(PredictSensitivity))
+    monitor_lookback: int | None = Column(Integer)
+    predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
     predict_min_lookback: int | None = Column(Integer)
+    predict_exclude_weekends: bool = Column(Boolean, default=False)
+    predict_holiday_codes: str | None = Column(String)
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()

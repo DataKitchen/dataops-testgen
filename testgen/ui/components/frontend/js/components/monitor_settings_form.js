@@ -15,6 +15,8 @@
  * @property {number?} monitor_lookback
  * @property {('low'|'medium'|'high')?} predict_sensitivity
  * @property {number?} predict_min_lookback
+ * @property {boolean?} predict_exclude_weekends
+ * @property {string?} predict_holiday_codes
  * 
  * @typedef FormState
  * @type {object}
@@ -38,11 +40,13 @@ import { Select } from './select.js';
 import { Checkbox } from './checkbox.js';
 import { CrontabInput } from './crontab_input.js';
 import { Icon } from './icon.js';
-import { numberBetween } from '../form_validators.js';
+import { Link } from './link.js';
+import { numberBetween, required } from '../form_validators.js';
 import { timezones } from '../values.js';
 import { formatDurationSeconds, humanReadableDuration } from '../display_utils.js';
 
 const { div, span } = van.tags;
+const holidayCodes = ['USA', 'NYSE', 'Canada', 'UK'];
 
 /**
  * 
@@ -61,6 +65,8 @@ const MonitorSettingsForm = (props) => {
     const monitorLookback = van.state(monitorSuite.monitor_lookback ?? 14);
     const predictSensitivity = van.state(monitorSuite.predict_sensitivity ?? 'medium');
     const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? 30);
+    const predictExcludeWeekends = van.state(monitorSuite.predict_exclude_weekends ?? false);
+    const predictHolidayCodes = van.state(monitorSuite.predict_holiday_codes);
 
     const updatedSchedule = van.derive(() => {
         return {
@@ -77,6 +83,8 @@ const MonitorSettingsForm = (props) => {
             monitor_lookback: monitorLookback.val,
             predict_sensitivity: predictSensitivity.val,
             predict_min_lookback: predictMinLookback.val,
+            predict_exclude_weekends: predictExcludeWeekends.val,
+            predict_holiday_codes: predictHolidayCodes.val,
         };
     });
 
@@ -116,6 +124,8 @@ const MonitorSettingsForm = (props) => {
             { setValidity: setFieldValidity },
             predictSensitivity,
             predictMinLookback,
+            predictExcludeWeekends,
+            predictHolidayCodes,
         ),
     );
 };
@@ -224,37 +234,87 @@ const PredictionForm = (
     options,
     predictSensitivity,
     predictMinLookback,
+    predictExcludeWeekends,
+    predictHolidayCodes,
 ) => {
+    const excludeHolidays = van.state(!!predictHolidayCodes.val);
     return div(
-        { class: 'flex-row fx-gap-3 fx-flex-wrap border border-radius-1 p-3 monitor-settings-row', style: 'position: relative;' },
+        { class: 'flex-column fx-gap-4 border border-radius-1 p-3', style: 'position: relative;' },
         Caption({content: 'Prediction Model', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
-        RadioGroup({
-            name: 'predict_sensitivity',
-            label: 'Sensitivity',
-            options: [
-                { label: 'Low', value: 'low' },
-                { label: 'Medium', value: 'medium' },
-                { label: 'High', value: 'high' },
-            ],
-            value: predictSensitivity,
-            onChange: (value) => predictSensitivity.val = value,
+        div(
+            { class: 'flex-row fx-gap-3 fx-flex-wrap monitor-settings-row' },
+            RadioGroup({
+                name: 'predict_sensitivity',
+                label: 'Sensitivity',
+                options: [
+                    { label: 'Low', value: 'low' },
+                    { label: 'Medium', value: 'medium' },
+                    { label: 'High', value: 'high' },
+                ],
+                value: predictSensitivity,
+                onChange: (value) => predictSensitivity.val = value,
+            }),
+            Input({
+                name: 'predict_min_lookback',
+                type: 'number',
+                label: 'Minimum Training Lookback',
+                value: predictMinLookback,
+                help: 'Minimum number of monitor runs to use for training models',
+                type: 'number',
+                step: 1,
+                onChange: (value, state) => {
+                    predictMinLookback.val = value;
+                    options.setValidity?.('predict_min_lookback', state.valid);
+                },
+                validators: [
+                    numberBetween(30, 1000, 1),
+                ],
+            }),
+        ),
+        Checkbox({
+            name: 'predict_exclude_weekends',
+            label: 'Exclude weekends from training',
+            width: 250,
+            checked: predictExcludeWeekends,
+            onChange: (value) => predictExcludeWeekends.val = value,
         }),
-        Input({
-            name: 'predict_min_lookback',
-            type: 'number',
-            label: 'Training Lookback',
-            value: predictMinLookback,
-            help: 'Minimum number of monitor runs to use for training models',
-            type: 'number',
-            step: 1,
-            onChange: (value, state) => {
-                predictMinLookback.val = value;
-                options.setValidity?.('predict_min_lookback', state.valid);
-            },
-            validators: [
-                numberBetween(30, 1000, 1),
-            ],
+        Checkbox({
+            name: 'predict_exclude_holidays',
+            label: 'Exclude holidays from training',
+            width: 250,
+            checked: excludeHolidays,
+            onChange: (value) => excludeHolidays.val = value,
         }),
+        () => excludeHolidays.val
+            ? div(
+                { style: 'width: 250px; margin: -8px 0 0 25px; position: relative;' },
+                Input({
+                    name: 'predict_holiday_codes',
+                    label: 'Holiday Codes',
+                    value: predictHolidayCodes,
+                    help: 'Comma-separated list of country or financial market codes',
+                    autocompleteOptions: holidayCodes,
+                    onChange: (value, state) => {
+                        predictHolidayCodes.val = value;
+                        options.setValidity?.('predict_holiday_codes', state.valid);
+                    },
+                    validators: [
+                        required,
+                    ],
+                }),
+                div(
+                    { class: 'flex-row fx-gap-1 mt-1 text-caption' },
+                    span({}, 'See supported'),
+                    Link({
+                        open_new: true,
+                        label: 'codes',
+                        href: 'https://holidays.readthedocs.io/en/latest/#available-countries',
+                        right_icon: 'open_in_new',
+                        right_icon_size: 13,
+                    }),
+                ),
+            )
+            : '',
     );
 };
 

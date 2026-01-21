@@ -170,9 +170,11 @@ CREATE TABLE test_suites (
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
    is_monitor              BOOLEAN DEFAULT FALSE,
+   monitor_lookback        INTEGER DEFAULT NULL,
    predict_sensitivity     VARCHAR(6),
    predict_min_lookback    INTEGER,
-   monitor_lookback        INTEGER DEFAULT NULL,
+   predict_exclude_weekends BOOLEAN DEFAULT FALSE,
+   predict_holiday_codes   VARCHAR(20),
 
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
