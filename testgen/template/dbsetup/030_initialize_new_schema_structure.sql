@@ -174,7 +174,7 @@ CREATE TABLE test_suites (
    predict_sensitivity     VARCHAR(6),
    predict_min_lookback    INTEGER,
    predict_exclude_weekends BOOLEAN DEFAULT FALSE,
-   predict_holiday_codes   VARCHAR(20),
+   predict_holiday_codes   VARCHAR(100),
 
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
