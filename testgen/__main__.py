@@ -211,9 +211,9 @@ def run_tests(test_suite_id: str | None = None, project_key: str | None = None, 
     help="ID of the monitor suite to run.",
 )
 @with_database_session
-def run_monitors(monitor_suite_id: str):
-    click.echo(f"run-monitors for suite: {monitor_suite_id}")
-    message = run_test_execution(monitor_suite_id)
+def run_monitors(test_suite_id: str):
+    click.echo(f"run-monitors for suite: {test_suite_id}")
+    message = run_test_execution(test_suite_id)
     click.echo("\n" + message)
 
 

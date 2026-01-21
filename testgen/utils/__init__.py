@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
@@ -89,6 +90,8 @@ def make_json_safe(value: Any) -> str | bool | int | float | None:
         return int(value.replace(tzinfo=UTC).timestamp())
     elif isinstance(value, Decimal):
         return float(value)
+    elif isinstance(value, Enum):
+        return value.value
     elif isinstance(value, list):
         return [ make_json_safe(item) for item in value ]
     elif isinstance(value, dict):

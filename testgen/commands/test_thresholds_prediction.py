@@ -54,7 +54,11 @@ class TestThresholdsPrediction:
                 history = group[["test_time", "result_signal"]]
                 history = history.set_index("test_time")
 
-                test_prediction = [self.test_suite.id, test_def_id, self.run_date]
+                test_prediction = [
+                    self.test_suite.id,
+                    test_def_id,
+                    to_sql_timestamp(self.run_date),
+                ]
                 if len(history) >= (self.test_suite.predict_min_lookback or 1):
                     try:
                         forecast = get_arima_forecast(
