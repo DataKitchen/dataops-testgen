@@ -1,12 +1,26 @@
 const Streamlit = {
-    init: () => {
+    _v2: false,
+    _customSendDataHandler: undefined,
+    init() {
         sendMessageToStreamlit('streamlit:componentReady', { apiVersion: 1 });
     },
-    setFrameHeight: (height) => {
-        sendMessageToStreamlit('streamlit:setFrameHeight', { height: height });
+    enableV2(handler) {
+        this._v2 = true;
+        this._customSendDataHandler = handler;
     },
-    sendData: (data) => {
-        sendMessageToStreamlit('streamlit:setComponentValue', { value: data, dataType: 'json' });
+    setFrameHeight(height) {
+        if (!this._v2) {
+            sendMessageToStreamlit('streamlit:setFrameHeight', { height: height });
+        }
+    },
+    sendData(data) {
+        if (this._v2) {
+            const event = data.event;
+            const triggerData = Object.fromEntries(Object.entries(data).filter(([k, v]) => k !== 'event'));
+            this._customSendDataHandler(event, triggerData);
+        } else {
+            sendMessageToStreamlit('streamlit:setComponentValue', { value: data, dataType: 'json' });
+        }
     },
 };
 

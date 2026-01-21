@@ -12,6 +12,7 @@
  * @property {string?} error
  * @property {string[]?} samples
  * @property {string?} readable_expr
+ * @property {string?} id
  * 
  * @typedef ProjectSummary
  * @type {object}

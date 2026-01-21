@@ -15,6 +15,7 @@
  * @typedef Options
  * @type {object}
  * @property {(string|null)} id
+ * @property {(string|null)} name
  * @property {string?} testId
  * @property {string?} class
  * @property {CronSample?} sample
@@ -74,6 +75,7 @@ const CrontabInput = (/** @type Options */ props) => {
                 }
             }},
             Input({
+                name: props.name ?? getRandomId(),
                 label: 'Schedule',
                 icon: 'calendar_clock',
                 readonly: true,
@@ -480,6 +482,10 @@ function determineMode(expression) {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tg-crontab-input {
+    position: relative;
+}
+
 .tg-crontab-display {
   border-bottom: 1px dashed var(--border-color);
 }
@@ -492,6 +498,7 @@ stylesheet.replace(`
 }
 
 .tg-crontab-editor-content {
+  align-items: stretch;
   border-bottom: 1px solid var(--border-color);
 }
 

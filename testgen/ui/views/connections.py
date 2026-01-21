@@ -354,11 +354,7 @@ class ConnectionsPage(Page):
 
             if is_table_group_verified():
                 try:
-                    table_group.save(
-                        add_scorecard_definition=add_scorecard_definition,
-                        add_monitor_test_suite=add_monitor_test_suite,
-                        monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
-                    )
+                    table_group.save(add_scorecard_definition)
 
                     if save_data_chars:
                         try:

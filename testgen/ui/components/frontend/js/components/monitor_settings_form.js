@@ -199,6 +199,7 @@ const ScheduleForm = (
                 portalClass: 'short-select-portal',
             }),
             CrontabInput({
+                name: 'monitor_settings_schedule',
                 sample: options.cronSample,
                 value: cronEditorValue,
                 modes: ['x_hours', 'x_days'],

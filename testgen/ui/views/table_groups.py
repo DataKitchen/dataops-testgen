@@ -11,12 +11,15 @@ from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
+from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import table_group_queries
 from testgen.ui.session import session, temp_value
+from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.ui.views.profiling_runs import ProfilingScheduleDialog, manage_notifications
@@ -108,6 +111,8 @@ class TableGroupsPage(Page):
                 "tableGroup",
                 "testTableGroup",
                 "runProfiling",
+                "testSuite",
+                "monitorSuite",
             ],
         )
 
@@ -143,27 +148,68 @@ class TableGroupsPage(Page):
             table_group: dict = payload["table_group"]
             table_group_verified: bool = payload.get("table_group_verified", False)
             run_profiling: bool = payload.get("run_profiling", False)
+            standard_test_suite: dict = payload.get("standard_test_suite", None)
+            monitor_test_suite: dict = payload.get("monitor_test_suite", None)
 
             mark_for_preview(True)
             set_save(True)
             set_table_group(table_group)
+            set_standard_test_suite_data(standard_test_suite)
+            set_monitor_test_suite_data(monitor_test_suite)
             set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
 
         def on_go_to_profiling_runs(params: dict) -> None:
-            set_navigation_params({ **params, "project_code": project_code })
+            set_navigation({ "to": "profiling-runs", "params": {**params, "project_code": project_code} })
 
-        get_navigation_params, set_navigation_params = temp_value(
-            "connections:new_table_group:go_to_profiling_run",
-            default=None,
-        )
-        if (params := get_navigation_params()):
-            self.router.navigate(to="profiling-runs", with_args=params)
+        def on_go_to_test_suites(params: dict) -> None:
+            set_navigation({ "to": "test-suites", "params": {**params, "project_code": project_code} })
+
+        def on_go_to_monitors(params: dict) -> None:
+            set_navigation({ "to": "monitors", "params": {**params, "project_code": project_code} })
+
+        def on_run_profiling(payload: dict) -> None:
+            table_group_id = payload.get("table_group_id")
+            test_suite_id = payload.get("test_suite_id")
+            if table_group_id:
+                try:
+                    run_profiling_in_background(table_group_id, test_suite_id=test_suite_id)
+                except Exception:
+                    LOG.exception("Profiling run encountered errors")
+            set_navigation({ "to": "profiling-runs", "params": {"table_group_id": table_group_id, "project_code": project_code} })
+
+        get_navigation, set_navigation = temp_value("connections:new_table_group:navigate", default=None)
+        if (navigation := get_navigation()):
+            navigate_to = navigation.get("to")
+            params = navigation.get("params")
+            self.router.navigate(to=navigate_to, with_args=params)
 
         should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
         should_verify_access, mark_for_access_preview = temp_value("table_groups:preview_access:new", default=False)
         should_save, set_save = temp_value("table_groups:save:new", default=False)
         get_table_group, set_table_group = temp_value("table_groups:updated:new", default={})
+        get_standard_test_suite_data, set_standard_test_suite_data = temp_value(
+            "table_groups:test_suite_data:new",
+            default={
+                "generate": False,
+                "name": "",
+                "schedule": "",
+                "timezone": "",
+            },
+        )
+        get_monitor_test_suite_data, set_monitor_test_suite_data = temp_value(
+            "table_groups:monitor_suite_data:new",
+            default={
+                "generate": False,
+                "monitor_lookback": 0,
+                "schedule": "",
+                "timezone": "",
+                "predict_sensitivity": 0,
+                "predict_min_lookback": 0,
+                "predict_exclude_weekends": False,
+                "predict_holiday_codes": None,
+            },
+        )
         is_table_group_verified, set_table_group_verified = temp_value(
             "table_groups:new:verified",
             default=False,
@@ -172,6 +218,8 @@ class TableGroupsPage(Page):
             "table_groups:new:run_profiling",
             default=False,
         )
+        standard_cron_sample_result, on_get_standard_cron_sample = get_cron_sample_handler("table_groups:new:standard_cron_expr_validation")
+        monitor_cron_sample_result, on_get_monitor_cron_sample = get_cron_sample_handler("table_groups:new:monitor_cron_expr_validation")
 
         is_table_group_used = False
         connections = self._get_connections(project_code)
@@ -182,13 +230,10 @@ class TableGroupsPage(Page):
             original_table_group_schema = table_group.table_group_schema
             is_table_group_used = TableGroup.is_in_use([table_group_id])
 
-        add_monitor_test_suite = False
         add_scorecard_definition = False
         for key, value in get_table_group().items():
             if key == "add_scorecard_definition":
                 add_scorecard_definition = value
-            elif key == "add_monitor_test_suite":
-                add_monitor_test_suite = value
             else:
                 setattr(table_group, key, value)
 
@@ -220,32 +265,88 @@ class TableGroupsPage(Page):
 
         success = None
         message = ""
+        run_profiling = False
+        generate_test_suite = False
+        generate_monitor_suite = False
+        standard_test_suite_id: str | None = None
         if should_save():
             success = True
             if is_table_group_verified():
                 try:
-                    table_group.save(
-                        add_scorecard_definition,
-                        add_monitor_test_suite=add_monitor_test_suite,
-                        monitor_schedule_timezone=st.session_state["browser_timezone"] or "UTC",
-                    )
-
+                    table_group.save(add_scorecard_definition)
                     if save_data_chars:
                         try:
                             save_data_chars(table_group.id)
                         except Exception:
                             LOG.exception("Data characteristics refresh encountered errors")
 
+                    standard_test_suite_data = get_standard_test_suite_data() or {}
+                    if standard_test_suite_data.get("generate"):
+                        generate_test_suite = True
+                        standard_test_suite = TestSuite(
+                            project_code=project_code,
+                            test_suite=standard_test_suite_data["name"],
+                            connection_id=table_group.connection_id,
+                            table_groups_id=table_group.id,
+                            export_to_observability=False,
+                            dq_score_exclude=False,
+                            is_monitor=False,
+                            monitor_lookback=0,
+                            predict_min_lookback=0,
+                        )
+                        standard_test_suite.save()
+                        standard_test_suite_id = str(standard_test_suite.id)
+
+                        JobSchedule(
+                            project_code=project_code,
+                            key=RUN_TESTS_JOB_KEY,
+                            cron_expr=standard_test_suite_data["schedule"],
+                            cron_tz=standard_test_suite_data["timezone"],
+                            args=[],
+                            kwargs={"test_suite_id": str(standard_test_suite.id)},
+                        ).save()
+
+                    monitor_test_suite_data = get_monitor_test_suite_data() or {}
+                    if monitor_test_suite_data.get("generate"):
+                        generate_monitor_suite = True
+                        monitor_test_suite = TestSuite(
+                            project_code=project_code,
+                            test_suite=f"{table_group.table_groups_name} Monitors",
+                            connection_id=table_group.connection_id,
+                            table_groups_id=table_group.id,
+                            export_to_observability=False,
+                            dq_score_exclude=True,
+                            is_monitor=True,
+                            monitor_lookback=monitor_test_suite_data.get("monitor_lookback") or 14,
+                            predict_min_lookback=monitor_test_suite_data.get("predict_min_lookback") or 30,
+                            predict_sensitivity=monitor_test_suite_data.get("predict_sensitivity") or "medium",
+                            predict_exclude_weekends=monitor_test_suite_data.get("predict_exclude_weekends") or False,
+                            predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
+                        )
+                        monitor_test_suite.save()
+
+                        table_group.monitor_test_suite_id = monitor_test_suite.id
+                        table_group.save()
+
+                        JobSchedule(
+                            project_code=project_code,
+                            key=RUN_MONITORS_JOB_KEY,
+                            cron_expr=monitor_test_suite_data.get("schedule"),
+                            cron_tz=monitor_test_suite_data.get("timezone"),
+                            args=[],
+                            kwargs={"test_suite_id": str(monitor_test_suite.id)},
+                        ).save()
+
                     if should_run_profiling():
+                        run_profiling = True
                         try:
-                            run_profiling_in_background(table_group.id)
+                            run_profiling_in_background(table_group.id, test_suite_id=standard_test_suite_id)
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception:
                             success = False
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
-                    else:
-                        st.rerun()
+
                 except IntegrityError:
                     success = False
                     message = "A Table Group with the same name already exists."
@@ -253,9 +354,9 @@ class TableGroupsPage(Page):
                 success = False
                 message = "Verify the table group before saving"
 
-        return testgen.testgen_component(
-            "table_group_wizard",
-            props={
+        return testgen.table_group_wizard(
+            key="add_tg_wizard",
+            data={
                 "project_code": project_code,
                 "connections": connections,
                 "table_group": table_group.to_dict(json_safe=True),
@@ -265,14 +366,24 @@ class TableGroupsPage(Page):
                 "results": {
                     "success": success,
                     "message": message,
+                    "run_profiling": run_profiling,
+                    "generate_test_suite": generate_test_suite,
+                    "generate_monitor_suite": generate_monitor_suite,
                     "table_group_id": str(table_group.id),
+                    "table_group_name": table_group.table_groups_name,
+                    "test_suite_id": standard_test_suite_id,
                 } if success is not None else None,
+                "standard_cron_sample": standard_cron_sample_result(),
+                "monitor_cron_sample": monitor_cron_sample_result(),
             },
-            on_change_handlers={
-                "PreviewTableGroupClicked": on_preview_table_group_clicked,
-                "SaveTableGroupClicked": on_save_table_group_clicked,
-                "GoToProfilingRunsClicked": on_go_to_profiling_runs,
-            },
+            on_PreviewTableGroupClicked_change=on_preview_table_group_clicked,
+            on_GetCronSample_change=on_get_monitor_cron_sample,
+            on_GetCronSampleAux_change=on_get_standard_cron_sample,
+            on_SaveTableGroupClicked_change=on_save_table_group_clicked,
+            on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs,
+            on_GoToTestSuitesClicked_change=on_go_to_test_suites,
+            on_GoToMonitorsClicked_change=on_go_to_monitors,
+            on_RunProfilingClicked_change=on_run_profiling,
         )
 
     def _get_connections(self, project_code: str, connection_id: str | None = None) -> list[dict]:

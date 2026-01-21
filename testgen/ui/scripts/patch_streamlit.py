@@ -1,10 +1,11 @@
 # ruff: noqa: TRY002
 
-import functools
 import pathlib
+import re
 import shutil
 
 import streamlit
+import streamlit.web.server.app_static_file_handler as streamlit_app_static_file_handler
 from bs4 import BeautifulSoup, Tag
 
 INJECTED_CLASS = "testgen-mods"
@@ -13,29 +14,24 @@ STREAMLIT_INDEX = STREAMLIT_ROOT / "static" / "index.html"
 STREAMLIT_JS_FOLDER = STREAMLIT_ROOT / "static" / "static" / "js"
 STREAMLIT_CSS_FOLDER = STREAMLIT_ROOT / "static" / "static" / "css"
 TESTGEN_ROOT = pathlib.Path(__file__).parent.parent.parent
+TESTGEN_STATIC_FOLDER = pathlib.Path(__file__).parent.parent.parent / "ui" / "static"
+STATIC_FILES = [
+    "css/style.css",
+    "css/shared.css",
+    "css/roboto-font-faces.css",
+    "css/material-symbols-rounded.css",
+    "js/scripts.js",
+    "js/sidebar.js",
+    "js/van.min.js",
+]
 
 
-def patch(force: bool = False) -> list[str]:
-    operations = [
-        "ui/assets/style.css:insert",
-        "ui/assets/scripts.js:insert",
-        "ui/components/frontend/css/KFOmCnqEu92Fr1Mu7GxKOzY.woff2:copy",
-        "ui/components/frontend/css/KFOmCnqEu92Fr1Mu4mxK.woff2:copy",
-        "ui/components/frontend/css/KFOlCnqEu92Fr1MmEU9fChc4EsA.woff2:copy",
-        "ui/components/frontend/css/KFOlCnqEu92Fr1MmEU9fBBc4.woff2:copy",
-        "ui/components/frontend/css/material-symbols-rounded.woff2:copy",
-        "ui/components/frontend/css/roboto-font-faces.css:inject",
-        "ui/components/frontend/css/material-symbols-rounded.css:inject",
-        "ui/components/frontend/js/van.min.js:copy",
-        "ui/components/frontend/js/components/sidebar.js:inject",
-    ]
-
-    _patch_streamlit_index(*operations, force=force)
-
-    return [op.split(":")[0] for op in operations]
+def patch(force: bool = False) -> None:
+    _allow_static_files([".js", ".css"])
+    _patch_streamlit_index(*STATIC_FILES, force=force)
 
 
-def _patch_streamlit_index(*operations: str, force: bool = False) -> None:
+def _patch_streamlit_index(*static_files: str, force: bool = False) -> None:
     """
     Patches the index.html inside streamlit package to inject Testgen's
     own styles and scripts before rendering time.
@@ -63,49 +59,70 @@ def _patch_streamlit_index(*operations: str, force: bool = False) -> None:
 
         head = html.find(name="head")
         if head:
-            actions = {
-                "insert": _inline_tag,
-                "copy": _sourced_tag,
-                "inject": functools.partial(_sourced_tag, inject=True),
-            }
-            for operation in operations:
-                filename, action = operation.split(":")
-                if (filepath := (TESTGEN_ROOT / filename)).exists():
-                    if tag := actions[action](filepath, html):
+            for relative_path in static_files:
+                if (TESTGEN_STATIC_FOLDER / relative_path).exists():
+                    if tag := _create_tag(relative_path, html):
                         head.append(tag)
 
             STREAMLIT_INDEX.write_text(str(html))
 
 
-def _inline_tag(filepath: pathlib.Path, html: BeautifulSoup, **_) -> Tag:
-    tag_for_ext = {
-        ".css": lambda: html.new_tag("style", **{"class": INJECTED_CLASS}),
-        ".js": lambda: html.new_tag("script", **{"type": "module", "class": INJECTED_CLASS}),
-    }
-
-    try:
-        tag = tag_for_ext[filepath.suffix]()
-    except:
-        raise Exception(f"Unsupported insert operation for file with extension {filepath.suffix}") from None
-
-    tag.string = filepath.read_text()
-    return tag
-
-
-def _sourced_tag(filepath: pathlib.Path, html: BeautifulSoup, inject: bool = False) -> Tag | None:
+def _create_tag(relative_filepath: str, html: BeautifulSoup) -> Tag | None:
     tag_for_ext = {
         ".css": lambda: html.new_tag(
-            "link", **{"href": f"./static/css/{filepath.name}", "rel": "stylesheet", "class": INJECTED_CLASS}
+            "link", **{"href": f"/app/static/{relative_filepath}", "rel": "stylesheet", "class": INJECTED_CLASS}
         ),
         ".js": lambda: html.new_tag(
-            "script", **{"type": "module", "src": f"./static/js/{filepath.name}", "class": INJECTED_CLASS}
+            "script", **{"type": "module", "src": f"/app/static/{relative_filepath}", "class": INJECTED_CLASS}
         ),
     }
-    copy_to = ({".js": STREAMLIT_JS_FOLDER}).get(filepath.suffix, STREAMLIT_CSS_FOLDER)
 
-    shutil.copy(filepath, copy_to)
+    extension = f".{relative_filepath.split(".")[-1]}"
+    if extension in tag_for_ext:
+        return tag_for_ext[extension]()
+    return None
 
-    if not inject or filepath.suffix not in tag_for_ext:
-        return None
 
-    return tag_for_ext[filepath.suffix]()
+def _allow_static_files(extensions: list[str]):
+    file_path = pathlib.Path(streamlit_app_static_file_handler.__file__)
+    backup_file_path = file_path.with_suffix(".py.bak")
+
+    if not backup_file_path.exists():
+        shutil.copy(file_path, backup_file_path)
+    shutil.copy(backup_file_path, file_path)
+
+    content = file_path.read_text()
+
+    match = re.search(r"(SAFE_APP_STATIC_FILE_EXTENSIONS\s*=\s*\()([^)]*)(\))", content, re.DOTALL)
+
+    if match:
+        prefix = match.group(1)
+        existing_extensions_str = match.group(2)
+        suffix = match.group(3)
+
+        existing_extensions: list[str] = []
+        for line in existing_extensions_str.splitlines():
+            stripped_line = line.strip()
+            if stripped_line and not stripped_line.startswith("#"):
+                found_exts = re.findall(r'\"(\.[a-zA-Z0-9]+)\"', stripped_line)
+                existing_extensions.extend(found_exts)
+
+        all_extensions = []
+        for ext in existing_extensions + extensions:
+            if not ext.startswith("."):
+                ext = "." + ext
+            all_extensions.append(ext)
+        all_extensions = sorted(set(all_extensions))
+
+        new_extensions_formatted_lines = []
+        for ext in all_extensions:
+            new_extensions_formatted_lines.append(f'    "{ext}",')
+
+        new_tuple_content = "\n".join(new_extensions_formatted_lines)
+        new_tuple_str = f"{prefix}\n{new_tuple_content}\n{suffix}"
+        
+        new_content = content.replace(match.group(0), new_tuple_str)
+        file_path.write_text(new_content)
+    else:
+        raise RuntimeError("Could not find SAFE_APP_STATIC_FILE_EXTENSIONS in the file.")
+

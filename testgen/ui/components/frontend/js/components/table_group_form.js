@@ -83,7 +83,6 @@ const TableGroupForm = (props) => {
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
     const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
-    const addMonitorTestSuite = van.state(tableGroup.add_monitor_test_suite ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
     const profileSamplePercent = van.state(tableGroup.profile_sample_percent ?? 30);
     const profileSampleMinCount = van.state(tableGroup.profile_sample_min_count ?? 15000);
@@ -123,7 +122,6 @@ const TableGroupForm = (props) => {
             profile_flag_cdes: profileFlagCdes.val,
             include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
-            add_monitor_test_suite: addMonitorTestSuite.val,
             profile_use_sampling: profileUseSampling.val,
             profile_sample_percent: profileSamplePercent.val,
             profile_sample_min_count: profileSampleMinCount.val,
@@ -190,7 +188,6 @@ const TableGroupForm = (props) => {
             profileFlagCdes,
             includeInDashboard,
             addScorecardDefinition,
-            addMonitorTestSuite,
         ),
         SamplingForm(
             { setValidity: setFieldValidity },
@@ -330,7 +327,6 @@ const SettingsForm = (
     profileFlagCdes,
     includeInDashboard,
     addScorecardDefinition,
-    addMonitorTestSuite,
 ) => {
     return div(
         { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start border border-radius-1 p-3 mt-1', style: 'position: relative;' },
@@ -356,15 +352,6 @@ const SettingsForm = (
                     help: 'Add a new scorecard to the Quality Dashboard upon creation of this table group',
                     checked: addScorecardDefinition,
                     onChange: (value) => addScorecardDefinition.val = value,
-                })
-                : null,
-            () => !options.editMode
-                ? Checkbox({
-                    name: 'add_monitor_test_suite',
-                    label: 'Add monitor test suite',
-                    help: 'Add a new test suite with monitor generation set for this table group',
-                    checked: addMonitorTestSuite,
-                    onChange: (value) => addMonitorTestSuite.val = value,
                 })
                 : null,
         ),
