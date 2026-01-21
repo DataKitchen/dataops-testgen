@@ -148,8 +148,8 @@ class TableGroupsPage(Page):
             table_group: dict = payload["table_group"]
             table_group_verified: bool = payload.get("table_group_verified", False)
             run_profiling: bool = payload.get("run_profiling", False)
-            standard_test_suite: dict = payload.get("standard_test_suite", None)
-            monitor_test_suite: dict = payload.get("monitor_test_suite", None)
+            standard_test_suite: dict | None = payload.get("standard_test_suite", None)
+            monitor_test_suite: dict | None = payload.get("monitor_test_suite", None)
 
             mark_for_preview(True)
             set_save(True)

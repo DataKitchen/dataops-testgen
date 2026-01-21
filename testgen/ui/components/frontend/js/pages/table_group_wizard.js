@@ -175,6 +175,8 @@ const TableGroupWizard = (props) => {
       });
     }),
     WizardStep(1, currentStepIndex, () => {
+      currentStepIndex.val;
+
       if (isComplete.val) {
         return '';
       }
@@ -302,7 +304,7 @@ const TableGroupWizard = (props) => {
               }),
               div(
                 { class: 'flex-column fx-gap-3 border border-radius-1 p-3', style: 'position: relative;' },
-                Caption({content: 'Monitor Schedule', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
+                Caption({content: 'Test Run Schedule', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
                 div(
                     { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start monitor-settings-row' },
                     Select({
@@ -537,8 +539,6 @@ const TableGroupWizard = (props) => {
       div(
         { class: 'flex-row' },
         () => {
-          const results = getValue(props.results);
-
           if (currentStepIndex.val <= 0 || isComplete.val) {
             return '';
           }
