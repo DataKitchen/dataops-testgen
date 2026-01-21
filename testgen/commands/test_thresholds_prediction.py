@@ -10,7 +10,7 @@ from testgen.common.database.database_service import (
 )
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.common.read_file import read_template_sql_file
-from testgen.common.time_series_service import NotEnoughData, get_arima_forecast
+from testgen.common.time_series_service import NotEnoughData, get_sarimax_forecast
 from testgen.utils import to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
@@ -26,15 +26,15 @@ class TestThresholdsPrediction:
         "upper_tolerance",
         "prediction",
     )
-    num_forecast = 20
-    quantile_map: ClassVar = {
-        ("lower_tolerance", PredictSensitivity.low): 0,
-        ("lower_tolerance", PredictSensitivity.medium): 0.2,
-        ("lower_tolerance", PredictSensitivity.high): 0.4,
-        "median": 0.5,
-        ("upper_tolerance", PredictSensitivity.high): 0.6,
-        ("upper_tolerance", PredictSensitivity.medium): 0.8,
-        ("upper_tolerance", PredictSensitivity.low): 1,
+    num_forecast = 10
+    # https://www.pindling.org/Math/Learning/Statistics/z_scores_table.htm
+    z_score_map: ClassVar = {
+        ("lower_tolerance", PredictSensitivity.low): -1.645, # 5th percentile
+        ("lower_tolerance", PredictSensitivity.medium): -0.842, # 20th percentile
+        ("lower_tolerance", PredictSensitivity.high): -0.253, # 40th percentile
+        ("upper_tolerance", PredictSensitivity.high): 0.253, # 60th percentile
+        ("upper_tolerance", PredictSensitivity.medium): 0.842, # 80th percentile
+        ("upper_tolerance", PredictSensitivity.low): 1.645, # 95th percentile
     }
 
     def __init__(self, test_suite: TestSuite, run_date: datetime):
@@ -61,17 +61,24 @@ class TestThresholdsPrediction:
                 ]
                 if len(history) >= (self.test_suite.predict_min_lookback or 1):
                     try:
-                        forecast = get_arima_forecast(
+                        forecast = get_sarimax_forecast(
                             history,
                             num_forecast=self.num_forecast,
-                            quantiles=list(self.quantile_map.values()),
+                            exclude_weekends=self.test_suite.predict_exclude_weekends,
+                            holiday_codes=[
+                                code.strip() for code in self.test_suite.predict_holiday_codes.split(",")
+                            ] if self.test_suite.predict_holiday_codes else None,
                         )
+
+                        for key, z_score in self.z_score_map.items():
+                            column = f"{key[0]}|{key[1].value}"
+                            forecast[column] = forecast["mean"] + (z_score * forecast["se"])
 
                         next_date = forecast.index[0]
                         sensitivity = self.test_suite.predict_sensitivity or PredictSensitivity.medium
                         test_prediction.extend([
-                            forecast.at[next_date, self.quantile_map[("lower_tolerance", sensitivity)]],
-                            forecast.at[next_date, self.quantile_map[("upper_tolerance", sensitivity)]],
+                            forecast.at[next_date, f"lower_tolerance|{sensitivity.value}"],
+                            forecast.at[next_date, f"upper_tolerance|{sensitivity.value}"],
                             forecast.to_json(),
                         ])
                     except NotEnoughData:

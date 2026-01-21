@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from enum import Enum
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import Enum
 from functools import wraps
 from typing import TYPE_CHECKING
 
