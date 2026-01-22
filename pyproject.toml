@@ -109,6 +109,7 @@ include-package-data = true
 [tool.setuptools.package-data]
 "*" = ["*.toml", "*.sql", "*.yaml"]
 "testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
+"testgen.ui.static" = ["**/*.js", "**/*.css", "**/*.woff2"]
 "testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "*.ico", "flavors/*.svg"]
 "testgen.ui.components.frontend" = ["*.html", "**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
 
@@ -279,8 +280,8 @@ push = false
 
 [[tool.streamlit.component.components]]
 name = "table_group_wizard"
-asset_dir = "testgen/ui/components/frontend/js"
+asset_dir = "ui/components/frontend/js"
 
 [[tool.streamlit.component.components]]
 name = "edit_monitor_settings"
-asset_dir = "testgen/ui/components/frontend/js"
+asset_dir = "ui/components/frontend/js"

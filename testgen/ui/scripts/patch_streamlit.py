@@ -5,6 +5,7 @@ import re
 import shutil
 
 import streamlit
+import streamlit.components.v2.manifest_scanner as streamlit_manifest_scanner
 import streamlit.web.server.app_static_file_handler as streamlit_app_static_file_handler
 from bs4 import BeautifulSoup, Tag
 
@@ -29,6 +30,7 @@ STATIC_FILES = [
 def patch(force: bool = False) -> None:
     _allow_static_files([".js", ".css"])
     _patch_streamlit_index(*STATIC_FILES, force=force)
+    _allow_pyproject_from_editable_installs()
 
 
 def _patch_streamlit_index(*static_files: str, force: bool = False) -> None:
@@ -63,7 +65,6 @@ def _patch_streamlit_index(*static_files: str, force: bool = False) -> None:
                 if (TESTGEN_STATIC_FOLDER / relative_path).exists():
                     if tag := _create_tag(relative_path, html):
                         head.append(tag)
-
             STREAMLIT_INDEX.write_text(str(html))
 
 
@@ -126,3 +127,94 @@ def _allow_static_files(extensions: list[str]):
     else:
         raise RuntimeError("Could not find SAFE_APP_STATIC_FILE_EXTENSIONS in the file.")
 
+
+def _allow_pyproject_from_editable_installs() -> None:
+    injected_functions = """
+import json
+
+
+def _pyproject_via_editable_package(dist: importlib.metadata.Distribution) -> Path | None:
+    from urllib.parse import urlparse, unquote
+
+    if _is_editable_package(dist):
+        try:
+            content = dist.read_text("direct_url.json")
+            data = json.loads(content)
+            if not data.get("dir_info", {}).get("editable", False):
+                return None
+            file_url = data.get("url")
+            if not file_url or not file_url.startswith("file://"):
+                return None
+            path_str = unquote(urlparse(file_url).path)
+            project_root = Path(path_str)
+            pyproject_path = project_root / "pyproject.toml"
+            if pyproject_path.exists():
+                return pyproject_path
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+def _is_editable_package(dist: importlib.metadata.Distribution) -> bool:
+    content = dist.read_text("direct_url.json")
+    if not content:
+        return False
+    try:
+        data = json.loads(content)
+        return data.get("dir_info", {}).get("editable", False)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return False
+
+
+IGNORED_DIR_NAMES = ["__pycache__", "invocations", "tests"]
+def _find_first_package_dir(project_path: Path) -> Path | None:
+    for item in sorted(project_path.iterdir()):
+        if item.is_dir():
+            if item.name.startswith(".") or item.name in IGNORED_DIR_NAMES:
+                continue
+            if (item / "__init__.py").exists():
+                return item
+    return None
+"""
+
+    file_path = pathlib.Path(streamlit_manifest_scanner.__file__)
+    backup_file_path = file_path.with_suffix(".py.bak")
+
+    if not backup_file_path.exists():
+        shutil.copy(file_path, backup_file_path)
+    shutil.copy(backup_file_path, file_path)
+
+    content = file_path.read_text()
+    to_replace = """    for finder in (
+        _pyproject_via_read_text,
+        _pyproject_via_dist_files,
+        lambda d: _pyproject_via_import_spec(d, package_name),
+    ):"""
+    new_value = """    for finder in (
+        _pyproject_via_read_text,
+        _pyproject_via_dist_files,
+        lambda d: _pyproject_via_import_spec(d, package_name),
+        _pyproject_via_editable_package,
+    ):"""
+
+    new_content = content + "\n" + injected_functions
+    new_content = new_content.replace(to_replace, new_value)
+
+    to_replace = """    if not package_root:
+        package_root = pyproject_path.parent"""
+    new_value = """    if not package_root:
+        if _is_editable_package(dist):
+            package_root = _find_first_package_dir(pyproject_path.parent)
+    
+    if not package_root:
+        package_root = pyproject_path.parent"""
+
+    new_content = new_content.replace(to_replace, new_value)
+
+    file_path.write_text(new_content)
+
+
+if __name__ == "__main__":
+    patch(force=True)
+    print("patched internal streamlit files")  # noqa: T201
