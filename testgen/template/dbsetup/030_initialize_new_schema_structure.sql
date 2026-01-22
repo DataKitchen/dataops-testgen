@@ -98,6 +98,7 @@ CREATE TABLE table_groups
     connection_id            BIGINT
          CONSTRAINT table_groups_connections_connection_id_fk
          REFERENCES connections,
+    default_test_suite_id    UUID DEFAULT NULL,
     monitor_test_suite_id    UUID DEFAULT NULL,
     table_groups_name        VARCHAR(100),
     table_group_schema       VARCHAR(100),

@@ -33,7 +33,7 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
-def run_profiling_in_background(table_group_id: str | UUID, test_suite_id: str | None = None) -> None:
+def run_profiling_in_background(table_group_id: str | UUID) -> None:
     msg = f"Triggering profiling run for table group {table_group_id}"
     if settings.IS_DEBUG:
         LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
@@ -41,7 +41,6 @@ def run_profiling_in_background(table_group_id: str | UUID, test_suite_id: str |
         background_thread = threading.Thread(
             target=run_profiling,
             args=(table_group_id, session.auth.user_display if session.auth else None),
-            kwargs={"test_suite_id": test_suite_id},
         )
         background_thread.start()
     else:
@@ -51,12 +50,7 @@ def run_profiling_in_background(table_group_id: str | UUID, test_suite_id: str |
 
 
 @with_database_session
-def run_profiling(
-    table_group_id: str | UUID,
-    username: str | None = None,
-    run_date: datetime | None = None,
-    test_suite_id: str | None = None,
-) -> str:
+def run_profiling(table_group_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -125,8 +119,8 @@ def run_profiling(
         if not table_group.last_complete_profile_run_id:
             if bool(table_group.monitor_test_suite_id):
                 _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
-            if bool(test_suite_id):
-                _generate_standard_tests(table_group_id, test_suite_id)
+            if bool(table_group.default_test_suite_id):
+                _generate_standard_tests(table_group_id, table_group.default_test_suite_id)
     finally:
         MixpanelService().send_event(
             "run-profiling",

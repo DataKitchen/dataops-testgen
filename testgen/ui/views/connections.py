@@ -298,30 +298,12 @@ class ConnectionsPage(Page):
             mark_for_preview(True)
             mark_for_access_preview(verify_table_access)
 
-        def on_go_to_profiling_runs(params: dict) -> None:
-            set_navigation({ "to": "profiling-runs", "params": {**params, "project_code": project_code} })
+        def on_close_clicked(_params: dict) -> None:
+            set_close_dialog(True)
 
-        def on_go_to_test_suites(params: dict) -> None:
-            set_navigation({ "to": "test-suites", "params": {**params, "project_code": project_code} })
-
-        def on_go_to_monitors(params: dict) -> None:
-            set_navigation({ "to": "monitors", "params": {**params, "project_code": project_code} })
-
-        def on_run_profiling(payload: dict) -> None:
-            table_group_id = payload.get("table_group_id")
-            test_suite_id = payload.get("test_suite_id")
-            if table_group_id:
-                try:
-                    run_profiling_in_background(table_group_id, test_suite_id=test_suite_id)
-                except Exception:
-                    LOG.exception("Profiling run encountered errors")
-            set_navigation({ "to": "profiling-runs", "params": {"table_group_id": table_group_id, "project_code": project_code} })
-
-        get_navigation, set_navigation = temp_value(f"connections:{connection_id}:navigate", default=None)
-        if (navigation := get_navigation()):
-            navigate_to = navigation.get("to")
-            params = navigation.get("params")
-            self.router.navigate(to=navigate_to, with_args=params)
+        get_close_dialog, set_close_dialog = temp_value(f"connections:{connection_id}:close", default=False)
+        if (get_close_dialog()):
+            st.rerun()
 
         get_new_table_group, set_new_table_group = temp_value(
             f"connections:{connection_id}:table_group",
@@ -396,7 +378,8 @@ class ConnectionsPage(Page):
         run_profiling = False
         generate_test_suite = False
         generate_monitor_suite = False
-        standard_test_suite_id: str | None = None
+        standard_test_suite = None
+        monitor_test_suite = None
         if should_save():
             success = True
             message = None
@@ -426,7 +409,6 @@ class ConnectionsPage(Page):
                             predict_min_lookback=0,
                         )
                         standard_test_suite.save()
-                        standard_test_suite_id = str(standard_test_suite.id)
 
                         JobSchedule(
                             project_code=project_code,
@@ -456,9 +438,6 @@ class ConnectionsPage(Page):
                         )
                         monitor_test_suite.save()
 
-                        table_group.monitor_test_suite_id = monitor_test_suite.id
-                        table_group.save()
-
                         JobSchedule(
                             project_code=project_code,
                             key=RUN_MONITORS_JOB_KEY,
@@ -467,6 +446,11 @@ class ConnectionsPage(Page):
                             args=[],
                             kwargs={"test_suite_id": str(monitor_test_suite.id)},
                         ).save()
+
+                    if standard_test_suite or monitor_test_suite:
+                        table_group.default_test_suite_id = standard_test_suite.id if standard_test_suite else None
+                        table_group.monitor_test_suite_id = monitor_test_suite.id if monitor_test_suite else None
+                        table_group.save()
 
                     if should_run_profiling:
                         try:
@@ -488,31 +472,25 @@ class ConnectionsPage(Page):
                 results = {
                     "success": success,
                     "message": message,
-                    "table_group_id": str(table_group.id),
-                    "table_group_name": table_group.table_groups_name,
+                    "test_suite_name": standard_test_suite.test_suite if standard_test_suite else None,
                     "run_profiling": run_profiling,
                     "generate_test_suite": generate_test_suite,
                     "generate_monitor_suite": generate_monitor_suite,
-                    "test_suite_id": standard_test_suite_id,
                 }
             else:
                 results = {
                     "success": False,
                     "message": "Verify the table group before saving",
-                    "connection_id": None,
-                    "table_group_id": None,
-                    "table_group_name": None,
                     "run_profiling": False,
                     "generate_test_suite": False,
                     "generate_monitor_suite": False,
-                    "test_suite_id": None,
+                    "test_suite_name": None,
                 }
 
         return testgen.table_group_wizard(
             key="setup_data_configuration",
             data={
                 "project_code": project_code,
-                "connection_id": connection_id,
                 "table_group": table_group.to_dict(json_safe=True),
                 "table_group_preview": table_group_preview,
                 "steps": [
@@ -528,12 +506,9 @@ class ConnectionsPage(Page):
             },
             on_SaveTableGroupClicked_change=on_save_table_group_clicked,
             on_PreviewTableGroupClicked_change=on_preview_table_group,
+            on_CloseClicked_change=on_close_clicked,
             on_GetCronSample_change=on_get_monitor_cron_sample,
             on_GetCronSampleAux_change=on_get_standard_cron_sample,
-            on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs,
-            on_GoToTestSuitesClicked_change=on_go_to_test_suites,
-            on_GoToMonitorsClicked_change=on_go_to_monitors,
-            on_RunProfilingClicked_change=on_run_profiling,
         )
 
 

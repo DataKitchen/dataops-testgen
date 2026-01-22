@@ -11,9 +11,7 @@
  * @property {boolean} run_profiling
  * @property {boolean} generate_test_suite
  * @property {boolean} generate_monitor_suite
- * @property {string?} table_group_id
- * @property {string?} test_suite_id
- * @property {string?} table_group_name
+ * @property {string?} test_suite_name
  * 
  * @typedef Properties
  * @type {object}
@@ -39,13 +37,14 @@ import { Icon } from '../components/icon.js';
 import { Caption } from '../components/caption.js';
 import { Input } from '../components/input.js';
 import { Select } from '../components/select.js';
+import { Link } from '../components/link.js';
 import { CrontabInput } from '../components/crontab_input.js';
 import { timezones } from '../values.js';
 import { requiredIf } from '../form_validators.js';
 import { MonitorSettingsForm } from '../components/monitor_settings_form.js';
 import { Streamlit } from '../streamlit.js';
 
-const { div, i, span, strong } = van.tags;
+const { div, span, strong } = van.tags;
 const stepsTitle = {
   tableGroup: 'Configure Table Group',
   testTableGroup: 'Preview Table Group',
@@ -121,6 +120,9 @@ const TableGroupWizard = (props) => {
 
   const setStep = (stepIdx) => {
     currentStepIndex.val = stepIdx;
+    // Force scroll reset to top of dialog
+    document.activeElement?.blur();
+    setTimeout(() => document.querySelector('.stDialog').scrollTop = 0, 1);
   };
   const saveTableGroup = () => {
     const payloadEntries = [
@@ -138,21 +140,18 @@ const TableGroupWizard = (props) => {
   const domId = 'table-group-wizard-wrapper';
 
   return div(
-    { id: domId, class: 'tg-table-group-wizard flex-column fx-gap-3' },
-    div(
-      {},
-      () => {
-        const stepName = steps[currentStepIndex.val];
-        const stepNumber = currentStepIndex.val + 1;
+    { id: domId },
+    () => {
+      const stepName = steps[currentStepIndex.val];
+      const stepNumber = currentStepIndex.val + 1;
 
-        if (isComplete.val) {
-          return '';
-        }
-        return Caption({
-          content: `Step ${stepNumber} of ${steps.length}: ${stepsTitle[stepName]}`,
-        });
-      },
-    ),
+      if (isComplete.val) {
+        return '';
+      }
+      return Caption({
+        content: `Step ${stepNumber} of ${steps.length}: ${stepsTitle[stepName]}`,
+      });
+    },
     WizardStep(0, currentStepIndex, () => {
       currentStepIndex.val;
       if (isComplete.val) {
@@ -280,9 +279,8 @@ const TableGroupWizard = (props) => {
           Checkbox({
             label: div(
               { class: 'flex-row' },
-              span({ class: 'mr-1' }, 'Generate and run tests for the table group'),
+              span({ class: 'mr-1' }, 'Generate and schedule tests for the table group'),
               strong(() => tableGroupName),
-              span('?'),
             ),
             checked: generateStandardTests,
             disabled: false,
@@ -335,7 +333,7 @@ const TableGroupWizard = (props) => {
               { class: 'text-caption' },
               () => generateStandardTests.val
                 ? 'Tests will be generated after profiling and run periodically on schedule.'
-                : 'Test generation will be skipped. You can do this step later from the Test Suites page.',
+                : 'Test generation will be skipped. You can do this step later on the Test Suites page.',
             ),
           ),
         );
@@ -388,7 +386,6 @@ const TableGroupWizard = (props) => {
               { class: 'flex-row' },
               span({ class: 'mr-1' }, 'Configure monitors for the table group'),
               strong(() => tableGroupName),
-              span('?'),
             ),
             checked: generateMonitorTests,
             disabled: false,
@@ -429,7 +426,7 @@ const TableGroupWizard = (props) => {
               { class: 'text-caption' },
               () => generateMonitorTests.val
                 ? 'Monitors will be configured after profiling and run periodically on schedule.'
-                : 'Monitor configuration will be skipped. You can do this step later from the Monitors page.',
+                : 'Monitor configuration will be skipped. You can do this step later on the Monitors page.',
             ),
           ),
         );
@@ -441,95 +438,129 @@ const TableGroupWizard = (props) => {
       }
 
       const results = getValue(props.results);
-      let message = '';
-      if (results.run_profiling) {
-        message = 'Profiling run started.';
-        if (results.generate_test_suite) {
-          message += ' Tests';
-          if (results.generate_monitor_suite) {
-            message += ' and';
-          }
-        }
-        if (results.generate_monitor_suite) {
-          message += ' Monitors';
-        }
-        if (results.generate_test_suite || results.generate_monitor_suite) {
-          message += ' will be configured after profiling and run periodically on schedule.';
-        }
-      } else {
-        message = 'Profiling was skipped.';
-        if (results.generate_test_suite || results.generate_monitor_suite) {
-          message += ' Run profiling manually to generate';
-        }
-        if (results.generate_test_suite) {
-          message += ' Tests';
-          if (results.generate_monitor_suite) {
-            message += ' and';
-          }
-        }
-        if (results.generate_monitor_suite) {
-          message += ' Monitors.';
-        }
-      }
+      const projectCode = getValue(props.project_code);
+      const tableGroup = getValue(props.table_group);
+      const preview = getValue(props.table_group_preview);
 
       return div(
-        {class: ''},
+        { class: 'flex-column' },
         div(
-          {class: 'flex-column'},
-          div({}, span("Created table group "), strong(results.table_group_name), span(".")),
+          { class: 'flex-column fx-gap-4 mb-4 p-5 border border-radius-2' },
           div(
-            { class: 'flex-row fx-gap-1 mb-4' },
-            Icon({ size: 16 }, 'info'),
-            span(
-              { class: 'text-caption' },
-              message
+            { class: 'flex-row fx-gap-2' },
+            Icon({ style: 'color: var(--green);' }, 'check_circle'),
+            div(
+              div('Table group ', strong(tableGroup.table_groups_name), ' created.'),
+              div(
+                { class: 'text-caption' },
+                `Schema: ${tableGroup.table_group_schema} | ${Object.keys(preview.tables).length} tables | ${preview.stats.column_ct} columns`,
+              ),
             ),
           ),
-
           div(
-            {class: 'flex-row fx-justify-content-flex-end fx-gap-2'},
+            { class: 'flex-row fx-gap-2' },
             results.run_profiling
-              ? Button({
-                type: 'stroked',
-                color: 'primary',
-                label: 'Go to Profiling Runs',
-                width: 'auto',
-                icon: 'chevron_right',
-                onclick: () => emitEvent('GoToProfilingRunsClicked', { payload: { table_group_id: results.table_group_id } }),
-              })
-              : Button({
-                type: 'stroked',
-                color: 'primary',
-                label: 'Run Profiling',
-                width: 'auto',
-                onclick: () => emitEvent('RunProfilingClicked', { payload: { table_group_id: results.table_group_id, test_suite_id: results.test_suite_id } }),
-              }),
-            (results.run_profiling && results.generate_test_suite)
-              ? Button({
-                type: 'stroked',
-                color: 'primary',
-                label: 'Go to Test Suites',
-                width: 'auto',
-                icon: 'chevron_right',
-                onclick: () => emitEvent('GoToTestSuitesClicked', { payload: { table_group_id: results.table_group_id } }),
-              })
-              : '',
-            (results.run_profiling && results.generate_monitor_suite)
-              ? Button({
-                type: 'stroked',
-                color: 'primary',
-                label: 'Go to Monitors',
-                width: 'auto',
-                icon: 'chevron_right',
-                onclick: () => emitEvent('GoToMonitorsClicked', { payload: { table_group_id: results.table_group_id } }),
-              })
-              : '',
+              ? Icon({ style: 'color: var(--green);' }, 'play_circle')
+              : Icon({ style: 'color: var(--grey);' }, 'do_not_disturb_on'),
+            results.run_profiling
+              ? div(
+                { class: 'flex-row fx-gap-1' },
+                div('Profiling run started.'),
+                Link({
+                  open_new: true,
+                  label: 'View progress',
+                  href: 'profiling-runs',
+                  params: { project_code: projectCode, table_group_id: tableGroup.id },
+                  right_icon: 'open_in_new',
+                  right_icon_size: 13,
+                }),
+              )
+              : div(
+                div('Profiling skipped.'),
+                div(
+                  { class: 'text-caption flex-row fx-gap-1' },
+                  'Run profiling or configure a schedule on the ',
+                  Link({
+                    open_new: true,
+                    label: 'Table Groups',
+                    href: 'table-groups',
+                    params: { project_code: projectCode, connection_id: tableGroup.connection_id },
+                    right_icon: 'open_in_new',
+                    right_icon_size: 13,
+                  }),
+                  ' page.',
+                ),
+              ),
           ),
-        )
+          div(
+            { class: 'flex-row fx-gap-2' },
+            results.generate_test_suite
+              ? Icon({ style: 'color: var(--blue);' }, 'pending')
+              : Icon({ style: 'color: var(--grey);' }, 'do_not_disturb_on'),
+            div(
+              results.generate_test_suite
+                ? div('Test suite ', strong(results.test_suite_name), ' created. Tests will be generated and scheduled after profiling.')
+                : div('Test generation skipped.'),
+              div(
+                { class: 'text-caption flex-row fx-gap-1' },
+                results.generate_test_suite
+                  ? 'Manage test suites and schedules on the '
+                  : 'Create test suites, generate and run tests, and configure schedules on the ',
+                Link({
+                  open_new: true,
+                  label: 'Test Suites',
+                  href: 'test-suites',
+                  params: { project_code: projectCode, table_group_id: tableGroup.id },
+                  right_icon: 'open_in_new',
+                  right_icon_size: 13,
+                }),
+                ' page.',
+              ),
+            ),
+          ),
+          div(
+            { class: 'flex-row fx-gap-2' },
+            results.generate_monitor_suite
+              ? Icon({ style: 'color: var(--blue);' }, 'pending')
+              :  Icon({ style: 'color: var(--grey);' }, 'do_not_disturb_on'),
+            div(
+              div(
+                results.generate_monitor_suite
+                  ? 'Monitors will be configured and scheduled after profiling.'
+                  : 'Monitor configuration skipped.',
+              ),
+              div(
+                { class: 'text-caption flex-row fx-gap-1' },
+                results.generate_monitor_suite
+                  ? 'Manage monitors and view anomalies on the '
+                  : 'Configure freshness, volume, and schema monitors on the ',
+                Link({
+                  open_new: true,
+                  label: 'Monitors',
+                  href: 'monitors',
+                  params: { project_code: projectCode, table_group_id: tableGroup.id },
+                  right_icon: 'open_in_new',
+                  right_icon_size: 13,
+                }),
+                ' page.',
+              ),
+            ),
+          ),
+        ),
+        div(
+          {class: 'flex-row fx-justify-content-flex-end'},
+          Button({
+            type: 'stroked',
+            color: 'primary',
+            label: 'Close',
+            width: 'auto',
+            onclick: () => emitEvent('CloseClicked', {}),
+          }),
+        ),
       );
     },
     div(
-      { class: 'flex-column fx-gap-3' },
+      { class: 'flex-column fx-gap-3 mt-4' },
       () => {
         const results = getValue(props.results) ?? {};
         return results?.success === false
@@ -591,9 +622,8 @@ const RunProfilingStep = (tableGroup, runProfiling, preview) => {
     Checkbox({
       label: div(
         { class: 'flex-row' },
-        span({ class: 'mr-1' }, 'Execute profiling for the table group'),
+        span({ class: 'mr-1' }, 'Run profiling for the table group'),
         strong(() => tableGroup.table_groups_name),
-        span('?'),
       ),
       checked: runProfiling,
       disabled: false,
@@ -609,7 +639,7 @@ const RunProfilingStep = (tableGroup, runProfiling, preview) => {
         { class: 'text-caption' },
         () => runProfiling.val
           ? 'Profiling will be performed in a background process.'
-          : 'Profiling will be skipped. You can run this step later from the Profiling Runs page.',
+          : 'Profiling will be skipped. You can do this step later on the Table Groups page.',
       ),
     ),
   );

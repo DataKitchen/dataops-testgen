@@ -78,6 +78,11 @@ class TableGroup(Entity):
     id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String, ForeignKey("projects.project_code"))
     connection_id: int = Column(BigInteger, ForeignKey("connections.connection_id"))
+    default_test_suite_id: UUID | None = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("test_suites.id"),
+        default=None,
+    )
     monitor_test_suite_id: UUID | None = Column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("test_suites.id"),

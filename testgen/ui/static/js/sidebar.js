@@ -224,6 +224,7 @@ stylesheet.replace(`
     flex-direction: column;
     justify-content: space-between;
     height: calc(100% - 68px);
+    font-size: 16px;
 }
 
 .menu .menu--project {

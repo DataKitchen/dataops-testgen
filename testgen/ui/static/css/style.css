@@ -144,6 +144,10 @@ div[data-testid="stDialog"] div[role="dialog"]:has(i.xl-dialog) {
     width: calc(95rem);
 }
 
+div[data-testid="stDialog"] button[aria-label="Close"]:focus {
+    outline: none;
+}
+
 div[data-testid="stSpinner"] {
     background: transparent;
 }

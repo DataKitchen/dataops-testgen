@@ -159,30 +159,12 @@ class TableGroupsPage(Page):
             set_table_group_verified(table_group_verified)
             set_run_profiling(run_profiling)
 
-        def on_go_to_profiling_runs(params: dict) -> None:
-            set_navigation({ "to": "profiling-runs", "params": {**params, "project_code": project_code} })
+        def on_close_clicked(_params: dict) -> None:
+            set_close_dialog(True)
 
-        def on_go_to_test_suites(params: dict) -> None:
-            set_navigation({ "to": "test-suites", "params": {**params, "project_code": project_code} })
-
-        def on_go_to_monitors(params: dict) -> None:
-            set_navigation({ "to": "monitors", "params": {**params, "project_code": project_code} })
-
-        def on_run_profiling(payload: dict) -> None:
-            table_group_id = payload.get("table_group_id")
-            test_suite_id = payload.get("test_suite_id")
-            if table_group_id:
-                try:
-                    run_profiling_in_background(table_group_id, test_suite_id=test_suite_id)
-                except Exception:
-                    LOG.exception("Profiling run encountered errors")
-            set_navigation({ "to": "profiling-runs", "params": {"table_group_id": table_group_id, "project_code": project_code} })
-
-        get_navigation, set_navigation = temp_value("connections:new_table_group:navigate", default=None)
-        if (navigation := get_navigation()):
-            navigate_to = navigation.get("to")
-            params = navigation.get("params")
-            self.router.navigate(to=navigate_to, with_args=params)
+        get_close_dialog, set_close_dialog = temp_value("table_groups:close:new", default=False)
+        if (get_close_dialog()):
+            st.rerun()
 
         should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
         should_verify_access, mark_for_access_preview = temp_value("table_groups:preview_access:new", default=False)
@@ -268,7 +250,8 @@ class TableGroupsPage(Page):
         run_profiling = False
         generate_test_suite = False
         generate_monitor_suite = False
-        standard_test_suite_id: str | None = None
+        standard_test_suite = None
+        monitor_test_suite = None
         if should_save():
             success = True
             if is_table_group_verified():
@@ -295,7 +278,6 @@ class TableGroupsPage(Page):
                             predict_min_lookback=0,
                         )
                         standard_test_suite.save()
-                        standard_test_suite_id = str(standard_test_suite.id)
 
                         JobSchedule(
                             project_code=project_code,
@@ -325,9 +307,6 @@ class TableGroupsPage(Page):
                         )
                         monitor_test_suite.save()
 
-                        table_group.monitor_test_suite_id = monitor_test_suite.id
-                        table_group.save()
-
                         JobSchedule(
                             project_code=project_code,
                             key=RUN_MONITORS_JOB_KEY,
@@ -337,10 +316,15 @@ class TableGroupsPage(Page):
                             kwargs={"test_suite_id": str(monitor_test_suite.id)},
                         ).save()
 
+                    if standard_test_suite or monitor_test_suite:
+                        table_group.default_test_suite_id = standard_test_suite.id if standard_test_suite else None
+                        table_group.monitor_test_suite_id = monitor_test_suite.id if monitor_test_suite else None
+                        table_group.save()
+
                     if should_run_profiling():
                         run_profiling = True
                         try:
-                            run_profiling_in_background(table_group.id, test_suite_id=standard_test_suite_id)
+                            run_profiling_in_background(table_group.id)
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception:
                             success = False
@@ -369,9 +353,7 @@ class TableGroupsPage(Page):
                     "run_profiling": run_profiling,
                     "generate_test_suite": generate_test_suite,
                     "generate_monitor_suite": generate_monitor_suite,
-                    "table_group_id": str(table_group.id),
-                    "table_group_name": table_group.table_groups_name,
-                    "test_suite_id": standard_test_suite_id,
+                    "test_suite_name": standard_test_suite.test_suite if standard_test_suite else None,
                 } if success is not None else None,
                 "standard_cron_sample": standard_cron_sample_result(),
                 "monitor_cron_sample": monitor_cron_sample_result(),
@@ -380,10 +362,7 @@ class TableGroupsPage(Page):
             on_GetCronSample_change=on_get_monitor_cron_sample,
             on_GetCronSampleAux_change=on_get_standard_cron_sample,
             on_SaveTableGroupClicked_change=on_save_table_group_clicked,
-            on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs,
-            on_GoToTestSuitesClicked_change=on_go_to_test_suites,
-            on_GoToMonitorsClicked_change=on_go_to_monitors,
-            on_RunProfilingClicked_change=on_run_profiling,
+            on_CloseClicked_change=on_close_clicked,
         )
 
     def _get_connections(self, project_code: str, connection_id: str | None = None) -> list[dict]:
