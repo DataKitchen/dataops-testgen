@@ -27,13 +27,14 @@ STATIC_FILES = [
 ]
 
 
-def patch(force: bool = False) -> None:
+def patch(dev: bool = False) -> None:
     _allow_static_files([".js", ".css"])
-    _patch_streamlit_index(*STATIC_FILES, force=force)
-    _allow_pyproject_from_editable_installs()
+    _patch_streamlit_index(*STATIC_FILES, dev=dev)
+    if dev:
+        _allow_pyproject_from_editable_installs()
 
 
-def _patch_streamlit_index(*static_files: str, force: bool = False) -> None:
+def _patch_streamlit_index(*static_files: str, dev: bool = False) -> None:
     """
     Patches the index.html inside streamlit package to inject Testgen's
     own styles and scripts before rendering time.
@@ -45,12 +46,12 @@ def _patch_streamlit_index(*static_files: str, force: bool = False) -> None:
     NOTE: keeps a .bak of the original index.html file
 
     :param filename: list of path to valid .css and .js files
-    :param force: to use in development while actively changing the
+    :param dev: to use in development while actively changing the
     injected files to force re-injection
     """
 
     html = BeautifulSoup(STREAMLIT_INDEX.read_text(), features="html.parser")
-    if force or not html.find_all(attrs={"class": INJECTED_CLASS}):
+    if dev or not html.find_all(attrs={"class": INJECTED_CLASS}):
         streamlit_index_backup = STREAMLIT_INDEX.with_suffix(".bak")
 
         if not streamlit_index_backup.exists():
@@ -121,7 +122,7 @@ def _allow_static_files(extensions: list[str]):
 
         new_tuple_content = "\n".join(new_extensions_formatted_lines)
         new_tuple_str = f"{prefix}\n{new_tuple_content}\n{suffix}"
-        
+
         new_content = content.replace(match.group(0), new_tuple_str)
         file_path.write_text(new_content)
     else:
@@ -206,7 +207,7 @@ def _find_first_package_dir(project_path: Path) -> Path | None:
     new_value = """    if not package_root:
         if _is_editable_package(dist):
             package_root = _find_first_package_dir(pyproject_path.parent)
-    
+
     if not package_root:
         package_root = pyproject_path.parent"""
 
@@ -216,5 +217,5 @@ def _find_first_package_dir(project_path: Path) -> Path | None:
 
 
 if __name__ == "__main__":
-    patch(force=True)
+    patch(dev=True)
     print("patched internal streamlit files")  # noqa: T201

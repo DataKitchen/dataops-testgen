@@ -1,4 +1,4 @@
-FROM python:3.12-alpine3.22
+FROM python:3.12-alpine3.23
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
@@ -14,24 +14,22 @@ RUN apk update && apk upgrade && apk add --no-cache \
     cmake \
     musl-dev \
     gfortran \
-    linux-headers=6.14.2-r0 \
-    # Tools needed for installing the MSSQL ODBC drivers \
+    linux-headers=6.16.12-r0 \
+    # Tools needed for installing the MSSQL ODBC drivers
     curl \
     gpg \
+    gpgv \
+    openssl \
     # Additional libraries needed and their dev counterparts. We add both so that we can remove
     # the *-dev later, keeping the libraries
-    openblas=0.3.28-r0 \
-    openblas-dev=0.3.28-r0 \
-    unixodbc=2.3.12-r0 \
-    unixodbc-dev=2.3.12-r0 \
+    openblas=0.3.30-r2 \
+    openblas-dev=0.3.30-r2 \
+    unixodbc=2.3.14-r0 \
+    unixodbc-dev=2.3.14-r0 \
+    libarrow=21.0.0-r4 \
+    apache-arrow-dev=21.0.0-r4 \
     # Pinned versions for security
-    xz=5.8.1-r0
-
-RUN apk add --no-cache \
-    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/community \
-    --repository https://dl-cdn.alpinelinux.org/alpine/v3.21/main \
-    libarrow=18.1.0-r0 \
-    apache-arrow-dev=18.1.0-r0
+    xz=5.8.2-r0
 
 COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
 RUN /tmp/dk/install_linuxodbc.sh
@@ -39,6 +37,10 @@ RUN /tmp/dk/install_linuxodbc.sh
 # Install TestGen's main project empty pyproject.toml to install (and cache) the dependencies first
 COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
+
+# Upgrading pip for security
+RUN python3 -m pip install --upgrade pip==25.3
+
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 
 RUN apk del \
@@ -46,9 +48,12 @@ RUN apk del \
     g++ \
     make \
     cmake \
+    curl \
     musl-dev \
     gfortran \
     gpg \
+    gpgv \
+    openssl \
     linux-headers \
     openblas-dev \
     unixodbc-dev \
