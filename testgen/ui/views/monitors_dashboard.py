@@ -9,7 +9,8 @@ from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -502,18 +503,36 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             data_structure_logs = get_data_structure_logs(
                 table_group.id, table_name, *selected_data_point,
             )
-
+        
         events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
+        definitions = TestDefinition.select_where(
+            TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
+            TestDefinition.table_name == table_name,
+            TestDefinition.prediction != None,
+        )
 
-        testgen.testgen_component(
+        predictions = {}
+        if len(definitions) > 0:
+            test_suite = TestSuite.get(table_group.monitor_test_suite_id)
+            predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
+            for definition in definitions:
+                lower_key = f"lower_tolerance|{predict_sensitivity.value}"
+                upper_key = f"upper_tolerance|{predict_sensitivity.value}"
+
+                predictions[definition.test_type.lower()] = {
+                    "mean": definition.prediction["mean"],
+                    "lower_tolerance": definition.prediction[lower_key],
+                    "upper_tolerance": definition.prediction[upper_key],
+                }
+
+        testgen.table_monitoring_trends(
             "table_monitoring_trends",
-            props={
+            data={
                 **make_json_safe(events),
                 "data_structure_logs": make_json_safe(data_structure_logs),
+                "predictions": predictions,
             },
-            on_change_handlers={
-                "ShowDataStructureLogs": on_show_data_structure_logs,
-            },
+            on_ShowDataStructureLogs_change=on_show_data_structure_logs,
         )
 
     def on_show_data_structure_logs(payload):

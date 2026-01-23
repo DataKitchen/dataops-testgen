@@ -285,3 +285,7 @@ asset_dir = "ui/components/frontend/js"
 [[tool.streamlit.component.components]]
 name = "edit_monitor_settings"
 asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "table_monitoring_trends"
+asset_dir = "ui/components/frontend/js"

@@ -11,12 +11,19 @@
  * @property {Point?} nestedPosition
  * @property {number[]?} yAxisTicks
  * @property {Object?} attributes
+ * @property {PredictionPoint[]?} prediction
+ * 
+ * @typedef PredictionPoint
+ * @type {Object}
+ * @property {number} x
+ * @property {number} upper
+ * @property {number} lower
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
 import { getValue } from '../utils.js';
 
-const { circle,  g, polyline, svg } = van.tags("http://www.w3.org/2000/svg");
+const { circle, g, path, polyline, svg } = van.tags("http://www.w3.org/2000/svg");
 
 /**
  * 
@@ -57,6 +64,14 @@ const MonitoringSparklineChart = (options, ...points) => {
             height: '100%',
             ...extraAttributes,
         },
+        () => _options.prediction
+            ? path({
+                d: generateShadowPath(_options.prediction ?? []),
+                fill: 'rgba(218, 218, 218, 0.3)',
+                fillOpacity: 0.3,
+                stroke: 'none',
+            })
+            : '',
         () => polyline({
             points: linePoints.val.map(point => `${point.x} ${point.y}`).join(', '),
             style: `stroke: ${getValue(_options.lineColor)}; stroke-width: ${getValue(_options.lineWidth)};`,
@@ -64,6 +79,18 @@ const MonitoringSparklineChart = (options, ...points) => {
         }),
     );
 };
+
+function generateShadowPath(data) {
+  let pathString = `M ${data[0].x} ${data[0].upper}`;
+  for (let i = 1; i < data.length; i++) {
+    pathString += ` L ${data[i].x} ${data[i].upper}`;
+  }
+  for (let i = data.length - 1; i >= 0; i--) {
+    pathString += ` L ${data[i].x} ${data[i].lower}`;
+  }
+  pathString += " Z";
+  return pathString;
+}
 
 /**
  * 
