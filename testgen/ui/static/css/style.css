@@ -105,6 +105,10 @@ section.stSidebar {
     background-color: var(--sidebar-background-color);
 }
 
+section.stSidebar > [data-testid="stSidebarContent"] {
+    overflow: visible;
+}
+
 [data-testid="stSidebarNav"],
 [data-testid="stSidebarUserContent"] {
     display: none;
@@ -249,6 +253,18 @@ button[title="Show password text"] {
     width: 100%;
     flex-direction: row;
 }
+
+/* Required after Streamlit upgrade to 1.53.0 */
+.stVerticalBlock > div.stElementContainer:has(> div.stHtml > i.flex-row) {
+    display: none;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-row) > div.stElementContainer:nth-child(2) {
+    width: auto;
+}
+/* ... */
+
+
 
 div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
 div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
@@ -501,11 +517,15 @@ div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
 /*  */
 
 /* Export Menu */
-.st-key-tg--export-popover [data-testid="stPopoverButton"] > div:last-child {
+/* .st-key-tg--export-popover [data-testid="stPopoverButton"] > div:last-child {
     display: none;
-}
+} */
 
 .st-key-tg--export-popover [data-testid="stPopover"] {
+    width: auto;
+}
+
+[data-testid="stLayoutWrapper"]:has(> .st-key-tg--export-popover > .stElementContainer > .stHtml > .flex-row) {
     width: auto;
 }
 
@@ -519,11 +539,19 @@ div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--expor
     gap: 0;
 }
 
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) > .stElementContainer {
+    width: 100%;
+}
+
 div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) button {
     width: 100%;
     padding: 4px 16px;
     justify-content: flex-start;
     border-radius: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"] button > div {
+    justify-content: flex-start;
 }
 
 div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"]:nth-child(2) button {

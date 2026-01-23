@@ -32,7 +32,7 @@ def paginator(
         if on_change:
             on_change()
 
-    if page_index is None:
+    if page_index is None and bind_to_query is not None:
         bound_value = st.query_params.get(bind_to_query, "")
         page_index = int(bound_value) if bound_value.isdigit() else 0
         page_index = page_index if page_index < math.ceil(count / page_size) else 0
