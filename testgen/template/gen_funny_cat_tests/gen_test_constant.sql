@@ -1,107 +1,117 @@
--- Then insert new tests where a locked test is not already present
+WITH latest_run AS (
+  -- Latest complete profiling run before as-of-date
+  SELECT MAX(run_date) AS last_run_date
+    FROM profile_results
+  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND run_date::DATE <= :AS_OF_DATE ::DATE
+),
+latest_results AS (
+  -- Column results for latest run
+  SELECT p.*
+  FROM profile_results p
+  INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+),
+all_runs AS (
+  SELECT DISTINCT table_groups_id, run_date,
+    DENSE_RANK() OVER (PARTITION BY table_groups_id ORDER BY run_date DESC) AS run_rank
+  FROM profile_results
+  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND run_date::DATE <= :AS_OF_DATE ::DATE
+),
+recent_runs AS (
+  SELECT table_groups_id, run_date, run_rank
+  FROM all_runs
+  WHERE run_rank <= 5
+),
+selected_columns AS (
+  -- Select columns based on recent profiling results
+  SELECT p.schema_name, p.table_name, p.column_name,
+    SUM(CASE WHEN p.distinct_value_ct = 1 THEN 0 ELSE 1 END) AS always_one_val,
+    COUNT(
+      DISTINCT CASE
+        WHEN p.general_type = 'A' THEN p.min_text
+        WHEN p.general_type = 'N' THEN p.min_value::VARCHAR
+        WHEN p.general_type IN ('D','T') THEN p.min_date::VARCHAR
+        WHEN p.general_type = 'B' AND p.boolean_true_ct = p.value_ct THEN 'TRUE'
+        WHEN p.general_type = 'B' AND p.boolean_true_ct = 0 AND p.distinct_value_ct = 1 THEN 'FALSE'
+      END
+    ) AS agg_distinct_val_ct
+  FROM recent_runs rr
+  INNER JOIN profile_results p ON (
+    rr.table_groups_id = p.table_groups_id
+    AND rr.run_date = p.run_date
+  )
+  WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    -- No dates as constants
+    AND NOT (p.general_type = 'D' AND rr.run_rank = 1)
+  GROUP BY p.schema_name, p.table_name, p.column_name
+  HAVING SUM(CASE WHEN p.distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
+    AND SUM(CASE WHEN p.max_length < 100 THEN 0 ELSE 1 END) = 0
+    AND COUNT(
+      DISTINCT CASE
+        WHEN p.general_type = 'A' THEN p.min_text
+        WHEN p.general_type = 'N' THEN p.min_value::VARCHAR
+        WHEN p.general_type IN ('D','T') THEN p.min_date::VARCHAR
+        WHEN p.general_type = 'B' AND p.boolean_true_ct = p.value_ct THEN 'TRUE'
+        WHEN p.general_type = 'B' AND p.boolean_true_ct = 0 AND p.distinct_value_ct = 1 THEN 'FALSE'
+      END
+    ) = 1
+    -- Only constant if more than one profiling result
+    AND COUNT(*) > 1
+)
+INSERT INTO test_definitions (
+  table_groups_id, test_suite_id, test_type,
+  schema_name, table_name, column_name,
+  test_active, last_auto_gen_date, profiling_as_of_date, profile_run_id,
+  baseline_value, threshold_value, skip_errors
+)
+SELECT 
+  :TABLE_GROUPS_ID ::UUID AS table_groups_id,
+  :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  'Constant'              AS test_type,
+  r.schema_name,
+  r.table_name,
+  r.column_name,
+  'Y'                     AS test_active, 
+  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date, 
+  :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date,
+  r.profile_run_id,
+  CASE WHEN r.general_type = 'A' THEN fn_quote_literal_escape(r.min_text, :SQL_FLAVOR)::VARCHAR
+    WHEN r.general_type = 'D' THEN fn_quote_literal_escape(r.min_date::VARCHAR, :SQL_FLAVOR)::VARCHAR
+    WHEN r.general_type = 'N' THEN r.min_value::VARCHAR
+    WHEN r.general_type = 'B' AND r.boolean_true_ct = 0 THEN 'FALSE'::VARCHAR
+    WHEN r.general_type = 'B' AND r.boolean_true_ct > 0 THEN 'TRUE'::VARCHAR
+    ELSE ''
+  END AS baseline_value,
+  '0' AS threshold_value,
+  0   AS skip_errors
+FROM latest_results r
+-- Only insert tests for selected columns
+INNER JOIN selected_columns c ON (
+  r.schema_name = c.schema_name
+  AND r.table_name = c.table_name
+  AND r.column_name = c.column_name
+)
+  -- Only insert if test type is active
+WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Constant' AND active = 'Y')
+  -- Only insert if test type is included in generation set
+  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Constant' AND generation_set = :GENERATION_SET)
 
-INSERT INTO test_definitions (table_groups_id, profile_run_id,
-                              test_type, test_suite_id,
-                              schema_name, table_name, column_name, skip_errors,
-                              last_auto_gen_date, test_active,
-                              baseline_value, threshold_value, profiling_as_of_date)
-WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
-                    FROM profile_results p
-                  INNER JOIN profiling_runs r
-                     ON (p.profile_run_id = r.id)
-                    INNER JOIN test_suites ts
-                       ON p.project_code = ts.project_code
-                      AND p.connection_id = ts.connection_id
-                   WHERE p.project_code = :PROJECT_CODE
-                     AND r.table_groups_id = :TABLE_GROUPS_ID
-                     AND ts.id = :TEST_SUITE_ID
-                     AND p.run_date::DATE <= :AS_OF_DATE
-                  GROUP BY r.table_groups_id),
-     curprof AS (SELECT p.*
-                   FROM last_run lr
-                 INNER JOIN profile_results p
-                    ON (lr.table_groups_id = p.table_groups_id
-                    AND lr.last_run_date = p.run_date) ),
-     locked AS (SELECT schema_name, table_name, column_name, test_type
-                  FROM test_definitions
-				     WHERE table_groups_id = :TABLE_GROUPS_ID
-                   AND test_suite_id = :TEST_SUITE_ID
-                   AND lock_refresh = 'Y'),
-     all_runs AS ( SELECT DISTINCT p.table_groups_id, p.schema_name, p.run_date,
-                          DENSE_RANK() OVER (PARTITION BY p.table_groups_id ORDER BY p.run_date DESC) as run_rank
-                     FROM profile_results p
-                   INNER JOIN test_suites ts
-                      ON p.connection_id = ts.connection_id
-                     AND p.project_code = ts.project_code
-                   WHERE p.table_groups_id = :TABLE_GROUPS_ID
-                     AND ts.id = :TEST_SUITE_ID
-                     AND p.run_date::DATE <= :AS_OF_DATE),
-     recent_runs AS (SELECT table_groups_id, schema_name, run_date, run_rank
-                       FROM all_runs
-                      WHERE run_rank <= 5),
-     rightcols as (SELECT p.schema_name, p.table_name, p.column_name,
-                          SUM(CASE WHEN distinct_value_ct = 1 THEN 0 ELSE 1 END) as always_one_val,
-                          COUNT(DISTINCT CASE
-                                           WHEN p.general_type = 'A' THEN min_text
-                                           WHEN p.general_type = 'N' THEN min_value::VARCHAR
-                                           WHEN p.general_type IN ('D','T') THEN min_date::VARCHAR
-                                           WHEN p.general_type = 'B'
-                                            AND boolean_true_ct = value_ct  THEN 'TRUE'
-                                           WHEN p.general_type = 'B'
-                                            AND p.boolean_true_ct = 0
-                                            AND p.distinct_value_ct = 1     THEN 'FALSE'
-                                         END ) as agg_distinct_val_ct
-                    FROM recent_runs rr
-                  INNER JOIN profile_results p
-                     ON (rr.table_groups_id = p.table_groups_id
-                    AND  rr.run_date = p.run_date)
-                    -- No Dates as constants
-                  WHERE NOT (p.general_type = 'D' AND rr.run_rank = 1)
-                  GROUP BY p.schema_name, p.table_name, p.column_name
-                  HAVING SUM(CASE WHEN distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
-                     AND SUM(CASE WHEN max_length < 100 THEN 0 ELSE 1 END) = 0
-                     AND COUNT(DISTINCT CASE
-                                           WHEN p.general_type = 'A' THEN min_text
-                                           WHEN p.general_type = 'N' THEN min_value::VARCHAR
-                                           WHEN p.general_type IN ('D','T') THEN min_date::VARCHAR
-                                           WHEN p.general_type = 'B'
-                                            AND boolean_true_ct = value_ct  THEN 'TRUE'
-                                           WHEN p.general_type = 'B'
-                                            AND p.boolean_true_ct = 0
-                                            AND p.distinct_value_ct = 1     THEN 'FALSE'
-                                         END ) = 1
-                     -- Only constant if more than one profiling result
-                     AND COUNT(*) > 1),
-newtests AS ( SELECT 'Constant'::VARCHAR AS test_type,
-                     :TEST_SUITE_ID ::UUID AS test_suite_id,
-                     c.profile_run_id,
-                     c.schema_name, c.table_name, c.column_name,
-                     c.run_date AS last_run_date,
-                   case when general_type='A' then fn_quote_literal_escape(min_text, :SQL_FLAVOR)::VARCHAR
-                        when general_type='D' then fn_quote_literal_escape(min_date :: VARCHAR, :SQL_FLAVOR)::VARCHAR
-                        when general_type='N' then min_value::VARCHAR
-                        when general_type='B' and boolean_true_ct = 0 then 'FALSE'::VARCHAR
-                        when general_type='B' and boolean_true_ct > 0 then 'TRUE'::VARCHAR
-                   end as baseline_value
-                FROM curprof c
-               INNER JOIN rightcols r
-                  ON (c.schema_name = r.schema_name
-                     AND c.table_name = r.table_name
-                     AND c.column_name = r.column_name)
-               LEFT JOIN generation_sets s
-                  ON ('Constant' = s.test_type
-                 AND  :GENERATION_SET = s.generation_set)
-               WHERE (s.generation_set IS NOT NULL
-                  OR  :GENERATION_SET = '')  )
-SELECT :TABLE_GROUPS_ID as table_groups_id, n.profile_run_id,
-       n.test_type, n.test_suite_id, n.schema_name, n.table_name, n.column_name,
-       0 as skip_errors, :RUN_DATE ::TIMESTAMP as auto_gen_date,
-       'Y' as test_active, COALESCE(baseline_value, '') as baseline_value,
-       '0' as threshold_value, :AS_OF_DATE ::TIMESTAMP
-  FROM newtests n
-LEFT JOIN locked l
-  ON (n.schema_name = l.schema_name
- AND  n.table_name = l.table_name
- AND  n.column_name = l.column_name
- AND  n.test_type = l.test_type)
- WHERE l.test_type IS NULL;
+-- Match "uix_td_autogen_column" unique index exactly
+ON CONFLICT (test_suite_id, test_type, schema_name, table_name, column_name)
+WHERE last_auto_gen_date IS NOT NULL 
+  AND table_name IS NOT NULL 
+  AND column_name IS NOT NULL
+
+-- Update tests if they already exist
+DO UPDATE SET
+  test_active          = EXCLUDED.test_active,
+  last_auto_gen_date   = EXCLUDED.last_auto_gen_date,
+  profiling_as_of_date = EXCLUDED.profiling_as_of_date,
+  profile_run_id       = EXCLUDED.profile_run_id,
+  baseline_value       = EXCLUDED.baseline_value,
+  threshold_value      = EXCLUDED.threshold_value,
+  skip_errors          = EXCLUDED.skip_errors
+-- Ignore locked tests
+WHERE test_definitions.lock_refresh = 'N';

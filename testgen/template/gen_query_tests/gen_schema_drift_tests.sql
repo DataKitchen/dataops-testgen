@@ -1,50 +1,30 @@
-INSERT INTO test_definitions (table_groups_id, profile_run_id, test_type, test_suite_id,
-                              schema_name,
-                              skip_errors, test_active, last_auto_gen_date, profiling_as_of_date)
-WITH last_run AS (SELECT r.table_groups_id, MAX(run_date) AS last_run_date
-                    FROM profile_results p
-                  INNER JOIN profiling_runs r
-                     ON (p.profile_run_id = r.id)
-                    INNER JOIN test_suites ts
-                       ON p.project_code = ts.project_code
-                      AND p.connection_id = ts.connection_id
-                   WHERE p.project_code = :PROJECT_CODE
-                     AND r.table_groups_id = :TABLE_GROUPS_ID ::UUID
-                     AND ts.id = :TEST_SUITE_ID 
-                     AND p.run_date::DATE <= :AS_OF_DATE
-                  GROUP BY r.table_groups_id),
-    curprof AS (SELECT p.schema_name, p.profile_run_id
-                   FROM last_run lr
-                 INNER JOIN profile_results p
-                    ON (lr.table_groups_id = p.table_groups_id
-                    AND lr.last_run_date = p.run_date)
-                 GROUP BY p.schema_name, p.profile_run_id),
-     locked AS (SELECT schema_name
-                  FROM test_definitions
-				     WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-                   AND test_suite_id = :TEST_SUITE_ID
-				       AND test_type = 'Schema_Drift'
-                   AND lock_refresh = 'Y'),
-     newtests AS (SELECT *
-                  FROM curprof lr
-                  INNER JOIN test_types t
-                     ON ('Schema_Drift' = t.test_type
-                    AND   'Y' = t.active)
-                  LEFT JOIN generation_sets s
-                     ON (t.test_type = s.test_type
-                    AND  :GENERATION_SET = s.generation_set)
-                  WHERE lr.schema_name = :DATA_SCHEMA
-                    AND (s.generation_set IS NOT NULL
-                     OR  :GENERATION_SET = '') )
-SELECT :TABLE_GROUPS_ID ::UUID AS table_groups_id,
-       n.profile_run_id,
-       'Schema_Drift' AS test_type,
-       :TEST_SUITE_ID AS test_suite_id,
-       n.schema_name,
-       0 AS skip_errors, 'Y' AS test_active,
-       :RUN_DATE ::TIMESTAMP AS last_auto_gen_date,
-       :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date
-FROM newtests n
-LEFT JOIN locked l
-  ON (n.schema_name = l.schema_name)
-WHERE l.schema_name IS NULL;
+-- Insert test for current schema
+INSERT INTO test_definitions (
+  table_groups_id, test_suite_id, test_type,
+  schema_name,
+  test_active, last_auto_gen_date
+)
+SELECT
+  :TABLE_GROUPS_ID ::UUID AS table_groups_id,
+  :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  'Schema_Drift'          AS test_type,
+  :DATA_SCHEMA            AS schema_name,
+  'Y'                     AS test_active,
+  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date
+  -- Only insert if test type is active
+WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Schema_Drift' AND active = 'Y')
+  -- Only insert if test type is included in generation set
+  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Schema_Drift' AND generation_set = :GENERATION_SET)
+
+-- Match "uix_td_autogen_schema" unique index exactly
+ON CONFLICT (test_suite_id, test_type, schema_name) 
+WHERE last_auto_gen_date IS NOT NULL 
+  AND table_name IS NULL 
+  AND column_name IS NULL
+
+-- Update test if it already exists
+DO UPDATE SET
+  test_active         = EXCLUDED.test_active,
+  last_auto_gen_date  = EXCLUDED.last_auto_gen_date
+-- Ignore locked tests
+WHERE test_definitions.lock_refresh = 'N';

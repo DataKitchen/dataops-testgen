@@ -13,6 +13,7 @@ UPDATE test_results
   FROM test_results r
 INNER JOIN data_table_chars tc
   ON (r.table_groups_id = tc.table_groups_id
+ AND r.schema_name = tc.schema_name
  AND r.table_name ILIKE tc.table_name)
  WHERE r.test_run_id = '{RUN_ID}'::UUID
    AND test_results.id = r.id;
@@ -50,6 +51,7 @@ WITH result_calc
              AND r.column_names = p.column_name)
           LEFT JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
+             AND r.schema_name = tc.schema_name
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
@@ -79,6 +81,7 @@ WITH result_calc
                 ON r.test_type = tt.test_type
           INNER JOIN data_table_chars tc
                 ON (r.table_groups_id = tc.table_groups_id
+             AND r.schema_name = tc.schema_name
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0

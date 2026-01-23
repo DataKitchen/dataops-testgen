@@ -913,7 +913,10 @@ def copy_move_test_dialog(
         )
 
     with suite_filter_column:
-        test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id == target_table_group_id)
+        test_suites = TestSuite.select_minimal_where(
+            TestSuite.table_groups_id == target_table_group_id,
+            TestSuite.is_monitor.isnot(True),
+        )
         test_suites_df = to_dataframe(test_suites, TestSuiteMinimal.columns())
         target_test_suite_id = testgen.select(
             options=test_suites_df,

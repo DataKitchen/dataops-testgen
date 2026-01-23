@@ -714,11 +714,6 @@ CREATE UNIQUE INDEX idx_tg_last_profile
   ON table_groups (last_complete_profile_run_id)
   WHERE last_complete_profile_run_id IS NOT NULL;
 
--- Index Profile Results - ORIGINAL -- still relevant?
-CREATE INDEX profile_results_tgid_sn_tn_cn
-    ON profile_results (table_groups_id, schema_name, table_name, column_name);
-
-
 -- Index test_suites
 CREATE UNIQUE INDEX uix_ts_id
    ON test_suites(id);
@@ -745,6 +740,24 @@ CREATE INDEX ix_td_tg
 
 CREATE INDEX ix_td_ts_tc
    ON test_definitions(test_suite_id, table_name, column_name, test_type);
+
+CREATE UNIQUE INDEX uix_td_autogen_schema
+   ON test_definitions (test_suite_id, test_type, schema_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NULL 
+      AND column_name IS NULL;
+
+CREATE UNIQUE INDEX uix_td_autogen_table
+   ON test_definitions (test_suite_id, test_type, schema_name, table_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NOT NULL 
+      AND column_name IS NULL;
+
+CREATE UNIQUE INDEX uix_td_autogen_column
+   ON test_definitions (test_suite_id, test_type, schema_name, table_name, column_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NOT NULL 
+      AND column_name IS NOT NULL;
 
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk
@@ -803,6 +816,12 @@ CREATE INDEX ix_pr_prun
 CREATE INDEX ix_pr_pc_con
    ON profile_results(project_code, connection_id);
 
+CREATE INDEX ix_pr_tg_s_t_c
+   ON profile_results (table_groups_id, schema_name, table_name, column_name);
+
+CREATE INDEX ix_pr_tg_rd
+   ON profile_results (table_groups_id, run_date);
+
 CREATE UNIQUE INDEX uix_pr_tg_t_c_prun
    ON profile_results(table_groups_id, table_name, column_name, profile_run_id);
 
@@ -820,12 +839,21 @@ CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
 -- Index data_table_chars
-CREATE INDEX idx_dtc_tgid_table
-  ON data_table_chars (table_groups_id, table_name);
+CREATE INDEX idx_dtc_tg_schema_table
+  ON data_table_chars (table_groups_id, schema_name, table_name);
+
+CREATE INDEX idx_dtc_id
+  ON data_table_chars (table_id);
 
 -- Index data_column_chars
-CREATE INDEX idx_dcc_tg_table_column
-  ON data_column_chars (table_groups_id, table_name, column_name);
+CREATE INDEX idx_dcc_tg_schema_table_column
+  ON data_column_chars (table_groups_id, schema_name, table_name, column_name);
+
+CREATE INDEX idx_dcc_tableid_column
+  ON data_column_chars (table_id, column_name);
+
+CREATE INDEX idx_dcc_id
+  ON data_column_chars (column_id);
 
 -- Conditional Index for dq_scoring views
 CREATE INDEX idx_test_results_filter_join

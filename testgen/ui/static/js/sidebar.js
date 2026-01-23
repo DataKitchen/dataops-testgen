@@ -225,12 +225,12 @@ stylesheet.replace(`
     flex-direction: column;
     justify-content: space-between;
     height: calc(100% - 68px);
-    font-size: 16px;
+    font-size: 15px;
 }
 
 .menu .menu--project {
     padding: 0 20px;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 .project-select--label {
@@ -293,7 +293,7 @@ stylesheet.replace(`
 }
 
 .menu .menu--item {
-    height: 40px;
+    height: 36px;
     display: flex;
     align-items: center;
     padding: 0 16px;

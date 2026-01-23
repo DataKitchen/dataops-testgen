@@ -105,6 +105,7 @@ class TestExecutionSQL:
     def _get_params(self, test_def: TestExecutionDef | None = None) -> dict:
         quote = self.flavor_service.quote_character
         params = {
+            "TABLE_GROUPS_ID": self.table_group.id,
             "TEST_SUITE_ID": self.test_run.test_suite_id,
             "TEST_RUN_ID": self.test_run.id,
             "RUN_DATE": to_sql_timestamp(self.run_date),
@@ -119,7 +120,6 @@ class TestExecutionSQL:
                 "TEST_DEFINITION_ID": test_def.id,
                 "APP_SCHEMA_NAME": get_tg_schema(),
                 "SCHEMA_NAME": test_def.schema_name,
-                "TABLE_GROUPS_ID": self.table_group.id,
                 "TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
@@ -174,6 +174,10 @@ class TestExecutionSQL:
             query = query.replace(":", "\\:")
 
         return query, None if no_bind else params
+    
+    def has_schema_changes(self) -> tuple[dict]:
+        # Runs on App database
+        return self._get_query("has_schema_changes.sql")
 
     def get_active_test_definitions(self) -> tuple[dict]:
         # Runs on App database

@@ -2,7 +2,7 @@ import time
 
 import streamlit as st
 
-from testgen.commands.run_generate_tests import run_test_gen_queries
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
@@ -14,7 +14,6 @@ from testgen.ui.services.database_service import execute_db_query, fetch_all_fro
 def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
     test_suite_id = test_suite.id
     test_suite_name = test_suite.test_suite
-    table_group_id = test_suite.table_groups_id
 
     selected_set = ""
     generation_sets = get_generation_set_choices()
@@ -53,7 +52,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}' --generation-set '{selected_set}'",
+            f"testgen run-test-generation --test-suite-id {test_suite_id} --generation-set '{selected_set}'",
             language="shellSession",
         )
 
@@ -71,7 +70,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
         status_container.info("Generating tests ...")
 
         try:
-            run_test_gen_queries(table_group_id, test_suite_name, selected_set)
+            run_test_generation(test_suite_id, selected_set)
         except Exception as e:
             status_container.error(f"Test generation encountered errors: {e!s}.")
 

@@ -10,7 +10,6 @@ import click
 from click.core import Context
 
 from testgen import settings
-from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_get_entities import (
     run_get_results,
     run_get_test_suite,
@@ -33,6 +32,7 @@ from testgen.commands.run_quick_start import run_quick_start, run_quick_start_in
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
+from testgen.commands.test_generation import run_test_generation
 from testgen.common import (
     configure_logging,
     display_service,
@@ -134,17 +134,24 @@ def run_profile(table_group_id: str):
 
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
 @click.option(
+    "-t",
+    "--test-suite-id",
+    required=False,
+    type=click.STRING,
+    help="ID of the test suite to generate. Use a test_suite_id shown in list-test-suites.",
+)
+@click.option(
     "-tg",
     "--table-group-id",
     help="The identifier for the table group used during a profile run. Use a table_group_id shown in list-table-groups.",
-    required=True,
+    required=False,
     type=click.STRING,
 )
 @click.option(
     "-ts",
     "--test-suite-key",
     help="The identifier for a test suite. Use a test_suite_key shown in list-test-suites.",
-    required=True,
+    required=False,
     type=click.STRING,
 )
 @click.option(
@@ -154,11 +161,18 @@ def run_profile(table_group_id: str):
     required=False,
     default="Standard",
 )
-@pass_configuration
-def run_test_generation(configuration: Configuration, table_group_id: str, test_suite_key: str, generation_set: str):
-    LOG.info("CurrentStep: Generate Tests - Main Procedure")
-    message = run_test_gen_queries(table_group_id, test_suite_key, generation_set)
-    LOG.info("Current Step: Generate Tests - Main Procedure Complete")
+@with_database_session
+def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None):
+    click.echo(f"run-test-generation for suite: {test_suite_id or test_suite_key}")
+    # For backward compatibility
+    if not test_suite_id:
+        test_suites = TestSuite.select_minimal_where(
+            TestSuite.table_groups_id == table_group_id,
+            TestSuite.test_suite == test_suite_key,
+        )
+        if test_suites:
+            test_suite_id = test_suites[0].id
+    message = run_test_generation(test_suite_id, generation_set)
     click.echo("\n" + message)
 
 
@@ -408,8 +422,8 @@ def quick_start(
     message = run_profiling(table_group_id, run_date=now_date + time_delta)
     click.echo("\n" + message)
 
-    LOG.info(f"run-test-generation with table_group_id: {table_group_id} test_suite: {settings.DEFAULT_TEST_SUITE_KEY}")
-    message = run_test_gen_queries(table_group_id, settings.DEFAULT_TEST_SUITE_KEY)
+    LOG.info(f"run-test-generation with test_suite_id: {test_suite_id}")
+    message = with_database_session(run_test_generation)(test_suite_id, "Standard")
     click.echo("\n" + message)
 
     run_test_execution(test_suite_id, run_date=now_date + time_delta)

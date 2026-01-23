@@ -57,11 +57,7 @@ def get_test_results(
             p.project_code, r.table_groups_id::VARCHAR,
             r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
             c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
-            r.test_definition_id::VARCHAR as test_definition_id_runtime,
-            CASE
-                WHEN r.auto_gen = TRUE THEN d.id
-                                    ELSE r.test_definition_id
-            END::VARCHAR as test_definition_id_current,
+            r.test_definition_id::VARCHAR,
             r.auto_gen,
 
             -- These are used in the PDF report
@@ -80,13 +76,6 @@ def get_test_results(
         FROM run_results r
     INNER JOIN test_types tt
         ON (r.test_type = tt.test_type)
-    LEFT JOIN test_definitions d
-        ON (r.test_suite_id = d.test_suite_id
-        AND  r.table_name = d.table_name
-        AND  COALESCE(r.column_names, 'N/A') = COALESCE(d.column_name, 'N/A')
-        AND  r.test_type = d.test_type
-        AND  r.auto_gen = TRUE
-        AND  d.last_auto_gen_date IS NOT NULL)
     INNER JOIN test_suites ts
         ON r.test_suite_id = ts.id
     INNER JOIN projects p
@@ -126,36 +115,31 @@ def get_test_results(
 @st.cache_data(show_spinner=False)
 def get_test_result_history(tr_data, limit: int | None = None):
     query = f"""
-    SELECT test_date,
-        test_type,
-        test_name_short,
-        test_name_long,
-        measure_uom,
-        test_operator,
-        threshold_value::NUMERIC,
-        result_measure::NUMERIC,
-        result_status,
-        result_visualization,
-        result_visualization_params
-    FROM v_test_results
-    WHERE {f"""
-        test_suite_id = :test_suite_id
-        AND table_name = :table_name
-        AND column_names {"= :column_names" if tr_data["column_names"] else "IS NULL"}
-        AND test_type = :test_type
-        AND auto_gen = TRUE
-    """ if tr_data["auto_gen"] else """
-        test_definition_id_runtime = :test_definition_id_runtime
-    """}
-    ORDER BY test_date DESC
+    SELECT r.test_time AS test_date,
+        r.test_type,
+        tt.test_name_short,
+        tt.test_name_long,
+        tt.measure_uom,
+        c.test_operator,
+        r.threshold_value::NUMERIC(16, 5),
+        r.result_measure::NUMERIC(16, 5),
+        r.result_status,
+        tt.result_visualization,
+        tt.result_visualization_params
+    FROM test_results r
+        INNER JOIN test_types tt ON (r.test_type = tt.test_type)
+        INNER JOIN table_groups tg ON (r.table_groups_id = tg.id)
+        INNER JOIN connections cn ON (tg.connection_id = cn.connection_id)
+        LEFT JOIN cat_test_conditions c ON (
+            cn.sql_flavor = c.sql_flavor
+            AND r.test_type = c.test_type
+        )
+    WHERE r.test_definition_id = :test_definition_id
+    ORDER BY r.test_time DESC
     {'LIMIT ' + str(limit) if limit else ''};
     """
     params = {
-        "test_suite_id": tr_data["test_suite_id"],
-        "table_name": tr_data["table_name"],
-        "column_names": tr_data["column_names"],
-        "test_type": tr_data["test_type"],
-        "test_definition_id_runtime": tr_data["test_definition_id_runtime"],
+        "test_definition_id": tr_data["test_definition_id"],
     }
 
     df = fetch_df_from_db(query, params)

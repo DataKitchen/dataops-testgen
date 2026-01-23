@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 
+from testgen.commands.test_generation import run_test_generation
 from testgen.ui.queries import table_group_queries
 
 try:
@@ -437,6 +438,7 @@ class ConnectionsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        run_test_generation(monitor_test_suite.id, "Monitor")
 
                         JobSchedule(
                             project_code=project_code,
