@@ -85,29 +85,7 @@ const SchemaChangesChart = (options, ...events) => {
                 fill: colorMap.lightGrey,
             }));
         } else {
-            // TODO: handle small numbers for additions and deletions
-            if (e.additions > 0) {
-                parts.push(line({
-                    x1: xPosition,
-                    y1: yPosition,
-                    x2: xPosition,
-                    y2: scale(e.additions, {old: {min: 0, max: maxAdditions}, new: {min: yPosition, max: 0 }}),
-                    'stroke-width': _options.lineWidth,
-                    'stroke': _options.lineColor,
-                }));
-            }
-
-            if (e.deletions > 0) {
-                parts.push(line({
-                    x1: xPosition,
-                    y1: yPosition,
-                    x2: xPosition,
-                    y2: scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition),
-                    'stroke-width': _options.lineWidth,
-                    'stroke': _options.lineColor,
-                }));
-            }
-            
+            // const modificationsY = yPosition - (_options.modsMarkerSize / 2);
             if (e.modifications > 0) {
                 parts.push(
                     rect({
@@ -120,6 +98,40 @@ const SchemaChangesChart = (options, ...events) => {
                         transform: 'rotate(45)',
                     })
                 );
+            }
+
+            if (e.additions > 0) {
+                let offset = 0;
+                const additionsY = scale(e.additions, {old: {min: 0, max: maxAdditions}, new: {min: yPosition, max: 0 }});
+                if (e.modifications > 0 && Math.abs(additionsY - yPosition) <= (_options.modsMarkerSize / 2)) {
+                    offset = _options.modsMarkerSize / 2;
+                }
+
+                parts.push(line({
+                    x1: xPosition,
+                    y1: yPosition - offset,
+                    x2: xPosition,
+                    y2: additionsY - offset,
+                    'stroke-width': _options.lineWidth,
+                    'stroke': _options.lineColor,
+                }));
+            }
+
+            if (e.deletions > 0) {
+                let offset = 0;
+                const deletionsY = scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition);
+                if (e.modifications > 0 && Math.abs(deletionsY - yPosition) <= (_options.modsMarkerSize / 2)) {
+                    offset = _options.modsMarkerSize / 2;
+                }
+
+                parts.push(line({
+                    x1: xPosition,
+                    y1: yPosition + offset,
+                    x2: xPosition,
+                    y2: scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition) + offset,
+                    'stroke-width': _options.lineWidth,
+                    'stroke': _options.lineColor,
+                }));
             }
         }
 

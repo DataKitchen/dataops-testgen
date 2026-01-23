@@ -29,7 +29,7 @@
  */
 import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
 import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/components/freshness_chart.js';
 import { colorMap } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
@@ -62,6 +62,7 @@ const timeTickFormatter = new Intl.DateTimeFormat('en-US', {
  * @param {Properties} props
  */
 const TableMonitoringTrend = (props) => {
+  window.testgen.isPage = true;
   loadStylesheet('table-monitoring-trends', stylesheet);
 
   const domId = 'monitoring-trends-container';
