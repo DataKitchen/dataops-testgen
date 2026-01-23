@@ -309,16 +309,17 @@ def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGrou
         LOG.exception("Error rolling up profiling scores")
 
 
+@with_database_session
 def _generate_tests(table_group: TableGroup) -> None:
-    if not table_group.last_complete_profile_run_id:
-        if bool(table_group.monitor_test_suite_id):
-            try:
-                run_test_generation(table_group.monitor_test_suite_id, "Monitor")
-            except Exception:
-                LOG.exception("Error generating monitor tests")
+    # Freshness_Trend depends on profiling results, so regenerate after each profiling run
+    if bool(table_group.monitor_test_suite_id):
+        try:
+            run_test_generation(table_group.monitor_test_suite_id, "Monitor", test_types=["Freshness_Trend"])
+        except Exception:
+            LOG.exception("Error generating Freshness_Trend monitor tests")
 
-        if bool(table_group.default_test_suite_id):
-            try:
-                run_test_generation(table_group.default_test_suite_id, "Standard")
-            except Exception:
-                LOG.exception(f"Error generating standard tests for test suite: {table_group.default_test_suite_id}")
+    if not table_group.last_complete_profile_run_id and bool(table_group.default_test_suite_id):
+        try:
+            run_test_generation(table_group.default_test_suite_id, "Standard")
+        except Exception:
+            LOG.exception(f"Error generating standard tests for test suite: {table_group.default_test_suite_id}")

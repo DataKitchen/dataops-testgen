@@ -300,7 +300,7 @@ def _monitor_changes_by_tables_query(
             ranked_test_runs.lookback,
             ranked_test_runs.position,
             ranked_test_runs.test_starttime,
-            CASE WHEN results.test_type = 'Table_Freshness' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
+            CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
             CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
             CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
             CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
@@ -324,7 +324,7 @@ def _monitor_changes_by_tables_query(
             SUM(freshness_anomaly) AS freshness_anomalies,
             SUM(volume_anomaly) AS volume_anomalies,
             SUM(schema_anomaly) AS schema_anomalies,
-            MAX(test_time) FILTER (WHERE test_type = 'Table_Freshness' AND result_code = 0) AS latest_update,
+            MAX(test_time) FILTER (WHERE test_type = 'Freshness_Trend' AND result_code = 0) AS latest_update,
             MAX(row_count) FILTER (WHERE position = 1) AS row_count,
             SUM(col_adds) AS column_adds,
             SUM(col_drops) AS column_drops,
@@ -456,7 +456,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_test_generation(monitor_suite.id, "Monitor")
+                run_test_generation(monitor_suite.id, "Monitor", test_types=["Volume_Trend", "Schema_Drift"])
 
             st.rerun()
 
@@ -634,7 +634,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         WHERE position <= lookback
     ),
     target_tests AS (
-        SELECT 'Table_Freshness' AS test_type
+        SELECT 'Freshness_Trend' AS test_type
         UNION ALL SELECT 'Volume_Trend'
         UNION ALL SELECT 'Schema_Drift'
     )
@@ -666,7 +666,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     return {
         "freshness_events": [
             {"changed": event["result_code"] is not None and int(event["result_code"]) == 0, "expected": None, "status": event["result_status"], "time": event["test_time"]}
-            for event in results if event["test_type"] == "Table_Freshness"
+            for event in results if event["test_type"] == "Freshness_Trend"
         ],
         "volume_events": [
             {"record_count": int(event["result_signal"] or 0), "time": event["test_time"]}

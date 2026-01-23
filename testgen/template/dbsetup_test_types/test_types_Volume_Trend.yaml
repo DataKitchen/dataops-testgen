@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
+  generation_template: gen_Volume_Trend.sql
   dq_score_prevalence_formula: null
   dq_score_risk_factor: null
   column_name_prompt: null
@@ -19,7 +20,7 @@ test_types:
   default_parm_values: null
   default_parm_prompts: Lower Bound,Upper Bound,Result Lookback,Subset Condition,Query
   default_parm_help: null
-  default_severity: Warning
+  default_severity: Fail
   run_type: CAT
   test_scope: table
   dq_dimension: Completeness

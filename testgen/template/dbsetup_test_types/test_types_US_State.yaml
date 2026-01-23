@@ -12,6 +12,7 @@ test_types:
     Values that doo not match 2-character US state abbreviations.
   selection_criteria: |-
     general_type= 'A' AND column_name ILIKE '%state%' AND distinct_value_ct < 70 AND max_length = 2
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

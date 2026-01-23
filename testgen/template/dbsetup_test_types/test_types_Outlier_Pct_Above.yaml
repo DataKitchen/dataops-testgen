@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     functional_data_type = 'Measurement' AND distinct_value_ct > 30 AND NOT distinct_value_ct = max_value - min_value + 1 AND distinct_value_ct::FLOAT/value_ct::FLOAT > 0.1 AND stdev_value::FLOAT/avg_value::FLOAT > 0.01 AND column_name NOT ILIKE '%latitude%' AND column_name NOT ilike '%longitude%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     GREATEST(0, {RESULT_MEASURE}::FLOAT-{THRESHOLD_VALUE}::FLOAT)
   dq_score_risk_factor: '0.75'

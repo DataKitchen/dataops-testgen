@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type ='A' AND max_length > 0 AND ( (min_length = avg_length AND max_length = avg_length) OR (numeric_ct <> value_ct ) ) AND functional_table_type NOT LIKE  '%window%' /*  The conditions below are to eliminate overlap with : LOV_Match (excluded selection criteria for this test_type),  Pattern_Match (excluded selection criteria for this test_type), Constant (excluded functional_data_type Constant and Boolean) */ AND ( (distinct_value_ct NOT BETWEEN 2 AND 10  AND functional_data_type NOT IN ( 'Constant', 'Boolean') ) AND NOT ( fn_charcount(top_patterns, E' \| ' ) = 1   AND fn_charcount(top_patterns, E' \| ' ) IS NOT NULL AND REPLACE(SPLIT_PART(top_patterns, '|' , 2), 'N' , '' ) > ''))
+  generation_template: null
   dq_score_prevalence_formula: |-
     {VALUE_CT}::FLOAT * (FN_NORMAL_CDF(({MAX_LENGTH}::FLOAT - {AVG_LENGTH}::FLOAT) / (NULLIF({MAX_LENGTH}::FLOAT, 0) / 3)) - FN_NORMAL_CDF(({RESULT_MEASURE}::FLOAT - {AVG_LENGTH}::FLOAT) / (NULLIF({MAX_LENGTH}::FLOAT, 0) / 3)) ) /NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

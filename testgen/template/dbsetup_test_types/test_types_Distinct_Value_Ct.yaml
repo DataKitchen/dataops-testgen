@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     distinct_value_ct between 2 and 10 AND value_ct > 50 AND functional_data_type IN ('Code', 'Category', 'Attribute', 'Description') AND NOT coalesce(top_freq_values,'') > ''
+  generation_template: gen_Distinct_Value_Ct.sql
   dq_score_prevalence_formula: |-
     ABS({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DISTINCT_VALUE_CT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

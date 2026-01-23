@@ -10,6 +10,7 @@ test_types:
   measure_uom: Row count
   measure_uom_description: null
   selection_criteria: null
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({THRESHOLD_VALUE}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

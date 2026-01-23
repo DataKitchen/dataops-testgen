@@ -12,6 +12,7 @@ test_types:
     Number of days that most recent date precedes the date of test
   selection_criteria: |-
     general_type= 'D' AND max_date <= run_date AND NOT column_name IN ( 'filedate' , 'file_date' ) AND NOT functional_data_type IN ('Future Date', 'Schedule Date') AND DATEDIFF( 'DAY' , max_date, run_date) <= 62
+  generation_template: null
   dq_score_prevalence_formula: |-
     (ABS({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/(1.0+DATEDIFF('DAY', '{MIN_DATE}', '{MAX_DATE}'))::FLOAT)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

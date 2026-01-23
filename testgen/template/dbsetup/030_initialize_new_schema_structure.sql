@@ -474,6 +474,7 @@ CREATE TABLE test_types (
    measure_uom                   VARCHAR(100),
    measure_uom_description       VARCHAR(200),
    selection_criteria            TEXT,
+   generation_template           VARCHAR(100),
    dq_score_prevalence_formula   TEXT,
    dq_score_risk_factor          TEXT,
    column_name_prompt            TEXT,

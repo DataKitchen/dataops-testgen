@@ -1,0 +1,377 @@
+test_types:
+  id: '1515'
+  test_type: Freshness_Trend
+  test_name_short: Freshness Trend
+  test_name_long: Table updated within expected time window
+  test_description: |-
+    Confirms whether table has been updated within expected time window
+  except_message: |-
+    Table has not been updated within expected time window.
+  measure_uom: Interval since last update
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  generation_template: gen_Freshness_Trend.sql
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: |-
+    null
+  column_name_help: |-
+    null
+  default_parm_columns: history_calculation,history_lookback,subset_condition,custom_query
+  default_parm_values: null
+  default_parm_prompts: |-
+    History Aggregate,History Lookback,Record Subset Condition,Fingerprint Expression
+  default_parm_help: |-
+    Aggregate calculation to be performed on the N lookback results|Last N tests to use for history aggregate calculation|Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: table
+  dq_dimension: Recency
+  health_dimension: Recency
+  threshold_description: |-
+    Expected time window
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Not updated on time","1":"Updated"}}}'
+  usage_notes: |-
+    This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated within the expectd time window. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2517'
+    test_type: Freshness_Trend
+    sql_flavor: bigquery
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE) AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2417'
+    test_type: Freshness_Trend
+    sql_flavor: databricks
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}') AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2217'
+    test_type: Freshness_Trend
+    sql_flavor: mssql
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2317'
+    test_type: Freshness_Trend
+    sql_flavor: postgresql
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2017'
+    test_type: Freshness_Trend
+    sql_flavor: redshift
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2517'
+    test_type: Freshness_Trend
+    sql_flavor: redshift_spectrum
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      ) test;
+  - id: '2117'
+    test_type: Freshness_Trend
+    sql_flavor: snowflake
+    template: |-
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_signal,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+        END AS result_message,
+        -- Calculated interval in minutes
+        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+      FROM (
+        SELECT {CUSTOM_QUERY} AS fingerprint
+        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      ) test;
