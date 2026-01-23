@@ -3,6 +3,7 @@ import importlib.metadata
 import inspect
 import json
 import os
+import shutil
 from collections.abc import Generator
 from pathlib import Path
 from typing import ClassVar
@@ -66,7 +67,19 @@ class ComponentSpec:
 
         target  = ui_plugins_components_directory / self.name
         try:
-            os.symlink(self.root, target)
+            if target.exists():
+                if target.is_symlink():
+                    target.unlink()
+                else:
+                    shutil.rmtree(target)
+
+            try:
+                if self.root.is_dir():
+                    shutil.copytree(self.root, target)
+                else:
+                    shutil.copy2(self.root, target)
+            except Exception:
+                os.symlink(self.root, target)
         except FileExistsError:
             ...
         except OSError as e:

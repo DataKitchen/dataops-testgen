@@ -37,6 +37,12 @@ body {
     --app-background-color: #f8f9fa;
 }
 
+.stBidiComponent {
+    font-size: 14px;
+    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
+    color: var(--primary-text-color);
+}
+
 img.dk-logo-img {
     margin: 0 0 30px 0;
     width: 100%;
@@ -78,6 +84,11 @@ img.dk-logo-img {
 }
 
 /* Sidebar */
+div[data-testid="stSidebarContent"] {
+    padding-left: unset;
+    padding-right: unset;
+}
+
 [data-testid="stSidebarContent"] [data-testid="stSidebarHeader"] {
     padding: 16px 20px 20px;
     margin-bottom: 0;
@@ -345,10 +356,13 @@ Use as testgen.text("text", "extra_styles") */
 }
 
 /* Help menu */
-.st-key-tg-header--help [data-testid="stPageLink"] {
+.st-key-tg-header--help {
+    position: relative;
+}
+
+.st-key-tg-header--help .stElementContainer:has([data-testid="stPageLink"]) {
     position: absolute;
-    top: -7px;
-    right: 0;
+    right: -7px;
     z-index: 5;
 }
 
@@ -527,6 +541,10 @@ div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--expor
     background: var(--select-hover-background);
 }
 /*  */
+
+input {
+    line-height: normal !important;
+}
 
 input::-ms-reveal,
 input::-ms-clear {

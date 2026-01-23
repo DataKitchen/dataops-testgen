@@ -398,10 +398,10 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 run_test_gen_queries(table_group.id, monitor_suite.test_suite, "Monitor")
 
             st.rerun()
-        
-        testgen.testgen_component(
-            "edit_monitor_settings",
-            props={
+
+        testgen.edit_monitor_settings(
+            key="edit_monitor_settings",
+            data={
                 "table_group": table_group.to_dict(json_safe=True),
                 "monitor_suite": monitor_suite.to_dict(json_safe=True),
                 "schedule": {
@@ -411,10 +411,8 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 } if schedule else None,
                 "cron_sample": cron_sample_result(),
             },
-            on_change_handlers={
-                "SaveSettingsClicked": on_save_settings_clicked,
-                "GetCronSample": on_cron_sample,
-            },
+            on_SaveSettingsClicked_change=on_save_settings_clicked,
+            on_GetCronSample_change=on_cron_sample,
         )
 
     return st.dialog(title="Edit Monitor Settings" if monitor_suite_id else "Configure Monitors")(show_dialog)()

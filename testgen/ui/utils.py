@@ -10,6 +10,7 @@ from testgen.ui.session import temp_value
 
 
 class CronSample(TypedDict):
+    id: str | None
     error: str | None
     samples: list[str] | None
     readable_expr: str | None
@@ -41,9 +42,9 @@ def get_cron_sample_handler(key: str, *, sample_count: int = 3) -> tuple[dict | 
     cron_sample_result, set_cron_sample = temp_value(key, default={})
 
     def on_cron_sample(payload: CronSampleHandlerPayload):
-            cron_expr = payload["cron_expr"]
-            cron_tz = payload.get("tz", "America/New_York")
-            cron_sample = get_cron_sample(cron_expr, cron_tz, sample_count)
-            set_cron_sample(cron_sample)
+        cron_expr = payload["cron_expr"]
+        cron_tz = payload.get("tz", "America/New_York")
+        cron_sample = get_cron_sample(cron_expr, cron_tz, sample_count)
+        set_cron_sample(cron_sample)
 
     return cron_sample_result, on_cron_sample

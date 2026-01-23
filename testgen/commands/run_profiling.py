@@ -116,8 +116,11 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
 
         _rollup_profiling_scores(profiling_run, table_group)
 
-        if bool(table_group.monitor_test_suite_id) and not table_group.last_complete_profile_run_id:
-            _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
+        if not table_group.last_complete_profile_run_id:
+            if bool(table_group.monitor_test_suite_id):
+                _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
+            if bool(table_group.default_test_suite_id):
+                _generate_standard_tests(table_group_id, table_group.default_test_suite_id)
     finally:
         MixpanelService().send_event(
             "run-profiling",
@@ -324,3 +327,16 @@ def _generate_monitor_tests(table_group_id: str, test_suite_id: str) -> None:
             run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
     except Exception:
         LOG.exception("Error generating monitor tests")
+
+
+@with_database_session
+def _generate_standard_tests(table_group_id: str, test_suite_id: str) -> None:
+    try:
+        test_suite = TestSuite.get_minimal(test_suite_id)
+        if not test_suite:
+            LOG.info(f"Skipping test generation on missing test suite: {test_suite_id}")
+        else:
+            LOG.info(f"Generating tests for test suite: {test_suite_id}")
+            run_test_gen_queries(table_group_id, test_suite.test_suite, "Standard")
+    except Exception:
+        LOG.exception(f"Error generating standard tests for test suite: {test_suite_id}")

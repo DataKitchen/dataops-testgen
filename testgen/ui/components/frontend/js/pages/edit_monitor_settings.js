@@ -18,11 +18,11 @@
  * @property {CronSample?} cron_sample
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { Button } from '../components/button.js';
 import { Icon } from '../components/icon.js';
 import { MonitorSettingsForm } from '../components/monitor_settings_form.js';
-import { emitEvent, getRandomId, getValue, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, isEqual } from '../utils.js';
+import { Streamlit } from '../streamlit.js';
 
 const { div, span } = van.tags;
 
@@ -32,10 +32,8 @@ const { div, span } = van.tags;
  * @returns 
  */
 const EditMonitorSettings = (props) => {
-    Streamlit.setFrameHeight(1);
     window.testgen.isPage = true;
 
-    const domId = `edit-monitor-settings-${getRandomId()}`;
     const tableGroup = getValue(props.table_group);
 
     const schedule = getValue(props.schedule);
@@ -46,11 +44,8 @@ const EditMonitorSettings = (props) => {
 
     const formState = van.state({dirty: false, valid: false});
 
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);
-
     return div(
-        { id: domId },
+        {},
         div(
             { class: 'flex-row fx-gap-1 mb-5 text-large' },
             span({ class: 'text-secondary' }, 'Table Group:'),
@@ -101,3 +96,30 @@ const EditMonitorSettings = (props) => {
 };
 
 export { EditMonitorSettings };
+
+export default (component) => {
+  const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+  Streamlit.enableV2(setTriggerValue);
+
+  let componentState = parentElement.state;
+  if (componentState === undefined) {
+    componentState = {};
+    for (const [ key, value ] of Object.entries(data)) {
+      componentState[key] = van.state(value);
+    }
+
+    parentElement.state = componentState;
+    van.add(parentElement, EditMonitorSettings(componentState));
+  } else {
+    for (const [ key, value ] of Object.entries(data)) {
+      if (!isEqual(componentState[key].val, value)) {
+        componentState[key].val = value;
+      }
+    }
+  }
+
+  return () => {
+    parentElement.state = null;
+  };
+};

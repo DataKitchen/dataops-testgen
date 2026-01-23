@@ -656,6 +656,10 @@ code > .tg-icon:hover {
     border-radius: 8px;
 }
 
+input {
+    line-height: normal !important;
+}
+
 input::-ms-reveal,
 input::-ms-clear {
     display: none;

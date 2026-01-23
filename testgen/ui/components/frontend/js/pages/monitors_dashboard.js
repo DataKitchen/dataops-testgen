@@ -288,7 +288,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         span({class: 'fx-flex'}, ''),
                         () => {
                             const schedule = getValue(props.schedule);
-                            console.log(schedule)
                             if (schedule && !schedule.active) {
                                 return div(
                                     { class: 'flex-row fx-gap-1' },
