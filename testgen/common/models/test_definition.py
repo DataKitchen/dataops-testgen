@@ -87,6 +87,7 @@ class TestDefinitionSummary(EntityMinimal):
     default_severity: str
     test_scope: TestScope
     usage_notes: str
+    prediction: str | None
 
 
 @dataclass
@@ -194,6 +195,7 @@ class TestDefinition(Entity):
     profiling_as_of_date: datetime = Column(postgresql.TIMESTAMP)
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
+    prediction: str | None = Column(String)
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (

@@ -9,7 +9,8 @@ from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -502,18 +503,46 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             data_structure_logs = get_data_structure_logs(
                 table_group.id, table_name, *selected_data_point,
             )
-
+        
         events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
+        definitions = TestDefinition.select_where(
+            TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
+            TestDefinition.table_name == table_name,
+            TestDefinition.prediction != None,
+        )
 
-        testgen.testgen_component(
+        predictions = {}
+        if len(definitions) > 0:
+            test_suite = TestSuite.get(table_group.monitor_test_suite_id)
+            monitor_lookback = test_suite.monitor_lookback
+            predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
+            for definition in definitions:
+                if (base_mean_predictions := definition.prediction.get("mean")):
+                    predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
+                    predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < monitor_lookback]
+
+                    mean_predictions: dict = {}
+                    lower_tolerance_predictions: dict = {}
+                    upper_tolerance_predictions: dict = {}
+                    for timestamp in predicted_times:
+                        mean_predictions[timestamp] = base_mean_predictions[timestamp]
+                        lower_tolerance_predictions[timestamp] = definition.prediction[f"lower_tolerance|{predict_sensitivity.value}"][timestamp]
+                        upper_tolerance_predictions[timestamp] = definition.prediction[f"upper_tolerance|{predict_sensitivity.value}"][timestamp]
+
+                    predictions[definition.test_type.lower()] = {
+                        "mean": mean_predictions,
+                        "lower_tolerance": lower_tolerance_predictions,
+                        "upper_tolerance": upper_tolerance_predictions,
+                    }
+
+        testgen.table_monitoring_trends(
             "table_monitoring_trends",
-            props={
+            data={
                 **make_json_safe(events),
                 "data_structure_logs": make_json_safe(data_structure_logs),
+                "predictions": predictions,
             },
-            on_change_handlers={
-                "ShowDataStructureLogs": on_show_data_structure_logs,
-            },
+            on_ShowDataStructureLogs_change=on_show_data_structure_logs,
         )
 
     def on_show_data_structure_logs(payload):
@@ -532,26 +561,38 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     WITH ranked_test_runs AS (
         SELECT
             test_runs.id,
+            test_runs.test_starttime,
             COALESCE(test_suites.monitor_lookback, 1) AS lookback,
             ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
         FROM test_suites
         INNER JOIN test_runs
             ON (test_suites.id = test_runs.test_suite_id)
         WHERE test_suites.id = :test_suite_id
+    ),
+    active_runs AS (
+        SELECT id, test_starttime FROM ranked_test_runs 
+        WHERE position <= lookback
+    ),
+    target_tests AS (
+        SELECT 'Table_Freshness' AS test_type
+        UNION ALL SELECT 'Volume_Trend'
+        UNION ALL SELECT 'Schema_Drift'
     )
     SELECT 
-        results.test_time,
-        results.test_type,
+        COALESCE(results.test_time, active_runs.test_starttime) AS test_time,
+        tt.test_type,
         results.result_code,
         COALESCE(results.result_status, 'Log') AS result_status,
         results.result_signal
-    FROM ranked_test_runs
-    INNER JOIN test_results AS results
-        ON (results.test_run_id = ranked_test_runs.id)
-    WHERE ranked_test_runs.position <= ranked_test_runs.lookback
-        AND results.table_name = :table_name
-        AND results.test_type in ('Table_Freshness', 'Volume_Trend', 'Schema_Drift')
-    ORDER BY results.test_time ASC;
+    FROM active_runs
+    CROSS JOIN target_tests tt
+    LEFT JOIN test_results AS results
+        ON (
+            results.test_run_id = active_runs.id 
+            AND results.test_type = tt.test_type
+            AND results.table_name = :table_name
+        )
+    ORDER BY active_runs.id, tt.test_type;
     """
 
     params = {
@@ -577,7 +618,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "deletions": signals[2],
                 "modifications": signals[3],
                 "time": event["test_time"],
-                "window_start": datetime.fromisoformat(signals[4]),
+                "window_start": datetime.fromisoformat(signals[4]) if signals[4] else None,
             }
             for event in results if event["test_type"] == "Schema_Drift"
             and (signals := (event["result_signal"] or "|0|0|0|").split("|") or True)

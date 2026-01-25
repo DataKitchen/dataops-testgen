@@ -41,3 +41,9 @@ edit_monitor_settings = component_v2_wrapped(components_v2.component(
     js="pages/edit_monitor_settings.js",
     isolate_styles=False,
 ))
+
+table_monitoring_trends = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.table_monitoring_trends",
+    js="pages/table_monitoring_trends.js",
+    isolate_styles=False,
+))

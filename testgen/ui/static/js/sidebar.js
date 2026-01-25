@@ -54,6 +54,7 @@ const Sidebar = (/** @type {Properties} */ props) => {
     return div(
         {class: 'menu'},
         div(
+            {class: 'fx-flex', style: 'overflow-y: auto;'},
             div(
                 { class: 'menu--project' },
                 div({ class: 'caption' }, 'Project'),
@@ -230,10 +231,6 @@ stylesheet.replace(`
 .menu .menu--project {
     padding: 0 20px;
     margin-bottom: 16px;
-}
-
-.project-select {
-    position: relative;
 }
 
 .project-select--label {

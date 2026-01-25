@@ -4,30 +4,41 @@
  * @import {SchemaEvent} from '../components/schema_changes_chart.js';
  * @import {DataStructureLog} from '../components/schema_changes_list.js';
  * 
- * @typedef MonitoringEvent
+ * @typedef VolumeTrendEvent
  * @type {object}
  * @property {number} time
  * @property {number} record_count
  * 
+ * @typedef MetricPrediction
+ * @type {object}
+ * @property {PredictionSet} volume_trend
+ * 
+ * @typedef PredictionSet
+ * @type {object}
+ * @property {object} mean
+ * @property {object} lower_tolerance
+ * @property {object} upper_tolerance
+ * 
  * @typedef Properties
  * @type {object}
  * @property {FreshnessEvent[]} freshness_events
- * @property {MonitoringEvent[]} volume_events
+ * @property {VolumeTrendEvent[]} volume_events
  * @property {SchemaEvent[]} schema_events
  * @property {(DataStructureLog[])?} data_structure_logs
+ * @property {MetricPrediction?} predictions
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { FreshnessChart, getFreshnessEventColor } from '../components/freshness_chart.js';
-import { colorMap } from '../display_utils.js';
-import { SchemaChangesChart } from '../components/schema_changes_chart.js';
-import { SchemaChangesList } from '../components/schema_changes_list.js';
-import { getAdaptiveTimeTicks, scale } from '../axis_utils.js';
-import { Tooltip } from '../components/tooltip.js';
-import { DualPane } from '../components/dual_pane.js';
-import { Button } from '../components/button.js';
-import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '../components/monitoring_sparkline.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
+import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/components/freshness_chart.js';
+import { colorMap } from '/app/static/js/display_utils.js';
+import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
+import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
+import { getAdaptiveTimeTicks, scale } from '/app/static/js/axis_utils.js';
+import { Tooltip } from '/app/static/js/components/tooltip.js';
+import { DualPane } from '/app/static/js/components/dual_pane.js';
+import { Button } from '/app/static/js/components/button.js';
+import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
 
 const { div, span } = van.tags;
 const { circle, clipPath, defs, foreignObject, g, line, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
@@ -51,12 +62,10 @@ const timeTickFormatter = new Intl.DateTimeFormat('en-US', {
  * @param {Properties} props
  */
 const TableMonitoringTrend = (props) => {
+  window.testgen.isPage = true;
   loadStylesheet('table-monitoring-trends', stylesheet);
-  Streamlit.setFrameHeight(1);
 
   const domId = 'monitoring-trends-container';
-  resizeFrameHeightToElement(domId);
-  resizeFrameHeightOnDOMChange(domId);
 
   const chartHeight = (
     + (spacing * 2)
@@ -84,11 +93,25 @@ const TableMonitoringTrend = (props) => {
     return verticalPosition;
   };
 
+  const predictions = getValue(props.predictions);
+  const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
+    ...predictionTimes,
+    ...Object.keys(v.mean).map(t => ({time: +t}))
+  ], []);
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
-  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
 
-  const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents].map(e => e.time);
+  let volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
+  if (predictions.volume_trend) {
+    for (const [time, records] of Object.entries(predictions.volume_trend.mean)) {
+      volumeTrendEvents.push({
+        time: +time,
+        record_count: parseInt(records),
+      });
+    }
+  }
+
+  const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents, ...predictionTimes].map(e => e.time);
   const rawTimeline = [...new Set(allTimes)].sort();
   const dateRange = { min: rawTimeline[0], max: rawTimeline[rawTimeline.length - 1] };
   const timeline = [
@@ -184,7 +207,14 @@ const TableMonitoringTrend = (props) => {
   const schemaChartSelection = van.state(null);
   van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
 
-  const volumes = volumeTrendEvents.map((e) => e.record_count);
+  const volumes = [
+    ...volumeTrendEvents.map((e) => e.record_count),
+    ...Object.keys(predictions?.volume_trend?.mean ?? {}).reduce((values, time) => [
+      ...values,
+      parseInt(predictions.volume_trend.upper_tolerance[time]),
+      parseInt(predictions.volume_trend.lower_tolerance[time]),
+    ], []),
+  ];
   const volumeRange = {min: Math.min(...volumes), max: Math.max(...volumes)};
   if (volumeRange.min === volumeRange.max) {
     volumeRange.max = volumeRange.max + 100;
@@ -195,6 +225,11 @@ const TableMonitoringTrend = (props) => {
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
+  let parsedVolumeTrendPredictionPoints = Object.keys(predictions?.volume_trend?.mean ?? {}).map((time) => ({
+    x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+    upper: scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
+    lower: scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
+  })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
 
   let tooltipText = '';
   const shouldShowTooltip = van.state(false);
@@ -293,6 +328,7 @@ const TableMonitoringTrend = (props) => {
             nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
             lineWidth: 2,
             attributes: {style: 'overflow: visible;'},
+            prediction: parsedVolumeTrendPredictionPoints,
           },
           ...parsedVolumeTrendEvents,
         ),
@@ -490,3 +526,30 @@ stylesheet.replace(`
 `);
 
 export { TableMonitoringTrend };
+
+export default (component) => {
+  const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+  Streamlit.enableV2(setTriggerValue);
+
+  let componentState = parentElement.state;
+  if (componentState === undefined) {
+    componentState = {};
+    for (const [ key, value ] of Object.entries(data)) {
+      componentState[key] = van.state(value);
+    }
+
+    parentElement.state = componentState;
+    van.add(parentElement, TableMonitoringTrend(componentState));
+  } else {
+    for (const [ key, value ] of Object.entries(data)) {
+      if (!isEqual(componentState[key].val, value)) {
+        componentState[key].val = value;
+      }
+    }
+  }
+
+  return () => {
+    parentElement.state = null;
+  };
+};
