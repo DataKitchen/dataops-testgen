@@ -425,7 +425,7 @@ const TableGroupWizard = (props) => {
             span(
               { class: 'text-caption' },
               () => generateMonitorTests.val
-                ? 'Monitors will be configured after profiling and run periodically on schedule.'
+                ? 'Volume and Schema monitors will be configured and run periodically on schedule. Freshness monitors will be configured after profiling.'
                 : 'Monitor configuration will be skipped. You can do this step later on the Monitors page.',
             ),
           ),
@@ -526,7 +526,7 @@ const TableGroupWizard = (props) => {
             div(
               div(
                 results.generate_monitor_suite
-                  ? 'Monitors will be configured and scheduled after profiling.'
+                  ? 'Volume and Schema monitors configured and scheduled. Freshness monitors will be configured after profiling.'
                   : 'Monitor configuration skipped.',
               ),
               div(

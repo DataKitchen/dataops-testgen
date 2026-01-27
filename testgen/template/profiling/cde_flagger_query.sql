@@ -3,7 +3,7 @@ UPDATE data_column_chars
  WHERE table_groups_id = :TABLE_GROUPS_ID;
 
 WITH cde_selects
-   AS ( SELECT table_groups_id, table_name, column_name
+   AS ( SELECT table_groups_id, schema_name, table_name, column_name
 --                ,functional_data_type,
 --                record_ct,
 --                ROUND(100.0 * (value_ct - COALESCE(zero_length_ct, 0.0) - COALESCE(filled_value_ct, 0.0))::DEC(15, 3) /
@@ -29,5 +29,6 @@ UPDATE data_column_chars
    SET critical_data_element = TRUE
   FROM cde_selects
  WHERE data_column_chars.table_groups_id = cde_selects.table_groups_id
+   AND data_column_chars.schema_name = cde_selects.schema_name
    AND data_column_chars.table_name = cde_selects.table_name
    AND data_column_chars.column_name = cde_selects.column_name;

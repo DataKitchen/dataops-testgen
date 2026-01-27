@@ -9,9 +9,9 @@ from testgen import settings
 from testgen.commands.queries.profiling_query import HygieneIssueType, ProfilingSQL, TableSampling
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.test_generation import run_test_generation
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -25,7 +25,6 @@ from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
@@ -113,14 +112,8 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.save()
 
         send_profiling_run_notifications(profiling_run)
-
         _rollup_profiling_scores(profiling_run, table_group)
-
-        if not table_group.last_complete_profile_run_id:
-            if bool(table_group.monitor_test_suite_id):
-                _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
-            if bool(table_group.default_test_suite_id):
-                _generate_standard_tests(table_group_id, table_group.default_test_suite_id)
+        _generate_tests(table_group)
     finally:
         MixpanelService().send_event(
             "run-profiling",
@@ -316,27 +309,16 @@ def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGrou
         LOG.exception("Error rolling up profiling scores")
 
 
-@with_database_session
-def _generate_monitor_tests(table_group_id: str, test_suite_id: str) -> None:
-    try:
-        monitor_test_suite = TestSuite.get(test_suite_id)
-        if not monitor_test_suite:
-            LOG.info("Skipping test generation on missing monitor test suite")
-        else:
-            LOG.info("Generating monitor tests")
-            run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
-    except Exception:
-        LOG.exception("Error generating monitor tests")
+def _generate_tests(table_group: TableGroup) -> None:
+    if not table_group.last_complete_profile_run_id:
+        if bool(table_group.monitor_test_suite_id):
+            try:
+                run_test_generation(table_group.monitor_test_suite_id, "Monitor")
+            except Exception:
+                LOG.exception("Error generating monitor tests")
 
-
-@with_database_session
-def _generate_standard_tests(table_group_id: str, test_suite_id: str) -> None:
-    try:
-        test_suite = TestSuite.get_minimal(test_suite_id)
-        if not test_suite:
-            LOG.info(f"Skipping test generation on missing test suite: {test_suite_id}")
-        else:
-            LOG.info(f"Generating tests for test suite: {test_suite_id}")
-            run_test_gen_queries(table_group_id, test_suite.test_suite, "Standard")
-    except Exception:
-        LOG.exception(f"Error generating standard tests for test suite: {test_suite_id}")
+        if bool(table_group.default_test_suite_id):
+            try:
+                run_test_generation(table_group.default_test_suite_id, "Standard")
+            except Exception:
+                LOG.exception(f"Error generating standard tests for test suite: {table_group.default_test_suite_id}")

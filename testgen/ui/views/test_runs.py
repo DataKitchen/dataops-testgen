@@ -142,7 +142,10 @@ class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
     def _get_component_props(self) -> dict[str, Any]:
         test_suite_options = [
             (str(ts.id), ts.test_suite)
-            for ts in TestSuite.select_minimal_where(TestSuite.project_code == self.ns_attrs["project_code"])
+            for ts in TestSuite.select_minimal_where(
+                TestSuite.project_code == self.ns_attrs["project_code"],
+                TestSuite.is_monitor.isnot(True),
+            )
         ]
         test_suite_options.insert(0, (None, "All Test Suites"))
         trigger_labels = {

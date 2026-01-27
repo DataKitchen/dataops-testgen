@@ -68,7 +68,7 @@ const TableGroupDeleteConfirmation = (props) => {
                 { class: 'flex-column fx-gap-4 mt-4' },
                 Alert(
                     { type: 'warn' },
-                    div('This Table Group has related data, which may include profiling, test definitions and test results.'),
+                    div('This Table Group has related data, which may include profiling, test definitions, test results, and monitor history.'),
                     div({ class: 'mt-2' }, 'If you proceed, all related data will be permanently deleted.'),
                 ),
                 Toggle({

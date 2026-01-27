@@ -109,7 +109,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
-    test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+    test_definition = TestDefinition.get(issue_data["test_definition_id"])
     if not test_definition:
         return None
 
@@ -160,7 +160,7 @@ def get_test_issue_source_data(
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     lookup_query = None
     try:
-        test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+        test_definition = TestDefinition.get(issue_data["test_definition_id"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
 
@@ -186,7 +186,7 @@ def get_test_issue_source_data(
 def get_test_issue_source_query_custom(
     issue_data: dict,
 ) -> str:
-    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id_current"])
+    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
@@ -203,7 +203,7 @@ def get_test_issue_source_data_custom(
     limit: int | None = None,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     try:
-        test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+        test_definition = TestDefinition.get(issue_data["test_definition_id"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
 

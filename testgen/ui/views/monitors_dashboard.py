@@ -4,7 +4,7 @@ from typing import ClassVar, Literal
 
 import streamlit as st
 
-from testgen.commands.run_generate_tests import run_test_gen_queries
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
@@ -396,7 +396,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_test_gen_queries(table_group.id, monitor_suite.test_suite, "Monitor")
+                run_test_generation(monitor_suite.id, "Monitor")
 
             st.rerun()
 

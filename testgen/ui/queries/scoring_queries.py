@@ -102,12 +102,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             types.test_type,
             results.auto_gen,
             results.test_suite_id,
-            results.test_definition_id::VARCHAR as test_definition_id_runtime,
-            CASE
-                WHEN results.auto_gen = TRUE
-                THEN definitions.id
-                ELSE results.test_definition_id
-            END::VARCHAR AS test_definition_id_current,
+            results.test_definition_id::VARCHAR,
             results.table_groups_id::VARCHAR,
             types.id::VARCHAR AS test_type_id,
             column_chars.description as column_description,
@@ -127,13 +122,6 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             ON (results.test_suite_id = suites.id)
         INNER JOIN table_groups groups
             ON (results.table_groups_id = groups.id)
-        LEFT JOIN test_definitions definitions
-            ON (results.test_suite_id = definitions.test_suite_id
-            AND results.table_name = definitions.table_name
-            AND COALESCE(results.column_names, 'N/A') = COALESCE(definitions.column_name, 'N/A')
-            AND results.test_type = definitions.test_type
-            AND results.auto_gen = TRUE
-            AND definitions.last_auto_gen_date IS NOT NULL)
         LEFT JOIN data_column_chars column_chars
             ON (groups.id = column_chars.table_groups_id
             AND results.schema_name = column_chars.schema_name

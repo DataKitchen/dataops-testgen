@@ -531,7 +531,7 @@ def render_selected_details(
             date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
 
             if user_can_edit:
-                view_edit_test(v_col1, selected_item["test_definition_id_current"])
+                view_edit_test(v_col1, selected_item["test_definition_id"])
 
             if selected_item["test_scope"] == "column":
                 with v_col2:
@@ -611,7 +611,7 @@ def render_selected_details(
                         # write_history_graph(dfh)
                         write_history_chart_v2(dfh)
                 with ut_tab2:
-                    show_test_def_detail(selected_item["test_definition_id_current"], test_suite)
+                    show_test_def_detail(selected_item["test_definition_id"], test_suite)
 
 
 @with_database_session

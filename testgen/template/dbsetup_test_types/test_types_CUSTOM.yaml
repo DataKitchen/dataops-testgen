@@ -51,7 +51,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -90,7 +90,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -129,7 +129,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -168,7 +168,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -207,7 +207,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -246,7 +246,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,
@@ -285,7 +285,7 @@ test_types:
              '{SCHEMA_NAME}' as schema_name,
              '{TABLE_NAME}'  as table_name,
              CASE
-               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN 'N/A'
+               WHEN '{COLUMN_NAME_NO_QUOTES}' = '' OR '{COLUMN_NAME_NO_QUOTES}' IS NULL THEN NULL
                ELSE '{COLUMN_NAME_NO_QUOTES}'
              END as column_names,
           '{SKIP_ERRORS}' as threshold_value,

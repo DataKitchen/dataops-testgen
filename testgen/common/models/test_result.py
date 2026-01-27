@@ -2,7 +2,7 @@ import enum
 from collections import defaultdict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, String, and_, or_, select
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, String, or_, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 
@@ -50,22 +50,7 @@ class TestResult(Entity):
             alias_a.status, alias_b.status, alias_b.test_definition_id,
         ).join(
             alias_b,
-            or_(
-                and_(
-                    alias_a.auto_gen.is_(True),
-                    alias_b.auto_gen.is_(True),
-                    alias_a.test_suite_id == alias_b.test_suite_id,
-                    alias_a.schema_name == alias_b.schema_name,
-                    alias_a.table_name.isnot_distinct_from(alias_b.table_name),
-                    alias_a.column_names.isnot_distinct_from(alias_b.column_names),
-                    alias_a.test_type == alias_b.test_type,
-                ),
-                and_(
-                    alias_a.auto_gen.isnot(True),
-                    alias_b.auto_gen.isnot(True),
-                    alias_a.test_definition_id == alias_b.test_definition_id,
-                ),
-            ),
+            alias_a.test_definition_id == alias_b.test_definition_id,
             full=True,
         ).where(
             or_(alias_a.test_run_id == test_run_id_a, alias_a.test_run_id.is_(None)),

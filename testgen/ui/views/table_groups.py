@@ -8,6 +8,7 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_profiling import run_profiling_in_background
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
@@ -306,6 +307,7 @@ class TableGroupsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        run_test_generation(monitor_test_suite.id, "Monitor")
 
                         JobSchedule(
                             project_code=project_code,

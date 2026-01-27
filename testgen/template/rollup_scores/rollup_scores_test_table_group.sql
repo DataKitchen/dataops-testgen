@@ -42,6 +42,7 @@ WITH score_calc
                      ON (r.test_suite_id = ts.id
                     AND  r.test_run_id = ts.last_complete_test_run_id))
          ON (dcc.table_groups_id = ts.table_groups_id
+        AND  dcc.schema_name = r.schema_name
         AND  dcc.table_name = r.table_name
         AND  dcc.column_name = r.column_names)
        WHERE dcc.table_groups_id = :TABLE_GROUPS_ID
@@ -72,6 +73,7 @@ WITH score_detail
                      ON (r.test_suite_id = ts.id
                     AND  r.test_run_id = ts.last_complete_test_run_id))
          ON (dtc.table_groups_id = ts.table_groups_id
+        AND  dtc.schema_name = r.schema_name
         AND  dtc.table_name = r.table_name)
        WHERE dtc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
