@@ -109,16 +109,16 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             const rowCountChange = (monitor.row_count ?? 0) - (monitor.previous_row_count ?? 0);
 
             return {
-                table_name: span({class: monitor.table_state === 'dropped' ? 'text-disabled' : ''}, monitor.table_name),
-                freshness: AnomalyTag(monitor.freshness_anomalies),
-                volume: AnomalyTag(monitor.volume_anomalies),
-                schema: AnomalyTag(monitor.schema_anomalies),
-                quality_drift: AnomalyTag(monitor.quality_drift_anomalies),
-                latest_update: span(
+                table_name: () => span({class: monitor.table_state === 'dropped' ? 'text-disabled' : ''}, monitor.table_name),
+                freshness: () => AnomalyTag(monitor.freshness_anomalies),
+                volume: () => AnomalyTag(monitor.volume_anomalies),
+                schema: () => AnomalyTag(monitor.schema_anomalies),
+                quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
+                latest_update: () => span(
                     {class: 'text-small text-secondary'},
                     monitor.latest_update ? `${humanReadableDuration(formatDuration(monitor.latest_update, renderTime), true)} ago` : '-',
                 ),
-                row_count: rowCountChange !== 0 ?
+                row_count: () => rowCountChange !== 0 ?
                     withTooltip(
                         div(
                             {class: 'flex-row fx-gap-1', style: 'position: relative; display: inline-flex;'},
@@ -138,7 +138,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         },
                     )
                     : span({class: 'text-small text-secondary'}, '-'),
-                schema_changes: monitor.schema_anomalies ?
+                schema_changes: () => monitor.schema_anomalies ?
                     withTooltip(
                         div(
                             {
@@ -192,7 +192,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             position: 'right',
                         },
                     ) : span({class: 'text-small text-secondary'}, '-'),
-                action: div(
+                action: () => div(
                     {
                         role: 'button',
                         class: 'flex-row fx-gap-1 p-2 clickable',
@@ -232,15 +232,15 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 () => getValue(props.has_monitor_test_suite) && userCanEdit
                     ? div(
                         {class: 'flex-row fx-gap-3'},
-                        // Button({
-                        //     icon: 'notifications',
-                        //     tooltip: 'Configure email notifications for table group monitors',
-                        //     tooltipPosition: 'bottom-left',
-                        //     color: 'basic',
-                        //     type: 'stroked',
-                        //     style: 'background: var(--button-generic-background-color);', 
-                        //     onclick: () => emitEvent('EditNotifications', {}),
-                        // }),
+                        Button({
+                            icon: 'notifications',
+                            tooltip: 'Configure email notifications for table group monitors',
+                            tooltipPosition: 'bottom-left',
+                            color: 'basic',
+                            type: 'stroked',
+                            style: 'background: var(--button-generic-background-color);', 
+                            onclick: () => emitEvent('EditNotifications', {}),
+                        }),
                         Button({
                             icon: 'settings',
                             tooltip: 'Edit monitor settings for table group',

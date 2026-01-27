@@ -1,11 +1,16 @@
 import logging
 from datetime import UTC, datetime
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 import streamlit as st
 
 from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_settings import (
+    MonitorNotificationSettings,
+    MonitorNotificationTrigger,
+    NotificationEvent,
+)
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -15,9 +20,11 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample, get_cron_sample_handler
+from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 
 PAGE_ICON = "apps_outage"
@@ -138,11 +145,64 @@ class MonitorsDashboardPage(Page):
                 "OpenSchemaChanges": lambda payload: open_schema_changes(selected_table_group, payload),
                 "OpenMonitoringTrends": lambda payload: open_table_trends(selected_table_group, payload),
                 "SetParamValues": lambda payload: set_param_values(payload),
-                # "EditNotifications": lambda *_: manage_notifications(project_code, selected_table_group),
+                "EditNotifications": manage_notifications(project_code, selected_table_group),
                 "EditMonitorSettings": lambda *_: edit_monitor_settings(selected_table_group, monitor_schedule),
                 "DeleteMonitorSuite": lambda *_: delete_monitor_suite(selected_table_group),
             },
         )
+
+
+def manage_notifications(project_code: str, selected_table_group: TableGroupMinimal):
+    def open_dialog(*_):
+        MonitorNotificationSettingsDialog(
+            MonitorNotificationSettings,
+            ns_attrs={
+                "project_code": project_code,
+                "table_group_id": str(selected_table_group.id),
+                "test_suite_id": str(selected_table_group.monitor_test_suite_id),
+            },
+            component_props={
+                "subtitle": {
+                    "label": "Table Group",
+                    "value": selected_table_group.table_groups_name,
+                },
+            },
+        ).open(),
+    return open_dialog
+
+
+class MonitorNotificationSettingsDialog(NotificationSettingsDialogBase):
+    title = "Monitor Notifications"
+
+    def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "trigger": MonitorNotificationTrigger.on_anomalies,
+            "table_name": item["scope"],
+        }
+
+    def _model_to_item_attrs(self, model: MonitorNotificationSettings) -> dict[str, Any]:
+        return {
+            "trigger": model.trigger.value if model.trigger else None,
+            "scope": table_name
+                if model.settings and (table_name := model.settings.get("table_name")) else None,
+        }
+
+    def _get_component_props(self) -> dict[str, Any]:
+        tables = get_tables_by_table_group(self.ns_attrs["table_group_id"])
+        table_options = [
+            (table["table_name"], table["table_name"]) for table in tables
+        ]
+        table_options.insert(0, (None, "All Tables"))
+        trigger_labels = {
+            MonitorNotificationTrigger.on_anomalies.value: "On Anomalies",
+        }
+        trigger_options = [(t.value, trigger_labels[t.value]) for t in MonitorNotificationTrigger]
+        return {
+            "event": NotificationEvent.monitor_run.value,
+            "scope_label": "Table",
+            "scope_options": table_options,
+            "trigger_options": trigger_options,
+        }
 
 
 @st.cache_data(show_spinner=False)
@@ -316,7 +376,7 @@ def _monitor_changes_by_tables_query(
     FROM monitor_tables
     LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
     {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ''}
-    {f"ORDER BY {sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else ''}
+    {f"ORDER BY monitor_tables.{sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else ''}
     {"LIMIT :limit" if limit else ''}
     {"OFFSET :offset" if offset else ''}
     """

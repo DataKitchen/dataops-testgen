@@ -2,7 +2,7 @@ import enum
 from collections import defaultdict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, String, or_, select
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, or_, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 
@@ -40,6 +40,7 @@ class TestResult(Entity):
     status: TestResultStatus = Column("result_status", Enum(TestResultStatus))
     message: str = Column("result_message", String)
 
+    result_code: int = Column(Integer)
     # Note: not all table columns are implemented by this entity
 
     @classmethod
