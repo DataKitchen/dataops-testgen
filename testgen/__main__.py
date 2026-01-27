@@ -57,7 +57,7 @@ LOG = logging.getLogger("testgen")
 
 APP_MODULES = ["ui", "scheduler"]
 VERSION_DATA = version_service.get_version()
-
+CHILDREN_POLL_INTERVAL = 10
 
 @dataclass
 class Configuration:
@@ -662,7 +662,8 @@ def run_ui():
 
     use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
 
-    patch_streamlit.patch(force=True)
+    if settings.IS_DEBUG:
+        patch_streamlit.patch(dev=True)
 
     @with_database_session
     def init_ui():
@@ -732,8 +733,20 @@ def run_app(module):
             signal.signal(signal.SIGINT, term_children)
             signal.signal(signal.SIGTERM, term_children)
 
-            for child in children:
-                child.wait()
+            terminating = False
+            while children:
+                try:
+                    children[0].wait(CHILDREN_POLL_INTERVAL)
+                except subprocess.TimeoutExpired:
+                    pass
+
+                for child in children:
+                    if child.poll() is not None:
+                        children.remove(child)
+                        if not terminating:
+                            terminating = True
+                            term_children(signal.SIGTERM, None)
+
 
 
 if __name__ == "__main__":

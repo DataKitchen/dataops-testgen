@@ -1,4 +1,4 @@
-ARG TESTGEN_BASE_LABEL=v10
+ARG TESTGEN_BASE_LABEL=v11
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
 
@@ -16,6 +16,8 @@ RUN apk upgrade
 COPY . /tmp/dk/
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 RUN rm -Rf /tmp/dk
+
+RUN tg-patch-streamlit
 
 RUN addgroup -S testgen && adduser -S testgen -G testgen
 
