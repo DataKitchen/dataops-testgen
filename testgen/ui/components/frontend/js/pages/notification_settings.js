@@ -8,6 +8,11 @@
  * @property {string} trigger
  * @property {boolean} enabled
  *
+ * @typedef Subtitle
+ * @type {object}
+ * @property {string} label
+ * @property {string} value
+ * 
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
@@ -28,6 +33,7 @@
  * @property {import('../components/select.js').Option[]} trigger_options
  * @property {Boolean} cde_enabled;
  * @property {Boolean} total_enabled;
+ * @property {Subtitle?} subtitle
  * @property {Result?} result
  */
 import van from '../van.min.js';
@@ -97,6 +103,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
         cdeScoreThreshold: van.state(0),
         isEdit: van.state(false),
     };
+
+    const subtitle = getValue(props.subtitle);
 
     const resetForm = () => {
         newNotificationItemForm.id.val = null ;
@@ -199,6 +207,13 @@ const NotificationSettings = (/** @type Properties */ props) => {
 
     return div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
+        subtitle
+            ? div(
+                    { class: 'flex-row fx-gap-1 mb-5 text-large' },
+                    span({ class: 'text-secondary' }, `${subtitle.label}: `),
+                    span(subtitle.value),
+                )
+            : '',
         () => ExpansionPanel(
             {
                 title: newNotificationItemForm.isEdit.val
@@ -246,15 +261,17 @@ const NotificationSettings = (/** @type Properties */ props) => {
                             onChange: (value) => newNotificationItemForm.scope.val = value,
                             portalClass: 'short-select-portal',
                         }),
-                        () => Select({
-                            label: 'When',
-                            options: triggerOptions.map(([value, label]) => ({
-                                label: label, value: value
-                            })),
-                            value: newNotificationItemForm.trigger,
-                            onChange: (value) => newNotificationItemForm.trigger.val = value,
-                            portalClass: 'short-select-portal',
-                        }),
+                        () => event !== 'monitor_run'
+                            ? Select({
+                                label: 'When',
+                                options: triggerOptions.map(([value, label]) => ({
+                                    label: label, value: value
+                                })),
+                                value: newNotificationItemForm.trigger,
+                                onChange: (value) => newNotificationItemForm.trigger.val = value,
+                                portalClass: 'short-select-portal',
+                            })
+                            : '',
                     ]),
                 ),
                 div(

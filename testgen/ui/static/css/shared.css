@@ -700,3 +700,7 @@ input::-ms-clear {
     background: var(--error-color);
     color: white;
 }
+
+.notifications--empty.tg-empty-state {
+    margin-top: 0;
+}

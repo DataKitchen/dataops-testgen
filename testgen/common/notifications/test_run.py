@@ -3,7 +3,11 @@ import logging
 from sqlalchemy import case, literal, select
 
 from testgen.common.models import get_current_session, with_database_session
-from testgen.common.models.notification_settings import TestRunNotificationSettings, TestRunNotificationTrigger
+from testgen.common.models.notification_settings import (
+    NotificationEvent,
+    TestRunNotificationSettings,
+    TestRunNotificationTrigger,
+)
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -242,7 +246,11 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
 @with_database_session
 def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_status_min=5):
 
-    notifications = list(TestRunNotificationSettings.select(enabled=True, test_suite_id=test_run.test_suite_id))
+    notifications = list(TestRunNotificationSettings.select(
+      enabled=True,
+      test_suite_id=test_run.test_suite_id,
+      event=NotificationEvent.test_run,
+    ))
     if not notifications:
         return
 
@@ -303,7 +311,10 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 TestType.test_name_short.label("test_type"),
             )
             .join(TestType, TestType.test_type == TestResult.test_type)
-            .where(TestResult.test_run_id == test_run.id, TestResult.status == status)
+            .where(
+                TestResult.test_run_id == test_run.id,
+                TestResult.status == status,
+              )
             .order_by(changed_case.desc())
             .limit(result_count_by_status[status])
         )

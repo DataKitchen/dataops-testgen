@@ -339,7 +339,7 @@ const TableCell = (column, row, index) => {
             'data-testid': `table-cell:${index},${column.name}`,
             style: `overflow-x: ${column.overflow ?? 'hidden'}`,
         },
-        row[column.name],
+        getValue(row[column.name]),
     );
 };
 
