@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from typing import Any
 
 import click
 
@@ -7,9 +9,9 @@ from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
+    apply_params,
     create_database,
     execute_db_queries,
-    replace_params,
     set_target_db_params,
 )
 from testgen.common.database.flavor.flavor_service import ConnectionParams
@@ -88,7 +90,7 @@ def _prepare_connection_to_target_database(params_mapping):
     set_target_db_params(connection_params)
 
 
-def _get_params_mapping(iteration: int = 0) -> dict:
+def _get_settings_params_mapping() -> dict:
     return {
         "TESTGEN_ADMIN_USER": settings.DATABASE_ADMIN_USER,
         "TESTGEN_ADMIN_PASSWORD": settings.DATABASE_ADMIN_PASSWORD,
@@ -99,6 +101,12 @@ def _get_params_mapping(iteration: int = 0) -> dict:
         "PROJECT_DB_HOST": settings.PROJECT_DATABASE_HOST,
         "PROJECT_DB_PORT": settings.PROJECT_DATABASE_PORT,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
+    }
+
+
+def _get_quick_start_params_mapping(iteration: int = 0) -> dict:
+    return {
+        **_get_settings_params_mapping(),
         "MAX_SUPPLIER_ID_SEQ": _get_max_supplierid_seq(iteration),
         "MAX_PRODUCT_ID_SEQ": _get_max_productid_seq(iteration),
         "MAX_CUSTOMER_ID_SEQ": _get_max_customerid_seq(iteration),
@@ -107,9 +115,27 @@ def _get_params_mapping(iteration: int = 0) -> dict:
     }
 
 
+def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
+    return {
+        **_get_settings_params_mapping(),
+        "ITERATION_NUMBER": iteration,
+        "RUN_DATE": run_date,
+        "NEW_SALES": 2 ** (iteration % 14),
+        "IS_CUSTOMER_ADD_COL_ITER": iteration == 28,
+        "IS_CUSTOMER_DEL_COL_ITER": iteration == 36,
+        "IS_UPDATE_PRODUCT_ITER": not 14 < iteration < 18,
+        "IS_ADD_TABLE_ITER": iteration == 12,
+    }
+
+
+def _get_quick_start_query(template_file_name: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    template = read_template_sql_file(template_file_name, "quick_start")
+    return apply_params(template, params), params
+
+
 def run_quick_start(delete_target_db: bool) -> None:
     # Init
-    params_mapping = _get_params_mapping()
+    params_mapping = _get_quick_start_params_mapping()
     _prepare_connection_to_target_database(params_mapping)
 
     # Create DB
@@ -127,7 +153,7 @@ def run_quick_start(delete_target_db: bool) -> None:
     app_db_params = get_app_db_params_mapping()
     execute_db_queries(
         [
-            (replace_params(read_template_sql_file("initial_data_seeding.sql", "quick_start"), app_db_params), app_db_params),
+            _get_quick_start_query("initial_data_seeding.sql", app_db_params),
         ],
     )
 
@@ -137,8 +163,8 @@ def run_quick_start(delete_target_db: bool) -> None:
     click.echo(f"Populating target db : {target_db_name}")
     execute_db_queries(
         [
-            (replace_params(read_template_sql_file("recreate_target_data_schema.sql", "quick_start"), params_mapping), params_mapping),
-            (replace_params(read_template_sql_file("populate_target_data.sql", "quick_start"), params_mapping), params_mapping),
+            _get_quick_start_query("recreate_target_data_schema.sql", params_mapping),
+            _get_quick_start_query("populate_target_data.sql", params_mapping),
         ],
         use_target_db=True,
     )
@@ -158,7 +184,7 @@ def _setup_initial_config():
 
 
 def run_quick_start_increment(iteration):
-    params_mapping = _get_params_mapping(iteration)
+    params_mapping = _get_quick_start_params_mapping(iteration)
     _prepare_connection_to_target_database(params_mapping)
 
     target_db_name = params_mapping["PROJECT_DB"]
@@ -166,12 +192,27 @@ def run_quick_start_increment(iteration):
 
     execute_db_queries(
         [
-            (replace_params(read_template_sql_file("update_target_data.sql", "quick_start"), params_mapping), params_mapping),
-            (replace_params(read_template_sql_file(f"update_target_data_iter{iteration}.sql", "quick_start"), params_mapping), params_mapping),
+            _get_quick_start_query("update_target_data.sql", params_mapping),
+            _get_quick_start_query(f"update_target_data_iter{iteration}.sql", params_mapping),
         ],
         use_target_db=True,
     )
     setup_cat_tests(iteration)
+
+
+def run_monitor_increment(run_date, iteration):
+    params_mapping = _get_monitor_params_mapping(run_date, iteration)
+    _prepare_connection_to_target_database(params_mapping)
+
+    target_db_name = params_mapping["PROJECT_DB"]
+    LOG.info(f"Incremental monitor updates of target db : {target_db_name}")
+
+    execute_db_queries(
+        [
+            _get_quick_start_query("run_monitor_iteration.sql", params_mapping),
+        ],
+        use_target_db=True,
+    )
 
 
 def setup_cat_tests(iteration):
@@ -182,12 +223,11 @@ def setup_cat_tests(iteration):
     elif iteration >=1:
         sql_file = "update_cat_tests.sql"
 
-    params_mapping = _get_params_mapping(iteration)
-    query = replace_params(read_template_sql_file(sql_file, "quick_start"), params_mapping)
+    params_mapping = _get_quick_start_params_mapping(iteration)
 
     execute_db_queries(
         [
-            (query, params_mapping),
+            _get_quick_start_query(sql_file, params_mapping),
         ],
         use_target_db=False,
     )
