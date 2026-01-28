@@ -120,7 +120,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                 ? div(
                     { class: 'flex-column mt-4' },
                     getValue(filteredTableGroups).map(tableGroup =>
-                        tableGroup.monitoring_summary && (tableGroup.monitoring_summary.lookback ?? 0) > 0
+                        tableGroup.monitoring_summary
                             ? TableGroupCardWithMonitor(tableGroup)
                             : TableGroupCard(tableGroup)
                     )

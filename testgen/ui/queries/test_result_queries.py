@@ -35,13 +35,13 @@ def get_test_results(
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
             c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
             CASE
-                WHEN r.result_code <> 1 THEN r.disposition
+                WHEN r.result_code = 0 THEN r.disposition
                 ELSE 'Passed'
             END as disposition,
             NULL::VARCHAR(1) as action,
-            r.input_parameters, r.result_message, CASE WHEN result_code <> 1 THEN r.severity END as severity,
-            r.result_code as passed_ct,
-            (1 - r.result_code)::INTEGER as exception_ct,
+            r.input_parameters, r.result_message, CASE WHEN result_code = 0 THEN r.severity END as severity,
+            CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END as passed_ct,
+            CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END as exception_ct,
             CASE
                 WHEN result_status = 'Warning' THEN 1
             END::INTEGER as warning_ct,

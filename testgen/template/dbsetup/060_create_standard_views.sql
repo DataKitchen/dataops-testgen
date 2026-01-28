@@ -221,8 +221,8 @@ SELECT
        dcc.functional_data_type as semantic_data_type,
        r.test_time, r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
-       SUM(r.result_code) as passed_ct,
-       SUM(1 - r.result_code) as issue_ct,
+       SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+       SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r
@@ -262,8 +262,8 @@ WITH dimension_rollup
    AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
               r.table_name, r.column_names, tt.dq_dimension,
               COUNT(*) as test_ct,
-              SUM(r.result_code) as passed_ct,
-              SUM(1 - r.result_code) as issue_ct,
+              SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+              SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
               MAX(r.dq_record_ct) as dq_record_ct,
               SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0)) as good_data_pct
          FROM test_results r
@@ -407,8 +407,8 @@ SELECT
        dcc.functional_data_type as semantic_data_type,
        r.test_time, r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
-       SUM(r.result_code) as passed_ct,
-       SUM(1 - r.result_code) as issue_ct,
+       SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+       SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r

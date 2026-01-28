@@ -74,6 +74,11 @@ class ProjectDashboardPage(Page):
                             "freshness_anomalies": table_group.monitor_freshness_anomalies or 0,
                             "schema_anomalies": table_group.monitor_schema_anomalies or 0,
                             "volume_anomalies": table_group.monitor_volume_anomalies or 0,
+                            "freshness_is_training": table_group.monitor_freshness_is_training or False,
+                            "volume_is_training": table_group.monitor_volume_is_training or False,
+                            "freshness_is_pending": table_group.monitor_freshness_is_pending or False,
+                            "volume_is_pending": table_group.monitor_volume_is_pending or False,
+                            "schema_is_pending": table_group.monitor_schema_is_pending or False,
                         } if table_group.monitor_test_suite_id else None,
                     }
                     for table_group in table_groups

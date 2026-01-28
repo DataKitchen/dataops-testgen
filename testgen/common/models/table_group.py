@@ -70,6 +70,11 @@ class TableGroupSummary(EntityMinimal):
     monitor_freshness_anomalies: int | None
     monitor_schema_anomalies: int | None
     monitor_volume_anomalies: int | None
+    monitor_freshness_is_training: bool | None
+    monitor_volume_is_training: bool | None
+    monitor_freshness_is_pending: bool | None
+    monitor_volume_is_pending: bool | None
+    monitor_schema_is_pending: bool | None
 
 
 class TableGroup(Entity):
@@ -256,7 +261,14 @@ class TableGroup(Entity):
                 ranked_test_runs.table_group_id,
                 SUM(CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS freshness_anomalies,
                 SUM(CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END) AS schema_anomalies,
-                SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies
+                SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies,
+                BOOL_OR(results.result_code = -1) FILTER (WHERE results.test_type = 'Freshness_Trend' AND ranked_test_runs.position = 1) AS freshness_is_training,
+                BOOL_OR(results.result_code = -1) FILTER (WHERE results.test_type = 'Volume_Trend' AND ranked_test_runs.position = 1) AS volume_is_training,
+                BOOL_OR(results.test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
+                BOOL_OR(results.test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
+                -- Schema monitor only creates results on schema changes (Failed)
+                -- Mark it as pending only if there are no results of any test type
+                BOOL_OR(results.test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending
             FROM ranked_test_runs
             INNER JOIN test_results AS results
                 ON (results.test_run_id = ranked_test_runs.id)
@@ -299,7 +311,12 @@ class TableGroup(Entity):
             lookback_windows.lookback_end AS monitor_lookback_end,
             monitor_tables.freshness_anomalies AS monitor_freshness_anomalies,
             monitor_tables.schema_anomalies AS monitor_schema_anomalies,
-            monitor_tables.volume_anomalies AS monitor_volume_anomalies
+            monitor_tables.volume_anomalies AS monitor_volume_anomalies,
+            monitor_tables.freshness_is_training AS monitor_freshness_is_training,
+            monitor_tables.volume_is_training AS monitor_volume_is_training,
+            monitor_tables.freshness_is_pending AS monitor_freshness_is_pending,
+            monitor_tables.volume_is_pending AS monitor_volume_is_pending,
+            monitor_tables.schema_is_pending AS monitor_schema_is_pending
         FROM table_groups AS groups
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)

@@ -47,6 +47,7 @@ class TestExecutionDef(InputParameters):
     table_name: str
     column_name: str
     skip_errors: int
+    history_calculation: str
     custom_query: str
     run_type: TestRunType
     test_scope: TestScope
@@ -260,14 +261,18 @@ class TestExecutionSQL:
                 measure = replace_templated_functions(measure, self.flavor)
                 td.measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{self.null_value}|')"
 
-                condition = (
-                    f"{td.measure} {td.test_operator} {td.test_condition}"
-                    if "BETWEEN" in td.test_operator
-                    else f"{td.measure}{td.test_operator}{td.test_condition}"
-                )
-                condition = replace_params(condition, params)
-                condition = replace_templated_functions(condition, self.flavor)
-                td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
+                # For prediction mode, return -1 during training period
+                if td.history_calculation == "PREDICT" and (not td.lower_tolerance or not td.upper_tolerance):
+                    td.condition_expression = "'-1,'"
+                else:
+                    condition = (
+                        f"{td.measure} {td.test_operator} {td.test_condition}"
+                        if "BETWEEN" in td.test_operator
+                        else f"{td.measure}{td.test_operator}{td.test_condition}"
+                    )
+                    condition = replace_params(condition, params)
+                    condition = replace_templated_functions(condition, self.flavor)
+                    td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
 
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
