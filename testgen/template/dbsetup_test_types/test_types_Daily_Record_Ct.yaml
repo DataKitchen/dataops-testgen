@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     general_type= 'D' AND date_days_present > 21 AND date_days_present - (DATEDIFF('day', '1800-01-05'::DATE, max_date) - DATEDIFF('day', '1800-01-05'::DATE, min_date) + 1) = 0 AND future_date_ct::FLOAT / NULLIF(value_ct, 0) <= 0.75
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DATE_DAYS_PRESENT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

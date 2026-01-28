@@ -12,6 +12,7 @@ test_types:
     Expected count of values with invalid characters
   selection_criteria: |-
     general_type = 'A'
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

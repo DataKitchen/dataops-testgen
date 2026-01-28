@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     functional_data_type IN ('Boolean', 'Code', 'Category') AND top_freq_values > '' AND distinct_value_ct BETWEEN 2 and 10 AND value_ct > 5
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

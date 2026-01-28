@@ -254,7 +254,7 @@ class TableGroup(Entity):
         monitor_tables AS (
             SELECT
                 ranked_test_runs.table_group_id,
-                SUM(CASE WHEN results.test_type = 'Table_Freshness' AND results.result_code = 0 THEN 1 ELSE 0 END) AS freshness_anomalies,
+                SUM(CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS freshness_anomalies,
                 SUM(CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END) AS schema_anomalies,
                 SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies
             FROM ranked_test_runs

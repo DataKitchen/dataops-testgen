@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: |-
     Row count percent above or below baseline
   selection_criteria: null
+  generation_template: null
   dq_score_prevalence_formula: |-
     (100.0 - {RESULT_MEASURE}::FLOAT)/100.0
   dq_score_risk_factor: '1.0'

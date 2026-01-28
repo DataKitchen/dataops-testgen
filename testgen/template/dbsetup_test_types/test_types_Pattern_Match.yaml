@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     (functional_data_type IN ('Attribute', 'DateTime Stamp', 'Phone') OR functional_data_type ILIKE 'ID%' OR functional_data_type ILIKE 'Period%') AND fn_charcount(top_patterns, E' \| ' ) = 1 AND REPLACE(SPLIT_PART(top_patterns, '|' , 2), 'N' , '' ) > '' AND distinct_value_ct > 10
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

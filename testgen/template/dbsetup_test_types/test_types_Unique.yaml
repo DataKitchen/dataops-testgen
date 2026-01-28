@@ -12,6 +12,7 @@ test_types:
     Count of non-unique values
   selection_criteria: |-
     record_ct > 500 and record_ct = distinct_value_ct and value_ct > 0
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

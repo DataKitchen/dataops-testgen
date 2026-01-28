@@ -307,7 +307,7 @@ class TableGroupsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
-                        run_test_generation(monitor_test_suite.id, "Monitor")
+                        run_test_generation(monitor_test_suite.id, "Monitor", test_types=["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
                             project_code=project_code,

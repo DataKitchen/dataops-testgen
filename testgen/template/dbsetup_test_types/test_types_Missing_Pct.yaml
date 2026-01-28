@@ -12,6 +12,7 @@ test_types:
     Cohen's H Difference (0.20 small, 0.5 mod, 0.8 large, 1.2 very large, 2.0 huge)
   selection_criteria: |-
     record_ct <> value_ct
+  generation_template: null
   dq_score_prevalence_formula: |-
     2.0 * (1.0 - fn_normal_cdf(ABS({RESULT_MEASURE}::FLOAT) / 2.0))
   dq_score_risk_factor: '0.75'

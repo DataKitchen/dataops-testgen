@@ -87,3 +87,25 @@ SET lower_tolerance = CASE
   END
 FROM stats s
 WHERE t.id = s.test_definition_id;
+
+
+WITH fingerprint_history AS (
+  SELECT test_definition_id,
+    test_time AS change_time,
+    result_signal AS last_fingerprint
+  FROM (
+    SELECT test_definition_id, test_time, result_signal,
+      result_signal IS DISTINCT FROM LAG(result_signal) OVER (ORDER BY test_time) AS changed
+    FROM test_results
+    WHERE test_suite_id = :TEST_SUITE_ID
+      AND test_type = 'Freshness_Trend'
+  ) tr
+  WHERE changed = TRUE
+  ORDER BY test_time DESC
+  LIMIT 1
+)
+UPDATE test_definitions
+SET baseline_value = h.last_fingerprint,
+  baseline_sum = h.change_time::VARCHAR
+FROM fingerprint_history h
+WHERE test_definitions.id = h.test_definition_id;

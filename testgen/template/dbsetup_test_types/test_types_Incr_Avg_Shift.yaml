@@ -12,6 +12,7 @@ test_types:
     Absolute Z-score (number of SD's outside mean) of prior avg - incremental avg
   selection_criteria: |-
     general_type='N' AND distinct_value_ct > 10 AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     {RECORD_CT}::FLOAT*(1-FN_NORMAL_CDF({RESULT_MEASURE}::FLOAT))/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

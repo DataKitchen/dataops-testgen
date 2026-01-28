@@ -12,6 +12,7 @@ test_types:
     Percent of records that match street address pattern
   selection_criteria: |-
     (std_pattern_match='STREET_ADDR') AND (avg_length <> round(avg_length)) AND (avg_embedded_spaces BETWEEN 2 AND 6) AND (avg_length < 35)
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({VALUE_CT}::FLOAT * ({RESULT_MEASURE}::FLOAT - {THRESHOLD_VALUE}::FLOAT)/100.0)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

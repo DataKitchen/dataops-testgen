@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
+  generation_template: gen_Constant.sql
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

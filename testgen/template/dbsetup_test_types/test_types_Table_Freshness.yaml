@@ -11,6 +11,7 @@ test_types:
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
+  generation_template: gen_Table_Freshness.sql
   dq_score_prevalence_formula: null
   dq_score_risk_factor: null
   column_name_prompt: |-

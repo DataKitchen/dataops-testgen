@@ -5,4 +5,6 @@ WHERE test_suite_id = :TEST_SUITE_ID ::UUID
   -- Ignore manual tests
   AND last_auto_gen_date IS NOT NULL
   -- Ignore locked tests
-  AND lock_refresh = 'N';
+  AND lock_refresh = 'N'
+  -- Filter by test types if specified (NULL = no filter)
+  AND (:TEST_TYPES_FILTER IS NULL OR test_type = ANY(:TEST_TYPES_FILTER));

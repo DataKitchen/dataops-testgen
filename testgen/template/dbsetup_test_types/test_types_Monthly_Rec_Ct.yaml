@@ -12,6 +12,7 @@ test_types:
     Calendar months without date values present
   selection_criteria: |-
     functional_data_type ILIKE 'Transactional Date%' AND date_days_present > 1 AND functional_table_type ILIKE  '%cumulative%' AND date_months_present > 2 AND date_months_present - (datediff( 'MON' , min_date, max_date) + 1) = 0 AND future_date_ct::FLOAT / NULLIF(value_ct, 0) <= 0.75
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DATE_MONTHS_PRESENT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

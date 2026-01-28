@@ -10,6 +10,7 @@ test_types:
   measure_uom: Mismatched measures
   measure_uom_description: null
   selection_criteria: null
+  generation_template: null
   dq_score_prevalence_formula: |-
     1
   dq_score_risk_factor: '1.0'

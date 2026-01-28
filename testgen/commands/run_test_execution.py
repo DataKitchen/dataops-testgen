@@ -86,10 +86,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         sql_generator = TestExecutionSQL(connection, table_group, test_run)
 
         if test_suite.is_monitor:
-            has_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())
-            if has_changes[0]["exists"]:
-                LOG.info("Regenerating monitor tests")
-                run_test_generation(test_suite_id, "Monitor")
+            schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
+            if schema_changes["has_table_adds"] or schema_changes["has_table_drops"]:
+                LOG.info("Tables added or dropped, regenerating Freshness and Volume tests")
+                run_test_generation(test_suite_id, "Monitor", test_types=["Freshness_Trend", "Volume_Trend"])
 
         # Update the thresholds before retrieving the test definitions in the next steps
         LOG.info("Updating test thresholds based on history calculations")
@@ -125,7 +125,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
                 # Run metadata tests last so that results for other tests are available to them
                 for run_type in ["QUERY", "CAT", "METADATA"]:
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
-                        run_functions[run_type](run_test_defs)
+                        run_functions[run_type](run_test_defs, save_progress=not test_suite.is_monitor)
                     else:
                         test_run.set_progress(run_type, "Completed")
                         LOG.info(f"No {run_type} tests to run")
@@ -188,7 +188,12 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     """
 
 
-def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "METADATA"], test_defs: list[TestExecutionDef]) -> None:
+def _run_tests(
+    sql_generator: TestExecutionSQL,
+    run_type: Literal["QUERY", "METADATA"],
+    test_defs: list[TestExecutionDef],
+    save_progress: bool = False,
+) -> None:
     test_run = sql_generator.test_run
     test_run.set_progress(run_type, "Running")
     test_run.save()
@@ -209,7 +214,7 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
         [sql_generator.run_query_test(td) for td in test_defs],
         use_target_db=run_type != "METADATA",
         max_threads=sql_generator.connection.max_threads,
-        progress_callback=update_test_progress,
+        progress_callback=update_test_progress if save_progress else None,
     )
 
     if test_results:
@@ -234,7 +239,11 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
     )
 
 
-def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutionDef]) -> None:
+def _run_cat_tests(
+    sql_generator: TestExecutionSQL,
+    test_defs: list[TestExecutionDef],
+    save_progress: bool = False,
+) -> None:
     test_run = sql_generator.test_run
     test_run.set_progress("CAT", "Running")
     test_run.save()
@@ -260,7 +269,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
         aggregate_queries,
         use_target_db=True,
         max_threads=sql_generator.connection.max_threads,
-        progress_callback=update_aggegate_progress,
+        progress_callback=update_aggegate_progress if save_progress else None,
     )
 
     if aggregate_results:
@@ -300,7 +309,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
             single_queries,
             use_target_db=True,
             max_threads=sql_generator.connection.max_threads,
-            progress_callback=update_single_progress,
+            progress_callback=update_single_progress if save_progress else False,
         )
 
         if single_results:

@@ -51,7 +51,7 @@ VALUES  ('Standard', 'Alpha_Trunc'),
         ('Standard', 'Variability_Increase'),
         ('Standard', 'Weekly_Rec_Ct'),
         ('Monitor', 'Schema_Drift'),
-        ('Monitor', 'Table_Freshness'),
+        ('Monitor', 'Freshness_Trend'),
         ('Monitor', 'Volume_Trend');
 
 
