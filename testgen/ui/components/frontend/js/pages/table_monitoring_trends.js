@@ -34,7 +34,7 @@ import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/component
 import { colorMap } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
 import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
-import { getAdaptiveTimeTicks, scale } from '/app/static/js/axis_utils.js';
+import { getAdaptiveTimeTicksV2, scale } from '/app/static/js/axis_utils.js';
 import { Tooltip } from '/app/static/js/components/tooltip.js';
 import { DualPane } from '/app/static/js/components/dual_pane.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -57,6 +57,7 @@ const timeTickFormatter = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
   hour12: true,
 });
+const tickWidth = 90;
 
 /**
  * @param {Properties} props
@@ -115,9 +116,9 @@ const TableMonitoringTrend = (props) => {
   const rawTimeline = [...new Set(allTimes)].sort();
   const dateRange = { min: rawTimeline[0] ?? (new Date()).getTime(), max: rawTimeline[rawTimeline.length - 1] ?? (new Date()).getTime() + 1 * 24 * 60 * 60 * 1000 };
   const timeline = ([
-    dateRange.min,
-    ...getAdaptiveTimeTicks(rawTimeline.slice(2, rawTimeline.length - 2), 5, 8),
-    dateRange.max,
+    new Date(dateRange.min),
+    ...getAdaptiveTimeTicksV2(rawTimeline.slice(2, rawTimeline.length - 2).map(time => new Date(time)), chartsWidth, tickWidth),
+    new Date(dateRange.max),
   ]).filter((t) => !!t);
 
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
@@ -221,13 +222,13 @@ const TableMonitoringTrend = (props) => {
   if (volumeRange.min === volumeRange.max) {
     volumeRange.max = volumeRange.max + 100;
   }
-  const parsedVolumeTrendEvents = volumeTrendEvents.map((e) => ({
+  const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
-  let parsedVolumeTrendPredictionPoints = Object.keys(predictions?.volume_trend?.mean ?? {}).map((time) => ({
+  let parsedVolumeTrendPredictionPoints = Object.keys(predictions?.volume_trend?.mean ?? {}).toSorted((a, b) => (+a) - (+b)).map((time) => ({
     x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     upper: scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
     lower: scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
@@ -392,8 +393,9 @@ const TableMonitoringTrend = (props) => {
           }),
 
           timeline.map((value, idx) => {
-            const label = timeTickFormatter.format(new Date(value));
-            const xPosition = scale(value, {
+            const valueAsDate = new Date(value);
+            const label = timeTickFormatter.format(valueAsDate);
+            const xPosition = scale(valueAsDate.getTime(), {
               old: dateRange,
               new: { min: origin.x, max: end.x },
             }, origin.x);

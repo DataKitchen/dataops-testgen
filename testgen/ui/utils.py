@@ -58,4 +58,4 @@ def parse_fuzzy_date(value: str | int) -> datetime | None:
         if ts >= 1e11:
             ts /= 1000
         return datetime.fromtimestamp(ts)
-    return None
+    return value
