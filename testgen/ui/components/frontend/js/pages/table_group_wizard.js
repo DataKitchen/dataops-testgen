@@ -43,15 +43,9 @@ import { timezones } from '../values.js';
 import { requiredIf } from '../form_validators.js';
 import { MonitorSettingsForm } from '../components/monitor_settings_form.js';
 import { Streamlit } from '../streamlit.js';
+import { WizardProgressIndicator } from '../components/wizard_progress_indicator.js';
 
 const { div, span, strong } = van.tags;
-const stepsTitle = {
-  tableGroup: 'Configure Table Group',
-  testTableGroup: 'Preview Table Group',
-  runProfiling: 'Run Profiling',
-  testSuite: 'Generate and Run Tests',
-  monitorSuite: 'Set up Monitors',
-};
 const lastStepCustomButtonText = {
   monitorSuite: (_, states) => states?.runProfiling?.val === true ? 'Save & Run' : 'Save',
 };
@@ -142,15 +136,43 @@ const TableGroupWizard = (props) => {
   return div(
     { id: domId },
     () => {
-      const stepName = steps[currentStepIndex.val];
-      const stepNumber = currentStepIndex.val + 1;
-
+      const stepIndex = currentStepIndex.val;
       if (isComplete.val) {
         return '';
       }
-      return Caption({
-        content: `Step ${stepNumber} of ${steps.length}: ${stepsTitle[stepName]}`,
-      });
+
+      return WizardProgressIndicator(
+        [
+          {
+            index: 1,
+            title: 'Table Group',
+            skipped: false,
+            includedSteps: ['tableGroup', 'testTableGroup'],
+          },
+          {
+            index: 2,
+            title: 'Profiling',
+            skipped: !stepsState.runProfiling.rawVal,
+            includedSteps: ['runProfiling'],
+          },
+          {
+            index: 3,
+            title: 'Testing',
+            skipped: !stepsState.testSuite.rawVal.generate,
+            includedSteps: ['testSuite'],
+          },
+          {
+            index: 4,
+            title: 'Monitors',
+            skipped: !stepsState.monitorSuite.rawVal.generate,
+            includedSteps: ['monitorSuite'],
+          },
+        ],
+        {
+          index: stepIndex,
+          name: steps[stepIndex],
+        },
+      );
     },
     WizardStep(0, currentStepIndex, () => {
       currentStepIndex.val;
