@@ -107,8 +107,8 @@ class NotificationSettingsDialogBase:
                 rule = (recipient, item.get("trigger"), item.get("scope"))
                 rule_counts[rule] = rule_counts.get(rule, 0) + 1
                 rule_items.setdefault(rule, []).append(item)
-        for rule, count in rule_counts.items():
-            if count > 1:
+        for rule, ocurrence_count in rule_counts.items():
+            if ocurrence_count > 1:
                 items = rule_items[rule]
                 for item in items:
                     item.setdefault("duplicates", []).append(rule[0])
@@ -134,6 +134,15 @@ class NotificationSettingsDialogBase:
             }
             ns_json_list.append(ns_json)
 
+        component_props = {
+            **self.component_props,
+            **(self._get_component_props()),
+        }
+        scope_options_labels = dict(component_props.get("scope_options", []))
+        ns_json_list = sorted(
+            self._mark_duplicates(ns_json_list),
+            key=lambda item: "0" if not item["scope"] else scope_options_labels.get(item["scope"], "ZZZ"),
+        )
         widgets.css_class("m-dialog")
         widgets.testgen_component(
             "notification_settings",
@@ -145,8 +154,7 @@ class NotificationSettingsDialogBase:
                 "result": result,
                 "scope_options": [],
                 "scope_label": None,
-                **self.component_props,
-                **self._get_component_props(),
+                **component_props,
             },
             event_handlers={
                 "AddNotification": self.on_add_item,
