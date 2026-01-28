@@ -98,6 +98,22 @@ class NotificationSettingsDialogBase:
     def _get_component_props(self) -> dict[str, Any]:
         raise NotImplementedError
 
+    def _mark_duplicates(self, ns_json_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return a list of recipients that have duplicate rule (recipient + trigger + scope) combinations."""
+        rule_counts = {}
+        rule_items: dict[tuple, list[dict]] = {}
+        for item in ns_json_list:
+            for recipient in item["recipients"]:
+                rule = (recipient, item.get("trigger"), item.get("scope"))
+                rule_counts[rule] = rule_counts.get(rule, 0) + 1
+                rule_items.setdefault(rule, []).append(item)
+        for rule, count in rule_counts.items():
+            if count > 1:
+                items = rule_items[rule]
+                for item in items:
+                    item.setdefault("duplicates", []).append(rule[0])
+        return ns_json_list
+
     @with_database_session
     def render(self) -> None:
         user_can_edit = session.auth.user_has_permission("edit")
