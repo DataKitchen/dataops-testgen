@@ -117,7 +117,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     }
 
     van.derive(() => {
-        if (getValue(props.result)?.success) {
+        if (getValue(props.result)?.success && newNotificationItemForm.isEdit.rawVal) {
             resetForm();
         }
     });
