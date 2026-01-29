@@ -11,6 +11,7 @@ from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db, fetch_one_from_db
+from testgen.ui.utils import parse_fuzzy_date
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -118,7 +119,8 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_names"], # Don't quote this - queries already have quotes
         "COLUMN_TYPE": issue_data["column_type"],
-        "TEST_DATE": str(issue_data["test_date"]),
+        "TEST_DATE": str(parsed_test_date) if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
+            else None,
         "CUSTOM_QUERY": test_definition.custom_query,
         "BASELINE_VALUE": test_definition.baseline_value,
         "BASELINE_CT": test_definition.baseline_ct,
