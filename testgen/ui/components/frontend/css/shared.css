@@ -689,12 +689,8 @@ input::-ms-clear {
     background: var(--green);
 }
 
-.anomaly-tag.no-value {
-    background: var(--light-grey);
-}
-
 .anomaly-tag > .material-symbols-rounded {
-    color: white;
+    color: var(--empty-light);
     font-size: 20px;
 }
 
@@ -702,7 +698,29 @@ input::-ms-clear {
     padding: 1px 5px;
     border-radius: 10px;
     background: var(--error-color);
-    color: white;
+    color: var(--empty-light);
+}
+
+.anomaly-tag.is-training {
+    position: relative;
+    background: transparent;
+    border: 2px solid var(--blue);
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+}
+
+.anomaly-tag.is-training > .material-symbols-rounded {
+    color: var(--blue);
+}
+
+.anomaly-tag.is-pending {
+    background: none;
+    color: var(--primary-text-color);
+}
+
+.notifications--empty.tg-empty-state {
+    margin-top: 0;
 }
 
 .warning-text {

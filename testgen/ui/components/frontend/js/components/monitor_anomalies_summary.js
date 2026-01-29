@@ -5,6 +5,11 @@
  * @property {number} volume_anomalies
  * @property {number} schema_anomalies
  * @property {number} quality_drift_anomalies
+ * @property {boolean?} freshness_is_training
+ * @property {boolean?} volume_is_training
+ * @property {boolean?} freshness_is_pending
+ * @property {boolean?} volume_is_pending
+ * @property {boolean?} schema_is_pending
  * @property {number} lookback
  * @property {number} lookback_start
  * @property {number} lookback_end
@@ -13,22 +18,34 @@
  */
 import { emitEvent } from '../utils.js';
 import { formatDuration, humanReadableDuration } from '../display_utils.js';
+import { withTooltip } from './tooltip.js';
 import van from '../van.min.js';
 
 const { a, div, i, span } = van.tags;
 
-/**`
- * @param {MonitorSummary} summary 
+/**
+ * @param {MonitorSummary} summary
  * @param {any?} topLabel
  */
 const AnomaliesSummary = (summary, label = 'Anomalies') => {
-    const SummaryTag = (label, value) => div(
+    if (!summary.lookback) {
+        return span({class: 'text-secondary mt-3 mb-2'}, 'No monitor runs yet');
+    }
+
+    const SummaryTag = (label, value, isTraining, isPending) => div(
         {class: 'flex-row fx-gap-1'},
         div(
-            {class: `flex-row fx-justify-center anomaly-tag ${value > 0 ? 'has-anomalies' : ''}`},
+            {class: `flex-row fx-justify-center anomaly-tag ${value > 0 ? 'has-anomalies' : isTraining ? 'is-training' : isPending ? 'is-pending' : ''}`},
             value > 0
                 ? value
-                : i({class: 'material-symbols-rounded'}, 'check'),
+                : isTraining
+                    ? withTooltip(
+                        i({class: 'material-symbols-rounded'}, 'more_horiz'),
+                        {text: 'Training model', position: 'top-right'},
+                    )
+                    : isPending
+                        ? span({class: 'mr-2'}, '-')
+                        : i({class: 'material-symbols-rounded'}, 'check'),
         ),
         span({}, label),
     );
@@ -40,9 +57,9 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
 
     const contentElement = div(
         {class: 'flex-row fx-gap-5'},
-        SummaryTag('Freshness', summary.freshness_anomalies),
-        SummaryTag('Volume', summary.volume_anomalies),
-        SummaryTag('Schema', summary.schema_anomalies),
+        SummaryTag('Freshness', summary.freshness_anomalies, summary.freshness_is_training, summary.freshness_is_pending),
+        SummaryTag('Volume', summary.volume_anomalies, summary.volume_is_training, summary.volume_is_pending),
+        SummaryTag('Schema', summary.schema_anomalies, false, summary.schema_is_pending),
         // SummaryTag('Quality Drift', summary.quality_drift_anomalies),
     );
 

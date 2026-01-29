@@ -17,6 +17,11 @@
  * @property {number?} volume_anomalies
  * @property {number?} schema_anomalies
  * @property {number?} quality_drift_anomalies
+ * @property {boolean?} freshness_is_training
+ * @property {boolean?} volume_is_training
+ * @property {boolean} freshness_is_pending
+ * @property {boolean} volume_is_pending
+ * @property {boolean} schema_is_pending
  * @property {number?} lookback_start
  * @property {number?} lookback_end
  * @property {string?} latest_update
@@ -110,9 +115,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 
             return {
                 table_name: () => span({class: monitor.table_state === 'dropped' ? 'text-disabled' : ''}, monitor.table_name),
-                freshness: () => AnomalyTag(monitor.freshness_anomalies),
-                volume: () => AnomalyTag(monitor.volume_anomalies),
-                schema: () => AnomalyTag(monitor.schema_anomalies),
+                freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending),
+                volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending),
+                schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending),
                 quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
                 latest_update: () => span(
                     {class: 'text-small text-secondary'},
@@ -223,12 +228,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
                 }),
-                () => {
-                    const summary = getValue(props.summary);
-                    return getValue(props.has_monitor_test_suite) && summary?.lookback
-                        ? AnomaliesSummary(summary, 'Total anomalies')
-                        : '';
-                },
+                () => getValue(props.has_monitor_test_suite)
+                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies')
+                    : '',
                 () => getValue(props.has_monitor_test_suite) && userCanEdit
                     ? div(
                         {class: 'flex-row fx-gap-3'},
@@ -325,8 +327,8 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             ],
                             [
                                 {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
-                                {name: 'freshness', label: 'Freshness', width: 85, align: 'left'},
-                                {name: 'volume', label: 'Volume', width: 85, align: 'left'},
+                                {name: 'freshness', label: 'Freshness', width: 85, align: 'left', overflow: 'visible'},
+                                {name: 'volume', label: 'Volume', width: 85, align: 'left', overflow: 'visible'},
                                 {name: 'schema', label: 'Schema', width: 85, align: 'left'},
                                 // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
                                 {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
@@ -340,9 +342,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         {class: 'flex-row fx-justify-center empty-table-message'},
                         span(
                             {class: 'text-secondary'},
-                            getValue(props.summary)?.lookback
-                                ? 'No tables found matching filters'
-                                : 'No monitor results yet for table group',
+                            'No tables found matching filters',
                         ),
                     ),
                     sort: tableSort,
@@ -356,23 +356,30 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 }
 
 /**
- * @param {number?} value
+ * @param {number?} anomalies
+ * @param {boolean} isTraining
+ * @param {boolean} isPending
  */
-const AnomalyTag = (value) => {
+const AnomalyTag = (anomalies, isTraining = false, isPending = false) => {
+    if (isPending) {
+        return span({class: 'text-secondary'}, '-');
+    }
+
     const content = van.derive(() => {
-        if (value == undefined) {
-            return i({class: 'material-symbols-rounded'}, 'remove');
+        if (isTraining) {
+            return withTooltip(
+                i({class: 'material-symbols-rounded'}, 'more_horiz'),
+                {text: 'Training model'},
+            );
         }
-
-        if (value > 0) {
-            return span(value);
+        if (anomalies > 0) {
+            return span(anomalies);
         }
-
         return i({class: 'material-symbols-rounded'}, 'check');
     });
 
     return div(
-        {class: `anomaly-tag ${(value != undefined && value > 0) ? 'has-anomalies' : ''} ${value == undefined ? 'no-value' : ''}`},
+        {class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${isTraining ? 'is-training' : ''}`},
         content,
     );
 };

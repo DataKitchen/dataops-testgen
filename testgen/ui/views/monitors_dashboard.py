@@ -255,7 +255,12 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         MAX(lookback_end) AS lookback_end,
         SUM(freshness_anomalies)::INTEGER AS freshness_anomalies,
         SUM(volume_anomalies)::INTEGER AS volume_anomalies,
-        SUM(schema_anomalies)::INTEGER AS schema_anomalies
+        SUM(schema_anomalies)::INTEGER AS schema_anomalies,
+        BOOL_OR(freshness_is_training) AS freshness_is_training,
+        BOOL_OR(volume_is_training) AS volume_is_training,
+        BOOL_OR(freshness_is_pending) AS freshness_is_pending,
+        BOOL_OR(volume_is_pending) AS volume_is_pending,
+        BOOL_OR(schema_is_pending) AS schema_is_pending
     FROM ({query}) AS subquery
     GROUP BY lookback
     """
@@ -264,7 +269,13 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
     return {**result} if result else {
         "lookback": 0,
         "freshness_anomalies": 0,
+        "volume_anomalies": 0,
         "schema_anomalies": 0,
+        "freshness_is_training": False,
+        "volume_is_training": False,
+        "freshness_is_pending": False,
+        "volume_is_pending": False,
+        "schema_is_pending": False,
     }
 
 
@@ -278,7 +289,16 @@ def _monitor_changes_by_tables_query(
     offset: int | None = None,
 ) -> tuple[str, dict]:
     query = f"""
-    WITH ranked_test_runs AS (
+    WITH latest_tables AS (
+        SELECT DISTINCT
+            table_chars.schema_name,
+            table_chars.table_name
+        FROM data_table_chars table_chars
+        WHERE table_chars.table_groups_id = :table_group_id
+            AND table_chars.drop_date IS NULL
+            {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
+    ),
+    ranked_test_runs AS (
         SELECT
             test_runs.id,
             test_runs.test_starttime,
@@ -292,14 +312,16 @@ def _monitor_changes_by_tables_query(
         WHERE table_groups.id = :table_group_id
     ),
     monitor_results AS (
-        SELECT 
+        SELECT
+            latest_tables.table_name,
             results.test_time,
-            results.table_name,
             results.test_type,
             results.result_code,
             ranked_test_runs.lookback,
             ranked_test_runs.position,
             ranked_test_runs.test_starttime,
+            -- result_code = -1 indicates training mode
+            CASE WHEN results.result_code = -1 THEN 1 ELSE 0 END AS is_training,
             CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
             CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
             CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
@@ -308,19 +330,20 @@ def _monitor_changes_by_tables_query(
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods
-        FROM ranked_test_runs
-        INNER JOIN test_results AS results
-            ON (results.test_run_id = ranked_test_runs.id)
-        -- Also capture 1 run before the lookback to get baseline results
-        WHERE ranked_test_runs.position <= ranked_test_runs.lookback + 1
-            AND results.table_name IS NOT NULL
-            {"AND results.table_name ILIKE :table_name_filter" if table_name_filter else ''}
+        FROM latest_tables
+        LEFT JOIN ranked_test_runs ON TRUE
+        LEFT JOIN test_results AS results
+            ON results.test_run_id = ranked_test_runs.id
+            AND results.table_name = latest_tables.table_name
+        WHERE ranked_test_runs.position IS NULL
+            -- Also capture 1 run before the lookback to get baseline results
+            OR ranked_test_runs.position <= ranked_test_runs.lookback + 1
     ),
     monitor_tables AS (
         SELECT
             :table_group_id AS table_group_id,
             table_name,
-            lookback,
+            MAX(lookback) AS lookback,
             SUM(freshness_anomaly) AS freshness_anomalies,
             SUM(volume_anomaly) AS volume_anomalies,
             SUM(schema_anomaly) AS schema_anomalies,
@@ -329,6 +352,13 @@ def _monitor_changes_by_tables_query(
             SUM(col_adds) AS column_adds,
             SUM(col_drops) AS column_drops,
             SUM(col_mods) AS column_mods,
+            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_is_training,
+            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_is_training,
+            BOOL_OR(test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
+            BOOL_OR(test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
+            -- Schema monitor only creates results on schema changes (Failed)
+            -- Mark it as pending only if there are no results of any test type
+            BOOL_OR(test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending,
             CASE
                 -- Mark as Dropped if latest Schema Drift result for the table indicates it was dropped
                 WHEN (ARRAY_AGG(table_change ORDER BY test_time DESC) FILTER (WHERE table_change IS NOT NULL))[1] = 'D'
@@ -342,15 +372,16 @@ def _monitor_changes_by_tables_query(
             END AS table_state
         FROM monitor_results
         -- Only aggregate within lookback runs
-        WHERE position <= lookback
-        GROUP BY table_name, lookback
+        WHERE position IS NULL OR position <= COALESCE(lookback, 1)
+        GROUP BY table_name
     ),
     table_bounds AS (
-        SELECT 
+        SELECT
             table_name,
             MIN(position) AS min_position,
             MAX(position) AS max_position
         FROM monitor_results
+        WHERE position IS NOT NULL
         GROUP BY table_name
     ),
     baseline_tables AS (
@@ -372,11 +403,13 @@ def _monitor_changes_by_tables_query(
     )
     SELECT
         monitor_tables.*,
-        baseline_tables.*
+        baseline_tables.lookback_start,
+        baseline_tables.lookback_end,
+        baseline_tables.previous_row_count
     FROM monitor_tables
     LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
     {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ''}
-    {f"ORDER BY monitor_tables.{sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else ''}
+    {f"ORDER BY monitor_tables.{sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else 'ORDER BY LOWER(monitor_tables.table_name)'}
     {"LIMIT :limit" if limit else ''}
     {"OFFSET :offset" if offset else ''}
     """

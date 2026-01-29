@@ -56,14 +56,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE)
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -71,17 +73,17 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+            AND DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE)
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE)
+            AND NOT DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME('{BASELINE_SUM}'), MINUTE) AS result_measure
+        DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE) AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
         FROM `{SCHEMA_NAME}.{TABLE_NAME}`
@@ -104,14 +106,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+            AND DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}')
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+            AND NOT DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}')
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -119,20 +123,20 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+            AND DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}')
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}')
+            AND NOT DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}')
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATEDIFF(MINUTE, TIMESTAMP '{BASELINE_SUM}', TIMESTAMP '{RUN_DATE}') AS result_measure
+        DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}') AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        FROM `{SCHEMA_NAME}`.`{TABLE_NAME}`
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2217'
@@ -152,14 +156,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+            AND DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+            AND NOT DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -167,20 +173,20 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+            AND DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
+            AND NOT DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2))
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATEDIFF(MINUTE, CAST('{BASELINE_SUM}' AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS result_measure
+        DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2317'
@@ -200,14 +206,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -215,20 +223,20 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+            AND (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER
+            AND NOT (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - '{BASELINE_SUM}'::TIMESTAMP)) / 60)::INTEGER AS result_measure
+        (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2017'
@@ -248,14 +256,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -263,20 +273,20 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+        DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2517'
@@ -296,14 +306,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -311,20 +323,20 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+        DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
       ) test;
   - id: '2117'
@@ -344,14 +356,16 @@ test_types:
         '{INPUT_PARAMETERS}' AS input_parameters,
         fingerprint AS result_signal,
         CASE
+          -- Learning mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 0
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 0
           ELSE 1
@@ -359,19 +373,19 @@ test_types:
         CASE
           -- No change to table, and we're beyond time range: LATE
           WHEN fingerprint = '{BASELINE_VALUE}'
-            AND DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               > {UPPER_TOLERANCE}
             THEN 'Table unchanged beyond expected schedule'
           -- Table changed outside time range: UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
-            AND NOT DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
+            AND NOT DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP)
               BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
             THEN 'Table changed outside of expected schedule'
         END AS result_message,
         -- Calculated interval in minutes
-        DATEDIFF(MINUTE, '{BASELINE_SUM}'::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
+        DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS result_measure
       FROM (
         SELECT {CUSTOM_QUERY} AS fingerprint
-        FROM "{SCHEMA_NAME}.{TABLE_NAME}"
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
       ) test;

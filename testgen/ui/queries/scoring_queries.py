@@ -94,7 +94,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             suites.test_suite,
             types.dq_dimension,
             CASE
-                WHEN results.result_code <> 1 THEN results.disposition
+                WHEN results.result_code = 0 THEN results.disposition
                 ELSE 'Passed'
             END as disposition,
             results.test_run_id::VARCHAR,

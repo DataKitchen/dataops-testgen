@@ -4,6 +4,7 @@ import click
 
 from testgen import settings
 from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
     create_database,
@@ -145,6 +146,7 @@ def run_quick_start(delete_target_db: bool) -> None:
         )
     )
     with_database_session(score_definition.save)()
+    with_database_session(run_test_generation)("823a1fef-9b6d-48d5-9d0f-2db9812cc318", "Monitor", ["Volume_Trend", "Schema_Drift"])
 
 
 def run_quick_start_increment(iteration):

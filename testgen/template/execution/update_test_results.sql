@@ -7,6 +7,7 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
         CASE
           WHEN r.result_status = 'Error' THEN 'Error'
           WHEN COALESCE(d.severity, s.severity, tt.default_severity) = 'Log' THEN 'Log'
+          WHEN r.result_code = -1 THEN 'Log'
           WHEN r.result_code = 1 THEN 'Passed'
           WHEN r.result_code = 0 AND COALESCE(d.severity, s.severity, tt.default_severity) = 'Warning' THEN 'Warning'
           WHEN r.result_code = 0 AND COALESCE(d.severity, s.severity, tt.default_severity) = 'Fail' THEN 'Failed'

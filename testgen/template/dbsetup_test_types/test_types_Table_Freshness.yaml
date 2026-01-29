@@ -18,12 +18,12 @@ test_types:
     null
   column_name_help: |-
     null
-  default_parm_columns: history_calculation,history_lookback,subset_condition,custom_query
+  default_parm_columns: subset_condition,custom_query
   default_parm_values: null
   default_parm_prompts: |-
-    History Aggregate,History Lookback,Record Subset Condition,Fingerprint Expression
+    Record Subset Condition,Fingerprint Expression
   default_parm_help: |-
-    Aggregate calculation to be performed on the N lookback results|Last N tests to use for history aggregate calculation|Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
+    Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
   default_severity: Log
   run_type: QUERY
   test_scope: table

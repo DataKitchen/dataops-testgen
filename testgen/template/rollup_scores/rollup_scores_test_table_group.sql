@@ -31,7 +31,7 @@ UPDATE data_column_chars
 -- Roll up latest scores to data_column_chars -- excludes multi-column tests
 WITH score_calc
   AS (SELECT dcc.column_id,
-             SUM(1 - r.result_code) as issue_ct,
+             SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
              -- Use AVG instead of MAX because column counts may differ by test_run
              AVG(r.dq_record_ct) as row_ct,
              -- bad data pct * record count = affected_data_points
