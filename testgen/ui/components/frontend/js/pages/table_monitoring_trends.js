@@ -113,12 +113,12 @@ const TableMonitoringTrend = (props) => {
 
   const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents, ...predictionTimes].map(e => e.time);
   const rawTimeline = [...new Set(allTimes)].sort();
-  const dateRange = { min: rawTimeline[0], max: rawTimeline[rawTimeline.length - 1] };
-  const timeline = [
+  const dateRange = { min: rawTimeline[0] ?? (new Date()).getTime(), max: rawTimeline[rawTimeline.length - 1] ?? (new Date()).getTime() + 1 * 24 * 60 * 60 * 1000 };
+  const timeline = ([
     dateRange.min,
     ...getAdaptiveTimeTicks(rawTimeline.slice(2, rawTimeline.length - 2), 5, 8),
     dateRange.max,
-  ];
+  ]).filter((t) => !!t);
 
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
     changed: e.changed,
@@ -215,7 +215,9 @@ const TableMonitoringTrend = (props) => {
       parseInt(predictions.volume_trend.lower_tolerance[time]),
     ], []),
   ];
-  const volumeRange = {min: Math.min(...volumes), max: Math.max(...volumes)};
+  const volumeRange = volumes.length > 0
+    ? {min: Math.min(...volumes), max: Math.max(...volumes)}
+    : {min: 0, max: 100};
   if (volumeRange.min === volumeRange.max) {
     volumeRange.max = volumeRange.max + 100;
   }
