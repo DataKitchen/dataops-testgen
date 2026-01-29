@@ -7,6 +7,7 @@
  * @property {string[]} recipients
  * @property {string} trigger
  * @property {boolean} enabled
+ * @property {string[]} duplicates
  *
  * @typedef Subtitle
  * @type {object}
@@ -117,7 +118,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     }
 
     van.derive(() => {
-        if (getValue(props.result)?.success) {
+        if (getValue(props.result)?.success && newNotificationItemForm.isEdit.rawVal) {
             resetForm();
         }
     });
@@ -129,76 +130,90 @@ const NotificationSettings = (/** @type Properties */ props) => {
     ) => {
         const showTotalScore = totalScoreEnabled && item.total_score_threshold !== '0.0';
         const showCdeScore = cdeScoreEnabled && item.cde_score_threshold !== '0.0';
+        const duplicatedMessage = item.duplicates?.length
+            ? `This notification will be delivered multiple times for: ${item.duplicates.join(', ')}`
+            : '';
+
         return div(
-            { class: () => `table-row flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
-            event === 'score_drop'
-                ? div(
-                    { style: `flex: ${columns[0]}%`, class: 'flex-column fx-gap-1 score-threshold' },
-                    showTotalScore ? div('Total score: ', b(item.total_score_threshold)) : '',
-                    showCdeScore ? div(`${showTotalScore ? 'or ' : ''}CDE score: `, b(item.cde_score_threshold)) : '',
-                )
-                : div(
-                    { style: `flex: ${columns[0]}%` },
-                    div(scopeLabel(item.scope)),
-                    div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+            { class: 'flex-column table-row'},
+            div(
+                { class: () => `flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
+                event === 'score_drop'
+                    ? div(
+                        { style: `flex: ${columns[0]}%`, class: 'flex-column fx-gap-1 score-threshold' },
+                        showTotalScore ? div('Total score: ', b(item.total_score_threshold)) : '',
+                        showCdeScore ? div(`${showTotalScore ? 'or ' : ''}CDE score: `, b(item.cde_score_threshold)) : '',
+                    )
+                    : div(
+                        { style: `flex: ${columns[0]}%` },
+                        div(scopeLabel(item.scope)),
+                        div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+                    ),
+                div(
+                    { style: `flex: ${columns[1]}%` },
+                    TruncatedText({ max: 6 }, ...item.recipients),
                 ),
-            div(
-                { style: `flex: ${columns[1]}%` },
-                TruncatedText({ max: 6 }, ...item.recipients),
-            ),
-            div(
-                { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
-                permissions.can_edit
-                ? (newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id
-                ? div(
-                    { class: 'flex-row fx-gap-1' },
-                    Icon({ size: 18, classes: 'notifications--editing' }, 'edit'),
-                    span({ class: 'notifications--editing' }, 'Editing'),
-                )
-                : [
-                    item.enabled
-                        ? Button({
+                div(
+                    { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
+                    permissions.can_edit
+                    ? (newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id
+                    ? div(
+                        { class: 'flex-row fx-gap-1' },
+                        Icon({ size: 18, classes: 'notifications--editing' }, 'edit'),
+                        span({ class: 'notifications--editing' }, 'Editing'),
+                    )
+                    : [
+                        item.enabled
+                            ? Button({
+                                type: 'stroked',
+                                icon: 'pause',
+                                tooltip: 'Pause notification',
+                                style: 'height: 32px;',
+                                onclick: () => emitEvent('PauseNotification', { payload: item }),
+                            })
+                            : Button({
+                                type: 'stroked',
+                                icon: 'play_arrow',
+                                tooltip: 'Resume notification',
+                                style: 'height: 32px;',
+                                onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                            }),
+                        Button({
                             type: 'stroked',
-                            icon: 'pause',
-                            tooltip: 'Pause notification',
+                            icon: 'edit',
+                            tooltip: 'Edit notification',
                             style: 'height: 32px;',
-                            onclick: () => emitEvent('PauseNotification', { payload: item }),
-                        })
-                        : Button({
-                            type: 'stroked',
-                            icon: 'play_arrow',
-                            tooltip: 'Resume notification',
-                            style: 'height: 32px;',
-                            onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                            onclick: () => {
+                                newNotificationItemForm.isEdit.val = true;
+                                newNotificationItemForm.id.val = item.id;
+                                newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
+                                if (event === 'score_drop') {
+                                    newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
+                                    newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
+                                } else {
+                                    newNotificationItemForm.scope.val = item.scope;
+                                    newNotificationItemForm.trigger.val = item.trigger;
+                                }
+                            },
                         }),
-                    Button({
-                        type: 'stroked',
-                        icon: 'edit',
-                        tooltip: 'Edit notification',
-                        style: 'height: 32px;',
-                        onclick: () => {
-                            newNotificationItemForm.isEdit.val = true;
-                            newNotificationItemForm.id.val = item.id;
-                            newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
-                            if (event === 'score_drop') {
-                                newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
-                                newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
-                            } else {
-                                newNotificationItemForm.scope.val = item.scope;
-                                newNotificationItemForm.trigger.val = item.trigger;
-                            }
-                        },
-                    }),
-                    Button({
-                        type: 'stroked',
-                        icon: 'delete',
-                        tooltip: 'Delete notification',
-                        tooltipPosition: 'top-left',
-                        style: 'height: 32px;',
-                        onclick: () => emitEvent('DeleteNotification', { payload: item }),
-                    }),
-                ]) : null,
+                        Button({
+                            type: 'stroked',
+                            icon: 'delete',
+                            tooltip: 'Delete notification',
+                            tooltipPosition: 'top-left',
+                            style: 'height: 32px;',
+                            onclick: () => emitEvent('DeleteNotification', { payload: item }),
+                        }),
+                    ]) : null,
+                ),
             ),
+            duplicatedMessage
+                ? div(
+                    { class: 'flex-row fx-gap-1 text-caption warning-text' },
+                    Icon({ size: 12, classes: 'warning-text' }, 'warning'),
+                    span({}, duplicatedMessage),
+                )
+                : '',
         );
     }
 

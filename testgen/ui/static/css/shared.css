@@ -704,3 +704,7 @@ input::-ms-clear {
 .notifications--empty.tg-empty-state {
     margin-top: 0;
 }
+
+.warning-text {
+    color: var(--orange);
+}

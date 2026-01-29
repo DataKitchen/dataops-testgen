@@ -704,3 +704,7 @@ input::-ms-clear {
     background: var(--error-color);
     color: white;
 }
+
+.warning-text {
+    color: var(--orange);
+}
