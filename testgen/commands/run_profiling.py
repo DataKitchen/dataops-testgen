@@ -11,7 +11,7 @@ from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -25,6 +25,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
@@ -311,15 +312,23 @@ def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGrou
 
 @with_database_session
 def _generate_tests(table_group: TableGroup) -> None:
-    # Freshness_Trend depends on profiling results, so regenerate after each profiling run
-    if bool(table_group.monitor_test_suite_id):
-        try:
-            run_test_generation(table_group.monitor_test_suite_id, "Monitor", test_types=["Freshness_Trend"])
-        except Exception:
-            LOG.exception("Error generating Freshness_Trend monitor tests")
+    is_first_profile_run = not table_group.last_complete_profile_run_id
 
-    if not table_group.last_complete_profile_run_id and bool(table_group.default_test_suite_id):
+    if bool(table_group.monitor_test_suite_id):
+        monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
+        try:
+            run_monitor_generation(
+                table_group.monitor_test_suite_id,
+                # Only Freshness depends on profiling results
+                ["Freshness_Trend"],
+                # Insert for new tables only, if user disabled regeneration
+                mode="upsert" if is_first_profile_run or monitor_suite.monitor_regenerate_freshness else "insert",
+            )
+        except Exception:
+            LOG.exception("Error generating Freshness monitors")
+
+    if is_first_profile_run and bool(table_group.default_test_suite_id):
         try:
             run_test_generation(table_group.default_test_suite_id, "Standard")
         except Exception:
-            LOG.exception(f"Error generating standard tests for test suite: {table_group.default_test_suite_id}")
+            LOG.exception(f"Error generating tests for test suite: {table_group.default_test_suite_id}")

@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Literal
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
@@ -489,7 +489,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_test_generation(monitor_suite.id, "Monitor", test_types=["Volume_Trend", "Schema_Drift"])
+                run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
 
             st.rerun()
 

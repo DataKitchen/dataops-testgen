@@ -70,6 +70,7 @@ class TestSuite(Entity):
     dq_score_exclude: bool = Column(Boolean, default=False)
     is_monitor: bool = Column(Boolean, default=False)
     monitor_lookback: int | None = Column(Integer)
+    monitor_regenerate_freshness: bool = Column(Boolean, default=True)
     predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
     predict_min_lookback: int | None = Column(Integer)
     predict_exclude_weekends: bool = Column(Boolean, default=False)

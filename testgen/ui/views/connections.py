@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation
 from testgen.ui.queries import table_group_queries
 
 try:
@@ -432,13 +432,14 @@ class ConnectionsPage(Page):
                             dq_score_exclude=True,
                             is_monitor=True,
                             monitor_lookback=monitor_test_suite_data.get("monitor_lookback") or 14,
+                            monitor_regenerate_freshness=monitor_test_suite_data.get("monitor_regenerate_freshness") or True,
                             predict_min_lookback=monitor_test_suite_data.get("predict_min_lookback") or 30,
                             predict_sensitivity=monitor_test_suite_data.get("predict_sensitivity") or "medium",
                             predict_exclude_weekends=monitor_test_suite_data.get("predict_exclude_weekends") or False,
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
-                        run_test_generation(monitor_test_suite.id, "Monitor", test_types=["Volume_Trend", "Schema_Drift"])
+                        run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
                             project_code=project_code,

@@ -13,11 +13,12 @@
  * @property {string?} table_groups_id
  * @property {string?} test_suite
  * @property {number?} monitor_lookback
+ * @property {boolean?} monitor_regenerate_freshness
  * @property {('low'|'medium'|'high')?} predict_sensitivity
  * @property {number?} predict_min_lookback
  * @property {boolean?} predict_exclude_weekends
  * @property {string?} predict_holiday_codes
- * 
+ *
  * @typedef FormState
  * @type {object}
  * @property {boolean} dirty
@@ -62,6 +63,7 @@ const MonitorSettingsForm = (props) => {
 
     const monitorSuite = getValue(props.monitorSuite) ?? {};
     const monitorLookback = van.state(monitorSuite.monitor_lookback ?? 14);
+    const monitorRegenerateFreshness = van.state(monitorSuite.monitor_regenerate_freshness ?? true);
     const predictSensitivity = van.state(monitorSuite.predict_sensitivity ?? 'medium');
     const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? 30);
     const predictExcludeWeekends = van.state(monitorSuite.predict_exclude_weekends ?? false);
@@ -80,6 +82,7 @@ const MonitorSettingsForm = (props) => {
             table_groups_id: monitorSuite.table_groups_id,
             test_suite: monitorSuite.test_suite,
             monitor_lookback: monitorLookback.val,
+            monitor_regenerate_freshness: monitorRegenerateFreshness.val,
             predict_sensitivity: predictSensitivity.val,
             predict_min_lookback: predictMinLookback.val,
             predict_exclude_weekends: predictExcludeWeekends.val,
@@ -104,8 +107,9 @@ const MonitorSettingsForm = (props) => {
     return div(
         { class: 'flex-column fx-gap-4' },
         MainForm(
-            { setValidity: setFieldValidity },            
+            { setValidity: setFieldValidity },
             monitorLookback,
+            monitorRegenerateFreshness,
             cronExpression,
         ),
         ScheduleForm(
@@ -132,39 +136,54 @@ const MonitorSettingsForm = (props) => {
 const MainForm = (
     options,
     monitorLookback,
+    monitorRegenerateFreshness,
     cronExpression,
 ) => {
     return div(
-        { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap monitor-settings-row' },
-        Input({
-            name: 'monitor_lookback',
-            label: 'Lookback Runs',
-            value: monitorLookback,
-            help: 'Number of monitor runs to summarize on dashboard views',
-            helpPlacement: 'bottom-right',
-            type: 'number',
-            step: 1,             
-            onChange: (value, state) => {
-                monitorLookback.val = value;
-                options.setValidity?.('monitor_lookback', state.valid);
-            },
-            validators: [
-                numberBetween(1, 200, 1),
-            ],
-        }),
-        () => {
-            const cronDuration = determineDuration(cronExpression.val);
-            if (!cronDuration || !monitorLookback.val) {
-                return span({});
-            }
+        { class: 'flex-column fx-gap-4' },
+        div(
+            { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap monitor-settings-row' },
+            Input({
+                name: 'monitor_lookback',
+                label: 'Lookback Runs',
+                value: monitorLookback,
+                help: 'Number of monitor runs to summarize on dashboard views',
+                helpPlacement: 'bottom-right',
+                type: 'number',
+                step: 1,
+                onChange: (value, state) => {
+                    monitorLookback.val = value;
+                    options.setValidity?.('monitor_lookback', state.valid);
+                },
+                validators: [
+                    numberBetween(1, 200, 1),
+                ],
+            }),
+            () => {
+                const cronDuration = determineDuration(cronExpression.val);
+                if (!cronDuration || !monitorLookback.val) {
+                    return span({});
+                }
 
-            const lookbackDuration = monitorLookback.val * cronDuration;
-            return div(
-                { class: 'flex-column' },
-                span({ class: 'text-caption mt-1 mb-3' }, 'Lookback Window'),
-                span(humanReadableDuration(formatDurationSeconds(lookbackDuration))),
-            );
-        }
+                const lookbackDuration = monitorLookback.val * cronDuration;
+                return div(
+                    { class: 'flex-column' },
+                    span({ class: 'text-caption mt-1 mb-3' }, 'Lookback Window'),
+                    span(humanReadableDuration(formatDurationSeconds(lookbackDuration))),
+                );
+            }
+        ),
+        div(
+            { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap mb-2 monitor-settings-row' },
+            Checkbox({
+                name: 'monitor_regenerate_freshness',
+                label: 'Reconfigure Freshness monitors after profiling',
+                help: 'When enabled, Freshness monitors will be automatically reconfigured with new fingerprints after each profiling run',
+                width: 350,
+                checked: monitorRegenerateFreshness,
+                onChange: (value) => monitorRegenerateFreshness.val = value,
+            }),
+        ),
     );
 };
 
