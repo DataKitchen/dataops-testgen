@@ -15,7 +15,9 @@ from testgen.common.database.database_service import (
 from testgen.common.database.flavor.flavor_service import ConnectionParams
 from testgen.common.models import with_database_session
 from testgen.common.models.scores import ScoreDefinition
+from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
+from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
 
 LOG = logging.getLogger("testgen")
@@ -129,6 +131,8 @@ def run_quick_start(delete_target_db: bool) -> None:
         ],
     )
 
+    with_database_session(_setup_initial_config)()
+
     # Schema and Populate target db
     click.echo(f"Populating target db : {target_db_name}")
     execute_db_queries(
@@ -147,6 +151,10 @@ def run_quick_start(delete_target_db: bool) -> None:
     )
     with_database_session(score_definition.save)()
     with_database_session(run_test_generation)("823a1fef-9b6d-48d5-9d0f-2db9812cc318", "Monitor", ["Volume_Trend", "Schema_Drift"])
+
+
+def _setup_initial_config():
+    PersistedSetting.set("SMTP_CONFIGURED", smtp_configured())
 
 
 def run_quick_start_increment(iteration):
