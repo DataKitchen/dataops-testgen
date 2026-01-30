@@ -34,6 +34,9 @@ def get_sarimax_forecast(
     # Return value
     Returns a Pandas dataframe with forecast DatetimeIndex, "mean" column, and "se" (standard error) column.
     """
+    if len(history) < MIN_TRAIN_VALUES:
+        raise NotEnoughData("Not enough data points in history.")
+    
     # statsmodels requires DatetimeIndex with a regular frequency
     # Resample the data to get a regular time series
     datetimes = history.index.to_series()

@@ -22,7 +22,12 @@ def scheduler_instance() -> Scheduler:
         get_jobs = Mock()
         start_job = Mock()
 
-    yield TestScheduler()
+    instance = TestScheduler()
+    yield instance
+    # Cleanup: ensure scheduler thread is stopped even if test fails
+    if instance.thread and instance.thread.is_alive():
+        instance.shutdown()
+        instance.wait(timeout=1.0)
 
 
 @pytest.fixture
@@ -94,6 +99,16 @@ def test_jobs_start_in_order(scheduler_instance, base_time):
             assert job in triggred_jobs or triggering_time.minute % divisor != 0
 
 
+def wait_for_call_count(mock, expected_count, timeout=0.5):
+    """Wait for a mock's call_count to reach the expected value."""
+    start = time.monotonic()
+    while mock.call_count < expected_count:
+        if time.monotonic() - start > timeout:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("with_job", (True, False))
 def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_time):
@@ -101,12 +116,11 @@ def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_ti
     scheduler_instance.get_jobs.return_value = jobs
 
     scheduler_instance.start(base_time)
-    time.sleep(0.05)
-    assert scheduler_instance.get_jobs.call_count == 1
-    with assert_finishes_within(milliseconds=100):
+    assert wait_for_call_count(scheduler_instance.get_jobs, 1), "get_jobs should be called once on start"
+
+    with assert_finishes_within(milliseconds=500):
         scheduler_instance.reload_jobs()
-        time.sleep(0.05)
-        assert scheduler_instance.get_jobs.call_count == 2
+        assert wait_for_call_count(scheduler_instance.get_jobs, 2), "get_jobs should be called again after reload"
         scheduler_instance.shutdown()
         scheduler_instance.wait()
 

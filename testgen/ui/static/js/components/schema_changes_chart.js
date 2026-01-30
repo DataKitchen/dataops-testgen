@@ -167,7 +167,7 @@ const /** @type Options */ defaultOptions = {
     lineWidth: 3,
     lineColor: colorMap.red,
     modsMarkerSize: 8,
-    staleMarkerSize: 4,
+    staleMarkerSize: 2,
     middleLine: undefined,
     nestedPosition: {x: 0, y: 0},
 };

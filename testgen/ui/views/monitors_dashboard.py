@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Literal
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
@@ -289,16 +289,7 @@ def _monitor_changes_by_tables_query(
     offset: int | None = None,
 ) -> tuple[str, dict]:
     query = f"""
-    WITH latest_tables AS (
-        SELECT DISTINCT
-            table_chars.schema_name,
-            table_chars.table_name
-        FROM data_table_chars table_chars
-        WHERE table_chars.table_groups_id = :table_group_id
-            AND table_chars.drop_date IS NULL
-            {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
-    ),
-    ranked_test_runs AS (
+    WITH ranked_test_runs AS (
         SELECT
             test_runs.id,
             test_runs.test_starttime,
@@ -310,6 +301,22 @@ def _monitor_changes_by_tables_query(
         INNER JOIN test_suites
             ON (table_groups.monitor_test_suite_id = test_suites.id)
         WHERE table_groups.id = :table_group_id
+    ),
+    lookback_window AS (
+        SELECT MIN(test_starttime) AS lookback_start
+        FROM ranked_test_runs
+        WHERE position <= lookback
+    ),
+    latest_tables AS (
+        SELECT DISTINCT
+            table_chars.schema_name,
+            table_chars.table_name
+        FROM data_table_chars table_chars
+        CROSS JOIN lookback_window
+        WHERE table_chars.table_groups_id = :table_group_id
+            -- Include current tables and tables dropped within lookback window
+            AND (table_chars.drop_date IS NULL OR table_chars.drop_date >= lookback_window.lookback_start)
+            {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
     ),
     monitor_results AS (
         SELECT
@@ -408,10 +415,11 @@ def _monitor_changes_by_tables_query(
         baseline_tables.previous_row_count
     FROM monitor_tables
     LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
-    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ''}
-    {f"ORDER BY monitor_tables.{sort_field} {'ASC' if sort_order == 'asc' else 'DESC'} NULLS LAST" if sort_field else 'ORDER BY LOWER(monitor_tables.table_name)'}
-    {"LIMIT :limit" if limit else ''}
-    {"OFFSET :offset" if offset else ''}
+    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ""}
+    ORDER BY {"LOWER(monitor_tables.table_name)" if not sort_field or sort_field == "table_name" else f"monitor_tables.{sort_field}"}
+    {"DESC" if sort_order == "desc" else "ASC"} NULLS LAST
+    {"LIMIT :limit" if limit else ""}
+    {"OFFSET :offset" if offset else ""}
     """
 
     params = {
@@ -489,7 +497,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_test_generation(monitor_suite.id, "Monitor", test_types=["Volume_Trend", "Schema_Drift"])
+                run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
 
             st.rerun()
 

@@ -114,7 +114,13 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             const rowCountChange = (monitor.row_count ?? 0) - (monitor.previous_row_count ?? 0);
 
             return {
-                table_name: () => span({class: monitor.table_state === 'dropped' ? 'text-disabled' : ''}, monitor.table_name),
+                table_name: () => span(
+                    {
+                        class: monitor.table_state === 'dropped' ? 'text-disabled' : '',
+                        style: monitor.table_state === 'added' ? `font-weight: 500; color: ${colorMap.tealDark}` : '',
+                    },
+                    monitor.table_name,
+                ),
                 freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending),
                 volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending),
                 schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending),

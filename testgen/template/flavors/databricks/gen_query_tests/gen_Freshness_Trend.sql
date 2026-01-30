@@ -198,4 +198,6 @@ DO UPDATE SET
   history_lookback     = EXCLUDED.history_lookback,
   custom_query         = EXCLUDED.custom_query
 -- Ignore locked tests
-WHERE test_definitions.lock_refresh = 'N';
+WHERE test_definitions.lock_refresh = 'N'
+  -- Don't update existing tests in "insert" mode
+  AND NOT COALESCE(:INSERT_ONLY, FALSE);

@@ -11,7 +11,7 @@ from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation
 from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
     execute_db_queries,
@@ -87,9 +87,11 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
 
         if test_suite.is_monitor:
             schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
-            if schema_changes["has_table_adds"] or schema_changes["has_table_drops"]:
-                LOG.info("Tables added or dropped, regenerating Freshness and Volume tests")
-                run_test_generation(test_suite_id, "Monitor", test_types=["Freshness_Trend", "Volume_Trend"])
+            if schema_changes["has_table_drops"]:
+                run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend"], mode="delete")
+            if schema_changes["has_table_adds"]:
+                # Freshness monitors will be inserted after profiling
+                run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
 
         # Update the thresholds before retrieving the test definitions in the next steps
         LOG.info("Updating test thresholds based on history calculations")

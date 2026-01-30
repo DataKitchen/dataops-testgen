@@ -172,6 +172,7 @@ CREATE TABLE test_suites (
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
    is_monitor              BOOLEAN DEFAULT FALSE,
    monitor_lookback        INTEGER DEFAULT NULL,
+   monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),
    predict_min_lookback    INTEGER,
    predict_exclude_weekends BOOLEAN DEFAULT FALSE,

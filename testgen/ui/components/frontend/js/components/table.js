@@ -287,9 +287,10 @@ const TableHeaderColumn = (
         
         const isSorted = sortOptions.val.field === column.name;
         return (
-            isSorted
-                ? Icon({size: 13}, sortOptions.val.order === 'desc' ? 'south' : 'north')
-                : null
+            Icon(
+                {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
+                isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
+            )
         );
     });
 

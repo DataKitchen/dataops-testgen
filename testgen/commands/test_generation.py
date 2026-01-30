@@ -22,6 +22,7 @@ LOG = logging.getLogger("testgen")
 
 GenerationSet = Literal["Standard", "Monitor"]
 MonitorTestType = Literal["Freshness_Trend", "Volume_Trend", "Schema_Drift"]
+MonitorGenerationMode = Literal["upsert", "insert", "delete"]
 
 @dataclasses.dataclass
 class TestTypeParams:
@@ -32,10 +33,11 @@ class TestTypeParams:
     default_parm_values: str | None
 
 
+# Generate tests for a regular non-monitor test suite - don't use for monitors
 def run_test_generation(
     test_suite_id: str | UUID,
     generation_set: GenerationSet = "Standard",
-    test_types: list[MonitorTestType] | None = None,
+    test_types: list[str] | None = None,
 ) -> str:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -44,11 +46,10 @@ def run_test_generation(
 
     LOG.info("Retrieving connection, table group, and test suite parameters")
     test_suite = TestSuite.get(test_suite_id)
+    if test_suite.is_monitor:
+        raise ValueError("Cannot run regular test generation for monitor suite")
     table_group = TableGroup.get(test_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
-
-    if test_suite.is_monitor:
-        generation_set = "Monitor"
 
     success = False
     try:
@@ -65,6 +66,31 @@ def run_test_generation(
         )
 
     return "Test generation completed." if success else "Test generation encountered an error. Check log for details."
+
+
+def run_monitor_generation(
+    monitor_suite_id: str | UUID,
+    monitors: list[MonitorTestType],
+    mode: MonitorGenerationMode = "upsert",
+) -> None:
+    """
+    Modes:
+    - "upsert": Add tests for new tables + update tests for existing tables + no deletion
+    - "insert": Only add tests for new tables
+    - "delete": Only delete tests for dropped tables
+    """
+    if monitor_suite_id is None:
+        raise ValueError("Monitor Suite ID was not specified")
+
+    LOG.info(f"Starting monitor generation for {monitor_suite_id} (Mode = {mode}, Monitors = {monitors})")
+
+    monitor_suite = TestSuite.get(monitor_suite_id)
+    if not monitor_suite.is_monitor:
+        raise ValueError("Cannot run monitor generation for regular test suite")
+    table_group = TableGroup.get(monitor_suite.table_groups_id)
+    connection = Connection.get(table_group.connection_id)
+
+    TestGeneration(connection, table_group, monitor_suite, "Monitor", monitors).monitor_run(mode)
 
 
 class TestGeneration:
@@ -85,56 +111,57 @@ class TestGeneration:
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 
-    def run(self) -> None:
         self.run_date = datetime.now(UTC)
         self.as_of_date = self.run_date
         if (delay_days := int(self.table_group.profiling_delay_days)):
             self.as_of_date = self.run_date - timedelta(days=delay_days)
 
-        LOG.info("Retrieving active test types")
-        test_types = fetch_dict_from_db(*self.get_test_types())
+    def run(self) -> None:
+        LOG.info("Running test generation queries")
+        execute_db_queries([
+            *self._get_generation_queries(),
+            self._get_query("delete_stale_autogen_tests.sql"),
+        ])
+
+    def monitor_run(self, mode: MonitorGenerationMode) -> None:
+        if mode == "delete":
+            execute_db_queries([self._get_query("delete_stale_monitors.sql")])
+            return
+
+        LOG.info("Running monitor generation queries")
+        execute_db_queries(
+            self._get_generation_queries(
+                extra_params={"INSERT_ONLY": mode == "insert"},
+            ),
+        )
+
+    def _get_generation_queries(self, extra_params: dict | None = None) -> list[tuple[str, dict]]:
+        test_types = fetch_dict_from_db(*self._get_query("get_test_types.sql", extra_params=extra_params))
         test_types = [TestTypeParams(**item) for item in test_types]
 
         if self.test_types_filter:
             test_types = [tt for tt in test_types if tt.test_type in self.test_types_filter]
 
-        selection_test_types = [tt for tt in test_types if tt.selection_criteria and tt.selection_criteria != "TEMPLATE"]
-        template_test_types = [tt for tt in test_types if tt.generation_template]
+        selection_queries = [
+            self._get_query("gen_selection_tests.sql", test_type=tt, extra_params=extra_params)
+            for tt in test_types 
+            if tt.selection_criteria and tt.selection_criteria != "TEMPLATE"
+        ]
 
-        LOG.info("Running test generation queries")
-        execute_db_queries([
-            *self.generate_selection_test_types(selection_test_types),
-            *self.generate_template_test_types(template_test_types),
-            self.delete_old_tests(),
-        ])
-
-    def get_test_types(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("get_test_types.sql")
-
-    def generate_selection_test_types(self, test_types: list[TestTypeParams]) -> list[tuple[str, dict]]:
-        # Runs on App database
-        return [self._get_query("gen_selection_tests.sql", test_type=tt) for tt in test_types]
-
-    def generate_template_test_types(self, test_types: list[TestTypeParams]) -> list[tuple[str, dict]]:
-        # Runs on App database
-        queries = []
+        template_queries = []
         for tt in test_types:
-            template_file = tt.generation_template
-            # Try flavor-specific template first, then fall back to generic
-            for directory in [f"flavors/{self.flavor}/gen_query_tests", "gen_query_tests", "gen_funny_cat_tests"]:
-                try:
-                    queries.append(self._get_query(template_file, directory))
-                    break
-                except (ValueError, ModuleNotFoundError):
-                    continue
-            else:
-                LOG.warning(f"Template file '{template_file}' not found for test type '{tt.test_type}'")
-        return queries
-
-    def delete_old_tests(self) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("delete_old_tests.sql")
+            if template_file := tt.generation_template:
+                # Try flavor-specific template first, then fall back to generic
+                for directory in [f"flavors/{self.flavor}/gen_query_tests", "gen_query_tests", "gen_funny_cat_tests"]:
+                    try:
+                        template_queries.append(self._get_query(template_file, directory, extra_params=extra_params))
+                        break
+                    except (ValueError, ModuleNotFoundError):
+                        continue
+                else:
+                    LOG.warning(f"Template file '{template_file}' not found for test type '{tt.test_type}'")
+    
+        return [*selection_queries, *template_queries]        
 
     def _get_params(self, test_type: TestTypeParams | None = None) -> dict:
         params = {}
@@ -160,6 +187,7 @@ class TestGeneration:
             "AS_OF_DATE": to_sql_timestamp(self.as_of_date),
             "SQL_FLAVOR": self.flavor,
             "QUOTE": self.flavor_service.quote_character,
+            "INSERT_ONLY": False,
         })
         return params
     
@@ -168,8 +196,11 @@ class TestGeneration:
         template_file_name: str,
         sub_directory: str | None = "generation",
         test_type: TestTypeParams | None = None,
+        extra_params: dict | None = None,
     ) -> tuple[str, dict | None]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = self._get_params(test_type)
+        if extra_params:
+            params.update(extra_params)
         query = replace_params(query, params)
         return query, params
