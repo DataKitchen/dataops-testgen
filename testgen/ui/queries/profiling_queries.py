@@ -182,6 +182,7 @@ def get_tables_by_condition(
     WITH active_test_definitions AS (
         SELECT
             test_defs.table_groups_id,
+            test_defs.schema_name,
             test_defs.table_name,
             COUNT(*) AS count
         FROM test_definitions test_defs

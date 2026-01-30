@@ -1,6 +1,5 @@
 import json
 import typing
-from datetime import datetime
 from functools import partial
 
 import pandas as pd
@@ -23,6 +22,7 @@ from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.database_service import fetch_df_from_db
 from testgen.ui.session import session
+from testgen.ui.utils import parse_fuzzy_date
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 
 FORM_DATA_WIDTH = 400
@@ -198,7 +198,7 @@ def get_excel_report_data(
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(
-            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and val != "NaT" else None
+            lambda val: parse_fuzzy_date(val) if not pd.isna(val) and val != "NaT" else None
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)
