@@ -8,6 +8,7 @@
  * @type {object}
  * @property {number} time
  * @property {number} record_count
+ * @property {boolean} is_anomaly
  * 
  * @typedef MetricPrediction
  * @type {object}
@@ -225,6 +226,7 @@ const TableMonitoringTrend = (props) => {
   const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
+    isAnomaly: e.is_anomaly,
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
@@ -337,7 +339,7 @@ const TableMonitoringTrend = (props) => {
         ),
         MonitoringSparklineMarkers(
           {
-            color: 'transparent',
+            size: 2,
             transform: `translate(0, ${positionTracking.volumeTrendChart})`,
             showTooltip: showTooltip.bind(null, 0 + volumeTrendChartHeight / 2),
             hideTooltip,

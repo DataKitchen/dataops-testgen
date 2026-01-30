@@ -13,6 +13,12 @@
  * @property {Object?} attributes
  * @property {PredictionPoint[]?} prediction
  * 
+ * @typedef MonitoringPoint
+ * @type {Object}
+ * @property {number} x
+ * @property {number} y
+ * @property {boolean?} isAnomaly
+ * 
  * @typedef PredictionPoint
  * @type {Object}
  * @property {number} x
@@ -23,7 +29,7 @@ import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
 import { getValue } from '../utils.js';
 
-const { circle, g, path, polyline, svg } = van.tags("http://www.w3.org/2000/svg");
+const { circle, g, path, polyline, rect, svg } = van.tags("http://www.w3.org/2000/svg");
 
 /**
  * 
@@ -95,13 +101,28 @@ function generateShadowPath(data) {
 /**
  * 
  * @param {*} options 
- * @param {Point[]} points 
+ * @param {MonitoringPoint[]} points 
  * @returns 
  */
 const MonitoringSparklineMarkers = (options, points) => {
     return g(
         {transform: options.transform ?? undefined},
         ...points.map((point) => {
+            if (point.isAnomaly) {
+                const size = options.anomalySize || defaultAnomalyMarkerSize;
+                return rect({
+                    width: size,
+                    height: size,
+                    x: point.x - (size / 2),
+                    y: point.y - (size / 2),
+                    fill: options.anomalyColor || defaultAnomalyMarkerColor,
+                    style: `transform-box: fill-box; transform-origin: center;`,
+                    transform: 'rotate(45)',
+                    onmouseenter: () => options.showTooltip?.(`(${formatTimestamp(point.originalX, true)}; ${point.originalY})`, point),
+                    onmouseleave: () => options.hideTooltip?.(),
+                });
+            }
+
             return circle({
                 cx: point.x,
                 cy: point.y,
@@ -122,5 +143,7 @@ const /** @type Options */ defaultOptions = {
 };
 const defaultMarkerSize = 3;
 const defaultMarkerColor = colorMap.blueLight;
+const defaultAnomalyMarkerSize = 3;
+const defaultAnomalyMarkerColor = colorMap.red;
 
 export { MonitoringSparklineChart, MonitoringSparklineMarkers };
