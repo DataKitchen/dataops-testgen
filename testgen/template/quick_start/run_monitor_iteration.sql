@@ -73,21 +73,21 @@ WHERE product_id IN (
 -- TG-ENDIF
 
 
--- TG-IF IS_CUSTOMER_DEL_COL_ITER
+-- TG-IF IS_DELETE_CUSTOMER_COL_ITER
 ALTER TABLE demo.d_ebike_customers
     DROP COLUMN occupation,
     DROP COLUMN tax_id;
 -- TG-ENDIF
 
 
--- TG-IF IS_CUSTOMER_ADD_COL_ITER
+-- TG-IF IS_ADD_CUSTOMER_COL_ITER
 ALTER TABLE demo.d_ebike_customers
     ADD COLUMN is_international BOOL DEFAULT FALSE,
     ADD COLUMN first_contact DATE;
 -- TG-ENDIF
 
 
--- TG-IF IS_ADD_TABLE_ITER
+-- TG-IF IS_CREATE_RETURNS_TABLE_ITER
 CREATE TABLE demo.f_ebike_returns
 (
     return_id INTEGER,
@@ -95,5 +95,32 @@ CREATE TABLE demo.f_ebike_returns
     return_date DATE,
     refund_amount NUMERIC(10, 2),
     return_reason TEXT
+);
+
+INSERT INTO demo.f_ebike_returns
+(
+    return_id,
+    sale_id,
+    return_date,
+    refund_amount,
+    return_reason
+)
+SELECT
+    ROW_NUMBER() OVER (),
+    sale_id,
+    :RUN_DATE,
+    sale_price * 0.8,
+    'No reason'
+FROM demo.f_ebike_sales
+ORDER BY RANDOM()
+LIMIT 200;
+-- TG-ENDIF
+
+
+-- TG-IF IS_DELETE_CUSTOMER_ITER
+DELETE FROM demo.d_ebike_customers
+WHERE customer_id IN
+(
+    SELECT customer_id FROM demo.d_ebike_customers ORDER BY RANDOM() LIMIT 1
 );
 -- TG-ENDIF

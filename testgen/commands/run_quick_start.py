@@ -121,10 +121,11 @@ def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
         "ITERATION_NUMBER": iteration,
         "RUN_DATE": run_date,
         "NEW_SALES": 2 ** (iteration % 14),
-        "IS_CUSTOMER_ADD_COL_ITER": iteration == 29,
-        "IS_CUSTOMER_DEL_COL_ITER": iteration == 36,
+        "IS_ADD_CUSTOMER_COL_ITER": iteration == 29,
+        "IS_DELETE_CUSTOMER_COL_ITER": iteration == 36,
         "IS_UPDATE_PRODUCT_ITER": not 14 < iteration < 18,
-        "IS_ADD_TABLE_ITER": iteration == 32,
+        "IS_CREATE_RETURNS_TABLE_ITER": iteration == 32,
+        "IS_DELETE_CUSTOMER_ITER": iteration in (18, 22, 34),
     }
 
 
