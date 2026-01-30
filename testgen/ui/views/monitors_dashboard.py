@@ -710,7 +710,11 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
             for event in results if event["test_type"] == "Freshness_Trend"
         ],
         "volume_events": [
-            {"record_count": int(event["result_signal"] or 0), "time": event["test_time"]}
+            {
+                "record_count": int(event["result_signal"] or 0),
+                "time": event["test_time"],
+                "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
+            }
             for event in results if event["test_type"] == "Volume_Trend"
         ],
         "schema_events": [

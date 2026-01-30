@@ -31,7 +31,7 @@ def data_preview_dialog(
     else:
         st.dataframe(
             data,
-            width=520 if column_name else None,
+            width=520 if column_name else "content",
             height=700,
         )
 

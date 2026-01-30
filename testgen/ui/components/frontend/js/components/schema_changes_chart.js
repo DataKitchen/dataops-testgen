@@ -55,16 +55,13 @@ const SchemaChangesChart = (options, ...events) => {
         minY.val = viewBox?.minY;
     });
 
-    // const origin = {x: 0, y: 0};
-    // const end = {x: _options.width, y: _options.height};
-    // const center = {x: (origin.x + end.x) / 2, y: (origin.y + end.y) / 2};
-
     const maxAdditions = Math.ceil(Math.max(...events.map(e => e.additions)) / 10) * 10;
     const maxDeletions = Math.ceil(Math.max(...events.map(e => e.deletions)) / 10) * 10;
     const schemaEvents = events.map(e => {
         const xPosition = e.point.x;
         const yPosition = e.point.y;
         const markerProps = {};
+        const parts = [];
 
         if (_options.showTooltip) {
             markerProps.onmouseenter = () => _options.showTooltip?.(SchemaChangesChartTooltip(e), e.point);
@@ -72,11 +69,21 @@ const SchemaChangesChart = (options, ...events) => {
         }
 
         if (_options.onClick && (e.additions + e.deletions + e.modifications) > 0) {
-            markerProps.onclick = () => _options.onClick?.(e);
-            markerProps.style = 'cursor: pointer;';
+            const clickableWidth = 10;
+            const chartHeight = height.rawVal ?? options.height
+            parts.push(
+                rect({
+                    width: clickableWidth,
+                    height: chartHeight,
+                    x: xPosition - (clickableWidth / 2),
+                    y: yPosition - (chartHeight / 2),
+                    fill: 'transparent',
+                    style: `transform-box: fill-box; transform-origin: center; cursor: pointer;`,
+                    onclick: () => _options.onClick?.(e),
+                })
+            );
         }
 
-        const parts = [];
         if ((e.additions + e.deletions + e.modifications) <= 0) {
             parts.push(circle({
                 cx: xPosition,
