@@ -110,11 +110,10 @@ class DataCatalogPage(Page):
                 },
             },
             on_change_handlers={
-                "RunProfilingClicked": partial(
-                    run_profiling_dialog,
-                    project_code,
-                    selected_table_group.id,
-                ),
+                "RunProfilingClicked": lambda _: run_profiling_dialog(
+                    project_code=project_code,
+                    table_group_id=selected_table_group.id,
+                ) if selected_table_group else None,
                 "TableGroupSelected": on_table_group_selected,
                 "ItemSelected": on_item_selected,
                 "ExportClicked": lambda items: download_dialog(
