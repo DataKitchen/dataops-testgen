@@ -2,6 +2,8 @@ import logging
 from datetime import datetime
 from typing import ClassVar
 
+import pandas as pd
+
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -76,11 +78,13 @@ class TestThresholdsPrediction:
 
                         next_date = forecast.index[0]
                         sensitivity = self.test_suite.predict_sensitivity or PredictSensitivity.medium
-                        test_prediction.extend([
-                            forecast.at[next_date, f"lower_tolerance|{sensitivity.value}"],
-                            forecast.at[next_date, f"upper_tolerance|{sensitivity.value}"],
-                            forecast.to_json(),
-                        ])
+                        lower_tolerance = forecast.at[next_date, f"lower_tolerance|{sensitivity.value}"]
+                        upper_tolerance = forecast.at[next_date, f"upper_tolerance|{sensitivity.value}"]
+
+                        if pd.isna(lower_tolerance) or pd.isna(upper_tolerance):
+                            test_prediction.extend([None, None, None])
+                        else:
+                            test_prediction.extend([lower_tolerance, upper_tolerance, forecast.to_json()])
                     except NotEnoughData:
                         test_prediction.extend([None, None, None])
                 else:

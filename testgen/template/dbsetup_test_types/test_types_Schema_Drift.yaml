@@ -7,7 +7,7 @@ test_types:
     Checks whether table schema has changed
   except_message: |-
     Table schema has changed.
-  measure_uom: Was Schema Change Detected
+  measure_uom: Schema changes
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE

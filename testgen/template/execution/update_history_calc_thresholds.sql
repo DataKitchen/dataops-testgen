@@ -89,23 +89,27 @@ FROM stats s
 WHERE t.id = s.test_definition_id;
 
 
-WITH fingerprint_history AS (
-  SELECT test_definition_id,
-    test_time AS change_time,
-    result_signal AS last_fingerprint
+WITH changed_fingerprints AS (
+  SELECT test_definition_id, test_time, result_measure
   FROM (
-    SELECT test_definition_id, test_time, result_signal,
-      result_signal IS DISTINCT FROM LAG(result_signal) OVER (ORDER BY test_time) AS changed
+    SELECT test_definition_id, test_time, result_measure,
+      result_measure IS DISTINCT FROM LAG(result_measure) OVER (PARTITION BY test_definition_id ORDER BY test_time) AS changed
     FROM test_results
     WHERE test_suite_id = :TEST_SUITE_ID
       AND test_type = 'Freshness_Trend'
   ) tr
   WHERE changed = TRUE
-  ORDER BY test_time DESC
-  LIMIT 1
+),
+fingerprint_history AS (
+  SELECT test_definition_id,
+    test_time AS change_time,
+    result_measure AS last_fingerprint,
+    ROW_NUMBER() OVER (PARTITION BY test_definition_id ORDER BY test_time DESC) AS rn
+  FROM changed_fingerprints
 )
 UPDATE test_definitions
 SET baseline_value = h.last_fingerprint,
   baseline_sum = h.change_time::VARCHAR
 FROM fingerprint_history h
-WHERE test_definitions.id = h.test_definition_id;
+WHERE test_definitions.id = h.test_definition_id
+  AND h.rn = 1;
