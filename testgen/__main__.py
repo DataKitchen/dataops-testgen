@@ -28,7 +28,7 @@ from testgen.commands.run_get_entities import (
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
 from testgen.commands.run_profiling import run_profiling
-from testgen.commands.run_quick_start import run_quick_start, run_quick_start_increment
+from testgen.commands.run_quick_start import run_monitor_increment, run_quick_start, run_quick_start_increment
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
@@ -434,6 +434,16 @@ def quick_start(
         run_date = now_date + timedelta(days=-10 * (total_iterations - iteration)) # 10 day increments
         run_quick_start_increment(iteration)
         run_test_execution(test_suite_id, run_date=run_date)
+
+    monitor_iterations = 42  # 3 weeks
+    monitor_interval = timedelta(hours=12)
+    monitor_test_suite_id = "823a1fef-9b6d-48d5-9d0f-2db9812cc318"
+    monitor_run_date = datetime.now(UTC) - monitor_interval * monitor_iterations
+    for iteration in range(1, monitor_iterations + 1):
+        click.echo(f"Running monitor iteration: {iteration} / {monitor_iterations}")
+        run_monitor_increment(monitor_run_date, iteration)
+        run_test_execution(monitor_test_suite_id, run_date=monitor_run_date)
+        monitor_run_date += monitor_interval
 
     click.echo("Quick start has successfully finished.")
 

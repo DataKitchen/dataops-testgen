@@ -2,6 +2,7 @@ import concurrent.futures
 import csv
 import importlib
 import logging
+import re
 from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -193,7 +194,7 @@ def fetch_from_db_threaded(
             LOG.exception(f"Failed to execute threaded query: {query}")
 
         return row_data, column_names, index, error
-    
+
     result_data: list[LegacyRow] = []
     result_columns: list[str] = []
     error_data: dict[int, str] = {}
@@ -284,10 +285,40 @@ def write_to_app_db(data: list[LegacyRow], column_names: Iterable[str], table_na
     connection.close()
 
 
+def apply_params(query: str, params: dict[str, Any]) -> str:
+    query = process_conditionals(query, params)
+    query = replace_params(query, params)
+    return query
+
+
 def replace_params(query: str, params: dict[str, Any]) -> str:
     for key, value in params.items():
         query = query.replace(f"{{{key}}}", "" if value is None else str(value))
     return query
+
+
+def process_conditionals(query: str, params: dict[str, Any]) -> str:
+    re_pattern = re.compile(r"^--\s+TG-(IF|ELSE|ENDIF)(?:\s+(\w+))?\s*$")
+    condition = None
+    updated_query = []
+    for line in query.splitlines(True):
+        if re_match := re_pattern.match(line):
+            match re_match.group(1):
+                case "IF" if condition is None and (variable := re_match.group(2)) is not None:
+                    condition = bool(params.get(variable))
+                case "ELSE" if condition is not None:
+                    condition = not condition
+                case "ENDIF" if condition is not None:
+                    condition = None
+                case _:
+                    raise ValueError("Template conditional misused")
+        elif condition is not False:
+            updated_query.append(line)
+
+    if condition is not None:
+        raise ValueError("Template conditional misused")
+
+    return "".join(updated_query)
 
 
 def get_queries_for_command(
