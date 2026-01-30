@@ -102,16 +102,7 @@ const TableMonitoringTrend = (props) => {
   ], []);
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
-
-  let volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
-  if (predictions.volume_trend) {
-    for (const [time, records] of Object.entries(predictions.volume_trend.mean)) {
-      volumeTrendEvents.push({
-        time: +time,
-        record_count: parseInt(records),
-      });
-    }
-  }
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
 
   const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents, ...predictionTimes].map(e => e.time);
   const rawTimeline = [...new Set(allTimes)].sort();
@@ -132,6 +123,7 @@ const TableMonitoringTrend = (props) => {
       y: fresshnessChartHeight / 2,
     },
   }));
+
   const freshessChartLegendItems = Object.values(parsedFreshnessEvents.reduce((legendItems, e, idx) => {
     const itemColor = getFreshnessEventColor(e);
     const key = `${e.changed}-${itemColor}`;
@@ -230,8 +222,9 @@ const TableMonitoringTrend = (props) => {
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
-  let parsedVolumeTrendPredictionPoints = Object.keys(predictions?.volume_trend?.mean ?? {}).toSorted((a, b) => (+a) - (+b)).map((time) => ({
+  const parsedVolumeTrendPredictionPoints = Object.entries(predictions?.volume_trend?.mean ?? {}).toSorted(([a,], [b,]) => (+a) - (+b)).map(([time, count]) => ({
     x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+    y: scale(+count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
     upper: scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
     lower: scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
