@@ -70,7 +70,7 @@ const MonitoringSparklineChart = (options, ...points) => {
             height: '100%',
             ...extraAttributes,
         },
-        () => _options.prediction
+        () => _options.prediction && _options.prediction.length > 0
             ? path({
                 d: generateShadowPath(_options.prediction ?? []),
                 fill: 'rgba(218, 218, 218, 0.3)',
