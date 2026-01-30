@@ -107,6 +107,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             onPageChange: (page, pageSize) => emitEvent('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
         };
     });
+    const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_group_id: monitor.table_group_id, table_name: monitor.table_name }});
     const tableRows = van.derive(() => {
         const result = getValue(props.monitors);
         renderTime = new Date();
@@ -121,9 +122,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     },
                     monitor.table_name,
                 ),
-                freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending),
-                volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending),
-                schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending),
+                freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
+                volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
+                schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
                 quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
                 latest_update: () => span(
                     {class: 'text-small text-secondary'},
@@ -208,7 +209,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         role: 'button',
                         class: 'flex-row fx-gap-1 p-2 clickable',
                         style: 'color: var(--link-color); width: fit-content;',
-                        onclick: () => emitEvent('OpenMonitoringTrends', { payload: { table_group_id: monitor.table_group_id, table_name: monitor.table_name }})
+                        onclick: () => openChartsDialog(monitor),
                     },
                     span('View'),
                     i({class: 'material-symbols-rounded', style: 'font-size: 18px;'}, 'insights'),
@@ -365,8 +366,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
  * @param {number?} anomalies
  * @param {boolean} isTraining
  * @param {boolean} isPending
+ * @param {Function} onClick
  */
-const AnomalyTag = (anomalies, isTraining = false, isPending = false) => {
+const AnomalyTag = (anomalies, isTraining = false, isPending = false, onClick = undefined) => {
     if (isPending) {
         return span({class: 'text-secondary'}, '-');
     }
@@ -385,8 +387,13 @@ const AnomalyTag = (anomalies, isTraining = false, isPending = false) => {
     });
 
     return div(
-        {class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${isTraining ? 'is-training' : ''}`},
-        content,
+        { class: `anomaly-tag-wrapper flex-row p-1 ${onClick ? 'clickable' : ''}`, onclick: onClick },
+        div(
+            {
+                class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${isTraining ? 'is-training' : ''}`,
+            },
+            content,
+        ),
     );
 };
 
@@ -493,6 +500,14 @@ stylesheet.replace(`
 .tg-icon.schema-icon--mod {
     cursor: pointer;
     color: ${colorMap.purple}; 
+}
+
+.anomaly-tag-wrapper {
+    width: fit-content;
+    border-radius: 4px;
+}
+.anomaly-tag-wrapper.clickable:hover {
+    background: var(--select-hover-background);
 }
 `);
 
