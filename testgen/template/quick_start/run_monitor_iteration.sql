@@ -74,22 +74,26 @@ WHERE product_id IN (
 
 
 -- TG-IF IS_CUSTOMER_DEL_COL_ITER
-alter table demo.d_ebike_customers drop column occupation;
+ALTER TABLE demo.d_ebike_customers
+    DROP COLUMN occupation,
+    DROP COLUMN tax_id;
 -- TG-ENDIF
 
 
 -- TG-IF IS_CUSTOMER_ADD_COL_ITER
-alter table demo.d_ebike_customers add column is_international bool default false;
+ALTER TABLE demo.d_ebike_customers
+    ADD COLUMN is_international BOOL DEFAULT FALSE,
+    ADD COLUMN first_contact DATE;
 -- TG-ENDIF
 
 
 -- TG-IF IS_ADD_TABLE_ITER
-create table demo.f_ebike_returns
+CREATE TABLE demo.f_ebike_returns
 (
-    return_id integer,
-    sale_id integer,
-    return_date date,
-    refund_amount numeric(10, 2),
-    return_reason text
+    return_id INTEGER,
+    sale_id INTEGER,
+    return_date DATE,
+    refund_amount NUMERIC(10, 2),
+    return_reason TEXT
 );
 -- TG-ENDIF

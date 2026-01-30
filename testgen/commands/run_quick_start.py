@@ -121,10 +121,10 @@ def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
         "ITERATION_NUMBER": iteration,
         "RUN_DATE": run_date,
         "NEW_SALES": 2 ** (iteration % 14),
-        "IS_CUSTOMER_ADD_COL_ITER": iteration == 28,
+        "IS_CUSTOMER_ADD_COL_ITER": iteration == 29,
         "IS_CUSTOMER_DEL_COL_ITER": iteration == 36,
         "IS_UPDATE_PRODUCT_ITER": not 14 < iteration < 18,
-        "IS_ADD_TABLE_ITER": iteration == 12,
+        "IS_ADD_TABLE_ITER": iteration == 32,
     }
 
 
@@ -205,7 +205,7 @@ def run_monitor_increment(run_date, iteration):
     _prepare_connection_to_target_database(params_mapping)
 
     target_db_name = params_mapping["PROJECT_DB"]
-    LOG.info(f"Incremental monitor updates of target db : {target_db_name}")
+    LOG.info(f"Incremental monitor updates of target db ({iteration}) : {target_db_name}")
 
     execute_db_queries(
         [
