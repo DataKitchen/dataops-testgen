@@ -438,7 +438,10 @@ def quick_start(
     monitor_iterations = 42  # 3 weeks
     monitor_interval = timedelta(hours=12)
     monitor_test_suite_id = "823a1fef-9b6d-48d5-9d0f-2db9812cc318"
-    monitor_run_date = datetime.now(UTC) - monitor_interval * monitor_iterations
+    # Round down to nearest 12-hour mark (12:00 AM or 12:00 PM UTC)
+    now = datetime.now(UTC)
+    nearest_12h_mark = now.replace(hour=12 if now.hour >= 12 else 0, minute=0, second=0, microsecond=0)
+    monitor_run_date = nearest_12h_mark - monitor_interval * (monitor_iterations - 1)
     for iteration in range(1, monitor_iterations + 1):
         click.echo(f"Running monitor iteration: {iteration} / {monitor_iterations}")
         run_monitor_increment(monitor_run_date, iteration)

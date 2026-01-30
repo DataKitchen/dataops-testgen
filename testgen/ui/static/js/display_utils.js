@@ -168,6 +168,7 @@ const colorMap = {
     lightGrey: '#E0E0E0', // Gray 300
     empty: 'var(--empty)', // Light: Gray 200, Dark: Gray 800
     emptyLight: 'var(--empty-light)', // Light: Gray 50, Dark: Gray 900
+    emptyDark: 'var(--empty-dark)', // Light: Gray 400, Dark: Gray 600
     emptyTeal: 'var(--empty-teal)',
 }
 

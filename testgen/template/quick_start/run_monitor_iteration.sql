@@ -51,14 +51,11 @@ WHERE ctid IN (
 );
 
 
+-- TG-IF IS_UPDATE_SUPPLIERS_ITER
 UPDATE demo.d_ebike_suppliers
 SET last_order = :RUN_DATE
-WHERE supplier_id IN (
-    SELECT supplier_id
-    FROM demo.d_ebike_suppliers
-    ORDER BY RANDOM()
-    LIMIT 2
-);
+WHERE supplier_id IN (40001, 40002);
+-- TG-ENDIF
 
 
 -- TG-IF IS_UPDATE_PRODUCT_ITER

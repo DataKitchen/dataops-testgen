@@ -1,4 +1,5 @@
 import logging
+import random
 from datetime import datetime
 from typing import Any
 
@@ -116,16 +117,27 @@ def _get_quick_start_params_mapping(iteration: int = 0) -> dict:
 
 
 def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
+    # Volume: linear growth with jitter, spike at specific iteration for anomaly
+    random.seed(42)
+    if iteration == 37:
+        new_sales = 100
+    else:
+        new_sales = random.randint(8, 12)  # noqa: S311
+
+    # Freshness: update every other iteration, late update for anomaly
+    is_update_suppliers_iter = (iteration % 2 == 0 and iteration != 38) or iteration == 39
+
     return {
         **_get_settings_params_mapping(),
         "ITERATION_NUMBER": iteration,
         "RUN_DATE": run_date,
-        "NEW_SALES": 2 ** (iteration % 14),
+        "NEW_SALES": new_sales,
         "IS_ADD_CUSTOMER_COL_ITER": iteration == 29,
         "IS_DELETE_CUSTOMER_COL_ITER": iteration == 36,
         "IS_UPDATE_PRODUCT_ITER": not 14 < iteration < 18,
         "IS_CREATE_RETURNS_TABLE_ITER": iteration == 32,
         "IS_DELETE_CUSTOMER_ITER": iteration in (18, 22, 34),
+        "IS_UPDATE_SUPPLIERS_ITER": is_update_suppliers_iter,
     }
 
 

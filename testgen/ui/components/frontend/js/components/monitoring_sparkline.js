@@ -18,6 +18,7 @@
  * @property {number} x
  * @property {number} y
  * @property {boolean?} isAnomaly
+ * @property {boolean?} isTraining
  * 
  * @typedef PredictionPoint
  * @type {Object}
@@ -149,7 +150,8 @@ const MonitoringSparklineMarkers = (options, points) => {
                 cx: point.x,
                 cy: point.y,
                 r: options.size || defaultMarkerSize,
-                fill: options.color || defaultMarkerColor,
+                fill: point.isTraining ? 'var(--dk-dialog-background)' : (options.color || defaultMarkerColor),
+                style: `stroke: ${options.color || defaultMarkerColor}; stroke-width: 1;`,
                 onmouseenter: () => options.showTooltip?.(`(${formatTimestamp(point.originalX, true)}; ${point.originalY})`, point),
                 onmouseleave: () => options.hideTooltip?.(),
             });

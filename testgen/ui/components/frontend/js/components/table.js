@@ -40,6 +40,7 @@
  * @property {any?} header
  * @property {any?} emptyState
  * @property {string?} class
+ * @property {((row: any, index: number) => string)?} rowClass
  * @property {string?} height
  * @property {string?} width
  * @property {boolean?} highDensity
@@ -209,7 +210,7 @@ const Table = (options, rows) => {
                         rows_.map((row, idx) =>
                             tr(
                                 {
-                                    class: () => selectedRows[idx].val ? 'selected' : '',
+                                    class: () => `${selectedRows[idx].val ? 'selected' : ''} ${options.rowClass?.(row, idx) ?? ''}`,
                                     onclick: () => onRowSelected(idx),
                                 },
                                 ...getValue(dataColumns).map(column => TableCell(column, row, idx)),

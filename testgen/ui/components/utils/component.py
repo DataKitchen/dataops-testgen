@@ -45,7 +45,7 @@ def _wrap_handler(key: str | None, callback_name: str | None, callback: Callable
     if key and callback_name and callback:
         def wrapper():
             component_value = st.session_state[key] or {}
-            trigger_value_name = callback_name.replace("on_", "").replace("_change", "")
+            trigger_value_name = callback_name.removeprefix("on_").removesuffix("_change")
             trigger_value = (component_value.get(trigger_value_name) or {}).get("payload")
             return callback(trigger_value)
         return wrapper

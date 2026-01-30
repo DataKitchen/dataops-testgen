@@ -47,7 +47,7 @@ const { circle, clipPath, defs, foreignObject, g, line, rect, svg, text } = van.
 const spacing = 8;
 const chartsWidth = 700;
 const chartsYAxisWidth = 104;
-const fresshnessChartHeight = 25;
+const fresshnessChartHeight = 40;
 const schemaChartHeight = 80;
 const volumeTrendChartHeight = 80;
 const paddingLeft = 16;
@@ -115,8 +115,8 @@ const TableMonitoringTrend = (props) => {
 
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
     changed: e.changed,
-    expected: e.expected,
     status: e.status,
+    isTraining: e.is_training,
     time: e.time,
     point: {
       x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
@@ -219,6 +219,7 @@ const TableMonitoringTrend = (props) => {
     originalX: e.time,
     originalY: e.record_count,
     isAnomaly: e.is_anomaly,
+    isTraining: e.is_training,
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
@@ -382,7 +383,7 @@ const TableMonitoringTrend = (props) => {
             y: 0,
             rx: 4,
             ry: 4,
-            stroke: colorMap.lightGrey,
+            stroke: 'var(--border-color)',
             fill: 'transparent',
             style: 'pointer-events: none;'
           }),
@@ -429,12 +430,6 @@ const TableMonitoringTrend = (props) => {
               ),
             );
           }),
-
-          // Freshness Chart Y axis
-          g(
-            { transform: `translate(24, ${positionTracking.freshnessChart + (fresshnessChartHeight / 2) - 35})` },
-            ...freshessChartLegendItems,
-          ),
 
           // Volume Chart Y axis
           g(
@@ -503,7 +498,7 @@ const TableMonitoringTrend = (props) => {
  * @param {Point} end
  */
 const DividerLine = (start, end) => {
-  return line({ x1: start.x, y1: start.y, x2: end.x + paddingRight, y2: start.y, stroke: colorMap.lightGrey });
+  return line({ x1: start.x, y1: start.y, x2: end.x + paddingRight, y2: start.y, stroke: 'var(--border-color)' });
 }
 
 const stylesheet = new CSSStyleSheet();

@@ -69,14 +69,14 @@ class TestDefinitionSummary(EntityMinimal):
     history_calculation: str
     history_calculation_upper: str
     history_lookback: int
-    test_active: str
+    test_active: bool
     test_definition_status: str
     severity: str
-    lock_refresh: str
+    lock_refresh: bool
     last_auto_gen_date: datetime
     profiling_as_of_date: datetime
     last_manual_update: datetime
-    export_to_observability: str
+    export_to_observability: bool
     test_name_short: str
     default_test_description: str
     measure_uom: str
@@ -215,6 +215,7 @@ class TestDefinition(Entity):
         check_result,
         last_auto_gen_date,
         profiling_as_of_date,
+        prediction,
     )
 
     @classmethod

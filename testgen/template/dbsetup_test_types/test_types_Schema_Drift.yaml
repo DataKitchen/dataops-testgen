@@ -1,7 +1,7 @@
 test_types:
   id: '1512'
   test_type: Schema_Drift
-  test_name_short: Schema Drift
+  test_name_short: Schema
   test_name_long: Table Schema Changed
   test_description: |-
     Checks whether table schema has changed

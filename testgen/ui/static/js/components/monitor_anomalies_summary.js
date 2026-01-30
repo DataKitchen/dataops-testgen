@@ -51,9 +51,8 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
     );
 
     const numRuns = summary.lookback === 1 ? 'run' : `${summary.lookback} runs`;
-    // TODO: Display lookback duration?
-    // const duration = humanReadableDuration(formatDuration(summary.lookback_start, new Date()))
-    const labelElement = span({class: 'text-small text-secondary'}, `${label} in last ${numRuns}`);
+    const duration = humanReadableDuration(formatDuration(summary.lookback_start, new Date()), true)
+    const labelElement = span({class: 'text-small text-secondary'}, `${label} in last ${numRuns} (${duration})`);
 
     const contentElement = div(
         {class: 'flex-row fx-gap-5'},

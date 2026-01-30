@@ -1,7 +1,7 @@
 test_types:
   id: '1513'
   test_type: Volume_Trend
-  test_name_short: Volume Trend
+  test_name_short: Volume
   test_name_long: Number of rows is within tolerance range
   test_description: |-
     Tests that row count of all or subset of records in a table is within derived tolerance range.
@@ -16,9 +16,9 @@ test_types:
   dq_score_risk_factor: null
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: history_calculation,history_calculation_upper,history_lookback,subset_condition,custom_query
+  default_parm_columns: subset_condition,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
-  default_parm_prompts: Lower Bound,Upper Bound,Result Lookback,Subset Condition,Query
+  default_parm_prompts: Subset Condition,Lower Bound,Upper Bound,Result Lookback
   default_parm_help: null
   default_severity: Fail
   run_type: CAT
