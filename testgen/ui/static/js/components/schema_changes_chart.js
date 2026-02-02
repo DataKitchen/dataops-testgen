@@ -21,9 +21,9 @@
  * @property {string | number} window_start
  */
 import van from '../van.min.js';
-import { colorMap, formatTimestamp } from '../display_utils.js';
+import { colorMap, formatNumber, formatTimestamp } from '../display_utils.js';
 import { scale } from '../axis_utils.js';
-import { getValue, formatNumber } from '../utils.js';
+import { getValue } from '../utils.js';
 
 const { div, span } = van.tags();
 const { circle, g, rect, svg } = van.tags("http://www.w3.org/2000/svg");
@@ -71,9 +71,9 @@ const SchemaChangesChart = (options, ...events) => {
         if (totalChanges <= 0) {
             parts.push(circle({
                 cx: xPosition,
-                cy: chartHeight - (_options.staleMarkerSize * 2) - 5,
+                cy: chartHeight - (_options.staleMarkerSize * 2),
                 r: _options.staleMarkerSize,
-                fill: colorMap.lightGrey,
+                fill: colorMap.emptyDark,
             }));
         } else {
             const barWidth = _options.lineWidth;
@@ -95,7 +95,7 @@ const SchemaChangesChart = (options, ...events) => {
                 });
             };
 
-            parts.push(drawBar(e.additions, 0, e.additions ? colorMap.blueLight : 'transparent'));
+            parts.push(drawBar(e.additions, 0, e.additions ? colorMap.blue : 'transparent'));
             parts.push(drawBar(e.deletions, 1, e.deletions ? colorMap.orange : 'transparent'));
             parts.push(drawBar(e.modifications, 2, e.modifications ? colorMap.purple : 'transparent'));
 

@@ -14,7 +14,7 @@ from testgen.common.models.notification_settings import (
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary, TestType
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -257,11 +257,14 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         SUM(freshness_anomalies)::INTEGER AS freshness_anomalies,
         SUM(volume_anomalies)::INTEGER AS volume_anomalies,
         SUM(schema_anomalies)::INTEGER AS schema_anomalies,
-        BOOL_OR(freshness_is_training) AS freshness_is_training,
-        BOOL_OR(volume_is_training) AS volume_is_training,
-        BOOL_OR(freshness_is_pending) AS freshness_is_pending,
-        BOOL_OR(volume_is_pending) AS volume_is_pending,
-        BOOL_OR(schema_is_pending) AS schema_is_pending
+        SUM(metric_anomalies)::INTEGER AS metric_anomalies,
+        BOOL_OR(freshness_is_training) AND BOOL_AND(freshness_is_training OR freshness_is_pending) AS freshness_is_training,
+        BOOL_OR(volume_is_training) AND BOOL_AND(volume_is_training OR volume_is_pending) AS volume_is_training,
+        BOOL_OR(metric_is_training) AND BOOL_AND(metric_is_training OR metric_is_pending) AS metric_is_training,
+        BOOL_AND(freshness_is_pending) AS freshness_is_pending,
+        BOOL_AND(volume_is_pending) AS volume_is_pending,
+        BOOL_AND(schema_is_pending) AS schema_is_pending,
+        BOOL_AND(metric_is_pending) AS metric_is_pending
     FROM ({query}) AS subquery
     GROUP BY lookback
     """
@@ -274,9 +277,11 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         "schema_anomalies": 0,
         "freshness_is_training": False,
         "volume_is_training": False,
+        "metric_is_training": False,
         "freshness_is_pending": False,
         "volume_is_pending": False,
         "schema_is_pending": False,
+        "metric_is_pending": False,
     }
 
 
@@ -333,6 +338,7 @@ def _monitor_changes_by_tables_query(
             CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
             CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
             CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
+            CASE WHEN results.test_type = 'Metric_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS metric_anomaly,
             CASE WHEN results.test_type = 'Freshness_Trend' THEN results.result_signal ELSE NULL END AS freshness_interval,
             CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
             CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
@@ -356,6 +362,7 @@ def _monitor_changes_by_tables_query(
             SUM(freshness_anomaly) AS freshness_anomalies,
             SUM(volume_anomaly) AS volume_anomalies,
             SUM(schema_anomaly) AS schema_anomalies,
+            SUM(metric_anomaly) AS metric_anomalies,
             MAX(test_time - (COALESCE(NULLIF(freshness_interval, 'Unknown')::INTEGER, 0) * INTERVAL '1 minute'))
                 FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS latest_update,
             MAX(row_count) FILTER (WHERE position = 1) AS row_count,
@@ -364,11 +371,13 @@ def _monitor_changes_by_tables_query(
             SUM(col_mods) AS column_mods,
             BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_is_training,
             BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_is_training,
+            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_is_training,
             BOOL_OR(test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
             BOOL_OR(test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
             -- Schema monitor only creates results on schema changes (Failed)
             -- Mark it as pending only if there are no results of any test type
             BOOL_OR(test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending,
+            BOOL_OR(test_type = 'Metric_Trend') IS NOT TRUE AS metric_is_pending,
             CASE
                 -- Mark as Dropped if latest Schema Drift result for the table indicates it was dropped
                 WHEN (ARRAY_AGG(table_change ORDER BY test_time DESC) FILTER (WHERE table_change IS NOT NULL))[1] = 'D'
@@ -634,7 +643,8 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
                         lower_tolerance_predictions[timestamp] = definition.prediction[f"lower_tolerance|{predict_sensitivity.value}"][timestamp]
                         upper_tolerance_predictions[timestamp] = definition.prediction[f"upper_tolerance|{predict_sensitivity.value}"][timestamp]
 
-                    predictions[definition.test_type.lower()] = {
+                    test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
+                    predictions[test_key] = {
                         "mean": mean_predictions,
                         "lower_tolerance": lower_tolerance_predictions,
                         "upper_tolerance": upper_tolerance_predictions,
@@ -675,21 +685,24 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         WHERE test_suites.id = :test_suite_id
     ),
     active_runs AS (
-        SELECT id, test_starttime FROM ranked_test_runs 
+        SELECT id, test_starttime FROM ranked_test_runs
         WHERE position <= lookback
     ),
     target_tests AS (
         SELECT 'Freshness_Trend' AS test_type
         UNION ALL SELECT 'Volume_Trend'
         UNION ALL SELECT 'Schema_Drift'
+        UNION ALL SELECT 'Metric_Trend'
     )
-    SELECT 
+    SELECT
         COALESCE(results.test_time, active_runs.test_starttime) AS test_time,
         tt.test_type,
         results.result_code,
         COALESCE(results.result_status, 'Log') AS result_status,
         results.result_signal,
-        results.result_message
+        results.result_message,
+        results.test_definition_id::TEXT,
+        results.column_names
     FROM active_runs
     CROSS JOIN target_tests tt
     LEFT JOIN test_results AS results
@@ -708,6 +721,22 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
 
     results = fetch_all_from_db(query, params)
     results = [ dict(row) for row in results ]
+
+    metric_events: dict[str, dict] = {}
+    for event in results:
+        if event["test_type"] == "Metric_Trend" and (definition_id := event["test_definition_id"]):
+            if definition_id not in metric_events:
+                metric_events[definition_id] = {
+                    "test_definition_id": definition_id,
+                    "column_name": event["column_names"],
+                    "events": [],
+                }
+            metric_events[definition_id]["events"].append({
+                "value": float(event["result_signal"]) if event["result_signal"] else None,
+                "time": event["test_time"],
+                "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
+                "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
+            })
 
     return {
         "freshness_events": [
@@ -739,6 +768,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
             for event in results if event["test_type"] == "Schema_Drift"
             and (signals := (event["result_signal"] or "|0|0|0|").split("|") or True)
         ],
+        "metric_events": list(metric_events.values()),
     }
 
 
@@ -776,31 +806,64 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
         definitions = TestDefinition.select_where(
             TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
             TestDefinition.table_name == table_name,
-            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend"]),
+            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
         )
 
         def on_save_test_definition(payload: dict) -> None:
             set_save(True)
-            set_definitions(payload.get("definitions", []))
+            set_updated_definitions(payload.get("updated_definitions", []))
+            set_new_metrics(payload.get("new_metrics", []))
+            set_deleted_metric_ids(payload.get("deleted_metric_ids", []))
 
         should_save, set_save = temp_value(f"edit_table_monitors:save:{table_name}", default=False)
-        get_definitions, set_definitions = temp_value(f"edit_table_monitors:definitions:{table_name}", default=[])
+        get_updated_definitions, set_updated_definitions = temp_value(f"edit_table_monitors:updated_definitions:{table_name}", default=[])
+        get_new_metrics, set_new_metrics = temp_value(f"edit_table_monitors:new_metrics:{table_name}", default=[])
+        get_deleted_metric_ids, set_deleted_metric_ids = temp_value(f"edit_table_monitors:deleted_metric_ids:{table_name}", default=[])
 
         if should_save():
             valid_columns = {col.name for col in TestDefinition.__table__.columns}
-            for updated_def in get_definitions():
+
+            for updated_def in get_updated_definitions():
                 current_def: TestDefinitionSummary = TestDefinition.get(updated_def.get("id"))
                 if current_def:
                     merged = {key: getattr(current_def, key, None) for key in valid_columns}
                     merged.update({key: value for key, value in updated_def.items() if key in valid_columns})
+                    merged["lock_refresh"] = True
                     TestDefinition(**merged).save()
+
+            for new_metric in get_new_metrics():
+                new_def = TestDefinition(
+                    table_groups_id=table_group.id,
+                    test_type="Metric_Trend",
+                    test_suite_id=table_group.monitor_test_suite_id,
+                    schema_name=table_group.table_group_schema,
+                    table_name=table_name,
+                    test_active=True,
+                    lock_refresh=True,
+                )
+                for key, value in new_metric.items():
+                    if key in valid_columns:
+                        setattr(new_def, key, value)
+                new_def.save()
+
+            deleted_ids = get_deleted_metric_ids()
+            if deleted_ids:
+                TestDefinition.delete_where(
+                    TestDefinition.id.in_(deleted_ids),
+                    TestDefinition.test_type == "Metric_Trend",
+                )
+
             st.rerun()
+
+        metric_test_types = TestType.select_summary_where(TestType.test_type == "Metric_Trend")
+        metric_test_type = metric_test_types[0] if metric_test_types else None
 
         testgen.edit_table_monitors(
             key="edit_table_monitors",
             data={
                 "table_name": table_name,
                 "definitions": [td.to_dict(json_safe=True) for td in definitions],
+                "metric_test_type": metric_test_type.to_dict(json_safe=True) if metric_test_type else {},
             },
             on_SaveTestDefinition_change=on_save_test_definition,
         )

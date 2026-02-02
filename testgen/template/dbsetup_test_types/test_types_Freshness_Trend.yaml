@@ -18,10 +18,10 @@ test_types:
     null
   column_name_help: |-
     null
-  default_parm_columns: subset_condition,custom_query,history_calculation,history_lookback
+  default_parm_columns: subset_condition,custom_query,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
   default_parm_prompts: |-
-    Record Subset Condition,Fingerprint Expression,History Aggregate,History Lookback
+    Record Subset Condition,Fingerprint Expression,Lower Bound,Upper Bound,History Lookback
   default_parm_help: |-
     Aggregate calculation to be performed on the N lookback results|Last N tests to use for history aggregate calculation|Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
   default_severity: Fail

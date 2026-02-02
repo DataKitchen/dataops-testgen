@@ -3,36 +3,51 @@
  * @import {FreshnessEvent} from '../components/freshness_chart.js';
  * @import {SchemaEvent} from '../components/schema_changes_chart.js';
  * @import {DataStructureLog} from '../components/schema_changes_list.js';
- * 
+ *
  * @typedef VolumeTrendEvent
  * @type {object}
  * @property {number} time
  * @property {number} record_count
  * @property {boolean} is_anomaly
- * 
- * @typedef MetricPrediction
+ * @property {boolean} is_training
+ *
+ * @typedef MetricTrendEvent
  * @type {object}
- * @property {PredictionSet} volume_trend
- * 
+ * @property {number} time
+ * @property {number} value
+ * @property {boolean} is_anomaly
+ * @property {boolean} is_training
+ *
+ * @typedef MetricEventGroup
+ * @type {object}
+ * @property {string} test_definition_id
+ * @property {string} column_name
+ * @property {MetricTrendEvent[]} events
+ *
  * @typedef PredictionSet
  * @type {object}
  * @property {object} mean
  * @property {object} lower_tolerance
  * @property {object} upper_tolerance
- * 
+ *
+ * @typedef Predictions
+ * @type {object}
+ * @property {PredictionSet} volume_trend
+ *
  * @typedef Properties
  * @type {object}
  * @property {FreshnessEvent[]} freshness_events
  * @property {VolumeTrendEvent[]} volume_events
  * @property {SchemaEvent[]} schema_events
+ * @property {MetricEventGroup[]} metric_events
  * @property {(DataStructureLog[])?} data_structure_logs
- * @property {MetricPrediction?} predictions
+ * @property {Predictions?} predictions
  */
 import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate, isEqual, formatNumber } from '/app/static/js/utils.js';
+import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
 import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/components/freshness_chart.js';
-import { colorMap } from '/app/static/js/display_utils.js';
+import { colorMap, formatNumber } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
 import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
 import { getAdaptiveTimeTicksV2, scale } from '/app/static/js/axis_utils.js';
@@ -50,6 +65,7 @@ const baseChartsYAxisWidth = 24;
 const fresshnessChartHeight = 40;
 const schemaChartHeight = 80;
 const volumeTrendChartHeight = 80;
+const metricTrendChartHeight = 80;
 const paddingLeft = 16;
 const paddingRight = 16;
 const timeTickFormatter = new Intl.DateTimeFormat('en-US', {
@@ -69,6 +85,8 @@ const TableMonitoringTrend = (props) => {
 
   const domId = 'monitoring-trends-container';
 
+  const metricEvents = getValue(props.metric_events) ?? [];
+
   const chartHeight = (
     + (spacing * 2)
     + fresshnessChartHeight
@@ -76,9 +94,7 @@ const TableMonitoringTrend = (props) => {
     + volumeTrendChartHeight
     + (spacing * 3)
     + schemaChartHeight
-    // + (spacing * 3)
-    // + (lineChartHeight * lineCharts.length)
-    // + ((spacing * 3) * lineCharts.length - 1)
+    + (metricEvents.length ? (spacing * 3 + metricTrendChartHeight) * metricEvents.length + (spacing * 3) : 0)
     + (spacing * 3) // padding
   );
 
@@ -91,6 +107,11 @@ const TableMonitoringTrend = (props) => {
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
   const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
+
+  const metricEventGroups = metricEvents.map(group => ({
+    ...group,
+    events: group.events.map(e => ({ ...e, time: parseDate(e.time) })),
+  }));
 
   const volumes = [
     ...volumeTrendEvents.map((e) => e.record_count),
@@ -107,10 +128,36 @@ const TableMonitoringTrend = (props) => {
     volumeRange.max = volumeRange.max + 100;
   }
 
+  const metricRanges = metricEventGroups.map(group => {
+    const predictionKey = `metric:${group.test_definition_id}`;
+    const metricPrediction = predictions?.[predictionKey];
+
+    const metricValues = [
+      ...group.events.map(e => e.value),
+      ...Object.keys(metricPrediction?.mean ?? {}).reduce((values, time) => [
+        ...values,
+        parseFloat(metricPrediction.upper_tolerance[time]),
+        parseFloat(metricPrediction.lower_tolerance[time]),
+      ], []),
+    ];
+
+    const metricRange = metricValues.length > 0
+      ? { min: Math.min(...metricValues), max: Math.max(...metricValues) }
+      : { min: 0, max: 100 };
+    if (metricRange.min === metricRange.max) {
+      metricRange.max = metricRange.max + 100;
+    }
+    return metricRange;
+  });
+
   const longestYTickText = Math.max(
     String(volumeRange.min).length,
     String(volumeRange.max).length,
     String(schemaChangesMaxValue).length,
+    ...metricRanges.flatMap(range => [
+      String(Number(range.min.toFixed(3))).length,
+      String(Number(range.max.toFixed(3))).length,
+    ]),
   );
   const longestYTickSize = longestYTickText * 6 - baseChartsYAxisWidth;
   const chartsYAxisWidth = baseChartsYAxisWidth + Math.max(longestYTickSize, 0);
@@ -127,7 +174,14 @@ const TableMonitoringTrend = (props) => {
     return verticalPosition;
   };
 
-  const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents, ...predictionTimes].map(e => e.time);
+  const allTimes = [
+    ...freshnessEvents,
+    ...schemaChangeEvents,
+    ...volumeTrendEvents,
+    ...metricEventGroups.flatMap(group => group.events),
+    ...predictionTimes,
+  ].map(e => e.time);
+
   const rawTimeline = [...new Set(allTimes)].sort();
   const dateRange = { min: rawTimeline[0] ?? (new Date()).getTime(), max: rawTimeline[rawTimeline.length - 1] ?? (new Date()).getTime() + 1 * 24 * 60 * 60 * 1000 };
   const timeline = ([
@@ -237,6 +291,36 @@ const TableMonitoringTrend = (props) => {
     upper: scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
     lower: scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
+
+  const parsedMetricCharts = metricEventGroups.map((group, idx) => {
+    const predictionKey = `metric:${group.test_definition_id}`;
+    const metricPrediction = predictions?.[predictionKey];
+    const metricRange = metricRanges[idx];
+
+    const parsedEvents = group.events.toSorted((a, b) => a.time - b.time).map(e => ({
+      originalX: e.time,
+      originalY: e.value,
+      isAnomaly: e.is_anomaly,
+      isTraining: e.is_training,
+      x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+      y: scale(e.value, { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
+    }));
+
+    const parsedPredictionPoints = Object.entries(metricPrediction?.mean ?? {}).toSorted(([a,], [b,]) => (+a) - (+b)).map(([time, value]) => ({
+      x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+      y: scale(+value, { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
+      upper: scale(parseFloat(metricPrediction.upper_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
+      lower: scale(parseFloat(metricPrediction.lower_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
+    })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
+
+    return {
+      columnName: group.column_name,
+      testDefinitionId: group.test_definition_id,
+      events: parsedEvents,
+      predictionPoints: parsedPredictionPoints,
+      range: metricRange,
+    };
+  });
 
   let tooltipText = '';
   const shouldShowTooltip = van.state(false);
@@ -381,6 +465,34 @@ const TableMonitoringTrend = (props) => {
           ...parsedSchemaChangeEvents,
         ),
 
+        ...parsedMetricCharts.flatMap((metricChart, idx) => {
+          const chartName = `metricTrendChart_${idx}`;
+          return [
+            DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: idx === 0 ? schemaChartHeight : metricTrendChartHeight }) }, end),
+            text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, `Metric: ${metricChart.columnName}`),
+            MonitoringSparklineChart(
+              {
+                width: chartsWidth,
+                height: metricTrendChartHeight,
+                nestedPosition: { x: 0, y: nextPosition({ name: chartName }) },
+                lineWidth: 2,
+                attributes: {style: 'overflow: visible;'},
+                prediction: metricChart.predictionPoints,
+              },
+              ...metricChart.events,
+            ),
+            MonitoringSparklineMarkers(
+              {
+                size: 2,
+                transform: `translate(0, ${positionTracking[chartName]})`,
+                showTooltip: showTooltip.bind(null, positionTracking[chartName] + metricTrendChartHeight / 2),
+                hideTooltip,
+              },
+              metricChart.events,
+            ),
+          ];
+        }),
+
         g(
           {},
           rect({
@@ -451,6 +563,16 @@ const TableMonitoringTrend = (props) => {
             text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(schemaChangesMaxValue)),
             text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, 0),
           ),
+
+          // Metric Chart Y axes
+          ...parsedMetricCharts.map((metricChart, idx) => {
+            const chartName = `metricTrendChart_${idx}`;
+            return g(
+              { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking[chartName] + (metricTrendChartHeight / 2)})` },
+              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min)),
+              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max)),
+            );
+          }),
         ),
         tooltipWrapperElement,
       ),
@@ -506,7 +628,7 @@ const TableMonitoringTrend = (props) => {
         },
         'Schema': {
           items: [
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blueLight })), label: 'Additions' },
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blue })), label: 'Additions' },
             { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
             { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
           ],
@@ -605,7 +727,7 @@ stylesheet.replace(`
   .chart-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 24px;
+    gap: 36px;
     padding: 12px 16px;
     border-top: 1px solid var(--border-color);
     background: var(--background-color);

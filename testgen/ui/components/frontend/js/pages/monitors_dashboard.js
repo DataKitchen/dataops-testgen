@@ -16,12 +16,14 @@
  * @property {number?} freshness_anomalies
  * @property {number?} volume_anomalies
  * @property {number?} schema_anomalies
- * @property {number?} quality_drift_anomalies
+ * @property {number?} metric_anomalies
  * @property {boolean?} freshness_is_training
  * @property {boolean?} volume_is_training
+ * @property {boolean?} metric_is_training
  * @property {boolean} freshness_is_pending
  * @property {boolean} volume_is_pending
  * @property {boolean} schema_is_pending
+ * @property {boolean} metric_is_pending
  * @property {number?} lookback_start
  * @property {number?} lookback_end
  * @property {string?} latest_update
@@ -133,7 +135,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             const rowCountChange = (monitor.row_count ?? 0) - (monitor.previous_row_count ?? 0);
 
             return {
-                _hasAnomalies: monitor.freshness_anomalies || monitor.volume_anomalies || monitor.schema_anomalies || monitor.quality_drift_anomalies,
+                _hasAnomalies: monitor.freshness_anomalies || monitor.volume_anomalies || monitor.schema_anomalies || monitor.metric_anomalies,
                 table_name: () => span(
                     {
                         class: monitor.table_state === 'dropped' ? 'text-disabled' : '',
@@ -144,7 +146,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
                 volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
                 schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
-                quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
+                metric_anomalies: () => AnomalyTag(monitor.metric_anomalies, monitor.metric_is_training, monitor.metric_is_pending, () => openChartsDialog(monitor)),
                 latest_update: () => monitor.latest_update
                     ? withTooltip(
                         span(
@@ -381,7 +383,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 {name: 'freshness_anomalies', label: 'Freshness', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'volume_anomalies', label: 'Volume', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'schema_anomalies', label: 'Schema', width: 85, sortable: true, align: 'left'},
-                                // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
+                                {name: 'metric_anomalies', label: 'Metrics', width: 85, sortable: true, align: 'left'},
 
                                 ...(
                                     showChanges
@@ -395,8 +397,8 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 
                                 {
                                     name: 'action',
-                                    label: `View trends |
-                                    Edit monitors`, // Formatted this way for white-space: pre-line
+                                    label: showChanges ? `View trends |
+                                    Edit monitors` : 'View trends | Edit monitors', // Formatted this way for white-space: pre-line
                                     width: 100,
                                     align: 'center',
                                     overflow: 'visible',
@@ -527,10 +529,10 @@ th.tg-table-column.action span {
 }
 
 .tg-table-column.table_name,
-.tg-table-column.schema_anomalies,
+.tg-table-column.metric_anomalies,
 .tg-table-column.schema_changes,
 .tg-table-cell.table_name,
-.tg-table-cell.schema_anomalies,
+.tg-table-cell.metric_anomalies,
 .tg-table-cell.schema_changes {
     border-right: 1px dashed var(--border-color);
 }

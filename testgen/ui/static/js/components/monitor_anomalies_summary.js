@@ -4,12 +4,14 @@
  * @property {number} freshness_anomalies
  * @property {number} volume_anomalies
  * @property {number} schema_anomalies
- * @property {number} quality_drift_anomalies
+ * @property {number} metric_anomalies
  * @property {boolean?} freshness_is_training
  * @property {boolean?} volume_is_training
+ * @property {boolean?} metric_is_training
  * @property {boolean?} freshness_is_pending
  * @property {boolean?} volume_is_pending
  * @property {boolean?} schema_is_pending
+ * @property {boolean?} metric_is_pending
  * @property {number} lookback
  * @property {number} lookback_start
  * @property {number} lookback_end
@@ -59,7 +61,7 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
         SummaryTag('Freshness', summary.freshness_anomalies, summary.freshness_is_training, summary.freshness_is_pending),
         SummaryTag('Volume', summary.volume_anomalies, summary.volume_is_training, summary.volume_is_pending),
         SummaryTag('Schema', summary.schema_anomalies, false, summary.schema_is_pending),
-        // SummaryTag('Quality Drift', summary.quality_drift_anomalies),
+        SummaryTag('Metrics', summary.metric_anomalies, summary.metric_is_training, summary.metric_is_pending),
     );
 
     if (summary.project_code && summary.table_group_id) {

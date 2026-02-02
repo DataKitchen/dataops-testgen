@@ -33,7 +33,21 @@ TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
 @dataclass
-class TestDefinitionSummary(EntityMinimal):
+class TestTypeSummary(EntityMinimal):
+    test_name_short: str
+    default_test_description: str
+    measure_uom: str
+    measure_uom_description: str
+    default_parm_columns: str
+    default_parm_prompts: str
+    default_parm_help: str
+    default_severity: str
+    test_scope: TestScope
+    usage_notes: str
+
+
+@dataclass
+class TestDefinitionSummary(TestTypeSummary):
     id: UUID
     table_groups_id: UUID
     profile_run_id: UUID
@@ -77,16 +91,6 @@ class TestDefinitionSummary(EntityMinimal):
     profiling_as_of_date: datetime
     last_manual_update: datetime
     export_to_observability: bool
-    test_name_short: str
-    default_test_description: str
-    measure_uom: str
-    measure_uom_description: str
-    default_parm_columns: str
-    default_parm_prompts: str
-    default_parm_help: str
-    default_severity: str
-    test_scope: TestScope
-    usage_notes: str
     prediction: str | None
 
 
@@ -145,6 +149,17 @@ class TestType(Entity):
     usage_notes: str = Column(String)
     active: str = Column(String)
 
+    _summary_columns = (
+        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        test_description.label("default_test_description"),
+    )
+
+    @classmethod
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def select_summary_where(cls, *clauses) -> Iterable[TestTypeSummary]:
+        results = cls._select_columns_where(cls._summary_columns, *clauses)
+        return [TestTypeSummary(**row) for row in results]
+
 
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
@@ -199,7 +214,8 @@ class TestDefinition(Entity):
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
-        *[key for key in TestDefinitionSummary.__annotations__.keys() if key != "default_test_description"],
+        *TestDefinitionSummary.__annotations__.keys(),
+        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
         TestType.test_description.label("default_test_description"),
     )
     _minimal_columns = TestDefinitionMinimal.__annotations__.keys()

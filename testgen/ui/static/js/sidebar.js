@@ -362,8 +362,7 @@ button.tg-button:hover {
     background: rgba(0, 0, 0, 0.04);
 }
 
-button.tg-button > i {
-    font-size: 18px;
+button.tg-button > i:has(+ span:not(.tg-tooltip)) {
     margin-right: 8px;
 }
 /* ... */
