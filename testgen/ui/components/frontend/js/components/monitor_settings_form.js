@@ -42,6 +42,7 @@ import { Checkbox } from './checkbox.js';
 import { CrontabInput } from './crontab_input.js';
 import { Icon } from './icon.js';
 import { Link } from './link.js';
+import { withTooltip } from './tooltip.js';
 import { numberBetween, required } from '../form_validators.js';
 import { timezones, holidayCodes } from '../values.js';
 import { formatDurationSeconds, humanReadableDuration } from '../display_utils.js';
@@ -168,7 +169,14 @@ const MainForm = (
                 const lookbackDuration = monitorLookback.val * cronDuration;
                 return div(
                     { class: 'flex-column' },
-                    span({ class: 'text-caption mt-1 mb-3' }, 'Lookback Window'),
+                    div(
+                        { class: 'flex-row fx-gap-1 text-caption mt-1 mb-3' },
+                        span('Lookback Window (calculated)'),
+                        withTooltip(
+                            Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                            { text: 'Time window to summarize on dashboard views. Calculated based on Lookback Runs and Schedule.', width: 200 },
+                        )
+                    ),
                     span(humanReadableDuration(formatDurationSeconds(lookbackDuration))),
                 );
             }

@@ -15,9 +15,9 @@ test_types:
   dq_score_risk_factor: null
   column_name_prompt: null
   column_name_help: null
-  default_parm_columns: custom_query,history_calculation,history_calculation_upper,history_lookback,subset_condition
+  default_parm_columns: column_name,custom_query,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
-  default_parm_prompts: Metric Expression,Lower Bound,Upper Bound,Result Lookback,Subset Condition
+  default_parm_prompts: Metric Name,Metric Expression,Lower Bound,Upper Bound,Result Lookback
   default_parm_help: null
   default_severity: Fail
   run_type: CAT

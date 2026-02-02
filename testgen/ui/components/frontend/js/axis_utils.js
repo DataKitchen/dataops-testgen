@@ -270,6 +270,133 @@ function estimateMonthYearTicks(minTime, maxTime, monthStep) {
     return Math.ceil(totalMonths / monthStep) + 2;
 }
 
+function getAdaptiveTimeTicksV2(dates, totalWidth, tickWidth) {
+    if (!dates || dates.length === 0) {
+        return [];
+    }
+
+    if (typeof dates[0] === 'number') {
+        dates = dates.map(d => new Date(d));
+    }
+
+    const timestamps = dates.map(d => d.getTime());
+    const minTime = Math.min(...timestamps);
+    const maxTime = Math.max(...timestamps);
+    const rangeMs = maxTime - minTime;
+
+    const maxTicks = Math.floor(totalWidth / tickWidth);
+    const timeSteps = [
+        { name: 'hour', ms: 3600000 },
+        { name: '2 hours', ms: 7200000 },
+        { name: '4 hours', ms: 14400000 },
+        { name: '6 hours', ms: 21600000 },
+        { name: '8 hours', ms: 28800000 },
+        { name: '12 hours', ms: 43200000 },
+        { name: 'day', ms: 86400000 },
+        { name: '2 days', ms: 172800000 },
+        { name: '3 days', ms: 259200000 },
+        { name: 'week', ms: 604800000 },
+        { name: '2 weeks', ms: 1209600000 },
+        { name: 'month', ms: null, count: 1 },
+        { name: '3 months', ms: null, count: 3 },
+        { name: '6 months', ms: null, count: 6 },
+        { name: 'year', ms: null, count: 1 },
+    ];
+
+    for (let i = 0; i < timeSteps.length; i++) {
+        const step = timeSteps[i];
+        let tickCount = 0;
+
+        if (step.ms !== null) {
+            // Precise calculation: how many strict ticks fit in [minTime, maxTime]?
+            const firstTick = Math.ceil(minTime / step.ms) * step.ms;
+            const lastTick = Math.floor(maxTime / step.ms) * step.ms;
+            if (lastTick >= firstTick) {
+                tickCount = Math.floor((lastTick - firstTick) / step.ms) + 1;
+            }
+        } else {
+            tickCount = estimateMonthYearTicksStrict(minTime, maxTime, step.count);
+        }
+
+        if (tickCount <= maxTicks && tickCount > 0) {
+            if (step.ms !== null) {
+                return generateMsTicksStrict(minTime, maxTime, step.ms);
+            } else {
+                return generateMonthYearTicksStrict(minTime, maxTime, step.count);
+            }
+        }
+    }
+
+    const targetStep = rangeMs / Math.max(1, maxTicks);
+    const niceStep = getNiceStep(targetStep);
+    return generateMsTicksStrict(minTime, maxTime, niceStep);
+}
+
+/** * Generates ticks strictly within [minTime, maxTime].
+ * Uses Math.ceil to start 'inside' the range.
+ */
+function generateMsTicksStrict(minTime, maxTime, stepMs) {
+    const ticks = [];
+    
+    let currentTick = Math.ceil(minTime / stepMs) * stepMs;
+
+    while (currentTick <= maxTime) {
+        ticks.push(new Date(currentTick));
+        currentTick += stepMs;
+    }
+
+    return ticks;
+}
+
+/** * Generates Month/Year ticks strictly within bounds.
+ */
+function generateMonthYearTicksStrict(minTime, maxTime, monthStep) {
+    const ticks = [];
+    let currentDate = new Date(minTime);
+    
+    currentDate.setDate(1);
+    currentDate.setHours(0, 0, 0, 0);
+
+    let month = currentDate.getMonth();
+    let year = currentDate.getFullYear();
+    while (month % monthStep !== 0) {
+        month--;
+        if (month < 0) { month = 11; year--; }
+    }
+    currentDate.setFullYear(year, month, 1);
+
+    while (currentDate.getTime() < minTime) {
+        currentDate.setMonth(currentDate.getMonth() + monthStep);
+    }
+
+    while (currentDate.getTime() <= maxTime) {
+        ticks.push(new Date(currentDate));
+        currentDate.setMonth(currentDate.getMonth() + monthStep);
+    }
+
+    return ticks;
+}
+
+function estimateMonthYearTicksStrict(minTime, maxTime, monthStep) {
+    let count = 0;
+    let d = new Date(minTime);
+    d.setDate(1); d.setHours(0,0,0,0);
+    
+    let m = d.getMonth();
+    let y = d.getFullYear();
+    while (m % monthStep !== 0) { m--; if(m<0){m=11; y--;} }
+    d.setFullYear(y, m, 1);
+
+    while (d.getTime() < minTime) {
+        d.setMonth(d.getMonth() + monthStep);
+    }
+    while (d.getTime() <= maxTime) {
+        count++;
+        d.setMonth(d.getMonth() + monthStep);
+    }
+    return count;
+}
+
 /**
  * Formats an array of Date objects into smart, non-redundant labels.
  * It only displays the year, month, or day when it changes from the previous tick.
@@ -371,4 +498,4 @@ function formatSmartTimeTicks(ticks) {
     return formattedLabels;
 }
 
-export { niceBounds, niceTicks, scale, screenToSvgCoordinates, getAdaptiveTimeTicks, formatSmartTimeTicks };
+export { niceBounds, niceTicks, scale, screenToSvgCoordinates, getAdaptiveTimeTicks, getAdaptiveTimeTicksV2, formatSmartTimeTicks };

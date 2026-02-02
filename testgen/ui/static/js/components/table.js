@@ -40,6 +40,7 @@
  * @property {any?} header
  * @property {any?} emptyState
  * @property {string?} class
+ * @property {((row: any, index: number) => string)?} rowClass
  * @property {string?} height
  * @property {string?} width
  * @property {boolean?} highDensity
@@ -209,7 +210,7 @@ const Table = (options, rows) => {
                         rows_.map((row, idx) =>
                             tr(
                                 {
-                                    class: () => selectedRows[idx].val ? 'selected' : '',
+                                    class: () => `${selectedRows[idx].val ? 'selected' : ''} ${options.rowClass?.(row, idx) ?? ''}`,
                                     onclick: () => onRowSelected(idx),
                                 },
                                 ...getValue(dataColumns).map(column => TableCell(column, row, idx)),
@@ -287,9 +288,10 @@ const TableHeaderColumn = (
         
         const isSorted = sortOptions.val.field === column.name;
         return (
-            isSorted
-                ? Icon({size: 13}, sortOptions.val.order === 'desc' ? 'south' : 'north')
-                : null
+            Icon(
+                {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
+                isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
+            )
         );
     });
 
@@ -339,7 +341,7 @@ const TableCell = (column, row, index) => {
             'data-testid': `table-cell:${index},${column.name}`,
             style: `overflow-x: ${column.overflow ?? 'hidden'}`,
         },
-        row[column.name],
+        getValue(row[column.name]),
     );
 };
 

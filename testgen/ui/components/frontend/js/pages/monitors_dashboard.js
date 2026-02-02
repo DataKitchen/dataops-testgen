@@ -68,7 +68,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { formatDuration, humanReadableDuration, colorMap, formatNumber, viewPortUnitsToPixels } from '../display_utils.js';
+import { formatDuration, formatTimestamp, humanReadableDuration, formatNumber, viewPortUnitsToPixels } from '../display_utils.js';
 import { Button } from '../components/button.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
@@ -107,7 +107,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             onPageChange: (page, pageSize) => emitEvent('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
         };
     });
-    const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_group_id: monitor.table_group_id, table_name: monitor.table_name }});
+    const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
     const tableRows = van.derive(() => {
         const result = getValue(props.monitors);
         renderTime = new Date();
@@ -115,10 +115,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             const rowCountChange = (monitor.row_count ?? 0) - (monitor.previous_row_count ?? 0);
 
             return {
+                _hasAnomalies: monitor.freshness_anomalies || monitor.volume_anomalies || monitor.schema_anomalies || monitor.quality_drift_anomalies,
                 table_name: () => span(
                     {
                         class: monitor.table_state === 'dropped' ? 'text-disabled' : '',
-                        style: monitor.table_state === 'added' ? `font-weight: 500; color: ${colorMap.tealDark}` : '',
+                        style: monitor.table_state === 'added' ? 'font-weight: 500;' : '',
                     },
                     monitor.table_name,
                 ),
@@ -126,26 +127,31 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
                 schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
                 quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
-                latest_update: () => span(
-                    {class: 'text-small text-secondary'},
-                    monitor.latest_update ? `${humanReadableDuration(formatDuration(monitor.latest_update, renderTime), true)} ago` : '-',
-                ),
+                latest_update: () => monitor.latest_update
+                    ? withTooltip(
+                        span(
+                            {class: 'text-small', style: 'position: relative;'},
+                            `${humanReadableDuration(formatDuration(monitor.latest_update, renderTime), true)} ago`,
+                        ),
+                        { text: `Latest update detected: ${formatTimestamp(monitor.latest_update)}` },
+                    )
+                    : span({class: 'text-small text-secondary'}, '-'),
                 row_count: () => rowCountChange !== 0 ?
                     withTooltip(
                         div(
                             {class: 'flex-row fx-gap-1', style: 'position: relative; display: inline-flex;'},
                             Icon(
-                                {style: `font-size: 20px; color: ${rowCountChange > 0 ? colorMap.tealDark : colorMap.redDark};`},
+                                {style: 'font-size: 20px; color: var(--primary-text-color);'},
                                 rowCountChange > 0 ? 'arrow_upward' : 'arrow_downward',
                             ),
-                            span({class: 'text-small text-secondary'}, formatNumber(Math.abs(rowCountChange))),
+                            span({class: 'text-small'}, formatNumber(Math.abs(rowCountChange))),
                         ),
                         {
                             text: div(
                                 {class: 'flex-column fx-align-flex-start mb-1'},
                                 span(`Previous count: ${formatNumber(monitor.previous_row_count)}`),
                                 span(`Latest count: ${formatNumber(monitor.row_count)}`),
-                                span(`Percent change: ${formatNumber(rowCountChange * 100 / monitor.previous_row_count, 2)}%`),
+                                span(`Percent change: ${monitor.previous_row_count ? formatNumber(rowCountChange * 100 / monitor.previous_row_count, 2) : '100'}%`),
                             ),
                         },
                     )
@@ -165,25 +171,25 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 },
                             },
                             monitor.table_state === 'added' 
-                                ? Icon({size: 20, classes: 'schema-icon--add', filled: true}, 'add_box')
+                                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'add_box')
                                 : null,
                             monitor.table_state === 'dropped' 
-                                ? Icon({size: 20, classes: 'schema-icon--drop', filled: true}, 'indeterminate_check_box')
+                                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'indeterminate_check_box')
                                 : null,
                             monitor.column_adds ? div(
                                 {class: 'flex-row'},
-                                Icon({size: 20, classes: 'schema-icon--add'}, 'add'),
-                                span({class: 'text-small text-secondary'}, formatNumber(monitor.column_adds)),
+                                Icon({size: 20, classes: 'schema-icon'}, 'add'),
+                                span({class: 'text-small'}, formatNumber(monitor.column_adds)),
                             ) : null,
                             monitor.column_drops ? div(
                                 {class: 'flex-row'},
-                                Icon({size: 20, classes: 'schema-icon--drop'}, 'remove'),
-                                span({class: 'text-small text-secondary'}, formatNumber(monitor.column_drops)),
+                                Icon({size: 20, classes: 'schema-icon'}, 'remove'),
+                                span({class: 'text-small'}, formatNumber(monitor.column_drops)),
                             ) : null,
                             monitor.column_mods ? div(
                                 {class: 'flex-row'},
-                                Icon({size: 18, classes: 'schema-icon--mod'}, 'change_history'),
-                                span({class: 'text-small text-secondary'}, formatNumber(monitor.column_mods)),
+                                Icon({size: 18, classes: 'schema-icon'}, 'change_history'),
+                                span({class: 'text-small'}, formatNumber(monitor.column_mods)),
                             ) : null,
                         ),
                         {
@@ -205,14 +211,25 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         },
                     ) : span({class: 'text-small text-secondary'}, '-'),
                 action: () => div(
-                    {
-                        role: 'button',
-                        class: 'flex-row fx-gap-1 p-2 clickable',
-                        style: 'color: var(--link-color); width: fit-content;',
+                    { class: 'flex-row fx-gap-2' },
+                    Button({
+                        icon: 'insights',
+                        type: 'icon',
+                        tooltip: 'View table trends',
+                        tooltipPosition: 'top-left',
+                        style: 'color: var(--secondary-text-color);',
                         onclick: () => openChartsDialog(monitor),
-                    },
-                    span('View'),
-                    i({class: 'material-symbols-rounded', style: 'font-size: 18px;'}, 'insights'),
+                    }),
+                    getValue(props.permissions)?.can_edit
+                        ? Button({
+                            icon: 'edit',
+                            type: 'icon',
+                            tooltip: 'Edit table monitors',
+                            tooltipPosition: 'top-left',
+                            style: 'color: var(--secondary-text-color);',
+                            onclick: () => emitEvent('EditTableMonitors', { payload: { table_name: monitor.table_name }}),
+                        })
+                        : null,
                 ),
             };
         });
@@ -311,7 +328,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 return withTooltip(
                                     span(
                                         { class: 'text-caption', style: 'position: relative;' },
-                                        `Next run: ${schedule.cron_sample.samples[0]}`,
+                                        `Next run: ${formatTimestamp(schedule.cron_sample.samples[0])}`,
                                     ),
                                     {
                                         text: `Schedule: ${schedule.cron_sample.readable_expr} (${schedule.cron_tz})`,
@@ -338,10 +355,17 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 {name: 'volume', label: 'Volume', width: 85, align: 'left', overflow: 'visible'},
                                 {name: 'schema', label: 'Schema', width: 85, align: 'left'},
                                 // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
-                                {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true},
+                                {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'schema_changes', label: 'Schema', width: 150, align: 'left', overflow: 'visible'},
-                                {name: 'action', label: '', width: 100, align: 'center'},
+                                {
+                                    name: 'action',
+                                    label: `View trends |
+                                    Edit monitors`, // Formatted this way for white-space: pre-line
+                                    width: 100,
+                                    align: 'center',
+                                    overflow: 'visible',
+                                },
                             ],
                         ];
                     },
@@ -354,6 +378,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     ),
                     sort: tableSort,
                     paginator: tablePaginator,
+                    rowClass: (row) => row._hasAnomalies ? 'has-anomalies' : '',
                 },
                 tableRows,
             )
@@ -452,6 +477,11 @@ stylesheet.replace(`
     min-height: 300px;
 }
 
+th.tg-table-column.action span {
+    white-space: pre-line;
+    text-transform: none;
+}
+
 .tg-table-column.table_name,
 .tg-table-column.freshness,
 .tg-table-column.latest_update,
@@ -487,19 +517,9 @@ stylesheet.replace(`
     background: var(--select-hover-background);
 }
 
-.tg-icon.schema-icon--add {
+.tg-icon.schema-icon {
     cursor: pointer;
-    color: ${colorMap.tealDark}; 
-}
-
-.tg-icon.schema-icon--drop {
-    cursor: pointer;
-    color: ${colorMap.redDark}; 
-}
-
-.tg-icon.schema-icon--mod {
-    cursor: pointer;
-    color: ${colorMap.purple}; 
+    color: var(--primary-text-color);
 }
 
 .anomaly-tag-wrapper {
@@ -508,6 +528,10 @@ stylesheet.replace(`
 }
 .anomaly-tag-wrapper.clickable:hover {
     background: var(--select-hover-background);
+}
+
+tr.has-anomalies {
+    background-color: rgba(239, 83, 80, 0.08);
 }
 `);
 

@@ -7,8 +7,6 @@
  * @property {number} height
  * @property {number} lineWidth
  * @property {number} lineHeight
- * @property {string} freshLineColor
- * @property {string} staleLineColor
  * @property {number} staleMarkerSize
  * @property {number} freshMarkerSize
  * @property {Point?} nestedPosition
@@ -21,8 +19,8 @@
  * @property {Point} point
  * @property {number} time
  * @property {boolean} changed
- * @property {boolean?} expected
- * @property {string?} status
+ * @property {string} status
+ * @property {boolean} isTraining
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
@@ -30,14 +28,11 @@ import { getValue } from '../utils.js';
 
 const { div, span } = van.tags;
 const { circle, g, line, rect, svg } = van.tags("http://www.w3.org/2000/svg");
-const freshnessColorByStatus = {
+const colorByStatus = {
     Passed: colorMap.limeGreen,
-    Log: colorMap.blueLight,
-};
-const staleColorByStatus = {
     Failed: colorMap.red,
     Warning: colorMap.orange,
-    Log: colorMap.lightGrey,
+    Log: colorMap.blueLight,
 };
 
 /**
@@ -65,54 +60,40 @@ const FreshnessChart = (options, ...events) => {
 
     const freshnessEvents = events.map(event => {
         const point = event.point;
-        const minY = point.y - (_options.lineHeight / 2);
-        const maxY = point.y + (_options.lineHeight / 2);
+        const minY = point.y - (_options.lineHeight / 2) + 2;
+        const maxY = point.y + (_options.lineHeight / 2) - 2;
         const lineProps = { x1: point.x, y1: minY, x2: point.x, y2: maxY };
-        const lineColor = getFreshnessEventColor(event);
+        const eventColor = getFreshnessEventColor(event);
         const markerProps = _options.showTooltip ? {
             onmouseenter: () => _options.showTooltip?.(FreshnessChartTooltip(event), point),
             onmouseleave: () => _options.hideTooltip?.(),
         } : {};
 
-        if (event.expected === false) {
-            return line({
-                ...lineProps,
-                ...markerProps,
-                style: `stroke: ${lineColor}; stroke-width: ${_options.lineWidth};`,
-            });
-        }
-
-        if (event.changed) {
-            return g(
-                {...markerProps},
-                line({
-                    ...lineProps,
-                    style: `stroke: ${lineColor}; stroke-width: ${_options.lineWidth};`,
-                }),
-                circle({
-                    cx: lineProps.x1,
-                    cy: point.y,
-                    r: _options.freshMarkerSize,
-                    fill: lineColor,
-                }),
-            );
-        }
-
         return g(
             {...markerProps},
-            line({
-                ...lineProps,
-                style: `stroke: ${lineColor}; stroke-width: ${_options.lineWidth};`,
-            }),
-            rect({
-                width: _options.staleMarkerSize,
-                height: _options.staleMarkerSize,
-                x: lineProps.x1 - (_options.staleMarkerSize / 2),
-                y: point.y - _options.staleMarkerSize / 2,
-                fill: lineColor,
-                style: `transform-box: fill-box; transform-origin: center;`,
-                transform: 'rotate(45)',
-            }),
+            event.changed 
+                ? line({
+                    ...lineProps,
+                    style: `stroke: ${eventColor}; stroke-width: ${event.isTraining ? '1' : _options.lineWidth};`,
+                })
+                : null,
+            !['Passed', 'Log'].includes(event.status)
+                ? rect({
+                    width: _options.staleMarkerSize,
+                    height: _options.staleMarkerSize,
+                    x: lineProps.x1 - (_options.staleMarkerSize / 2),
+                    y: maxY - (_options.staleMarkerSize / 2),
+                    fill: eventColor,
+                    style: `transform-box: fill-box; transform-origin: center;`,
+                    transform: 'rotate(45)',
+                })
+                : circle({
+                    cx: lineProps.x1,
+                    cy: maxY,
+                    r: 2,
+                    fill: event.isTraining ? 'var(--dk-dialog-background)' : eventColor,
+                    style: `stroke: ${eventColor}; stroke-width: 1;`,
+                }),
         );
     });
 
@@ -137,9 +118,7 @@ const FreshnessChart = (options, ...events) => {
 const /** @type Options */ defaultOptions = {
     width: 600,
     height: 200,
-    freshLineColor: colorMap.limeGreen,
-    staleLineColor: colorMap.red,
-    lineWidth: 3,
+    lineWidth: 2,
     lineHeight: 5,
     staleMarkerSize: 8,
     freshMarkerSize: 4,
@@ -151,13 +130,10 @@ const /** @type Options */ defaultOptions = {
  * @returns 
  */
 const getFreshnessEventColor = (event) => {
-    if (event.expected === false) {
-        return colorMap.lightGrey;
+    if (!event.changed && (event.status === 'Passed' || event.isTraining)) {
+        return colorMap.emptyDark;
     }
-    if (event.changed) {
-        return freshnessColorByStatus[event.status] || defaultOptions.freshLineColor;
-    }
-    return staleColorByStatus[event.status] || defaultOptions.staleLineColor;
+    return colorByStatus[event.status];
 }
 
 /**

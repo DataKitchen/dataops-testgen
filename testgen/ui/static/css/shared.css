@@ -23,6 +23,7 @@ body {
     --light-grey: #E0E0E0;
     --empty: #EEEEEE;
     --empty-light: #FAFAFA;
+    --empty-dark: #BDBDBD;
     --empty-teal: #E7F1F0;
 
     --primary-text-color: #000000de;
@@ -34,6 +35,8 @@ body {
     --tooltip-color: #333d;
     --tooltip-text-color: #fff;
     --dk-card-background: #fff;
+    --dk-dialog-background: #fff;
+    --selected-item-background: #06a04a17;
 
     --sidebar-background-color: white;
     --sidebar-item-hover-color: #f5f5f5;
@@ -90,6 +93,7 @@ body {
     body {
         --empty: #424242;
         --empty-light: #212121;
+        --empty-dark: #757575;
         --empty-teal: #242E2D;
 
         --primary-text-color: rgba(255, 255, 255);
@@ -101,6 +105,7 @@ body {
         --tooltip-color: #eee;
         --tooltip-text-color: #000;
         --dk-card-background: #14181f;
+        --dk-dialog-background: #0e1117;
 
         --sidebar-background-color: #14181f;
         --sidebar-item-hover-color: #10141b;

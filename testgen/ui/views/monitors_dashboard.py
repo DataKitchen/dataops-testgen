@@ -14,7 +14,7 @@ from testgen.common.models.notification_settings import (
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -148,6 +148,7 @@ class MonitorsDashboardPage(Page):
                 "EditNotifications": manage_notifications(project_code, selected_table_group),
                 "EditMonitorSettings": lambda *_: edit_monitor_settings(selected_table_group, monitor_schedule),
                 "DeleteMonitorSuite": lambda *_: delete_monitor_suite(selected_table_group),
+                "EditTableMonitors": lambda payload: edit_table_monitors(selected_table_group, payload),
             },
         )
 
@@ -332,6 +333,7 @@ def _monitor_changes_by_tables_query(
             CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
             CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
             CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
+            CASE WHEN results.test_type = 'Freshness_Trend' THEN results.result_signal ELSE NULL END AS freshness_interval,
             CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
             CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
@@ -354,7 +356,8 @@ def _monitor_changes_by_tables_query(
             SUM(freshness_anomaly) AS freshness_anomalies,
             SUM(volume_anomaly) AS volume_anomalies,
             SUM(schema_anomaly) AS schema_anomalies,
-            MAX(test_time) FILTER (WHERE test_type = 'Freshness_Trend' AND result_code = 0) AS latest_update,
+            MAX(test_time - (COALESCE(NULLIF(freshness_interval, 'Unknown')::INTEGER, 0) * INTERVAL '1 minute'))
+                FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS latest_update,
             MAX(row_count) FILTER (WHERE position = 1) AS row_count,
             SUM(col_adds) AS column_adds,
             SUM(col_drops) AS column_drops,
@@ -620,7 +623,8 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             for definition in definitions:
                 if (base_mean_predictions := definition.prediction.get("mean")):
                     predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
-                    predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < monitor_lookback]
+                    # Limit predictions to 1/3 of the lookback, with minimum 3 points
+                    predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
 
                     mean_predictions: dict = {}
                     lower_tolerance_predictions: dict = {}
@@ -684,7 +688,8 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         tt.test_type,
         results.result_code,
         COALESCE(results.result_status, 'Log') AS result_status,
-        results.result_signal
+        results.result_signal,
+        results.result_message
     FROM active_runs
     CROSS JOIN target_tests tt
     LEFT JOIN test_results AS results
@@ -706,7 +711,12 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
 
     return {
         "freshness_events": [
-            {"changed": event["result_code"] is not None and int(event["result_code"]) == 0, "expected": None, "status": event["result_status"], "time": event["test_time"]}
+            {
+                "changed": "detected: Yes" in (event["result_message"] or ""),
+                "status": event["result_status"],
+                "is_training": event["result_code"] == -1,
+                "time": event["test_time"],
+            }
             for event in results if event["test_type"] == "Freshness_Trend"
         ],
         "volume_events": [
@@ -714,6 +724,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "record_count": int(event["result_signal"] or 0),
                 "time": event["test_time"],
                 "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
+                "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
             }
             for event in results if event["test_type"] == "Volume_Trend"
         ],
@@ -755,3 +766,43 @@ def get_data_structure_logs(table_group_id: str, table_name: str, start_time: st
 
     results = fetch_all_from_db(query, params)
     return [ dict(row) for row in results ]
+
+
+def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
+    table_name = payload.get("table_name")
+
+    @with_database_session
+    def show_dialog():
+        definitions = TestDefinition.select_where(
+            TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
+            TestDefinition.table_name == table_name,
+            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend"]),
+        )
+
+        def on_save_test_definition(payload: dict) -> None:
+            set_save(True)
+            set_definitions(payload.get("definitions", []))
+
+        should_save, set_save = temp_value(f"edit_table_monitors:save:{table_name}", default=False)
+        get_definitions, set_definitions = temp_value(f"edit_table_monitors:definitions:{table_name}", default=[])
+
+        if should_save():
+            valid_columns = {col.name for col in TestDefinition.__table__.columns}
+            for updated_def in get_definitions():
+                current_def: TestDefinitionSummary = TestDefinition.get(updated_def.get("id"))
+                if current_def:
+                    merged = {key: getattr(current_def, key, None) for key in valid_columns}
+                    merged.update({key: value for key, value in updated_def.items() if key in valid_columns})
+                    TestDefinition(**merged).save()
+            st.rerun()
+
+        testgen.edit_table_monitors(
+            key="edit_table_monitors",
+            data={
+                "table_name": table_name,
+                "definitions": [td.to_dict(json_safe=True) for td in definitions],
+            },
+            on_SaveTestDefinition_change=on_save_test_definition,
+        )
+
+    return st.dialog(title=f"Table Monitors: {table_name}")(show_dialog)()
