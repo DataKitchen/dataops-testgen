@@ -323,7 +323,7 @@ const TableMonitoringTrend = (props) => {
         MonitoringSparklineChart(
           {
             width: chartsWidth,
-            height: schemaChartHeight,
+            height: volumeTrendChartHeight,
             nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
             lineWidth: 2,
             attributes: {style: 'overflow: visible;'},
@@ -346,7 +346,7 @@ const TableMonitoringTrend = (props) => {
         () => {
           const selection = schemaChartSelection.val;
           if (selection) {
-            const width = 10;
+            const width = 16;
             const height = schemaChartHeight + 3 * spacing;
             return rect({
               width: width,
@@ -365,7 +365,6 @@ const TableMonitoringTrend = (props) => {
           {
             width: chartsWidth,
             height: schemaChartHeight,
-            middleLine: { x1: origin.x - paddingLeft, y1: schemaChartHeight / 2, x2: end.x + paddingRight, y2: schemaChartHeight / 2 },
             nestedPosition: { x: 0, y: nextPosition({ name: 'schemaChangesChart' }) },
             onClick: getDataStructureLogs,
             showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart + schemaChartHeight / 2),
@@ -442,23 +441,7 @@ const TableMonitoringTrend = (props) => {
           g(
             { transform: `translate(10, ${positionTracking.schemaChangesChart + (schemaChartHeight / 2)})` },
             text({ x: 65, y: -35, class: 'text-small', fill: 'var(--caption-text-color)' }, schemaChangesMaxValue),
-            text({ x: 30, y: -20, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Adds'),
-            g(
-              {},
-              rect({
-                x: -3,
-                y: -7,
-                width: 7,
-                height: 7,
-                fill: colorMap.red,
-                style: `transform-box: fill-box; transform-origin: center;`,
-                transform: 'rotate(45)',
-              }),
-              text({ x: 12, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Modifications'),
-            ),
-            text({ x: 17, y: 20, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Deletes'),
-
-            text({ x: 65, y: 35, class: 'text-small', fill: 'var(--caption-text-color)' }, schemaChangesMaxValue),
+            text({ x: 65, y: 35, class: 'text-small', fill: 'var(--caption-text-color)' }, 0),
           ),
         ),
         tooltipWrapperElement,
@@ -468,7 +451,7 @@ const TableMonitoringTrend = (props) => {
     () => {
       const _shouldShowSidebar = shouldShowSidebar.val;
       const selection = schemaChartSelection.val;
-      if (!_shouldShowSidebar) {
+      if (!_shouldShowSidebar || !selection) {
         return span();
       }
 
