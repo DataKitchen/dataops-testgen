@@ -33,6 +33,7 @@
  * @typedef Predictions
  * @type {object}
  * @property {PredictionSet} volume_trend
+ * @property {PredictionSet} freshness_trend
  *
  * @typedef Properties
  * @type {object}
@@ -46,7 +47,7 @@
 import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
 import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
-import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/components/freshness_chart.js';
+import { FreshnessChart } from '/app/static/js/components/freshness_chart.js';
 import { colorMap, formatNumber } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
 import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
@@ -200,66 +201,15 @@ const TableMonitoringTrend = (props) => {
       y: fresshnessChartHeight / 2,
     },
   }));
-
-  const freshessChartLegendItems = Object.values(parsedFreshnessEvents.reduce((legendItems, e, idx) => {
-    const itemColor = getFreshnessEventColor(e);
-    const key = `${e.changed}-${itemColor}`;
-    if (!legendItems[key]) {
-      const position = `translate(0,${20 * (Object.keys(legendItems).length + 1)})`;
-      legendItems[key] = e.changed
-        ? g(
-          { transform: position },
-          circle({
-            r: 4,
-            cx: 0,
-            cy: -4,
-            fill: itemColor,
-          }),
-          text({ x: 10, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Update'),
-        )
-        : g(
-          { transform: position },
-          rect({
-            x: -3,
-            y: -7,
-            width: 7,
-            height: 7,
-            fill: itemColor,
-            style: `transform-box: fill-box; transform-origin: center;`,
-            transform: 'rotate(45)',
-          }),
-          text({ x: 10, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'No update'),
-        );
-    }
-    return legendItems;
-  }, {}));
-  if (freshessChartLegendItems.length === 0) {
-    freshessChartLegendItems.push(
-      g(
-        { transform: 'translate(0,20)' },
-        circle({
-          r: 4,
-          cx: 0,
-          cy: -4,
-          fill: colorMap.green,
-        }),
-        text({ x: 10, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Update'),
-      ),
-      g(
-        { transform: 'translate(0,40)' },
-        rect({
-          x: -3,
-          y: -7,
-          width: 7,
-          height: 7,
-          fill: colorMap.red,
-          style: `transform-box: fill-box; transform-origin: center;`,
-          transform: 'rotate(45)',
-        }),
-        text({ x: 10, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'No update'),
-      ),
-    );
-  }
+  const parsedFreshnessPredictionPoints = Object.entries(predictions?.freshness_trend?.mean ?? {})
+    .toSorted(([a,], [b,]) => (+a) - (+b))
+    .filter(([time,]) => parseInt(predictions.freshness_trend.lower_tolerance[time] ?? '0') <= 0 && parseInt(predictions.freshness_trend.upper_tolerance[time] ?? '0') >= 0)
+    .map(([time,]) => ({
+      x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+      y: fresshnessChartHeight / 2,
+      time: +time,
+    }))
+    .filter(p => p.x != undefined && p.y != undefined);
 
   const parsedSchemaChangeEvents = schemaChangeEvents.map((e) => ({
     time: e.time,
@@ -404,6 +354,7 @@ const TableMonitoringTrend = (props) => {
             height: fresshnessChartHeight,
             lineHeight: fresshnessChartHeight,
             nestedPosition: { x: 0, y: nextPosition({ name: 'freshnessChart' }) },
+            prediction: parsedFreshnessPredictionPoints,
             showTooltip: showTooltip.bind(null, 0 + fresshnessChartHeight / 2),
             hideTooltip,
           },

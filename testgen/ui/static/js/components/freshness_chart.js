@@ -13,6 +13,7 @@
  * @property {ChartViewBox?} viewBox
  * @property {Function?} showTooltip
  * @property {Function?} hideTooltip
+ * @property {PredictedEvent[]?} prediction
  * 
  * @typedef FreshnessEvent
  * @type {object}
@@ -21,6 +22,12 @@
  * @property {boolean} changed
  * @property {string} status
  * @property {boolean} isTraining
+ * 
+ * @typedef PredictedEvent
+ * @type {Object}
+ * @property {number} x
+ * @property {number} y
+ * @property {number} time
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
@@ -96,6 +103,28 @@ const FreshnessChart = (options, ...events) => {
                 }),
         );
     });
+    const predicitedEvents = (getValue(_options.prediction) ?? []).map((event) => {
+        const minY = event.y - (_options.lineHeight / 2) + 2;
+        const maxY = event.y + (_options.lineHeight / 2) - 2;
+        const lineProps = { x1: event.x, y1: minY, x2: event.x, y2: maxY };
+        const markerProps = _options.showTooltip ? {
+            onmouseenter: () => _options.showTooltip?.(FreshnessChartPredictionTooltip(event), event),
+            onmouseleave: () => _options.hideTooltip?.(),
+        } : {};
+        const barHeight = getValue(_options.height);
+
+        return g(
+            {...markerProps},
+            rect({
+                width: _options.staleMarkerSize,
+                height: barHeight,
+                x: lineProps.x1 - (_options.staleMarkerSize / 2),
+                y: 0,
+                fill: colorMap.emptyDark,
+                opacity: 0.25,
+            }),
+        );
+    });
 
     const extraAttributes = {};
     if (_options.nestedPosition) {
@@ -112,6 +141,7 @@ const FreshnessChart = (options, ...events) => {
             ...extraAttributes,
         },
         ...freshnessEvents,
+        ...predicitedEvents,
     );
 };
 
@@ -137,7 +167,6 @@ const getFreshnessEventColor = (event) => {
 }
 
 /**
- * 
  * @param {FreshnessEvent} event
  * @returns {HTMLDivElement}
  */
@@ -149,4 +178,16 @@ const FreshnessChartTooltip = (event) => {
     );
 };
 
-export { FreshnessChart, getFreshnessEventColor };
+/**
+ * @param {PredictedEvent} event
+ * @returns {HTMLDivElement}
+ */
+const FreshnessChartPredictionTooltip = (event) => {
+    return div(
+        {class: 'flex-column'},
+        span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
+        span({class: 'text-left text-small'}, 'Update expected'),
+    );
+};
+
+export { FreshnessChart };
