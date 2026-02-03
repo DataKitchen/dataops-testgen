@@ -29,7 +29,7 @@
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
-import { getValue } from '../utils.js';
+import { getValue, formatNumber } from '../utils.js';
 
 const { div, span } = van.tags();
 const { circle, g, path, polyline, rect, svg } = van.tags("http://www.w3.org/2000/svg");
@@ -168,7 +168,7 @@ const MonitoringSparklineChartTooltip = (point) => {
     return div(
         {class: 'flex-column'},
         span({class: 'text-left mb-1'}, formatTimestamp(point.originalX, true)),
-        span({class: 'text-left text-small'}, point.originalY),
+        span({class: 'text-left text-small'}, formatNumber(point.originalY)),
     );
 };
 

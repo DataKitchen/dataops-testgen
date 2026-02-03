@@ -42,7 +42,7 @@ import { Button } from '/app/static/js/components/button.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
 
 const { div, span } = van.tags;
-const { circle, clipPath, defs, foreignObject, g, line, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
+const { circle, clipPath, defs, foreignObject, g, line, path, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
 
 const spacing = 8;
 const chartsWidth = 700;
@@ -454,6 +454,64 @@ const TableMonitoringTrend = (props) => {
         ),
         tooltipWrapperElement,
       ),
+      ChartLegend({
+        '': {
+          items: [
+            { icon: svg({ width: 10, height: 10 },
+              path({ d: 'M 8 5 A 3 3 0 0 0 2 5', fill: 'none', stroke: colorMap.emptyDark, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+              path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+              circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
+            ), label: 'Training' },
+          ],
+        },
+        'Freshness': {
+          items: [
+            { icon: svg({ width: 10, height: 10 }, line({ x1: 4, y1: 0, x2: 4, y2: 10, stroke: colorMap.emptyDark, 'stroke-width': 2 })), label: 'Update' },
+            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 4, fill: colorMap.limeGreen })), label: 'On Time' },
+            {
+              icon: svg(
+                { width: 10, height: 10, style: 'overflow: visible;' },
+                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+              ),
+              label: 'Early/Late',
+            },
+          ],
+        },
+        'Volume/Metrics': {
+          items: [
+            {
+              icon: svg(
+                { width: 16, height: 10 },
+                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.blueLight, 'stroke-width': 2 }),
+                circle({ cx: 8, cy: 5, r: 3, fill: colorMap.blueLight })
+              ),
+              label: 'Actual',
+            },
+            {
+              icon: svg(
+                { width: 10, height: 10, style: 'overflow: visible;' },
+                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+              ),
+              label: 'Anomaly',
+            },
+            {
+              icon: svg(
+                { width: 16, height: 10 },
+                path({ d: 'M 0,4 L 16,2 L 16,8 L 0,6 Z', fill: colorMap.emptyDark, opacity: 0.4 }),
+                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.grey, 'stroke-width': 2 })
+              ),
+              label: 'Prediction',
+            },
+          ],
+        },
+        'Schema': {
+          items: [
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blueLight })), label: 'Additions' },
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
+          ],
+        },
+      }),
     ),
 
     () => {
@@ -492,6 +550,37 @@ const DividerLine = (start, end) => {
   return line({ x1: start.x, y1: start.y, x2: end.x + paddingRight, y2: start.y, stroke: 'var(--border-color)' });
 }
 
+/**
+ * @typedef LegendItem
+ * @type {object}
+ * @property {Element} icon
+ * @property {string} label
+ *
+ * @typedef LegendGroup
+ * @type {object}
+ * @property {LegendItem[]} items
+ *
+ * @param {Object.<string, LegendGroup>} legendGroups
+ */
+const ChartLegend = (legendGroups) => {
+  return div(
+    { class: 'chart-legend' },
+    Object.entries(legendGroups).map(([groupName, { items }]) =>
+      div(
+        { class: 'chart-legend-group' },
+        span({ class: 'chart-legend-group-label' }, groupName),
+        ...items.map(item =>
+          div(
+            { class: 'chart-legend-item' },
+            item.icon,
+            span({ class: 'chart-legend-item-label' }, item.label),
+          )
+        ),
+      )
+    ),
+  );
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
   .table-monitoring-trend-wrapper {
@@ -511,6 +600,40 @@ stylesheet.replace(`
 
   .tick-text {
     font-size: 10px;
+  }
+
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--background-color);
+    position: sticky;
+    bottom: 0;
+  }
+
+  .chart-legend-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .chart-legend-group-label {
+    font-size: 11px;
+    color: var(--secondary-text-color);
+    font-weight: 500;
+  }
+
+  .chart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .chart-legend-item-label {
+    font-size: 11px;
+    color: var(--caption-text-color);
   }
 `);
 
