@@ -70,3 +70,29 @@ SELECT 'eac9d722-d06a-4b1f-b8c4-bb2854bd4cfd'::UUID AS id,
 UPDATE table_groups
 SET monitor_test_suite_id = '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID
 WHERE id = '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID;
+
+-- Metric monitors
+INSERT INTO test_definitions
+    (id, table_groups_id, test_suite_id, test_type, schema_name, table_name, column_name,
+     custom_query, history_calculation, history_calculation_upper, lower_tolerance, upper_tolerance, test_active)
+VALUES
+    -- Average Discount
+    ('a1b2c3d4-1006-4000-8000-000000000006'::UUID,
+     '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID,
+     '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID,
+     'Metric_Trend', '{PROJECT_SCHEMA}', 'f_ebike_sales', 'Average Discount',
+     'AVG(discount_amount)', NULL, NULL, 0, 500, 'Y'),
+
+    -- Average Product Price
+    ('a1b2c3d4-3333-4000-8000-000000000003'::UUID,
+     '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID,
+     '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID,
+     'Metric_Trend', '{PROJECT_SCHEMA}', 'd_ebike_products', 'Average Product Price',
+     'AVG(price)', NULL, NULL, 0, 10000, 'Y'),
+
+    -- Max Discount
+    ('a1b2c3d4-2006-4000-8000-000000000006'::UUID,
+     '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID,
+     '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID,
+     'Metric_Trend', '{PROJECT_SCHEMA}', 'd_ebike_products', 'Max Discount',
+     'MAX(max_discount)', 'PREDICT', NULL, NULL, NULL, 'Y');

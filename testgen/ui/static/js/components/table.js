@@ -33,6 +33,7 @@
  * @property {number?} totalItems
  * @property {number?} currentPageIdx
  * @property {((a: number, b: number) => void)?} onPageChange
+ * @property {HTMLElement?} leftContent
  * 
  * @typedef Options
  * @type {object}
@@ -128,6 +129,7 @@ const Table = (options, rows) => {
             totalItems: p?.totalItems ?? undefined,
             currentPageIdx: p?.currentPageIdx ?? 0,
             onPageChange: p?.onPageChange,
+            leftContent: p?.leftContent,
         };
     });
 
@@ -173,7 +175,7 @@ const Table = (options, rows) => {
                     },
                 },
                 () => colgroup(
-                    ...columnWidths.map((widthState) => col({style: `width: ${widthState.val}px;`})),
+                    ...dataColumns.val.map((_, idx) => col({style: `width: ${columnWidths[idx].val}px;`})),
                 ),
                 () => thead(
                     getValue(headerLines).map((headerLine, idx, allHeaderLines) => {
@@ -199,7 +201,7 @@ const Table = (options, rows) => {
                             {class: 'tg-table-empty-state-body'},
                             tr(
                                 td(
-                                    {colspan: columnWidths.length},
+                                    {colspan: dataColumns.length},
                                     options.emptyState,
                                 ),
                             ),
@@ -227,6 +229,7 @@ const Table = (options, rows) => {
                 getValue(paginatorOptions).currentPageIdx,
                 getValue(options.highDensity),
                 getValue(paginatorOptions).onPageChange,
+                getValue(paginatorOptions).leftContent,
             )
             : undefined,
     );
@@ -352,6 +355,7 @@ const TableCell = (column, row, index) => {
  * @param {number} currentPageIdx
  * @param {boolean?} highDensity
  * @param {((number, number) => void)?} onPageChange
+ * @param {HTMLElement?} leftContent
  * @returns {HTMLElement}
  */
 const Paginatior = (
@@ -360,6 +364,7 @@ const Paginatior = (
     currentPageIdx,
     highDensity,
     onPageChange,
+    leftContent = undefined,
 ) => {
     const pageStart = itemsPerPage * currentPageIdx + 1;
     const pageEnd = Math.min(pageStart + itemsPerPage - 1, totalItems);
@@ -367,6 +372,10 @@ const Paginatior = (
 
     return div(
         {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
+
+        leftContent,
+        leftContent != undefined ? span({class: 'fx-flex'}) : '',
+
         span({class: 'mr-2'}, 'Rows per page:'),
         Select({
             triggerStyle: 'inline',

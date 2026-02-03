@@ -18,7 +18,7 @@ test_types:
   column_name_help: null
   default_parm_columns: subset_condition,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
-  default_parm_prompts: Subset Condition,Lower Bound,Upper Bound,Result Lookback
+  default_parm_prompts: Record Subset Condition,Lower Bound,Upper Bound,History Lookback
   default_parm_help: null
   default_severity: Fail
   run_type: CAT
