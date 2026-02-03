@@ -141,9 +141,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     },
                     monitor.table_name,
                 ),
-                freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
-                volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
-                schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
+                freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
+                volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
+                schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
                 quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
                 latest_update: () => monitor.latest_update
                     ? withTooltip(
@@ -518,19 +518,19 @@ th.tg-table-column.action span {
 }
 
 .tg-table-column.table_name,
-.tg-table-column.freshness,
+.tg-table-column.freshness_anomalies,
 .tg-table-column.latest_update,
 .tg-table-cell.table_name,
-.tg-table-cell.freshness,
+.tg-table-cell.freshness_anomalies,
 .tg-table-cell.latest_update {
     padding-left: 16px !important;
 }
 
 .tg-table-column.table_name,
-.tg-table-column.schema,
+.tg-table-column.schema_anomalies,
 .tg-table-column.schema_changes,
 .tg-table-cell.table_name,
-.tg-table-cell.schema,
+.tg-table-cell.schema_anomalies,
 .tg-table-cell.schema_changes {
     border-right: 1px dashed var(--border-color);
 }

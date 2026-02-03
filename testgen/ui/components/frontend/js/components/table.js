@@ -175,7 +175,7 @@ const Table = (options, rows) => {
                     },
                 },
                 () => colgroup(
-                    ...dataColumns.map((_, idx) => col({style: `width: ${columnWidths[idx].val}px;`})),
+                    ...dataColumns.val.map((_, idx) => col({style: `width: ${columnWidths[idx].val}px;`})),
                 ),
                 () => thead(
                     getValue(headerLines).map((headerLine, idx, allHeaderLines) => {
