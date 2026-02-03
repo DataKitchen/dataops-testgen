@@ -275,6 +275,7 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         "freshness_anomalies": 0,
         "volume_anomalies": 0,
         "schema_anomalies": 0,
+        "metric_anomalies": 0,
         "freshness_is_training": False,
         "volume_is_training": False,
         "metric_is_training": False,
@@ -285,6 +286,11 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
     }
 
 
+ALLOWED_SORT_FIELDS = {
+    "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
+    "metric_anomalies", "latest_update", "row_count",
+}
+
 def _monitor_changes_by_tables_query(
     table_group_id: str,
     table_name_filter: str | None = None,
@@ -294,6 +300,9 @@ def _monitor_changes_by_tables_query(
     limit: int | None = None,
     offset: int | None = None,
 ) -> tuple[str, dict]:
+    if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
+        sort_field = None
+
     query = f"""
     WITH ranked_test_runs AS (
         SELECT
@@ -427,7 +436,7 @@ def _monitor_changes_by_tables_query(
         baseline_tables.previous_row_count
     FROM monitor_tables
     LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
-    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies) > 0" if only_tables_with_anomalies else ""}
+    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies + metric_anomalies) > 0" if only_tables_with_anomalies else ""}
     ORDER BY {"LOWER(monitor_tables.table_name)" if not sort_field or sort_field == "table_name" else f"monitor_tables.{sort_field}"}
     {"DESC" if sort_order == "desc" else "ASC"} NULLS LAST
     {"LIMIT :limit" if limit else ""}
@@ -566,8 +575,8 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             with st.spinner("Deleting monitors ..."):
                 monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
                 TestSuite.cascade_delete([monitor_suite.id])
-            st.rerun()
             st.cache_data.clear()
+            st.rerun()
         except Exception:
             LOG.exception("Failed to delete monitor suite")
             set_result({
@@ -697,6 +706,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     SELECT
         COALESCE(results.test_time, active_runs.test_starttime) AS test_time,
         tt.test_type,
+        results.id AS result_id,
         results.result_code,
         COALESCE(results.result_status, 'Log') AS result_status,
         results.result_signal,
@@ -736,14 +746,17 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "time": event["test_time"],
                 "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
                 "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
+                "is_pending": not bool(event["result_id"]),
             })
 
     return {
         "freshness_events": [
             {
-                "changed": "detected: Yes" in (event["result_message"] or ""),
+                "changed": "detected: Yes" in (result_message := event["result_message"] or ""),
+                "message": parts[1].rstrip(".") if len(parts := result_message.split(". ", 1)) > 1 else None,
                 "status": event["result_status"],
                 "is_training": event["result_code"] == -1,
+                "is_pending": not bool(event["result_id"]),
                 "time": event["test_time"],
             }
             for event in results if event["test_type"] == "Freshness_Trend"
@@ -754,6 +767,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "time": event["test_time"],
                 "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
                 "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
+                "is_pending": not bool(event["result_id"]),
             }
             for event in results if event["test_type"] == "Volume_Trend"
         ],

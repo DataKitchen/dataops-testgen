@@ -79,7 +79,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -129,7 +129,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -179,7 +179,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' + CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' + CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           + CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -229,7 +229,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -279,7 +279,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -329,7 +329,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
@@ -379,7 +379,7 @@ test_types:
             AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
           ELSE 1
         END AS result_code,
-        'Table change detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
             WHEN fingerprint <> '{BASELINE_VALUE}' AND interval_minutes < {LOWER_TOLERANCE} THEN '. Earlier than expected.'

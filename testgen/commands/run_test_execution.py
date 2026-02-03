@@ -88,7 +88,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         if test_suite.is_monitor:
             schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
             if schema_changes["has_table_drops"]:
-                run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend"], mode="delete")
+                run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
             if schema_changes["has_table_adds"]:
                 # Freshness monitors will be inserted after profiling
                 run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")

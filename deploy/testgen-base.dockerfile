@@ -39,7 +39,7 @@ COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
 
 # Upgrading pip for security
-RUN python3 -m pip install --upgrade pip==25.3
+RUN python3 -m pip install --upgrade pip==26.0
 
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 

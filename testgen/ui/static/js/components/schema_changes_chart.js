@@ -4,8 +4,7 @@
  * @type {object}
  * @property {number} lineWidth
  * @property {string} lineColor
- * @property {number} modsMarkerSize
- * @property {number} staleMarkerSize
+ * @property {number} markerSize
  * @property {Point?} nestedPosition
  * @property {ChartViewBox?} viewBox
  * @property {Function?} showTooltip
@@ -71,8 +70,8 @@ const SchemaChangesChart = (options, ...events) => {
         if (totalChanges <= 0) {
             parts.push(circle({
                 cx: xPosition,
-                cy: chartHeight - (_options.staleMarkerSize * 2),
-                r: _options.staleMarkerSize,
+                cy: chartHeight - (_options.markerSize * 2),
+                r: _options.markerSize,
                 fill: colorMap.emptyDark,
             }));
         } else {
@@ -143,8 +142,7 @@ const SchemaChangesChart = (options, ...events) => {
 const defaultOptions = {
     lineWidth: 4,
     lineColor: colorMap.red,
-    modsMarkerSize: 8,
-    staleMarkerSize: 2,
+    markerSize: 2,
     nestedPosition: {x: 0, y: 0},
 };
 

@@ -7,12 +7,12 @@
  * @property {number} height
  * @property {number} lineWidth
  * @property {number} lineHeight
- * @property {number} staleMarkerSize
- * @property {number} freshMarkerSize
+ * @property {number} markerSize
  * @property {Point?} nestedPosition
  * @property {ChartViewBox?} viewBox
  * @property {Function?} showTooltip
  * @property {Function?} hideTooltip
+ * @property {PredictedEvent[]?} prediction
  * 
  * @typedef FreshnessEvent
  * @type {object}
@@ -20,7 +20,15 @@
  * @property {number} time
  * @property {boolean} changed
  * @property {string} status
+ * @property {string} message
  * @property {boolean} isTraining
+ * @property {boolean} isPending
+ * 
+ * @typedef PredictedEvent
+ * @type {Object}
+ * @property {number} x
+ * @property {number} y
+ * @property {number} time
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
@@ -59,6 +67,10 @@ const FreshnessChart = (options, ...events) => {
     });
 
     const freshnessEvents = events.map(event => {
+        if (event.isPending) {
+            return null;
+        }
+        
         const point = event.point;
         const minY = point.y - (_options.lineHeight / 2) + 2;
         const maxY = point.y + (_options.lineHeight / 2) - 2;
@@ -79,10 +91,10 @@ const FreshnessChart = (options, ...events) => {
                 : null,
             !['Passed', 'Log'].includes(event.status)
                 ? rect({
-                    width: _options.staleMarkerSize,
-                    height: _options.staleMarkerSize,
-                    x: lineProps.x1 - (_options.staleMarkerSize / 2),
-                    y: maxY - (_options.staleMarkerSize / 2),
+                    width: _options.markerSize,
+                    height: _options.markerSize,
+                    x: lineProps.x1 - (_options.markerSize / 2),
+                    y: maxY - (_options.markerSize / 2),
                     fill: eventColor,
                     style: `transform-box: fill-box; transform-origin: center;`,
                     transform: 'rotate(45)',
@@ -94,6 +106,37 @@ const FreshnessChart = (options, ...events) => {
                     fill: event.isTraining ? 'var(--dk-dialog-background)' : eventColor,
                     style: `stroke: ${eventColor}; stroke-width: 1;`,
                 }),
+            // Larger hit area for tooltip
+            rect({
+                width: _options.markerSize,
+                height: _options.lineHeight,
+                x: lineProps.x1 - (_options.markerSize / 2),
+                y: 0,
+                fill: 'transparent',
+                style: `transform-box: fill-box; transform-origin: center;`,
+            })
+        );
+    });
+    const predictedEvents = (getValue(_options.prediction) ?? []).map((event) => {
+        const minY = event.y - (_options.lineHeight / 2) + 2;
+        const maxY = event.y + (_options.lineHeight / 2) - 2;
+        const lineProps = { x1: event.x, y1: minY, x2: event.x, y2: maxY };
+        const markerProps = _options.showTooltip ? {
+            onmouseenter: () => _options.showTooltip?.(FreshnessChartPredictionTooltip(event), event),
+            onmouseleave: () => _options.hideTooltip?.(),
+        } : {};
+        const barHeight = getValue(_options.height);
+
+        return g(
+            {...markerProps},
+            rect({
+                width: _options.markerSize,
+                height: barHeight,
+                x: lineProps.x1 - (_options.markerSize / 2),
+                y: 0,
+                fill: colorMap.emptyDark,
+                opacity: 0.25,
+            }),
         );
     });
 
@@ -112,6 +155,7 @@ const FreshnessChart = (options, ...events) => {
             ...extraAttributes,
         },
         ...freshnessEvents,
+        ...predictedEvents,
     );
 };
 
@@ -120,8 +164,7 @@ const /** @type Options */ defaultOptions = {
     height: 200,
     lineWidth: 2,
     lineHeight: 5,
-    staleMarkerSize: 8,
-    freshMarkerSize: 4,
+    markerSize: 8,
     nestedPosition: {x: 0, y: 0},
 };
 
@@ -137,7 +180,6 @@ const getFreshnessEventColor = (event) => {
 }
 
 /**
- * 
  * @param {FreshnessEvent} event
  * @returns {HTMLDivElement}
  */
@@ -145,8 +187,23 @@ const FreshnessChartTooltip = (event) => {
     return div(
         {class: 'flex-column'},
         span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
-        span({class: 'text-left text-small'}, event.changed ? 'Update' : 'No update'),
+        span(
+            {class: 'text-left text-small'},
+            `${event.changed ? 'Table updated' : 'No update'}${event.message ? ' - ' + event.message : ''}`,
+        ),
     );
 };
 
-export { FreshnessChart, getFreshnessEventColor };
+/**
+ * @param {PredictedEvent} event
+ * @returns {HTMLDivElement}
+ */
+const FreshnessChartPredictionTooltip = (event) => {
+    return div(
+        {class: 'flex-column'},
+        span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
+        span({class: 'text-left text-small'}, 'Update expected'),
+    );
+};
+
+export { FreshnessChart };
