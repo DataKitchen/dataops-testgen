@@ -239,4 +239,8 @@ function parseDate(value) {
     return value;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };
+function formatNumber(value) {
+    return Number(value).toLocaleString('es-US');
+}
+
+export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate, formatNumber };

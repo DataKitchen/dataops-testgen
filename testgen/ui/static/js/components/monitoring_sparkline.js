@@ -31,6 +31,7 @@ import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
 import { getValue } from '../utils.js';
 
+const { div, span } = van.tags();
 const { circle, g, path, polyline, rect, svg } = van.tags("http://www.w3.org/2000/svg");
 
 /**
@@ -141,7 +142,7 @@ const MonitoringSparklineMarkers = (options, points) => {
                     fill: options.anomalyColor || defaultAnomalyMarkerColor,
                     style: `transform-box: fill-box; transform-origin: center;`,
                     transform: 'rotate(45)',
-                    onmouseenter: () => options.showTooltip?.(`(${formatTimestamp(point.originalX, true)}; ${point.originalY})`, point),
+                    onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
                     onmouseleave: () => options.hideTooltip?.(),
                 });
             }
@@ -152,10 +153,22 @@ const MonitoringSparklineMarkers = (options, points) => {
                 r: options.size || defaultMarkerSize,
                 fill: point.isTraining ? 'var(--dk-dialog-background)' : (options.color || defaultMarkerColor),
                 style: `stroke: ${options.color || defaultMarkerColor}; stroke-width: 1;`,
-                onmouseenter: () => options.showTooltip?.(`(${formatTimestamp(point.originalX, true)}; ${point.originalY})`, point),
+                onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
                 onmouseleave: () => options.hideTooltip?.(),
             });
         }),
+    );
+};
+
+/**
+ * * @param {SchemaEvent} MonitoringPoint
+ * @returns {HTMLDivElement}
+ */
+const MonitoringSparklineChartTooltip = (point) => {
+    return div(
+        {class: 'flex-column'},
+        span({class: 'text-left mb-1'}, formatTimestamp(point.originalX, true)),
+        span({class: 'text-left text-small'}, point.originalY),
     );
 };
 

@@ -30,7 +30,7 @@
  */
 import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
+import { emitEvent, getValue, loadStylesheet, parseDate, isEqual, formatNumber } from '/app/static/js/utils.js';
 import { FreshnessChart, getFreshnessEventColor } from '/app/static/js/components/freshness_chart.js';
 import { colorMap } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
@@ -46,7 +46,7 @@ const { circle, clipPath, defs, foreignObject, g, line, rect, svg, text } = van.
 
 const spacing = 8;
 const chartsWidth = 700;
-const chartsYAxisWidth = 104;
+const baseChartsYAxisWidth = 24;
 const fresshnessChartHeight = 40;
 const schemaChartHeight = 80;
 const volumeTrendChartHeight = 80;
@@ -82,6 +82,38 @@ const TableMonitoringTrend = (props) => {
     + (spacing * 3) // padding
   );
 
+  const predictions = getValue(props.predictions);
+  const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
+    ...predictionTimes,
+    ...Object.keys(v.mean).map(t => ({time: +t}))
+  ], []);
+  const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
+  const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
+  const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
+
+  const volumes = [
+    ...volumeTrendEvents.map((e) => e.record_count),
+    ...Object.keys(predictions?.volume_trend?.mean ?? {}).reduce((values, time) => [
+      ...values,
+      parseInt(predictions.volume_trend.upper_tolerance[time]),
+      parseInt(predictions.volume_trend.lower_tolerance[time]),
+    ], []),
+  ];
+  const volumeRange = volumes.length > 0
+    ? {min: Math.min(...volumes), max: Math.max(...volumes)}
+    : {min: 0, max: 100};
+  if (volumeRange.min === volumeRange.max) {
+    volumeRange.max = volumeRange.max + 100;
+  }
+
+  const longestYTickText = Math.max(
+    String(volumeRange.min).length,
+    String(volumeRange.max).length,
+    String(schemaChangesMaxValue).length,
+  );
+  const longestYTickSize = longestYTickText * 6 - baseChartsYAxisWidth;
+  const chartsYAxisWidth = baseChartsYAxisWidth + Math.max(longestYTickSize, 0);
   const origin = { x: chartsYAxisWidth + paddingLeft, y: chartHeight + spacing };
   const end = { x: chartsWidth + chartsYAxisWidth - paddingRight, y: chartHeight - spacing };
 
@@ -94,15 +126,6 @@ const TableMonitoringTrend = (props) => {
     }
     return verticalPosition;
   };
-
-  const predictions = getValue(props.predictions);
-  const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
-    ...predictionTimes,
-    ...Object.keys(v.mean).map(t => ({time: +t}))
-  ], []);
-  const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
-  const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
-  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
 
   const allTimes = [...freshnessEvents, ...schemaChangeEvents, ...volumeTrendEvents, ...predictionTimes].map(e => e.time);
   const rawTimeline = [...new Set(allTimes)].sort();
@@ -195,26 +218,11 @@ const TableMonitoringTrend = (props) => {
       y: schemaChartHeight / 2,
     },
   }));
-  const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
 
   const shouldShowSidebar = van.state(false);
   const schemaChartSelection = van.state(null);
   van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
 
-  const volumes = [
-    ...volumeTrendEvents.map((e) => e.record_count),
-    ...Object.keys(predictions?.volume_trend?.mean ?? {}).reduce((values, time) => [
-      ...values,
-      parseInt(predictions.volume_trend.upper_tolerance[time]),
-      parseInt(predictions.volume_trend.lower_tolerance[time]),
-    ], []),
-  ];
-  const volumeRange = volumes.length > 0
-    ? {min: Math.min(...volumes), max: Math.max(...volumes)}
-    : {min: 0, max: 100};
-  if (volumeRange.min === volumeRange.max) {
-    volumeRange.max = volumeRange.max + 100;
-  }
   const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
@@ -323,7 +331,7 @@ const TableMonitoringTrend = (props) => {
         MonitoringSparklineChart(
           {
             width: chartsWidth,
-            height: schemaChartHeight,
+            height: volumeTrendChartHeight,
             nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
             lineWidth: 2,
             attributes: {style: 'overflow: visible;'},
@@ -346,7 +354,7 @@ const TableMonitoringTrend = (props) => {
         () => {
           const selection = schemaChartSelection.val;
           if (selection) {
-            const width = 10;
+            const width = 16;
             const height = schemaChartHeight + 3 * spacing;
             return rect({
               width: width,
@@ -365,7 +373,6 @@ const TableMonitoringTrend = (props) => {
           {
             width: chartsWidth,
             height: schemaChartHeight,
-            middleLine: { x1: origin.x - paddingLeft, y1: schemaChartHeight / 2, x2: end.x + paddingRight, y2: schemaChartHeight / 2 },
             nestedPosition: { x: 0, y: nextPosition({ name: 'schemaChangesChart' }) },
             onClick: getDataStructureLogs,
             showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart + schemaChartHeight / 2),
@@ -433,32 +440,16 @@ const TableMonitoringTrend = (props) => {
 
           // Volume Chart Y axis
           g(
-            { transform: `translate(40, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
-            text({ x: 60, y: 35, class: 'text-small', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, volumeRange.min),
-            text({ x: 60, y: -35, class: 'text-small', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, volumeRange.max),
+            { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
+            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min)),
+            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max)),
           ),
 
           // Schema Chart Y axis
           g(
-            { transform: `translate(10, ${positionTracking.schemaChangesChart + (schemaChartHeight / 2)})` },
-            text({ x: 65, y: -35, class: 'text-small', fill: 'var(--caption-text-color)' }, schemaChangesMaxValue),
-            text({ x: 30, y: -20, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Adds'),
-            g(
-              {},
-              rect({
-                x: -3,
-                y: -7,
-                width: 7,
-                height: 7,
-                fill: colorMap.red,
-                style: `transform-box: fill-box; transform-origin: center;`,
-                transform: 'rotate(45)',
-              }),
-              text({ x: 12, y: 0, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Modifications'),
-            ),
-            text({ x: 17, y: 20, class: 'text-small', fill: 'var(--caption-text-color)' }, 'Deletes'),
-
-            text({ x: 65, y: 35, class: 'text-small', fill: 'var(--caption-text-color)' }, schemaChangesMaxValue),
+            { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.schemaChangesChart + (schemaChartHeight / 2)})` },
+            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(schemaChangesMaxValue)),
+            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, 0),
           ),
         ),
         tooltipWrapperElement,
@@ -468,7 +459,7 @@ const TableMonitoringTrend = (props) => {
     () => {
       const _shouldShowSidebar = shouldShowSidebar.val;
       const selection = schemaChartSelection.val;
-      if (!_shouldShowSidebar) {
+      if (!_shouldShowSidebar || !selection) {
         return span();
       }
 
@@ -516,6 +507,10 @@ stylesheet.replace(`
   .data-structure-logs-sidebar {
     align-self: stretch;
     max-height: 500px;
+  }
+
+  .tick-text {
+    font-size: 10px;
   }
 `);
 

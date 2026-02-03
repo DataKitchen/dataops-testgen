@@ -1,20 +1,17 @@
 /**
  * @import {ChartViewBox, Point} from './chart_canvas.js';
- * 
- * @typedef Options
+ * * @typedef Options
  * @type {object}
  * @property {number} lineWidth
  * @property {string} lineColor
  * @property {number} modsMarkerSize
  * @property {number} staleMarkerSize
- * @property {({x1: number, y1: number, x2: number, y2: number})?} middleLine
  * @property {Point?} nestedPosition
  * @property {ChartViewBox?} viewBox
  * @property {Function?} showTooltip
  * @property {Function?} hideTooltip
  * @property {((e: SchemaEvent) => void)} onClick
- * 
- * @typedef SchemaEvent
+ * * @typedef SchemaEvent
  * @type {object}
  * @property {Point} point
  * @property {string | number} time
@@ -29,11 +26,10 @@ import { scale } from '../axis_utils.js';
 import { getValue } from '../utils.js';
 
 const { div, span } = van.tags();
-const { circle, g, line, rect, svg } = van.tags("http://www.w3.org/2000/svg");
+const { circle, g, rect, svg } = van.tags("http://www.w3.org/2000/svg");
 
 /**
- * 
- * @param {Options} options
+ * * @param {Options} options
  * @param {Array<SchemaEvent>} events
  */
 const SchemaChangesChart = (options, ...events) => {
@@ -55,11 +51,13 @@ const SchemaChangesChart = (options, ...events) => {
         minY.val = viewBox?.minY;
     });
 
-    const maxAdditions = Math.ceil(Math.max(...events.map(e => e.additions)) / 10) * 10;
-    const maxDeletions = Math.ceil(Math.max(...events.map(e => e.deletions)) / 10) * 10;
+    const currentViewBox = getValue(_options.viewBox);
+    const chartHeight = currentViewBox?.height ?? getValue(_options.height) ?? 100;
+    
+    const maxValue = Math.ceil(Math.max(...events.map(e => Math.max(e.additions, e.deletions, e.modifications))) / 10) * 10 || 10;
+
     const schemaEvents = events.map(e => {
         const xPosition = e.point.x;
-        const yPosition = e.point.y;
         const markerProps = {};
         const parts = [];
 
@@ -68,77 +66,53 @@ const SchemaChangesChart = (options, ...events) => {
             markerProps.onmouseleave = () => _options.hideTooltip?.();
         }
 
-        if (_options.onClick && (e.additions + e.deletions + e.modifications) > 0) {
-            const clickableWidth = 10;
-            const chartHeight = height.rawVal ?? options.height
-            parts.push(
-                rect({
-                    width: clickableWidth,
-                    height: chartHeight,
-                    x: xPosition - (clickableWidth / 2),
-                    y: yPosition - (chartHeight / 2),
-                    fill: 'transparent',
-                    style: `transform-box: fill-box; transform-origin: center; cursor: pointer;`,
-                    onclick: () => _options.onClick?.(e),
-                })
-            );
-        }
+        const totalChanges = e.additions + e.deletions + e.modifications;
 
-        if ((e.additions + e.deletions + e.modifications) <= 0) {
+        if (totalChanges <= 0) {
             parts.push(circle({
                 cx: xPosition,
-                cy: yPosition,
+                cy: chartHeight - (_options.staleMarkerSize * 2) - 5,
                 r: _options.staleMarkerSize,
                 fill: colorMap.lightGrey,
             }));
         } else {
-            // const modificationsY = yPosition - (_options.modsMarkerSize / 2);
-            if (e.modifications > 0) {
+            const barWidth = _options.lineWidth;
+            const gap = 1;
+            const groupWidth = (barWidth * 3) + (gap * 2);
+            const startX = xPosition - (groupWidth / 2);
+
+            const drawBar = (val, index, color) => {
+                const barHeight = scale(val, {old: {min: 0, max: maxValue}, new: {min: 0, max: chartHeight}});
+                const yPos = chartHeight - barHeight;
+
+                return rect({
+                    x: startX + (index * (barWidth + gap)),
+                    y: yPos,
+                    width: barWidth,
+                    height: Math.max(barHeight, 0),
+                    fill: color,
+                    'shape-rendering': 'crispEdges'
+                });
+            };
+
+            parts.push(drawBar(e.additions, 0, e.additions ? colorMap.blue : 'transparent'));
+            parts.push(drawBar(e.modifications, 1, e.modifications ? colorMap.yellow : 'transparent'));
+            parts.push(drawBar(e.deletions, 2, e.deletions ? colorMap.purple : 'transparent'));
+
+            if (_options.onClick && totalChanges > 0) {
+                const barGroupWidth = (_options.lineWidth * 3) + 4;
+                const clickableWidth = Math.max(barGroupWidth + 4, 14);
                 parts.push(
                     rect({
-                        width: _options.modsMarkerSize,
-                        height: _options.modsMarkerSize,
-                        x: xPosition - (_options.modsMarkerSize / 2),
-                        y: yPosition - (_options.modsMarkerSize / 2),
-                        fill: _options.lineColor,
-                        style: `transform-box: fill-box; transform-origin: center;`,
-                        transform: 'rotate(45)',
+                        width: clickableWidth,
+                        height: chartHeight,
+                        x: xPosition - (clickableWidth / 2),
+                        y: 0,
+                        fill: 'transparent',
+                        style: `transform-box: fill-box; transform-origin: center; cursor: pointer;`,
+                        onclick: () => _options.onClick?.(e),
                     })
                 );
-            }
-
-            if (e.additions > 0) {
-                let offset = 0;
-                const additionsY = scale(e.additions, {old: {min: 0, max: maxAdditions}, new: {min: yPosition, max: 0 }});
-                if (e.modifications > 0 && Math.abs(additionsY - yPosition) <= (_options.modsMarkerSize / 2)) {
-                    offset = _options.modsMarkerSize / 2;
-                }
-
-                parts.push(line({
-                    x1: xPosition,
-                    y1: yPosition - offset,
-                    x2: xPosition,
-                    y2: additionsY - offset,
-                    'stroke-width': _options.lineWidth,
-                    'stroke': _options.lineColor,
-                }));
-            }
-
-            if (e.deletions > 0) {
-                let offset = 0;
-                const deletionsY = scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition);
-                if (e.modifications > 0 && Math.abs(deletionsY - yPosition) <= (_options.modsMarkerSize / 2)) {
-                    offset = _options.modsMarkerSize / 2;
-                }
-
-                parts.push(line({
-                    x1: xPosition,
-                    y1: yPosition + offset,
-                    x2: xPosition,
-                    y2: scale(e.deletions * -1, {old: {min: 0, max: maxDeletions}, new: {min: yPosition, max: 0}}, yPosition) + offset,
-                    'stroke-width': _options.lineWidth,
-                    'stroke': _options.lineColor,
-                }));
             }
         }
 
@@ -162,26 +136,20 @@ const SchemaChangesChart = (options, ...events) => {
             height: '100%',
             ...extraAttributes,
         },
-        () => {
-            const middleLine = getValue(_options.middleLine);
-            return line({ ...middleLine, stroke: colorMap.lightGrey });
-        },
         ...schemaEvents,
     );
 };
 
-const /** @type Options */ defaultOptions = {
-    lineWidth: 3,
+const defaultOptions = {
+    lineWidth: 4,
     lineColor: colorMap.red,
     modsMarkerSize: 8,
     staleMarkerSize: 2,
-    middleLine: undefined,
     nestedPosition: {x: 0, y: 0},
 };
 
 /**
- * 
- * @param {SchemaEvent} event
+ * * @param {SchemaEvent} event
  * @returns {HTMLDivElement}
  */
 const SchemaChangesChartTooltip = (event) => {

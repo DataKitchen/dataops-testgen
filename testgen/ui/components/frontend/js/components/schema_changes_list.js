@@ -15,7 +15,7 @@
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { Icon } from '../components/icon.js';
-import { colorMap, formatTimestamp } from '../display_utils.js';
+import { formatTimestamp } from '../display_utils.js';
 import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 
 const { div, span } = van.tags;
@@ -53,7 +53,7 @@ const StructureLogEntry = (/** @type {DataStructureLog} */ log) => {
     return div(
       { class: 'flex-row fx-gap-1 fx-align-flex-start' },
       Icon(
-        {style: `font-size: 20px; color: ${colorMap.tealDark}`, filled: !log.column_name},
+        {style: `font-size: 20px; color: var(--primary-text-color)`, filled: !log.column_name},
         log.column_name ? 'add' : 'add_box',
       ),
       div(
@@ -66,7 +66,7 @@ const StructureLogEntry = (/** @type {DataStructureLog} */ log) => {
     return div(
       { class: 'flex-row fx-gap-1' },
       Icon(
-        {style: `font-size: 20px; color: ${colorMap.redDark}`, filled: !log.column_name},
+        {style: `font-size: 20px; color: var(--primary-text-color)`, filled: !log.column_name},
         log.column_name ? 'remove' : 'indeterminate_check_box',
       ),
       div(
@@ -77,7 +77,7 @@ const StructureLogEntry = (/** @type {DataStructureLog} */ log) => {
   } else if (log.change === 'M') {
     return div(
       { class: 'flex-row fx-gap-1 fx-align-flex-start' },
-      Icon({style: `font-size: 18px; color: ${colorMap.purple}`}, 'change_history'),
+      Icon({style: `font-size: 18px; color: var(--primary-text-color)`}, 'change_history'),
       div(
         { class: 'schema-changes-item flex-column' },
         span({ class: 'truncate-text' }, log.column_name),

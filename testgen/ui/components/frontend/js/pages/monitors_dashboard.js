@@ -72,6 +72,7 @@ import { formatDuration, formatTimestamp, humanReadableDuration, formatNumber, v
 import { Button } from '../components/button.js';
 import { Select } from '../components/select.js';
 import { Input } from '../components/input.js';
+import { Checkbox } from '../components/checkbox.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { Icon } from '../components/icon.js';
 import { Table } from '../components/table.js';
@@ -80,6 +81,7 @@ import { withTooltip } from '../components/tooltip.js';
 import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
 const { div, i, span, b } = van.tags;
+const SHOW_CHANGES_COLUMNS_KEY = 'testgen__monitors__showchanges';
 
 const MonitorsDashboard = (/** @type Properties */ props) => {
     loadStylesheet('monitors-dashboard', stylesheet);
@@ -98,6 +100,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             onSortChange: (sort) => emitEvent('SetParamValues', { payload: { sort_field: sort.field ?? null, sort_order: sort.order ?? null } }),
         };
     });
+    const showChangesColumns = van.state(Boolean(window.localStorage?.getItem(SHOW_CHANGES_COLUMNS_KEY) === '1'));
+    const setShowChanges = (value) => {
+        showChangesColumns.val = value ?? false;
+        window.localStorage?.setItem(SHOW_CHANGES_COLUMNS_KEY, Number(showChangesColumns.val))
+    };
     const tablePaginator = van.derive(() => {
         const result = getValue(props.monitors);
         return {
@@ -105,9 +112,20 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             itemsPerPage: result.items_per_page,
             totalItems: result.total_count,
             onPageChange: (page, pageSize) => emitEvent('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
+            leftContent: div(
+                { class: 'ml-2' },
+                Checkbox({
+                    label: span({ class: 'mr-1' }, 'Show changes'),
+                    checked: showChangesColumns,
+                    disabled: false,
+                    onChange: setShowChanges,
+                }),
+            ),
         };
     });
     const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
+
+
     const tableRows = van.derive(() => {
         const result = getValue(props.monitors);
         renderTime = new Date();
@@ -123,9 +141,9 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     },
                     monitor.table_name,
                 ),
-                freshness: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
-                volume: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
-                schema: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
+                freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
+                volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
+                schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
                 quality_drift: () => AnomalyTag(monitor.quality_drift_anomalies),
                 latest_update: () => monitor.latest_update
                     ? withTooltip(
@@ -211,7 +229,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         },
                     ) : span({class: 'text-small text-secondary'}, '-'),
                 action: () => div(
-                    { class: 'flex-row fx-gap-2' },
+                    { class: 'flex-row fx-justify-center fx-gap-2' },
                     Button({
                         icon: 'insights',
                         type: 'icon',
@@ -342,22 +360,39 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     columns: () => {
                         const lookback = getValue(props.summary)?.lookback ?? 0;
                         const numRuns = lookback === 1 ? 'run' : `${lookback} runs`;
+                        const showChanges = showChangesColumns.val;
+
                         return [
                             [
                                 {name: 'filler_1', colspan: 1, label: ''},
                                 {name: 'anomalies', label: `Anomalies in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'},
-                                {name: 'changes', label: `Changes in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'},
-                                {name: 'filler_2', label: ''},
+
+                                ...(
+                                    showChanges
+                                        ? [
+                                            {name: 'changes', label: `Changes in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'},
+                                            {name: 'filler_2', label: ''},
+                                        ]
+                                        : []
+                                ),
                             ],
                             [
                                 {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
-                                {name: 'freshness', label: 'Freshness', width: 85, align: 'left', overflow: 'visible'},
-                                {name: 'volume', label: 'Volume', width: 85, align: 'left', overflow: 'visible'},
-                                {name: 'schema', label: 'Schema', width: 85, align: 'left'},
+                                {name: 'freshness_anomalies', label: 'Freshness', width: 85, align: 'left', sortable: true, overflow: 'visible'},
+                                {name: 'volume_anomalies', label: 'Volume', width: 85, align: 'left', sortable: true, overflow: 'visible'},
+                                {name: 'schema_anomalies', label: 'Schema', width: 85, sortable: true, align: 'left'},
                                 // {name: 'quality_drift', label: 'Quality Drift', width: 185, align: 'left'},
-                                {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true, overflow: 'visible'},
-                                {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
-                                {name: 'schema_changes', label: 'Schema', width: 150, align: 'left', overflow: 'visible'},
+
+                                ...(
+                                    showChanges
+                                        ? [
+                                            {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true, overflow: 'visible'},
+                                            {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
+                                            {name: 'schema_changes', label: 'Schema', width: 150, align: 'left', overflow: 'visible'},
+                                        ]
+                                        : []
+                                ),
+
                                 {
                                     name: 'action',
                                     label: `View trends |
@@ -483,19 +518,19 @@ th.tg-table-column.action span {
 }
 
 .tg-table-column.table_name,
-.tg-table-column.freshness,
+.tg-table-column.freshness_anomalies,
 .tg-table-column.latest_update,
 .tg-table-cell.table_name,
-.tg-table-cell.freshness,
+.tg-table-cell.freshness_anomalies,
 .tg-table-cell.latest_update {
     padding-left: 16px !important;
 }
 
 .tg-table-column.table_name,
-.tg-table-column.schema,
+.tg-table-column.schema_anomalies,
 .tg-table-column.schema_changes,
 .tg-table-cell.table_name,
-.tg-table-cell.schema,
+.tg-table-cell.schema_anomalies,
 .tg-table-cell.schema_changes {
     border-right: 1px dashed var(--border-color);
 }
