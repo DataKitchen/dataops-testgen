@@ -23,7 +23,7 @@
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
 import { scale } from '../axis_utils.js';
-import { getValue } from '../utils.js';
+import { getValue, formatNumber } from '../utils.js';
 
 const { div, span } = van.tags();
 const { circle, g, rect, svg } = van.tags("http://www.w3.org/2000/svg");
@@ -95,9 +95,9 @@ const SchemaChangesChart = (options, ...events) => {
                 });
             };
 
-            parts.push(drawBar(e.additions, 0, e.additions ? colorMap.blue : 'transparent'));
-            parts.push(drawBar(e.modifications, 1, e.modifications ? colorMap.yellow : 'transparent'));
-            parts.push(drawBar(e.deletions, 2, e.deletions ? colorMap.purple : 'transparent'));
+            parts.push(drawBar(e.additions, 0, e.additions ? colorMap.blueLight : 'transparent'));
+            parts.push(drawBar(e.deletions, 1, e.deletions ? colorMap.orange : 'transparent'));
+            parts.push(drawBar(e.modifications, 2, e.modifications ? colorMap.purple : 'transparent'));
 
             if (_options.onClick && totalChanges > 0) {
                 const barGroupWidth = (_options.lineWidth * 3) + 4;
@@ -156,9 +156,9 @@ const SchemaChangesChartTooltip = (event) => {
     return div(
         {class: 'flex-column'},
         span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
-        span({class: 'text-left text-small'}, `Additions: ${event.additions}`),
-        span({class: 'text-left text-small'}, `Modifications: ${event.modifications}`),
-        span({class: 'text-left text-small'}, `Deletions: ${event.deletions}`),
+        span({class: 'text-left text-small'}, `Additions: ${formatNumber(event.additions)}`),
+        span({class: 'text-left text-small'}, `Deletions: ${formatNumber(event.deletions)}`),
+        span({class: 'text-left text-small'}, `Modifications: ${formatNumber(event.modifications)}`),
     );
 };
 
