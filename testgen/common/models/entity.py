@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Self
 from uuid import UUID
 
@@ -23,7 +23,7 @@ ENTITY_HASH_FUNCS = {
 class EntityMinimal:
     @classmethod
     def columns(cls) -> list[str]:
-        return list(cls.__annotations__.keys())
+        return [f.name for f in fields(cls)]
 
     def to_dict(self, json_safe: bool = False) -> dict[str, Any]:
         result = asdict(self)

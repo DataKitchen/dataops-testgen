@@ -136,13 +136,18 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 
             return {
                 _hasAnomalies: monitor.freshness_anomalies || monitor.volume_anomalies || monitor.schema_anomalies || monitor.metric_anomalies,
-                table_name: () => span(
-                    {
-                        class: monitor.table_state === 'dropped' ? 'text-disabled' : '',
-                        style: monitor.table_state === 'added' ? 'font-weight: 500;' : '',
-                    },
-                    monitor.table_name,
-                ),
+                table_name: () => ['added', 'dropped'].includes(monitor.table_state)
+                    ? withTooltip(
+                        span(
+                            {
+                                class: monitor.table_state === 'dropped' ? 'text-disabled' : '',
+                                style: `position: relative; ${monitor.table_state === 'added' ? 'font-weight: 500;' : ''}`,
+                            },
+                            monitor.table_name,
+                        ),
+                        { text: `Table ${monitor.table_state}` },
+                    )
+                    : monitor.table_name,
                 freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
                 volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
                 schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
@@ -367,7 +372,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         return [
                             [
                                 {name: 'filler_1', colspan: 1, label: ''},
-                                {name: 'anomalies', label: `Anomalies in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'},
+                                {name: 'anomalies', label: `Anomalies in last ${numRuns}`, colspan: 4, padding: 8, align: 'center'},
 
                                 ...(
                                     showChanges
@@ -379,7 +384,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 ),
                             ],
                             [
-                                {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true},
+                                {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'freshness_anomalies', label: 'Freshness', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'volume_anomalies', label: 'Volume', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'schema_anomalies', label: 'Schema', width: 85, sortable: true, align: 'left'},

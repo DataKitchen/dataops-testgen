@@ -10,6 +10,7 @@
  * @property {number} record_count
  * @property {boolean} is_anomaly
  * @property {boolean} is_training
+ * @property {boolean} is_pending
  *
  * @typedef MetricTrendEvent
  * @type {object}
@@ -17,6 +18,7 @@
  * @property {number} value
  * @property {boolean} is_anomaly
  * @property {boolean} is_training
+ * @property {boolean} is_pending
  *
  * @typedef MetricEventGroup
  * @type {object}
@@ -194,7 +196,9 @@ const TableMonitoringTrend = (props) => {
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
     changed: e.changed,
     status: e.status,
+    message: e.message,
     isTraining: e.is_training,
+    isPending: e.is_pending,
     time: e.time,
     point: {
       x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
@@ -230,8 +234,10 @@ const TableMonitoringTrend = (props) => {
   const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
+    label: 'Row count',
     isAnomaly: e.is_anomaly,
     isTraining: e.is_training,
+    isPending: e.is_pending,
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
   }));
@@ -252,6 +258,7 @@ const TableMonitoringTrend = (props) => {
       originalY: e.value,
       isAnomaly: e.is_anomaly,
       isTraining: e.is_training,
+      isPending: e.is_pending,
       x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: scale(e.value, { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
     }));
@@ -535,6 +542,7 @@ const TableMonitoringTrend = (props) => {
               path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
               circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
             ), label: 'Training' },
+            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 3, fill: colorMap.emptyDark, stroke: 'none' })), label: 'No change' },
           ],
         },
         'Freshness': {

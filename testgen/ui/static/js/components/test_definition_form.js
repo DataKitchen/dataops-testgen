@@ -301,7 +301,7 @@ const ThresholdForm = (options, definition) => {
                         { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap' },
                         div(
                             { class: 'td-form--field flex-column fx-gap-3' },
-                            Select({
+                            () => Select({
                                 label: 'Lower Bound Calculation',
                                 options: historyCalcOptions,
                                 value: lowerParsed.val.selectValue,
@@ -311,7 +311,7 @@ const ThresholdForm = (options, definition) => {
                                     setFieldValues({ history_calculation: fieldValue });
                                 },
                             }),
-                            lowerParsed.val.isExpression
+                            () => lowerParsed.val.isExpression
                                 ? Input({
                                     name: 'history_calculation_expression',
                                     label: 'Lower Bound Expression',
@@ -319,15 +319,14 @@ const ThresholdForm = (options, definition) => {
                                     help: 'Use {VALUE}, {MINIMUM}, {MAXIMUM}, {SUM}, {AVERAGE}, {STANDARD_DEVIATION} to reference historical aggregates. Example: 0.5 * {AVERAGE}',
                                     onChange: (value) => {
                                         const fieldValue = formatExpressionValue(value);
-                                        historyCalc.val = fieldValue;
                                         setFieldValues({ history_calculation: fieldValue });
                                     },
                                 })
-                                : null,
+                                : '',
                         ),
                         div(
                             { class: 'td-form--field flex-column fx-gap-3' },
-                            Select({
+                            () => Select({
                                 label: 'Upper Bound Calculation',
                                 options: historyCalcOptions,
                                 value: upperParsed.val.selectValue,
@@ -337,7 +336,7 @@ const ThresholdForm = (options, definition) => {
                                     setFieldValues({ history_calculation_upper: fieldValue });
                                 },
                             }),
-                            upperParsed.val.isExpression
+                            () => upperParsed.val.isExpression
                                 ? Input({
                                     name: 'history_calculation_upper_expression',
                                     label: 'Upper Bound Expression',
@@ -345,11 +344,10 @@ const ThresholdForm = (options, definition) => {
                                     help: 'Use {VALUE}, {MINIMUM}, {MAXIMUM}, {SUM}, {AVERAGE}, {STANDARD_DEVIATION} to reference historical aggregates. Example: 1.5 * {AVERAGE}',
                                     onChange: (value) => {
                                         const fieldValue = formatExpressionValue(value);
-                                        historyCalcUpper.val = fieldValue;
-                                        setFieldValues({ history_calculation: fieldValue });
+                                        setFieldValues({ history_calculation_upper: fieldValue });
                                     },
                                 })
-                                : null,
+                                : '',
                         ),
                     ),
                     div(

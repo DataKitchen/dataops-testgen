@@ -17,8 +17,10 @@
  * @type {Object}
  * @property {number} x
  * @property {number} y
+ * @property {string?} label
  * @property {boolean?} isAnomaly
  * @property {boolean?} isTraining
+ * @property {boolean?} isPending
  * 
  * @typedef PredictionPoint
  * @type {Object}
@@ -49,12 +51,12 @@ const MonitoringSparklineChart = (options, ...points) => {
     const minY = van.state(0);
     const width = van.state(0);
     const height = van.state(0);
-    const linePoints = van.state(points);
+    const linePoints = van.state(points.filter(e => !e.isPending));
     const predictionPoints = van.derive(() => {
         const _linePoints = linePoints.val;
         const _predictionPoints = _options.prediction ?? [];
-        if (_predictionPoints.length > 0) {
-            const lastPoint =  _linePoints[_linePoints.length - 1];
+        if (_linePoints.length > 0 && _predictionPoints.length > 0) {
+            const lastPoint = _linePoints[_linePoints.length - 1];
             _predictionPoints.unshift({
                 x: lastPoint.x,
                 y: lastPoint.y,
@@ -95,8 +97,8 @@ const MonitoringSparklineChart = (options, ...points) => {
         () => predictionPoints.val.length > 0
             ? path({
                 d: generateShadowPath(predictionPoints.rawVal),
-                fill: 'rgba(218, 218, 218, 0.3)',
-                fillOpacity: 0.3,
+                fill: colorMap.emptyDark,
+                opacity: 0.25,
                 stroke: 'none',
             })
             : '',
@@ -132,43 +134,55 @@ const MonitoringSparklineMarkers = (options, points) => {
     return g(
         {transform: options.transform ?? undefined},
         ...points.map((point) => {
-            if (point.isAnomaly) {
-                const size = options.anomalySize || defaultAnomalyMarkerSize;
-                return rect({
-                    width: size,
-                    height: size,
-                    x: point.x - (size / 2),
-                    y: point.y - (size / 2),
-                    fill: options.anomalyColor || defaultAnomalyMarkerColor,
-                    style: `transform-box: fill-box; transform-origin: center;`,
-                    transform: 'rotate(45)',
+            if (point.isPending) {
+                return null;
+            }
+            
+            const size = options.anomalySize || defaultAnomalyMarkerSize;
+            return g(
+                {
                     onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
                     onmouseleave: () => options.hideTooltip?.(),
-                });
-            }
-
-            return circle({
-                cx: point.x,
-                cy: point.y,
-                r: options.size || defaultMarkerSize,
-                fill: point.isTraining ? 'var(--dk-dialog-background)' : (options.color || defaultMarkerColor),
-                style: `stroke: ${options.color || defaultMarkerColor}; stroke-width: 1;`,
-                onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
-                onmouseleave: () => options.hideTooltip?.(),
-            });
+                },
+                // Larger hit area for tooltip
+                circle({
+                    cx: point.x,
+                    cy: point.y,
+                    r: size,
+                    fill: 'transparent',
+                }),
+                point.isAnomaly
+                    ? rect({
+                        width: size,
+                        height: size,
+                        x: point.x - (size / 2),
+                        y: point.y - (size / 2),
+                        fill: options.anomalyColor || defaultAnomalyMarkerColor,
+                        style: `transform-box: fill-box; transform-origin: center;`,
+                        transform: 'rotate(45)',
+                        
+                    })
+                    : circle({
+                        cx: point.x,
+                        cy: point.y,
+                        r: options.size || defaultMarkerSize,
+                        fill: point.isTraining ? 'var(--dk-dialog-background)' : (options.color || defaultMarkerColor),
+                        style: `stroke: ${options.color || defaultMarkerColor}; stroke-width: 1;`,
+                    }),
+            );
         }),
     );
 };
 
 /**
- * * @param {SchemaEvent} MonitoringPoint
+ * * @param {MonitoringPoint} point
  * @returns {HTMLDivElement}
  */
 const MonitoringSparklineChartTooltip = (point) => {
     return div(
         {class: 'flex-column'},
-        span({class: 'text-left mb-1'}, formatTimestamp(point.originalX, true)),
-        span({class: 'text-left text-small'}, formatNumber(point.originalY)),
+        span({class: 'text-left mb-1'}, formatTimestamp(point.originalX)),
+        span({class: 'text-left text-small'}, `${point.label || 'Value'}: ${formatNumber(point.originalY)}`),
     );
 };
 
