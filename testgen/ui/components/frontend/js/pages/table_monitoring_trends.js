@@ -9,8 +9,10 @@
  * @property {number} time
  * @property {number} record_count
  * @property {boolean} is_anomaly
- * @property {boolean} is_training
  * @property {boolean} is_pending
+ * @property {boolean} is_training
+ * @property {number?} lower_tolerance
+ * @property {number?} upper_tolerance
  *
  * @typedef MetricTrendEvent
  * @type {object}
@@ -19,6 +21,8 @@
  * @property {boolean} is_anomaly
  * @property {boolean} is_training
  * @property {boolean} is_pending
+ * @property {number?} lower_tolerance
+ * @property {number?} upper_tolerance
  *
  * @typedef MetricEventGroup
  * @type {object}
@@ -28,6 +32,7 @@
  *
  * @typedef PredictionSet
  * @type {object}
+ * @property {('predict'|'static')} method
  * @property {object} mean
  * @property {object} lower_tolerance
  * @property {object} upper_tolerance
@@ -117,12 +122,15 @@ const TableMonitoringTrend = (props) => {
   }));
 
   const volumes = [
-    ...volumeTrendEvents.map((e) => e.record_count),
-    ...Object.keys(predictions?.volume_trend?.mean ?? {}).reduce((values, time) => [
-      ...values,
-      parseInt(predictions.volume_trend.upper_tolerance[time]),
-      parseInt(predictions.volume_trend.lower_tolerance[time]),
-    ], []),
+    ...volumeTrendEvents
+      .flatMap((e) => [e.record_count, parseInt(e.lower_tolerance), parseInt(e.upper_tolerance)])
+      .filter((v) => Number.isFinite(v)),
+    ...Object.keys(predictions?.volume_trend?.mean ?? {})
+      .flatMap((time) => [
+        parseInt(predictions.volume_trend.upper_tolerance[time]),
+        parseInt(predictions.volume_trend.lower_tolerance[time]),
+      ])
+      .filter((v) => Number.isFinite(v)),
   ];
   const volumeRange = volumes.length > 0
     ? {min: Math.min(...volumes), max: Math.max(...volumes)}
@@ -136,12 +144,15 @@ const TableMonitoringTrend = (props) => {
     const metricPrediction = predictions?.[predictionKey];
 
     const metricValues = [
-      ...group.events.map(e => e.value),
-      ...Object.keys(metricPrediction?.mean ?? {}).reduce((values, time) => [
-        ...values,
-        parseFloat(metricPrediction.upper_tolerance[time]),
-        parseFloat(metricPrediction.lower_tolerance[time]),
-      ], []),
+      ...group.events
+        .flatMap(e => [e.value, parseFloat(e.lower_tolerance), parseFloat(e.upper_tolerance)])
+        .filter((v) => Number.isFinite(v)),
+      ...Object.keys(metricPrediction?.mean ?? {})
+        .flatMap((time) => [
+          parseFloat(metricPrediction.upper_tolerance[time]),
+          parseFloat(metricPrediction.lower_tolerance[time]),
+        ])
+        .filter((v) => Number.isFinite(v)),
     ];
 
     const metricRange = metricValues.length > 0
@@ -207,7 +218,7 @@ const TableMonitoringTrend = (props) => {
   }));
   const parsedFreshnessPredictionPoints = Object.entries(predictions?.freshness_trend?.mean ?? {})
     .toSorted(([a,], [b,]) => (+a) - (+b))
-    .filter(([time,]) => parseInt(predictions.freshness_trend.lower_tolerance[time] ?? '0') <= 0 && parseInt(predictions.freshness_trend.upper_tolerance[time] ?? '0') >= 0)
+    .filter(([time,]) => parseFloat(predictions.freshness_trend.lower_tolerance[time] ?? '0') <= 0 && parseFloat(predictions.freshness_trend.upper_tolerance[time] ?? '0') >= 0)
     .map(([time,]) => ({
       x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: fresshnessChartHeight / 2,
@@ -234,19 +245,36 @@ const TableMonitoringTrend = (props) => {
   const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
+    originalLowerTolerance: e.lower_tolerance != undefined
+      ? parseInt(e.lower_tolerance)
+      : undefined,
+    originalUpperTolerance: e.upper_tolerance != undefined
+      ? parseInt(e.upper_tolerance)
+      : undefined,
     label: 'Row count',
     isAnomaly: e.is_anomaly,
     isTraining: e.is_training,
     isPending: e.is_pending,
     x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(e.record_count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
+    lowerTolerance: e.lower_tolerance != undefined
+      ? scale(parseInt(e.lower_tolerance), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight)
+      : undefined,
+    upperTolerance: e.upper_tolerance != undefined
+      ? scale(parseInt(e.upper_tolerance), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight)
+      : undefined,
   }));
+
   const parsedVolumeTrendPredictionPoints = Object.entries(predictions?.volume_trend?.mean ?? {}).toSorted(([a,], [b,]) => (+a) - (+b)).map(([time, count]) => ({
     x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
     y: scale(+count, { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
-    upper: scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
-    lower: scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight),
-  })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
+    upper: predictions.volume_trend.upper_tolerance[time] != undefined
+      ? scale(parseInt(predictions.volume_trend.upper_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight)
+      : undefined,
+    lower: predictions.volume_trend.lower_tolerance[time] != undefined
+      ? scale(parseInt(predictions.volume_trend.lower_tolerance[time]), { old: volumeRange, new: { min: volumeTrendChartHeight, max: 0 } }, volumeTrendChartHeight)
+      : undefined,
+  })).filter(p => p.x != undefined && (p.upper != undefined || p.lower != undefined));
 
   const parsedMetricCharts = metricEventGroups.map((group, idx) => {
     const predictionKey = `metric:${group.test_definition_id}`;
@@ -256,26 +284,39 @@ const TableMonitoringTrend = (props) => {
     const parsedEvents = group.events.toSorted((a, b) => a.time - b.time).map(e => ({
       originalX: e.time,
       originalY: e.value,
+      originalLowerTolerance: e.lower_tolerance,
+      originalUpperTolerance: e.upper_tolerance,
       isAnomaly: e.is_anomaly,
       isTraining: e.is_training,
       isPending: e.is_pending,
       x: scale(e.time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: scale(e.value, { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
+      lowerTolerance: e.lower_tolerance != undefined
+        ? scale(parseFloat(e.lower_tolerance), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight)
+        : undefined,
+      upperTolerance: e.upper_tolerance != undefined
+        ? scale(parseFloat(e.upper_tolerance), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight)
+        : undefined,
     }));
 
     const parsedPredictionPoints = Object.entries(metricPrediction?.mean ?? {}).toSorted(([a,], [b,]) => (+a) - (+b)).map(([time, value]) => ({
       x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
       y: scale(+value, { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
-      upper: scale(parseFloat(metricPrediction.upper_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
-      lower: scale(parseFloat(metricPrediction.lower_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight),
-    })).filter(p => p.x != undefined && p.upper != undefined && p.lower != undefined);
+      upper: metricPrediction.upper_tolerance[time] != undefined
+        ? scale(parseFloat(metricPrediction.upper_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight)
+        : undefined,
+      lower: metricPrediction.lower_tolerance[time] != undefined
+        ? scale(parseFloat(metricPrediction.lower_tolerance[time]), { old: metricRange, new: { min: metricTrendChartHeight, max: 0 } }, metricTrendChartHeight)
+        : undefined,
+    })).filter(p => p.x != undefined && (p.upper != undefined || p.lower != undefined));
 
     return {
       columnName: group.column_name,
       testDefinitionId: group.test_definition_id,
       events: parsedEvents,
-      predictionPoints: parsedPredictionPoints,
       range: metricRange,
+      predictionPoints: parsedPredictionPoints,
+      predictionMethod: metricPrediction.method,
     };
   });
 
@@ -378,6 +419,7 @@ const TableMonitoringTrend = (props) => {
             lineWidth: 2,
             attributes: {style: 'overflow: visible;'},
             prediction: parsedVolumeTrendPredictionPoints,
+            predictionMethod: predictions.volume_trend?.method,
           },
           ...parsedVolumeTrendEvents,
         ),
@@ -436,6 +478,7 @@ const TableMonitoringTrend = (props) => {
                 lineWidth: 2,
                 attributes: {style: 'overflow: visible;'},
                 prediction: metricChart.predictionPoints,
+                predictionMethod: metricChart.predictionMethod,
               },
               ...metricChart.events,
             ),
@@ -688,7 +731,6 @@ stylesheet.replace(`
     flex-wrap: wrap;
     gap: 36px;
     padding: 12px 16px;
-    border-top: 1px solid var(--border-color);
     background: var(--background-color);
     position: sticky;
     bottom: 0;

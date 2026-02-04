@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime
+from math import ceil
 from typing import Any, ClassVar, Literal
 
 import streamlit as st
@@ -23,7 +24,7 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.session import session, temp_value
-from testgen.ui.utils import get_cron_sample, get_cron_sample_handler
+from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 
@@ -631,16 +632,29 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
         definitions = TestDefinition.select_where(
             TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
             TestDefinition.table_name == table_name,
-            TestDefinition.prediction != None,
+            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
         )
 
         predictions = {}
         if len(definitions) > 0:
             test_suite = TestSuite.get(table_group.monitor_test_suite_id)
+            monitor_schedule = JobSchedule.get(
+                JobSchedule.key == RUN_MONITORS_JOB_KEY,
+                JobSchedule.kwargs["test_suite_id"].astext == str(table_group.monitor_test_suite_id),
+            )
             monitor_lookback = test_suite.monitor_lookback
             predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
+
+            last_run_time_per_test_key: dict[str, datetime] = {
+                "volume_trend": max(e["time"] for e in events["volume_events"]),
+            }
+            for metric_group in events["metric_events"]:
+                metric_definition_id = metric_group["test_definition_id"]
+                last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
+
             for definition in definitions:
-                if (base_mean_predictions := definition.prediction.get("mean")):
+                test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
+                if definition.history_calculation == "PREDICT" and definition.prediction and (base_mean_predictions := definition.prediction.get("mean")):
                     predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
                     # Limit predictions to 1/3 of the lookback, with minimum 3 points
                     predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
@@ -653,8 +667,30 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
                         lower_tolerance_predictions[timestamp] = definition.prediction[f"lower_tolerance|{predict_sensitivity.value}"][timestamp]
                         upper_tolerance_predictions[timestamp] = definition.prediction[f"upper_tolerance|{predict_sensitivity.value}"][timestamp]
 
-                    test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
                     predictions[test_key] = {
+                        "method": "predict",
+                        "mean": mean_predictions,
+                        "lower_tolerance": lower_tolerance_predictions,
+                        "upper_tolerance": upper_tolerance_predictions,
+                    }
+                elif definition.history_calculation is None and (definition.lower_tolerance is not None or definition.upper_tolerance is not None):
+                    cron_sample = get_cron_sample(
+                        monitor_schedule.cron_expr,
+                        monitor_schedule.cron_tz,
+                        sample_count=ceil(min(max(3, monitor_lookback / 3), 10)),
+                        reference_time=last_run_time_per_test_key.get(test_key),
+                    )
+                    mean_predictions: dict = {}
+                    lower_tolerance_predictions: dict = {}
+                    upper_tolerance_predictions: dict = {}
+                    sample_next_runs = [timestamp * 1000 for timestamp in (cron_sample.get("samples") or [])]
+                    for timestamp in sample_next_runs:
+                        mean_predictions[timestamp] = None
+                        lower_tolerance_predictions[timestamp] = definition.lower_tolerance
+                        upper_tolerance_predictions[timestamp] = definition.upper_tolerance
+
+                    predictions[test_key] = {
+                        "method": "static",
                         "mean": mean_predictions,
                         "lower_tolerance": lower_tolerance_predictions,
                         "upper_tolerance": upper_tolerance_predictions,
@@ -713,6 +749,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         results.result_signal,
         results.result_message,
         results.test_definition_id::TEXT,
+        COALESCE(results.input_parameters, '') AS input_parameters,
         results.column_names
     FROM active_runs
     CROSS JOIN target_tests tt
@@ -722,6 +759,8 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
             AND results.test_type = tt.test_type
             AND results.table_name = :table_name
         )
+    LEFT JOIN test_definitions AS definition
+        ON (definition.id = results.test_definition_id)
     ORDER BY active_runs.id, tt.test_type;
     """
 
@@ -742,12 +781,15 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                     "column_name": event["column_names"],
                     "events": [],
                 }
+            params = dict_from_kv(event.get("input_parameters") or "")
             metric_events[definition_id]["events"].append({
                 "value": float(event["result_signal"]) if event["result_signal"] else None,
                 "time": event["test_time"],
                 "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
                 "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
                 "is_pending": not bool(event["result_id"]),
+                "lower_tolerance": params.get("lower_tolerance") if params.get("lower_tolerance") else None,
+                "upper_tolerance": params.get("upper_tolerance") if params.get("upper_tolerance") else None,
             })
 
     return {
@@ -769,8 +811,12 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
                 "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
                 "is_pending": not bool(event["result_id"]),
+                **params,
             }
-            for event in results if event["test_type"] == "Volume_Trend"
+            for event in results if event["test_type"] == "Volume_Trend" and (
+                params := dict_from_kv(event.get("input_parameters"))
+                    or {"lower_tolerance": None, "upper_tolerance": None}
+            )
         ],
         "schema_events": [
             {
