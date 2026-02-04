@@ -110,7 +110,7 @@ const WizardProgressIndicator = (steps, currentStep) => {
       ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
       : '',
     div(
-      { class: 'flex-row', style: `color: var(--empty-light); border: 2px solid var(--disabled-text-color); background: var(--disabled-text-color); border-radius: 50%;` },
+      { class: 'flex-row', style: `color: var(--empty-light); border: 2px solid var(--grey); background: var(--grey); border-radius: 50%;` },
       i(
         {
             class: 'material-symbols-rounded',
