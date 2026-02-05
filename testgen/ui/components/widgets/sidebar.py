@@ -42,7 +42,7 @@ def sidebar(
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
             "username": session.auth.user_display,
-            "role": session.auth.user.role if session.auth.user else None,
+            "role": session.auth.role or "-",
             "logout_path": LOGOUT_PATH,
             "version": version.__dict__,
             "support_email": support_email,

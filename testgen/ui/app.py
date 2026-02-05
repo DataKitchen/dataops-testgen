@@ -23,7 +23,13 @@ def render(log_level: int = logging.INFO):
         # Collapse when logging out because the sidebar takes some time to be removed from the DOM
         # Collapse for Catalog role since they only have access to one page
         initial_sidebar_state="collapsed"
-        if session.auth and (session.auth.logging_out or (session.auth.is_logged_in and not session.auth.user_has_permission("view")))
+        if session.auth and (
+            session.auth.logging_out
+            or (
+                session.auth.is_logged_in
+                and not session.auth.user_has_permission("view")
+            )
+        )
         else "auto",
     )
 

@@ -151,7 +151,7 @@ def test_send_test_run_notification(
     else:
         diff_mock.return_value = create_diff(**diff_mock_args)
         get_prev_mock.return_value = TestRun(id="tr-prev-id")
-    summary = object()
+    summary = Mock(project_code="test_project")
     select_summary_mock.return_value = [summary]
 
     send_test_run_notifications(test_run)
@@ -174,7 +174,7 @@ def test_send_test_run_notification(
 
     expected_context = {
         "test_run": summary,
-        "test_run_url": "http://tg-base-url/test-runs:results?run_id=tr-id&source=email",
+        "test_run_url": "http://tg-base-url/test-runs:results?project_code=test_project&run_id=tr-id&source=email",
         "test_run_id": "tr-id",
         "test_result_summary": ANY,
     }

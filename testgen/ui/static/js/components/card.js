@@ -9,16 +9,33 @@
  * @property {string?} class
  * @property {string?} testId
  */
-import { loadStylesheet } from '../utils.js';
+import { loadStylesheet, getValue } from '../utils.js';
 import van from '../van.min.js';
 
 const { div, h3 } = van.tags;
 
 const Card = (/** @type Properties */ props) => {
     loadStylesheet('card', stylesheet);
-
     return div(
-        { class: `tg-card mb-4 ${props.border ? 'tg-card-border' : ''} ${props.class}`, id: props.id ?? '', 'data-testid': props.testId ?? '' },
+        {
+            id: props.id ?? '',
+            'data-testid': props.testId ?? '',
+            class: () => {
+                const classes = ['tg-card'];
+                if (getValue(props.border)) {
+                    classes.push('tg-card-border');
+                }
+
+                if (!!props.class) {
+                    classes.push(...props.class);
+                    if (!props.class.includes('mb-') && !props.class.includes('m-')) {
+                        classes.push('mb-4');
+                    }
+                }
+
+                return classes.join(' ');
+            },
+        },
         () =>
             props.title || props.actionContent ?
             div(

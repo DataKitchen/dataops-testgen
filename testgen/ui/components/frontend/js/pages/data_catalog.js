@@ -573,6 +573,7 @@ const TestSuitesCard = (/** @type Table | Column */ item) => {
                         test_suite_id: id,
                         table_name: item.table_name,
                         column_name: item.column_name,
+                        project_code: item.project_code,
                     },
                     open_new: true,
                     label: name,

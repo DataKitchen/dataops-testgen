@@ -100,7 +100,7 @@ def test_send_profiling_run_notification(
     hi_count_mock,
     send_mock,
 ):
-    profiling_run = ProfilingRun(id="pr-id", table_groups_id="tg-id", status=profiling_run_status)
+    profiling_run = ProfilingRun(id="pr-id", table_groups_id="tg-id", status=profiling_run_status, project_code="proj")
     get_prev_mock.return_value = ProfilingRun(id="pr-prev-id") if has_prev_run else None
     new_count = iter(count())
     priorities = ("Definite", "Likely", "Possible", "High", "Moderate")
@@ -133,8 +133,8 @@ def test_send_profiling_run_notification(
                 {
                     "profiling_run": {
                         "id": "pr-id",
-                        "issues_url": "http://tg-base-url/profiling-runs:hygiene?run_id=pr-id&source=email",
-                        "results_url": "http://tg-base-url/profiling-runs:results?run_id=pr-id&source=email",
+                        "issues_url": "http://tg-base-url/profiling-runs:hygiene?project_code=proj&run_id=pr-id&source=email",
+                        "results_url": "http://tg-base-url/profiling-runs:results?project_code=proj&run_id=pr-id&source=email",
                         "start_time": None,
                         "end_time": None,
                         "status": profiling_run_status,

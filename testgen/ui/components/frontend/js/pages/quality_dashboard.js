@@ -81,7 +81,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                                 right_icon: 'chevron_right',
                                 href: 'quality-dashboard:score-details',
                                 class: 'ml-4',
-                                params: { definition_id: score.id },
+                                params: { definition_id: score.id, project_code: getValue(props.project_summary)?.project_code },
                             }),
                             {showHistory: true},
                         ))
