@@ -121,6 +121,7 @@ class MonitorsDashboardPage(Page):
                         "value": str(table_group.id),
                         "label": table_group.table_groups_name,
                         "selected": str(table_group_id) == str(table_group.id),
+                        "has_monitors": bool(table_group.monitor_test_suite_id),
                     } for table_group in table_groups
                 ],
                 "monitors": {
@@ -872,14 +873,17 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
 
         def on_save_test_definition(payload: dict) -> None:
             set_save(True)
+            set_close(payload.get("close", False))
             set_updated_definitions(payload.get("updated_definitions", []))
             set_new_metrics(payload.get("new_metrics", []))
             set_deleted_metric_ids(payload.get("deleted_metric_ids", []))
 
         should_save, set_save = temp_value(f"edit_table_monitors:save:{table_name}", default=False)
+        should_close, set_close = temp_value(f"edit_table_monitors:close:{table_name}", default=False)
         get_updated_definitions, set_updated_definitions = temp_value(f"edit_table_monitors:updated_definitions:{table_name}", default=[])
         get_new_metrics, set_new_metrics = temp_value(f"edit_table_monitors:new_metrics:{table_name}", default=[])
         get_deleted_metric_ids, set_deleted_metric_ids = temp_value(f"edit_table_monitors:deleted_metric_ids:{table_name}", default=[])
+        get_result, set_result = temp_value(f"edit_table_monitors:result:{table_name}", default=None)
 
         if should_save():
             valid_columns = {col.name for col in TestDefinition.__table__.columns}
@@ -914,7 +918,11 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                     TestDefinition.test_type == "Metric_Trend",
                 )
 
-            st.rerun()
+            if should_close():
+                st.rerun()
+
+            set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
+            st.rerun(scope="fragment")
 
         metric_test_types = TestType.select_summary_where(TestType.test_type == "Metric_Trend")
         metric_test_type = metric_test_types[0] if metric_test_types else None
@@ -925,6 +933,7 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                 "table_name": table_name,
                 "definitions": [td.to_dict(json_safe=True) for td in definitions],
                 "metric_test_type": metric_test_type.to_dict(json_safe=True) if metric_test_type else {},
+                "result": get_result(),
             },
             on_SaveTestDefinition_change=on_save_test_definition,
         )

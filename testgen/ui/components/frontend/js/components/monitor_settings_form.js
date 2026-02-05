@@ -49,6 +49,17 @@ import { formatDurationSeconds, humanReadableDuration } from '../display_utils.j
 
 const { div, span } = van.tags;
 
+const monitorLookbackConfig = {
+    default: 14,
+    min: 1,
+    max: 200,
+};
+const predictLookbackConfig = {
+    default: 30,
+    min: 20,
+    max: 1000,
+}
+
 /**
  * 
  * @param {Properties} props 
@@ -63,10 +74,10 @@ const MonitorSettingsForm = (props) => {
     const scheduleActive = van.state(schedule.active ?? true);
 
     const monitorSuite = getValue(props.monitorSuite) ?? {};
-    const monitorLookback = van.state(monitorSuite.monitor_lookback ?? 14);
+    const monitorLookback = van.state(monitorSuite.monitor_lookback ?? monitorLookbackConfig.default);
     const monitorRegenerateFreshness = van.state(monitorSuite.monitor_regenerate_freshness ?? true);
     const predictSensitivity = van.state(monitorSuite.predict_sensitivity ?? 'medium');
-    const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? 30);
+    const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? predictLookbackConfig.default);
     const predictExcludeWeekends = van.state(monitorSuite.predict_exclude_weekends ?? false);
     const predictHolidayCodes = van.state(monitorSuite.predict_holiday_codes);
 
@@ -157,7 +168,7 @@ const MainForm = (
                     options.setValidity?.('monitor_lookback', state.valid);
                 },
                 validators: [
-                    numberBetween(1, 200, 1),
+                    numberBetween(monitorLookbackConfig.min, monitorLookbackConfig.max, 1),
                 ],
             }),
             () => {
@@ -274,9 +285,9 @@ const PredictionForm = (
                 name: 'predict_sensitivity',
                 label: 'Sensitivity',
                 options: [
-                    { label: 'Low', value: 'low' },
-                    { label: 'Medium', value: 'medium' },
-                    { label: 'High', value: 'high' },
+                    { label: 'Low', value: 'low', help: 'Fewer alerts. Flag values outside 2 standard deviations of predicted value.' },
+                    { label: 'Medium', value: 'medium', help: 'Balanced. Flag values outside 1.5 standard deviations of predicted value.' },
+                    { label: 'High', value: 'high', help: 'More alerts. Flag values outside 1 standard deviation of predicted value.' },
                 ],
                 value: predictSensitivity,
                 onChange: (value) => predictSensitivity.val = value,
@@ -294,7 +305,7 @@ const PredictionForm = (
                     options.setValidity?.('predict_min_lookback', state.valid);
                 },
                 validators: [
-                    numberBetween(30, 1000, 1),
+                    numberBetween(predictLookbackConfig.min, predictLookbackConfig.max, 1),
                 ],
             }),
         ),

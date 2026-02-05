@@ -6,6 +6,7 @@
  * @property {string} table_name
  * @property {TestDefinition[]} definitions
  * @property {object} metric_test_type
+ * @property {{ success: boolean, timestamp: string }?} result
  */
 
 import van from '../van.min.js';
@@ -13,6 +14,7 @@ import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, isEqual } from '../utils.js';
 import { Button } from '../components/button.js';
 import { Card } from '../components/card.js';
+import { Icon } from '../components/icon.js';
 import { TestDefinitionForm } from '../components/test_definition_form.js';
 
 const { div, span } = van.tags;
@@ -28,10 +30,22 @@ const EditTableMonitors = (/** @type Properties */ props) => {
 
     const definitions = getValue(props.definitions);
     const metricTestType = getValue(props.metric_test_type);
-    
+
     const updatedDefinitions = van.state({}); // { [id]: changes } - only changes for existing definitions
     const newMetrics = van.state({}); // { [tempId]: metric }
     const deletedMetricIds = van.state([]);
+
+    const showSaveSuccess = van.state(false);
+    let lastSaveTimestamp = null;
+
+    van.derive(() => {
+        const result = getValue(props.result);
+        if (result?.success && result.timestamp !== lastSaveTimestamp) {
+            lastSaveTimestamp = result.timestamp;
+            showSaveSuccess.val = true;
+            setTimeout(() => { showSaveSuccess.val = false; }, 2000);
+        }
+    });
 
     const formStates = van.state({}); // { [id]: { dirty, valid } }
     const isDirty = van.derive(() => {
@@ -183,9 +197,31 @@ const EditTableMonitors = (/** @type Properties */ props) => {
             },
         ),
         div(
-            { class: 'edit-monitors--footer flex-row fx-justify-content-flex-end mt-4 pt-4' },
+            { class: 'edit-monitors--footer flex-row fx-gap-3 fx-justify-content-flex-end fx-align-center mt-4 pt-4' },
+            () => showSaveSuccess.val
+                ? span(
+                    { class: 'flex-row fx-gap-1 text-secondary mr-4' },
+                    Icon({ style: 'color: var(--green);'}, 'check_circle'),
+                    'Changes saved',
+                )
+                : '',
             Button({
                 label: 'Save',
+                color: 'primary',
+                type: 'stroked',
+                width: 'auto',
+                disabled: () => !isDirty.val || !isValid.val,
+                onclick: () => {
+                    const payload = {
+                        updated_definitions: Object.values(updatedDefinitions.val),
+                        new_metrics: Object.values(newMetrics.val),
+                        deleted_metric_ids: deletedMetricIds.val,
+                    };
+                    emitEvent('SaveTestDefinition', { payload });
+                },
+            }),
+            Button({
+                label: 'Save & Close',
                 color: 'primary',
                 type: 'flat',
                 width: 'auto',
@@ -195,6 +231,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         updated_definitions: Object.values(updatedDefinitions.val),
                         new_metrics: Object.values(newMetrics.val),
                         deleted_metric_ids: deletedMetricIds.val,
+                        close: false,
                     };
                     emitEvent('SaveTestDefinition', { payload });
                 },

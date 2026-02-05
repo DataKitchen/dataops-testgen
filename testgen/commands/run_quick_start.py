@@ -24,7 +24,7 @@ from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
 
 LOG = logging.getLogger("testgen")
-
+random.seed(42)
 
 def _get_max_date(iteration: int):
     if iteration == 0:
@@ -118,7 +118,6 @@ def _get_quick_start_params_mapping(iteration: int = 0) -> dict:
 
 def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
     # Volume: linear growth with jitter, spike at specific iteration for anomaly
-    random.seed(42)
     if iteration == 37:
         new_sales = 100
     else:
