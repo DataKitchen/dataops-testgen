@@ -1,6 +1,6 @@
 /**
  * @import {ChartViewBox, Point} from './chart_canvas.js';
- * 
+ *
  * @typedef Options
  * @type {object}
  * @property {ChartViewBox} viewBox
@@ -12,7 +12,8 @@
  * @property {number[]?} yAxisTicks
  * @property {Object?} attributes
  * @property {PredictionPoint[]?} prediction
- * 
+ * @property {('predict'|'static')?} predictionMethod
+ *
  * @typedef MonitoringPoint
  * @type {Object}
  * @property {number} x
@@ -21,11 +22,13 @@
  * @property {boolean?} isAnomaly
  * @property {boolean?} isTraining
  * @property {boolean?} isPending
- * 
+ * @property {number?} lowerTolerance
+ * @property {number?} upperTolerance
+ *
  * @typedef PredictionPoint
  * @type {Object}
  * @property {number} x
- * @property {number} y
+ * @property {number?} y
  * @property {number} upper
  * @property {number} lower
  */
@@ -52,17 +55,27 @@ const MonitoringSparklineChart = (options, ...points) => {
     const width = van.state(0);
     const height = van.state(0);
     const linePoints = van.state(points.filter(e => !e.isPending));
+    const isStaticPrediction = _options.predictionMethod === 'static';
     const predictionPoints = van.derive(() => {
         const _linePoints = linePoints.val;
         const _predictionPoints = _options.prediction ?? [];
         if (_linePoints.length > 0 && _predictionPoints.length > 0) {
             const lastPoint = _linePoints[_linePoints.length - 1];
-            _predictionPoints.unshift({
-                x: lastPoint.x,
-                y: lastPoint.y,
-                upper: lastPoint.y,
-                lower: lastPoint.y,
-            });
+            if (isStaticPrediction) {
+                _predictionPoints.unshift({
+                    x: lastPoint.x,
+                    y: lastPoint.y,
+                    upper: lastPoint.upperTolerance ?? lastPoint.y,
+                    lower: lastPoint.lowerTolerance ?? lastPoint.y,
+                });
+            } else {
+                _predictionPoints.unshift({
+                    x: lastPoint.x,
+                    y: lastPoint.y,
+                    upper: lastPoint.upperTolerance ?? lastPoint.y,
+                    lower: lastPoint.lowerTolerance ?? lastPoint.y,
+                });
+            }
         }
         return _predictionPoints;
     });
@@ -89,38 +102,96 @@ const MonitoringSparklineChart = (options, ...points) => {
             height: '100%',
             ...extraAttributes,
         },
-        () => polyline({
-            points: linePoints.val.map(point => `${point.x} ${point.y}`).join(', '),
-            style: `stroke: ${getValue(_options.lineColor)}; stroke-width: ${getValue(_options.lineWidth)};`,
-            fill: 'none',
-        }),
-        () => predictionPoints.val.length > 0
-            ? path({
-                d: generateShadowPath(predictionPoints.rawVal),
+        () => {
+            const validPoints = linePoints.val.filter(p =>
+                Number.isFinite(p.x) && Number.isFinite(p.y)
+            );
+            if (validPoints.length < 2) return '';
+            return polyline({
+                points: validPoints.map(point => `${point.x} ${point.y}`).join(', '),
+                style: `stroke: ${getValue(_options.lineColor)}; stroke-width: ${getValue(_options.lineWidth)};`,
+                fill: 'none',
+            });
+        },
+        () => {
+            const tolerancePoints = linePoints.val.filter(p =>
+                Number.isFinite(p.lowerTolerance) || Number.isFinite(p.upperTolerance)
+            );
+            if (tolerancePoints.length < 2) return '';
+
+            return path({
+                d: generateTolerancePath(tolerancePoints, _options.height, getValue(_options.lineWidth)),
+                fill: colorMap.blue,
+                'fill-opacity': 0.1,
+                stroke: 'none',
+            });
+        },
+        () => {
+            const validPoints = predictionPoints.rawVal.filter(p =>
+                Number.isFinite(p.x) && (Number.isFinite(p.upper) || Number.isFinite(p.lower))
+            );
+            if (validPoints.length < 2) return '';
+            return path({
+                d: generateShadowPath(validPoints, _options.height),
                 fill: colorMap.emptyDark,
                 opacity: 0.25,
                 stroke: 'none',
-            })
-            : '',
-        () => predictionPoints.val.length > 0
-            ? polyline({
-                points: predictionPoints.rawVal.map(point => `${point.x} ${point.y}`).join(', '),
+            });
+        },
+        () => {
+            if (isStaticPrediction) return '';
+            const validPoints = predictionPoints.rawVal.filter(p =>
+                Number.isFinite(p.x) && Number.isFinite(p.y)
+            );
+            if (validPoints.length < 2) return '';
+            return polyline({
+                points: validPoints.map(point => `${point.x} ${point.y}`).join(', '),
                 style: `stroke: ${getValue(colorMap.grey)}; stroke-width: ${getValue(_options.lineWidth)};`,
                 fill: 'none',
-            })
-            : '',
+            });
+        },
     );
 };
 
-function generateShadowPath(data) {
-  let pathString = `M ${data[0].x} ${data[0].upper}`;
+function generateTolerancePath(points, chartHeight, minHeight = 0) {
+    const getBounds = (p) => {
+        let upper = Number.isFinite(p.upperTolerance) ? p.upperTolerance : 0;
+        let lower = Number.isFinite(p.lowerTolerance) ? p.lowerTolerance : chartHeight;
+        const height = lower - upper;
+        if (minHeight > 0 && height < minHeight) {
+            const midpoint = (upper + lower) / 2;
+            const halfMin = minHeight / 2;
+            upper = midpoint - halfMin;
+            lower = midpoint + halfMin;
+        }
+        return { upper, lower };
+    };
+
+    const bounds = points.map(getBounds);
+
+    let pathString = `M ${points[0].x} ${bounds[0].upper}`;
+    for (let i = 1; i < points.length; i++) {
+        pathString += ` L ${points[i].x} ${bounds[i].upper}`;
+    }
+    for (let i = points.length - 1; i >= 0; i--) {
+        pathString += ` L ${points[i].x} ${bounds[i].lower}`;
+    }
+    pathString += ' Z';
+    return pathString;
+}
+
+function generateShadowPath(data, chartHeight) {
+  const getUpper = (p) => Number.isFinite(p.upper) ? p.upper : 0;
+  const getLower = (p) => Number.isFinite(p.lower) ? p.lower : chartHeight;
+
+  let pathString = `M ${data[0].x} ${getUpper(data[0])}`;
   for (let i = 1; i < data.length; i++) {
-    pathString += ` L ${data[i].x} ${data[i].upper}`;
+    pathString += ` L ${data[i].x} ${getUpper(data[i])}`;
   }
   for (let i = data.length - 1; i >= 0; i--) {
-    pathString += ` L ${data[i].x} ${data[i].lower}`;
+    pathString += ` L ${data[i].x} ${getLower(data[i])}`;
   }
-  pathString += " Z";
+  pathString += ' Z';
   return pathString;
 }
 
@@ -134,17 +205,16 @@ const MonitoringSparklineMarkers = (options, points) => {
     return g(
         {transform: options.transform ?? undefined},
         ...points.map((point) => {
-            if (point.isPending) {
+            if (point.isPending || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 return null;
             }
-            
+
             const size = options.anomalySize || defaultAnomalyMarkerSize;
             return g(
                 {
                     onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
                     onmouseleave: () => options.hideTooltip?.(),
                 },
-                // Larger hit area for tooltip
                 circle({
                     cx: point.x,
                     cy: point.y,
@@ -183,6 +253,12 @@ const MonitoringSparklineChartTooltip = (point) => {
         {class: 'flex-column'},
         span({class: 'text-left mb-1'}, formatTimestamp(point.originalX)),
         span({class: 'text-left text-small'}, `${point.label || 'Value'}: ${formatNumber(point.originalY)}`),
+        point.lowerTolerance != undefined
+            ? span({class: 'text-left text-small'}, `Lower bound: ${formatNumber(point.originalLowerTolerance)}`)
+            : '',
+        point.upperTolerance != undefined
+            ? span({class: 'text-left text-small'}, `Upper bound: ${formatNumber(point.originalUpperTolerance)}`)
+            : '',
     );
 };
 

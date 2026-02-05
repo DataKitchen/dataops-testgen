@@ -23,10 +23,17 @@ class CronSampleHandlerPayload(TypedDict):
 CronSampleCallback = Callable[[CronSampleHandlerPayload], None]
 
 
-def get_cron_sample(cron_expr: str, cron_tz: str, sample_count: int, *, formatted: bool = False) -> CronSample:
+def get_cron_sample(
+    cron_expr: str,
+    cron_tz: str,
+    sample_count: int,
+    *,
+    reference_time: datetime | None = None,
+    formatted: bool = False,
+) -> CronSample:
     try:
         cron_obj = cron_converter.Cron(cron_expr)
-        cron_schedule = cron_obj.schedule(datetime.now(zoneinfo.ZoneInfo(cron_tz)))
+        cron_schedule = cron_obj.schedule(reference_time or datetime.now(zoneinfo.ZoneInfo(cron_tz)))
         readble_cron_schedule = cron_descriptor.get_description(cron_expr)
         if formatted:
             samples = [cron_schedule.next().strftime("%a %b %-d, %-I:%M %p") for _ in range(sample_count)]
@@ -64,3 +71,14 @@ def parse_fuzzy_date(value: str | int) -> datetime | None:
             ts /= 1000
         return datetime.fromtimestamp(ts)
     return value
+
+
+def dict_from_kv(value: str | None, pairs_seprator: str = ";", kv_separator: str = "=") -> dict:
+    if not value:
+        return {}
+    pairs = [ pair.split(kv_separator) for raw_pair in value.split(pairs_seprator) if (pair := raw_pair.strip()) ]
+    return {
+        pair_key: pair_value
+        for pair in pairs
+        if (pair_key := pair[0].strip()) and (pair_value := pair[1].strip())
+    }
