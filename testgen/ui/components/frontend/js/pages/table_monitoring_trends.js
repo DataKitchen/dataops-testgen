@@ -94,16 +94,11 @@ const TableMonitoringTrend = (props) => {
   const domId = 'monitoring-trends-container';
 
   const metricEvents = getValue(props.metric_events) ?? [];
-
   const chartHeight = (
-    + (spacing * 2)
-    + fresshnessChartHeight
-    + (spacing * 3)
-    + volumeTrendChartHeight
-    + (spacing * 3)
-    + schemaChartHeight
-    + (metricEvents.length ? (spacing * 3 + metricTrendChartHeight) * metricEvents.length + (spacing * 3) : 0)
-    + (spacing * 3) // padding
+    + (spacing * 4) + fresshnessChartHeight
+    + (spacing * 4) + volumeTrendChartHeight
+    + (spacing * 4) + schemaChartHeight
+    + metricEvents.length * ((spacing * 4) + metricTrendChartHeight)
   );
 
   const predictions = getValue(props.predictions);
@@ -731,9 +726,13 @@ stylesheet.replace(`
     flex-wrap: wrap;
     gap: 36px;
     padding: 12px 16px;
-    background: var(--background-color);
+    border-top: 1px solid var(--border-color);
+    background: var(--dk-dialog-background);
     position: sticky;
     bottom: 0;
+    margin-left: -24px;
+    margin-right: -48px;
+    margin-top: 24px;
   }
 
   .chart-legend-group {
