@@ -83,26 +83,27 @@ class MonitorsDashboardPage(Page):
             monitor_suite_id = selected_table_group.monitor_test_suite_id
 
             if monitor_suite_id:
-                monitor_schedule = JobSchedule.get(
-                    JobSchedule.key == RUN_MONITORS_JOB_KEY,
-                    JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
-                )
+                with st.spinner(text="Loading data ..."):
+                    monitor_schedule = JobSchedule.get(
+                        JobSchedule.key == RUN_MONITORS_JOB_KEY,
+                        JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
+                    )
 
-            monitored_tables_page = get_monitor_changes_by_tables(
-                table_group_id,
-                table_name_filter=table_name_filter,
-                only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
-                sort_field=sort_field,
-                sort_order=sort_order,
-                limit=int(items_per_page),
-                offset=page_start,
-            )
-            all_monitored_tables_count = count_monitor_changes_by_tables(
-                table_group_id,
-                table_name_filter=table_name_filter,
-                only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
-            )
-            monitor_changes_summary = summarize_monitor_changes(table_group_id)
+                    monitored_tables_page = get_monitor_changes_by_tables(
+                        table_group_id,
+                        table_name_filter=table_name_filter,
+                        only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+                        sort_field=sort_field,
+                        sort_order=sort_order,
+                        limit=int(items_per_page),
+                        offset=page_start,
+                    )
+                    all_monitored_tables_count = count_monitor_changes_by_tables(
+                        table_group_id,
+                        table_name_filter=table_name_filter,
+                        only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+                    )
+                    monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
         return testgen.testgen_component(
             "monitors_dashboard",

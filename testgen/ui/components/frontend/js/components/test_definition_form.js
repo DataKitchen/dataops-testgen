@@ -73,6 +73,9 @@ import { numberBetween } from '../form_validators.js';
 
 const { div, span } = van.tags;
 
+const subsetConditionColumns = ['subset_condition', 'match_subset_condition'];
+const subsetConditionNoopValues = ['1=1', 'true', 'TRUE'];
+
 const thresholdColumns = [
     'history_calculation',
     'history_calculation_upper',
@@ -195,15 +198,20 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                     );
                 }
 
+                const isSubsetCondition = subsetConditionColumns.includes(column);
+                const originalValue = currentValue();
+
                 return div(
                     { class: 'td-form--field' },
                     () => Input({
                         name: column,
                         label: config.label,
                         help: config.help,
-                        value: currentValue(),
+                        // The no-op values are not intuitive for users, so we display empty input to imply no condition
+                        // But we save it as "1=1" to not break the SQL templates
+                        value: isSubsetCondition && subsetConditionNoopValues.includes(originalValue) ? '' : originalValue,
                         onChange: (value, state) => {
-                            setFieldValues({ [column]: value || null })
+                            setFieldValues({ [column]: isSubsetCondition && !value ? '1=1' : value })
                             setFieldValidity(column, state.valid);
                         },
                     }),

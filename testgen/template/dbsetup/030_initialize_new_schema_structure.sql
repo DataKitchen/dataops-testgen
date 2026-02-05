@@ -781,6 +781,9 @@ CREATE INDEX ix_tr_pc_ts
 CREATE INDEX ix_tr_trun
    ON test_results(test_run_id);
 
+CREATE INDEX ix_tr_trun_table
+   ON test_results(test_run_id, table_name);
+
 CREATE INDEX ix_tr_tt
    ON test_results(test_type);
 
