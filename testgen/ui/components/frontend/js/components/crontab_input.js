@@ -21,6 +21,7 @@
  * @property {CronSample?} sample
  * @property {InitialValue?} value
  * @property {('x_hours'|'x_days'|'certain_days'|'custom'))[]?} modes
+ * @property {boolean?} hideExpression
  * @property {((expr: string) => void)?} onChange
  */
 import { getRandomId, getValue, loadStylesheet } from '../utils.js';
@@ -92,6 +93,7 @@ const CrontabInput = (/** @type Options */ props) => {
                     onClose: () => opened.val = false,
                     sample: props.sample,
                     modes: props.modes,
+                    hideExpression: props.hideExpression,
                 },
                 expression,
             ),
@@ -110,11 +112,13 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
     const xHoursState = {
         hours: van.state(1),
         minute: van.state(0),
+        startHour: van.state(0),
     };
     const xDaysState = {
         days: van.state(1),
         hour: van.state(1),
         minute: van.state(0),
+        startDay: van.state(1),
     };
     const certainDaysState = {
         sunday: van.state(false),
@@ -135,12 +139,30 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
         if (mode.val === 'x_hours') {
             const hours = xHoursState.hours.val;
             const minute = xHoursState.minute.val;
-            options.onChange(`${minute ?? 0} ${(hours && hours !== 1) ? '*/' + hours : '*'} * * *`);
+            const startHour = xHoursState.startHour.val;
+            let hourField;
+            if (!hours || hours <= 1) {
+                hourField = '*';
+            } else if (startHour > 0) {
+                hourField = generateSteppedValues(startHour, hours, 23);
+            } else {
+                hourField = '*/' + hours;
+            }
+            options.onChange(`${minute ?? 0} ${hourField} * * *`);
         } else if (mode.val === 'x_days') {
             const days = xDaysState.days.val;
             const hour = xDaysState.hour.val;
             const minute = xDaysState.minute.val;
-            options.onChange(`${minute ?? 0} ${hour ?? 0} ${(days && days !== 1) ? '*/' + days : '*'} * *`);
+            const startDay = xDaysState.startDay.val;
+            let dayField;
+            if (!days || days <= 1) {
+                dayField = '*';
+            } else if (startDay > 1) {
+                dayField = generateSteppedValues(startDay, days, 31);
+            } else {
+                dayField = '*/' + days;
+            }
+            options.onChange(`${minute ?? 0} ${hour ?? 0} ${dayField} * *`);
         } else if (mode.val === 'certain_days') {
             const days = [];
             const dayMap = [
@@ -225,16 +247,19 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                         span({}, 'Every'),
                         () => Select({
                             label: "",
-                            options: Array.from({length: 24}, (_, i) => i).map(i => ({label: i.toString(), value: i})),
+                            options: Array.from({length: 24}, (_, i) => i + 1).map(i => ({label: i.toString(), value: i})),
                             triggerStyle: 'inline',
                             portalClass: 'tg-crontab--select-portal',
                             value: xHoursState.hours,
-                            onChange: (value) => xHoursState.hours.val = value,
+                            onChange: (value) => {
+                                xHoursState.hours.val = value;
+                                if (value <= 1) xHoursState.startHour.val = 0;
+                            },
                         }),
                         span({}, 'hours'),
                     ),
                     div(
-                        {class: 'flex-row fx-gap-2'},
+                        {class: () => `flex-row fx-gap-2 ${xHoursState.hours.val > 1 ? 'mb-2' : ''}`},
                         span({}, 'on'),
                         span({}, 'minute'),
                         () => Select({
@@ -244,6 +269,18 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                             portalClass: 'tg-crontab--select-portal',
                             value: xHoursState.minute,
                             onChange: (value) => xHoursState.minute.val = value,
+                        }),
+                    ),
+                    div(
+                        {class: () => `flex-row fx-gap-2 ${xHoursState.hours.val > 1 ? '' : 'hidden'}`},
+                        span({}, 'starting at hour'),
+                        () => Select({
+                            label: "",
+                            options: Array.from({length: 24}, (_, i) => i).map(i => ({label: i.toString(), value: i})),
+                            triggerStyle: 'inline',
+                            portalClass: 'tg-crontab--select-portal',
+                            value: xHoursState.startHour,
+                            onChange: (value) => xHoursState.startHour.val = value,
                         }),
                     ),
                 ),
@@ -258,12 +295,15 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                             triggerStyle: 'inline',
                             portalClass: 'tg-crontab--select-portal',
                             value: xDaysState.days,
-                            onChange: (value) => xDaysState.days.val = value,
+                            onChange: (value) => {
+                                xDaysState.days.val = value;
+                                if (value <= 1) xDaysState.startDay.val = 1;
+                            },
                         }),
                         span({}, 'days'),
                     ),
                     div(
-                        {class: 'flex-row fx-gap-2'},
+                        {class: () => `flex-row fx-gap-2 ${xDaysState.days.val > 1 ? 'mb-2' : ''}`},
                         span({}, 'at'),
                         () => Select({
                             label: "",
@@ -280,6 +320,18 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                             portalClass: 'tg-crontab--select-portal',
                             value: xDaysState.minute,
                             onChange: (value) => xDaysState.minute.val = value,
+                        }),
+                    ),
+                    div(
+                        {class: () => `flex-row fx-gap-2 ${xDaysState.days.val > 1 ? '' : 'hidden'}`},
+                        span({}, 'starting on day'),
+                        () => Select({
+                            label: "",
+                            options: Array.from({length: 31}, (_, i) => i + 1).map(i => ({label: i.toString(), value: i})),
+                            triggerStyle: 'inline',
+                            portalClass: 'tg-crontab--select-portal',
+                            value: xDaysState.startDay,
+                            onChange: (value) => xDaysState.startDay.val = value,
                         }),
                     ),
                 ),
@@ -370,7 +422,7 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                 div(
                     {class: 'flex-column fx-gap-1 mt-3 text-secondary'},
                     () => span(
-                        { class: mode.val === 'custom' ? 'hidden': '' },
+                        { class: mode.val === 'custom' || getValue(options.hideExpression) ? 'hidden': '' },
                         `Cron Expression: ${expr.val ?? ''}`,
                     ),
                     () => div(
@@ -409,6 +461,25 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
     );
 };
 
+function generateSteppedValues(start, step, max) {
+    const values = [];
+    for (let i = start; i <= max; i += step) {
+        values.push(i);
+    }
+    return values.join(',');
+}
+
+function parseSteppedList(field) {
+    const values = field.split(',').map(Number);
+    if (values.length < 2 || values.some(isNaN)) return null;
+    const step = values[1] - values[0];
+    if (step <= 0) return null;
+    for (let i = 2; i < values.length; i++) {
+        if (values[i] - values[i - 1] !== step) return null;
+    }
+    return { start: values[0], step };
+}
+
 /**
  * Populates the state variables for the initial mode based on the cron expression
  * @param {string} expr
@@ -420,21 +491,35 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
 function populateInitialModeState(expr, mode, xHoursState, xDaysState, certainDaysState) {
     const parts = (expr || '').trim().split(/\s+/);
     if (mode === 'x_hours' && parts.length === 5) {
-        // e.g. "M */H * * *" or "M * * * *"
         xHoursState.minute.val = Number(parts[0]) || 0;
         if (parts[1].startsWith('*/')) {
             xHoursState.hours.val = Number(parts[1].slice(2)) || 1;
+            xHoursState.startHour.val = 0;
+        } else if (parts[1].includes(',')) {
+            const parsed = parseSteppedList(parts[1]);
+            if (parsed) {
+                xHoursState.hours.val = parsed.step;
+                xHoursState.startHour.val = parsed.start;
+            }
         } else {
             xHoursState.hours.val = 1;
+            xHoursState.startHour.val = 0;
         }
     } else if (mode === 'x_days' && parts.length === 5) {
-        // e.g. "M H */D * *" or "M H * * *"
         xDaysState.minute.val = Number(parts[0]) || 0;
         xDaysState.hour.val = Number(parts[1]) || 0;
         if (parts[2].startsWith('*/')) {
             xDaysState.days.val = Number(parts[2].slice(2)) || 1;
+            xDaysState.startDay.val = 1;
+        } else if (parts[2].includes(',')) {
+            const parsed = parseSteppedList(parts[2]);
+            if (parsed) {
+                xDaysState.days.val = parsed.step;
+                xDaysState.startDay.val = parsed.start;
+            }
         } else {
             xDaysState.days.val = 1;
+            xDaysState.startDay.val = 1;
         }
     } else if (mode === 'certain_days' && parts.length === 5) {
         // e.g. "M H * * DAY[,DAY...]"
@@ -465,13 +550,21 @@ function populateInitialModeState(expr, mode, xHoursState, xDaysState, certainDa
 function determineMode(expression) {
     // Normalize whitespace
     const expr = (expression || '').trim().replace(/\s+/g, ' ');
-    // x_hours: "M */H * * *" or "M * * * *"
+    // x_hours: "M */H * * *" or "M * * * *" or "M H1,H2,... * * *"
     if (/^\d{1,2} \*\/\d+ \* \* \*$/.test(expr) || /^\d{1,2} \* \* \* \*$/.test(expr)) {
         return 'x_hours';
     }
-    // x_days: "M H */D * *" or "M H * * *"
+    if (/^\d{1,2} \d+(,\d+)+ \* \* \*$/.test(expr)) {
+        const hourField = expr.split(' ')[1];
+        if (parseSteppedList(hourField)) return 'x_hours';
+    }
+    // x_days: "M H */D * *" or "M H * * *" or "M H D1,D2,... * *"
     if (/^\d{1,2} \d{1,2} \*\/\d+ \* \*$/.test(expr) || /^\d{1,2} \d{1,2} \* \* \*$/.test(expr)) {
         return 'x_days';
+    }
+    if (/^\d{1,2} \d{1,2} \d+(,\d+)+ \* \*$/.test(expr)) {
+        const dayField = expr.split(' ')[2];
+        if (parseSteppedList(dayField)) return 'x_days';
     }
     // certain_days: "M H * * DAY[,DAY...]" (DAY = SUN,MON,...)
     if (/^\d{1,2} \d{1,2} \* \* ((SUN|MON|TUE|WED|THU|FRI|SAT)(-(SUN|MON|TUE|WED|THU|FRI|SAT))?(,)?)+$/.test(expr)) {
@@ -533,4 +626,4 @@ stylesheet.replace(`
 }
 `);
 
-export { CrontabInput };
+export { CrontabInput, parseSteppedList };
