@@ -4,9 +4,9 @@ test_types:
   test_name_short: Custom Condition
   test_name_long: Column values match pre-defined condition
   test_description: |-
-    Tests that each record in the table matches a pre-defined, custom condition
+    Tests that each record in the table matches a predefined custom condition.
   except_message: |-
-    Value(s) found not matching defined condition.
+    Values found not matching defined condition.
   measure_uom: Values Failing
   measure_uom_description: null
   selection_criteria: null

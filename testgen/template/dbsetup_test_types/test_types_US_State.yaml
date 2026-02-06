@@ -4,9 +4,9 @@ test_types:
   test_name_short: US State
   test_name_long: Column value is two-letter US state code
   test_description: |-
-    Tests that the recorded column value is a valid US state.
+    Tests that values in column are valid US states.
   except_message: |-
-    Column Value is not a valid US state.
+    Column values found that are not valid US states.
   measure_uom: Not US States
   measure_uom_description: |-
     Values that doo not match 2-character US state abbreviations.

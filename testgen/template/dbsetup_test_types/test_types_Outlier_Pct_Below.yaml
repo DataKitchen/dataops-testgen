@@ -4,9 +4,9 @@ test_types:
   test_name_short: Outliers Below
   test_name_long: Consistent outlier counts under 2 SD below mean
   test_description: |-
-    Tests that percent of outliers over 2 SD below Mean doesn't exceed threshold
+    Tests that percent of outliers over two standard deviations below mean does not exceed threshold.
   except_message: |-
-    Percent of outliers exceeding 2 SD below the mean is greater than expected threshold.
+    Percent of outliers exceeding two standard deviations below the mean is greater than expected threshold.
   measure_uom: Pct records under limit
   measure_uom_description: null
   selection_criteria: |-

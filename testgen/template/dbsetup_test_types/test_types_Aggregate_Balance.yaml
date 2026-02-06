@@ -4,7 +4,7 @@ test_types:
   test_name_short: Aggregate Balance
   test_name_long: Aggregate values per group match reference
   test_description: |-
-    Tests for exact match in aggregate values for each set of column values vs. reference dataset
+    Tests for exact match in aggregate measure for each set of column values compared to reference dataset.
   except_message: |-
     Aggregate measure per set of column values does not exactly match reference dataset.
   measure_uom: Mismatched measures

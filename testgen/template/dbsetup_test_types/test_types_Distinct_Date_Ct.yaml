@@ -4,7 +4,7 @@ test_types:
   test_name_short: Date Count
   test_name_long: Count of distinct dates at or above reference
   test_description: |-
-    Tests that the count of distinct dates referenced in the column has not dropped vs. baseline data
+    Tests that count of distinct dates referenced in column has not dropped compared to baseline data.
   except_message: |-
     Drop in count of unique dates recorded in column.
   measure_uom: Unique dates

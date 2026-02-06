@@ -4,9 +4,9 @@ test_types:
   test_name_short: Daily Records
   test_name_long: All dates present within date range
   test_description: |-
-    Tests for presence of every calendar date within min/max date range, per baseline data
+    Tests for presence of every calendar date within minimum and maximum date range, per baseline data.
   except_message: |-
-    Not every date value between min and max dates is present, unlike at baseline.
+    Not every date value between minimum and maximum dates is present.
   measure_uom: Missing dates
   measure_uom_description: null
   selection_criteria: |-

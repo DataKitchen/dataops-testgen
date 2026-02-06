@@ -4,7 +4,7 @@ test_types:
   test_name_short: Volume
   test_name_long: Number of rows is within tolerance range
   test_description: |-
-    Tests that row count of all or subset of records in a table is within derived tolerance range.
+    Tests that row count of all or subset of records in a table is within tolerance range.
   except_message: |-
     Row count is outside expected range.
   measure_uom: Row count

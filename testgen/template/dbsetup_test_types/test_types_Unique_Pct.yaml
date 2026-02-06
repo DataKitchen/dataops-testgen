@@ -4,9 +4,9 @@ test_types:
   test_name_short: Percent Unique
   test_name_long: Consistent ratio of unique values
   test_description: |-
-    Tests for statistically-significant shift in percentage of unique values vs. baseline data.
+    Tests for statistically significant shift in percentage of unique values compared to baseline data.
   except_message: |-
-    Significant shift in percent of unique values vs. baseline.
+    Significant shift in percent of unique values compared to baseline.
   measure_uom: Difference measure
   measure_uom_description: |-
     Cohen's H Difference (0.20 small, 0.5 mod, 0.8 large, 1.2 very large, 2.0 huge)

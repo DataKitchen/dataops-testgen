@@ -4,9 +4,9 @@ test_types:
   test_name_short: Timeframe Match
   test_name_long: Column value combinations from latest timeframe same as prior period
   test_description: |-
-    Tests for presence of same column values in most recent time-window vs. prior time window
+    Tests for presence of same column values in most recent time window compared to prior time window.
   except_message: |-
-    Column values don't match in most recent time-windows.
+    Column values do not match in most recent time windows.
   measure_uom: Mismatched values
   measure_uom_description: null
   selection_criteria: null

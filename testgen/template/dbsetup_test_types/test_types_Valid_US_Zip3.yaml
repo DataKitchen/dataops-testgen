@@ -4,9 +4,9 @@ test_types:
   test_name_short: 'Valid US Zip-3  '
   test_name_long: Valid USA Zip-3 Prefix
   test_description: |-
-    Tests that postal codes match the 3 digit format of a regional prefix.
+    Tests that postal codes match the 3-digit format of a regional prefix.
   except_message: |-
-    Invalid 3-digit US Zip Code regional prefix formats found.
+    Invalid 3-digit US zip code regional prefix formats found.
   measure_uom: Invalid Zip-3 Prefix
   measure_uom_description: |-
     Expected count of values with invalid Zip-3 Prefix Codes

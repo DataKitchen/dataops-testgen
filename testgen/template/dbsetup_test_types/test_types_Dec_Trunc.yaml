@@ -4,9 +4,9 @@ test_types:
   test_name_short: Decimal Truncation
   test_name_long: Sum of fractional values at or above reference
   test_description: |-
-    Tests for decimal truncation by confirming that the sum of fractional values in data is no less than the sum at baseline
+    Tests for decimal truncation by confirming that sum of fractional values in data is no less than sum at baseline.
   except_message: |-
-    The sum of fractional values is under baseline, which may indicate decimal truncation
+    Sum of fractional values is under baseline sum, which may indicate decimal truncation.
   measure_uom: Fractional sum
   measure_uom_description: |-
     The sum of all decimal values from all data for this column

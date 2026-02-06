@@ -4,7 +4,7 @@ test_types:
   test_name_short: Average Shift
   test_name_long: Column mean is consistent with reference
   test_description: |-
-    Tests for statistically-significant shift in mean value for column from average calculated at baseline.
+    Tests for statistically significant shift in mean value for column from average calculated at baseline.
   except_message: |-
     Standardized difference between averages is over the selected threshold level.
   measure_uom: Difference Measure

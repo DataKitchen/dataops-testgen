@@ -4,7 +4,7 @@ test_types:
   test_name_short: Value Count
   test_name_long: Count of distinct values has not dropped
   test_description: |-
-    Tests that the count of unique values in the column has not changed from baseline.
+    ests that count of unique values in column has not changed from baseline.
   except_message: |-
     Count of unique values in column has changed from baseline.
   measure_uom: Unique Values

@@ -4,7 +4,7 @@ test_types:
   test_name_short: Freshness
   test_name_long: Table updated within expected time window
   test_description: |-
-    Confirms whether table has been updated within expected time window
+    Tests that table has been updated within expected time window.
   except_message: |-
     Table has not been updated within expected time window.
   measure_uom: Interval since last update

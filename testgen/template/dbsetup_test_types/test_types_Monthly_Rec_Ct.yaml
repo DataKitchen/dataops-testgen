@@ -4,9 +4,9 @@ test_types:
   test_name_short: Monthly Records
   test_name_long: At least one date per month present within date range
   test_description: |-
-    Tests for presence of at least one date per calendar month within min/max date range, per baseline data
+    Tests for presence of at least one date per calendar month within minimum and maximum date range, per baseline data.
   except_message: |-
-    At least one date per month expected in min/max date range.
+    Not every month between minimum and maximum date range has at least one date present.
   measure_uom: Missing months
   measure_uom_description: |-
     Calendar months without date values present

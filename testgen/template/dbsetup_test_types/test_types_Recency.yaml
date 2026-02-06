@@ -4,7 +4,7 @@ test_types:
   test_name_short: Recency
   test_name_long: Latest date within expected range of test date
   test_description: |-
-    Tests that the latest date in column is within a set number of days of the test date
+    Tests that most recent date in column is within a set number of days of the test date.
   except_message: |-
     Most recent date value not within expected days of test date.
   measure_uom: Days before test
