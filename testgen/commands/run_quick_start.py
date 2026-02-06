@@ -1,4 +1,5 @@
 import logging
+import math
 import random
 from datetime import datetime
 from typing import Any
@@ -116,6 +117,19 @@ def _get_quick_start_params_mapping(iteration: int = 0) -> dict:
     }
 
 
+def _metric_cumulative_shift(iteration: int) -> tuple[float, float]:
+    """Compute cumulative metric shifts at a given iteration for Metric_Trend monitors.
+
+    Returns (discount_shift, price_shift) — the total shift from baseline
+    that should be applied to the underlying data at this iteration.
+    Uses composite sine waves for organic-looking oscillation patterns.
+    """
+    i = iteration
+    discount = -1.0 + 1.8 * math.sin(2 * math.pi * i / 14 + math.pi) + 0.7 * math.sin(2 * math.pi * i / 6 + math.pi + 0.5)
+    price = 80 * math.sin(2 * math.pi * i / 16) + 40 * math.sin(2 * math.pi * i / 7 + 0.3) + 100
+    return discount, price
+
+
 def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
     # Volume: linear growth with jitter, spike at specific iteration for anomaly
     if iteration == 37:
@@ -125,6 +139,12 @@ def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
 
     # Freshness: update every other iteration, late update for anomaly
     is_update_suppliers_iter = (iteration % 2 == 0 and iteration != 38) or iteration == 39
+
+    # Metrics: compute deltas for discount and price shifts
+    curr_discount, curr_price = _metric_cumulative_shift(iteration)
+    prev_discount, prev_price = _metric_cumulative_shift(iteration - 1) if iteration > 1 else (0.0, 0.0)
+    discount_delta = round(curr_discount - prev_discount, 3)
+    price_delta = round(curr_price - prev_price, 2)
 
     return {
         **_get_settings_params_mapping(),
@@ -137,6 +157,8 @@ def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
         "IS_CREATE_RETURNS_TABLE_ITER": iteration == 32,
         "IS_DELETE_CUSTOMER_ITER": iteration in (18, 22, 34),
         "IS_UPDATE_SUPPLIERS_ITER": is_update_suppliers_iter,
+        "DISCOUNT_DELTA": discount_delta,
+        "PRICE_DELTA": price_delta,
     }
 
 

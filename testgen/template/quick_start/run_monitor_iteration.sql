@@ -70,6 +70,14 @@ WHERE product_id IN (
 -- TG-ENDIF
 
 
+-- Metric_Trend variation: shift discount averages and product prices each iteration
+UPDATE demo.f_ebike_sales
+SET discount_amount = GREATEST(0, discount_amount + {DISCOUNT_DELTA});
+
+UPDATE demo.d_ebike_products
+SET price = GREATEST(50, price + {PRICE_DELTA});
+
+
 -- TG-IF IS_DELETE_CUSTOMER_COL_ITER
 ALTER TABLE demo.d_ebike_customers
     DROP COLUMN occupation,

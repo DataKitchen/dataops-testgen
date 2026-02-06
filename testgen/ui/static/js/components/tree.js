@@ -508,7 +508,8 @@ stylesheet.replace(`
 }
 
 .tg-tree--row.selected {
-    background-color: #06a04a17;
+    background-color: var(--sidebar-item-hover-color);
+    color: var(--primary-color);
     font-weight: 500;
 }
 

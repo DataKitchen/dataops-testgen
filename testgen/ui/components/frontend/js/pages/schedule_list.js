@@ -74,7 +74,7 @@ const ScheduleList = (/** @type Properties */ props) => {
     return div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
         ExpansionPanel(
-            {title: 'Add Schedule', testId: 'scheduler-cron-editor'},
+            {title: span({ class: 'text-green' }, 'Add Schedule'), testId: 'scheduler-cron-editor'},
             div(
                 { class: 'flex-row fx-gap-2' },
                 () => Select({
