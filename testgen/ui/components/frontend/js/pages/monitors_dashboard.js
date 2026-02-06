@@ -55,12 +55,15 @@
  * @type {object}
  * @property {boolean} can_edit
  *
+ * @typedef TableGroupFilterOption
+ * @type {FilterOption & { has_monitors: boolean }}
+ *
  * @typedef Properties
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {MonitorSummary?} summary
  * @property {Schedule?} schedule
- * @property {FilterOption[]} table_group_filter_options
+ * @property {TableGroupFilterOption[]} table_group_filter_options
  * @property {boolean?} has_monitor_test_suite
  * @property {MonitorList} monitors
  * @property {MonitorListFilters} filters
@@ -271,7 +274,14 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 Select({
                     label: 'Table Group',
                     value: tableGroupFilterValue,
-                    options: getValue(props.table_group_filter_options) ?? [],
+                    options: (getValue(props.table_group_filter_options) ?? []).map(option => ({
+                        ...option,
+                        label: span(
+                            { class: 'flex-row fx-gap-2' },
+                            span({ class: `has-monitors dot text-disabled ${option.has_monitors ? '' : 'invisible'}` }),
+                            option.label,
+                        ),
+                    })),
                     allowNull: false,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
@@ -388,7 +398,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 {name: 'freshness_anomalies', label: 'Freshness', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'volume_anomalies', label: 'Volume', width: 85, align: 'left', sortable: true, overflow: 'visible'},
                                 {name: 'schema_anomalies', label: 'Schema', width: 85, sortable: true, align: 'left'},
-                                {name: 'metric_anomalies', label: 'Metrics', width: 85, sortable: true, align: 'left'},
+                                {name: 'metric_anomalies', label: 'Metrics', width: 85, sortable: true, align: 'left', overflow: 'visible'},
 
                                 ...(
                                     showChanges
@@ -517,6 +527,14 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .empty-table-message {
     min-height: 300px;
+}
+
+.has-monitors {
+    font-size: 5px;
+}
+
+.tg-select--field .has-monitors {
+    display: none;
 }
 
 th.tg-table-column.action span {

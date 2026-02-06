@@ -9,7 +9,7 @@ LOG = logging.getLogger("testgen")
 
 # This is a heuristic minimum to get a reasonable prediction
 # Not a hard limit of the model
-MIN_TRAIN_VALUES = 30
+MIN_TRAIN_VALUES = 20
 
 
 class NotEnoughData(ValueError):

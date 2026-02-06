@@ -15,7 +15,7 @@ SELECT
   :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date,
   'PREDICT'               AS history_calculation,
   NULL                    AS history_lookback,
-  '1=1'                   AS subset_condition,
+  NULL                    AS subset_condition,
   'COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)' AS custom_query
 FROM data_table_chars c
 WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID

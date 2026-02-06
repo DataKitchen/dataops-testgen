@@ -9,83 +9,55 @@ import van from './van.min.js';
 import pluginSpec from './plugins.js';
 import { Streamlit } from './streamlit.js';
 import { isEqual, getParents } from './utils.js';
-import { Button } from './components/button.js'
-import { Breadcrumbs } from './components/breadcrumbs.js'
-import { ExpanderToggle } from './components/expander_toggle.js';
-import { Link } from './components/link.js';
-import { Paginator } from './components/paginator.js';
-import { SortingSelector } from './components/sorting_selector.js';
-import { ColumnSelector } from './components/explorer_column_selector.js';
-import { TestRuns } from './pages/test_runs.js';
-import { ProfilingRuns } from './pages/profiling_runs.js';
-import { DataCatalog } from './pages/data_catalog.js';
-import { ProjectDashboard } from './pages/project_dashboard.js';
-import { TestSuites } from './pages/test_suites.js';
-import { QualityDashboard } from './pages/quality_dashboard.js';
-import { ScoreDetails } from './pages/score_details.js';
-import { ScoreExplorer } from './pages/score_explorer.js';
-import { ColumnProfilingResults } from './data_profiling/column_profiling_results.js';
-import { ColumnProfilingHistory } from './data_profiling/column_profiling_history.js';
-import { ScheduleList } from './pages/schedule_list.js';
-import { Connections } from './pages/connections.js';
-import { TableGroupWizard } from './pages/table_group_wizard.js';
-import { HelpMenu } from './components/help_menu.js'
-import { TableGroupList } from './pages/table_group_list.js';
-import { TableGroupDeleteConfirmation } from './pages/table_group_delete_confirmation.js';
-import { RunProfilingDialog } from './pages/run_profiling_dialog.js';
-import { ConfirmationDialog } from './pages/confirmation_dialog.js';
-import { TestDefinitionSummary } from './pages/test_definition_summary.js';
-import { NotificationSettings } from './pages/notification_settings.js';
-import { TableMonitoringTrend } from './pages/table_monitoring_trends.js';
-import { MonitorsDashboard } from './pages/monitors_dashboard.js';
-import { TestResultsChart } from './pages/test_results_chart.js';
-import { SchemaChangesList } from './components/schema_changes_list.js';
-import { EditMonitorSettings } from './pages/edit_monitor_settings.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
 
-const TestGenComponent = (/** @type {string} */ id, /** @type {object} */ props) => {
-    const componentById = {
-        breadcrumbs: Breadcrumbs,
-        button: Button,
-        expander_toggle: ExpanderToggle,
-        link: Link,
-        paginator: Paginator,
-        sorting_selector: SortingSelector,
-        sidebar: window.top.testgen.components.Sidebar,
-        test_runs: TestRuns,
-        profiling_runs: ProfilingRuns,
-        data_catalog: DataCatalog,
-        column_profiling_results: ColumnProfilingResults,
-        column_profiling_history: ColumnProfilingHistory,
-        project_dashboard: ProjectDashboard,
-        test_suites: TestSuites,
-        quality_dashboard: QualityDashboard,
-        score_details: ScoreDetails,
-        score_explorer: ScoreExplorer,
-        schedule_list: ScheduleList,
-        column_selector: ColumnSelector,
-        connections: Connections,
-        table_group_wizard: TableGroupWizard,
-        help_menu: HelpMenu,
-        table_group_list: TableGroupList,
-        table_group_delete: TableGroupDeleteConfirmation,
-        run_profiling_dialog: RunProfilingDialog,
-        confirm_dialog: ConfirmationDialog,
-        test_definition_summary: TestDefinitionSummary,
-        notification_settings: NotificationSettings,
-        monitors_dashboard: MonitorsDashboard,
-        table_monitoring_trends: TableMonitoringTrend,
-        test_results_chart: TestResultsChart,
-        schema_changes_list: SchemaChangesList,
-        edit_monitor_settings: EditMonitorSettings,
-    };
+const componentLoaders = {
+    breadcrumbs: () => import('./components/breadcrumbs.js').then(m => m.Breadcrumbs),
+    button: () => import('./components/button.js').then(m => m.Button),
+    expander_toggle: () => import('./components/expander_toggle.js').then(m => m.ExpanderToggle),
+    link: () => import('./components/link.js').then(m => m.Link),
+    paginator: () => import('./components/paginator.js').then(m => m.Paginator),
+    sorting_selector: () => import('./components/sorting_selector.js').then(m => m.SortingSelector),
+    sidebar: () => Promise.resolve(window.top.testgen.components.Sidebar),
+    test_runs: () => import('./pages/test_runs.js').then(m => m.TestRuns),
+    profiling_runs: () => import('./pages/profiling_runs.js').then(m => m.ProfilingRuns),
+    data_catalog: () => import('./pages/data_catalog.js').then(m => m.DataCatalog),
+    column_profiling_results: () => import('./data_profiling/column_profiling_results.js').then(m => m.ColumnProfilingResults),
+    column_profiling_history: () => import('./data_profiling/column_profiling_history.js').then(m => m.ColumnProfilingHistory),
+    project_dashboard: () => import('./pages/project_dashboard.js').then(m => m.ProjectDashboard),
+    test_suites: () => import('./pages/test_suites.js').then(m => m.TestSuites),
+    quality_dashboard: () => import('./pages/quality_dashboard.js').then(m => m.QualityDashboard),
+    score_details: () => import('./pages/score_details.js').then(m => m.ScoreDetails),
+    score_explorer: () => import('./pages/score_explorer.js').then(m => m.ScoreExplorer),
+    schedule_list: () => import('./pages/schedule_list.js').then(m => m.ScheduleList),
+    column_selector: () => import('./components/explorer_column_selector.js').then(m => m.ColumnSelector),
+    connections: () => import('./pages/connections.js').then(m => m.Connections),
+    table_group_wizard: () => import('./pages/table_group_wizard.js').then(m => m.TableGroupWizard),
+    help_menu: () => import('./components/help_menu.js').then(m => m.HelpMenu),
+    table_group_list: () => import('./pages/table_group_list.js').then(m => m.TableGroupList),
+    table_group_delete: () => import('./pages/table_group_delete_confirmation.js').then(m => m.TableGroupDeleteConfirmation),
+    run_profiling_dialog: () => import('./pages/run_profiling_dialog.js').then(m => m.RunProfilingDialog),
+    confirm_dialog: () => import('./pages/confirmation_dialog.js').then(m => m.ConfirmationDialog),
+    test_definition_summary: () => import('./pages/test_definition_summary.js').then(m => m.TestDefinitionSummary),
+    notification_settings: () => import('./pages/notification_settings.js').then(m => m.NotificationSettings),
+    monitors_dashboard: () => import('./pages/monitors_dashboard.js').then(m => m.MonitorsDashboard),
+    table_monitoring_trends: () => import('./pages/table_monitoring_trends.js').then(m => m.TableMonitoringTrend),
+    test_results_chart: () => import('./pages/test_results_chart.js').then(m => m.TestResultsChart),
+    schema_changes_list: () => import('./components/schema_changes_list.js').then(m => m.SchemaChangesList),
+    edit_monitor_settings: () => import('./pages/edit_monitor_settings.js').then(m => m.EditMonitorSettings),
+};
 
+const TestGenComponent = async (/** @type {string} */ id, /** @type {object} */ props) => {
     if (Object.keys(window.testgen.plugins).includes(id)) {
         return window.testgen.plugins[id](props);
-    } else if (Object.keys(componentById).includes(id)) {
-        return componentById[id](props);
+    }
+
+    const loader = componentLoaders[id];
+    if (loader) {
+        const Component = await loader();
+        return Component(props);
     }
     return '';
 };
@@ -130,7 +102,7 @@ window.addEventListener('message', async (event) => {
                 window.testgen.states[componentKey] = componentState;
             }
 
-            return van.add(mountPoint, TestGenComponent(componentId, componentState));
+            return van.add(mountPoint, await TestGenComponent(componentId, componentState));
         }
 
         for (const [ key, value ] of Object.entries(event.data.args.props)) {

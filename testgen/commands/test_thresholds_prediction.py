@@ -29,14 +29,13 @@ class TestThresholdsPrediction:
         "prediction",
     )
     num_forecast = 10
-    # https://www.pindling.org/Math/Learning/Statistics/z_scores_table.htm
     z_score_map: ClassVar = {
-        ("lower_tolerance", PredictSensitivity.low): -1.645, # 5th percentile
-        ("lower_tolerance", PredictSensitivity.medium): -0.842, # 20th percentile
-        ("lower_tolerance", PredictSensitivity.high): -0.253, # 40th percentile
-        ("upper_tolerance", PredictSensitivity.high): 0.253, # 60th percentile
-        ("upper_tolerance", PredictSensitivity.medium): 0.842, # 80th percentile
-        ("upper_tolerance", PredictSensitivity.low): 1.645, # 95th percentile
+        ("lower_tolerance", PredictSensitivity.low): -2.0,    # 2.5th percentile
+        ("lower_tolerance", PredictSensitivity.medium): -1.5, # 7th percentile
+        ("lower_tolerance", PredictSensitivity.high): -1.0,   # 16th percentile
+        ("upper_tolerance", PredictSensitivity.high): 1.0,    # 84th percentile
+        ("upper_tolerance", PredictSensitivity.medium): 1.5,  # 93rd percentile
+        ("upper_tolerance", PredictSensitivity.low): 2.0,     # 97.5th percentile
     }
 
     def __init__(self, test_suite: TestSuite, run_date: datetime):

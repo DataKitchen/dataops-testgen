@@ -311,7 +311,7 @@ const TableMonitoringTrend = (props) => {
       events: parsedEvents,
       range: metricRange,
       predictionPoints: parsedPredictionPoints,
-      predictionMethod: metricPrediction.method,
+      predictionMethod: metricPrediction?.method,
     };
   });
 
