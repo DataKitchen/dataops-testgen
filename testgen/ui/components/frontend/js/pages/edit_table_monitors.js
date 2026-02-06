@@ -28,7 +28,6 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     loadStylesheet('edit-table-monitors', stylesheet);
     window.testgen.isPage = true;
 
-    const definitions = getValue(props.definitions);
     const metricTestType = getValue(props.metric_test_type);
 
     const updatedDefinitions = van.state({}); // { [id]: changes } - only changes for existing definitions
@@ -43,6 +42,10 @@ const EditTableMonitors = (/** @type Properties */ props) => {
         if (result?.success && result.timestamp !== lastSaveTimestamp) {
             lastSaveTimestamp = result.timestamp;
             showSaveSuccess.val = true;
+            updatedDefinitions.val = {};
+            newMetrics.val = {};
+            deletedMetricIds.val = [];
+            formStates.val = {};
             setTimeout(() => { showSaveSuccess.val = false; }, 2000);
         }
     });
@@ -55,11 +58,11 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     });
     const isValid = van.derive(() => Object.values(formStates.val).every(s => s.valid));
 
-    const existingMetrics = Object.fromEntries(
-        definitions.filter(td => td.test_type === 'Metric_Trend').map(metric => [metric.id, metric])
-    );
+    const existingMetrics = van.derive(() => Object.fromEntries(
+        getValue(props.definitions).filter(td => td.test_type === 'Metric_Trend').map(metric => [metric.id, metric])
+    ));
     const displayedMetrics = van.derive(() => {
-        const existing = Object.values(existingMetrics).filter(metric => !deletedMetricIds.val.includes(metric.id));
+        const existing = Object.values(existingMetrics.val).filter(metric => !deletedMetricIds.val.includes(metric.id));
         return [...existing, ...Object.values(newMetrics.val)];
     });
     const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
@@ -153,7 +156,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                     const isNew = id.startsWith('temp_');
                     const metricDefinition = isNew
                         ? newMetrics.rawVal[id]
-                        : { ...existingMetrics[id], ...updatedDefinitions.rawVal[id] };
+                        : { ...existingMetrics.val[id], ...updatedDefinitions.rawVal[id] };
 
                     return TestDefinitionForm({
                         definition: metricDefinition,
@@ -175,7 +178,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                     });
                 }
 
-                const selectedDef = definitions.find(td => td.test_type === type);
+                const selectedDef = getValue(props.definitions).find(td => td.test_type === type);
                 if (!selectedDef) {
                     return Card({
                         class: 'edit-monitors--empty flex-row fx-justify-center',
