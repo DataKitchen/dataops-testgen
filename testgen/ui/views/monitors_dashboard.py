@@ -484,7 +484,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
             set_schedule(payload["schedule"])
             set_monitor_suite(payload["monitor_suite"])
 
-        cron_sample_result, on_cron_sample = get_cron_sample_handler("monitors:cron_expr_validation", sample_count=0)
+        cron_sample_result, on_cron_sample = get_cron_sample_handler("monitors:cron_expr_validation", sample_count=2)
         should_save, set_save = temp_value(f"monitors:save:{monitor_suite_id}", default=False)
         get_schedule, set_schedule = temp_value(f"monitors:updated_schedule:{monitor_suite_id}", default={})
         get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})

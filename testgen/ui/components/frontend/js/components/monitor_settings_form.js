@@ -39,7 +39,7 @@ import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
 import { Select } from './select.js';
 import { Checkbox } from './checkbox.js';
-import { CrontabInput } from './crontab_input.js';
+import { CrontabInput, parseSteppedList } from './crontab_input.js';
 import { Icon } from './icon.js';
 import { Link } from './link.js';
 import { withTooltip } from './tooltip.js';
@@ -241,6 +241,7 @@ const ScheduleForm = (
                 sample: options.cronSample,
                 value: cronEditorValue,
                 modes: ['x_hours', 'x_days'],
+                hideExpression: true,
                 onChange: (value) => cronExpression.val = value,
             }),
         ),
@@ -372,6 +373,11 @@ function determineDuration(expression) {
     if (match) {
         return Number(match[1]) * 60 * 60; // H hours
     }
+    // "M H1,H2,... * * *" (stepped hours with starting offset)
+    if (/^\d{1,2} \d+(,\d+)+ \* \* \*$/.test(expr)) {
+        const parsed = parseSteppedList(expr.split(' ')[1]);
+        if (parsed) return parsed.step * 60 * 60;
+    }
     // "M H * * *"
     if (/^\d{1,2} \d{1,2} \* \* \*$/.test(expr)) {
         return 24 * 60 * 60; // 1 day
@@ -380,6 +386,11 @@ function determineDuration(expression) {
     match = expr.match(/^\d{1,2} \d{1,2} \*\/(\d+) \* \*$/);
     if (match) {
         return Number(match[1]) * 24 * 60 * 60; // D days
+    }
+    // "M H D1,D2,... * *" (stepped days with starting offset)
+    if (/^\d{1,2} \d{1,2} \d+(,\d+)+ \* \*$/.test(expr)) {
+        const parsed = parseSteppedList(expr.split(' ')[2]);
+        if (parsed) return parsed.step * 24 * 60 * 60;
     }
     return null;
 }
