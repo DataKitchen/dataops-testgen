@@ -50,11 +50,7 @@ const componentLoaders = {
 };
 
 const TestGenComponent = async (/** @type {string} */ id, /** @type {object} */ props) => {
-    if (Object.keys(window.testgen.plugins).includes(id)) {
-        return window.testgen.plugins[id](props);
-    }
-
-    const loader = componentLoaders[id];
+    const loader = window.testgen.plugins[id] ?? componentLoaders[id];
     if (loader) {
         const Component = await loader();
         return Component(props);
@@ -141,10 +137,10 @@ async function loadPlugins() {
         try {
             const modules = await Promise.all(Object.values(pluginSpec).map(plugin => import(plugin.entrypoint)))
             for (const pluginModule of modules) {
-                if (pluginModule && pluginModule.components) {
-                    Object.assign(window.testgen.plugins, pluginModule.components)
+                if (pluginModule && pluginModule.componentLoaders) {
+                    Object.assign(window.testgen.plugins, pluginModule.componentLoaders)
                 } else if (pluginModule) {
-                    console.warn(`Plugin '${pluginModule}' does not export a member 'components'.`);
+                    console.warn(`Plugin '${pluginModule}' does not export a member 'componentLoaders'.`);
                 }
             }
         } catch (error) {
