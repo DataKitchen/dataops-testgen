@@ -1,11 +1,12 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import ClassVar, Literal
 from uuid import UUID
 
 import streamlit as st
 from sqlalchemy import (
+    Boolean,
     Column,
     ForeignKey,
     String,
@@ -91,7 +92,8 @@ class TestDefinitionSummary(TestTypeSummary):
     profiling_as_of_date: datetime
     last_manual_update: datetime
     export_to_observability: bool
-    prediction: str | None
+    prediction: dict[str, dict[str, float]] | None
+    flagged: bool
 
 
 @dataclass
@@ -211,6 +213,7 @@ class TestDefinition(Entity):
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
     prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
+    flagged: bool = Column(Boolean, default=False, nullable=False)
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
@@ -276,10 +279,12 @@ class TestDefinition(Entity):
         )
         return [TestDefinitionMinimal(**row) for row in results]
 
+    _yn_columns: ClassVar = {"test_active", "lock_refresh"}
+
     @classmethod
     def set_status_attribute(
         cls,
-        status_type: Literal["test_active", "lock_refresh"],
+        status_type: Literal["test_active", "lock_refresh", "flagged"],
         test_definition_ids: list[str | UUID],
         value: bool,
     ) -> None:
@@ -296,7 +301,7 @@ class TestDefinition(Entity):
         """
         params = {
             "test_definition_ids": test_definition_ids,
-            "value": YNString().process_bind_param(value, None),
+            "value": YNString().process_bind_param(value, None) if status_type in cls._yn_columns else value,
         }
 
         db_session = get_current_session()
@@ -318,7 +323,7 @@ class TestDefinition(Entity):
             SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
         )
         UPDATE test_definitions
-        SET 
+        SET
             {"table_name = :target_table_name," if target_table_name else ""}
             {"column_name = :target_column_name," if target_column_name else ""}
             table_groups_id = :target_table_group,

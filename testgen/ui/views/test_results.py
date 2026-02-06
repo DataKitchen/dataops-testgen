@@ -63,6 +63,7 @@ class TestResultsPage(Page):
         column_name: str | None = None,
         test_type: str | None = None,
         action: str | None = None,
+        flagged: str | None = None,
         **_kwargs,
     ) -> None:
         run = TestRun.get_minimal(run_id)
@@ -86,15 +87,15 @@ class TestResultsPage(Page):
         )
 
         summary_column, score_column, actions_column, export_button_column = st.columns([.3, .15, .3, .15], vertical_alignment="bottom")
-        status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, action_filter_column, sort_column = st.columns(
-            [.175, .2, .2, .175, .15, .1], vertical_alignment="bottom"
+        status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, flagged_filter_column, action_filter_column, sort_column = st.columns(
+            [.15, .175, .175, .15, .1, .15, .1], vertical_alignment="bottom"
         )
 
         testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
 
         filters_changed = False
-        current_filters = (status, table_name, column_name, test_type, action)
+        current_filters = (status, table_name, column_name, test_type, flagged, action)
         if (query_filters := st.session_state.get("test_results:filters")) != current_filters:
             if query_filters:
                 filters_changed = True
@@ -157,6 +158,14 @@ class TestResultsPage(Page):
                 label="Test Type",
             )
 
+        with flagged_filter_column:
+            flagged = testgen.select(
+                options=["Flagged", "Not Flagged"],
+                default_value=flagged,
+                bind_to_query="flagged",
+                label="Flagged",
+            )
+
         with action_filter_column:
             action = testgen.select(
                 options=["✓	Confirmed", "✘	Dismissed", "🔇	Muted", "↩︎	No Action"],
@@ -196,8 +205,9 @@ class TestResultsPage(Page):
         with st.container():
             with st.spinner("Loading data ..."):
                 # Retrieve test results (always cached, action as null)
+                flagged_bool = True if flagged == "Flagged" else False if flagged == "Not Flagged" else None
                 df = test_result_queries.get_test_results(
-                    run_id, status, test_type, table_name, column_name, action, sorting_columns
+                    run_id, status, test_type, table_name, column_name, action, sorting_columns, flagged_bool
                 )
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_test_disposition(run_id)
@@ -222,6 +232,7 @@ class TestResultsPage(Page):
                 "measure_uom",
                 "result_status",
                 "action",
+                "flagged_display",
                 "result_message",
             ],
             [
@@ -232,6 +243,7 @@ class TestResultsPage(Page):
                 "Unit of Measure",
                 "Status",
                 "Action",
+                "Flagged",
                 "Details",
             ],
             id_column="test_result_id",
@@ -293,6 +305,26 @@ class TestResultsPage(Page):
                 if action["button"]:
                     fm.reset_post_updates(
                         do_disposition_update(selected, action["status"]),
+                        as_toast=True,
+                        clear_cache=True,
+                        lst_cached_functions=affected_cached_functions,
+                    )
+
+        if session.auth.user_has_permission("disposition"):
+            flag_actions = [
+                { "icon": "🚩", "help": "Flag test for attention", "value": True, "message": "Flagged" },
+                { "icon": "⌀", "help": "Clear flag", "value": False, "message": "Flag cleared" },
+            ]
+            for flag_action in flag_actions:
+                flag_disabled = not selected or all(sel["flagged"] == flag_action["value"] for sel in selected)
+                flag_action["button"] = actions_column.button(flag_action["icon"], help=flag_action["help"], disabled=flag_disabled)
+
+            for flag_action in flag_actions:
+                if flag_action["button"]:
+                    test_definition_ids = list({row["test_definition_id"] for row in selected})
+                    TestDefinition.set_status_attribute("flagged", test_definition_ids, flag_action["value"])
+                    fm.reset_post_updates(
+                        None,
                         as_toast=True,
                         clear_cache=True,
                         lst_cached_functions=affected_cached_functions,
@@ -441,11 +473,11 @@ def get_test_result_summary(test_run_id: str) -> list[dict]:
 def show_test_def_detail(test_definition_id: str, test_suite: TestSuiteMinimal):
     def readable_boolean(v: bool):
         return "Yes" if v else "No"
-    
+
     if not test_definition_id:
         st.warning("Test definition no longer exists.")
         return
-    
+
     test_definition = TestDefinition.get(test_definition_id)
 
     if test_definition:
@@ -640,6 +672,7 @@ def get_excel_report_data(
         "result_status": {"header": "Status"},
         "result_message": {"header": "Message"},
         "action": {},
+        "flagged_display": {"header": "Flagged"},
     }
     return get_excel_file_data(
         data,
@@ -816,7 +849,7 @@ def source_data_dialog(selected_row):
 
     st.markdown(f"#### {selected_row['test_name_short']}")
     st.caption(selected_row["test_description"])
-    
+
     st.markdown("#### Test Parameters")
     testgen.caption(selected_row["input_parameters"], styles="max-height: 75px; overflow: auto;")
 
