@@ -133,6 +133,7 @@ const TableMonitoringTrend = (props) => {
   if (volumeRange.min === volumeRange.max) {
     volumeRange.max = volumeRange.max + 100;
   }
+  const tickDecimals = (value, range) => (range.max - range.min) < 1 ? 3 : (value >= 1000 ? 0 : 3);
 
   const metricRanges = metricEventGroups.map(group => {
     const predictionKey = `metric:${group.test_definition_id}`;
@@ -549,8 +550,8 @@ const TableMonitoringTrend = (props) => {
           // Volume Chart Y axis
           g(
             { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
-            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min)),
-            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max)),
+            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min, tickDecimals(volumeRange.min, volumeRange))),
+            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max, tickDecimals(volumeRange.max, volumeRange))),
           ),
 
           // Schema Chart Y axis
@@ -565,8 +566,8 @@ const TableMonitoringTrend = (props) => {
             const chartName = `metricTrendChart_${idx}`;
             return g(
               { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking[chartName] + (metricTrendChartHeight / 2)})` },
-              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min)),
-              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max)),
+              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min, tickDecimals(metricChart.range.min, metricChart.range))),
+              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max, tickDecimals(metricChart.range.max, metricChart.range))),
             );
           }),
         ),
