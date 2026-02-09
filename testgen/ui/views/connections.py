@@ -238,8 +238,8 @@ class ConnectionsPage(Page):
     def test_connection(self, connection: Connection) -> "ConnectionStatus":
         empty_cache()
         try:
-            sql_query = "select 1;"
-            results = db.fetch_from_target_db(connection, sql_query)
+            flavor_service = get_flavor_service(connection.sql_flavor)
+            results = db.fetch_from_target_db(connection, flavor_service.test_query)
             connection_successful = len(results) == 1 and results[0][0] == 1
 
             if not connection_successful:
@@ -600,6 +600,12 @@ FLAVOR_OPTIONS = [
         value="mssql",
         flavor="mssql",
         icon=get_asset_data_url("flavors/mssql.svg"),
+    ),
+    ConnectionFlavor(
+        label="Oracle",
+        value="oracle",
+        flavor="oracle",
+        icon=get_asset_data_url("flavors/oracle.svg"),
     ),
     ConnectionFlavor(
         label="PostgreSQL",

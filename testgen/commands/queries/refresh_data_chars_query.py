@@ -99,7 +99,7 @@ class RefreshDataCharsSQL:
             """
 
         return table_criteria
-    
+
     def get_schema_ddf(self) -> tuple[str, dict]:
         # Runs on Target database
         return self._get_query(
@@ -107,7 +107,7 @@ class RefreshDataCharsSQL:
             f"flavors/{self.flavor}/data_chars",
             extra_params={"TABLE_CRITERIA": self._get_table_criteria()},
         )
-    
+
     def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
@@ -118,18 +118,20 @@ class RefreshDataCharsSQL:
         ]
         chunked_queries = chunk_queries(count_queries, " UNION ALL ", self.connection.max_query_chars)
         return [ (query, None) for query in chunked_queries ]
-    
+
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
         quote = self.flavor_service.quote_character
-        query = (
-            f"SELECT 1 FROM {quote}{schema}{quote}.{quote}{table_name}{quote} LIMIT 1"
-            if not self.flavor_service.use_top
-            else f"SELECT TOP 1 * FROM {quote}{schema}{quote}.{quote}{table_name}{quote}"
-        )
+        table_ref = f"{quote}{schema}{quote}.{quote}{table_name}{quote}"
+        if (row_limiting := self.flavor_service.row_limiting_clause) == "top":
+            query = f"SELECT TOP 1 * FROM {table_ref}"
+        elif row_limiting == "fetch":
+            query = f"SELECT 1 FROM {table_ref} FETCH FIRST 1 ROWS ONLY"
+        else:
+            query = f"SELECT 1 FROM {table_ref} LIMIT 1"
         return (query, None)
-    
+
     def get_staging_data_chars(self, data_chars: list[ColumnChars], run_date: datetime) -> list[list[str | bool | int]]:
         return [
             [
@@ -147,7 +149,7 @@ class RefreshDataCharsSQL:
             ]
             for column in data_chars
         ]
-    
+
     def update_data_chars(self, run_date: datetime) -> list[tuple[str, dict]]:
         # Runs on App database
         params = {"RUN_DATE": to_sql_timestamp(run_date)}

@@ -88,6 +88,14 @@ test_types:
     test_operator: NOT BETWEEN
     test_condition: |-
       {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '8016'
+    test_type: Metric_Trend
+    sql_flavor: oracle
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
   target_data_lookups:
   - id: '1484'
     test_id: '1514'
@@ -165,5 +173,16 @@ test_types:
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8514'
+    test_id: '1514'
+    test_type: Metric_Trend
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
     error_type: Test Results
   test_templates: []

@@ -10,7 +10,7 @@ class MssqlFlavorService(FlavorService):
 
     concat_operator = "+"
     escaped_underscore = "[_]"
-    use_top = True
+    row_limiting_clause = "top"
 
     def get_connection_string_head(self):
         return f"mssql+pyodbc://{self.username}:{quote_plus(self.password)}@"
@@ -44,7 +44,7 @@ class MssqlFlavorService(FlavorService):
             ("SET ANSI_DEFAULTS ON;", None),
             ("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;", None),
         ]
-    
+
     def get_connect_args(self):
         connect_args = super().get_connect_args()
         if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:

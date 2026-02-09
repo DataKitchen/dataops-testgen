@@ -4,7 +4,8 @@ from urllib.parse import parse_qs, urlparse
 
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle"]
+RowLimitingClause = Literal["limit", "top", "fetch"]
 
 
 class ConnectionParams(TypedDict):
@@ -34,8 +35,9 @@ class FlavorService:
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
     ddf_table_ref = "table_name"
-    use_top = False
+    row_limiting_clause: RowLimitingClause = "limit"
     default_uppercase = False
+    test_query = "SELECT 1"
 
     def init(self, connection_params: ConnectionParams):
         self.url = connection_params.get("url") or ""

@@ -98,6 +98,14 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8024'
+    test_type: Row_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(*)
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1387'
     test_id: '1031'
@@ -161,5 +169,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 *(current_count - {THRESHOLD_VALUE}) :: FLOAT / {THRESHOLD_VALUE} :: FLOAT,2))  AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE};
+    error_type: Test Results
+  - id: '8024'
+    test_id: '1031'
+    test_type: Row_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, ABS(ROUND(100 * (current_count - {THRESHOLD_VALUE}) / {THRESHOLD_VALUE}, 2)) AS row_count_pct_decrease FROM cte WHERE current_count < {THRESHOLD_VALUE}
     error_type: Test Results
   test_templates: []

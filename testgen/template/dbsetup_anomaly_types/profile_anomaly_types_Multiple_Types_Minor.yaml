@@ -91,3 +91,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type ILIKE 'timestamp%' THEN lower(data_type) WHEN data_type ILIKE 'date' THEN lower(data_type) WHEN data_type ILIKE 'boolean' THEN 'boolean' WHEN data_type = 'TEXT' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type ILIKE 'char%' THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'NUMBER' AND numeric_precision = 38 AND numeric_scale = 0 THEN 'bigint' WHEN data_type ILIKE 'num%' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' || CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1503'
+    test_id: '1004'
+    test_type: Multiple_Types_Minor
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, table_name, CASE WHEN data_type LIKE 'TIMESTAMP%%' THEN LOWER(data_type) WHEN data_type = 'DATE' THEN 'date' WHEN data_type = 'VARCHAR2' THEN 'varchar2(' || data_length || ')' WHEN data_type = 'CHAR' THEN 'char(' || data_length || ')' WHEN data_type = 'NUMBER' AND data_precision IS NULL THEN 'number' WHEN data_type = 'NUMBER' AND data_scale = 0 THEN 'number(' || data_precision || ')' WHEN data_type = 'NUMBER' THEN 'number(' || data_precision || ',' || data_scale || ')' ELSE data_type END AS data_type FROM all_tab_columns WHERE owner = '{TARGET_SCHEMA}' AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly

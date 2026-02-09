@@ -77,3 +77,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1530'
+    test_id: '1100'
+    test_type: Potential_PII
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly

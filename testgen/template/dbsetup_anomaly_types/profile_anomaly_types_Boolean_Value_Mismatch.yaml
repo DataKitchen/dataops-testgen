@@ -83,3 +83,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1514'
+    test_id: '1015'
+    test_type: Boolean_Value_Mismatch
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly

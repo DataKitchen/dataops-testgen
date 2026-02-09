@@ -77,3 +77,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1502'
+    test_id: '1003'
+    test_type: Invalid_Zip_USA
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly

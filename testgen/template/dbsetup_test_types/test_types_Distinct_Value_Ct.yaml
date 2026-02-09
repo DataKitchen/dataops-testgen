@@ -100,6 +100,14 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8008'
+    test_type: Distinct_Value_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1371'
     test_id: '1013'
@@ -161,5 +169,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8008'
+    test_id: '1013'
+    test_type: Distinct_Value_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   test_templates: []

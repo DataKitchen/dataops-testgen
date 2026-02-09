@@ -78,3 +78,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}"::VARCHAR, '.*\\s(and|but|or|yet)\\s.*') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1524'
+    test_id: '1025'
+    test_type: Delimited_Data_Embedded
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE("{COLUMN_NAME}", '^([^,|' || CHR(9) || ']{1,20}[,|' || CHR(9) || ']){2,}[^,|' || CHR(9) || ']{0,20}([,|' || CHR(9) || ']{0,1}[^,|' || CHR(9) || ']{0,20})*$') AND NOT REGEXP_LIKE("{COLUMN_NAME}", '[[:space:]](and|but|or|yet)[[:space:]]') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly

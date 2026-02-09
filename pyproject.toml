@@ -35,6 +35,7 @@ dependencies = [
     "databricks-sdk>=0.20.0",
     "snowflake-sqlalchemy==1.6.1",
     "sqlalchemy-bigquery==1.14.1",
+    "oracledb==3.4.0",
     "pyodbc==5.0.0",
     "psycopg2-binary==2.9.9",
     "pycryptodome==3.21",

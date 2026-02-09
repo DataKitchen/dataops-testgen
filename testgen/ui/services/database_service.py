@@ -63,6 +63,8 @@ def fetch_from_target_db(connection: Connection, query: str, params: dict | None
         **flavor_service.get_engine_args(),
     )
 
-    with engine.connect() as connection:
-        cursor: CursorResult = connection.execute(text(query), params)
+    with engine.connect() as conn:
+        for pre_query, pre_params in flavor_service.get_pre_connection_queries():
+            conn.execute(text(pre_query), pre_params)
+        cursor: CursorResult = conn.execute(text(query), params)
         return cursor.fetchall()

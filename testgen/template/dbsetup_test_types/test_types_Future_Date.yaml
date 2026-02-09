@@ -99,6 +99,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8010'
+    test_type: Future_Date
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN TRUNC({COLUMN_NAME}) >= TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1373'
     test_id: '1015'
@@ -159,5 +167,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - '{TEST_DATE}'::DATE)) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8010'
+    test_id: '1015'
+    test_type: Future_Date
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRUNC("{COLUMN_NAME}") >= TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   test_templates: []

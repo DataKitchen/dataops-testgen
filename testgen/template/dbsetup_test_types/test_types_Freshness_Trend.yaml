@@ -389,3 +389,49 @@ test_types:
           ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
         END AS result_signal
       FROM test_data;
+  - id: '2817'
+    test_type: Freshness_Trend
+    sql_flavor: oracle
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          ROUND((CAST(TO_TIMESTAMP('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS DATE) -
+                 CAST(TO_TIMESTAMP('{BASELINE_SUM}', 'YYYY-MM-DD HH24:MI:SS') AS DATE)) * 24 * 60) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL OR {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}' AND interval_minutes > {UPPER_TOLERANCE} THEN 0
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        CASE
+          -- No change to table, and we're beyond time range: LATE
+          WHEN fingerprint = '{BASELINE_VALUE}' AND interval_minutes > {UPPER_TOLERANCE}
+            THEN 'Table unchanged beyond expected schedule'
+          -- Table changed outside time range: UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT interval_minutes BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+            THEN 'Table changed outside of expected schedule'
+          ELSE 'Interval since last update: ' || COALESCE(TO_CHAR(interval_minutes), 'Unknown')
+        END AS result_message,
+        COALESCE(TO_CHAR(interval_minutes), 'Unknown') AS result_signal
+      FROM test_data

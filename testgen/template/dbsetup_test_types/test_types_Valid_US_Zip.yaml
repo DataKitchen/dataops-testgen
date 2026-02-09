@@ -99,6 +99,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8034'
+    test_type: Valid_US_Zip
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1398'
     test_id: '1044'
@@ -160,5 +168,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8044'
+    test_id: '1044'
+    test_type: Valid_US_Zip
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   test_templates: []

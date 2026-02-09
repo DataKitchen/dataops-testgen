@@ -83,6 +83,7 @@ const defaultPorts = {
     postgresql: '5432',
     snowflake: '443',
     databricks: '443',
+    oracle: '1521',
 };
 
 /**
@@ -234,6 +235,17 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             dynamicConnectionUrl,
         ),
+        oracle: () => OracleForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('oracle_form', isValid);
+            },
+            connection,
+            dynamicConnectionUrl,
+            { dbNameLabel: 'Service Name' },
+        ),
         bigquery: () => BigqueryForm(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -380,6 +392,7 @@ const ConnectionForm = (props, saveButton) => {
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
  * @param {VanState<string?>} dynamicConnectionUrl
+ * @param {{dbNameLabel: string}?} options
  * @returns {HTMLElement}
  */
 const RedshiftForm = (
@@ -388,6 +401,7 @@ const RedshiftForm = (
     onChange,
     originalConnection,
     dynamicConnectionUrl,
+    options,
 ) => {
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
@@ -479,7 +493,7 @@ const RedshiftForm = (
             ),
             Input({
                 name: 'db_name',
-                label: 'Database',
+                label: options?.dbNameLabel || 'Database',
                 value: connectionDatabase,
                 disabled: connectByUrl,
                 onChange: (value, state) => {
@@ -551,6 +565,8 @@ const RedshiftForm = (
 const RedshiftSpectrumForm = RedshiftForm;
 
 const PostgresqlForm = RedshiftForm;
+
+const OracleForm = RedshiftForm;
 
 const AzureMSSQLForm = (
     connection,
