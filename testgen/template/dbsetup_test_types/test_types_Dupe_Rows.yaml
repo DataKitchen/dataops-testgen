@@ -76,7 +76,7 @@ test_types:
       SELECT TOP {LIMIT} {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
                  WHERE {SUBSET_CONDITION}
-               GROUP BY {GROUPBY_NAMES}
+               GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
       ORDER BY {GROUPBY_NAMES}
     error_type: Test Results
@@ -262,7 +262,8 @@ test_types:
         FROM ( SELECT {GROUPBY_NAMES}, COUNT(*) as record_ct
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                  WHERE {SUBSET_CONDITION}
-               GROUP BY {GROUPBY_NAMES}
+               -- Checksum is added because string column grouping is case insensitive
+               GROUP BY {GROUPBY_NAMES}, BINARY_CHECKSUM({GROUPBY_NAMES})
                HAVING COUNT(*) > 1
              ) test;
   - id: '2311'
