@@ -1,18 +1,14 @@
----
-01_sampling: |
-  WITH target_table AS (
-    SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
-  )
-  SELECT
-01_else: |
-  WITH target_table AS (
-    SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
-  )
-  SELECT
-01_all: |
-  {CONNECTION_ID} as connection_id,
-  '{PROJECT_CODE}' as project_code,
-  '{TABLE_GROUPS_ID}' as table_groups_id,
+WITH target_table AS (
+-- TG-IF do_sample
+  SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
+-- TG-ELSE
+  SELECT * FROM `{DATA_SCHEMA}`.`{DATA_TABLE}`
+-- TG-ENDIF
+)
+SELECT
+  {CONNECTION_ID} AS connection_id,
+  '{PROJECT_CODE}' AS project_code,
+  '{TABLE_GROUPS_ID}' AS table_groups_id,
   '{DATA_SCHEMA}' AS schema_name,
   '{RUN_DATE}' AS run_date,
   '{DATA_TABLE}' AS table_name,
@@ -22,49 +18,54 @@
   '{DB_DATA_TYPE}' AS db_data_type,
   '{COL_GEN_TYPE}' AS general_type,
   COUNT(*) AS record_ct,
-
-02_X: |
   COUNT(`{COL_NAME}`) AS value_ct,
   COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
   SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
-02_else: |
-  COUNT(`{COL_NAME}`) AS value_ct,
-  COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
-  SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
-
-03_ADN: MIN(LEN(`{COL_NAME}`))  AS min_length,
-  MAX(LEN(`{COL_NAME}`))  AS max_length,
+-- TG-IF is_type_ADN
+  MIN(LEN(`{COL_NAME}`)) AS min_length,
+  MAX(LEN(`{COL_NAME}`)) AS max_length,
   AVG(CAST(NULLIF(LEN(`{COL_NAME}`), 0) AS FLOAT)) AS avg_length,
-03_else:  NULL as min_length,
-  NULL as max_length,
-  NULL as avg_length,
-
-04_A:  SUM(CASE
+-- TG-ELSE
+  NULL AS min_length,
+  NULL AS max_length,
+  NULL AS avg_length,
+-- TG-ENDIF
+-- TG-IF is_type_A
+  SUM(CASE
         WHEN LTRIM(RTRIM(`{COL_NAME}`)) RLIKE '0([.]0*)' THEN 1 ELSE 0
-      END)  AS zero_value_ct,
-04_N:   CAST(SUM( 1 - ABS(SIGN(`{COL_NAME}`)))AS BIGINT ) AS zero_value_ct,
-04_else: NULL as zero_value_ct,
-
-05_A: COUNT(DISTINCT UPPER(REPLACE(TRANSLATE(`{COL_NAME}`,' '''',.-',REPEAT(' ', LEN(' '''',.-'))),' ',''))) as distinct_std_value_ct,
+      END) AS zero_value_ct,
+-- TG-ENDIF
+-- TG-IF is_type_N
+  CAST(SUM( 1 - ABS(SIGN(`{COL_NAME}`)))AS BIGINT ) AS zero_value_ct,
+-- TG-ENDIF
+-- TG-IF is_not_A_not_N
+  NULL AS zero_value_ct,
+-- TG-ENDIF
+-- TG-IF is_type_A
+  COUNT(DISTINCT UPPER(REPLACE(TRANSLATE(`{COL_NAME}`,' '''',.-',REPEAT(' ', LEN(' '''',.-'))),' ',''))) AS distinct_std_value_ct,
   SUM(CASE
         WHEN `{COL_NAME}` = '' THEN 1
-                             ELSE 0
-      END)  AS zero_length_ct,
-  SUM( CASE
-         WHEN `{COL_NAME}` BETWEEN ' !' AND '!' THEN 1
-                                              ELSE 0
-       END )  AS lead_space_ct,
-  SUM( CASE WHEN `{COL_NAME}` LIKE '"%"' OR `{COL_NAME}` LIKE '\'%\'' THEN 1 ELSE 0 END ) as quoted_value_ct,
-  SUM( CASE WHEN `{COL_NAME}` RLIKE '[0-9]' THEN 1 ELSE 0 END ) as includes_digit_ct,
-  SUM( CASE
-         WHEN `{COL_NAME}` IN ('.', '?') OR `{COL_NAME}` RLIKE '^\s+$' THEN 1
+        ELSE 0
+      END) AS zero_length_ct,
+  SUM(CASE
+        WHEN `{COL_NAME}` BETWEEN ' !' AND '!' THEN 1
+        ELSE 0
+      END) AS lead_space_ct,
+  SUM(CASE WHEN `{COL_NAME}` LIKE '"%"' OR `{COL_NAME}` LIKE '\'%\'' THEN 1 ELSE 0 END) AS quoted_value_ct,
+  SUM(CASE WHEN `{COL_NAME}` RLIKE '[0-9]' THEN 1 ELSE 0 END) AS includes_digit_ct,
+  SUM(CASE
+         WHEN LEN(`{COL_NAME}`) > 0
+          AND ((LEN(REPLACE(`{COL_NAME}`, '.', ''))= 0 )
+                 OR (LEN(REPLACE(`{COL_NAME}`, '-', ''))= 0 )
+                 OR (LEN(REPLACE(`{COL_NAME}`, '?', ''))= 0 )
+                 OR (LEN(REPLACE(`{COL_NAME}`, ' ', ''))= 0 )
+             ) THEN 1
          WHEN LEN(`{COL_NAME}`) > 1
-          AND ( LOWER(`{COL_NAME}`) LIKE '%..%' OR  LOWER(`{COL_NAME}`) RLIKE '--'
-                 OR (LEN(REPLACE(`{COL_NAME}`, '0', ''))= 0 )
+          AND ((LEN(REPLACE(`{COL_NAME}`, '0', ''))= 0 )
                  OR (LEN(REPLACE(`{COL_NAME}`, '9', ''))= 0 )
                  OR (LEN(REPLACE(LOWER(`{COL_NAME}`), 'x', ''))= 0 )
                  OR (LEN(REPLACE(LOWER(`{COL_NAME}`), 'z', ''))= 0 )
-             )  THEN 1
+             ) THEN 1
          WHEN LOWER(`{COL_NAME}`) IN ('blank','error','missing','tbd',
                                     'n/a','#na','none','null','unknown')           THEN 1
          WHEN LOWER(`{COL_NAME}`) IN ('(blank)','(error)','(missing)','(tbd)',
@@ -72,9 +73,9 @@
          WHEN LOWER(`{COL_NAME}`) IN ('[blank]','[error]','[missing]','[tbd]',
                                     '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                    ELSE 0
-       END )   AS filled_value_ct,
-  LEFT(MIN(NULLIF(`{COL_NAME}`, '')), 100)  AS min_text,
-  LEFT(MAX(NULLIF(`{COL_NAME}`, '')), 100)  AS max_text,
+       END) AS filled_value_ct,
+  LEFT(MIN(NULLIF(`{COL_NAME}`, '')), 100) AS min_text,
+  LEFT(MAX(NULLIF(`{COL_NAME}`, '')), 100) AS max_text,
   SUM(CASE
         WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = `{COL_NAME}` THEN 0
         WHEN TRANSLATE(`{COL_NAME}`, 'abcdefghijklmnopqrstuvwxyz', '                          ') = `{COL_NAME}` THEN 1
@@ -89,12 +90,12 @@
         WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = `{COL_NAME}` THEN 1
         ELSE 0
       END) AS non_alpha_ct,
-  COUNT( CASE WHEN TRANSLATE(`{COL_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COL_NAME}` THEN 1 END) as non_printing_ct,
-  SUM(<%IS_NUM;LEFT(`{COL_NAME}`, 31)%>)  AS numeric_ct,
-  SUM(<%IS_DATE;LEFT(`{COL_NAME}`, 26)%>)  AS date_ct,
+  COUNT(CASE WHEN TRANSLATE(`{COL_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COL_NAME}` THEN 1 END) AS non_printing_ct,
+  SUM(<%IS_NUM;LEFT(`{COL_NAME}`, 31)%>) AS numeric_ct,
+  SUM(<%IS_DATE;LEFT(`{COL_NAME}`, 26)%>) AS date_ct,
   CASE
     WHEN CAST(SUM( CASE WHEN UPPER(`{COL_NAME}`) RLIKE '[1-9]{1,5} [A-Z]+ .*'
-         THEN 1 END ) as FLOAT) /CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8  THEN 'STREET_ADDR'
+         THEN 1 END ) AS FLOAT) /CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8  THEN 'STREET_ADDR'
     WHEN CAST(SUM(CASE WHEN `{COL_NAME}` IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'STATE_USA'
     WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '\\+1\\s*\\(?\\d{3}\\)?[-. ]*\\d{3}[-. ]*\\d{4}'
@@ -123,30 +124,32 @@
                                 OR `{COL_NAME}` LIKE '% but %'
                                 OR `{COL_NAME}` LIKE '% or %'
                                 OR `{COL_NAME}` LIKE '% yet %' )
-                         AND COALESCE(CAST(LEN(`{COL_NAME}`) - LEN(REPLACE(`{COL_NAME}`, ',', '')) as FLOAT)
-                              / CAST(NULLIF(LEN(`{COL_NAME}`) - LEN(REPLACE(`{COL_NAME}`, ' ', '')), 0) as FLOAT), 1) > 0.6
+                         AND COALESCE(CAST(LEN(`{COL_NAME}`) - LEN(REPLACE(`{COL_NAME}`, ',', '')) AS FLOAT)
+                              / CAST(NULLIF(LEN(`{COL_NAME}`) - LEN(REPLACE(`{COL_NAME}`, ' ', '')), 0) AS FLOAT), 1) > 0.6
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8 THEN 'DELIMITED_DATA'
     WHEN CAST(SUM ( CASE WHEN `{COL_NAME}` RLIKE '[0-8][0-9][0-9][- ][0-9][0-9][- ][0-9][0-9][0-9][0-9]'
                      AND LEFT(`{COL_NAME}`, 3) NOT BETWEEN '734' AND '749'
                      AND LEFT(`{COL_NAME}`, 3) <> '666' THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'SSN'
-  END as std_pattern_match,
-05_else: NULL as distinct_std_value_ct,
-  NULL as zero_length_ct,
-  NULL as lead_space_ct,
-  NULL as quoted_value_ct,
-  NULL as includes_digit_ct,
-  NULL as filled_value_ct,
-  NULL as min_text,
-  NULL as max_text,
-  NULL as upper_case_ct,
-  NULL as lower_case_ct,
-  NULL as non_alpha_ct,
-  NULL as non_printing_ct,
-  NULL as numeric_ct,
-  NULL as date_ct,
-  NULL as std_pattern_match,
-
-06_A: (SELECT CONCAT_WS(' | ', collect_list(ct_pattern))
+  END AS std_pattern_match,
+-- TG-ELSE
+  NULL AS distinct_std_value_ct,
+  NULL AS zero_length_ct,
+  NULL AS lead_space_ct,
+  NULL AS quoted_value_ct,
+  NULL AS includes_digit_ct,
+  NULL AS filled_value_ct,
+  NULL AS min_text,
+  NULL AS max_text,
+  NULL AS upper_case_ct,
+  NULL AS lower_case_ct,
+  NULL AS non_alpha_ct,
+  NULL AS non_printing_ct,
+  NULL AS numeric_ct,
+  NULL AS date_ct,
+  NULL AS std_pattern_match,
+-- TG-ENDIF
+-- TG-IF is_type_A
+  (SELECT CONCAT_WS(' | ', collect_list(ct_pattern))
         FROM (
                 SELECT
                     TRANSLATE(
@@ -165,33 +168,39 @@
                 ORDER BY ct DESC
                 LIMIT 5
         )) AS top_patterns,
-06_else: NULL as top_patterns,
-
-08_N: MIN(`{COL_NAME}`) AS min_value,
-  MIN(CASE WHEN `{COL_NAME}` > 0 THEN `{COL_NAME}` ELSE NULL END)  AS min_value_over_0,
-  MAX(`{COL_NAME}`)  AS max_value,
+-- TG-ELSE
+  NULL AS top_patterns,
+-- TG-ENDIF
+-- TG-IF is_type_N
+  MIN(`{COL_NAME}`) AS min_value,
+  MIN(CASE WHEN `{COL_NAME}` > 0 THEN `{COL_NAME}` ELSE NULL END) AS min_value_over_0,
+  MAX(`{COL_NAME}`) AS max_value,
   AVG(CAST(`{COL_NAME}` AS FLOAT)) AS avg_value,
   STDDEV_SAMP(CAST(`{COL_NAME}` AS FLOAT)) AS stdev_value,
-  MIN(pct_25) as percentile_25,
-  MIN(pct_50) as percentile_50,
-  MIN(pct_75) as percentile_75,
-08_else: NULL as min_value,
-  NULL as min_value_over_0,
-  NULL as max_value,
-  NULL as avg_value,
-  NULL as stdev_value,
-  NULL as percentile_25,
-  NULL as percentile_50,
-  NULL as percentile_75,
-
-10_N_dec: SUM(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5)) as fractional_sum,
-10_else: NULL as fractional_sum,
-
-11_D:  CASE
+  MIN(pct_25) AS percentile_25,
+  MIN(pct_50) AS percentile_50,
+  MIN(pct_75) AS percentile_75,
+-- TG-ELSE
+  NULL AS min_value,
+  NULL AS min_value_over_0,
+  NULL AS max_value,
+  NULL AS avg_value,
+  NULL AS stdev_value,
+  NULL AS percentile_25,
+  NULL AS percentile_50,
+  NULL AS percentile_75,
+-- TG-ENDIF
+-- TG-IF is_N_decimal
+  SUM(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5)) AS fractional_sum,
+-- TG-ELSE
+  NULL AS fractional_sum,
+-- TG-ENDIF
+-- TG-IF is_type_D
+  CASE
          WHEN MIN(`{COL_NAME}`) IS NULL THEN NULL
-         ELSE CASE WHEN MIN(`{COL_NAME}`) >= CAST('0001-01-01' as date) THEN MIN(`{COL_NAME}`) ELSE CAST('0001-01-01' as date) END
-       END as min_date,
-  MAX(`{COL_NAME}`) as max_date,
+         ELSE CASE WHEN MIN(`{COL_NAME}`) >= CAST('0001-01-01' AS date) THEN MIN(`{COL_NAME}`) ELSE CAST('0001-01-01' AS date) END
+       END AS min_date,
+  MAX(`{COL_NAME}`) AS max_date,
   SUM(CASE
         WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 12 THEN 1
                                                             ELSE 0
@@ -223,53 +232,57 @@
         WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 240 THEN 1
                                                                ELSE 0
       END) AS distant_future_date_ct,
-  COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_days_present,
-  COUNT(DISTINCT <%DATEDIFF_WEEK; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_weeks_present,
-  COUNT(DISTINCT <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) as date_months_present,
-11_else:  NULL as min_date,
-  NULL as max_date,
-  NULL as before_1yr_date_ct,
-  NULL as before_5yr_date_ct,
-  NULL as before_20yr_date_ct,
+  COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) AS date_days_present,
+  COUNT(DISTINCT <%DATEDIFF_WEEK; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) AS date_weeks_present,
+  COUNT(DISTINCT <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) AS date_months_present,
+-- TG-ELSE
+  NULL AS min_date,
+  NULL AS max_date,
+  NULL AS before_1yr_date_ct,
+  NULL AS before_5yr_date_ct,
+  NULL AS before_20yr_date_ct,
   NULL AS before_100yr_date_ct,
-  NULL as within_1yr_date_ct,
-  NULL as within_1mo_date_ct,
-  NULL as future_date_ct,
-  NULL as distant_future_date_ct,
-  NULL as date_days_present,
-  NULL as date_weeks_present,
-  NULL as date_months_present,
-
-12_B: SUM(CAST(`{COL_NAME}` AS INTEGER)) AS boolean_true_ct,
-12_else: NULL as boolean_true_ct,
-
-14_A:  ( SELECT COUNT(DISTINCT TRANSLATE(`{COL_NAME}`,
+  NULL AS within_1yr_date_ct,
+  NULL AS within_1mo_date_ct,
+  NULL AS future_date_ct,
+  NULL AS distant_future_date_ct,
+  NULL AS date_days_present,
+  NULL AS date_weeks_present,
+  NULL AS date_months_present,
+-- TG-ENDIF
+-- TG-IF is_type_B
+  SUM(CAST(`{COL_NAME}` AS INTEGER)) AS boolean_true_ct,
+-- TG-ELSE
+  NULL AS boolean_true_ct,
+-- TG-ENDIF
+-- TG-IF is_type_A
+  (SELECT COUNT(DISTINCT TRANSLATE(`{COL_NAME}`,
                                 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                                 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN'
                               )
              ) AS pattern_ct
   FROM target_table
- WHERE `{COL_NAME}` > ' ' )  AS distinct_pattern_ct,
+ WHERE `{COL_NAME}` > ' ' ) AS distinct_pattern_ct,
   SUM(CAST(SIGN(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ',''))) AS BIGINT)) AS embedded_space_ct,
-  AVG(CAST(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ','')) AS FLOAT))  AS avg_embedded_spaces,
-14_else:  NULL as distinct_pattern_ct,
-  NULL as embedded_space_ct,
-  NULL as avg_embedded_spaces,
-
-16_all: " '{PROFILE_RUN_ID}' as profile_run_id"
-
-98_all: ' FROM target_table'
-
-99_N: |
-     , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
-        FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` LIMIT 1) pctile
-99_N_sampling: |
-     , (SELECT
+  AVG(CAST(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ','')) AS FLOAT)) AS avg_embedded_spaces,
+-- TG-ELSE
+  NULL AS distinct_pattern_ct,
+  NULL AS embedded_space_ct,
+  NULL AS avg_embedded_spaces,
+-- TG-ENDIF
+  '{PROFILE_RUN_ID}' AS profile_run_id
+  FROM target_table
+-- TG-IF is_N_sampling
+  , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
         FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) LIMIT 1 ) pctile
-99_else: ' '
+-- TG-ENDIF
+-- TG-IF is_N_no_sampling
+  , (SELECT
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY `{COL_NAME}`) OVER () AS pct_75
+        FROM `{DATA_SCHEMA}`.`{DATA_TABLE}` LIMIT 1) pctile
+-- TG-ENDIF
