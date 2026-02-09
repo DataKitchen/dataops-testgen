@@ -4,9 +4,9 @@ test_types:
   test_name_short: Value Match
   test_name_long: All column values present in expected list
   test_description: |-
-    Tests that all values in the column match the list-of-values identified in baseline data.
+    Tests that column values match the list of values identified in baseline data.
   except_message: |-
-    Values not matching expected List-of-Values from baseline.
+    Values not matching expected list of values from baseline.
   measure_uom: Non-matching records
   measure_uom_description: null
   selection_criteria: |-

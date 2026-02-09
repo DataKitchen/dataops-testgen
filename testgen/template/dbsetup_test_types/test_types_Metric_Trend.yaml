@@ -4,7 +4,7 @@ test_types:
   test_name_short: Metric Trend
   test_name_long: Aggregate metric is within tolerance range
   test_description: |-
-    Tests that aggregate metric of all or subset of records in a table is within derived tolerance range.
+    Tests that aggregate metric of all or subset of records in a table is within tolerance range.
   except_message: |-
     Aggregate metric is outside expected range.
   measure_uom: Aggregate metric
@@ -22,7 +22,7 @@ test_types:
   default_severity: Fail
   run_type: CAT
   test_scope: table
-  dq_dimension: null
+  dq_dimension: Validity
   health_dimension: null
   threshold_description: |-
     Expected aggregate metric range.

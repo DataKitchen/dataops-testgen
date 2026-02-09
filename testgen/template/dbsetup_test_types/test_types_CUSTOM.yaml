@@ -4,7 +4,7 @@ test_types:
   test_name_short: Custom Test
   test_name_long: Custom-defined business rule
   test_description: |-
-    Custom SQL Query Test
+    Custom SQL Query Test. A highly flexible business-rule test covering any error state that can be expressed by a SQL query against one or more tables in the database.
   except_message: |-
     Errors were detected according to test definition.
   measure_uom: Errors found

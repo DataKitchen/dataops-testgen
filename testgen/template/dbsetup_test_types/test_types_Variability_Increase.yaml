@@ -4,9 +4,9 @@ test_types:
   test_name_short: Variability Increase
   test_name_long: Variability has increased above threshold
   test_description: |-
-    Tests that the spread or dispersion of column values has increased significantly over baseline, indicating a drop in stability of the measure.
+    Tests that the spread or dispersion of column values has increased significantly over baseline, indicating a drop in stability of the measure. This could signal a change in a process or a data quality issue.
   except_message: |-
-    The Standard Deviation of the measure has increased beyond the defined threshold. This could signal a change in a process or a data quality issue.
+    The standard deviation of the measure has increased beyond the defined threshold.
   measure_uom: Pct SD shift
   measure_uom_description: |-
     Percent of baseline Standard Deviation

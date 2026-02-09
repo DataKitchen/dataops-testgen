@@ -4,7 +4,7 @@ test_types:
   test_name_short: Email Format
   test_name_long: Email is correctly formatted
   test_description: |-
-    Tests that non-blank, non-empty email addresses match the standard format
+    Tests that non-blank, non-empty email addresses match standard format.
   except_message: |-
     Invalid email address formats found.
   measure_uom: Invalid emails

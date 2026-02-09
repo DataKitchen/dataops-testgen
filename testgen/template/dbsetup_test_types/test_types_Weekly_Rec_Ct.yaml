@@ -4,9 +4,9 @@ test_types:
   test_name_short: Weekly Records
   test_name_long: At least one date per week present within date range
   test_description: |-
-    Tests for presence of at least one date per calendar week within min/max date range, per baseline data
+    Tests for presence of at least one date per calendar week within minimum and maximum date range, per baseline data.
   except_message: |-
-    At least one date per week expected in min/max date range.
+    Not every week between minimum and maximum date range has at least one date present.
   measure_uom: Missing weeks
   measure_uom_description: |-
     Calendar weeks without date values present

@@ -85,11 +85,12 @@ const Select = (/** @type {Properties} */ props) => {
         optionsFilter.val = event.target.value;
     };
 
-    const showPortal = (/** @type Event */ event) => {
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        opened.val = getValue(props.disabled) ? false : true;
-    };
+    // Reset filtering when closed
+    van.derive(() => {
+        if (!opened.val) {
+            optionsFilter.val = '';
+        }
+    });
 
     van.derive(() => {
         const currentOptions = getValue(options);
@@ -116,7 +117,12 @@ const Select = (/** @type {Properties} */ props) => {
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
             'data-testid': getValue(props.testId) ?? '',
-            onclick: showPortal,
+            onclick: (/** @type Event */ event) => {
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                // Should toggle open/close unless disabled
+                opened.val = getValue(props.disabled) ? false : !opened.val;
+            },
         },
         span(
             { class: 'flex-row fx-gap-1', 'data-testid': 'select-label' },
@@ -145,6 +151,9 @@ const Select = (/** @type {Properties} */ props) => {
                     'data-testid': 'select-input',
                 },
                 () => {
+                    // Hack to display value again when closed
+                    // For some reason, it goes away when opened
+                    opened.val;
                     return div(
                         { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
                         valueIcon.val

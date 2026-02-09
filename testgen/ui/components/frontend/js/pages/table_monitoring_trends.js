@@ -687,7 +687,7 @@ const ChartLegend = (legendGroups) => {
     Object.entries(legendGroups).map(([groupName, { items }]) =>
       div(
         { class: 'chart-legend-group' },
-        span({ class: 'chart-legend-group-label' }, groupName),
+        span({ class: `chart-legend-group-label ${groupName ? '' : 'hidden'}` }, groupName),
         ...items.map(item =>
           div(
             { class: 'chart-legend-item' },
@@ -725,6 +725,7 @@ stylesheet.replace(`
     display: flex;
     flex-wrap: wrap;
     gap: 36px;
+    row-gap: 8px;
     padding: 12px 16px;
     border-top: 1px solid var(--border-color);
     background: var(--dk-dialog-background);

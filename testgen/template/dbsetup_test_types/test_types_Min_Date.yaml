@@ -4,9 +4,9 @@ test_types:
   test_name_short: Minimum Date
   test_name_long: All dates on or after set minimum
   test_description: |-
-    Tests that the earliest date referenced in the column is no earlier than baseline data
+    Tests that earliest date referenced in column is no earlier than baseline data.
   except_message: |-
-    The earliest date value found is before the earliest value at baseline.
+    Earliest date value found is before earliest value at baseline.
   measure_uom: Dates prior to limit
   measure_uom_description: null
   selection_criteria: |-

@@ -4,7 +4,7 @@ test_types:
   test_name_short: Aggregate Balance Percent
   test_name_long: Aggregate measure per group within percent of reference
   test_description: |-
-    Tests that aggregate measure for each set of column values fall within a percent range above or below the measure for reference dataset
+    Tests that aggregate measure for each set of column values falls within a percent range above or below the measure for reference dataset.
   except_message: |-
     Aggregate measure per set of column values is outside percent range of reference dataset.
   measure_uom: Mismatched measures

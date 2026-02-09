@@ -6,7 +6,7 @@ test_types:
   test_description: |-
     Tests that no values for the column are repeated in multiple records.
   except_message: |-
-    Column values should be unique per row.
+    Column values not unique per row.
   measure_uom: Duplicate values
   measure_uom_description: |-
     Count of non-unique values

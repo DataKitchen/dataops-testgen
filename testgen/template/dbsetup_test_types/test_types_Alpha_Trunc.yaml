@@ -4,9 +4,9 @@ test_types:
   test_name_short: Alpha Truncation
   test_name_long: Maximum character count consistent
   test_description: |-
-    Tests that the maximum count of characters in a column value has not dropped vs. baseline data
+    Tests that maximum count of characters in column values has not dropped compared to baseline data.
   except_message: |-
-    Maximum length of values has dropped from prior expected length.
+    Maximum length of values has dropped compared to baseline.
   measure_uom: Values over max
   measure_uom_description: null
   selection_criteria: |-

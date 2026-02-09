@@ -6,7 +6,7 @@ test_types:
   test_description: |-
     Tests that the spread or dispersion of column values has decreased significantly over baseline, indicating a shift in stability of the measure. This could signal a change in a process or a data quality issue.
   except_message: |-
-    The Standard Deviation of the measure has decreased below the defined threshold. This could signal a change in a process or a data quality issue.
+    The standard deviation of the measure has decreased below the defined threshold.
   measure_uom: Pct SD shift
   measure_uom_description: |-
     Percent of baseline Standard Deviation

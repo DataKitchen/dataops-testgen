@@ -4,7 +4,7 @@ test_types:
   test_name_short: Duplicate Rows
   test_name_long: Rows are not duplicated in table
   test_description: |-
-    Tests for the absence of duplicate rows based on unique combination of column values
+    Tests for the absence of duplicate rows based on unique combination of column values.
   except_message: |-
     Column value combinations are duplicated in the table.
   measure_uom: Duplicate records

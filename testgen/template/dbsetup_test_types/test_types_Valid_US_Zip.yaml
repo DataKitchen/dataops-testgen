@@ -4,9 +4,9 @@ test_types:
   test_name_short: Valid US Zip
   test_name_long: Valid USA Postal Codes
   test_description: |-
-    Tests that postal codes match the 5 or 9 digit standard US format
+    Tests that postal codes match the 5-digit or 9-digit standard US formats.
   except_message: |-
-    Invalid US Zip Code formats found.
+    Invalid US zip code formats found.
   measure_uom: Invalid Zip Codes
   measure_uom_description: |-
     Expected count of values with invalid Zip Codes

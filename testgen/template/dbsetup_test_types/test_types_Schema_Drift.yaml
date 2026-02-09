@@ -4,7 +4,7 @@ test_types:
   test_name_short: Schema
   test_name_long: Table Schema Changed
   test_description: |-
-    Checks whether table schema has changed
+    Checks whether table schema has changed.
   except_message: |-
     Table schema has changed.
   measure_uom: Schema changes

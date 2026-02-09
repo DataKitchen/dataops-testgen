@@ -4,9 +4,9 @@ test_types:
   test_name_short: New Shift
   test_name_long: New record mean is consistent with reference
   test_description: |-
-    Tests for statistically-significant shift in mean of new values for column compared to average calculated at baseline.
+    Tests for statistically significant shift in mean of new values for column compared to average calculated at baseline.
   except_message: |-
-    Significant shift in average of new values vs. baseline avg
+    Significant shift in average of new values compared to baseline average.
   measure_uom: Z-score of mean shift
   measure_uom_description: |-
     Absolute Z-score (number of SD's outside mean) of prior avg - incremental avg

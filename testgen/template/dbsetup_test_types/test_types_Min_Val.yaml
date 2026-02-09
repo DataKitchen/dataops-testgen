@@ -4,7 +4,7 @@ test_types:
   test_name_short: Minimum Value
   test_name_long: All values at or above set minimum
   test_description: |-
-    Tests that the minimum value present in the column is no lower than the minimum value in baseline data
+    Tests that minimum value present in column is no lower than minimum value in baseline data.
   except_message: |-
     Minimum column value less than baseline.
   measure_uom: Values under limit

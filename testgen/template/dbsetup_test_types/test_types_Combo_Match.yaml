@@ -4,7 +4,7 @@ test_types:
   test_name_short: Reference Match
   test_name_long: Column values or combinations found in reference
   test_description: |-
-    Tests for the presence of one or a set of column values in a reference table
+    Tests for the presence of one or a set of column values in reference dataset.
   except_message: |-
     Column value combinations are not found in reference table values.
   measure_uom: Missing values

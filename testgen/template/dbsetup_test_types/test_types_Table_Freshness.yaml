@@ -4,7 +4,7 @@ test_types:
   test_name_short: Table Freshness
   test_name_long: Stale Table Not Updated
   test_description: |-
-    Confirms whether table has been updated based on data fingerprint
+    Tests that table has been updated based on data fingerprint.
   except_message: |-
     Table has not been updated.
   measure_uom: Was Change Detected

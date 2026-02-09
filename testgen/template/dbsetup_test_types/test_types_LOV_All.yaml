@@ -4,9 +4,9 @@ test_types:
   test_name_short: Value Match All
   test_name_long: List of expected values all present in column
   test_description: |-
-    Tests that all values match a pipe-delimited list of expected values and that all expected values are present
+    Tests that column values match pipe-delimited list of expected values and that all expected values are present.
   except_message: |-
-    Column values found don't exactly match the expected list of values
+    Column values do not exactly match expected list of values.
   measure_uom: Values found
   measure_uom_description: null
   selection_criteria: null

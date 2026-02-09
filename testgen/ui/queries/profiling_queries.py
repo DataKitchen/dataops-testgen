@@ -195,6 +195,7 @@ def get_tables_by_condition(
         WHERE test_active = 'Y'
             AND column_id IS NULL
         GROUP BY test_defs.table_groups_id,
+            test_defs.schema_name,
             test_defs.table_name
     )
     """ if include_active_tests else ""}

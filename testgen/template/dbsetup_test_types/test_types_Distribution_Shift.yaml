@@ -4,7 +4,7 @@ test_types:
   test_name_short: Distribution Shift
   test_name_long: Probability distribution consistent with reference
   test_description: |-
-    Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test
+    Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test.
   except_message: |-
     Divergence between two distributions exceeds specified threshold.
   measure_uom: Divergence level (0-1)

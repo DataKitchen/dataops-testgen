@@ -82,14 +82,14 @@ VALUES
      '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID,
      '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID,
      'Metric_Trend', '{PROJECT_SCHEMA}', 'f_ebike_sales', 'Average Discount',
-     'AVG(discount_amount)', NULL, NULL, 0, 500, 'Y'),
+     'AVG(discount_amount)', NULL, NULL, 15, 25, 'Y'),
 
     -- Average Product Price
     ('a1b2c3d4-3333-4000-8000-000000000003'::UUID,
      '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID,
      '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID,
      'Metric_Trend', '{PROJECT_SCHEMA}', 'd_ebike_products', 'Average Product Price',
-     'AVG(price)', NULL, NULL, 0, 10000, 'Y'),
+     'AVG(price)', NULL, NULL, 1000, 1500, 'Y'),
 
     -- Max Discount
     ('a1b2c3d4-2006-4000-8000-000000000006'::UUID,

@@ -6,7 +6,7 @@ test_types:
   test_description: |-
     Tests that the count of records is within a percentage above or below the baseline count.
   except_message: |-
-    Row Count is outside of threshold percent of baseline count.
+    Row count is outside of threshold percent of baseline count.
   measure_uom: Percent of baseline
   measure_uom_description: |-
     Row count percent above or below baseline

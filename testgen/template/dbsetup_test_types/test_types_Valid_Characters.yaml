@@ -4,7 +4,7 @@ test_types:
   test_name_short: Valid Characters
   test_name_long: Column contains no invalid characters
   test_description: |-
-    Tests for the presence of non-printing characters, leading spaces, or surrounding quotes.
+    Tests for presence of non-printing characters, leading spaces, or surrounding quotes.
   except_message: |-
     Invalid characters, such as non-printing characters, leading spaces, or surrounding quotes, were found.
   measure_uom: Invalid records

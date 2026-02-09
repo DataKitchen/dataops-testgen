@@ -4,7 +4,7 @@ test_types:
   test_name_short: Aggregate Minimum
   test_name_long: Aggregate values per group are at or above reference
   test_description: |-
-    Tests that aggregate values for each set of column values are at least the same as reference dataset
+    Tests that aggregate values for each set of column values are at least the same as reference dataset.
   except_message: |-
     Aggregate measure per set of column values is not at least the same as reference dataset.
   measure_uom: Mismatched measures

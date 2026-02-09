@@ -5,9 +5,9 @@ test_types:
   test_name_long: Latest timeframe has at least all value combinations from prior
     period
   test_description: |-
-    Tests that column values in most recent time-window include at least same as prior time window
+    Tests that column values in most recent time window include at least same as prior time window.
   except_message: |-
-    Column values in most recent time-window don't include all values in prior window.
+    Column values in most recent time window do not include all values in prior time window.
   measure_uom: Mismatched values
   measure_uom_description: null
   selection_criteria: null
