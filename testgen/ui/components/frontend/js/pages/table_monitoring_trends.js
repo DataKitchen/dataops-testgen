@@ -133,6 +133,7 @@ const TableMonitoringTrend = (props) => {
   if (volumeRange.min === volumeRange.max) {
     volumeRange.max = volumeRange.max + 100;
   }
+  const tickDecimals = (value, range) => (range.max - range.min) < 1 ? 3 : (value >= 1000 ? 0 : 3);
 
   const metricRanges = metricEventGroups.map(group => {
     const predictionKey = `metric:${group.test_definition_id}`;
@@ -193,11 +194,50 @@ const TableMonitoringTrend = (props) => {
 
   const rawTimeline = [...new Set(allTimes)].sort();
   const dateRange = { min: rawTimeline[0] ?? (new Date()).getTime(), max: rawTimeline[rawTimeline.length - 1] ?? (new Date()).getTime() + 1 * 24 * 60 * 60 * 1000 };
-  const timeline = ([
-    new Date(dateRange.min),
-    ...getAdaptiveTimeTicksV2(rawTimeline.slice(2, rawTimeline.length - 2).map(time => new Date(time)), chartsWidth, tickWidth),
-    new Date(dateRange.max),
-  ]).filter((t) => !!t);
+  const toPixelX = (date) => scale(date.getTime(), { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x);
+  const xTickMinSpacing = 65;
+  const timeline = (() => {
+    const adaptiveTicks = getAdaptiveTimeTicksV2(
+      rawTimeline.map(time => new Date(time)),
+      end.x - origin.x,
+      xTickMinSpacing,
+    );
+
+    const seen = new Set();
+    const candidates = [];
+    for (const date of [new Date(dateRange.min), ...adaptiveTicks, new Date(dateRange.max)]) {
+      if (!date) continue;
+      const t = date.getTime();
+      if (!seen.has(t)) {
+        seen.add(t);
+        candidates.push(date);
+      }
+    }
+    candidates.sort((a, b) => a.getTime() - b.getTime());
+
+    if (candidates.length <= 2) return candidates;
+
+    const first = candidates[0];
+    const last = candidates[candidates.length - 1];
+    const firstPx = toPixelX(first);
+    const lastPx = toPixelX(last);
+
+    if (lastPx - firstPx < xTickMinSpacing) return [first];
+
+    const result = [first];
+    let prevPx = firstPx;
+
+    for (let i = 1; i < candidates.length - 1; i++) {
+      const px = toPixelX(candidates[i]);
+      if (px - prevPx >= xTickMinSpacing && lastPx - px >= xTickMinSpacing) {
+        result.push(candidates[i]);
+        prevPx = px;
+      }
+    }
+
+    result.push(last);
+    return result;
+  })();
 
   const parsedFreshnessEvents = freshnessEvents.map((e) => ({
     changed: e.changed,
@@ -549,8 +589,8 @@ const TableMonitoringTrend = (props) => {
           // Volume Chart Y axis
           g(
             { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
-            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min)),
-            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max)),
+            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min, tickDecimals(volumeRange.min, volumeRange))),
+            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max, tickDecimals(volumeRange.max, volumeRange))),
           ),
 
           // Schema Chart Y axis
@@ -565,8 +605,8 @@ const TableMonitoringTrend = (props) => {
             const chartName = `metricTrendChart_${idx}`;
             return g(
               { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking[chartName] + (metricTrendChartHeight / 2)})` },
-              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min)),
-              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max)),
+              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min, tickDecimals(metricChart.range.min, metricChart.range))),
+              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max, tickDecimals(metricChart.range.max, metricChart.range))),
             );
           }),
         ),
