@@ -157,7 +157,7 @@ SELECT
   COUNT(CASE WHEN "{COL_NAME}" > '{RUN_DATE}' THEN 1 END) AS future_date_ct,
   COUNT(CASE WHEN DATEDIFF('MON', '{RUN_DATE}', "{COL_NAME}"::DATE) > 240 THEN 1 END) AS distant_future_date_ct,
   COUNT(DISTINCT DATEDIFF(day, "{COL_NAME}"::DATE, '{RUN_DATE}' ) ) AS date_days_present,
-  COUNT(DISTINCT DATEDIFF(week, "{COL_NAME}"::DATE, '{RUN_DATE}' ) ) AS date_weeks_present,
+  COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";'{RUN_DATE}'%>) AS date_weeks_present,
   COUNT(DISTINCT DATEDIFF(month, "{COL_NAME}"::DATE, '{RUN_DATE}' ) ) AS date_months_present,
 -- TG-ELSE
   NULL AS min_date,

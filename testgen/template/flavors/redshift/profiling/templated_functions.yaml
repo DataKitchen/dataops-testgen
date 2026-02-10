@@ -99,3 +99,4 @@ IS_DATE: CASE
                                ELSE 0
        END
 
+DATEDIFF_WEEK: (DATE_TRUNC('week', {$2}::DATE)::DATE - DATE_TRUNC('week', {$1}::DATE)::DATE) / 7

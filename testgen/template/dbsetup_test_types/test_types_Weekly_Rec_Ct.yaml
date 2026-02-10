@@ -41,7 +41,7 @@ test_types:
     test_type: Weekly_Rec_Ct
     sql_flavor: bigquery
     measure: |-
-      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), WEEK), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), WEEK), WEEK) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, WEEK))
+      DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), ISOWEEK), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), ISOWEEK), ISOWEEK) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, ISOWEEK))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -73,7 +73,7 @@ test_types:
     test_type: Weekly_Rec_Ct
     sql_flavor: redshift
     measure: |-
-      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+      MAX(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>) - MIN(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)+1 - COUNT(DISTINCT <%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -81,7 +81,7 @@ test_types:
     test_type: Weekly_Rec_Ct
     sql_flavor: redshift_spectrum
     measure: |-
-      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+      MAX(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>) - MIN(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)+1 - COUNT(DISTINCT <%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -89,7 +89,7 @@ test_types:
     test_type: Weekly_Rec_Ct
     sql_flavor: snowflake
     measure: |-
-      MAX(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME})) - MIN(DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))+1 - COUNT(DISTINCT DATEDIFF(week, '1800-01-01'::DATE, {COLUMN_NAME}))
+      MAX(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>) - MIN(<%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)+1 - COUNT(DISTINCT <%DATEDIFF_WEEK;'1800-01-01'::DATE;{COLUMN_NAME}%>)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -120,14 +120,14 @@ test_types:
         SELECT week_start AS all_dates
         FROM UNNEST(
           GENERATE_DATE_ARRAY(
-            DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), WEEK),
-            DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), WEEK),
+            DATE_TRUNC((SELECT MIN(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), ISOWEEK),
+            DATE_TRUNC((SELECT MAX(CAST(`{COLUMN_NAME}` AS DATE)) FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), ISOWEEK),
             INTERVAL 7 DAY
           )
         ) AS week_start
       ),
       existing_periods AS (
-        SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), WEEK) AS period, COUNT(1) AS period_count
+        SELECT DISTINCT DATE_TRUNC(CAST(`{COLUMN_NAME}` AS DATE), ISOWEEK) AS period, COUNT(1) AS period_count
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
         GROUP BY period
       ),
