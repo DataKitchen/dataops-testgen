@@ -230,6 +230,7 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
                 str(table_group.id),
                 "&table_name_filter=" if table_name else "",
                 table_name if table_name else "",
+                "&source=email",
             )
         )
         try:
