@@ -4,7 +4,6 @@ from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
-    NotificationEvent,
 )
 from testgen.common.models.project import Project
 from testgen.common.models.settings import PersistedSetting
@@ -174,7 +173,6 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
     notifications = list(MonitorNotificationSettings.select(
         enabled=True,
         test_suite_id=test_run.test_suite_id,
-        event=NotificationEvent.monitor_run,
     ))
     if not notifications:
         return

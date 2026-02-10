@@ -6,6 +6,8 @@ from testgen.commands.run_observability_exporter import (
     calculate_chunk_size,
 )
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture()
 def test_outcome():
@@ -22,7 +24,6 @@ def test_outcome():
     }
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "test_outcomes_length",
     [1, 100, 10000],
@@ -40,7 +41,6 @@ def test_calculate_chunk_size(test_outcome, test_outcomes_length):
     assert 100 < chunk_size < 500
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "profiling_table_set, expected_outcome",
     (
@@ -54,7 +54,6 @@ def test_get_processed_profiling_table_set(profiling_table_set, expected_outcome
     assert expected_outcome == actual_outcome
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     "input_parameters, expected_outcome",
     (

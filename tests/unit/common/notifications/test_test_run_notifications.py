@@ -8,6 +8,8 @@ from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.test_run import send_test_run_notifications
 
+pytestmark = pytest.mark.unit
+
 
 def create_ns(**kwargs):
     with patch("testgen.common.notifications.test_run.TestRunNotificationSettings.save"):

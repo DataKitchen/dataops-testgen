@@ -11,6 +11,8 @@ from testgen.common.models.notification_settings import (
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 
+pytestmark = pytest.mark.unit
+
 
 def create_ns(**kwargs):
     with patch("testgen.common.notifications.profiling_run.ProfilingRunNotificationSettings.save"):
@@ -139,7 +141,7 @@ def test_send_profiling_run_notification(
                         "table_ct": None,
                         "column_ct": None,
                     },
-                    "new_issue_count": new_issue_count,
+                    "issue_count": issue_count,
                     "hygiene_issues_summary": ANY,
                     "notification_trigger": trigger,
                     "project_name": "proj-name",

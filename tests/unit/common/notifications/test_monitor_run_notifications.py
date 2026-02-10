@@ -5,7 +5,6 @@ import pytest
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
-    NotificationEvent,
 )
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
@@ -13,10 +12,12 @@ from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.monitor_run import send_monitor_notifications
 
+pytestmark = pytest.mark.unit
+
 
 def create_monitor_ns(**kwargs):
     with patch("testgen.common.notifications.monitor_run.MonitorNotificationSettings.save"):
-        return MonitorNotificationSettings.create("proj", None, **kwargs)
+        return MonitorNotificationSettings.create("proj", "tg-id", "ts-id", **kwargs)
 
 
 def create_test_result(table_name, test_type, message, result_code=0):
@@ -34,13 +35,11 @@ def ns_select_result():
         create_monitor_ns(
             recipients=["always@example.com"],
             trigger=MonitorNotificationTrigger.on_anomalies,
-            event=NotificationEvent.monitor_run,
         ),
         create_monitor_ns(
             recipients=["filtered@example.com"],
             trigger=MonitorNotificationTrigger.on_anomalies,
-            event=NotificationEvent.monitor_run,
-            settings={"table_name": "users"},
+            table_name="users",
         ),
     ]
 
@@ -130,7 +129,7 @@ def test_send_monitor_notifications(
 
     test_results = []
     for _ in range(freshness_count):
-        test_results.append(create_test_result("orders", "Table_Freshness", "Data is 2 hours old"))
+        test_results.append(create_test_result("orders", "Freshness_Trend", "Data is 2 hours old"))
     for _ in range(schema_count):
         test_results.append(create_test_result("customers", "Schema_Drift", "Column 'status' was removed"))
     for _ in range(volume_count):
@@ -143,8 +142,14 @@ def test_send_monitor_notifications(
             create_monitor_ns(
                 recipients=["filtered@example.com"],
                 trigger=MonitorNotificationTrigger.on_anomalies,
-                event=NotificationEvent.monitor_run,
-                settings={"table_name": table_name_filter},
+                table_name=table_name_filter,
+            ),
+        ]
+    else:
+        ns_select_patched.return_value = [
+            create_monitor_ns(
+                recipients=["always@example.com"],
+                trigger=MonitorNotificationTrigger.on_anomalies,
             ),
         ]
 
@@ -153,7 +158,6 @@ def test_send_monitor_notifications(
     ns_select_patched.assert_called_once_with(
         enabled=True,
         test_suite_id="monitor-suite-id",
-        event=NotificationEvent.monitor_run,
     )
 
     if expected_send_calls > 0:
@@ -233,13 +237,20 @@ def test_send_monitor_notifications_anomaly_counts(
     project_get_mock.return_value = project
 
     test_results = [
-        create_test_result("t1", "Table_Freshness", "msg1"),
-        create_test_result("t2", "Table_Freshness", "msg2"),
+        create_test_result("t1", "Freshness_Trend", "msg1"),
+        create_test_result("t2", "Freshness_Trend", "msg2"),
         create_test_result("t3", "Schema_Drift", "msg3"),
         create_test_result("t4", "Volume_Trend", "msg4"),
         create_test_result("t5", "Volume_Trend", "msg5"),
     ]
     test_result_select_where_mock.return_value = test_results
+
+    ns_select_patched.return_value = [
+        create_monitor_ns(
+            recipients=["always@example.com"],
+            trigger=MonitorNotificationTrigger.on_anomalies,
+        ),
+    ]
 
     send_monitor_notifications(test_run)
 
@@ -276,10 +287,16 @@ def test_send_monitor_notifications_url_construction(
     project.project_name = "Analytics"
     project_get_mock.return_value = project
 
-    test_results = [create_test_result("orders", "Table_Freshness", "stale")]
+    test_results = [create_test_result("orders", "Freshness_Trend", "stale")]
     test_result_select_where_mock.return_value = test_results
 
     # Test without table_name filter
+    ns_select_patched.return_value = [
+        create_monitor_ns(
+            recipients=["always@example.com"],
+            trigger=MonitorNotificationTrigger.on_anomalies,
+        ),
+    ]
     send_monitor_notifications(test_run)
 
     context = send_mock.call_args[0][1]
@@ -292,8 +309,7 @@ def test_send_monitor_notifications_url_construction(
         create_monitor_ns(
             recipients=["filtered@example.com"],
             trigger=MonitorNotificationTrigger.on_anomalies,
-            event=NotificationEvent.monitor_run,
-            settings={"table_name": "users"},
+            table_name="users",
         ),
     ]
 

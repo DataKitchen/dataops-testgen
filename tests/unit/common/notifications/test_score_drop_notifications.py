@@ -7,6 +7,8 @@ from testgen.common.models.notification_settings import ScoreDropNotificationSet
 from testgen.common.models.scores import ScoreDefinition, ScoreDefinitionResult
 from testgen.common.notifications.score_drop import collect_score_notification_data, send_score_drop_notifications
 
+pytestmark = pytest.mark.unit
+
 
 def create_ns(**kwargs):
     with patch("testgen.common.notifications.score_drop.ScoreDropNotificationSettings.save"):
@@ -144,8 +146,8 @@ def test_send_score_drop_notifications_no_match(
     )
 )
 def test_send_score_drop_notifications(
-    total_prev, total_fresh, cde_prev, cde_fresh, triggers, score_definition, db_session_mock, ns_select_result,
-    send_mock,
+    total_prev, total_fresh, cde_prev, cde_fresh, triggers, score_definition, db_session_mock,
+    ns_select_result, send_mock,
 ):
     data = [
         (score_definition, "score", total_prev, total_fresh),

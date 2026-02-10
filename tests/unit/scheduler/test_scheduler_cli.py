@@ -10,6 +10,8 @@ from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy
 from testgen.scheduler.cli_scheduler import CliJob, CliScheduler
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def scheduler_instance() -> CliScheduler:
@@ -77,7 +79,6 @@ def cli_job(job_data):
     yield CliJob(**job_data, delayed_policy=DelayedPolicy.SKIP)
 
 
-@pytest.mark.unit
 def test_get_jobs(scheduler_instance, db_jobs, job_sched):
     db_jobs.return_value = iter([job_sched])
 
@@ -89,7 +90,6 @@ def test_get_jobs(scheduler_instance, db_jobs, job_sched):
         assert getattr(jobs[0], attr) == getattr(job_sched, attr), f"Attribute '{attr}' does not match"
 
 
-@pytest.mark.unit
 def test_job_start(scheduler_instance, cli_job, cmd_mock, popen_mock, popen_proc_mock):
     with patch("testgen.scheduler.cli_scheduler.threading.Thread") as thread_mock:
         scheduler_instance.start_job(cli_job, datetime.now(UTC))
@@ -102,7 +102,6 @@ def test_job_start(scheduler_instance, cli_job, cmd_mock, popen_mock, popen_proc
     thread_mock.assert_called_once_with(target=scheduler_instance._proc_wrapper, args=(popen_proc_mock,))
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("proc_side_effect", (lambda: None, RuntimeError))
 def test_proc_wrapper(proc_side_effect, scheduler_instance):
     with (
@@ -121,7 +120,6 @@ def test_proc_wrapper(proc_side_effect, scheduler_instance):
         cond_mock.notify.assert_called_once()
 
 
-@pytest.mark.unit
 def test_shutdown_no_jobs(scheduler_instance):
     with (
         patch.object(scheduler_instance, "start") as start_mock,
@@ -148,7 +146,6 @@ def test_shutdown_no_jobs(scheduler_instance):
         assert not scheduler_instance._running_jobs
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
 def test_shutdown(scheduler_instance, sig):
     with (

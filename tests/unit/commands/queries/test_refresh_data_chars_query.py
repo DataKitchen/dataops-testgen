@@ -4,8 +4,9 @@ from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQ
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 
+pytestmark = pytest.mark.unit
 
-@pytest.mark.unit
+
 def test_include_exclude_mask_basic():
     connection = Connection(sql_flavor="postgresql")
     table_group = TableGroup(
@@ -26,7 +27,6 @@ def test_include_exclude_mask_basic():
             )""" in query
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("mask", ("", None))
 def test_include_empty_exclude_mask(mask):
     connection = Connection(sql_flavor="snowflake")
@@ -44,7 +44,6 @@ def test_include_empty_exclude_mask(mask):
             )""" in query
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("mask", ("", None))
 def test_include_empty_include_mask(mask):
     connection = Connection(sql_flavor="mssql")

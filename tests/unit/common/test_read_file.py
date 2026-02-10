@@ -4,6 +4,8 @@ import pytest
 
 from testgen.common.read_file import replace_templated_functions
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def query():
@@ -14,7 +16,6 @@ def query():
     """)
 
 
-@pytest.mark.unit
 def test_replace_templated_functions(query):
     fn = replace_templated_functions(query, "postgresql")
 
@@ -27,7 +28,6 @@ def test_replace_templated_functions(query):
     assert fn == expected
 
 
-@pytest.mark.unit
 def test_replace_templated_missing_arg(query):
     query = query.replace(";'1970-01-01'", "")
     with pytest.raises(
