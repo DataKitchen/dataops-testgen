@@ -323,15 +323,17 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
 
+    test_run_url = "".join(
+        (
+            PersistedSetting.get("BASE_URL", ""),
+            "/test-runs:results?run_id=",
+            str(test_run.id),
+        )
+    )
+
     context = {
         "test_run": tr_summary,
-        "test_run_url": "".join(
-            (
-                PersistedSetting.get("BASE_URL", ""),
-                "/test-runs:results?run_id=",
-                str(test_run.id),
-            )
-        ),
+        "test_run_url": test_run_url,
         "test_run_id": str(test_run.id),
         "test_result_summary": [
             {
@@ -340,6 +342,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 "total": test_run.ct_by_status[status],
                 "truncated": test_run.ct_by_status[status] - len(result_list),
                 "result_list": result_list,
+                "test_run_url": test_run_url,
             }
             for status, label in summary_statuses
             if (result_list := result_list_by_status.get(status, None))

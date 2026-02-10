@@ -665,7 +665,8 @@ def write_history_chart_v2(data: pd.DataFrame):
     return testgen.testgen_component(
         "test_results_chart",
         props={
-            "data": data.to_dict("records"),
+            # Fix NaN values
+            "data": json.loads(data.to_json(orient="records")),
         },
     )
 
