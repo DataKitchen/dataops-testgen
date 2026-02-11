@@ -71,6 +71,10 @@ class TableGroupSummary(EntityMinimal):
     monitor_schema_anomalies: int | None
     monitor_volume_anomalies: int | None
     monitor_metric_anomalies: int | None
+    monitor_freshness_has_errors: bool | None
+    monitor_volume_has_errors: bool | None
+    monitor_schema_has_errors: bool | None
+    monitor_metric_has_errors: bool | None
     monitor_freshness_is_training: bool | None
     monitor_volume_is_training: bool | None
     monitor_metric_is_training: bool | None
@@ -266,6 +270,10 @@ class TableGroup(Entity):
                 SUM(CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END) AS schema_anomalies,
                 SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies,
                 SUM(CASE WHEN results.test_type = 'Metric_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS metric_anomalies,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Freshness_Trend' AND ranked_test_runs.position = 1) AS freshness_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Volume_Trend' AND ranked_test_runs.position = 1) AS volume_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Schema_Drift' AND ranked_test_runs.position = 1) AS schema_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Metric_Trend' AND ranked_test_runs.position = 1) AS metric_has_errors,
                 BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Freshness_Trend' AND ranked_test_runs.position = 1) AS freshness_is_training,
                 BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Volume_Trend' AND ranked_test_runs.position = 1) AS volume_is_training,
                 BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Metric_Trend' AND ranked_test_runs.position = 1) AS metric_is_training,
@@ -319,6 +327,10 @@ class TableGroup(Entity):
             monitor_tables.schema_anomalies AS monitor_schema_anomalies,
             monitor_tables.volume_anomalies AS monitor_volume_anomalies,
             monitor_tables.metric_anomalies AS monitor_metric_anomalies,
+            monitor_tables.freshness_has_errors AS monitor_freshness_has_errors,
+            monitor_tables.volume_has_errors AS monitor_volume_has_errors,
+            monitor_tables.schema_has_errors AS monitor_schema_has_errors,
+            monitor_tables.metric_has_errors AS monitor_metric_has_errors,
             monitor_tables.freshness_is_training AS monitor_freshness_is_training,
             monitor_tables.volume_is_training AS monitor_volume_is_training,
             monitor_tables.metric_is_training AS monitor_metric_is_training,

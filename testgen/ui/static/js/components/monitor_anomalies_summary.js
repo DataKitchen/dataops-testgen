@@ -5,6 +5,10 @@
  * @property {number} volume_anomalies
  * @property {number} schema_anomalies
  * @property {number} metric_anomalies
+ * @property {boolean?} freshness_has_errors
+ * @property {boolean?} volume_has_errors
+ * @property {boolean?} schema_has_errors
+ * @property {boolean?} metric_has_errors
  * @property {boolean?} freshness_is_training
  * @property {boolean?} volume_is_training
  * @property {boolean?} metric_is_training
@@ -34,20 +38,28 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
         return span({class: 'text-secondary mt-3 mb-2'}, 'No monitor runs yet');
     }
 
-    const SummaryTag = (label, value, isTraining, isPending) => div(
+    const SummaryTag = (label, value, hasErrors, isTraining, isPending) => div(
         {class: 'flex-row fx-gap-1'},
         div(
-            {class: `flex-row fx-justify-center anomaly-tag ${value > 0 ? 'has-anomalies' : isTraining ? 'is-training' : isPending ? 'is-pending' : ''}`},
+            {class: `flex-row fx-justify-center anomaly-tag ${value > 0 ? 'has-anomalies' : hasErrors ? 'has-errors' : isTraining ? 'is-training' : isPending ? 'is-pending' : ''}`},
             value > 0
                 ? value
-                : isTraining
+                : hasErrors
                     ? withTooltip(
-                        i({class: 'material-symbols-rounded'}, 'more_horiz'),
-                        {text: 'Training model', position: 'top-right'},
+                        i({class: 'material-symbols-rounded'}, 'warning'),
+                        {text: 'Execution error', position: 'top-right'},
                     )
-                    : isPending
-                        ? span({class: 'mr-2'}, '-')
-                        : i({class: 'material-symbols-rounded'}, 'check'),
+                    : isTraining
+                        ? withTooltip(
+                            i({class: 'material-symbols-rounded'}, 'more_horiz'),
+                            {text: 'Training model', position: 'top-right'},
+                        )
+                        : isPending
+                            ? withTooltip(
+                                span({class: 'pl-2 pr-2', style: 'position: relative;'}, '-'),
+                                {text: 'No results yet or not configured'},
+                            )
+                            : i({class: 'material-symbols-rounded'}, 'check'),
         ),
         span({}, label),
     );
@@ -58,10 +70,10 @@ const AnomaliesSummary = (summary, label = 'Anomalies') => {
 
     const contentElement = div(
         {class: 'flex-row fx-gap-5'},
-        SummaryTag('Freshness', summary.freshness_anomalies, summary.freshness_is_training, summary.freshness_is_pending),
-        SummaryTag('Volume', summary.volume_anomalies, summary.volume_is_training, summary.volume_is_pending),
-        SummaryTag('Schema', summary.schema_anomalies, false, summary.schema_is_pending),
-        SummaryTag('Metrics', summary.metric_anomalies, summary.metric_is_training, summary.metric_is_pending),
+        SummaryTag('Freshness', summary.freshness_anomalies, summary.freshness_has_errors, summary.freshness_is_training, summary.freshness_is_pending),
+        SummaryTag('Volume', summary.volume_anomalies, summary.volume_has_errors, summary.volume_is_training, summary.volume_is_pending),
+        SummaryTag('Schema', summary.schema_anomalies, summary.schema_has_errors, false, summary.schema_is_pending),
+        SummaryTag('Metrics', summary.metric_anomalies, summary.metric_has_errors, summary.metric_is_training, summary.metric_is_pending),
     );
 
     if (summary.project_code && summary.table_group_id) {

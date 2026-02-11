@@ -261,6 +261,10 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         SUM(volume_anomalies)::INTEGER AS volume_anomalies,
         SUM(schema_anomalies)::INTEGER AS schema_anomalies,
         SUM(metric_anomalies)::INTEGER AS metric_anomalies,
+        BOOL_OR(freshness_error_message IS NOT NULL) AS freshness_has_errors,
+        BOOL_OR(volume_error_message IS NOT NULL) AS volume_has_errors,
+        BOOL_OR(schema_error_message IS NOT NULL) AS schema_has_errors,
+        BOOL_OR(metric_error_message IS NOT NULL) AS metric_has_errors,
         BOOL_OR(freshness_is_training) AND BOOL_AND(freshness_is_training OR freshness_is_pending) AS freshness_is_training,
         BOOL_OR(volume_is_training) AND BOOL_AND(volume_is_training OR volume_is_pending) AS volume_is_training,
         BOOL_OR(metric_is_training) AND BOOL_AND(metric_is_training OR metric_is_pending) AS metric_is_training,
@@ -286,6 +290,10 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
         "volume_is_pending": False,
         "schema_is_pending": False,
         "metric_is_pending": False,
+        "freshness_has_errors": False,
+        "volume_has_errors": False,
+        "schema_has_errors": False,
+        "metric_has_errors": False,
     }
 
 
@@ -356,7 +364,8 @@ def _monitor_changes_by_tables_query(
             CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
             CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods
+            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods,
+            CASE WHEN results.result_status = 'Error' THEN results.result_message ELSE NULL END AS error_message
         FROM latest_tables
         LEFT JOIN ranked_test_runs ON TRUE
         LEFT JOIN test_results AS results
@@ -381,6 +390,10 @@ def _monitor_changes_by_tables_query(
             SUM(col_adds) AS column_adds,
             SUM(col_drops) AS column_drops,
             SUM(col_mods) AS column_mods,
+            MAX(error_message) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_error_message,
+            MAX(error_message) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_error_message,
+            MAX(error_message) FILTER (WHERE test_type = 'Schema_Drift' AND position = 1) AS schema_error_message,
+            MAX(error_message) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_error_message,
             BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_is_training,
             BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_is_training,
             BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_is_training,
@@ -775,7 +788,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
 
     metric_events: dict[str, dict] = {}
     for event in results:
-        if event["test_type"] == "Metric_Trend" and (definition_id := event["test_definition_id"]):
+        if event["test_type"] == "Metric_Trend" and event["result_status"] != "Error" and (definition_id := event["test_definition_id"]):
             if definition_id not in metric_events:
                 metric_events[definition_id] = {
                     "test_definition_id": definition_id,
@@ -803,7 +816,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "is_pending": not bool(event["result_id"]),
                 "time": event["test_time"],
             }
-            for event in results if event["test_type"] == "Freshness_Trend"
+            for event in results if event["test_type"] == "Freshness_Trend" and event["result_status"] != "Error"
         ],
         "volume_events": [
             {
@@ -814,7 +827,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "is_pending": not bool(event["result_id"]),
                 **params,
             }
-            for event in results if event["test_type"] == "Volume_Trend" and (
+            for event in results if event["test_type"] == "Volume_Trend" and event["result_status"] != "Error" and (
                 params := dict_from_kv(event.get("input_parameters"))
                     or {"lower_tolerance": None, "upper_tolerance": None}
             )
@@ -827,7 +840,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
                 "time": event["test_time"],
                 "window_start": datetime.fromisoformat(signals[4]) if signals[4] else None,
             }
-            for event in results if event["test_type"] == "Schema_Drift"
+            for event in results if event["test_type"] == "Schema_Drift" and event["result_status"] != "Error"
             and (signals := (event["result_signal"] or "|0|0|0|").split("|") or True)
         ],
         "metric_events": list(metric_events.values()),
