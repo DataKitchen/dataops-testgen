@@ -240,6 +240,17 @@ CREATE TABLE test_definitions (
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
 
+CREATE TABLE test_definition_notes (
+   id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+   test_definition_id   UUID NOT NULL REFERENCES test_definitions ON DELETE CASCADE,
+   detail               TEXT NOT NULL,
+   created_by           VARCHAR(100) NOT NULL,
+   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at           TIMESTAMP
+);
+
+CREATE INDEX ix_tdn_tdid ON test_definition_notes(test_definition_id, created_at DESC);
+
 CREATE TABLE profile_results (
    id                    UUID DEFAULT gen_random_uuid()
       CONSTRAINT profile_results_id_pk

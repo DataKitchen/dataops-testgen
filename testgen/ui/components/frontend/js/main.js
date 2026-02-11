@@ -45,6 +45,7 @@ const componentLoaders = {
     monitors_dashboard: () => import('./pages/monitors_dashboard.js').then(m => m.MonitorsDashboard),
     table_monitoring_trends: () => import('./pages/table_monitoring_trends.js').then(m => m.TableMonitoringTrend),
     test_results_chart: () => import('./pages/test_results_chart.js').then(m => m.TestResultsChart),
+    test_definition_notes: () => import('./pages/test_definition_notes.js').then(m => m.TestDefinitionNotes),
     schema_changes_list: () => import('./components/schema_changes_list.js').then(m => m.SchemaChangesList),
     edit_monitor_settings: () => import('./pages/edit_monitor_settings.js').then(m => m.EditMonitorSettings),
 };

@@ -41,7 +41,8 @@ from testgen.ui.queries.source_data_queries import (
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
+from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
+from testgen.ui.views.dialogs.test_definition_notes_dialog import test_definition_notes_dialog
 from testgen.ui.views.test_definitions import show_test_form_by_id
 from testgen.utils import friendly_score, str_to_timestamp
 
@@ -86,12 +87,11 @@ class TestResultsPage(Page):
             ],
         )
 
-        summary_column, score_column, actions_column, export_button_column = st.columns([.3, .15, .3, .15], vertical_alignment="bottom")
+        summary_column, score_column, export_button_column = st.columns([.35, .15, .5], vertical_alignment="bottom")
         status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, flagged_filter_column, action_filter_column, sort_column = st.columns(
             [.15, .175, .175, .15, .1, .15, .1], vertical_alignment="bottom"
         )
 
-        testgen.flex_row_end(actions_column, wrap=True)
         testgen.flex_row_end(export_button_column)
 
         filters_changed = False
@@ -177,6 +177,8 @@ class TestResultsPage(Page):
 
         with sort_column:
             sortable_columns = (
+                ("Flagged", "CASE WHEN td.flagged THEN 0 ELSE 1 END"),
+                ("Has Notes", "CASE WHEN (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) > 0 THEN 0 ELSE 1 END"),
                 ("Table", "LOWER(r.table_name)"),
                 ("Columns/Focus", "LOWER(r.column_names)"),
                 ("Test Type", "r.test_type"),
@@ -185,10 +187,16 @@ class TestResultsPage(Page):
                 ("Status", "result_status"),
                 ("Action", "r.disposition"),
             )
-            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            default = [(sortable_columns[i][1], "ASC") for i in (2, 3, 4)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
-        with actions_column:
+        actions_column, disposition_column = st.columns([.5, .5])
+        testgen.flex_row_start(actions_column)
+        testgen.flex_row_end(disposition_column)
+
+        user_can_edit = session.auth.user_has_permission("edit")
+
+        with disposition_column:
             multi_select = st.toggle(
                 "Multi-Select",
                 help="Toggle on to perform actions on multiple results",
@@ -219,6 +227,18 @@ class TestResultsPage(Page):
                 action_map = df_action.set_index("id")["action"].to_dict()
                 df["action"] = df["test_result_id"].map(action_map).fillna(df["action"])
 
+                def build_review_column(row):
+                    parts = []
+                    if row["action"]:
+                        parts.append(row["action"])
+                    if row["flagged"]:
+                        parts.append("🚩")
+                    if row.get("notes_count", 0) > 0:
+                        parts.append(f"📝{row['notes_count']}")
+                    return " ".join(parts)
+
+                df["review"] = df.apply(build_review_column, axis=1)
+
                 test_suite = TestSuite.get_minimal(run.test_suite_id)
                 table_group = TableGroup.get_minimal(test_suite.table_groups_id)
 
@@ -231,8 +251,7 @@ class TestResultsPage(Page):
                 "result_measure",
                 "measure_uom",
                 "result_status",
-                "action",
-                "flagged_display",
+                "review",
                 "result_message",
             ],
             [
@@ -242,14 +261,14 @@ class TestResultsPage(Page):
                 "Result Measure",
                 "Unit of Measure",
                 "Status",
-                "Action",
-                "Flagged",
+                "Review",
                 "Details",
             ],
             id_column="test_result_id",
             selection_mode="multiple" if multi_select else "single",
             reset_pagination=filters_changed,
             bind_to_query=True,
+            column_styles={"review": {"textAlign": "center", "fontSize": "1.1em"}},
         )
 
         popover_container = export_button_column.empty()
@@ -282,6 +301,91 @@ class TestResultsPage(Page):
         # Need to render toolbar buttons after grid, so selection status is maintained
         affected_cached_functions = [get_test_disposition, test_result_queries.get_test_results]
 
+        # === Action buttons (left side, near the grid) ===
+
+        if actions_column.button(
+            ":material/sticky_note_2: Notes",
+            disabled=not selected or len(selected) != 1,
+            help="View and add notes for this test definition",
+        ):
+            row = selected[0]
+            test_definition_notes_dialog(
+                str(row["test_definition_id"]),
+                {"table": row["table_name"], "column": row["column_names"], "test": row["test_name_short"]},
+            )
+
+        if actions_column.button(
+            ":material/edit: Edit Test",
+            disabled=not selected_row or not user_can_edit,
+            help="Edit the Test Definition",
+        ):
+            show_test_form_by_id(selected_row["test_definition_id"])
+
+        if actions_column.button(
+            ":material/visibility: Source Data",
+            disabled=not selected_row,
+            help="View current source data for highlighted result",
+        ):
+            MixpanelService().send_event(
+                "view-source-data",
+                page=PAGE_PATH,
+                test_type=selected_row["test_name_short"],
+            )
+            source_data_dialog(selected_row)
+
+        can_view_profiling = (
+            selected_row
+            and selected_row.get("test_scope") == "column"
+            and selected_row.get("column_names") not in (None, "(multi-column)", "N/A")
+            and selected_row.get("table_name") not in (None, "(multi-table)")
+        )
+        if actions_column.button(
+            ":material/insert_chart: Profiling",
+            disabled=not can_view_profiling,
+            help="View profiling for highlighted column",
+        ):
+            profiling_results_dialog(
+                selected_row["column_names"],
+                selected_row["table_name"],
+                selected_row["table_groups_id"],
+            )
+
+        report_eligible_rows = [
+            row for row in selected
+            if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
+        ] if selected else []
+        report_btn_help = (
+            "Generate PDF reports for the selected results that are not muted or dismissed and are not Passed"
+            if multi_select
+            else "Generate PDF report for selected result"
+        )
+        if actions_column.button(
+            ":material/download: Issue Report",
+            disabled=not report_eligible_rows,
+            help=report_btn_help,
+        ):
+            MixpanelService().send_event(
+                "download-issue-report",
+                page=PAGE_PATH,
+                issue_count=len(report_eligible_rows),
+            )
+            dialog_title = "Download Issue Report"
+            if len(report_eligible_rows) == 1:
+                download_dialog(
+                    dialog_title=dialog_title,
+                    file_content_func=get_report_file_data,
+                    args=(report_eligible_rows[0],),
+                )
+            else:
+                zip_func = zip_multi_file_data(
+                    "testgen_test_issue_reports.zip",
+                    get_report_file_data,
+                    [(arg,) for arg in selected],
+                )
+                download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
+
+        # === Disposition buttons (right side) ===
+
         disposition_actions = [
             { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
             { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
@@ -298,7 +402,7 @@ class TestResultsPage(Page):
                     or sel["result_status"] == "Passed"
                     for sel in selected
                 )
-                action["button"] = actions_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
+                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=disable_dispo)
 
             # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
             for action in disposition_actions:
@@ -317,7 +421,7 @@ class TestResultsPage(Page):
             ]
             for flag_action in flag_actions:
                 flag_disabled = not selected or all(sel["flagged"] == flag_action["value"] for sel in selected)
-                flag_action["button"] = actions_column.button(flag_action["icon"], help=flag_action["help"], disabled=flag_disabled)
+                flag_action["button"] = disposition_column.button(flag_action["icon"], help=flag_action["help"], disabled=flag_disabled)
 
             for flag_action in flag_actions:
                 if flag_action["button"]:
@@ -335,14 +439,8 @@ class TestResultsPage(Page):
         with score_column:
             render_score(run.project_code, run_id)
 
-        if selected:
-            render_selected_details(
-                selected,
-                selected_row,
-                test_suite,
-                session.auth.user_has_permission("edit"),
-                multi_select,
-            )
+        if selected_row:
+            render_selected_details(selected_row, test_suite)
 
         # Help Links
         st.markdown("[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)")
@@ -541,109 +639,34 @@ def show_test_def_detail(test_definition_id: str, test_suite: TestSuiteMinimal):
 
 @with_database_session
 def render_selected_details(
-    selected_rows: list[dict],
     selected_item: dict,
     test_suite: TestSuiteMinimal,
-    user_can_edit: bool,
-    multi_select: bool = False,
 ) -> None:
-    if not selected_rows:
-        st.markdown(":orange[Select a record to see more information.]")
-    else:
-        pg_col1, pg_col2 = st.columns([0.5, 0.5])
+    dfh = test_result_queries.get_test_result_history(selected_item)
+    show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
 
-        with pg_col2:
-            v_col1, v_col2, v_col3, v_col4 = st.columns([.25, .25, .25, .25])
+    time_columns = ["test_date"]
+    date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
 
-        if selected_item:
-            dfh = test_result_queries.get_test_result_history(selected_item)
-            show_hist_columns = ["test_date", "threshold_value", "result_measure", "result_status"]
+    pg_col1, pg_col2 = st.columns([0.5, 0.5])
 
-            time_columns = ["test_date"]
-            date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
-
-            if user_can_edit:
-                view_edit_test(v_col1, selected_item["test_definition_id"])
-
-            if selected_item["test_scope"] == "column":
-                with v_col2:
-                    view_profiling_button(
-                        selected_item["column_names"],
-                        selected_item["table_name"],
-                        selected_item["table_groups_id"],
-                    )
-
-            with v_col3:
-                if st.button(
-                        ":material/visibility: Source Data", help="View current source data for highlighted result",
-                        use_container_width=True
-                ):
-                    MixpanelService().send_event(
-                        "view-source-data",
-                        page=PAGE_PATH,
-                        test_type=selected_item["test_name_short"],
-                    )
-                    source_data_dialog(selected_item)
-
-        with v_col4:
-
-            report_eligible_rows = [
-                row for row in selected_rows
-                if row["result_status"] != "Passed" and row["disposition"] in (None, "Confirmed")
-            ]
-
-            if multi_select:
-                report_btn_help = (
-                    "Generate PDF reports for the selected results that are not muted or dismissed and are not Passed"
-                )
+    with pg_col1:
+        fm.show_subheader(selected_item["test_name_short"])
+        st.markdown(f"###### {selected_item['test_description']}")
+        if selected_item["measure_uom_description"]:
+            st.caption(selected_item["measure_uom_description"])
+        if selected_item["result_message"]:
+            st.caption(selected_item["result_message"].replace("*", "\\*"))
+        fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled", key="test_history")
+    with pg_col2:
+        ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
+        with ut_tab1:
+            if dfh.empty:
+                st.write("Test history not available.")
             else:
-                report_btn_help = "Generate PDF report for selected result"
-
-            if st.button(
-                ":material/download: Issue Report",
-                use_container_width=True,
-                disabled=not report_eligible_rows,
-                help=report_btn_help,
-            ):
-                MixpanelService().send_event(
-                    "download-issue-report",
-                    page=PAGE_PATH,
-                    issue_count=len(report_eligible_rows),
-                )
-                dialog_title = "Download Issue Report"
-                if len(report_eligible_rows) == 1:
-                    download_dialog(
-                        dialog_title=dialog_title,
-                        file_content_func=get_report_file_data,
-                        args=(report_eligible_rows[0],),
-                    )
-                else:
-                    zip_func = zip_multi_file_data(
-                        "testgen_test_issue_reports.zip",
-                        get_report_file_data,
-                        [(arg,) for arg in selected_rows],
-                    )
-                    download_dialog(dialog_title=dialog_title, file_content_func=zip_func)
-
-        if selected_item:
-            with pg_col1:
-                fm.show_subheader(selected_item["test_name_short"])
-                st.markdown(f"###### {selected_item['test_description']}")
-                if selected_item["measure_uom_description"]:
-                    st.caption(selected_item["measure_uom_description"])
-                if selected_item["result_message"]:
-                    st.caption(selected_item["result_message"].replace("*", "\\*"))
-                fm.render_grid_select(dfh, show_hist_columns, selection_mode="disabled", key="test_history")
-            with pg_col2:
-                ut_tab1, ut_tab2 = st.tabs(["History", "Test Definition"])
-                with ut_tab1:
-                    if dfh.empty:
-                        st.write("Test history not available.")
-                    else:
-                        # write_history_graph(dfh)
-                        write_history_chart_v2(dfh)
-                with ut_tab2:
-                    show_test_def_detail(selected_item["test_definition_id"], test_suite)
+                write_history_chart_v2(dfh)
+        with ut_tab2:
+            show_test_def_detail(selected_item["test_definition_id"], test_suite)
 
 
 @with_database_session
@@ -886,13 +909,6 @@ def source_data_dialog(selected_row):
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, width=1050, hide_index=True)
-
-
-def view_edit_test(button_container, test_definition_id):
-    if test_definition_id:
-        with button_container:
-            if st.button(":material/edit: Edit Test", help="Edit the Test Definition", use_container_width=True):
-                show_test_form_by_id(test_definition_id)
 
 
 def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:

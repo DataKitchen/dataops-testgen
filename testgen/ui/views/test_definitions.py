@@ -7,7 +7,8 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import and_, asc, desc, func, or_, tuple_
+from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
+from sqlalchemy import select as sa_select
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -17,7 +18,7 @@ from testgen.common.database.database_service import get_flavor_service, replace
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal, TestDefinitionNote
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -33,6 +34,7 @@ from testgen.ui.services.string_service import empty_if_null, snake_case_to_titl
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
+from testgen.ui.views.dialogs.test_definition_notes_dialog import test_definition_notes_dialog
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -135,11 +137,13 @@ class TestDefinitionsPage(Page):
 
         with sort_column:
             sortable_columns = (
+                ("Flagged", "flagged"),
+                ("Has Notes", "notes_count"),
                 ("Table", "table_name"),
                 ("Column", "column_name"),
                 ("Test Type", "test_type"),
             )
-            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            default = [(sortable_columns[i][1], "ASC") for i in (2, 3, 4)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         if user_can_disposition:
@@ -225,6 +229,17 @@ class TestDefinitionsPage(Page):
                             lst_cached_functions=[],
                         )
 
+        if actions_column.button(
+            ":material/sticky_note_2: Notes",
+            disabled=not selected or len(selected) != 1,
+            help="View and add notes for this test definition",
+        ):
+            row = selected[0]
+            test_definition_notes_dialog(
+                str(row["id"]),
+                {"table": row["table_name"], "column": row["column_name"], "test": row["test_name_short"]},
+            )
+
         if user_can_edit:
             if actions_column.button(
                 ":material/edit: Edit",
@@ -256,6 +271,7 @@ def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> 
         "test_active_display",
         "lock_refresh_display",
         "flagged_display",
+        "notes_display",
         "urgency",
         "export_to_observability_display",
         "profiling_as_of_date",
@@ -274,6 +290,7 @@ def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> 
             "Active",
             "Locked",
             "Flagged",
+            "Notes",
             "Urgency",
             "Export to Observabilty",
             "Based on Profiling",
@@ -1258,12 +1275,30 @@ def get_test_definitions(
         clauses.append(TestDefinition.flagged == False)
 
     sort_funcs = {"ASC": asc, "DESC": desc}
+
+    notes_count_expr = (
+        sa_select(func.count(TestDefinitionNote.id))
+        .where(TestDefinitionNote.test_definition_id == TestDefinition.id)
+        .correlate(TestDefinition)
+        .scalar_subquery()
+    )
+
+    sort_expressions = {
+        "flagged": lambda d: sort_funcs[d](case((TestDefinition.flagged == True, 0), else_=1)),
+        "notes_count": lambda d: sort_funcs[d](case((notes_count_expr > 0, 0), else_=1)),
+    }
+
+    order_by = []
+    if sorting_columns:
+        for (attribute, direction) in sorting_columns:
+            if attribute in sort_expressions:
+                order_by.append(sort_expressions[attribute](direction))
+            else:
+                order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
+
     test_definitions = TestDefinition.select_where(
         *clauses,
-        order_by=tuple([
-            sort_funcs[direction](func.lower(getattr(TestDefinition, attribute)))
-            for (attribute, direction) in sorting_columns
-        ]) if sorting_columns else None,
+        order_by=tuple(order_by) if order_by else None,
     )
 
     df = to_dataframe(test_definitions)
@@ -1274,6 +1309,13 @@ def get_test_definitions(
     df["test_active_display"] = df["test_active"].apply(lambda value: "Yes" if value else "No")
     df["lock_refresh_display"] = df["lock_refresh"].apply(lambda value: "Yes" if value else "No")
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+
+    if not df.empty:
+        notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in df["id"]])
+        df["notes_count"] = df["id"].map(notes_counts).fillna(0).astype(int)
+    else:
+        df["notes_count"] = pd.Series(dtype=int)
+    df["notes_display"] = df["notes_count"].apply(lambda x: f"📝 {x}" if x > 0 else "")
     df["urgency"] = df.apply(lambda row: row["severity"] or test_suite.severity or row["default_severity"], axis=1)
     df["final_test_description"] = df.apply(lambda row: row["test_description"] or row["default_test_description"], axis=1)
     df["export_uom"] = df.apply(lambda row: row["measure_uom_description"] or row["measure_uom"], axis=1)

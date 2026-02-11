@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import streamlit as st
 from sqlalchemy import (
@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     asc,
+    delete,
     func,
     insert,
     select,
@@ -23,7 +24,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.models import get_current_session
+from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestamp, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
@@ -406,3 +407,70 @@ class TestDefinition(Entity):
             super().save()
 
         TestDefinition.clear_cache()
+
+
+class TestDefinitionNote(Base):
+    __tablename__ = "test_definition_notes"
+
+    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    test_definition_id: UUID = Column(
+        postgresql.UUID(as_uuid=True), ForeignKey("test_definitions.id", ondelete="CASCADE"), nullable=False
+    )
+    detail: str = Column(Text, nullable=False)
+    created_by: str = Column(String(100), nullable=False)
+    created_at: datetime = Column(postgresql.TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: datetime = Column(postgresql.TIMESTAMP)
+
+    @classmethod
+    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> None:
+        db_session = get_current_session()
+        db_session.execute(
+            insert(cls).values(test_definition_id=test_definition_id, detail=detail, created_by=username)
+        )
+        db_session.commit()
+
+    @classmethod
+    def update_note(cls, note_id: str | UUID, detail: str) -> None:
+        db_session = get_current_session()
+        db_session.execute(
+            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now())
+        )
+        db_session.commit()
+
+    @classmethod
+    def delete_note(cls, note_id: str | UUID) -> None:
+        db_session = get_current_session()
+        db_session.execute(delete(cls).where(cls.id == note_id))
+        db_session.commit()
+
+    @classmethod
+    def get_notes_count_by_ids(cls, test_definition_ids: list[str]) -> dict[str, int]:
+        """Returns {test_definition_id: count} for all given IDs."""
+        db_session = get_current_session()
+        rows = db_session.execute(
+            text("""
+                SELECT test_definition_id::VARCHAR, COUNT(*) as cnt
+                FROM test_definition_notes
+                WHERE test_definition_id = ANY(:ids)
+                GROUP BY test_definition_id
+            """),
+            {"ids": [UUID(td_id) for td_id in test_definition_ids]},
+        ).all()
+        return {str(row[0]): row[1] for row in rows}
+
+    @classmethod
+    def get_notes(cls, test_definition_id: str | UUID) -> list[dict]:
+        db_session = get_current_session()
+        results = db_session.execute(
+            select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
+        ).scalars().all()
+        return [
+            {
+                "id": str(note.id),
+                "detail": note.detail,
+                "created_by": note.created_by,
+                "created_at": note.created_at.isoformat() if note.created_at else None,
+                "updated_at": note.updated_at.isoformat() if note.updated_at else None,
+            }
+            for note in results
+        ]

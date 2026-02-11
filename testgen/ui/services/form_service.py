@@ -151,6 +151,7 @@ def render_grid_select(
     reset_pagination: bool = False,
     bind_to_query: bool = False,
     render_highlights: bool = True,
+    column_styles: dict[str, dict] | None = None,
     key: str = "aggrid",
 ) -> tuple[list[dict], dict]:
     """
@@ -343,6 +344,8 @@ function(params) {
 
             # Merge common and date-time specific kwargs
             all_kwargs = {**common_kwargs, **date_time_kwargs}
+        elif column_styles and column in column_styles:
+            all_kwargs = {**common_kwargs, "cellStyle": column_styles[column]}
         else:
             if render_highlights == True:
                 # Merge common and highlight-specific kwargs
@@ -394,14 +397,14 @@ function(params) {
             selection.update([row[id_column] for row in selected_rows])
             st.session_state[f"{key}_multiselection"] = selection
 
-        if selection:    
+        if selection:
             # We need to get the data from the original dataframe
             # Otherwise changes to the dataframe (e.g., editing the current selection) do not get reflected in the returned rows
             # Adding "modelUpdated" to AgGrid(update_on=...) does not work
             # because it causes unnecessary reruns that cause dialogs to close abruptly
             selected_df = df[df[id_column].isin(selection)]
             selected_data = json.loads(selected_df.to_json(orient="records"))
-            
+
             selected_id, selected_item = None, None
             if selected_rows:
                 selected_id = selected_rows[len(selected_rows) - 1][id_column]
@@ -414,5 +417,5 @@ function(params) {
                     testgen.caption(f"{count} item{'s' if count != 1 else ''} selected")
 
             return selected_data, selected_item
-    
+
     return None, None
