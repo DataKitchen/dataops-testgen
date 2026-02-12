@@ -91,7 +91,7 @@ def test_update_timestamp():
 @patch("testgen.common.encrypt.settings")
 def test_encrypted_bytea_roundtrip(mock_settings):
     mock_settings.APP_ENCRYPTION_SALT = "testsalt12345678"
-    mock_settings.APP_ENCRYPTION_SECRET = "testsecret123456"
+    mock_settings.APP_ENCRYPTION_SECRET = "testsecret123456"  # noqa: S105
 
     t = EncryptedBytea()
     original = "sensitive data"
@@ -115,7 +115,7 @@ def test_encrypted_bytea_none(mock_settings):
 @patch("testgen.common.encrypt.settings")
 def test_encrypted_json_roundtrip(mock_settings):
     mock_settings.APP_ENCRYPTION_SALT = "testsalt12345678"
-    mock_settings.APP_ENCRYPTION_SECRET = "testsecret123456"
+    mock_settings.APP_ENCRYPTION_SECRET = "testsecret123456"  # noqa: S105
 
     t = EncryptedJson()
     original = {"key": "value", "num": 42, "list": [1, 2, 3]}

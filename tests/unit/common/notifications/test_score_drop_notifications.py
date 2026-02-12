@@ -171,7 +171,7 @@ def test_send_score_drop_notifications(
                 {
                     "project_name": "Test Project",
                     "definition": score_definition,
-                    "scorecard_url": "http://tg-base-url/quality-dashboard:score-details?definition_id=sd-1",
+                    "scorecard_url": "http://tg-base-url/quality-dashboard:score-details?definition_id=sd-1&source=email",
                     "diff": [
                         {**expected_total_diff, "notify": total_triggers},
                         {**expected_cde_diff, "notify": cde_triggers},

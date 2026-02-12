@@ -301,7 +301,7 @@ def test_send_monitor_notifications_url_construction(
 
     context = send_mock.call_args[0][1]
     assert context["view_in_testgen_url"] == (
-        "http://tg-base-url/monitors?project_code=proj-abc&table_group_id=tg-123"
+        "http://tg-base-url/monitors?project_code=proj-abc&table_group_id=tg-123&source=email"
     )
 
     send_mock.reset_mock()
@@ -317,6 +317,6 @@ def test_send_monitor_notifications_url_construction(
 
     context = send_mock.call_args[0][1]
     assert context["view_in_testgen_url"] == (
-        "http://tg-base-url/monitors?project_code=proj-abc&table_group_id=tg-123&table_name_filter=users"
+        "http://tg-base-url/monitors?project_code=proj-abc&table_group_id=tg-123&table_name_filter=users&source=email"
     )
     assert context["summary"]["table_name"] == "users"

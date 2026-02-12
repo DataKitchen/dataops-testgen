@@ -2,10 +2,8 @@ import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
-from unittest.mock import patch
 from uuid import UUID
 
-import pandas as pd
 import pytest
 
 from testgen.utils import (

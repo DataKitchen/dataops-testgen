@@ -35,3 +35,8 @@ def test_replace_templated_missing_arg(query):
         match="Templated function call missing required arguments: <%DATEDIFF_YEAR;'{COL_NAME}'::DATE%>",
     ):
         replace_templated_functions(query, "postgresql")
+
+
+def test_replace_templated_functions_no_templates():
+    plain_query = "SELECT col1, col2 FROM my_table WHERE id = 1"
+    assert replace_templated_functions(plain_query, "postgresql") == plain_query

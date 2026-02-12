@@ -55,6 +55,34 @@ def now_5_min_ahead(scheduler_instance, base_time):
         yield now_func
 
 
+def test_get_triggering_times_every_5_min():
+    job = Job(cron_expr="*/5 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 9, 0, 0, tzinfo=UTC)
+    times = list(islice(job.get_triggering_times(base), 5))
+    minutes = [t.minute for t in times]
+    # cron_converter yields starting at base time, then increments
+    assert minutes == [0, 5, 10, 15, 20]
+    assert all(t.hour == 9 for t in times)
+
+
+def test_get_triggering_times_hourly():
+    job = Job(cron_expr="0 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 9, 30, 0, tzinfo=UTC)
+    times = list(islice(job.get_triggering_times(base), 3))
+    hours = [t.hour for t in times]
+    assert hours == [10, 11, 12]
+    assert all(t.minute == 0 for t in times)
+
+
+def test_get_triggering_times_timezone():
+    job = Job(cron_expr="0 9 * * *", cron_tz="America/New_York", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 12, 0, 0, tzinfo=UTC)  # 8 AM ET (EDT)
+    times = list(islice(job.get_triggering_times(base), 2))
+    # 9 AM ET = 13:00 UTC (during EDT)
+    assert times[0].astimezone(UTC).hour == 13
+    assert times[1].astimezone(UTC).hour == 13
+
+
 def test_getting_jobs_wont_crash(scheduler_instance, base_time):
     scheduler_instance.get_jobs.side_effect = Exception
     scheduler_instance.start(base_time)
