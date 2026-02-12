@@ -13,7 +13,7 @@ def patched_settings():
         yield mock
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def db_session_mock():
     with patch("testgen.common.models.Session") as factory_mock:
         yield factory_mock().__enter__()

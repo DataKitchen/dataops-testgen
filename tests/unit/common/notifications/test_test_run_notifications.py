@@ -8,6 +8,8 @@ from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.test_run import send_test_run_notifications
 
+pytestmark = pytest.mark.unit
+
 
 def create_ns(**kwargs):
     with patch("testgen.common.notifications.test_run.TestRunNotificationSettings.save"):
@@ -97,6 +99,7 @@ def select_summary_mock():
     ),
     [
         ("Complete", 0, 0, 0, {}, 0, 0, 0, ["always"]),
+        ("Complete", 0, 5, 0, {}, 0, 5, 0, ["always", "on_warnings"]),
         ("Complete", 1, 1, 1, {}, 1, 1, 1, ["always", "on_failures", "on_warnings"]),
         ("Complete", 50, 50, 50, {"failed": 2, "warning": 3}, 10, 5, 5, [
             "always", "on_failures", "on_warnings", "on_changes",
@@ -171,7 +174,7 @@ def test_send_test_run_notification(
 
     expected_context = {
         "test_run": summary,
-        "test_run_url": "http://tg-base-url/test-runs:results?run_id=tr-id",
+        "test_run_url": "http://tg-base-url/test-runs:results?run_id=tr-id&source=email",
         "test_run_id": "tr-id",
         "test_result_summary": ANY,
     }

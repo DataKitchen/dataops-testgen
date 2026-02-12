@@ -8,6 +8,8 @@ import pytest
 
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 
+pytestmark = pytest.mark.unit
+
 
 @contextmanager
 def assert_finishes_within(**kwargs):
@@ -53,7 +55,34 @@ def now_5_min_ahead(scheduler_instance, base_time):
         yield now_func
 
 
-@pytest.mark.unit
+def test_get_triggering_times_every_5_min():
+    job = Job(cron_expr="*/5 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 9, 0, 0, tzinfo=UTC)
+    times = list(islice(job.get_triggering_times(base), 5))
+    minutes = [t.minute for t in times]
+    # cron_converter yields starting at base time, then increments
+    assert minutes == [0, 5, 10, 15, 20]
+    assert all(t.hour == 9 for t in times)
+
+
+def test_get_triggering_times_hourly():
+    job = Job(cron_expr="0 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 9, 30, 0, tzinfo=UTC)
+    times = list(islice(job.get_triggering_times(base), 3))
+    hours = [t.hour for t in times]
+    assert hours == [10, 11, 12]
+    assert all(t.minute == 0 for t in times)
+
+
+def test_get_triggering_times_timezone():
+    job = Job(cron_expr="0 9 * * *", cron_tz="America/New_York", delayed_policy=DelayedPolicy.ALL)
+    base = datetime(2025, 4, 15, 12, 0, 0, tzinfo=UTC)  # 8 AM ET (EDT)
+    times = list(islice(job.get_triggering_times(base), 2))
+    # 9 AM ET = 13:00 UTC (during EDT)
+    assert times[0].astimezone(UTC).hour == 13
+    assert times[1].astimezone(UTC).hour == 13
+
+
 def test_getting_jobs_wont_crash(scheduler_instance, base_time):
     scheduler_instance.get_jobs.side_effect = Exception
     scheduler_instance.start(base_time)
@@ -66,7 +95,6 @@ def test_getting_jobs_wont_crash(scheduler_instance, base_time):
     scheduler_instance.wait()
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     ("expr", "dpol", "expected_minutes"),
     [
@@ -81,7 +109,6 @@ def test_delayed_jobs_policies(expr, dpol, expected_minutes, scheduler_instance,
     assert triggering_times == expected_triggering_times
 
 
-@pytest.mark.unit
 def test_jobs_start_in_order(scheduler_instance, base_time):
     jobs = {
         3: Job(cron_expr="*/3 * * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL),
@@ -109,7 +136,6 @@ def wait_for_call_count(mock, expected_count, timeout=0.5):
     return True
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("with_job", (True, False))
 def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_time):
     jobs = [Job(cron_expr="0 0 * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)] if with_job else []
@@ -125,7 +151,6 @@ def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_ti
         scheduler_instance.wait()
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize("start_side_effect", (lambda *_: None, Exception))
 def test_job_start_is_called(start_side_effect, scheduler_instance, base_time, no_wait):
     jobs = [

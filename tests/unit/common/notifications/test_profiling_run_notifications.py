@@ -1,5 +1,6 @@
 from itertools import count
 from unittest.mock import ANY, Mock, call, patch
+from urllib.parse import quote
 
 import pytest
 
@@ -10,6 +11,8 @@ from testgen.common.models.notification_settings import (
 )
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
+
+pytestmark = pytest.mark.unit
 
 
 def create_ns(**kwargs):
@@ -130,8 +133,8 @@ def test_send_profiling_run_notification(
                 {
                     "profiling_run": {
                         "id": "pr-id",
-                        "issues_url": "http://tg-base-url/profiling-runs:hygiene?run_id=pr-id",
-                        "results_url": "http://tg-base-url/profiling-runs:results?run_id=pr-id",
+                        "issues_url": "http://tg-base-url/profiling-runs:hygiene?run_id=pr-id&source=email",
+                        "results_url": "http://tg-base-url/profiling-runs:results?run_id=pr-id&source=email",
                         "start_time": None,
                         "end_time": None,
                         "status": profiling_run_status,
@@ -139,7 +142,7 @@ def test_send_profiling_run_notification(
                         "table_ct": None,
                         "column_ct": None,
                     },
-                    "new_issue_count": new_issue_count,
+                    "issue_count": issue_count,
                     "hygiene_issues_summary": ANY,
                     "notification_trigger": trigger,
                     "project_name": "proj-name",
@@ -162,3 +165,22 @@ def test_send_profiling_run_notification(
     assert all(s.get("label") is not None for s in summary)
     assert all(s.get("priority") in priorities for s in summary)
     assert all(s.get("url") is not None for s in summary)
+
+    # Verify priority-to-likelihood URL mapping and URL encoding
+    expected_likelihoods = {
+        "Definite": "Definite",
+        "Likely": "Likely",
+        "Possible": "Possible",
+        "High": "Potential PII",
+        "Moderate": "Potential PII",
+    }
+    for s in summary:
+        expected_likelihood = expected_likelihoods[s["priority"]]
+        assert f"likelihood={quote(expected_likelihood)}" in s["url"]
+
+    # Verify is_new flags are passed through
+    all_issues = [issue for s in summary for issue in s["issues"]]
+    if not has_prev_run:
+        assert all(issue["is_new"] is True for issue in all_issues)
+    elif new_issue_count == 0:
+        assert all(issue["is_new"] is False for issue in all_issues)
