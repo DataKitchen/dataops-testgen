@@ -142,8 +142,8 @@ selected_tables AS (
               COUNT(DISTINCT MOD((COALESCE(@@@,0)::DECIMAL(38,6) * 1000000)::DECIMAL(38,0), 1000003))::STRING,
               COALESCE((MIN(@@@)::DECIMAL(38,6))::STRING, ''''),
               COALESCE((MAX(@@@)::DECIMAL(38,6))::STRING, ''''),
-              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000007)), 0), 1000000007)::STRING, ''''),
-              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL, 1000000009)), 0), 1000000009)::STRING, '''')
+              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL(38,6), 1000000007)), 0), 1000000007)::STRING, ''''),
+              COALESCE(MOD(COALESCE(SUM(MOD((ABS(COALESCE(@@@,0))::DECIMAL(38,6) * 1000000)::DECIMAL(38,6), 1000000009)), 0), 1000000009)::STRING, '''')
             )'
           END,
           '@@@', '`' || column_name || '`'
@@ -180,6 +180,7 @@ FROM selected_tables s
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Freshness_Trend' AND active = 'Y')
   -- Only insert if test type is included in generation set
   AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Freshness_Trend' AND generation_set = :GENERATION_SET)
+  {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly
 ON CONFLICT (test_suite_id, test_type, schema_name, table_name)

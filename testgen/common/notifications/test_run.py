@@ -4,7 +4,6 @@ from sqlalchemy import case, literal, select
 
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
-    NotificationEvent,
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
 )
@@ -249,7 +248,6 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
     notifications = list(TestRunNotificationSettings.select(
       enabled=True,
       test_suite_id=test_run.test_suite_id,
-      event=NotificationEvent.test_run,
     ))
     if not notifications:
         return
@@ -323,15 +321,18 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
 
+    test_run_url = "".join(
+        (
+            PersistedSetting.get("BASE_URL", ""),
+            "/test-runs:results?run_id=",
+            str(test_run.id),
+            "&source=email",
+        )
+    )
+
     context = {
         "test_run": tr_summary,
-        "test_run_url": "".join(
-            (
-                PersistedSetting.get("BASE_URL", ""),
-                "/test-runs:results?run_id=",
-                str(test_run.id),
-            )
-        ),
+        "test_run_url": test_run_url,
         "test_run_id": str(test_run.id),
         "test_result_summary": [
             {
@@ -340,6 +341,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 "total": test_run.ct_by_status[status],
                 "truncated": test_run.ct_by_status[status] - len(result_list),
                 "result_list": result_list,
+                "test_run_url": test_run_url,
             }
             for status, label in summary_statuses
             if (result_list := result_list_by_status.get(status, None))

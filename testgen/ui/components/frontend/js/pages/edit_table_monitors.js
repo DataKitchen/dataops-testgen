@@ -234,7 +234,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         updated_definitions: Object.values(updatedDefinitions.val),
                         new_metrics: Object.values(newMetrics.val),
                         deleted_metric_ids: deletedMetricIds.val,
-                        close: false,
+                        close: true,
                     };
                     emitEvent('SaveTestDefinition', { payload });
                 },

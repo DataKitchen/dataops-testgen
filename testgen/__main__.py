@@ -32,7 +32,7 @@ from testgen.commands.run_quick_start import run_monitor_increment, run_quick_st
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
     configure_logging,
     display_service,
@@ -174,6 +174,20 @@ def run_generation(test_suite_id: str | None = None, table_group_id: str | None 
             test_suite_id = test_suites[0].id
     message = run_test_generation(test_suite_id, generation_set)
     click.echo("\n" + message)
+
+
+@cli.command("run-monitor-generation", help="Generates or refreshes the monitors for a table group.")
+@click.option(
+    "-t",
+    "--test-suite-id",
+    required=True,
+    type=click.STRING,
+    help="ID of the monitor suite to generate",
+)
+@with_database_session
+def generate_monitors(test_suite_id: str):
+    click.echo(f"run-monitor-generation for suite: {test_suite_id}")
+    run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Schema_Drift"])
 
 
 @register_scheduler_job

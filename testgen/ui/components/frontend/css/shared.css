@@ -712,6 +712,16 @@ input::-ms-clear {
     min-width: 20px;
 }
 
+.anomaly-tag.has-errors {
+    position: relative;
+    background: transparent;
+}
+
+.anomaly-tag.has-errors > .material-symbols-rounded {
+    color: var(--orange);
+    font-size: 22px;
+}
+
 .anomaly-tag.is-training {
     position: relative;
     background: transparent;

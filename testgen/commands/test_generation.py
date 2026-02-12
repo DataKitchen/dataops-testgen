@@ -72,6 +72,7 @@ def run_monitor_generation(
     monitor_suite_id: str | UUID,
     monitors: list[MonitorTestType],
     mode: MonitorGenerationMode = "upsert",
+    table_names: list[str] | None = None,
 ) -> None:
     """
     Modes:
@@ -90,7 +91,7 @@ def run_monitor_generation(
     table_group = TableGroup.get(monitor_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
 
-    TestGeneration(connection, table_group, monitor_suite, "Monitor", monitors).monitor_run(mode)
+    TestGeneration(connection, table_group, monitor_suite, "Monitor", monitors).monitor_run(mode, table_names=table_names)
 
 
 class TestGeneration:
@@ -123,16 +124,19 @@ class TestGeneration:
             self._get_query("delete_stale_autogen_tests.sql"),
         ])
 
-    def monitor_run(self, mode: MonitorGenerationMode) -> None:
+    def monitor_run(self, mode: MonitorGenerationMode, table_names: list[str] | None = None) -> None:
         if mode == "delete":
             execute_db_queries([self._get_query("delete_stale_monitors.sql")])
             return
 
+        extra_params = {"INSERT_ONLY": mode == "insert"}
+        if table_names:
+            table_list = ", ".join(f"'{table}'" for table in table_names)
+            extra_params["TABLE_FILTER"] = f"AND table_name IN ({table_list})"
+
         LOG.info("Running monitor generation queries")
         execute_db_queries(
-            self._get_generation_queries(
-                extra_params={"INSERT_ONLY": mode == "insert"},
-            ),
+            self._get_generation_queries(extra_params=extra_params),
         )
 
     def _get_generation_queries(self, extra_params: dict | None = None) -> list[tuple[str, dict]]:
@@ -188,6 +192,7 @@ class TestGeneration:
             "SQL_FLAVOR": self.flavor,
             "QUOTE": self.flavor_service.quote_character,
             "INSERT_ONLY": False,
+            "TABLE_FILTER": "",
         })
         return params
     

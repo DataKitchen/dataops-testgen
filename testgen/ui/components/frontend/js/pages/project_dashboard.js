@@ -261,7 +261,6 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
             })
             : '',
         ),
-        div({ style: 'flex: 1 1 120px;' })
     );
 };
 

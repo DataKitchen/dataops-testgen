@@ -17,6 +17,10 @@
  * @property {number?} volume_anomalies
  * @property {number?} schema_anomalies
  * @property {number?} metric_anomalies
+ * @property {string?} freshness_error_message
+ * @property {string?} volume_error_message
+ * @property {string?} schema_error_message
+ * @property {string?} metric_error_message
  * @property {boolean?} freshness_is_training
  * @property {boolean?} volume_is_training
  * @property {boolean?} metric_is_training
@@ -151,10 +155,10 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         { text: `Table ${monitor.table_state}` },
                     )
                     : monitor.table_name,
-                freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
-                volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
-                schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
-                metric_anomalies: () => AnomalyTag(monitor.metric_anomalies, monitor.metric_is_training, monitor.metric_is_pending, () => openChartsDialog(monitor)),
+                freshness_anomalies: () => AnomalyTag(monitor.freshness_anomalies, monitor.freshness_error_message, monitor.freshness_is_training, monitor.freshness_is_pending, () => openChartsDialog(monitor)),
+                volume_anomalies: () => AnomalyTag(monitor.volume_anomalies, monitor.volume_error_message, monitor.volume_is_training, monitor.volume_is_pending, () => openChartsDialog(monitor)),
+                schema_anomalies: () => AnomalyTag(monitor.schema_anomalies, monitor.schema_error_message, false, monitor.schema_is_pending, () => openChartsDialog(monitor)),
+                metric_anomalies: () => AnomalyTag(monitor.metric_anomalies, monitor.metric_error_message, monitor.metric_is_training, monitor.metric_is_pending, () => openChartsDialog(monitor)),
                 latest_update: () => monitor.latest_update
                     ? withTooltip(
                         span(
@@ -441,24 +445,42 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 
 /**
  * @param {number?} anomalies
+ * @param {string?} errorMessage
  * @param {boolean} isTraining
  * @param {boolean} isPending
  * @param {Function} onClick
  */
-const AnomalyTag = (anomalies, isTraining = false, isPending = false, onClick = undefined) => {
+const AnomalyTag = (anomalies, errorMessage = null, isTraining = false, isPending = false, onClick = undefined) => {
     if (isPending) {
-        return span({class: 'text-secondary'}, '-');
+        return withTooltip(
+            span({class: 'text-secondary pl-2 pr-2', style: 'position: relative;'}, '-'),
+            { text: 'No results yet or not configured' },
+        );
     }
 
+    const hasErrors = !!errorMessage;
     const content = van.derive(() => {
+        if (anomalies > 0) {
+            return span(anomalies);
+        }
+        if (hasErrors) {
+            return withTooltip(
+                i({class: 'material-symbols-rounded'}, 'warning'),
+                {
+                    text: div(
+                        { class: 'flex-column fx-gap-2 text-left' },
+                        span('Error in latest run. Reconfigure the monitor or contact support.'),
+                        i(errorMessage),
+                    ),
+                    width: 360,
+                },
+            );
+        }
         if (isTraining) {
             return withTooltip(
                 i({class: 'material-symbols-rounded'}, 'more_horiz'),
                 {text: 'Training model'},
             );
-        }
-        if (anomalies > 0) {
-            return span(anomalies);
         }
         return i({class: 'material-symbols-rounded'}, 'check');
     });
@@ -467,7 +489,7 @@ const AnomalyTag = (anomalies, isTraining = false, isPending = false, onClick = 
         { class: `anomaly-tag-wrapper flex-row p-1 ${onClick ? 'clickable' : ''}`, onclick: onClick },
         div(
             {
-                class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${isTraining ? 'is-training' : ''}`,
+                class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${hasErrors ? 'has-errors' : ''} ${isTraining ? 'is-training' : ''}`,
             },
             content,
         ),

@@ -4,6 +4,8 @@ import pytest
 
 from testgen.common.notifications.base import BaseEmailTemplate, EmailTemplateException
 
+pytestmark = pytest.mark.unit
+
 
 class TestEmailTemplate(BaseEmailTemplate):
 

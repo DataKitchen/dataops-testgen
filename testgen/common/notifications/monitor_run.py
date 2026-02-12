@@ -4,7 +4,6 @@ from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
-    NotificationEvent,
 )
 from testgen.common.models.project import Project
 from testgen.common.models.settings import PersistedSetting
@@ -22,7 +21,7 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Monitors Alert: {{summary.table_groups_name}}"
-            "{{#if summary.table_name}} | {{test_run_monitor_summary.table_name}}{{/if}}"
+            "{{#if summary.table_name}} | {{summary.table_name}}{{/if}}"
             ' | {{total_anomalies}} {{pluralize total_anomalies "anomaly" "anomalies"}}'
         )
 
@@ -65,7 +64,7 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                 border="0">
                 <tr>
                   <td class="summary__title">Anomalies Summary</td>
-                  <td align="left">
+                  <td align="right">
                     <a class="link" href="{{view_in_testgen_url}}" target="_blank">View on TestGen &gt;</a>
                   </td>
                 </tr>
@@ -94,7 +93,7 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                 border="0">
                 <tr class="text-caption">
                   <td>Table</td>
-                  <td>Type/Focus</td>
+                  <td>Monitor</td>
                   <td>Details</td>
                 </tr>
                 {{#each anomalies}}
@@ -119,7 +118,7 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
 
     def get_anomaly_tag_template(self):
         return """
-            <td valign="middle">
+            <td valign="middle" style="padding-right: 24px;">
               <table border="0" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
                   <td valign="middle">
@@ -127,11 +126,10 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                       {{#if count}}{{count}}{{else}}&#10003;{{/if}}
                     </div>
                   </td>
-                  <td width="4"></td> <td valign="middle" style="color: #111111;">{{type}}</td>
+                  <td valign="middle" style="color: #111111; padding-left: 8px;">{{type}}</td>
                 </tr>
               </table>
             </td>
-            {{#if @last}}{{else}}<td width="16"></td>{{/if}}
         """
 
     def get_extra_css_template(self) -> str:
@@ -171,11 +169,10 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
 
 @log_and_swallow_exception
 @with_database_session
-def send_monitor_notifications(test_run: TestRun):
+def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
     notifications = list(MonitorNotificationSettings.select(
         enabled=True,
         test_suite_id=test_run.test_suite_id,
-        event=NotificationEvent.monitor_run,
     ))
     if not notifications:
         return
@@ -206,10 +203,20 @@ def send_monitor_notifications(test_run: TestRun):
         for test_result in test_results:
             label = _TEST_TYPE_LABELS.get(test_result.test_type)
             anomaly_counts[label] = (anomaly_counts.get(label) or 0) + 1
+            details = test_result.message or "N/A"
+            
+            if test_result.test_type == "Freshness_Trend":
+                parts = details.split(". ", 1)
+                message = parts[1].rstrip(".") if len(parts) > 1 else None
+                prefix = "Table updated" if "detected: Yes" in details else "No table update"
+                details = f"{prefix} - {message}" if message else prefix
+            elif test_result.test_type == "Metric_Trend":
+                label = f"{label}: {test_result.column_names}"
+
             anomalies.append({
                 "table_name": test_result.table_name or "N/A",
                 "type": label,
-                "details": test_result.message or "N/A",
+                "details": details,
             })
 
         view_in_testgen_url = "".join(
@@ -221,6 +228,7 @@ def send_monitor_notifications(test_run: TestRun):
                 str(table_group.id),
                 "&table_name_filter=" if table_name else "",
                 table_name if table_name else "",
+                "&source=email",
             )
         )
         try:
@@ -238,12 +246,8 @@ def send_monitor_notifications(test_run: TestRun):
                         {"type": key, "count": value}
                         for key, value in anomaly_counts.items()
                     ],
-                    # "anomaly_counts": [
-                    #     {"type": "Freshness", "count": freshness_anomalies},
-                    #     {"type": "Schema", "count": schema_anomalies},
-                    #     {"type": "Volume", "count": volume_anomalies},
-                    # ],
-                    "anomalies": anomalies,
+                    "anomalies": anomalies[:result_list_ct],
+                    "truncated": max(len(anomalies) - result_list_ct, 0),
                     "view_in_testgen_url": view_in_testgen_url,
                 },
             )
@@ -252,7 +256,8 @@ def send_monitor_notifications(test_run: TestRun):
 
 
 _TEST_TYPE_LABELS = {
-    "Table_Freshness": "Freshness",
-    "Schema_Drift": "Schema",
+    "Freshness_Trend": "Freshness",
     "Volume_Trend": "Volume",
+    "Schema_Drift": "Schema",
+    "Metric_Trend": "Metric",
 }
