@@ -180,6 +180,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                         PersistedSetting.get("BASE_URL", ""),
                         "/quality-dashboard:score-details?definition_id=",
                         str(definition.id),
+                        "&source=email",
                     )
                 ),
                 "diff": context_diff,

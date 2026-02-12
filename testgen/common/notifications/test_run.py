@@ -328,6 +328,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
             PersistedSetting.get("BASE_URL", ""),
             "/test-runs:results?run_id=",
             str(test_run.id),
+            "&source=email",
         )
     )
 

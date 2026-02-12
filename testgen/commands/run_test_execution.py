@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import threading
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal
@@ -86,12 +87,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         sql_generator = TestExecutionSQL(connection, table_group, test_run)
 
         if test_suite.is_monitor:
-            schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
-            if schema_changes["has_table_drops"]:
-                run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
-            if schema_changes["has_table_adds"]:
-                # Freshness monitors will be inserted after profiling
-                run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
+            _sync_monitor_definitions(sql_generator)
 
         # Update the thresholds before retrieving the test definitions in the next steps
         LOG.info("Updating test thresholds based on history calculations")
@@ -188,6 +184,26 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         {"Test execution encountered an error. Check log for details." if test_run.status == "Error" else "Test execution completed."}
         Run ID: {test_run.id}
     """
+
+
+def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
+    test_suite_id = sql_generator.test_run.test_suite_id
+
+    schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
+    if schema_changes["has_table_drops"]:
+        run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
+    if schema_changes["has_table_adds"]:
+        # Freshness monitors will be inserted after profiling
+        run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
+
+    # Regenerate monitors that errored in previous run
+    errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
+    if errored_monitors:
+        errored_by_type: dict[str, list[str]] = defaultdict(list)
+        for row in errored_monitors:
+            errored_by_type[row["test_type"]].append(row["table_name"])
+        for test_type, table_names in errored_by_type.items():
+            run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=table_names)
 
 
 def _run_tests(

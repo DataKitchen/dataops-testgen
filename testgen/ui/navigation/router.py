@@ -27,7 +27,7 @@ class Router(Singleton):
         self._routes = {route.path: route(self) for route in routes} if routes else {}
         self._pending_navigation: dict | None = None
 
-    def _init_session(self):
+    def _init_session(self, url: str):
         # Clear cache on initial load or page refresh
         st.cache_data.clear()
 
@@ -37,13 +37,16 @@ class Router(Singleton):
         except Exception as e:
             LOG.exception("Error capturing the base URL")
 
+        source = st.query_params.pop("source", None)
+        MixpanelService().send_event(f"nav-{url}", page_load=True, source=source)
+
     def run(self) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
 
         current_page = st.navigation(streamlit_pages, position="hidden")
 
         if not session.initialized:
-            self._init_session()
+            self._init_session(url=current_page.url_path)
             session.initialized = True
 
         # This hack is needed because the auth cookie is not set if navigation happens immediately after login
