@@ -17,6 +17,45 @@ from testgen.utils import to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 
+Z_SCORE_MAP = {
+    ("lower_tolerance", PredictSensitivity.low): -2.0,    # 2.5th percentile
+    ("lower_tolerance", PredictSensitivity.medium): -1.5, # 7th percentile
+    ("lower_tolerance", PredictSensitivity.high): -1.0,   # 16th percentile
+    ("upper_tolerance", PredictSensitivity.high): 1.0,    # 84th percentile
+    ("upper_tolerance", PredictSensitivity.medium): 1.5,  # 93rd percentile
+    ("upper_tolerance", PredictSensitivity.low): 2.0,     # 97.5th percentile
+}
+
+
+def calculate_prediction_tolerances(
+    forecast: pd.DataFrame,
+    sensitivity: PredictSensitivity,
+    z_score_map: dict | None = None,
+) -> tuple[float | None, float | None, str | None]:
+    """Compute lower/upper tolerance from a SARIMAX forecast using z-score map.
+
+    The forecast DataFrame must have 'mean' and 'se' columns, indexed by date.
+    Tolerances are computed for the first forecast date at the given sensitivity.
+
+    Returns:
+        (lower_tolerance, upper_tolerance, forecast_json) or (None, None, None) if NaN.
+    """
+    if z_score_map is None:
+        z_score_map = Z_SCORE_MAP
+
+    for key, z_score in z_score_map.items():
+        column = f"{key[0]}|{key[1].value}"
+        forecast[column] = forecast["mean"] + (z_score * forecast["se"])
+
+    next_date = forecast.index[0]
+    lower_tolerance = forecast.at[next_date, f"lower_tolerance|{sensitivity.value}"]
+    upper_tolerance = forecast.at[next_date, f"upper_tolerance|{sensitivity.value}"]
+
+    if pd.isna(lower_tolerance) or pd.isna(upper_tolerance):
+        return None, None, None
+
+    return lower_tolerance, upper_tolerance, forecast.to_json()
+
 
 class TestThresholdsPrediction:
     staging_table = "stg_test_definition_updates"
@@ -29,14 +68,7 @@ class TestThresholdsPrediction:
         "prediction",
     )
     num_forecast = 10
-    z_score_map: ClassVar = {
-        ("lower_tolerance", PredictSensitivity.low): -2.0,    # 2.5th percentile
-        ("lower_tolerance", PredictSensitivity.medium): -1.5, # 7th percentile
-        ("lower_tolerance", PredictSensitivity.high): -1.0,   # 16th percentile
-        ("upper_tolerance", PredictSensitivity.high): 1.0,    # 84th percentile
-        ("upper_tolerance", PredictSensitivity.medium): 1.5,  # 93rd percentile
-        ("upper_tolerance", PredictSensitivity.low): 2.0,     # 97.5th percentile
-    }
+    z_score_map: ClassVar = Z_SCORE_MAP
 
     def __init__(self, test_suite: TestSuite, run_date: datetime):
         self.test_suite = test_suite
@@ -71,19 +103,11 @@ class TestThresholdsPrediction:
                             ] if self.test_suite.predict_holiday_codes else None,
                         )
 
-                        for key, z_score in self.z_score_map.items():
-                            column = f"{key[0]}|{key[1].value}"
-                            forecast[column] = forecast["mean"] + (z_score * forecast["se"])
-
-                        next_date = forecast.index[0]
                         sensitivity = self.test_suite.predict_sensitivity or PredictSensitivity.medium
-                        lower_tolerance = forecast.at[next_date, f"lower_tolerance|{sensitivity.value}"]
-                        upper_tolerance = forecast.at[next_date, f"upper_tolerance|{sensitivity.value}"]
-
-                        if pd.isna(lower_tolerance) or pd.isna(upper_tolerance):
-                            test_prediction.extend([None, None, None])
-                        else:
-                            test_prediction.extend([lower_tolerance, upper_tolerance, forecast.to_json()])
+                        lower, upper, forecast_json = calculate_prediction_tolerances(
+                            forecast, sensitivity, self.z_score_map,
+                        )
+                        test_prediction.extend([lower, upper, forecast_json])
                     except NotEnoughData:
                         test_prediction.extend([None, None, None])
                 else:
