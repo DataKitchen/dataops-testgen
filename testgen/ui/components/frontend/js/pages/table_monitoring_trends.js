@@ -108,12 +108,27 @@ const TableMonitoringTrend = (props) => {
   ], []);
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
-  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
+
+  // Compute dropped periods from schema events to hide volume/metric data between table drop and re-add
+  const droppedPeriods = [];
+  let dropStart = null;
+  const sorted = [...schemaChangeEvents].sort((a, b) => a.time - b.time);
+  for (const event of sorted) {
+    if (event.table_change === 'D' && dropStart === null) {
+      dropStart = event.time;
+    } else if (event.table_change === 'A' && dropStart !== null) {
+      droppedPeriods.push({ start: dropStart, end: event.time });
+      dropStart = null;
+    }
+  }
+  const isInDroppedPeriod = (time) => droppedPeriods.some(p => time >= p.start && time <= p.end);
+
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) })).filter(e => !isInDroppedPeriod(e.time));
 
   const metricEventGroups = metricEvents.map(group => ({
     ...group,
-    events: group.events.map(e => ({ ...e, time: parseDate(e.time) })),
+    events: group.events.map(e => ({ ...e, time: parseDate(e.time) })).filter(e => !isInDroppedPeriod(e.time)),
   }));
 
   const volumes = [

@@ -834,6 +834,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         ],
         "schema_events": [
             {
+                "table_change": signals[0] or None,
                 "additions": signals[1],
                 "deletions": signals[2],
                 "modifications": signals[3],
