@@ -1,0 +1,41 @@
+SELECT
+    c.SCHEMA_NAME AS schema_name,
+    c.TABLE_NAME AS table_name,
+    c.COLUMN_NAME AS column_name,
+    CASE
+        WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT') THEN 'char(' || c.LENGTH || ')'
+        WHEN c.DATA_TYPE_NAME = 'DECIMAL' AND c.SCALE = 0 THEN 'bigint'
+        WHEN c.DATA_TYPE_NAME = 'DECIMAL' AND c.SCALE > 0 THEN 'numeric(' || c.LENGTH || ',' || c.SCALE || ')'
+        WHEN c.DATA_TYPE_NAME IN ('DOUBLE', 'REAL', 'SMALLDECIMAL') THEN 'numeric'
+        WHEN c.DATA_TYPE_NAME IN ('TIMESTAMP', 'SECONDDATE') THEN 'timestamp'
+        ELSE LOWER(c.DATA_TYPE_NAME)
+    END AS column_type,
+    CASE
+        WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT') THEN c.DATA_TYPE_NAME || '(' || c.LENGTH || ')'
+        WHEN c.DATA_TYPE_NAME = 'DECIMAL' THEN 'DECIMAL(' || c.LENGTH || ',' || c.SCALE || ')'
+        ELSE c.DATA_TYPE_NAME
+    END AS db_data_type,
+    c.POSITION AS ordinal_position,
+    CASE
+        WHEN c.DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR', 'NCHAR', 'CHAR', 'ALPHANUM', 'SHORTTEXT')
+            THEN 'A'
+        WHEN c.DATA_TYPE_NAME = 'BOOLEAN'
+            THEN 'B'
+        WHEN c.DATA_TYPE_NAME IN ('DATE', 'TIMESTAMP', 'SECONDDATE')
+            THEN 'D'
+        WHEN c.DATA_TYPE_NAME = 'TIME'
+            THEN 'T'
+        WHEN c.DATA_TYPE_NAME IN ('INTEGER', 'BIGINT', 'SMALLINT', 'TINYINT', 'DECIMAL', 'DOUBLE', 'REAL', 'SMALLDECIMAL')
+            THEN 'N'
+        ELSE 'X'
+    END AS general_type,
+    CASE
+        WHEN c.DATA_TYPE_NAME = 'DECIMAL' AND c.SCALE > 0 THEN 1
+        WHEN c.DATA_TYPE_NAME IN ('DOUBLE', 'REAL', 'SMALLDECIMAL') THEN 1
+        ELSE 0
+    END AS is_decimal,
+    t.RECORD_COUNT AS approx_record_ct
+FROM SYS.TABLE_COLUMNS c
+LEFT JOIN SYS.M_TABLES t ON c.SCHEMA_NAME = t.SCHEMA_NAME AND c.TABLE_NAME = t.TABLE_NAME
+WHERE c.SCHEMA_NAME = '{DATA_SCHEMA}' {TABLE_CRITERIA}
+ORDER BY c.SCHEMA_NAME, c.TABLE_NAME, c.POSITION

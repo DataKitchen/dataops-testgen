@@ -109,6 +109,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8022'
+    test_type: Recency
+    sql_flavor: sap_hana
+    measure: |-
+      <%DATEDIFF_DAY;MAX({COLUMN_NAME});TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1385'
     test_id: '1028'
@@ -176,5 +184,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8022'
+    test_id: '1028'
+    test_type: Recency
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

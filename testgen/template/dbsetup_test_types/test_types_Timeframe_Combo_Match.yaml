@@ -305,6 +305,40 @@ test_types:
           AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") - {WINDOW_DAYS}
       ) WHERE ROWNUM <= {LIMIT_2}
     error_type: Test Results
+  - id: '8509'
+    test_id: '1509'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -2 * {WINDOW_DAYS})
+        AND {WINDOW_DATE_COLUMN} < ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      LIMIT {LIMIT_2}
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -2 * {WINDOW_DAYS})
+        AND {WINDOW_DATE_COLUMN} < ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      LIMIT {LIMIT_2}
+      )
+    error_type: Test Results
   test_templates:
   - id: '2508'
     test_type: Timeframe_Combo_Match
@@ -790,5 +824,59 @@ test_types:
       FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
       WHERE {SUBSET_CONDITION}
         AND {WINDOW_DATE_COLUMN} >= (SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}") - {WINDOW_DAYS}
+      )
+             ) test
+  - id: '8008'
+    test_type: Timeframe_Combo_Match
+    sql_flavor: sap_hana
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CAST(COUNT(*) AS VARCHAR(20)) || ' error(s) identified, ' ||
+                     CASE
+                       WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                       ELSE 'within limit of '
+                     END || '{SKIP_ERRORS}.'
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+        FROM (
+              (
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      EXCEPT
+      SELECT 'Prior Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -2 * {WINDOW_DAYS})
+        AND {WINDOW_DATE_COLUMN} <  ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+      )
+      UNION ALL
+      (
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -2 * {WINDOW_DAYS})
+        AND {WINDOW_DATE_COLUMN} <  ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -{WINDOW_DAYS})
+          EXCEPT
+      SELECT 'Latest Timeframe' as missing_from, {COLUMN_NAME_NO_QUOTES}
+      FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+      WHERE {SUBSET_CONDITION}
+        AND {WINDOW_DATE_COLUMN} >= ADD_DAYS((SELECT MAX({WINDOW_DATE_COLUMN}) FROM "{SCHEMA_NAME}"."{TABLE_NAME}"), -{WINDOW_DAYS})
       )
              ) test

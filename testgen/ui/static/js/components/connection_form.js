@@ -84,6 +84,7 @@ const defaultPorts = {
     snowflake: '443',
     databricks: '443',
     oracle: '1521',
+    sap_hana: '39015',
 };
 
 /**
@@ -245,6 +246,16 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             dynamicConnectionUrl,
             { dbNameLabel: 'Service Name' },
+        ),
+        sap_hana: () => OracleForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('sap_hana_form', isValid);
+            },
+            connection,
+            dynamicConnectionUrl,
         ),
         bigquery: () => BigqueryForm(
             updatedConnection,

@@ -106,6 +106,14 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8013'
+    test_type: LOV_All
+    sql_flavor: sap_hana
+    measure: |-
+      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+    test_operator: <>
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1376'
     test_id: '1018'
@@ -176,5 +184,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8013'
+    test_id: '1018'
+    test_type: LOV_All
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

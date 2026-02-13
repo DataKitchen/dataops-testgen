@@ -108,6 +108,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8035'
+    test_type: Valid_US_Zip3
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN REPLACE_REGEXPR('[0-9]' IN {COLUMN_NAME} WITH '9') <> '999' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1399'
     test_id: '1045'
@@ -177,5 +185,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8045'
+    test_id: '1045'
+    test_type: Valid_US_Zip3
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE_REGEXPR('[0-9]' IN "{COLUMN_NAME}" WITH '9') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

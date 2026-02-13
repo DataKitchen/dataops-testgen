@@ -99,3 +99,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT column_name, table_name, CASE WHEN data_type LIKE 'TIMESTAMP%%' THEN LOWER(data_type) WHEN data_type = 'DATE' THEN 'date' WHEN data_type = 'VARCHAR2' THEN 'varchar2(' || data_length || ')' WHEN data_type = 'CHAR' THEN 'char(' || data_length || ')' WHEN data_type = 'NUMBER' AND data_precision IS NULL THEN 'number' WHEN data_type = 'NUMBER' AND data_scale = 0 THEN 'number(' || data_precision || ')' WHEN data_type = 'NUMBER' THEN 'number(' || data_precision || ',' || data_scale || ')' ELSE data_type END AS data_type FROM all_tab_columns WHERE owner = '{TARGET_SCHEMA}' AND column_name = '{COLUMN_NAME}' ORDER BY data_type, table_name FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Profile Anomaly
+  - id: '1504'
+    test_id: '1005'
+    test_type: Multiple_Types_Major
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT COLUMN_NAME, TABLE_NAME, CASE WHEN DATA_TYPE_NAME LIKE 'TIMESTAMP%%' THEN LOWER(DATA_TYPE_NAME) WHEN DATA_TYPE_NAME = 'DATE' THEN 'date' WHEN DATA_TYPE_NAME IN ('NVARCHAR', 'VARCHAR') THEN LOWER(DATA_TYPE_NAME) || '(' || LENGTH || ')' WHEN DATA_TYPE_NAME = 'CHAR' THEN 'char(' || LENGTH || ')' WHEN DATA_TYPE_NAME = 'DECIMAL' AND SCALE = 0 THEN 'decimal(' || LENGTH || ')' WHEN DATA_TYPE_NAME = 'DECIMAL' THEN 'decimal(' || LENGTH || ',' || SCALE || ')' WHEN DATA_TYPE_NAME IN ('INTEGER', 'BIGINT', 'SMALLINT', 'TINYINT') THEN LOWER(DATA_TYPE_NAME) ELSE LOWER(DATA_TYPE_NAME) END AS data_type FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = '{TARGET_SCHEMA}' AND COLUMN_NAME = '{COLUMN_NAME}' ORDER BY data_type, TABLE_NAME LIMIT {LIMIT}
+    error_type: Profile Anomaly

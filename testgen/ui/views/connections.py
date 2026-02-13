@@ -614,6 +614,12 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/postgresql.svg"),
     ),
     ConnectionFlavor(
+        label="SAP HANA",
+        value="sap_hana",
+        flavor="sap_hana",
+        icon=get_asset_data_url("flavors/sap_hana.svg"),
+    ),
+    ConnectionFlavor(
         label="Snowflake",
         value="snowflake",
         flavor="snowflake",

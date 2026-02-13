@@ -112,6 +112,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8005'
+    test_type: Daily_Record_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1368'
     test_id: '1009'
@@ -247,5 +255,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH daterange AS (SELECT (SELECT MIN(TRUNC("{COLUMN_NAME}")) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") + LEVEL - 1 AS all_dates FROM DUAL CONNECT BY LEVEL <= (SELECT MAX(TRUNC("{COLUMN_NAME}")) - MIN(TRUNC("{COLUMN_NAME}")) + 1 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}")), existing_periods AS (SELECT DISTINCT TRUNC("{COLUMN_NAME}") AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY TRUNC("{COLUMN_NAME}")) SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8009'
+    test_id: '1009'
+    test_type: Daily_Record_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      WITH Pass0 AS (SELECT 1 C FROM DUMMY UNION ALL SELECT 1 FROM DUMMY), Pass1 AS (SELECT 1 C FROM Pass0 A, Pass0 B), Pass2 AS (SELECT 1 C FROM Pass1 A, Pass1 B), Pass3 AS (SELECT 1 C FROM Pass2 A, Pass2 B), Pass4 AS (SELECT 1 C FROM Pass3 A, Pass3 B), nums AS (SELECT ROW_NUMBER() OVER (ORDER BY C) - 1 AS rn FROM Pass4), bounds AS (SELECT MIN(CAST("{COLUMN_NAME}" AS DATE)) AS min_date, MAX(CAST("{COLUMN_NAME}" AS DATE)) AS max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), daterange AS (SELECT ADD_DAYS(b.min_date, n.rn) AS all_dates FROM bounds b, nums n WHERE ADD_DAYS(b.min_date, n.rn) <= b.max_date), existing_periods AS (SELECT DISTINCT CAST("{COLUMN_NAME}" AS DATE) AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY CAST("{COLUMN_NAME}" AS DATE)) SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

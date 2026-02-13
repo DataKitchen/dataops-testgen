@@ -109,6 +109,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8003'
+    test_type: Condition_Flag
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1366'
     test_id: '1006'
@@ -176,5 +184,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8006'
+    test_id: '1006'
+    test_type: Condition_Flag
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {CUSTOM_QUERY} LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

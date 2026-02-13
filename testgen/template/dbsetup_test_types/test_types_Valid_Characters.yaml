@@ -109,6 +109,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8036'
+    test_type: Valid_Characters
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({COLUMN_NAME}, NCHAR(160), ''), NCHAR(8203), ''), NCHAR(65279), ''), NCHAR(8239), ''), NCHAR(8201), ''), NCHAR(12288), ''), NCHAR(8204), '') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1397'
     test_id: '1043'
@@ -181,5 +189,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}", 'X' || UNISTR('\00A0') || UNISTR('\200B') || UNISTR('\FEFF') || UNISTR('\202F') || UNISTR('\2009') || UNISTR('\3000') || UNISTR('\200C'), 'XXXXXXXX') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8043'
+    test_id: '1043'
+    test_type: Valid_Characters
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", NCHAR(160), ''), NCHAR(8203), ''), NCHAR(65279), ''), NCHAR(8239), ''), NCHAR(8201), ''), NCHAR(12288), ''), NCHAR(8204), '') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

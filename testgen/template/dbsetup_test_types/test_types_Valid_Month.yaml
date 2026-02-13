@@ -108,5 +108,13 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8033'
+    test_type: Valid_Month
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NOT NULL AND {COLUMN_NAME} NOT IN ({BASELINE_VALUE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups: []
   test_templates: []

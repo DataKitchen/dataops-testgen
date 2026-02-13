@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana"]
 RowLimitingClause = Literal["limit", "top", "fetch"]
 
 

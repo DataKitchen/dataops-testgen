@@ -117,6 +117,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8031'
+    test_type: Variability_Increase
+    sql_flavor: sap_hana
+    measure: |-
+      100.0*STDDEV(CAST({COLUMN_NAME} AS DECIMAL))/CAST({BASELINE_SD} AS DECIMAL)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1394'
     test_id: '1040'
@@ -182,5 +190,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8031'
+    test_id: '1040'
+    test_type: Variability_Increase
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DECIMAL)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
     error_type: Test Results
   test_templates: []
