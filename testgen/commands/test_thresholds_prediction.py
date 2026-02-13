@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import ClassVar
 
 import pandas as pd
+from scipy import stats
 
 from testgen.common.database.database_service import (
     execute_db_queries,
@@ -29,13 +30,14 @@ class TestThresholdsPrediction:
         "prediction",
     )
     num_forecast = 10
+    t_distribution_threshold = 20
     z_score_map: ClassVar = {
-        ("lower_tolerance", PredictSensitivity.low): -2.0,    # 2.5th percentile
-        ("lower_tolerance", PredictSensitivity.medium): -1.5, # 7th percentile
-        ("lower_tolerance", PredictSensitivity.high): -1.0,   # 16th percentile
-        ("upper_tolerance", PredictSensitivity.high): 1.0,    # 84th percentile
-        ("upper_tolerance", PredictSensitivity.medium): 1.5,  # 93rd percentile
-        ("upper_tolerance", PredictSensitivity.low): 2.0,     # 97.5th percentile
+        ("lower_tolerance", PredictSensitivity.low): -3.0,    # 0.13th percentile
+        ("lower_tolerance", PredictSensitivity.medium): -2.5, # 0.62nd percentile
+        ("lower_tolerance", PredictSensitivity.high): -2.0,   # 2.3rd percentile
+        ("upper_tolerance", PredictSensitivity.high): 2.0,    # 97.7th percentile
+        ("upper_tolerance", PredictSensitivity.medium): 2.5,  # 99.4th percentile
+        ("upper_tolerance", PredictSensitivity.low): 3.0,     # 99.87th percentile
     }
 
     def __init__(self, test_suite: TestSuite, run_date: datetime):
@@ -71,9 +73,15 @@ class TestThresholdsPrediction:
                             ] if self.test_suite.predict_holiday_codes else None,
                         )
 
+                        num_points = len(history)
                         for key, z_score in self.z_score_map.items():
+                            if num_points < self.t_distribution_threshold:
+                                percentile = stats.norm.cdf(z_score)
+                                multiplier = stats.t.ppf(percentile, df=num_points - 1)
+                            else:
+                                multiplier = z_score
                             column = f"{key[0]}|{key[1].value}"
-                            forecast[column] = forecast["mean"] + (z_score * forecast["se"])
+                            forecast[column] = forecast["mean"] + (multiplier * forecast["se"])
 
                         next_date = forecast.index[0]
                         sensitivity = self.test_suite.predict_sensitivity or PredictSensitivity.medium
