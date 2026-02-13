@@ -825,14 +825,6 @@ def source_data_dialog(selected_row):
         st.markdown("#### Result Detail")
         st.caption(selected_row["result_message"].replace("*", "\\*"))
 
-    st.markdown("#### SQL Query")
-    if selected_row["test_type"] == "CUSTOM":
-        query = get_test_issue_source_query_custom(selected_row)
-    else:
-        query = get_test_issue_source_query(selected_row)
-    if query:
-        st.code(query, language="sql", wrap_lines=True, height=100)
-
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
             bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
@@ -854,6 +846,14 @@ def source_data_dialog(selected_row):
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, width=1050, hide_index=True)
+
+    st.markdown("#### SQL Query")
+    if selected_row["test_type"] == "CUSTOM":
+        query = get_test_issue_source_query_custom(selected_row)
+    else:
+        query = get_test_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql", wrap_lines=True, height=100)
 
 
 def view_edit_test(button_container, test_definition_id):
