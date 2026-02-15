@@ -637,10 +637,13 @@ def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
 def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
+    extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
 
     @with_database_session
     def show_dialog():
         testgen.css_class("l-dialog")
+
+        extended_history = st.session_state.get(extended_history_key, False)
 
         selected_data_point = get_selected_data_point()
         data_structure_logs = None
@@ -648,8 +651,9 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             data_structure_logs = get_data_structure_logs(
                 table_group.id, table_name, *selected_data_point,
             )
-        
-        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
+
+        lookback_multiplier = 3 if extended_history else 1
+        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
         definitions = TestDefinition.select_where(
             TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
             TestDefinition.table_name == table_name,
@@ -723,8 +727,10 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
                 **make_json_safe(events),
                 "data_structure_logs": make_json_safe(data_structure_logs),
                 "predictions": predictions,
+                "extended_history": extended_history,
             },
             on_ShowDataStructureLogs_change=on_show_data_structure_logs,
+            on_ToggleExtendedHistory_change=on_toggle_extended_history,
         )
 
     def on_show_data_structure_logs(payload):
@@ -734,17 +740,20 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             )
         except: pass  # noqa: S110
 
+    def on_toggle_extended_history(_payload):
+        st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
+
     return st.dialog(title=f"Table: {table_name}")(show_dialog)()
 
 
 @st.cache_data(show_spinner=False)
-def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
+def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_multiplier: int = 1) -> dict:
     query = """
     WITH ranked_test_runs AS (
         SELECT
             test_runs.id,
             test_runs.test_starttime,
-            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+            COALESCE(test_suites.monitor_lookback, 1) * :lookback_multiplier AS lookback,
             ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
         FROM test_suites
         INNER JOIN test_runs
@@ -788,6 +797,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     params = {
         "table_name": table_name,
         "test_suite_id": test_suite_id,
+        "lookback_multiplier": lookback_multiplier,
     }
 
     results = fetch_all_from_db(query, params)
