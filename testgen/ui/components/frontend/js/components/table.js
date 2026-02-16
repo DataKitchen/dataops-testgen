@@ -201,7 +201,7 @@ const Table = (options, rows) => {
                             {class: 'tg-table-empty-state-body'},
                             tr(
                                 td(
-                                    {colspan: dataColumns.length},
+                                    {colspan: dataColumns.val.length},
                                     options.emptyState,
                                 ),
                             ),
