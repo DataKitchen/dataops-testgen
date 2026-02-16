@@ -23,7 +23,7 @@ import { Icon } from './icon.js';
 
 const { a, div, span } = van.tags;
 
-const baseHelpUrl = 'https://docs.datakitchen.io/articles/#!dataops-testgen-help/';
+const baseHelpUrl = 'https://docs.datakitchen.io/articles/dataops-testgen-help/';
 const releaseNotesTopic = 'testgen-release-notes';
 const upgradeTopic = 'upgrade-testgen';
 

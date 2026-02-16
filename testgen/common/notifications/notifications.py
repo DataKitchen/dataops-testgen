@@ -393,7 +393,7 @@ class BaseNotificationTemplate(BaseEmailTemplate):
         </tr>
         <tr class="footer">
           <td>
-            <a href="https://docs.datakitchen.io/articles/#!dataops-testgen-help/introduction-to-dataops-testgen"
+            <a href="https://docs.datakitchen.io/articles/dataops-testgen-help/introduction-to-dataops-testgen"
                target="_blank">TestGen Help</a>
           </td>
           <td align="right">

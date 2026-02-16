@@ -67,6 +67,7 @@ class ScoreDetailsPage(Page):
 
         testgen.page_header(
             "Score Details",
+            "view-score-details",
             breadcrumbs=[
                 {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": score_definition.project_code}},
                 {"label": score_definition.name},

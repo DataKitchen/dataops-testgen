@@ -38,7 +38,7 @@ class ProjectSettingsPage(Page):
 
         testgen.page_header(
             PAGE_TITLE,
-            "tg-project-settings",
+            "manage-projects",
         )
 
         testgen.whitespace(1)

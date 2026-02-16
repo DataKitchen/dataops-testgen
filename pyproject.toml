@@ -99,8 +99,8 @@ tg-patch-streamlit = "testgen.ui.scripts.patch_streamlit:patch"
 [project.urls]
 "Source Code" = "https://github.com/DataKitchen/dataops-testgen"
 "Bug Tracker" = "https://github.com/DataKitchen/dataops-testgen/issues"
-"Documentation" = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/dataops-testgen-help"
-"Release Notes" = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-release-notes"
+"Documentation" = "https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help"
+"Release Notes" = "https://docs.datakitchen.io/articles/dataops-testgen-help/testgen-release-notes"
 "Slack" = "https://data-observability-slack.datakitchen.io/join"
 "Homepage" = "https://example.com"
 

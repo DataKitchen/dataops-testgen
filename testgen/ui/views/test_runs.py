@@ -51,7 +51,7 @@ class TestRunsPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "test-results",
+            "data-quality-testing",
         )
 
         with st.spinner("Loading data ..."):

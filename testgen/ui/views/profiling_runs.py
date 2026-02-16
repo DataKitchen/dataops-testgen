@@ -49,7 +49,7 @@ class DataProfilingPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "investigate-profiling",
+            "data-profiling",
         )
 
         with st.spinner("Loading data ..."):

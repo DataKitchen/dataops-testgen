@@ -57,6 +57,7 @@ class DataCatalogPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
+            "data-catalog",
         )
 
         _, loading_column = st.columns([.4, .6])
