@@ -77,7 +77,7 @@ class ScoreExplorerPage(Page):
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
 
-        testgen.page_header(page_title, breadcrumbs=[
+        testgen.page_header(page_title, "explore-and-create-scorecards", breadcrumbs=[
             {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
             {"label": last_breadcrumb},
         ])

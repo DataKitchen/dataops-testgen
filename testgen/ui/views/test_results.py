@@ -78,7 +78,7 @@ class TestResultsPage(Page):
 
         testgen.page_header(
             "Test Results",
-            "view-testgen-test-results",
+            "investigate-test-results",
             breadcrumbs=[
                 { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.test_suite} | {run_date}" },
@@ -311,9 +311,6 @@ class TestResultsPage(Page):
                 session.auth.user_has_permission("edit"),
                 multi_select,
             )
-
-        # Help Links
-        st.markdown("[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)")
 
 
 @st.fragment

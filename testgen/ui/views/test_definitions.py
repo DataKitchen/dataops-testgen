@@ -68,7 +68,7 @@ class TestDefinitionsPage(Page):
 
         testgen.page_header(
             "Test Definitions",
-            "testgen-test-types",
+            "test-definitions",
             breadcrumbs=[
                 { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
                 { "label": test_suite.test_suite },

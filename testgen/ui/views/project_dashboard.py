@@ -30,6 +30,7 @@ class ProjectDashboardPage(Page):
     def render(self, project_code: str, **_kwargs):
         testgen.page_header(
             PAGE_TITLE,
+            "project-dashboard",
         )
 
         with st.spinner("Loading data ..."):

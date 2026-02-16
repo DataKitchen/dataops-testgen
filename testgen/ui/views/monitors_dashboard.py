@@ -71,7 +71,7 @@ class MonitorsDashboardPage(Page):
     ) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "monitors-dashboard",
+            "monitor-tables",
         )
 
         project_summary = Project.get_summary(project_code)

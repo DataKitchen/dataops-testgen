@@ -64,7 +64,7 @@ class HygieneIssuesPage(Page):
 
         testgen.page_header(
             "Hygiene Issues",
-            "view-hygiene-issues",
+            "data-hygiene-issues",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },
@@ -336,10 +336,6 @@ class HygieneIssuesPage(Page):
         with score_column:
             render_score(run.project_code, run_id)
 
-        # Help Links
-        st.markdown(
-            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
-        )
 
 @st.fragment
 @with_database_session
