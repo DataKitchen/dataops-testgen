@@ -32,6 +32,17 @@ PAGE_ICON = "apps_outage"
 PAGE_TITLE = "Monitors"
 LOG = logging.getLogger("testgen")
 
+ALLOWED_SORT_FIELDS = {
+    "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
+    "metric_anomalies", "latest_update", "row_count",
+}
+ANOMALY_TYPE_FILTERS = { 
+    "freshness": "freshness_anomalies",
+    "volume": "volume_anomalies",
+    "schema": "schema_anomalies",
+    "metrics": "metric_anomalies",
+}
+
 
 class MonitorsDashboardPage(Page):
     path = "monitors"
@@ -51,7 +62,7 @@ class MonitorsDashboardPage(Page):
         project_code: str,
         table_group_id: str | None = None,
         table_name_filter: str | None = None,
-        only_tables_with_anomalies: Literal["true", "false"] | None = None,
+        anomaly_type_filter: str | None = None,
         sort_field: str | None = None,
         sort_order: str | None = None,
         items_per_page: str = "20",
@@ -60,7 +71,7 @@ class MonitorsDashboardPage(Page):
     ) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "monitors-dashboard",
+            "monitor-tables",
         )
 
         project_summary = Project.get_summary(project_code)
@@ -90,10 +101,14 @@ class MonitorsDashboardPage(Page):
                         JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
                     )
 
+                    anomaly_type_filter = [t for t in anomaly_type_filter.split(",") if t in ANOMALY_TYPE_FILTERS] if anomaly_type_filter else []
+                    if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
+                        sort_field = None
+
                     monitored_tables_page = get_monitor_changes_by_tables(
                         table_group_id,
                         table_name_filter=table_name_filter,
-                        only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+                        anomaly_type_filter=anomaly_type_filter,
                         sort_field=sort_field,
                         sort_order=sort_order,
                         limit=int(items_per_page),
@@ -102,7 +117,7 @@ class MonitorsDashboardPage(Page):
                     all_monitored_tables_count = count_monitor_changes_by_tables(
                         table_group_id,
                         table_name_filter=table_name_filter,
-                        only_tables_with_anomalies=only_tables_with_anomalies and only_tables_with_anomalies.lower() == "true",
+                        anomaly_type_filter=anomaly_type_filter,
                     )
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
@@ -133,7 +148,7 @@ class MonitorsDashboardPage(Page):
                 "filters": {
                     "table_group_id": table_group_id,
                     "table_name_filter": table_name_filter,
-                    "only_tables_with_anomalies": only_tables_with_anomalies,
+                    "anomaly_type_filter": list(anomaly_type_filter),
                 },
                 "sort": {
                     "sort_field": sort_field,
@@ -213,7 +228,7 @@ class MonitorNotificationSettingsDialog(NotificationSettingsDialogBase):
 def get_monitor_changes_by_tables(
     table_group_id: str,
     table_name_filter: str | None = None,
-    only_tables_with_anomalies: bool = False,
+    anomaly_type_filter: list[str] | None = None,
     sort_field: str | None = None,
     sort_order: Literal["asc"] | Literal["desc"] | None = None,
     limit: int | None = None,
@@ -222,7 +237,7 @@ def get_monitor_changes_by_tables(
     query, params = _monitor_changes_by_tables_query(
         table_group_id,
         table_name_filter=table_name_filter,
-        only_tables_with_anomalies=only_tables_with_anomalies,
+        anomaly_type_filter=anomaly_type_filter,
         sort_field=sort_field,
         sort_order=sort_order,
         limit=limit,
@@ -237,12 +252,12 @@ def get_monitor_changes_by_tables(
 def count_monitor_changes_by_tables(
     table_group_id: str,
     table_name_filter: str | None = None,
-    only_tables_with_anomalies: bool = False,
+    anomaly_type_filter: list[str] | None = None,
 ) -> int:
     query, params = _monitor_changes_by_tables_query(
         table_group_id,
         table_name_filter=table_name_filter,
-        only_tables_with_anomalies=only_tables_with_anomalies,
+        anomaly_type_filter=anomaly_type_filter,
     )
     count_query = f"SELECT COUNT(*) AS count FROM ({query}) AS subquery"
     result = execute_db_query(count_query, params)
@@ -297,23 +312,15 @@ def summarize_monitor_changes(table_group_id: str) -> dict:
     }
 
 
-ALLOWED_SORT_FIELDS = {
-    "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
-    "metric_anomalies", "latest_update", "row_count",
-}
-
 def _monitor_changes_by_tables_query(
     table_group_id: str,
     table_name_filter: str | None = None,
-    only_tables_with_anomalies: bool = False,
+    anomaly_type_filter: list[str] | None = None,
     sort_field: str | None = None,
     sort_order: Literal["asc"] | Literal["desc"] | None = None,
     limit: int | None = None,
     offset: int | None = None,
 ) -> tuple[str, dict]:
-    if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
-        sort_field = None
-
     query = f"""
     WITH ranked_test_runs AS (
         SELECT
@@ -452,7 +459,7 @@ def _monitor_changes_by_tables_query(
         baseline_tables.previous_row_count
     FROM monitor_tables
     LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
-    {"WHERE (freshness_anomalies + schema_anomalies + volume_anomalies + metric_anomalies) > 0" if only_tables_with_anomalies else ""}
+    {f"WHERE ({' OR '.join(f'{ANOMALY_TYPE_FILTERS[t]} > 0' for t in anomaly_type_filter)})" if anomaly_type_filter else ""}
     ORDER BY {"LOWER(monitor_tables.table_name)" if not sort_field or sort_field == "table_name" else f"monitor_tables.{sort_field}"}
     {"DESC" if sort_order == "desc" else "ASC"} NULLS LAST
     {"LIMIT :limit" if limit else ""}
@@ -630,10 +637,13 @@ def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
 def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
+    extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
 
     @with_database_session
     def show_dialog():
         testgen.css_class("l-dialog")
+
+        extended_history = st.session_state.get(extended_history_key, False)
 
         selected_data_point = get_selected_data_point()
         data_structure_logs = None
@@ -641,8 +651,9 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             data_structure_logs = get_data_structure_logs(
                 table_group.id, table_name, *selected_data_point,
             )
-        
-        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
+
+        lookback_multiplier = 3 if extended_history else 1
+        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
         definitions = TestDefinition.select_where(
             TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
             TestDefinition.table_name == table_name,
@@ -716,8 +727,10 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
                 **make_json_safe(events),
                 "data_structure_logs": make_json_safe(data_structure_logs),
                 "predictions": predictions,
+                "extended_history": extended_history,
             },
             on_ShowDataStructureLogs_change=on_show_data_structure_logs,
+            on_ToggleExtendedHistory_change=on_toggle_extended_history,
         )
 
     def on_show_data_structure_logs(payload):
@@ -727,17 +740,20 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
             )
         except: pass  # noqa: S110
 
+    def on_toggle_extended_history(_payload):
+        st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
+
     return st.dialog(title=f"Table: {table_name}")(show_dialog)()
 
 
 @st.cache_data(show_spinner=False)
-def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
+def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_multiplier: int = 1) -> dict:
     query = """
     WITH ranked_test_runs AS (
         SELECT
             test_runs.id,
             test_runs.test_starttime,
-            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+            COALESCE(test_suites.monitor_lookback, 1) * :lookback_multiplier AS lookback,
             ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
         FROM test_suites
         INNER JOIN test_runs
@@ -781,6 +797,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
     params = {
         "table_name": table_name,
         "test_suite_id": test_suite_id,
+        "lookback_multiplier": lookback_multiplier,
     }
 
     results = fetch_all_from_db(query, params)
@@ -834,6 +851,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str) -> dict:
         ],
         "schema_events": [
             {
+                "table_change": signals[0] or None,
                 "additions": signals[1],
                 "deletions": signals[2],
                 "modifications": signals[3],

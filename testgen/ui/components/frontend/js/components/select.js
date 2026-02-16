@@ -9,12 +9,13 @@
  * @type {object}
  * @property {string?} id
  * @property {string} label
- * @property {string?} value
+ * @property {string?|Array.<string>?} value
  * @property {Array.<SelectOption>} options
  * @property {boolean} allowNull
  * @property {Function|null} onChange
  * @property {boolean?} disabled
  * @property {boolean?} required
+ * @property {boolean?} multiSelect
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
@@ -33,6 +34,10 @@ const { div, i, input, label, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
+
+    if (getValue(props.multiSelect)) {
+        return MultiSelect(props);
+    }
 
     const domId = van.derive(() => props.id?.val ?? getRandomId());
     const opened = van.state(false);
@@ -207,6 +212,112 @@ const Select = (/** @type {Properties} */ props) => {
     );
 };
 
+/**
+ * @param {Properties} props
+ */
+const MultiSelect = (props) => {
+    const domId = van.derive(() => props.id?.val ?? getRandomId());
+    const opened = van.state(false);
+    const options = van.derive(() => getValue(props.options) ?? []);
+
+    const selectedValues = isState(props.value) ? props.value : van.state(props.value ?? []);
+
+    const displayLabel = van.derive(() => {
+        const selected = getValue(selectedValues) ?? [];
+        if (!selected.length) {
+            return '---';
+        };
+        const allOptions = getValue(options);
+        return selected
+            .map(value => allOptions.find(opt => opt.value === value)?.label ?? value)
+            .join(', ');
+    });
+
+    const toggleOption = (optionValue) => {
+        const current = [...(getValue(selectedValues) ?? [])];
+        const index = current.indexOf(optionValue);
+        if (index >= 0) {
+            current.splice(index, 1);
+        } else {
+            current.push(optionValue);
+        }
+        selectedValues.val = current;
+        props.onChange?.(current, { valid: current.length > 0 || !getValue(props.required) });
+    };
+
+    return div(
+        {
+            id: domId,
+            class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
+            'data-testid': getValue(props.testId) ?? '',
+            onclick: (/** @type Event */ event) => {
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                // Should toggle open/close unless disabled
+                opened.val = getValue(props.disabled) ? false : !opened.val;
+            },
+        },
+        span(
+            { class: 'flex-row fx-gap-1', 'data-testid': 'select-label' },
+            props.label,
+            () => getValue(props.required)
+                ? span({ class: 'text-error' }, '*')
+                : '',
+        ),
+
+        div(
+            {
+                class: () => `flex-row tg-select--field ${opened.val ? 'opened' : ''}`,
+                style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
+                'data-testid': 'select-input',
+            },
+            () => {
+                // Hack to display value again when closed
+                // For some reason, it goes away when opened
+                opened.val;
+                return div(
+                    { class: 'tg-select--field--content tg-select--multi-display', 'data-testid': 'select-input-display' },
+                    displayLabel.val || '',
+                );
+            },
+            div(
+                { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
+                i({ class: 'material-symbols-rounded' }, 'expand_more'),
+            ),
+        ),
+
+        Portal(
+            {target: domId.val, targetRelative: true, position: props.portalPosition?.val ?? props?.portalPosition, opened},
+            () => div(
+                {
+                    class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
+                    'data-testid': 'select-options',
+                },
+                getValue(options).map(option => {
+                    const isSelected = van.derive(() => (getValue(selectedValues) ?? []).includes(option.value));
+                    return div(
+                        {
+                            class: () => `tg-select--option fx-gap-2 ${isSelected.val ? 'selected' : ''}`,
+                            onclick: (/** @type Event */ event) => {
+                                event.stopPropagation();
+                                toggleOption(option.value);
+                            },
+                            'data-testid': 'select-options-item',
+                        },
+                        input({
+                            type: 'checkbox',
+                            class: 'tg-select--checkbox',
+                            checked: isSelected,
+                        }),
+                        span(option.label),
+                    );
+                }),
+            ),
+        ),
+    );
+};
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-select--label {
@@ -246,6 +357,12 @@ stylesheet.replace(`
     height: 100%;
     flex: 1;
     font-weight: 500;
+}
+
+.tg-select--multi-display {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tg-select--field--content > input {
@@ -306,6 +423,36 @@ stylesheet.replace(`
 .tg-select--option.selected {
     background: var(--select-hover-background);
     color: var(--primary-color);
+}
+
+.tg-select--checkbox {
+    appearance: none;
+    box-sizing: border-box;
+    margin: 0;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: 1px solid var(--secondary-text-color);
+    border-radius: 4px;
+    position: relative;
+    pointer-events: none;
+    transition-property: border-color, background-color;
+    transition-duration: 0.3s;
+}
+
+.tg-select--checkbox:checked {
+    border-color: transparent;
+    background-color: var(--primary-color);
+}
+
+.tg-select--checkbox:checked::after {
+    content: 'check';
+    position: absolute;
+    top: -4px;
+    left: -3px;
+    font-family: 'Material Symbols Rounded';
+    font-size: 22px;
+    color: white;
 }
 
 .tg-select--inline-trigger {

@@ -48,7 +48,7 @@
  * @type {object}
  * @property {string?} table_group_id
  * @property {string?} table_name_filter
- * @property {string?} only_tables_with_anomalies
+ * @property {string?} anomaly_type_filter
  * 
  * @typedef MonitorListSort
  * @type {object}
@@ -85,7 +85,6 @@ import { Checkbox } from '../components/checkbox.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { Icon } from '../components/icon.js';
 import { Table } from '../components/table.js';
-import { Toggle } from '../components/toggle.js';
 import { withTooltip } from '../components/tooltip.js';
 import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
@@ -100,7 +99,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
     let renderTime = new Date();
     const tableGroupFilterValue = van.derive(() => getValue(props.filters).table_group_id ?? null);
     const tableNameFilterValue = van.derive(() => getValue(props.filters).table_name_filter ?? null);
-    const onlyAnomaliesFilterValue = van.derive(() => getValue(props.filters).only_tables_with_anomalies === 'true');
+    const anomalyTypeFilterValue = van.derive(() => getValue(props.filters).anomaly_type_filter ?? []);
     const tableSort = van.derive(() => {
         const sort = getValue(props.sort);
         return {
@@ -292,7 +291,14 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
                 }),
                 () => getValue(props.has_monitor_test_suite)
-                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies')
+                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies', {
+                        onTagClick: (type) => {
+                            const current = anomalyTypeFilterValue.val;
+                            const newFilter = current.length === 1 && current[0] === type ? null : type;
+                            emitEvent('SetParamValues', { payload: { anomaly_type_filter: newFilter } });
+                        },
+                        activeTypes: anomalyTypeFilterValue,
+                    })
                     : '',
                 () => getValue(props.has_monitor_test_suite) && userCanEdit
                     ? div(
@@ -330,7 +336,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             () => getValue(props.has_monitor_test_suite) ? Table(
                 {
                     header: () => div(
-                        {class: 'flex-row fx-gap-3 p-4 pt-2 pb-2'},
+                        {class: 'flex-row fx-align-flex-end fx-gap-3 p-4 pt-2 pb-2'},
                         Input({
                             id: 'search-tables',
                             name: 'search-tables',
@@ -343,12 +349,20 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             value: tableNameFilterValue,
                             onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value}}),
                         }),
-                        Toggle({
-                            name: 'anomalies_only',
-                            label: 'Only tables with anomalies',
-                            style: 'font-size: 16px;',
-                            checked: onlyAnomaliesFilterValue,
-                            onChange: (checked) => emitEvent('SetParamValues', {payload: {only_tables_with_anomalies: String(checked).toLowerCase()}}),
+                        Select({
+                            label: 'Anomaly type',
+                            value: anomalyTypeFilterValue,
+                            options: [
+                                { label: 'Freshness', value: 'freshness' },
+                                { label: 'Volume', value: 'volume' },
+                                { label: 'Schema', value: 'schema' },
+                                { label: 'Metrics', value: 'metrics' },
+                            ],
+                            multiSelect: true,
+                            width: 200,
+                            onChange: (values) => emitEvent('SetParamValues', {
+                                payload: { anomaly_type_filter: values.length ? values.join(',') : null },
+                            }),
                         }),
                         span({class: 'fx-flex'}, ''),
                         () => {

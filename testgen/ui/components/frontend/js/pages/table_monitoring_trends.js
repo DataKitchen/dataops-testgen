@@ -50,6 +50,7 @@
  * @property {MetricEventGroup[]} metric_events
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
+ * @property {boolean} extended_history
  */
 import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
@@ -91,8 +92,136 @@ const TableMonitoringTrend = (props) => {
   window.testgen.isPage = true;
   loadStylesheet('table-monitoring-trends', stylesheet);
 
-  const domId = 'monitoring-trends-container';
+  const shouldShowSidebar = van.state(false);
+  const schemaChartSelection = van.state(null);
+  van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
 
+  const getDataStructureLogs = (/** @type {SchemaEvent} */ event) => {
+    emitEvent('ShowDataStructureLogs', { payload: { start_time: event.window_start, end_time: event.time } });
+    shouldShowSidebar.val = true;
+    schemaChartSelection.val = event;
+  };
+
+  return DualPane(
+    {
+      id: 'monitoring-trends-container',
+      class: () => `table-monitoring-trend-wrapper ${shouldShowSidebar.val ? 'has-sidebar' : ''}`,
+      minSize: 150,
+      maxSize: 400,
+      resizablePanel: 'right',
+      resizablePanelDomId: 'data-structure-logs-sidebar',
+    },
+    div(
+      { class: '', style: 'width: 100%;' },
+      () => {
+        const extendedHistory = getValue(props.extended_history) ?? false;
+        return div(
+          { class: 'extended-history-toggle' },
+          Button({
+            label: extendedHistory ? 'Show default view' : 'Show more history',
+            icon: extendedHistory ? 'history_toggle_off' : 'history',
+            width: 'auto',
+            onclick: () => emitEvent('ToggleExtendedHistory', { payload: {} }),
+          }),
+        );
+      },
+      () => ChartsSection(props, { schemaChartSelection, getDataStructureLogs }),
+      ChartLegend({
+        '': {
+          items: [
+            { icon: svg({ width: 10, height: 10 },
+              path({ d: 'M 8 5 A 3 3 0 0 0 2 5', fill: 'none', stroke: colorMap.emptyDark, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+              path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+              circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
+            ), label: 'Training' },
+            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 3, fill: colorMap.emptyDark, stroke: 'none' })), label: 'No change' },
+          ],
+        },
+        'Freshness': {
+          items: [
+            { icon: svg({ width: 10, height: 10 }, line({ x1: 4, y1: 0, x2: 4, y2: 10, stroke: colorMap.emptyDark, 'stroke-width': 2 })), label: 'Update' },
+            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 4, fill: colorMap.limeGreen })), label: 'On Time' },
+            {
+              icon: svg(
+                { width: 10, height: 10, style: 'overflow: visible;' },
+                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+              ),
+              label: 'Early/Late',
+            },
+          ],
+        },
+        'Volume/Metrics': {
+          items: [
+            {
+              icon: svg(
+                { width: 16, height: 10 },
+                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.blueLight, 'stroke-width': 2 }),
+                circle({ cx: 8, cy: 5, r: 3, fill: colorMap.blueLight })
+              ),
+              label: 'Actual',
+            },
+            {
+              icon: svg(
+                { width: 10, height: 10, style: 'overflow: visible;' },
+                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+              ),
+              label: 'Anomaly',
+            },
+            {
+              icon: svg(
+                { width: 16, height: 10 },
+                path({ d: 'M 0,4 L 16,2 L 16,8 L 0,6 Z', fill: colorMap.emptyDark, opacity: 0.4 }),
+                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.grey, 'stroke-width': 2 })
+              ),
+              label: 'Prediction',
+            },
+          ],
+        },
+        'Schema': {
+          items: [
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blue })), label: 'Additions' },
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
+            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
+          ],
+        },
+      }),
+    ),
+
+    () => {
+      const _shouldShowSidebar = shouldShowSidebar.val;
+      const selection = schemaChartSelection.val;
+      if (!_shouldShowSidebar || !selection) {
+        return span();
+      }
+
+      return div(
+        { id: 'data-structure-logs-sidebar', class: 'flex-column data-structure-logs-sidebar' },
+        SchemaChangesList({
+          data_structure_logs: props.data_structure_logs,
+          window_start: selection.window_start,
+          window_end: selection.time,
+        }),
+        Button({
+          label: 'Hide',
+          style: 'margin-top: 8px; width: auto; align-self: flex-end;',
+          icon: 'double_arrow',
+          onclick: () => {
+            shouldShowSidebar.val = false;
+            schemaChartSelection.val = null;
+          },
+        }),
+      );
+    },
+  );
+};
+
+/**
+ * @param {Properties} props
+ * @param {object} options
+ * @param {import('van').State} options.schemaChartSelection
+ * @param {Function} options.getDataStructureLogs
+ */
+const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) => {
   const metricEvents = getValue(props.metric_events) ?? [];
   const chartHeight = (
     + (spacing * 4) + fresshnessChartHeight
@@ -108,12 +237,27 @@ const TableMonitoringTrend = (props) => {
   ], []);
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
-  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
+
+  // Compute dropped periods from schema events to hide volume/metric data between table drop and re-add
+  const droppedPeriods = [];
+  let dropStart = null;
+  const sorted = [...schemaChangeEvents].sort((a, b) => a.time - b.time);
+  for (const event of sorted) {
+    if (event.table_change === 'D' && dropStart === null) {
+      dropStart = event.time;
+    } else if (event.table_change === 'A' && dropStart !== null) {
+      droppedPeriods.push({ start: dropStart, end: event.time });
+      dropStart = null;
+    }
+  }
+  const isInDroppedPeriod = (time) => droppedPeriods.some(p => time >= p.start && time <= p.end);
+
+  const volumeTrendEvents = (getValue(props.volume_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) })).filter(e => !isInDroppedPeriod(e.time));
 
   const metricEventGroups = metricEvents.map(group => ({
     ...group,
-    events: group.events.map(e => ({ ...e, time: parseDate(e.time) })),
+    events: group.events.map(e => ({ ...e, time: parseDate(e.time) })).filter(e => !isInDroppedPeriod(e.time)),
   }));
 
   const volumes = [
@@ -273,10 +417,6 @@ const TableMonitoringTrend = (props) => {
     },
   }));
 
-  const shouldShowSidebar = van.state(false);
-  const schemaChartSelection = van.state(null);
-  van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
-
   const parsedVolumeTrendEvents = volumeTrendEvents.toSorted((a, b) => a.time - b.time).map((e) => ({
     originalX: e.time,
     originalY: e.record_count,
@@ -406,299 +546,195 @@ const TableMonitoringTrend = (props) => {
     tooltipText = '';
   };
 
-  const getDataStructureLogs = (/** @type {SchemaEvent} */ event) => {
-    emitEvent('ShowDataStructureLogs', { payload: { start_time: event.window_start, end_time: event.time } });
-    shouldShowSidebar.val = true;
-    schemaChartSelection.val = event;
-  };
+  return svg(
+      {
+        id: 'monitoring-trends-charts-svg',
+        viewBox: `0 0 ${chartsWidth + chartsYAxisWidth} ${chartHeight}`,
+        style: `overflow: visible;`,
+      },
 
-  return DualPane(
-    {
-      id: domId,
-      class: () => `table-monitoring-trend-wrapper ${shouldShowSidebar.val ? 'has-sidebar' : ''}`,
-      minSize: 150,
-      maxSize: 400,
-      resizablePanel: 'right',
-      resizablePanelDomId: 'data-structure-logs-sidebar',
-    },
-    div(
-      { class: '', style: 'width: 100%;' },
-      svg(
+      text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Freshness'),
+      FreshnessChart(
         {
-          id: 'monitoring-trends-charts-svg',
-          viewBox: `0 0 ${chartsWidth + chartsYAxisWidth} ${chartHeight}`,
-          style: `overflow: visible;`,
+          width: chartsWidth,
+          height: fresshnessChartHeight,
+          lineHeight: fresshnessChartHeight,
+          nestedPosition: { x: 0, y: nextPosition({ name: 'freshnessChart' }) },
+          prediction: parsedFreshnessPredictionPoints,
+          showTooltip: showTooltip.bind(null, 0 + fresshnessChartHeight / 2),
+          hideTooltip,
         },
-
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Freshness'),
-        FreshnessChart(
-          {
-            width: chartsWidth,
-            height: fresshnessChartHeight,
-            lineHeight: fresshnessChartHeight,
-            nestedPosition: { x: 0, y: nextPosition({ name: 'freshnessChart' }) },
-            prediction: parsedFreshnessPredictionPoints,
-            showTooltip: showTooltip.bind(null, 0 + fresshnessChartHeight / 2),
-            hideTooltip,
-          },
-          ...parsedFreshnessEvents,
-        ),
-        DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
-
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Volume'),
-        MonitoringSparklineChart(
-          {
-            width: chartsWidth,
-            height: volumeTrendChartHeight,
-            nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
-            lineWidth: 2,
-            attributes: {style: 'overflow: visible;'},
-            prediction: parsedVolumeTrendPredictionPoints,
-            predictionMethod: predictions.volume_trend?.method,
-          },
-          ...parsedVolumeTrendEvents,
-        ),
-        MonitoringSparklineMarkers(
-          {
-            size: 2,
-            transform: `translate(0, ${positionTracking.volumeTrendChart})`,
-            showTooltip: showTooltip.bind(null, 0 + volumeTrendChartHeight / 2),
-            hideTooltip,
-          },
-          parsedVolumeTrendEvents,
-        ),
-        DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: volumeTrendChartHeight }) }, end),
-
-        // Schema Chart Selection Highlight
-        () => {
-          const selection = schemaChartSelection.val;
-          if (selection) {
-            const width = 16;
-            const height = schemaChartHeight + 3 * spacing;
-            return rect({
-              width: width,
-              height: height,
-              x: selection.point.x - (width / 2),
-              y: selection.point.y + positionTracking.schemaChangesChart - 1.5 * spacing - (height / 2),
-              fill: colorMap.empty,
-              style: `transform-box: fill-box; transform-origin: center;`,
-            });
-          }
-
-          return g();
-        },
-        text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Schema'),
-        SchemaChangesChart(
-          {
-            width: chartsWidth,
-            height: schemaChartHeight,
-            nestedPosition: { x: 0, y: nextPosition({ name: 'schemaChangesChart' }) },
-            onClick: getDataStructureLogs,
-            showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart + schemaChartHeight / 2),
-            hideTooltip,
-          },
-          ...parsedSchemaChangeEvents,
-        ),
-
-        ...parsedMetricCharts.flatMap((metricChart, idx) => {
-          const chartName = `metricTrendChart_${idx}`;
-          return [
-            DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: idx === 0 ? schemaChartHeight : metricTrendChartHeight }) }, end),
-            text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, `Metric: ${metricChart.columnName}`),
-            MonitoringSparklineChart(
-              {
-                width: chartsWidth,
-                height: metricTrendChartHeight,
-                nestedPosition: { x: 0, y: nextPosition({ name: chartName }) },
-                lineWidth: 2,
-                attributes: {style: 'overflow: visible;'},
-                prediction: metricChart.predictionPoints,
-                predictionMethod: metricChart.predictionMethod,
-              },
-              ...metricChart.events,
-            ),
-            MonitoringSparklineMarkers(
-              {
-                size: 2,
-                transform: `translate(0, ${positionTracking[chartName]})`,
-                showTooltip: showTooltip.bind(null, positionTracking[chartName] + metricTrendChartHeight / 2),
-                hideTooltip,
-              },
-              metricChart.events,
-            ),
-          ];
-        }),
-
-        g(
-          {},
-          rect({
-            width: chartsWidth,
-            height: chartHeight,
-            x: origin.x - paddingLeft,
-            y: 0,
-            rx: 4,
-            ry: 4,
-            stroke: 'var(--border-color)',
-            fill: 'transparent',
-            style: 'pointer-events: none;'
-          }),
-
-          timeline.map((value, idx) => {
-            const valueAsDate = new Date(value);
-            const label = timeTickFormatter.format(valueAsDate);
-            const xPosition = scale(valueAsDate.getTime(), {
-              old: dateRange,
-              new: { min: origin.x, max: end.x },
-            }, origin.x);
-
-            return g(
-              {},
-              defs(
-                clipPath(
-                  { id: `xTickClip-${idx}` },
-                  rect({ x: xPosition, y: -4, width: 4, height: 4 }),
-                ),
-              ),
-
-              rect({
-                x: xPosition,
-                y: -4,
-                width: 4,
-                height: 8,
-                rx: 2,
-                ry: 1,
-                fill: colorMap.lightGrey,
-                'clip-path': `url(#xTickClip-${idx})`,
-              }),
-
-              text(
-                {
-                  x: xPosition,
-                  y: 0,
-                  dx: -30,
-                  dy: -8,
-                  fill: colorMap.grey,
-                  'stroke-width': .1,
-                  style: `font-size: 10px;`,
-                },
-                label,
-              ),
-            );
-          }),
-
-          // Volume Chart Y axis
-          g(
-            { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
-            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min, tickDecimals(volumeRange.min, volumeRange))),
-            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max, tickDecimals(volumeRange.max, volumeRange))),
-          ),
-
-          // Schema Chart Y axis
-          g(
-            { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.schemaChangesChart + (schemaChartHeight / 2)})` },
-            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(schemaChangesMaxValue)),
-            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, 0),
-          ),
-
-          // Metric Chart Y axes
-          ...parsedMetricCharts.map((metricChart, idx) => {
-            const chartName = `metricTrendChart_${idx}`;
-            return g(
-              { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking[chartName] + (metricTrendChartHeight / 2)})` },
-              text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min, tickDecimals(metricChart.range.min, metricChart.range))),
-              text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max, tickDecimals(metricChart.range.max, metricChart.range))),
-            );
-          }),
-        ),
-        tooltipWrapperElement,
+        ...parsedFreshnessEvents,
       ),
-      ChartLegend({
-        '': {
-          items: [
-            { icon: svg({ width: 10, height: 10 },
-              path({ d: 'M 8 5 A 3 3 0 0 0 2 5', fill: 'none', stroke: colorMap.emptyDark, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
-              path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
-              circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
-            ), label: 'Training' },
-            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 3, fill: colorMap.emptyDark, stroke: 'none' })), label: 'No change' },
-          ],
+      DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: fresshnessChartHeight }) }, end),
+
+      text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Volume'),
+      MonitoringSparklineChart(
+        {
+          width: chartsWidth,
+          height: volumeTrendChartHeight,
+          nestedPosition: { x: 0, y: nextPosition({ name: 'volumeTrendChart' }) },
+          lineWidth: 2,
+          attributes: {style: 'overflow: visible;'},
+          prediction: parsedVolumeTrendPredictionPoints,
+          predictionMethod: predictions.volume_trend?.method,
         },
-        'Freshness': {
-          items: [
-            { icon: svg({ width: 10, height: 10 }, line({ x1: 4, y1: 0, x2: 4, y2: 10, stroke: colorMap.emptyDark, 'stroke-width': 2 })), label: 'Update' },
-            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 4, fill: colorMap.limeGreen })), label: 'On Time' },
-            {
-              icon: svg(
-                { width: 10, height: 10, style: 'overflow: visible;' },
-                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
-              ),
-              label: 'Early/Late',
-            },
-          ],
+        ...parsedVolumeTrendEvents,
+      ),
+      MonitoringSparklineMarkers(
+        {
+          size: 2,
+          transform: `translate(0, ${positionTracking.volumeTrendChart})`,
+          showTooltip: showTooltip.bind(null, 0 + volumeTrendChartHeight / 2),
+          hideTooltip,
         },
-        'Volume/Metrics': {
-          items: [
-            {
-              icon: svg(
-                { width: 16, height: 10 },
-                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.blueLight, 'stroke-width': 2 }),
-                circle({ cx: 8, cy: 5, r: 3, fill: colorMap.blueLight })
-              ),
-              label: 'Actual',
-            },
-            {
-              icon: svg(
-                { width: 10, height: 10, style: 'overflow: visible;' },
-                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
-              ),
-              label: 'Anomaly',
-            },
-            {
-              icon: svg(
-                { width: 16, height: 10 },
-                path({ d: 'M 0,4 L 16,2 L 16,8 L 0,6 Z', fill: colorMap.emptyDark, opacity: 0.4 }),
-                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.grey, 'stroke-width': 2 })
-              ),
-              label: 'Prediction',
-            },
-          ],
+        parsedVolumeTrendEvents,
+      ),
+      DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: volumeTrendChartHeight }) }, end),
+
+      // Schema Chart Selection Highlight
+      () => {
+        const selection = schemaChartSelection.val;
+        if (selection) {
+          const width = 16;
+          const height = schemaChartHeight + 3 * spacing;
+          return rect({
+            width: width,
+            height: height,
+            x: selection.point.x - (width / 2),
+            y: selection.point.y + positionTracking.schemaChangesChart - 1.5 * spacing - (height / 2),
+            fill: colorMap.empty,
+            style: `transform-box: fill-box; transform-origin: center;`,
+          });
+        }
+
+        return g();
+      },
+      text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, 'Schema'),
+      SchemaChangesChart(
+        {
+          width: chartsWidth,
+          height: schemaChartHeight,
+          nestedPosition: { x: 0, y: nextPosition({ name: 'schemaChangesChart' }) },
+          onClick: getDataStructureLogs,
+          showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart + schemaChartHeight / 2),
+          hideTooltip,
         },
-        'Schema': {
-          items: [
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blue })), label: 'Additions' },
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
-          ],
-        },
+        ...parsedSchemaChangeEvents,
+      ),
+
+      ...parsedMetricCharts.flatMap((metricChart, idx) => {
+        const chartName = `metricTrendChart_${idx}`;
+        return [
+          DividerLine({ x: origin.x - paddingLeft, y: nextPosition({ offset: idx === 0 ? schemaChartHeight : metricTrendChartHeight }) }, end),
+          text({ x: origin.x, y: nextPosition({ spaces: 2 }), class: 'text-small', fill: 'var(--primary-text-color)' }, `Metric: ${metricChart.columnName}`),
+          MonitoringSparklineChart(
+            {
+              width: chartsWidth,
+              height: metricTrendChartHeight,
+              nestedPosition: { x: 0, y: nextPosition({ name: chartName }) },
+              lineWidth: 2,
+              attributes: {style: 'overflow: visible;'},
+              prediction: metricChart.predictionPoints,
+              predictionMethod: metricChart.predictionMethod,
+            },
+            ...metricChart.events,
+          ),
+          MonitoringSparklineMarkers(
+            {
+              size: 2,
+              transform: `translate(0, ${positionTracking[chartName]})`,
+              showTooltip: showTooltip.bind(null, positionTracking[chartName] + metricTrendChartHeight / 2),
+              hideTooltip,
+            },
+            metricChart.events,
+          ),
+        ];
       }),
-    ),
 
-    () => {
-      const _shouldShowSidebar = shouldShowSidebar.val;
-      const selection = schemaChartSelection.val;
-      if (!_shouldShowSidebar || !selection) {
-        return span();
-      }
+      g(
+        {},
+        rect({
+          width: chartsWidth,
+          height: chartHeight,
+          x: origin.x - paddingLeft,
+          y: 0,
+          rx: 4,
+          ry: 4,
+          stroke: 'var(--border-color)',
+          fill: 'transparent',
+          style: 'pointer-events: none;'
+        }),
 
-      return div(
-        { id: 'data-structure-logs-sidebar', class: 'flex-column data-structure-logs-sidebar' },
-        SchemaChangesList({
-          data_structure_logs: props.data_structure_logs,
-          window_start: selection.window_start,
-          window_end: selection.time,
+        timeline.map((value, idx) => {
+          const valueAsDate = new Date(value);
+          const label = timeTickFormatter.format(valueAsDate);
+          const xPosition = scale(valueAsDate.getTime(), {
+            old: dateRange,
+            new: { min: origin.x, max: end.x },
+          }, origin.x);
+
+          return g(
+            {},
+            defs(
+              clipPath(
+                { id: `xTickClip-${idx}` },
+                rect({ x: xPosition, y: -4, width: 4, height: 4 }),
+              ),
+            ),
+
+            rect({
+              x: xPosition,
+              y: -4,
+              width: 4,
+              height: 8,
+              rx: 2,
+              ry: 1,
+              fill: colorMap.lightGrey,
+              'clip-path': `url(#xTickClip-${idx})`,
+            }),
+
+            text(
+              {
+                x: xPosition,
+                y: 0,
+                dx: -30,
+                dy: -8,
+                fill: colorMap.grey,
+                'stroke-width': .1,
+                style: `font-size: 10px;`,
+              },
+              label,
+            ),
+          );
         }),
-        Button({
-          label: 'Hide',
-          style: 'margin-top: 8px; width: auto; align-self: flex-end;',
-          icon: 'double_arrow',
-          onclick: () => {
-            shouldShowSidebar.val = false;
-            schemaChartSelection.val = null;
-          },
+
+        // Volume Chart Y axis
+        g(
+          { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.volumeTrendChart + (volumeTrendChartHeight / 2)})` },
+          text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.min, tickDecimals(volumeRange.min, volumeRange))),
+          text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(volumeRange.max, tickDecimals(volumeRange.max, volumeRange))),
+        ),
+
+        // Schema Chart Y axis
+        g(
+          { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking.schemaChangesChart + (schemaChartHeight / 2)})` },
+          text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(schemaChangesMaxValue)),
+          text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, 0),
+        ),
+
+        // Metric Chart Y axes
+        ...parsedMetricCharts.map((metricChart, idx) => {
+          const chartName = `metricTrendChart_${idx}`;
+          return g(
+            { transform: `translate(${chartsYAxisWidth - 4}, ${positionTracking[chartName] + (metricTrendChartHeight / 2)})` },
+            text({ x: 0, y: 35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.min, tickDecimals(metricChart.range.min, metricChart.range))),
+            text({ x: 0, y: -35, class: 'tick-text', 'text-anchor': 'end', fill: 'var(--caption-text-color)' }, formatNumber(metricChart.range.max, tickDecimals(metricChart.range.max, metricChart.range))),
+          );
         }),
-      );
-    },
-  );
+      ),
+      tooltipWrapperElement,
+    );
 };
 
 /**
@@ -746,6 +782,14 @@ stylesheet.replace(`
     min-height: 200px;
     padding-top: 24px;
     padding-right: 24px;
+    position: relative;
+  }
+
+  .extended-history-toggle {
+    position: absolute;
+    top: -70px;
+    right: 48px;
+    z-index: 1;
   }
 
   .table-monitoring-trend-wrapper:not(.has-sidebar) > .tg-dualpane-divider {

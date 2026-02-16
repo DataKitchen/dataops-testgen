@@ -9,7 +9,7 @@ from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
-UPGRADE_URL = "https://docs.datakitchen.io/articles/#!dataops-testgen-help/upgrade-testgen"
+UPGRADE_URL = "https://docs.datakitchen.io/articles/dataops-testgen-help/upgrade-testgen"
 
 
 def page_header(

@@ -49,7 +49,7 @@ class TableGroupsPage(Page):
         table_group_name: str | None = None,
         **_kwargs,
     ) -> None:
-        testgen.page_header(PAGE_TITLE, "create-a-table-group")
+        testgen.page_header(PAGE_TITLE, "manage-table-groups")
 
         user_can_edit = session.auth.user_has_permission("edit")
         project_summary = Project.get_summary(project_code)

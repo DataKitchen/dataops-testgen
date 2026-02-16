@@ -1,5 +1,5 @@
 # DataOps Data Quality TestGen
-![apache 2.0 license Badge](https://img.shields.io/badge/License%20-%20Apache%202.0%20-%20blue) ![PRs Badge](https://img.shields.io/badge/PRs%20-%20Welcome%20-%20green) [![Latest Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2Ftags%2F&query=results%5B0%5D.name&label=latest%20version&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Docker Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2F&query=pull_count&style=flat&label=docker%20pulls&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Documentation](https://img.shields.io/badge/docs-On%20datakitchen.io-06A04A?style=flat)](https://docs.datakitchen.io/articles/#!dataops-testgen-help/dataops-testgen-help) [![Static Badge](https://img.shields.io/badge/Slack-Join%20Discussion-blue?style=flat&logo=slack)](https://data-observability-slack.datakitchen.io/join)
+![apache 2.0 license Badge](https://img.shields.io/badge/License%20-%20Apache%202.0%20-%20blue) ![PRs Badge](https://img.shields.io/badge/PRs%20-%20Welcome%20-%20green) [![Latest Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2Ftags%2F&query=results%5B0%5D.name&label=latest%20version&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Docker Pulls](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fhub.docker.com%2Fv2%2Frepositories%2Fdatakitchen%2Fdataops-testgen%2F&query=pull_count&style=flat&label=docker%20pulls&color=06A04A)](https://hub.docker.com/r/datakitchen/dataops-testgen) [![Documentation](https://img.shields.io/badge/docs-On%20datakitchen.io-06A04A?style=flat)](https://docs.datakitchen.io/articles/dataops-testgen-help/dataops-testgen-help) [![Static Badge](https://img.shields.io/badge/Slack-Join%20Discussion-blue?style=flat&logo=slack)](https://data-observability-slack.datakitchen.io/join)
 
 *<p style="text-align: center;">DataOps Data Quality TestGen, or "TestGen" for short, can help you find data issues so you can alert your users and notify your suppliers. It does this by delivering simple, fast data quality test generation and execution by data profiling, new dataset screening and hygiene review, algorithmic generation of data quality validation tests, ongoing production testing of new data refreshes, and continuous anomaly monitoring of datasets. TestGen is part of DataKitchen's Open Source Data Observability.</p>*
 
@@ -110,7 +110,7 @@ Within the virtual environment, install the TestGen package with pip.
 pip install dataops-testgen
 ```
 
-Verify that the [_testgen_ command line](https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-commands-and-details) works.
+Verify that the [_testgen_ command line](https://docs.datakitchen.io/articles/dataops-testgen-help/testgen-commands-and-details) works.
 ```shell
 testgen --help
 ```
@@ -187,7 +187,7 @@ python3 dk-installer.py tg delete-demo
 
 ### Upgrade to latest version
 
-New releases of TestGen are announced on the `#releases` channel on [Data Observability Slack](https://data-observability-slack.datakitchen.io/join), and release notes can be found on the [DataKitchen documentation portal](https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-release-notes/a/h1_1691719522). Use the following command to upgrade to the latest released version.
+New releases of TestGen are announced on the `#releases` channel on [Data Observability Slack](https://data-observability-slack.datakitchen.io/join), and release notes can be found on the [DataKitchen documentation portal](https://docs.datakitchen.io/articles/dataops-testgen-help/testgen-release-notes/a/h1_1691719522). Use the following command to upgrade to the latest released version.
 
  ```shell
  python3 dk-installer.py tg upgrade
@@ -203,7 +203,7 @@ python3 dk-installer.py tg delete
 
 ### Access the _testgen_ CLI
 
-The [_testgen_ command line](https://docs.datakitchen.io/articles/#!dataops-testgen-help/testgen-commands-and-details) can be accessed within the running container.
+The [_testgen_ command line](https://docs.datakitchen.io/articles/dataops-testgen-help/testgen-commands-and-details) can be accessed within the running container.
 
 ```shell
 docker compose exec engine bash
@@ -232,7 +232,7 @@ We recommend you start by going through the [Data Observability Overview Demo](h
 For support requests, [join the Data Observability Slack](https://data-observability-slack.datakitchen.io/join) 👋 and post on the `#support` channel.
 
 ### Connect to your database
-Follow [these instructions](https://docs.datakitchen.io/articles/#!dataops-testgen-help/connect-your-database) to improve the quality of data in your database.
+Follow [these instructions](https://docs.datakitchen.io/articles/dataops-testgen-help/connect-your-database) to improve the quality of data in your database.
 
 ### Community
 Talk and learn with other data practitioners who are building with DataKitchen. Share knowledge, get help, and contribute to our open-source project.

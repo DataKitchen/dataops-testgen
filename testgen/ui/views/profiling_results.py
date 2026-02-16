@@ -49,7 +49,7 @@ class ProfilingResultsPage(Page):
 
         testgen.page_header(
             "Data Profiling Results",
-            "view-data-profiling-results",
+            "investigate-profiling-results",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },

@@ -64,7 +64,7 @@ class HygieneIssuesPage(Page):
 
         testgen.page_header(
             "Hygiene Issues",
-            "view-hygiene-issues",
+            "data-hygiene-issues",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },
@@ -336,10 +336,6 @@ class HygieneIssuesPage(Page):
         with score_column:
             render_score(run.project_code, run_id)
 
-        # Help Links
-        st.markdown(
-            "[Help on Hygiene Issues](https://docs.datakitchen.io/article/dataops-testgen-help/data-hygiene-issues)"
-        )
 
 @st.fragment
 @with_database_session
@@ -468,11 +464,6 @@ def source_data_dialog(selected_row):
     st.markdown("#### Hygiene Issue Detail")
     st.caption(selected_row["detail"])
 
-    st.markdown("#### SQL Query")
-    query = get_hygiene_issue_source_query(selected_row)
-    if query:
-        st.code(query, language="sql", wrap_lines=True, height=100)
-
     with st.spinner("Retrieving source data..."):
         bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
     if bad_data_status in {"ND", "NA"}:
@@ -491,6 +482,11 @@ def source_data_dialog(selected_row):
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, width=1050, hide_index=True)
+
+    st.markdown("#### SQL Query")
+    query = get_hygiene_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql", wrap_lines=True, height=100)
 
 
 def do_disposition_update(selected, str_new_status):
