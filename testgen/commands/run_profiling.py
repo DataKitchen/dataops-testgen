@@ -250,6 +250,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
                 LOG.info("Updating profiling results with frequency analysis and deleting staging")
                 execute_db_queries(sql_generator.update_frequency_analysis_results())
     except Exception as e:
+        LOG.exception("Error running frequency analysis")
         profiling_run.set_progress("freq_analysis", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         if error_data:
@@ -290,6 +291,7 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
             ]
         )
     except Exception as e:
+        LOG.exception("Error detecting hygiene issues")
         profiling_run.set_progress("hygiene_issues", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         profiling_run.set_progress("hygiene_issues", "Completed")

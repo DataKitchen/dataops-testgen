@@ -101,7 +101,7 @@ class MonitorsDashboardPage(Page):
                         JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
                     )
 
-                    anomaly_type_filter = [t for t in anomaly_type_filter.split(",") if t in ANOMALY_TYPE_FILTERS] if anomaly_type_filter else []
+                    anomaly_type_filter = [t for t in anomaly_type_filter.split(",") if t in ANOMALY_TYPE_FILTERS] if anomaly_type_filter else None
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
                         sort_field = None
 
@@ -148,7 +148,7 @@ class MonitorsDashboardPage(Page):
                 "filters": {
                     "table_group_id": table_group_id,
                     "table_name_filter": table_name_filter,
-                    "anomaly_type_filter": list(anomaly_type_filter),
+                    "anomaly_type_filter": list(anomaly_type_filter) if anomaly_type_filter else None,
                 },
                 "sort": {
                     "sort_field": sort_field,

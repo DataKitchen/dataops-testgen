@@ -295,7 +295,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         onTagClick: (type) => {
                             const current = anomalyTypeFilterValue.val;
                             const newFilter = current.length === 1 && current[0] === type ? null : type;
-                            emitEvent('SetParamValues', { payload: { anomaly_type_filter: newFilter } });
+                            emitEvent('SetParamValues', { payload: { anomaly_type_filter: newFilter, current_page: 0 } });
                         },
                         activeTypes: anomalyTypeFilterValue,
                     })
@@ -347,7 +347,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             icon: 'search',
                             testId: 'search-tables',
                             value: tableNameFilterValue,
-                            onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value}}),
+                            onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value, current_page: 0}}),
                         }),
                         Select({
                             label: 'Anomaly type',
@@ -361,7 +361,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             multiSelect: true,
                             width: 200,
                             onChange: (values) => emitEvent('SetParamValues', {
-                                payload: { anomaly_type_filter: values.length ? values.join(',') : null },
+                                payload: { anomaly_type_filter: values.length ? values.join(',') : null, current_page: 0 },
                             }),
                         }),
                         span({class: 'fx-flex'}, ''),
