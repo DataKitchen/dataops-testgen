@@ -1,16 +1,26 @@
 import dataclasses
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import date, datetime
 from typing import TypedDict
 from uuid import UUID
+
+import pandas as pd
 
 from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns
 from testgen.common.database.database_service import get_flavor_service, get_tg_schema, replace_params
+from testgen.common.freshness_service import (
+    count_excluded_minutes,
+    get_schedule_params,
+    is_excluded_day,
+    resolve_holiday_dates,
+)
 from testgen.common.models.connection import Connection
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
 from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions
 from testgen.utils import to_sql_timestamp
 
@@ -49,6 +59,7 @@ class TestExecutionDef(InputParameters):
     skip_errors: int
     history_calculation: str
     custom_query: str
+    prediction: dict | str | None
     run_type: TestRunType
     test_scope: TestScope
     template: str
@@ -88,13 +99,26 @@ class TestExecutionSQL:
         "result_measure",
     )
 
-    def __init__(self, connection: Connection, table_group: TableGroup, test_run: TestRun):
+    def __init__(self, connection: Connection, table_group: TableGroup, test_suite: TestSuite, test_run: TestRun):
         self.connection = connection
         self.table_group = table_group
+        self.test_suite = test_suite
         self.test_run = test_run
         self.run_date = test_run.test_starttime
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
+
+        self._exclude_weekends = bool(self.test_suite.predict_exclude_weekends)
+        self._holiday_dates: set[date] | None = None
+        self._schedule_tz: str | None = None
+        if test_suite.is_monitor:
+            schedule = JobSchedule.get(JobSchedule.kwargs["test_suite_id"].astext == str(test_suite.id))
+            self._schedule_tz = schedule.cron_tz or "UTC" if schedule else None
+            if test_suite.holiday_codes_list:
+                self._holiday_dates = resolve_holiday_dates(
+                    test_suite.holiday_codes_list,
+                    pd.DatetimeIndex([datetime(self.run_date.year - 1, 1, 1), datetime(self.run_date.year + 1, 12, 31)]),
+                )
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
         return "; ".join(
@@ -154,6 +178,32 @@ class TestExecutionSQL:
                 "COLUMN_TYPE": test_def.column_type,
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
+
+            # Freshness exclusion params — computed per test at execution time
+            if test_def.test_type == "Freshness_Trend" and test_def.baseline_sum:
+                sched = get_schedule_params(test_def.prediction)
+                has_exclusions = self._exclude_weekends or sched.excluded_days or sched.window_start is not None
+                if has_exclusions:
+                    last_update = pd.Timestamp(test_def.baseline_sum)
+                    excluded = int(count_excluded_minutes(
+                        last_update, self.run_date, self._exclude_weekends, self._holiday_dates,
+                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
+                        window_start=sched.window_start, window_end=sched.window_end,
+                    ))
+                    is_excl = 1 if is_excluded_day(
+                        pd.Timestamp(self.run_date), self._exclude_weekends, self._holiday_dates,
+                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
+                        window_start=sched.window_start, window_end=sched.window_end,
+                    ) else 0
+                    params["EXCLUDED_MINUTES"] = excluded
+                    params["IS_EXCLUDED_DAY"] = is_excl
+                else:
+                    params["EXCLUDED_MINUTES"] = 0
+                    params["IS_EXCLUDED_DAY"] = 0
+            else:
+                params["EXCLUDED_MINUTES"] = 0
+                params["IS_EXCLUDED_DAY"] = 0
+
         return params
 
     def _get_query(

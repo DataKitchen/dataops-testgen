@@ -11,13 +11,14 @@ WITH filtered_defs AS (
     AND test_active = 'Y'
     AND history_calculation = 'PREDICT'
 )
-SELECT test_definition_id,
-  test_time,
+SELECT r.test_definition_id,
+  d.test_type,
+  r.test_time,
   CASE
-    WHEN result_signal ~ '^-?[0-9]*\.?[0-9]+$' THEN result_signal::NUMERIC
+    WHEN r.result_signal ~ '^-?[0-9]*\.?[0-9]+$' THEN r.result_signal::NUMERIC
     ELSE NULL
   END AS result_signal
-FROM test_results
-WHERE test_suite_id = :TEST_SUITE_ID
-  AND test_definition_id IN (SELECT id FROM filtered_defs)
-ORDER BY test_time;
+FROM test_results r
+JOIN filtered_defs d ON d.id = r.test_definition_id
+WHERE r.test_suite_id = :TEST_SUITE_ID
+ORDER BY r.test_time;

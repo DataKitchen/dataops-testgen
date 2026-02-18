@@ -1,6 +1,6 @@
 /**
  * @import {ChartViewBox, Point} from './chart_canvas.js';
- * 
+ *
  * @typedef Options
  * @type {object}
  * @property {number} width
@@ -12,8 +12,8 @@
  * @property {ChartViewBox?} viewBox
  * @property {Function?} showTooltip
  * @property {Function?} hideTooltip
- * @property {PredictedEvent[]?} prediction
- * 
+ * @property {{startX: number?, endX: number, startTime: number?, endTime: number}?} predictedWindow
+ *
  * @typedef FreshnessEvent
  * @type {object}
  * @property {Point} point
@@ -23,12 +23,6 @@
  * @property {string} message
  * @property {boolean} isTraining
  * @property {boolean} isPending
- * 
- * @typedef PredictedEvent
- * @type {Object}
- * @property {number} x
- * @property {number} y
- * @property {number} time
  */
 import van from '../van.min.js';
 import { colorMap, formatTimestamp } from '../display_utils.js';
@@ -70,7 +64,7 @@ const FreshnessChart = (options, ...events) => {
         if (event.isPending) {
             return null;
         }
-        
+
         const point = event.point;
         const minY = point.y - (_options.lineHeight / 2) + 2;
         const maxY = point.y + (_options.lineHeight / 2) - 2;
@@ -83,7 +77,7 @@ const FreshnessChart = (options, ...events) => {
 
         return g(
             {...markerProps},
-            event.changed 
+            event.changed
                 ? line({
                     ...lineProps,
                     style: `stroke: ${eventColor}; stroke-width: ${event.isTraining ? '1' : _options.lineWidth};`,
@@ -117,28 +111,6 @@ const FreshnessChart = (options, ...events) => {
             })
         );
     });
-    const predictedEvents = (getValue(_options.prediction) ?? []).map((event) => {
-        const minY = event.y - (_options.lineHeight / 2) + 2;
-        const maxY = event.y + (_options.lineHeight / 2) - 2;
-        const lineProps = { x1: event.x, y1: minY, x2: event.x, y2: maxY };
-        const markerProps = _options.showTooltip ? {
-            onmouseenter: () => _options.showTooltip?.(FreshnessChartPredictionTooltip(event), event),
-            onmouseleave: () => _options.hideTooltip?.(),
-        } : {};
-        const barHeight = getValue(_options.height);
-
-        return g(
-            {...markerProps},
-            rect({
-                width: _options.markerSize,
-                height: barHeight,
-                x: lineProps.x1 - (_options.markerSize / 2),
-                y: 0,
-                fill: colorMap.emptyDark,
-                opacity: 0.25,
-            }),
-        );
-    });
 
     const extraAttributes = {};
     if (_options.nestedPosition) {
@@ -155,7 +127,7 @@ const FreshnessChart = (options, ...events) => {
             ...extraAttributes,
         },
         ...freshnessEvents,
-        ...predictedEvents,
+        FreshnessPredictedWindow(_options),
     );
 };
 
@@ -170,7 +142,7 @@ const /** @type Options */ defaultOptions = {
 
 /**
  * @param {FreshnessEvent} event
- * @returns 
+ * @returns
  */
 const getFreshnessEventColor = (event) => {
     if (!event.changed && (event.status === 'Passed' || event.isTraining)) {
@@ -195,14 +167,44 @@ const FreshnessChartTooltip = (event) => {
 };
 
 /**
- * @param {PredictedEvent} event
- * @returns {HTMLDivElement}
+ * @param {Options} options
+ * @returns {SVGGElement|null}
  */
-const FreshnessChartPredictionTooltip = (event) => {
+const FreshnessPredictedWindow = (options) => {
+    const window = getValue(options.predictedWindow);
+    if (!window) return null;
+
+    const barHeight = getValue(options.height);
+    const startX = window.startX ?? window.endX;
+    const windowWidth = window.endX - startX;
+    if (windowWidth <= 0) return null;
+
+    const markerProps = options.showTooltip ? {
+        onmouseenter: () => options.showTooltip?.(FreshnessWindowTooltip(window), {x: startX + windowWidth / 2, y: barHeight / 2}),
+        onmouseleave: () => options.hideTooltip?.(),
+    } : {};
+
+    return g(
+        {...markerProps},
+        rect({
+            width: windowWidth,
+            height: barHeight,
+            x: startX,
+            y: 0,
+            fill: colorMap.emptyDark,
+            opacity: 0.15,
+            rx: 2,
+        }),
+    );
+};
+
+const FreshnessWindowTooltip = (window) => {
     return div(
         {class: 'flex-column'},
-        span({class: 'text-left mb-1'}, formatTimestamp(event.time, false)),
-        span({class: 'text-left text-small'}, 'Update expected'),
+        span({class: 'text-left mb-1'}, 'Next update expected'),
+        window.startTime
+            ? span({class: 'text-left text-small'}, `${formatTimestamp(window.startTime, false)} - ${formatTimestamp(window.endTime, false)}`)
+            : span({class: 'text-left text-small'}, `By ${formatTimestamp(window.endTime, false)}`),
     );
 };
 

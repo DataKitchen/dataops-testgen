@@ -1,11 +1,13 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from math import ceil
 from typing import Any, ClassVar, Literal
 
+import pandas as pd
 import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
@@ -648,6 +650,14 @@ def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
     return st.dialog(title=f"Table: {table_name}")(show_dialog)()
 
 
+def _resolve_holiday_dates(test_suite: TestSuite) -> set[date] | None:
+    if not test_suite.holiday_codes_list:
+        return None
+    now = pd.Timestamp.now("UTC")
+    idx = pd.DatetimeIndex([now - pd.Timedelta(days=7), now + pd.Timedelta(days=30)])
+    return resolve_holiday_dates(test_suite.holiday_codes_list, idx)
+
+
 def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
     st.session_state[DIALOG_AUTO_OPENED_KEY] = table_name
@@ -737,6 +747,46 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
                         "lower_tolerance": lower_tolerance_predictions,
                         "upper_tolerance": upper_tolerance_predictions,
                     }
+                elif (
+                    definition.test_type == "Freshness_Trend"
+                    and definition.history_calculation == "PREDICT"
+                    and (not definition.prediction or definition.prediction.get("schedule_stage"))
+                    and definition.upper_tolerance is not None
+                ):
+                    last_update_events = [
+                        e for e in events["freshness_events"]
+                        if e["changed"] and not e["is_training"] and not e["is_pending"]
+                    ]
+                    if last_update_events:
+                        last_detection_time = max(e["time"] for e in last_update_events)
+                        holiday_dates = _resolve_holiday_dates(test_suite)
+                        tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
+                        sched = get_schedule_params(definition.prediction)
+
+                        window_end = add_business_minutes(
+                            pd.Timestamp(last_detection_time),
+                            float(definition.upper_tolerance),
+                            test_suite.predict_exclude_weekends,
+                            holiday_dates, tz,
+                            excluded_days=sched.excluded_days,
+                        )
+                        window_start = None
+                        if lower_minutes := float(definition.lower_tolerance) if definition.lower_tolerance else None:
+                            window_start = add_business_minutes(
+                                pd.Timestamp(last_detection_time),
+                                lower_minutes,
+                                test_suite.predict_exclude_weekends,
+                                holiday_dates, tz,
+                                excluded_days=sched.excluded_days,
+                            )
+
+                        predictions["freshness_trend"] = {
+                            "method": "freshness_window",
+                            "window": {
+                                "start": int(window_start.timestamp() * 1000) if window_start else None,
+                                "end": int(window_end.timestamp() * 1000),
+                            },
+                        }
 
         testgen.table_monitoring_trends(
             "table_monitoring_trends",
@@ -946,6 +996,15 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                     merged = {key: getattr(current_def, key, None) for key in valid_columns}
                     merged.update({key: value for key, value in updated_def.items() if key in valid_columns})
                     merged["lock_refresh"] = True
+
+                    # For Freshness static mode: set threshold_value and lower_tolerance
+                    # so the SQL template's staleness and BETWEEN checks work correctly.
+                    # Also clear prediction JSON to avoid stale schedule-based exclusions.
+                    if merged.get("test_type") == "Freshness_Trend" and merged.get("history_calculation") != "PREDICT":
+                        merged["threshold_value"] = merged.get("upper_tolerance")
+                        merged["lower_tolerance"] = 0
+                        merged["prediction"] = None
+
                     TestDefinition(**merged).save()
 
             for new_metric in get_new_metrics():

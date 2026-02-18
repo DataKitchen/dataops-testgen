@@ -32,15 +32,16 @@
  *
  * @typedef PredictionSet
  * @type {object}
- * @property {('predict'|'static')} method
- * @property {object} mean
- * @property {object} lower_tolerance
- * @property {object} upper_tolerance
+ * @property {('predict'|'static'|'freshness_window')} method
+ * @property {object?} mean
+ * @property {object?} lower_tolerance
+ * @property {object?} upper_tolerance
+ * @property {{start: number?, end: number}?} window
  *
  * @typedef Predictions
  * @type {object}
- * @property {PredictionSet} volume_trend
- * @property {PredictionSet} freshness_trend
+ * @property {PredictionSet?} volume_trend
+ * @property {PredictionSet?} freshness_trend
  *
  * @typedef Properties
  * @type {object}
@@ -231,9 +232,14 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
   );
 
   const predictions = getValue(props.predictions);
+  const freshnessWindow = predictions?.freshness_trend?.window;
   const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
     ...predictionTimes,
-    ...Object.keys(v.mean).map(t => ({time: +t}))
+    ...Object.keys(v.mean ?? {}).map(t => ({time: +t})),
+    ...(v.window ? [
+      v.window.start ? {time: v.window.start} : null,
+      {time: v.window.end},
+    ].filter(Boolean) : []),
   ], []);
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
@@ -395,15 +401,14 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
       y: fresshnessChartHeight / 2,
     },
   }));
-  const parsedFreshnessPredictionPoints = Object.entries(predictions?.freshness_trend?.mean ?? {})
-    .toSorted(([a,], [b,]) => (+a) - (+b))
-    .filter(([time,]) => parseFloat(predictions.freshness_trend.lower_tolerance[time] ?? '0') <= 0 && parseFloat(predictions.freshness_trend.upper_tolerance[time] ?? '0') >= 0)
-    .map(([time,]) => ({
-      x: scale(+time, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
-      y: fresshnessChartHeight / 2,
-      time: +time,
-    }))
-    .filter(p => p.x != undefined && p.y != undefined);
+  const parsedFreshnessWindow = freshnessWindow ? {
+    startX: freshnessWindow.start
+      ? scale(freshnessWindow.start, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x)
+      : null,
+    endX: scale(freshnessWindow.end, { old: dateRange, new: { min: origin.x, max: end.x } }, origin.x),
+    startTime: freshnessWindow.start,
+    endTime: freshnessWindow.end,
+  } : null;
 
   const parsedSchemaChangeEvents = schemaChangeEvents.map((e) => ({
     time: e.time,
@@ -567,8 +572,8 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
           height: fresshnessChartHeight,
           lineHeight: fresshnessChartHeight,
           nestedPosition: { x: 0, y: nextPosition({ name: 'freshnessChart' }) },
-          prediction: parsedFreshnessPredictionPoints,
-          showTooltip: showTooltip.bind(null, 0 + fresshnessChartHeight / 2),
+          predictedWindow: parsedFreshnessWindow,
+          showTooltip: showTooltip.bind(null, positionTracking.freshnessChart),
           hideTooltip,
         },
         ...parsedFreshnessEvents,
@@ -592,7 +597,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
         {
           size: 2,
           transform: `translate(0, ${positionTracking.volumeTrendChart})`,
-          showTooltip: showTooltip.bind(null, 0 + volumeTrendChartHeight / 2),
+          showTooltip: showTooltip.bind(null, positionTracking.volumeTrendChart),
           hideTooltip,
         },
         parsedVolumeTrendEvents,
@@ -651,7 +656,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
             {
               size: 2,
               transform: `translate(0, ${positionTracking[chartName]})`,
-              showTooltip: showTooltip.bind(null, positionTracking[chartName] + metricTrendChartHeight / 2),
+              showTooltip: showTooltip.bind(null, positionTracking[chartName]),
               hideTooltip,
             },
             metricChart.events,

@@ -21,31 +21,33 @@ def get_sarimax_forecast(
     num_forecast: int,
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
+    tz: str | None = None,
 ) -> pd.DataFrame:
     """
     # Parameters
-    :param history: Pandas dataframe containing time series data to be used for training the model. 
+    :param history: Pandas dataframe containing time series data to be used for training the model.
                     It must have a DatetimeIndex and a column with the historical values.
                     Only the first column will be used for the model.
     :param num_forcast: Number of values to predict in the future.
     :param exclude_weekends: Whether weekends should be considered exogenous when training the model and forecasting.
     :param holiday_codes: List of country or financial market codes defining holidays to be considered exogenous when training the model and forecasting.
+    :param tz: IANA timezone (e.g. "America/New_York") for day-of-week/holiday checks. Naive timestamps are treated as UTC and converted to this timezone before determining weekday/holiday status.
 
     # Return value
     Returns a Pandas dataframe with forecast DatetimeIndex, "mean" column, and "se" (standard error) column.
     """
     if len(history) < MIN_TRAIN_VALUES:
         raise NotEnoughData("Not enough data points in history.")
-    
+
     # statsmodels requires DatetimeIndex with a regular frequency
     # Resample the data to get a regular time series
     datetimes = history.index.to_series()
     frequency = infer_frequency(datetimes)
     resampled_history = history.resample(frequency).mean().interpolate(method="linear")
-    
+
     if len(resampled_history) < MIN_TRAIN_VALUES:
         raise NotEnoughData("Not enough data points after resampling.")
-    
+
     # Generate DatetimeIndex with future dates
     forecast_start = resampled_history.index[-1] + pd.to_timedelta(frequency)
     forecast_index = pd.date_range(start=forecast_start, periods=num_forecast, freq=frequency)
@@ -59,11 +61,13 @@ def get_sarimax_forecast(
     def get_exog_flags(index: pd.DatetimeIndex) -> pd.DataFrame:
         exog = pd.DataFrame(index=index)
         exog["is_excluded"] = 0
+        # Use local timezone for day-of-week and holiday checks when available
+        check_index = index.tz_localize("UTC").tz_convert(tz) if tz else index
         if exclude_weekends:
             # .dayofweek: 5=Saturday, 6=Sunday
-            exog.loc[exog.index.dayofweek >= 5, "is_excluded"] = 1
+            exog.loc[check_index.dayofweek >= 5, "is_excluded"] = 1
         if holiday_dates:
-            exog.loc[exog.index.normalize().isin(holiday_dates), "is_excluded"] = 1
+            exog.loc[pd.Index(check_index.date).isin(holiday_dates), "is_excluded"] = 1
         return exog
 
     exog_train = get_exog_flags(resampled_history.index)
@@ -81,13 +85,13 @@ def get_sarimax_forecast(
     fitted_model = model.fit(disp=False)
 
     forecast_index = pd.date_range(
-        start=resampled_history.index[-1] + pd.to_timedelta(frequency), 
-        periods=num_forecast, 
+        start=resampled_history.index[-1] + pd.to_timedelta(frequency),
+        periods=num_forecast,
         freq=frequency
     )
     exog_forecast = get_exog_flags(forecast_index)
     forecast = fitted_model.get_forecast(steps=num_forecast, exog=exog_forecast)
-    
+
     results = pd.DataFrame(index=forecast_index)
     results["mean"] = forecast.predicted_mean
     results["se"] = forecast.var_pred_mean ** 0.5
@@ -126,7 +130,7 @@ def get_holiday_dates(holiday_codes: list[str], datetime_index: pd.DatetimeIndex
         for code in holiday_codes:
             code = code.strip().upper()
             found = False
-            
+
             try:
                 country_holidays = holidays.country_holidays(code, years=years)
                 holiday_dates.update(country_holidays.keys())
@@ -141,7 +145,7 @@ def get_holiday_dates(holiday_codes: list[str], datetime_index: pd.DatetimeIndex
                     found = True
                 except NotImplementedError:
                     pass # Not a valid financial code
-            
+
             if not found:
                 LOG.warning(f"Holiday code '{code}' could not be resolved as a country or financial market")
 
