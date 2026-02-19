@@ -205,6 +205,10 @@ body {
     color: var(--disabled-text-color);
 }
 
+.text-bold {
+    font-weight: 500;
+}
+
 .text-small {
     font-size: 13px;
 }
