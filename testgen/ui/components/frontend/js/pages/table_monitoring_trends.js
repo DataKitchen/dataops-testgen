@@ -521,18 +521,25 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
 
     timeout = setTimeout(() => {
       const tooltipRect = tooltipWrapperElement.querySelector('.tg-tooltip').getBoundingClientRect();
-      const tooltipRectWidth = tooltipRect.width;
-      const tooltipRectHeight = tooltipRect.height;
+
+      // Convert screen pixel dimensions to SVG user units for boundary checks
+      const svgElement = document.getElementById('monitoring-trends-charts-svg');
+      const screenToSvg = (chartsWidth + chartsYAxisWidth) / svgElement.getBoundingClientRect().width;
+      const tooltipWidth = tooltipRect.width * screenToSvg;
+      const tooltipHeight = tooltipRect.height * screenToSvg;
 
       let tooltipX = point.x + 10;
       let tooltipY = point.y + verticalOffset + 10;
 
-      if ((tooltipX + tooltipRectWidth) >= (chartsWidth + chartsYAxisWidth)) {
-        tooltipX = point.x - tooltipRect.width - 10;
+      if ((tooltipX + tooltipWidth) >= (chartsWidth + chartsYAxisWidth)) {
+        tooltipX = point.x - tooltipWidth - 10;
       }
 
-      if (tooltipY + tooltipRectHeight >= (chartHeight - spacing)) {
-        tooltipY = (point.y + verticalOffset) - tooltipRectHeight - 10;
+      if (tooltipY + tooltipHeight >= chartHeight) {
+        tooltipY = chartHeight - tooltipHeight;
+      }
+      if (tooltipY < 0) {
+        tooltipY = 0;
       }
 
       tooltipExtraStyle.val = `transform: translate(${tooltipX}px, ${tooltipY}px);`;
@@ -617,7 +624,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
           height: schemaChartHeight,
           nestedPosition: { x: 0, y: nextPosition({ name: 'schemaChangesChart' }) },
           onClick: getDataStructureLogs,
-          showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart + schemaChartHeight / 2),
+          showTooltip: showTooltip.bind(null, positionTracking.schemaChangesChart),
           hideTooltip,
         },
         ...parsedSchemaChangeEvents,
