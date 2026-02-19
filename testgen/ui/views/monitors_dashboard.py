@@ -36,12 +36,13 @@ ALLOWED_SORT_FIELDS = {
     "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
     "metric_anomalies", "latest_update", "row_count",
 }
-ANOMALY_TYPE_FILTERS = { 
+ANOMALY_TYPE_FILTERS = {
     "freshness": "freshness_anomalies",
     "volume": "volume_anomalies",
     "schema": "schema_anomalies",
     "metrics": "metric_anomalies",
 }
+DIALOG_AUTO_OPENED_KEY = "monitors:dialog_auto_opened"
 
 
 class MonitorsDashboardPage(Page):
@@ -67,6 +68,7 @@ class MonitorsDashboardPage(Page):
         sort_order: str | None = None,
         items_per_page: str = "20",
         current_page: str = "0",
+        table_name: str | None = None,
         **_kwargs,
     ) -> None:
         testgen.page_header(
@@ -121,6 +123,17 @@ class MonitorsDashboardPage(Page):
                     )
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
+                monitored_table_names = {table["table_name"] for table in monitored_tables_page}
+                auto_open_table = None
+                if table_name:
+                    if st.session_state.get(DIALOG_AUTO_OPENED_KEY) != table_name:
+                        if table_name in monitored_table_names:
+                            auto_open_table = table_name
+                        else:
+                            Router().set_query_params({"table_name": None})
+                else:
+                    st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
+
         return testgen.testgen_component(
             "monitors_dashboard",
             props={
@@ -155,6 +168,7 @@ class MonitorsDashboardPage(Page):
                     "sort_order": sort_order,
                 } if sort_field and sort_order else None,
                 "has_monitor_test_suite": bool(selected_table_group and monitor_suite_id),
+                "auto_open_table": auto_open_table,
                 "permissions": {
                     "can_edit": session.auth.user_has_permission("edit"),
                 },
@@ -636,6 +650,9 @@ def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
 
 def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     table_name = payload.get("table_name")
+    st.session_state[DIALOG_AUTO_OPENED_KEY] = table_name
+    Router().set_query_params({"table_name": table_name})
+
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
     extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
 
@@ -743,7 +760,11 @@ def open_table_trends(table_group: TableGroupMinimal, payload: dict):
     def on_toggle_extended_history(_payload):
         st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
 
-    return st.dialog(title=f"Table: {table_name}")(show_dialog)()
+    def on_dismiss():
+        st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
+        Router().set_query_params({"table_name": None})
+
+    return st.dialog(title=f"Table: {table_name}", on_dismiss=on_dismiss)(show_dialog)()
 
 
 @st.cache_data(show_spinner=False)
