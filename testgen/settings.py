@@ -500,3 +500,27 @@ SMTP_PASSWORD: str | None = os.getenv("TG_SMTP_PASSWORD")
 """
 Email: SMTP password
 """
+
+MCP_PORT: int = int(os.getenv("TG_MCP_PORT", "8510"))
+"""
+Port for the MCP server.
+
+from env variable: `TG_MCP_PORT`
+defaults to: `8510`
+"""
+
+MCP_HOST: str = os.getenv("TG_MCP_HOST", "0.0.0.0")  # noqa: S104
+"""
+Host for the MCP server.
+
+from env variable: `TG_MCP_HOST`
+defaults to: `0.0.0.0`
+"""
+
+MCP_ENABLED: bool = os.getenv("TG_MCP_ENABLED", "Yes").lower() in ("yes", "y")
+"""
+Enable the MCP server when running `testgen run-app all`.
+
+from env variable: `TG_MCP_ENABLED`
+defaults to: `Yes`
+"""
