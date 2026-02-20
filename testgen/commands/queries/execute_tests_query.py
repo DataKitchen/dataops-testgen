@@ -135,8 +135,8 @@ class TestExecutionSQL:
                 "BASELINE_SUM": test_def.baseline_sum,
                 "BASELINE_AVG": test_def.baseline_avg,
                 "BASELINE_SD": test_def.baseline_sd,
-                "LOWER_TOLERANCE": test_def.lower_tolerance or "NULL",
-                "UPPER_TOLERANCE": test_def.upper_tolerance or "NULL",
+                "LOWER_TOLERANCE": "NULL" if test_def.lower_tolerance in (None, "") else test_def.lower_tolerance,
+                "UPPER_TOLERANCE": "NULL" if test_def.upper_tolerance in (None, "") else test_def.upper_tolerance,
                 # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
                 # since the latter may contain the former
                 "SUBSET_CONDITION": test_def.subset_condition or "1=1",
@@ -266,7 +266,7 @@ class TestExecutionSQL:
                 td.measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{self.null_value}|')"
 
                 # For prediction mode, return -1 during training period
-                if td.history_calculation == "PREDICT" and (not td.lower_tolerance or not td.upper_tolerance):
+                if td.history_calculation == "PREDICT" and (td.lower_tolerance in (None, "") or td.upper_tolerance in (None, "")):
                     td.condition_expression = "'-1,'"
                 else:
                     condition = (
