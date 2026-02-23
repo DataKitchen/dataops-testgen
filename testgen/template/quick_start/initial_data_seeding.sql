@@ -54,7 +54,7 @@ SELECT '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID AS id,
        '{TABLE_GROUPS_NAME} Monitor Suite'          AS test_suite_description,
        'N'                                          AS export_to_observability,
        TRUE                                         AS is_monitor,
-       14                                           AS monitor_lookback,
+       28                                           AS monitor_lookback,
        30                                           AS predict_min_lookback;
 
 INSERT INTO job_schedules
