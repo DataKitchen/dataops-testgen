@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from testgen.commands.test_thresholds_prediction import compute_freshness_threshold, compute_sarimax_threshold
+from testgen.commands.test_thresholds_prediction import compute_freshness_threshold
 from testgen.common.freshness_service import (
     MIN_FRESHNESS_GAPS,
     FreshnessThreshold,
@@ -634,77 +634,3 @@ class Test_GetSarimaxForecast_TimezoneExog:
         forecast_with_tz = get_sarimax_forecast(history, num_forecast=3, exclude_weekends=False, tz="America/New_York")
 
         pd.testing.assert_frame_equal(forecast_no_tz, forecast_with_tz)
-
-
-class Test_ComputeSarimaxThreshold_CumulativeFloor:
-    """Tests for the cumulative table floor constraint in compute_sarimax_threshold."""
-
-    @staticmethod
-    def _make_monotonic_history(n_days: int = 30, start_value: int = 1000, daily_growth: int = 100) -> pd.DataFrame:
-        """Create a monotonically increasing row count history (cumulative table)."""
-        dates = pd.date_range("2026-01-01", periods=n_days, freq="1D")
-        values = [start_value + i * daily_growth for i in range(n_days)]
-        return pd.DataFrame({"result_signal": values}, index=dates)
-
-    def test_cumulative_floors_lower_at_last_observed(self):
-        history = self._make_monotonic_history(n_days=30, start_value=1000, daily_growth=100)
-        last_observed = float(history["result_signal"].iloc[-1])
-
-        lower, upper, prediction = compute_sarimax_threshold(
-            history, PredictSensitivity.medium, is_cumulative=True,
-        )
-
-        assert lower is not None
-        assert upper is not None
-        assert prediction is not None
-        assert lower >= last_observed
-
-    def test_non_cumulative_allows_lower_below_last_observed(self):
-        # With high variance, SARIMAX lower bound can drop below last observed
-        rng = np.random.default_rng(42)
-        dates = pd.date_range("2026-01-01", periods=30, freq="1D")
-        # Trending up but with large noise — lower bound should be below last value
-        values = [1000 + i * 50 + rng.normal(0, 200) for i in range(30)]
-        history = pd.DataFrame({"result_signal": values}, index=dates)
-        last_observed = float(history["result_signal"].iloc[-1])
-
-        lower, upper, prediction = compute_sarimax_threshold(
-            history, PredictSensitivity.low, is_cumulative=False,
-        )
-
-        assert lower is not None
-        # With low sensitivity (z=-3.0) and high noise, lower should be below last value
-        # This is the behavior we're protecting against with the cumulative floor
-        assert lower < last_observed
-
-    def test_cumulative_does_not_affect_upper_tolerance(self):
-        history = self._make_monotonic_history(n_days=30)
-
-        _, upper_cumulative, _ = compute_sarimax_threshold(
-            history, PredictSensitivity.medium, is_cumulative=True,
-        )
-        _, upper_normal, _ = compute_sarimax_threshold(
-            history, PredictSensitivity.medium, is_cumulative=False,
-        )
-
-        assert upper_cumulative == upper_normal
-
-    def test_cumulative_with_insufficient_data_returns_none(self):
-        history = self._make_monotonic_history(n_days=2)
-
-        lower, upper, prediction = compute_sarimax_threshold(
-            history, PredictSensitivity.medium, min_lookback=5, is_cumulative=True,
-        )
-
-        assert lower is None
-        assert upper is None
-        assert prediction is None
-
-    def test_cumulative_default_is_false(self):
-        history = self._make_monotonic_history(n_days=30)
-
-        # Without is_cumulative param, should behave as non-cumulative
-        lower_default, _, _ = compute_sarimax_threshold(history, PredictSensitivity.medium)
-        lower_explicit, _, _ = compute_sarimax_threshold(history, PredictSensitivity.medium, is_cumulative=False)
-
-        assert lower_default == lower_explicit

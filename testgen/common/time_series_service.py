@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 
 import holidays
+import numpy as np
 import pandas as pd
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 
@@ -94,7 +95,21 @@ def get_sarimax_forecast(
 
     results = pd.DataFrame(index=forecast_index)
     results["mean"] = forecast.predicted_mean
-    results["se"] = forecast.var_pred_mean ** 0.5
+
+    # SE estimation: take the max of three sources to prevent overconfident bounds.
+    # 1. Model SE (var_pred_mean): can be artificially small when AR/MA nearly cancel
+    # 2. Residual SE: the model's actual 1-step prediction errors (after Kalman burn-in)
+    # 3. Raw diff SE: std of first-differences of the original data — captures inherent
+    #    point-to-point variability that the model may underestimate
+    model_se = forecast.var_pred_mean ** 0.5
+    order_sum = model.k_ar + model.k_diff + model.k_ma
+    burn_in = max(order_sum, 3)
+    usable_residuals = fitted_model.resid.iloc[burn_in:]
+    resid_se = usable_residuals.std() if len(usable_residuals) >= 5 else 0.0
+    raw_diffs = np.diff(history.iloc[:, 0].values)
+    raw_diff_se = np.std(raw_diffs, ddof=1) if len(raw_diffs) > 1 else 0.0
+    results["se"] = np.maximum(model_se, max(resid_se, raw_diff_se))
+
     return results
 
 
