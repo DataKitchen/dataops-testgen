@@ -169,7 +169,7 @@ def test_send_monitor_notifications(
             assert context["summary"]["table_groups_name"] == "production_tables"
             assert context["summary"]["project_name"] == "Data Platform"
             assert context["total_anomalies"] == expected_anomalies_count
-            assert "anomaly_counts" in context
+            assert "summary_tags" in context
             assert "anomalies" in context
             assert "view_in_testgen_url" in context
             assert len(context["anomalies"]) == expected_anomalies_count
@@ -257,10 +257,10 @@ def test_send_monitor_notifications_anomaly_counts(
     assert send_mock.call_count == 1
     context = send_mock.call_args[0][1]
 
-    anomaly_counts = {item["type"]: item["count"] for item in context["anomaly_counts"]}
-    assert anomaly_counts["Freshness"] == 2
-    assert anomaly_counts["Schema"] == 1
-    assert anomaly_counts["Volume"] == 2
+    summary_tags = {item["type"]: item["badge_content"] for item in context["summary_tags"]}
+    assert summary_tags["Freshness"] == "2"
+    assert summary_tags["Schema"] == "1"
+    assert summary_tags["Volume"] == "2"
 
 
 def test_send_monitor_notifications_url_construction(

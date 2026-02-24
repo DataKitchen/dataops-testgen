@@ -76,6 +76,12 @@ class TestSuite(Entity):
     predict_exclude_weekends: bool = Column(Boolean, default=False)
     predict_holiday_codes: str | None = Column(String)
 
+    @property
+    def holiday_codes_list(self) -> list[str] | None:
+        if not self.predict_holiday_codes:
+            return None
+        return [code.strip() for code in self.predict_holiday_codes.split(",")]
+
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
 

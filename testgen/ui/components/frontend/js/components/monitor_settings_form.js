@@ -286,9 +286,9 @@ const PredictionForm = (
                 name: 'predict_sensitivity',
                 label: 'Sensitivity',
                 options: [
-                    { label: 'Low', value: 'low', help: 'Fewer alerts. Flag values outside 3 standard deviations of predicted value.' },
-                    { label: 'Medium', value: 'medium', help: 'Balanced. Flag values outside 2.5 standard deviations of predicted value.' },
-                    { label: 'High', value: 'high', help: 'More alerts. Flag values outside 2 standard deviations of predicted value.' },
+                    { label: 'Low', value: 'low', help: 'Fewer alerts. Volume/Metric: 3 standard deviations. Freshness: wider interval tolerance.' },
+                    { label: 'Medium', value: 'medium', help: 'Balanced. Volume/Metric: 2.5 standard deviations. Freshness: moderate interval tolerance.' },
+                    { label: 'High', value: 'high', help: 'More alerts. Volume/Metric: 2 standard deviations. Freshness: tighter interval tolerance.' },
                 ],
                 value: predictSensitivity,
                 onChange: (value) => predictSensitivity.val = value,
