@@ -118,6 +118,11 @@ class TestThresholdsPrediction:
                         holiday_codes=self.test_suite.holiday_codes_list,
                         schedule_tz=self.tz,
                     )
+                    if test_type == "Volume_Trend":
+                        if lower is not None: 
+                            lower = max(lower, 0.0)
+                        if upper is not None:
+                            upper = max(upper, 0.0)
                     test_prediction.extend([lower, upper, None, prediction])
 
                 prediction_results.append(test_prediction)
