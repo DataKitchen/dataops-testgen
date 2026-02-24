@@ -633,7 +633,7 @@ class Test_ComputeFreshnessThresholdWithSchedule:
         # The typical gap is ~1440 min. After a missed update, the next check shows gap=1440.
         # Upper (P95 with floor) should be >= 1440 — so upper alone wouldn't catch it
         assert result.upper >= 1440
-        # Staleness (median × 0.85) should be < 1440 — catches the miss
+        # Staleness (median x 0.85) should be < 1440 — catches the miss
         assert result.staleness < 1440
 
 
