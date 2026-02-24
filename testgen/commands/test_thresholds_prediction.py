@@ -110,6 +110,10 @@ class TestThresholdsPrediction:
                     )
                     test_prediction.extend([lower, upper, staleness, prediction])
                 else:
+                    functional_table_type = group["functional_table_type"].iloc[0]
+                    is_cumulative = bool(
+                        functional_table_type and str(functional_table_type).startswith("cumulative")
+                    )
                     lower, upper, prediction = compute_sarimax_threshold(
                         history,
                         sensitivity=self.test_suite.predict_sensitivity or PredictSensitivity.medium,
@@ -117,6 +121,7 @@ class TestThresholdsPrediction:
                         exclude_weekends=self.test_suite.predict_exclude_weekends,
                         holiday_codes=self.test_suite.holiday_codes_list,
                         schedule_tz=self.tz,
+                        is_cumulative=is_cumulative,
                     )
                     test_prediction.extend([lower, upper, None, prediction])
 
@@ -258,10 +263,13 @@ def compute_sarimax_threshold(
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     schedule_tz: str | None = None,
+    is_cumulative: bool = False,
 ) -> tuple[float | None, float | None, str | None]:
     """Compute SARIMAX-based thresholds for the next forecast point.
 
     Returns (lower, upper, forecast_json) or (None, None, None) if insufficient data.
+    For cumulative tables, the lower tolerance is floored at the last observed value
+    so that any decrease in row count is detected as an anomaly.
     """
     if len(history) < min_lookback:
         return None, None, None
@@ -291,7 +299,12 @@ def compute_sarimax_threshold(
 
         if pd.isna(lower_tolerance) or pd.isna(upper_tolerance):
             return None, None, None
-        else:
-            return float(lower_tolerance), float(upper_tolerance), forecast.to_json()
+
+        lower_tolerance = float(lower_tolerance)
+        if is_cumulative:
+            last_observed = float(history["result_signal"].iloc[-1])
+            lower_tolerance = max(lower_tolerance, last_observed)
+
+        return lower_tolerance, float(upper_tolerance), forecast.to_json()
     except NotEnoughData:
         return None, None, None
