@@ -89,6 +89,7 @@ class MonitorsDashboardPage(Page):
         monitored_tables_page = []
         all_monitored_tables_count = 0
         monitor_changes_summary = None
+        auto_open_table = None
         
         current_page = int(current_page)
         items_per_page = int(items_per_page)
@@ -126,7 +127,6 @@ class MonitorsDashboardPage(Page):
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
                 monitored_table_names = {table["table_name"] for table in monitored_tables_page}
-                auto_open_table = None
                 if table_name:
                     if st.session_state.get(DIALOG_AUTO_OPENED_KEY) != table_name:
                         if table_name in monitored_table_names:
