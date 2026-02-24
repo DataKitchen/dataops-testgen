@@ -45,6 +45,7 @@ CREATE TABLE stg_test_definition_updates (
    run_date           TIMESTAMP,
    lower_tolerance    VARCHAR(1000),
    upper_tolerance    VARCHAR(1000),
+   threshold_value    VARCHAR(1000),
    prediction         JSONB
 );
 

@@ -69,6 +69,7 @@
  * @property {Schedule?} schedule
  * @property {TableGroupFilterOption[]} table_group_filter_options
  * @property {boolean?} has_monitor_test_suite
+ * @property {string?} auto_open_table
  * @property {MonitorList} monitors
  * @property {MonitorListFilters} filters
  * @property {MonitorListSort?} sort
@@ -131,6 +132,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             ),
         };
     });
+    const autoOpenTable = getValue(props.auto_open_table);
+    if (autoOpenTable) {
+        setTimeout(() => emitEvent('OpenMonitoringTrends', { payload: { table_name: autoOpenTable } }), 0);
+    }
+
     const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
 
 
@@ -288,7 +294,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     allowNull: false,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
-                    onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
+                    onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value, table_name: null}}),
                 }),
                 () => getValue(props.has_monitor_test_suite)
                     ? AnomaliesSummary(getValue(props.summary), 'Total anomalies', {

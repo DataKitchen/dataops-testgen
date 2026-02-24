@@ -130,15 +130,18 @@ def _metric_cumulative_shift(iteration: int) -> tuple[float, float]:
     return discount, price
 
 
-def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
+def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0, weekday_morning_count: int = 0) -> dict:
     # Volume: linear growth with jitter, spike at specific iteration for anomaly
-    if iteration == 37:
+    if iteration == 60:
         new_sales = 100
     else:
-        new_sales = random.randint(8, 12)  # noqa: S311
+        new_sales = random.randint(5, 15)  # noqa: S311
 
-    # Freshness: update every other iteration, late update for anomaly
-    is_update_suppliers_iter = (iteration % 2 == 0 and iteration != 38) or iteration == 39
+    # Freshness: weekday morning updates with 1-day outage after schedule goes active
+    is_weekday = run_date.weekday() < 5
+    is_morning = run_date.hour < 12
+    is_outage = weekday_morning_count == 21
+    is_update_suppliers_iter = is_weekday and is_morning and not is_outage
 
     # Metrics: compute deltas for discount and price shifts
     curr_discount, curr_price = _metric_cumulative_shift(iteration)
@@ -151,11 +154,11 @@ def _get_monitor_params_mapping(run_date: datetime, iteration: int = 0) -> dict:
         "ITERATION_NUMBER": iteration,
         "RUN_DATE": run_date,
         "NEW_SALES": new_sales,
-        "IS_ADD_CUSTOMER_COL_ITER": iteration == 29,
-        "IS_DELETE_CUSTOMER_COL_ITER": iteration == 36,
-        "IS_UPDATE_PRODUCT_ITER": not 14 < iteration < 18,
-        "IS_CREATE_RETURNS_TABLE_ITER": iteration == 32,
-        "IS_DELETE_CUSTOMER_ITER": iteration in (18, 22, 34),
+        "IS_ADD_CUSTOMER_COL_ITER": iteration == 47,
+        "IS_DELETE_CUSTOMER_COL_ITER": iteration == 58,
+        "IS_UPDATE_PRODUCT_ITER": not 24 < iteration < 28,
+        "IS_CREATE_RETURNS_TABLE_ITER": iteration == 52,
+        "IS_DELETE_CUSTOMER_ITER": iteration in (29, 36, 55),
         "IS_UPDATE_SUPPLIERS_ITER": is_update_suppliers_iter,
         "DISCOUNT_DELTA": discount_delta,
         "PRICE_DELTA": price_delta,
@@ -234,8 +237,8 @@ def run_quick_start_increment(iteration):
     setup_cat_tests(iteration)
 
 
-def run_monitor_increment(run_date, iteration):
-    params_mapping = _get_monitor_params_mapping(run_date, iteration)
+def run_monitor_increment(run_date, iteration, weekday_morning_count=0):
+    params_mapping = _get_monitor_params_mapping(run_date, iteration, weekday_morning_count)
     _prepare_connection_to_target_database(params_mapping)
 
     target_db_name = params_mapping["PROJECT_DB"]
