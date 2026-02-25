@@ -54,6 +54,16 @@ entries:
   testgen-services:
   - apiVersion: v2
     appVersion: "4"
+    created: "2026-02-25T01:59:32.262558644Z"
+    description: A Helm chart for Kubernetes
+    digest: cbd41d59fbb244d9b7fe018c878e9da332641e813e3efeca741ea10e106c6e63
+    name: testgen-services
+    type: application
+    urls:
+    - testgen-services-1.0.1.tgz
+    version: 1.0.1
+  - apiVersion: v2
+    appVersion: "4"
     created: "2026-02-25T01:54:29.014950064Z"
     description: A Helm chart for Kubernetes
     digest: 8a30fa7902be52e2efaebd13b3bf57afa0ad32f98efdbaf33cc92925bc68207f
@@ -90,4 +100,4 @@ entries:
     urls:
     - testgen-services-0.1.0.tgz
     version: 0.1.0
-generated: "2026-02-25T01:54:29.014980401Z"
+generated: "2026-02-25T01:59:32.262587198Z"
