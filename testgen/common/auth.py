@@ -51,15 +51,9 @@ def verify_password(password: str, hashed_password: str) -> bool:
 def check_permission(user: object, permission: str) -> bool:
     """Check if a user has the given permission.
 
-    Uses the enterprise ROLE_PERMISSION_MATRIX if available,
-    falls back to open-source (always allowed).
+    Uses the RBAC provider registered by installed plugins.
+    Returns True (all allowed) if no plugin overrides the default.
     """
-    try:
-        from testgen_enterprise_auth.auth import ROLE_PERMISSION_MATRIX
-    except Exception:
-        # Enterprise auth plugin not available or not loadable
-        # (importing it triggers Streamlit UI code that may fail outside the UI)
-        return True
-    else:
-        allowed = ROLE_PERMISSION_MATRIX.get(user.role, [])
-        return permission in allowed
+    from testgen.utils.plugins import PluginHook
+
+    return PluginHook.instance().rbac.check_permission(user, permission)

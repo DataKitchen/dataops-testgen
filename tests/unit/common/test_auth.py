@@ -1,7 +1,6 @@
 import base64
-import sys
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import bcrypt
 import jwt
@@ -71,31 +70,29 @@ def test_verify_password_wrong():
     assert verify_password("wrongpass", hashed) is False
 
 
-def test_check_permission_allowed_with_enterprise_plugin():
-    mock_matrix = {
-        "admin": ["administer", "edit", "disposition", "view", "catalog"],
-        "business": ["view", "catalog"],
-    }
-    mock_auth = MagicMock()
-    mock_auth.ROLE_PERMISSION_MATRIX = mock_matrix
-    with patch.dict(sys.modules, {"testgen_enterprise_auth": MagicMock(), "testgen_enterprise_auth.auth": mock_auth}):
-        user = MagicMock(role="admin")
-        assert check_permission(user, "edit") is True
+def test_check_permission_allowed_with_plugin():
+    mock_rbac = MagicMock()
+    mock_rbac.check_permission.return_value = True
+    mock_hook = MagicMock()
+    mock_hook.rbac = mock_rbac
+    with patch("testgen.utils.plugins.PluginHook.instance", return_value=mock_hook):
+        assert check_permission(MagicMock(role="admin"), "edit") is True
+        mock_rbac.check_permission.assert_called_once_with(ANY, "edit")
 
 
-def test_check_permission_denied_with_enterprise_plugin():
-    mock_matrix = {
-        "admin": ["administer", "edit", "disposition", "view", "catalog"],
-        "business": ["view", "catalog"],
-    }
-    mock_auth = MagicMock()
-    mock_auth.ROLE_PERMISSION_MATRIX = mock_matrix
-    with patch.dict(sys.modules, {"testgen_enterprise_auth": MagicMock(), "testgen_enterprise_auth.auth": mock_auth}):
-        user = MagicMock(role="business")
-        assert check_permission(user, "administer") is False
+def test_check_permission_denied_with_plugin():
+    mock_rbac = MagicMock()
+    mock_rbac.check_permission.return_value = False
+    mock_hook = MagicMock()
+    mock_hook.rbac = mock_rbac
+    with patch("testgen.utils.plugins.PluginHook.instance", return_value=mock_hook):
+        assert check_permission(MagicMock(role="business"), "administer") is False
 
 
-def test_check_permission_falls_back_when_no_plugin():
-    with patch.dict(sys.modules, {"testgen_enterprise_auth": None, "testgen_enterprise_auth.auth": None}):
-        user = MagicMock(role="business")
-        assert check_permission(user, "administer") is True
+def test_check_permission_defaults_without_plugin():
+    from testgen.utils.plugins import PluginHook
+
+    with patch("testgen.utils.plugins.PluginHook.instance") as mock_instance:
+        hook = PluginHook()
+        mock_instance.return_value = hook
+        assert check_permission(MagicMock(role="business"), "administer") is True

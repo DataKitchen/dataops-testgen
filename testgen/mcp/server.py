@@ -56,6 +56,11 @@ def ping() -> dict:
 def run_mcp() -> None:
     """Start the MCP server with streamable HTTP transport."""
     from testgen.mcp import get_server_url
+    from testgen.utils.plugins import discover
+
+    for plugin in discover():
+        plugin.load()
+
     server_url = with_database_session(get_server_url)()
 
     mcp = FastMCP(

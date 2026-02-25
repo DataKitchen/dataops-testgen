@@ -77,7 +77,7 @@ def run(log_level: int = logging.INFO) -> Application:
     logo_class = plugins.Logo
 
     for plugin in installed_plugins:
-        spec = plugin.load()
+        spec = plugin.load_streamlit()
 
         if spec.page:
             pages.append(spec.page)
