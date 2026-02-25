@@ -43,7 +43,7 @@ from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.test_definitions import show_test_form_by_id
-from testgen.utils import friendly_score
+from testgen.utils import friendly_score, str_to_timestamp
 
 PAGE_PATH = "test-runs:results"
 
@@ -78,7 +78,7 @@ class TestResultsPage(Page):
 
         testgen.page_header(
             "Test Results",
-            "view-testgen-test-results",
+            "investigate-test-results",
             breadcrumbs=[
                 { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.test_suite} | {run_date}" },
@@ -312,9 +312,6 @@ class TestResultsPage(Page):
                 multi_select,
             )
 
-        # Help Links
-        st.markdown("[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)")
-
 
 @st.fragment
 @with_database_session
@@ -531,7 +528,7 @@ def render_selected_details(
             date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
 
             if user_can_edit:
-                view_edit_test(v_col1, selected_item["test_definition_id_current"])
+                view_edit_test(v_col1, selected_item["test_definition_id"])
 
             if selected_item["test_scope"] == "column":
                 with v_col2:
@@ -608,9 +605,10 @@ def render_selected_details(
                     if dfh.empty:
                         st.write("Test history not available.")
                     else:
-                        write_history_graph(dfh)
+                        # write_history_graph(dfh)
+                        write_history_chart_v2(dfh)
                 with ut_tab2:
-                    show_test_def_detail(selected_item["test_definition_id_current"], test_suite)
+                    show_test_def_detail(selected_item["test_definition_id"], test_suite)
 
 
 @with_database_session
@@ -657,6 +655,17 @@ def write_history_graph(data: pd.DataFrame):
         case "binary_chart":
             render_binary_chart(data, **chart_params)
         case _: render_line_chart(data, **chart_params)
+
+
+def write_history_chart_v2(data: pd.DataFrame):
+    data["test_date"] = data["test_date"].apply(str_to_timestamp)
+    return testgen.testgen_component(
+        "test_results_chart",
+        props={
+            # Fix NaN values
+            "data": json.loads(data.to_json(orient="records")),
+        },
+    )
 
 
 def render_line_chart(dfh: pd.DataFrame, **_params: dict) -> None:
@@ -813,14 +822,6 @@ def source_data_dialog(selected_row):
         st.markdown("#### Result Detail")
         st.caption(selected_row["result_message"].replace("*", "\\*"))
 
-    st.markdown("#### SQL Query")
-    if selected_row["test_type"] == "CUSTOM":
-        query = get_test_issue_source_query_custom(selected_row)
-    else:
-        query = get_test_issue_source_query(selected_row)
-    if query:
-        st.code(query, language="sql", wrap_lines=True, height=100)
-
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
             bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
@@ -842,6 +843,14 @@ def source_data_dialog(selected_row):
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, width=1050, hide_index=True)
+
+    st.markdown("#### SQL Query")
+    if selected_row["test_type"] == "CUSTOM":
+        query = get_test_issue_source_query_custom(selected_row)
+    else:
+        query = get_test_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql", wrap_lines=True, height=100)
 
 
 def view_edit_test(button_container, test_definition_id):

@@ -37,7 +37,7 @@ SELECT tt.test_type,
            else concat('HAVING ', match_having_condition)
        END                                             as match_having_condition,
        coalesce(custom_query, '')                      as custom_query,
-       coalesce(tm.template_name, '')                  as template_name
+       coalesce(tm.template, '')                  as template
 FROM test_definitions td
          INNER JOIN test_suites ts
                     ON (td.test_suite_id = ts.id)

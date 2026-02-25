@@ -6,12 +6,13 @@ test_types:
   test_description: |-
     Tests that the spread or dispersion of column values has decreased significantly over baseline, indicating a shift in stability of the measure. This could signal a change in a process or a data quality issue.
   except_message: |-
-    The Standard Deviation of the measure has decreased below the defined threshold. This could signal a change in a process or a data quality issue.
+    The standard deviation of the measure has decreased below the defined threshold.
   measure_uom: Pct SD shift
   measure_uom_description: |-
     Percent of baseline Standard Deviation
   selection_criteria: |-
     general_type = 'N' AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%' AND value_ct <> distinct_value_ct AND distinct_value_ct > 10 AND stdev_value > 0 AND avg_value IS NOT NULL AND NOT (distinct_value_ct = max_value - min_value + 1 AND distinct_value_ct > 2)
+  generation_template: null
   dq_score_prevalence_formula: |-
     1
   dq_score_risk_factor: '0.75'

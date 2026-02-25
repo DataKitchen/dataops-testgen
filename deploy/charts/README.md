@@ -40,9 +40,14 @@ set can be easily used on the first install and future upgrades.
 
 The following configuration is recommended for experimental installations, but
 you're free to adjust it for your needs. The next installation steps assumes
-that a file named tg-values.yaml exists with this configuration.
+that a file named `tg-values.yaml` exists with this configuration.
 
 ```yaml
+image:
+
+  # DataOps TestGen version to be installed / upgraded
+  tag: v4
+
 testgen:
 
   # Password that will be assigned to the 'admin' user during the database preparation
@@ -54,10 +59,18 @@ testgen:
   # Whether to run the SSL certificate verifications when connecting to DataOps Observability
   observabilityVerifySsl: false
 
-image:
+  # (Optional) E-mail and SMTP configurations for enabling the email notifications
+  emailNotifications:
 
-  # DataOps TestGen version to be installed / upgraded
-  tag: v4.0
+    # The email address that notifications will be sent from
+    fromAddress:
+
+    # SMTP configuration for sending emails
+    smtp:
+      endpoint:
+      port:
+      username:
+      password:
 ```
 
 # Installing

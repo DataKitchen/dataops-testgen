@@ -1,17 +1,28 @@
 import dataclasses
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import date, datetime
 from typing import TypedDict
 from uuid import UUID
+
+import pandas as pd
 
 from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns
 from testgen.common.database.database_service import get_flavor_service, get_tg_schema, replace_params
+from testgen.common.freshness_service import (
+    count_excluded_minutes,
+    get_schedule_params,
+    is_excluded_day,
+    resolve_holiday_dates,
+)
 from testgen.common.models.connection import Connection
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
 from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions
+from testgen.utils import to_sql_timestamp
 
 
 @dataclasses.dataclass
@@ -46,10 +57,12 @@ class TestExecutionDef(InputParameters):
     table_name: str
     column_name: str
     skip_errors: int
+    history_calculation: str
     custom_query: str
+    prediction: dict | str | None
     run_type: TestRunType
     test_scope: TestScope
-    template_name: str
+    template: str
     measure: str
     test_operator: str
     test_condition: str
@@ -86,13 +99,26 @@ class TestExecutionSQL:
         "result_measure",
     )
 
-    def __init__(self, connection: Connection, table_group: TableGroup, test_run: TestRun):
+    def __init__(self, connection: Connection, table_group: TableGroup, test_suite: TestSuite, test_run: TestRun):
         self.connection = connection
         self.table_group = table_group
+        self.test_suite = test_suite
         self.test_run = test_run
-        self.run_date = test_run.test_starttime.strftime("%Y-%m-%d %H:%M:%S")
+        self.run_date = test_run.test_starttime
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
+
+        self._exclude_weekends = bool(self.test_suite.predict_exclude_weekends)
+        self._holiday_dates: set[date] | None = None
+        self._schedule_tz: str | None = None
+        if test_suite.is_monitor:
+            schedule = JobSchedule.get(JobSchedule.kwargs["test_suite_id"].astext == str(test_suite.id))
+            self._schedule_tz = schedule.cron_tz or "UTC" if schedule else None
+            if test_suite.holiday_codes_list:
+                self._holiday_dates = resolve_holiday_dates(
+                    test_suite.holiday_codes_list,
+                    pd.DatetimeIndex([datetime(self.run_date.year - 1, 1, 1), datetime(self.run_date.year + 1, 12, 31)]),
+                )
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
         return "; ".join(
@@ -104,9 +130,10 @@ class TestExecutionSQL:
     def _get_params(self, test_def: TestExecutionDef | None = None) -> dict:
         quote = self.flavor_service.quote_character
         params = {
+            "TABLE_GROUPS_ID": self.table_group.id,
             "TEST_SUITE_ID": self.test_run.test_suite_id,
             "TEST_RUN_ID": self.test_run.id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "VARCHAR_TYPE": self.flavor_service.varchar_type,
             "QUOTE": quote,
@@ -118,22 +145,24 @@ class TestExecutionSQL:
                 "TEST_DEFINITION_ID": test_def.id,
                 "APP_SCHEMA_NAME": get_tg_schema(),
                 "SCHEMA_NAME": test_def.schema_name,
-                "TABLE_GROUPS_ID": self.table_group.id,
                 "TABLE_NAME": test_def.table_name,
                 "COLUMN_NAME": f"{quote}{test_def.column_name or ''}{quote}",
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
                 "SKIP_ERRORS": test_def.skip_errors or 0,
+                "CUSTOM_QUERY": test_def.custom_query,
                 "BASELINE_CT": test_def.baseline_ct,
                 "BASELINE_UNIQUE_CT": test_def.baseline_unique_ct,
                 "BASELINE_VALUE": test_def.baseline_value,
                 "BASELINE_VALUE_CT": test_def.baseline_value_ct,
-                "THRESHOLD_VALUE": test_def.threshold_value,
+                "THRESHOLD_VALUE": test_def.threshold_value or 0,
                 "BASELINE_SUM": test_def.baseline_sum,
                 "BASELINE_AVG": test_def.baseline_avg,
                 "BASELINE_SD": test_def.baseline_sd,
-                "LOWER_TOLERANCE": test_def.lower_tolerance,
-                "UPPER_TOLERANCE": test_def.upper_tolerance,
+                "LOWER_TOLERANCE": "NULL" if test_def.lower_tolerance in (None, "") else test_def.lower_tolerance,
+                "UPPER_TOLERANCE": "NULL" if test_def.upper_tolerance in (None, "") else test_def.upper_tolerance,
+                # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
+                # since the latter may contain the former
                 "SUBSET_CONDITION": test_def.subset_condition or "1=1",
                 "GROUPBY_NAMES": test_def.groupby_names,
                 "HAVING_CONDITION": f"HAVING {test_def.having_condition}" if test_def.having_condition else "",
@@ -146,10 +175,35 @@ class TestExecutionSQL:
                 "MATCH_GROUPBY_NAMES": test_def.match_groupby_names,
                 "CONCAT_MATCH_GROUPBY": concat_columns(test_def.match_groupby_names, self.null_value) if test_def.match_groupby_names else "",
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
-                "CUSTOM_QUERY": test_def.custom_query,
                 "COLUMN_TYPE": test_def.column_type,
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
+
+            # Freshness exclusion params — computed per test at execution time
+            if test_def.test_type == "Freshness_Trend" and test_def.baseline_sum:
+                sched = get_schedule_params(test_def.prediction)
+                has_exclusions = self._exclude_weekends or sched.excluded_days or sched.window_start is not None
+                if has_exclusions:
+                    last_update = pd.Timestamp(test_def.baseline_sum)
+                    excluded = int(count_excluded_minutes(
+                        last_update, self.run_date, self._exclude_weekends, self._holiday_dates,
+                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
+                        window_start=sched.window_start, window_end=sched.window_end,
+                    ))
+                    is_excl = 1 if is_excluded_day(
+                        pd.Timestamp(self.run_date), self._exclude_weekends, self._holiday_dates,
+                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
+                        window_start=sched.window_start, window_end=sched.window_end,
+                    ) else 0
+                    params["EXCLUDED_MINUTES"] = excluded
+                    params["IS_EXCLUDED_DAY"] = is_excl
+                else:
+                    params["EXCLUDED_MINUTES"] = 0
+                    params["IS_EXCLUDED_DAY"] = 0
+            else:
+                params["EXCLUDED_MINUTES"] = 0
+                params["IS_EXCLUDED_DAY"] = 0
+
         return params
 
     def _get_query(
@@ -171,6 +225,14 @@ class TestExecutionSQL:
             query = query.replace(":", "\\:")
 
         return query, None if no_bind else params
+    
+    def has_schema_changes(self) -> tuple[dict]:
+        # Runs on App database
+        return self._get_query("has_schema_changes.sql")
+
+    def get_errored_autogen_monitors(self) -> tuple[str, dict]:
+        # Runs on App database
+        return self._get_query("get_errored_autogen_monitors.sql")
 
     def get_active_test_definitions(self) -> tuple[dict]:
         # Runs on App database
@@ -212,21 +274,28 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("disable_invalid_test_definitions.sql")
 
-    def update_historic_thresholds(self) -> tuple[str, dict]:
+    def update_history_calc_thresholds(self) -> tuple[str, dict]:
         # Runs on App database
-        return self._get_query("update_historic_thresholds.sql")
+        return self._get_query("update_history_calc_thresholds.sql")
 
     def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict]:
         # Runs on Target database
-        folder = "generic" if test_def.template_name.endswith("_generic.sql") else self.flavor
-        return self._get_query(
-            test_def.template_name,
-            f"flavors/{folder}/exec_query_tests",
-            no_bind=True,
-            # Final replace in CUSTOM_QUERY
-            extra_params={"DATA_SCHEMA": test_def.schema_name},
-            test_def=test_def,
-        )
+        if test_def.template.startswith("@"):
+            folder = "generic" if test_def.template.endswith("_generic.sql") else self.flavor
+            return self._get_query(
+                test_def.template,
+                f"flavors/{folder}/exec_query_tests",
+                no_bind=True,
+                # Final replace in CUSTOM_QUERY
+                extra_params={"DATA_SCHEMA": test_def.schema_name},
+                test_def=test_def,
+            )
+        else:
+            query = test_def.template
+            params = self._get_params(test_def)
+            params.update({"DATA_SCHEMA": test_def.schema_name})
+            query = replace_params(query, params)
+            return query, params
 
     def aggregate_cat_tests(
         self,
@@ -246,9 +315,18 @@ class TestExecutionSQL:
                 measure = replace_templated_functions(measure, self.flavor)
                 td.measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{self.null_value}|')"
 
-                condition = replace_params(f"{td.measure}{td.test_operator}{td.test_condition}", params)
-                condition = replace_templated_functions(condition, self.flavor)
-                td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
+                # For prediction mode, return -1 during training period
+                if td.history_calculation == "PREDICT" and (td.lower_tolerance in (None, "") or td.upper_tolerance in (None, "")):
+                    td.condition_expression = "'-1,'"
+                else:
+                    condition = (
+                        f"{td.measure} {td.test_operator} {td.test_condition}"
+                        if "BETWEEN" in td.test_operator
+                        else f"{td.measure}{td.test_operator}{td.test_condition}"
+                    )
+                    condition = replace_params(condition, params)
+                    condition = replace_templated_functions(condition, self.flavor)
+                    td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
 
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []

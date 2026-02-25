@@ -4,14 +4,15 @@ test_types:
   test_name_short: Valid US Zip
   test_name_long: Valid USA Postal Codes
   test_description: |-
-    Tests that postal codes match the 5 or 9 digit standard US format
+    Tests that postal codes match the 5-digit or 9-digit standard US formats.
   except_message: |-
-    Invalid US Zip Code formats found.
+    Invalid US zip code formats found.
   measure_uom: Invalid Zip Codes
   measure_uom_description: |-
     Expected count of values with invalid Zip Codes
   selection_criteria: |-
     functional_data_type = 'Zip'
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Minimum Value
   test_name_long: All values at or above set minimum
   test_description: |-
-    Tests that the minimum value present in the column is no lower than the minimum value in baseline data
+    Tests that minimum value present in column is no lower than minimum value in baseline data.
   except_message: |-
     Minimum column value less than baseline.
   measure_uom: Values under limit
   measure_uom_description: null
   selection_criteria: |-
     general_type='N' AND functional_data_type ILIKE 'Measure%' AND min_value IS NOT NULL AND (distinct_value_ct >= 2 OR (distinct_value_ct=2 and min_value<>0 and max_value<>1))
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

@@ -68,6 +68,7 @@ stylesheet.replace(`
 
 .column-history--item {
     padding: 8px;
+    border-radius: 4px;
 }
 
 .column-history--item:hover {
@@ -75,7 +76,7 @@ stylesheet.replace(`
 }
 
 .column-history--item.selected {
-    background-color: #06a04a17;
+    background-color: var(--selected-item-background);
 }
 
 .column-history--item.selected > div {
@@ -89,7 +90,7 @@ stylesheet.replace(`
 
 .column-history--divider {
     width: 1px;
-    background-color: var(--grey);
+    background-color: var(--border-color);
     margin: 0 10px;
 }
 

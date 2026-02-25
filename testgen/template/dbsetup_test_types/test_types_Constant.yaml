@@ -4,13 +4,14 @@ test_types:
   test_name_short: Constant Match
   test_name_long: All column values match constant value
   test_description: |-
-    Tests that all values in the column match the constant value identified in baseline data
+    Tests that all values in column match the constant value identified in baseline data.
   except_message: |-
-    A constant value is expected for this column.
+    Column values do not match expected constant value.
   measure_uom: Mismatched values
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
+  generation_template: gen_Constant.sql
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

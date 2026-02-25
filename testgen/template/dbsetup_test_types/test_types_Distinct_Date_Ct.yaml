@@ -4,7 +4,7 @@ test_types:
   test_name_short: Date Count
   test_name_long: Count of distinct dates at or above reference
   test_description: |-
-    Tests that the count of distinct dates referenced in the column has not dropped vs. baseline data
+    Tests that count of distinct dates referenced in column has not dropped compared to baseline data.
   except_message: |-
     Drop in count of unique dates recorded in column.
   measure_uom: Unique dates
@@ -12,6 +12,7 @@ test_types:
     Count of unique dates in transactional date column
   selection_criteria: |-
     functional_data_type ILIKE 'Transactional Date%' AND date_days_present > 1 AND functional_table_type ILIKE  '%cumulative%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     (({RECORD_CT}-{PRO_RECORD_CT})::FLOAT*{DISTINCT_VALUE_CT}::FLOAT/NULLIF({PRO_RECORD_CT}::FLOAT, 0))/NULLIF({PRO_RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

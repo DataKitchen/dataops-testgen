@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_types
+    ADD COLUMN generation_template VARCHAR(100);

@@ -106,10 +106,9 @@ const Toolbar = (
     ];
 
     return div(
-        { class: 'flex-row fx-align-flex-end mb-4' },
+        { class: 'flex-row fx-align-flex-end fx-gap-3 mb-4' },
         Input({
             width: 230,
-            style: 'font-size: 14px; margin-right: 16px;',
             icon: 'search',
             clearable: true,
             placeholder: 'Search scorecards',
@@ -132,7 +131,7 @@ const Toolbar = (
             icon: 'data_exploration',
             label: 'Score Explorer',
             color: 'primary',
-            style: 'background: var(--button-generic-background-color); width: unset; margin-right: 16px;',
+            style: 'background: var(--button-generic-background-color); width: unset;',
             onclick: () => emitEvent('LinkClicked', {
                 href: 'quality-dashboard:explorer',
                 params: { project_code: projectSummary.project_code },
@@ -140,11 +139,11 @@ const Toolbar = (
             }),
         }),
         Button({
-            type: 'icon',
+            type: 'stroked',
             icon: 'refresh',
             tooltip: 'Refresh page data',
             tooltipPosition: 'left',
-            style: 'border: var(--button-stroked-border); border-radius: 4px;',
+            style: 'background: var(--button-generic-background-color);',
             onclick: () => emitEvent('RefreshData', {}),
             testId: 'scorecards-refresh',
         }),

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Past Dates
   test_name_long: Latest date is prior to test run date
   test_description: |-
-    Tests that the maximum date referenced in the column is no greater than the test date, consistent with baseline data
+    Tests that maximum date referenced in column is no greater than the test date, consistent with baseline data.
   except_message: |-
     Future date found when absent in baseline data.
   measure_uom: Future dates
   measure_uom_description: null
   selection_criteria: |-
     general_type='D'AND future_date_ct = 0
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

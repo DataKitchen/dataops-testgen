@@ -45,20 +45,20 @@ class TestRunsPage(Page):
         icon=PAGE_ICON,
         label=PAGE_TITLE,
         section="Data Quality Testing",
-        order=0,
+        order=1,
     )
 
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "test-results",
+            "data-quality-testing",
         )
 
         with st.spinner("Loading data ..."):
             project_summary = Project.get_summary(project_code)
             test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id)
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code)
+            test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
 
         testgen_component(
             "test_runs",
@@ -142,7 +142,10 @@ class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
     def _get_component_props(self) -> dict[str, Any]:
         test_suite_options = [
             (str(ts.id), ts.test_suite)
-            for ts in TestSuite.select_minimal_where(TestSuite.project_code == self.ns_attrs["project_code"])
+            for ts in TestSuite.select_minimal_where(
+                TestSuite.project_code == self.ns_attrs["project_code"],
+                TestSuite.is_monitor.isnot(True),
+            )
         ]
         test_suite_options.insert(0, (None, "All Test Suites"))
         trigger_labels = {
@@ -167,7 +170,10 @@ class TestRunScheduleDialog(ScheduleDialog):
     test_suites: Iterable[TestSuiteMinimal] | None = None
 
     def init(self) -> None:
-        self.test_suites = TestSuite.select_minimal_where(TestSuite.project_code == self.project_code)
+        self.test_suites = TestSuite.select_minimal_where(
+            TestSuite.project_code == self.project_code,
+            TestSuite.is_monitor.isnot(True),
+        )
 
     def get_arg_value(self, job):
         return next(item.test_suite for item in self.test_suites if str(item.id) == job.kwargs["test_suite_id"])
@@ -214,7 +220,6 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
     testgen.testgen_component(
         "confirm_dialog",
         props={
-            "project_code": project_code,
             "message": message,
             "constraint": constraint,
             "button_label": "Delete",

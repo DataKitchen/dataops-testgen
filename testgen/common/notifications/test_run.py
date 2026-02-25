@@ -3,7 +3,10 @@ import logging
 from sqlalchemy import case, literal, select
 
 from testgen.common.models import get_current_session, with_database_session
-from testgen.common.models.notification_settings import TestRunNotificationSettings, TestRunNotificationTrigger
+from testgen.common.models.notification_settings import (
+    TestRunNotificationSettings,
+    TestRunNotificationTrigger,
+)
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -242,7 +245,10 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
 @with_database_session
 def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_status_min=5):
 
-    notifications = list(TestRunNotificationSettings.select(enabled=True, test_suite_id=test_run.test_suite_id))
+    notifications = list(TestRunNotificationSettings.select(
+      enabled=True,
+      test_suite_id=test_run.test_suite_id,
+    ))
     if not notifications:
         return
 
@@ -303,7 +309,10 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 TestType.test_name_short.label("test_type"),
             )
             .join(TestType, TestType.test_type == TestResult.test_type)
-            .where(TestResult.test_run_id == test_run.id, TestResult.status == status)
+            .where(
+                TestResult.test_run_id == test_run.id,
+                TestResult.status == status,
+              )
             .order_by(changed_case.desc())
             .limit(result_count_by_status[status])
         )
@@ -312,15 +321,18 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
 
+    test_run_url = "".join(
+        (
+            PersistedSetting.get("BASE_URL", ""),
+            "/test-runs:results?run_id=",
+            str(test_run.id),
+            "&source=email",
+        )
+    )
+
     context = {
         "test_run": tr_summary,
-        "test_run_url": "".join(
-            (
-                PersistedSetting.get("BASE_URL", ""),
-                "/test-runs:results?run_id=",
-                str(test_run.id),
-            )
-        ),
+        "test_run_url": test_run_url,
         "test_run_id": str(test_run.id),
         "test_result_summary": [
             {
@@ -329,6 +341,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 "total": test_run.ct_by_status[status],
                 "truncated": test_run.ct_by_status[status] - len(result_list),
                 "result_list": result_list,
+                "test_run_url": test_run_url,
             }
             for status, label in summary_statuses
             if (result_list := result_list_by_status.get(status, None))

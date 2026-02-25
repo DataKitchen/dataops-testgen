@@ -30,6 +30,7 @@ class ProjectDashboardPage(Page):
     def render(self, project_code: str, **_kwargs):
         testgen.page_header(
             PAGE_TITLE,
+            "project-dashboard",
         )
 
         with st.spinner("Loading data ..."):
@@ -65,6 +66,28 @@ class ProjectDashboardPage(Page):
                         "dq_score": friendly_score(score(table_group.dq_score_profiling, table_group.dq_score_testing)),
                         "dq_score_profiling": friendly_score(table_group.dq_score_profiling),
                         "dq_score_testing": friendly_score(table_group.dq_score_testing),
+                        "monitoring_summary": {
+                            "project_code": project_code,
+                            "table_group_id": str(table_group.id),
+                            "lookback": table_group.monitor_lookback,
+                            "lookback_start": make_json_safe(table_group.monitor_lookback_start),
+                            "lookback_end": make_json_safe(table_group.monitor_lookback_end),
+                            "freshness_anomalies": table_group.monitor_freshness_anomalies or 0,
+                            "schema_anomalies": table_group.monitor_schema_anomalies or 0,
+                            "volume_anomalies": table_group.monitor_volume_anomalies or 0,
+                            "metric_anomalies": table_group.monitor_metric_anomalies or 0,
+                            "freshness_has_errors": table_group.monitor_freshness_has_errors or False,
+                            "volume_has_errors": table_group.monitor_volume_has_errors or False,
+                            "schema_has_errors": table_group.monitor_schema_has_errors or False,
+                            "metric_has_errors": table_group.monitor_metric_has_errors or False,
+                            "freshness_is_training": table_group.monitor_freshness_is_training or False,
+                            "volume_is_training": table_group.monitor_volume_is_training or False,
+                            "metric_is_training": table_group.monitor_metric_is_training or False,
+                            "freshness_is_pending": table_group.monitor_freshness_is_pending or False,
+                            "volume_is_pending": table_group.monitor_volume_is_pending or False,
+                            "schema_is_pending": table_group.monitor_schema_is_pending or False,
+                            "metric_is_pending": table_group.monitor_metric_is_pending or False,
+                        } if table_group.monitor_test_suite_id else None,
                     }
                     for table_group in table_groups
                 ],

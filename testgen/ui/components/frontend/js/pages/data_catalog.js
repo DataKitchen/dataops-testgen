@@ -13,8 +13,10 @@
  * @property {string} functional_data_type
  * @property {number} record_ct
  * @property {number} value_ct
- * @property {number} drop_date
- * @property {number} table_drop_date
+ * @property {string} add_date
+ * @property {string} drop_date
+ * @property {string} table_add_date
+ * @property {string} table_drop_date
  * @property {boolean} critical_data_element
  * @property {boolean} table_critical_data_element
  * @property {string} data_source
@@ -117,12 +119,12 @@ const DataCatalog = (/** @type Properties */ props) => {
 
         const tables = {};
         columns.forEach((item) => {
-            const { column_id, table_id, column_name, table_name, record_ct, value_ct, drop_date, table_drop_date } = item;
+            const { column_id, table_id, column_name, table_name, record_ct, value_ct, add_date, drop_date, table_add_date, table_drop_date } = item;
             if (!tables[table_id]) {
                 tables[table_id] = {
                     id: table_id,
                     label: table_name,
-                    classes: table_drop_date ? 'text-disabled' : '',
+                    classes: table_drop_date ? 'text-disabled' : (table_add_date && (Date.now() - new Date(table_add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
                     ...TABLE_ICON,
                     iconColor: record_ct === 0 ? 'red' : null,
                     iconTooltip: record_ct === 0 ? 'No records detected' : null,
@@ -134,7 +136,7 @@ const DataCatalog = (/** @type Properties */ props) => {
             const columnNode = {
                 id: column_id,
                 label: column_name,
-                classes: drop_date ? 'text-disabled' : '',
+                classes: drop_date ? 'text-disabled' : (add_date && (Date.now() - new Date(add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
                 ...getColumnIcon(item),
                 iconColor: value_ct === 0 ? 'red' : null,
                 iconTooltip: value_ct === 0 ? 'No non-null values detected' : null,
@@ -333,7 +335,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
             tooltip: 'Download columns to Excel',
             tooltipPosition: 'left',
             width: 'fit-content',
-            style: 'background: var(--dk-card-background);',
+            style: 'background: var(--button-generic-background-color);',
             onclick: () => exportOptionsOpened.val = !exportOptionsOpened.val,
         }),
         Portal(
@@ -733,7 +735,7 @@ const ConditionalEmptyState = (
             color: 'primary',
             label: 'Run Profiling',
             width: 'fit-content',
-            style: 'margin: auto; background: background: var(--dk-card-background);',
+            style: 'margin: auto; background: var(--button-generic-background-color);',
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',

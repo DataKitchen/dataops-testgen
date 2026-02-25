@@ -31,78 +31,6 @@ SELECT DISTINCT anomaly_id, table_groups_id, schema_name, table_name, column_nam
  WHERE disposition = 'Inactive';
 
 
-DROP VIEW IF EXISTS v_test_results;
-
-CREATE VIEW v_test_results
-AS
-SELECT p.project_name,
-       ts.test_suite,
-       tg.table_groups_name,
-       cn.connection_name, cn.project_host, cn.sql_flavor,
-       tt.dq_dimension,
-       r.schema_name, r.table_name, r.column_names,
-       r.test_time as test_date,
-       r.test_type,  tt.id as test_type_id, tt.test_name_short, tt.test_name_long,
-       r.test_description,
-       tt.measure_uom, tt.measure_uom_description,
-       c.test_operator,
-       r.threshold_value::NUMERIC(16, 5) as threshold_value,
-       r.result_measure::NUMERIC(16, 5),
-       r.result_status,
-       r.input_parameters,
-       r.result_message,
-       tt.result_visualization,
-       tt.result_visualization_params,
-       CASE WHEN result_code <> 1 THEN r.severity END as severity,
-       CASE
-         WHEN result_code <> 1 THEN r.disposition
-            ELSE 'Passed'
-       END as disposition,
-       r.result_code as passed_ct,
-       (1 - COALESCE(r.result_code, 0))::INTEGER as exception_ct,
-       CASE
-         WHEN result_status = 'Warning' THEN 1
-       END::INTEGER as warning_ct,
-       CASE
-         WHEN result_status = 'Failed' THEN 1
-       END::INTEGER as failed_ct,
-       CASE
-         WHEN result_status = 'Error' THEN 1
-       END as execution_error_ct,
-       p.project_code,
-       r.table_groups_id,
-       r.id as test_result_id, c.id as connection_id,
-       r.test_suite_id,
-       r.test_definition_id as test_definition_id_runtime,
-       CASE
-         WHEN r.auto_gen = TRUE THEN d.id
-                                ELSE r.test_definition_id
-       END as test_definition_id_current,
-       r.test_run_id as test_run_id,
-       r.auto_gen
-  FROM test_results r
-INNER JOIN test_types tt
-   ON (r.test_type = tt.test_type)
-LEFT JOIN test_definitions d
-   ON (r.test_suite_id = d.test_suite_id
-  AND  r.table_name = d.table_name
-  AND  r.column_names = COALESCE(d.column_name, 'N/A')
-  AND  r.test_type = d.test_type
-  AND  r.auto_gen = TRUE
-  AND  d.last_auto_gen_date IS NOT NULL)
-INNER JOIN test_suites ts
-   ON (r.test_suite_id = ts.id)
-INNER JOIN projects p
-   ON (ts.project_code = p.project_code)
-INNER JOIN table_groups tg
-   ON (r.table_groups_id = tg.id)
-INNER JOIN connections cn
-   ON (tg.connection_id = cn.connection_id)
-LEFT JOIN cat_test_conditions c
-   ON (cn.sql_flavor = c.sql_flavor
-  AND  r.test_type = c.test_type);
-
-
 DROP VIEW IF EXISTS v_queued_observability_results;
 
 CREATE VIEW v_queued_observability_results
@@ -293,8 +221,8 @@ SELECT
        dcc.functional_data_type as semantic_data_type,
        r.test_time, r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
-       SUM(r.result_code) as passed_ct,
-       SUM(1 - r.result_code) as issue_ct,
+       SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+       SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r
@@ -334,8 +262,8 @@ WITH dimension_rollup
    AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
               r.table_name, r.column_names, tt.dq_dimension,
               COUNT(*) as test_ct,
-              SUM(r.result_code) as passed_ct,
-              SUM(1 - r.result_code) as issue_ct,
+              SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+              SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
               MAX(r.dq_record_ct) as dq_record_ct,
               SUM_LN(COALESCE(r.dq_prevalence::NUMERIC, 0)) as good_data_pct
          FROM test_results r
@@ -479,8 +407,8 @@ SELECT
        dcc.functional_data_type as semantic_data_type,
        r.test_time, r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
-       SUM(r.result_code) as passed_ct,
-       SUM(1 - r.result_code) as issue_ct,
+       SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
+       SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r

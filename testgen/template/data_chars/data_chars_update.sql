@@ -17,20 +17,37 @@ WITH new_chars AS (
       schema_name,
       table_name,
       run_date
+),
+updated_records AS (
+   UPDATE data_table_chars
+   SET approx_record_ct = n.approx_record_ct,
+      record_ct = n.record_ct,
+      column_ct = n.column_ct,
+      last_refresh_date = n.run_date,
+      drop_date = NULL
+   FROM new_chars n
+      INNER JOIN data_table_chars d ON (
+         n.table_groups_id = d.table_groups_id
+         AND n.schema_name = d.schema_name
+         AND n.table_name = d.table_name
+      )
+   WHERE data_table_chars.table_id = d.table_id
+   RETURNING data_table_chars.*, d.drop_date as old_drop_date
 )
-UPDATE data_table_chars
-SET approx_record_ct = n.approx_record_ct,
-   record_ct = n.record_ct,
-   column_ct = n.column_ct,
-   last_refresh_date = n.run_date,
-   drop_date = NULL
-FROM new_chars n
-   INNER JOIN data_table_chars d ON (
-      n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
-      AND n.table_name = d.table_name
-   )
-WHERE data_table_chars.table_id = d.table_id;
+INSERT INTO data_structure_log (
+   table_groups_id,
+   table_id,
+   table_name,
+   change_date,
+   change
+)
+SELECT u.table_groups_id,
+   u.table_id,
+   u.table_name,
+   u.last_refresh_date,
+   'A'
+   FROM updated_records u
+   WHERE u.old_drop_date IS NOT NULL;
 
 -- Add new records
 WITH new_chars AS (
@@ -47,32 +64,48 @@ WITH new_chars AS (
       schema_name,
       table_name,
       run_date
+),
+inserted_records AS (
+   INSERT INTO data_table_chars (
+         table_groups_id,
+         schema_name,
+         table_name,
+         add_date,
+         last_refresh_date,
+         approx_record_ct,
+         record_ct,
+         column_ct
+      )
+   SELECT n.table_groups_id,
+      n.schema_name,
+      n.table_name,
+      n.run_date,
+      n.run_date,
+      n.approx_record_ct,
+      n.record_ct,
+      n.column_ct
+   FROM new_chars n
+      LEFT JOIN data_table_chars d ON (
+         n.table_groups_id = d.table_groups_id
+         AND n.schema_name = d.schema_name
+         AND n.table_name = d.table_name
+      )
+   WHERE d.table_id IS NULL
+   RETURNING data_table_chars.*
 )
-INSERT INTO data_table_chars (
-      table_groups_id,
-      schema_name,
-      table_name,
-      add_date,
-      last_refresh_date,
-      approx_record_ct,
-      record_ct,
-      column_ct
-   )
-SELECT n.table_groups_id,
-   n.schema_name,
-   n.table_name,
-   n.run_date,
-   n.run_date,
-   n.approx_record_ct,
-   n.record_ct,
-   n.column_ct
-FROM new_chars n
-   LEFT JOIN data_table_chars d ON (
-      n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
-      AND n.table_name = d.table_name
-   )
-WHERE d.table_id IS NULL;
+INSERT INTO data_structure_log (
+   table_groups_id,
+   table_id,
+   table_name,
+   change_date,
+   change
+)
+SELECT i.table_groups_id,
+   i.table_id,
+   i.table_name,
+   i.add_date,
+   'A'
+   FROM inserted_records i;
 
 -- Mark dropped records
 WITH new_chars AS (
@@ -91,19 +124,35 @@ last_run AS (
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
    GROUP BY table_groups_id
+),
+deleted_records AS (
+   UPDATE data_table_chars
+   SET drop_date = l.last_run_date
+   FROM last_run l
+      INNER JOIN data_table_chars d ON (l.table_groups_id = d.table_groups_id)
+      LEFT JOIN new_chars n ON (
+         d.table_groups_id = n.table_groups_id
+         AND d.schema_name = n.schema_name
+         AND d.table_name = n.table_name
+      )
+   WHERE data_table_chars.table_id = d.table_id
+      AND d.drop_date IS NULL
+      AND n.table_name IS NULL
+   RETURNING data_table_chars.*
 )
-UPDATE data_table_chars
-SET drop_date = l.last_run_date
-FROM last_run l
-   INNER JOIN data_table_chars d ON (l.table_groups_id = d.table_groups_id)
-   LEFT JOIN new_chars n ON (
-      d.table_groups_id = n.table_groups_id
-      AND d.schema_name = n.schema_name
-      AND d.table_name = n.table_name
-   )
-WHERE data_table_chars.table_id = d.table_id
-   AND d.drop_date IS NULL
-   AND n.table_name IS NULL;
+INSERT INTO data_structure_log (
+   table_groups_id,
+   table_id,
+   table_name,
+   change_date,
+   change
+)
+SELECT del.table_groups_id,
+   del.table_id,
+   del.table_name,
+   del.drop_date,
+   'D'
+   FROM deleted_records del;
 
 -- ==============================================================================
 -- |   Column Characteristics
@@ -138,22 +187,43 @@ update_chars AS (
       )
    WHERE data_column_chars.table_id = d.table_id
       AND data_column_chars.column_name = d.column_name
-   RETURNING data_column_chars.*, d.db_data_type as old_data_type
+   RETURNING data_column_chars.*, d.db_data_type as old_data_type, d.drop_date as old_drop_date, n.run_date as run_date
 )
 INSERT INTO data_structure_log (
-   element_id,
+   table_groups_id,
+   table_id,
+   column_id,
+   table_name,
+   column_name,
    change_date,
    change,
    old_data_type,
    new_data_type
 )
-SELECT u.column_id,
+SELECT u.table_groups_id,
+   u.table_id,
+   u.column_id,
+   u.table_name,
+   u.column_name,
    u.last_mod_date,
    'M',
    u.old_data_type,
    u.db_data_type
    FROM update_chars u
-   WHERE u.old_data_type <> u.db_data_type;
+   WHERE u.old_data_type <> u.db_data_type
+      AND u.old_drop_date IS NULL
+UNION ALL
+SELECT u.table_groups_id,
+   u.table_id,
+   u.column_id,
+   u.table_name,
+   u.column_name,
+   u.run_date,
+   'A',
+   NULL,
+   u.db_data_type
+   FROM update_chars u
+   WHERE u.old_drop_date IS NOT NULL;
 
 
 -- Add new records
@@ -211,12 +281,20 @@ inserted_records AS (
    RETURNING data_column_chars.*
 )
 INSERT INTO data_structure_log (
-   element_id,
+   table_groups_id,
+   table_id,
+   column_id,
+   table_name,
+   column_name,
    change_date,
    change,
    new_data_type
 )
-SELECT i.column_id,
+SELECT i.table_groups_id,
+   i.table_id,
+   i.column_id,
+   i.table_name,
+   i.column_name,
    i.add_date,
    'A',
    i.db_data_type
@@ -256,12 +334,20 @@ deleted_records AS (
    RETURNING data_column_chars.*
 )
 INSERT INTO data_structure_log (
-   element_id,
+   table_groups_id,
+   table_id,
+   column_id,
+   table_name,
+   column_name,
    change_date,
    change,
    old_data_type
 )
-SELECT del.column_id,
+SELECT del.table_groups_id,
+   del.table_id,
+   del.column_id,
+   del.table_name,
+   del.column_name,
    del.drop_date,
    'D',
    del.db_data_type

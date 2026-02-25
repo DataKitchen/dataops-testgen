@@ -4,14 +4,15 @@ test_types:
   test_name_short: New Shift
   test_name_long: New record mean is consistent with reference
   test_description: |-
-    Tests for statistically-significant shift in mean of new values for column compared to average calculated at baseline.
+    Tests for statistically significant shift in mean of new values for column compared to average calculated at baseline.
   except_message: |-
-    Significant shift in average of new values vs. baseline avg
+    Significant shift in average of new values compared to baseline average.
   measure_uom: Z-score of mean shift
   measure_uom_description: |-
     Absolute Z-score (number of SD's outside mean) of prior avg - incremental avg
   selection_criteria: |-
     general_type='N' AND distinct_value_ct > 10 AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     {RECORD_CT}::FLOAT*(1-FN_NORMAL_CDF({RESULT_MEASURE}::FLOAT))/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '0.75'

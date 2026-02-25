@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import threading
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal
@@ -11,6 +12,8 @@ from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
+from testgen.commands.test_generation import run_monitor_generation
+from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -25,6 +28,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications.monitor_run import send_monitor_notifications
 from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.session import session
 from testgen.utils import get_exception_message
@@ -80,11 +84,14 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         data_chars = run_data_chars_refresh(connection, table_group, test_run.test_starttime)
         test_run.set_progress("data_chars", "Completed")
 
-        sql_generator = TestExecutionSQL(connection, table_group, test_run)
+        sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run)
+
+        if test_suite.is_monitor:
+            _sync_monitor_definitions(sql_generator)
 
         # Update the thresholds before retrieving the test definitions in the next steps
-        LOG.info("Updating historic test thresholds")
-        execute_db_queries([sql_generator.update_historic_thresholds()])
+        LOG.info("Updating test thresholds based on history calculations")
+        execute_db_queries([sql_generator.update_history_calc_thresholds()])
 
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
@@ -116,7 +123,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
                 # Run metadata tests last so that results for other tests are available to them
                 for run_type in ["QUERY", "CAT", "METADATA"]:
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
-                        run_functions[run_type](run_test_defs)
+                        run_functions[run_type](run_test_defs, save_progress=not test_suite.is_monitor)
                     else:
                         test_run.set_progress(run_type, "Completed")
                         LOG.info(f"No {run_type} tests to run")
@@ -150,17 +157,27 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
 
-        send_test_run_notifications(test_run)
-        _rollup_test_scores(test_run, table_group)
+        if not test_suite.is_monitor:
+            send_test_run_notifications(test_run)
+            _rollup_test_scores(test_run, table_group)
+        else:
+            send_monitor_notifications(test_run)
     finally:
+        scoring_endtime = datetime.now(UTC) + time_delta
+        try:
+            TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
+        except Exception:
+            LOG.exception("Error predicting test thresholds")
+            
         MixpanelService().send_event(
-            "run-tests",
+            "run-monitors" if test_suite.is_monitor else "run-tests",
             source=settings.ANALYTICS_JOB_SOURCE,
             username=username,
             sql_flavor=connection.sql_flavor_code,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            scoring_duration=(datetime.now(UTC) + time_delta - test_run.test_endtime).total_seconds(),
+            scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
+            prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
         )
 
     return f"""
@@ -169,7 +186,32 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     """
 
 
-def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "METADATA"], test_defs: list[TestExecutionDef]) -> None:
+def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
+    test_suite_id = sql_generator.test_run.test_suite_id
+
+    schema_changes = fetch_dict_from_db(*sql_generator.has_schema_changes())[0]
+    if schema_changes["has_table_drops"]:
+        run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Metric_Trend"], mode="delete")
+    if schema_changes["has_table_adds"]:
+        # Freshness monitors will be inserted after profiling
+        run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
+
+    # Regenerate monitors that errored in previous run
+    errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
+    if errored_monitors:
+        errored_by_type: dict[str, list[str]] = defaultdict(list)
+        for row in errored_monitors:
+            errored_by_type[row["test_type"]].append(row["table_name"])
+        for test_type, table_names in errored_by_type.items():
+            run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=table_names)
+
+
+def _run_tests(
+    sql_generator: TestExecutionSQL,
+    run_type: Literal["QUERY", "METADATA"],
+    test_defs: list[TestExecutionDef],
+    save_progress: bool = False,
+) -> None:
     test_run = sql_generator.test_run
     test_run.set_progress(run_type, "Running")
     test_run.save()
@@ -190,7 +232,7 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
         [sql_generator.run_query_test(td) for td in test_defs],
         use_target_db=run_type != "METADATA",
         max_threads=sql_generator.connection.max_threads,
-        progress_callback=update_test_progress,
+        progress_callback=update_test_progress if save_progress else None,
     )
 
     if test_results:
@@ -215,7 +257,11 @@ def _run_tests(sql_generator: TestExecutionSQL, run_type: Literal["QUERY", "META
     )
 
 
-def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutionDef]) -> None:
+def _run_cat_tests(
+    sql_generator: TestExecutionSQL,
+    test_defs: list[TestExecutionDef],
+    save_progress: bool = False,
+) -> None:
     test_run = sql_generator.test_run
     test_run.set_progress("CAT", "Running")
     test_run.save()
@@ -241,7 +287,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
         aggregate_queries,
         use_target_db=True,
         max_threads=sql_generator.connection.max_threads,
-        progress_callback=update_aggegate_progress,
+        progress_callback=update_aggegate_progress if save_progress else None,
     )
 
     if aggregate_results:
@@ -281,7 +327,7 @@ def _run_cat_tests(sql_generator: TestExecutionSQL, test_defs: list[TestExecutio
             single_queries,
             use_target_db=True,
             max_threads=sql_generator.connection.max_threads,
-            progress_callback=update_single_progress,
+            progress_callback=update_single_progress if save_progress else False,
         )
 
         if single_results:

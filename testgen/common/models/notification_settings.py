@@ -35,10 +35,15 @@ class ProfilingRunNotificationTrigger(enum.Enum):
     on_changes = "on_changes"
 
 
+class MonitorNotificationTrigger(enum.Enum):
+    on_anomalies = "on_anomalies"
+
+
 class NotificationEvent(enum.Enum):
     test_run = "test_run"
     profiling_run = "profiling_run"
     score_drop = "score_drop"
+    monitor_run = "monitor_run"
 
 
 class NotificationSettingsValidationError(Exception):
@@ -96,7 +101,7 @@ class NotificationSettings(Entity):
         fk_count = len([None for fk in (test_suite_id, table_group_id, score_definition_id) if fk is not SENTINEL])
         if fk_count > 1:
             raise ValueError("Only one foreign key can be used at a time.")
-        elif fk_count == 1 and (project_code is not SENTINEL or event is not SENTINEL):
+        elif fk_count == 1 and (project_code is not SENTINEL):
             raise ValueError("Filtering by project_code or event is not allowed when filtering by a foreign key.")
 
         query = select(cls)
@@ -281,6 +286,43 @@ class ScoreDropNotificationSettings(NotificationSettings):
                 "total_threshold": cls._value_to_threshold(total_score_threshold),
                 "cde_threshold": cls._value_to_threshold(cde_score_threshold),
             },
+        )
+        ns.save()
+        return ns
+
+
+class MonitorNotificationSettings(RunNotificationSettings[TestRunNotificationTrigger]):
+
+    __mapper_args__: ClassVar = {
+        "polymorphic_identity": NotificationEvent.monitor_run,
+    }
+    trigger_enum = MonitorNotificationTrigger
+
+    @property
+    def table_name(self) -> str | None:
+        return self.settings["table_name"] if self.settings.get("table_name") else None
+
+    @table_name.setter
+    def table_name(self, value: str | None) -> None:
+        self.settings = {**self.settings, "table_name": value}
+
+    @classmethod
+    def create(
+            cls,
+            project_code: str,
+            table_group_id: UUID,
+            test_suite_id: UUID,
+            recipients: list[str],
+            trigger: TestRunNotificationTrigger,
+            table_name: str | None = None,
+    ) -> Self:
+        ns = cls(
+            event=NotificationEvent.monitor_run,
+            project_code=project_code,
+            table_group_id=table_group_id,
+            test_suite_id=test_suite_id,
+            recipients=recipients,
+            settings={"trigger": trigger.value, "table_name": table_name},
         )
         ns.save()
         return ns

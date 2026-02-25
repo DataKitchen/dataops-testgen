@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE table_groups
+    ADD COLUMN default_test_suite_id UUID DEFAULT NULL;

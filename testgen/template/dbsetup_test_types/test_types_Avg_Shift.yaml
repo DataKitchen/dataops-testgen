@@ -4,7 +4,7 @@ test_types:
   test_name_short: Average Shift
   test_name_long: Column mean is consistent with reference
   test_description: |-
-    Tests for statistically-significant shift in mean value for column from average calculated at baseline.
+    Tests for statistically significant shift in mean value for column from average calculated at baseline.
   except_message: |-
     Standardized difference between averages is over the selected threshold level.
   measure_uom: Difference Measure
@@ -12,6 +12,7 @@ test_types:
     Cohen's D Difference (0.20 small, 0.5 mod, 0.8 large, 1.2 very large, 2.0 huge)
   selection_criteria: |-
     general_type='N' AND distinct_value_ct > 10 AND functional_data_type ilike 'Measure%' AND functional_data_type <> 'Measurement Spike' AND column_name NOT ilike '%latitude%' AND column_name NOT ilike '%longitude%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     2.0 * (1.0 - fn_normal_cdf(ABS({RESULT_MEASURE}::FLOAT) / 2.0))
   dq_score_risk_factor: '0.75'

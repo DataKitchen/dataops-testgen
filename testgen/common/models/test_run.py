@@ -12,7 +12,9 @@ from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.project import Project
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
 
@@ -60,6 +62,20 @@ class TestRunSummary(EntityMinimal):
     log_ct: int
     dismissed_ct: int
     dq_score_testing: float
+
+
+@dataclass
+class TestRunMonitorSummary(EntityMinimal):
+    test_run_id: UUID
+    table_group_id: UUID
+    test_endtime: datetime
+    table_groups_name: str
+    project_name: str
+    freshness_anomalies: int
+    schema_anomalies: int
+    volume_anomalies: int
+    table_name: str | None = None
+
 
 class LatestTestRun(NamedTuple):
     id: str
@@ -240,7 +256,7 @@ class TestRun(Entity):
             INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
             INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
             INNER JOIN projects ON (test_suites.project_code = projects.project_code)
-        WHERE TRUE
+        WHERE test_suites.is_monitor IS NOT TRUE
             {" AND test_suites.project_code = :project_code" if project_code else ""}
             {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}
@@ -256,6 +272,54 @@ class TestRun(Entity):
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
         return [TestRunSummary(**row) for row in results]
+
+    def get_monitoring_summary(self, table_name: str | None = None) -> TestRunMonitorSummary:
+        freshness_anomalies = func.sum(case(
+            ((TestResult.test_type == "Table_Freshness") & (TestResult.result_code == 0), 1),
+            else_=0,
+        ))
+        schema_anomalies = func.sum(case(
+            ((TestResult.test_type == "Schema_Drift") & (TestResult.result_code == 0), 1),
+            else_=0,
+        ))
+        volume_anomalies = func.sum(case(
+            ((TestResult.test_type == "Volume_Trend") & (TestResult.result_code == 0), 1),
+            else_=0,
+        ))
+        projection = [
+            TestRun.id.label("test_run_id"),
+            TestRun.test_endtime,
+            TableGroup.id.label("table_group_id"),
+            TableGroup.table_groups_name,
+            Project.project_name,
+            freshness_anomalies.label("freshness_anomalies"),
+            schema_anomalies.label("schema_anomalies"),
+            volume_anomalies.label("volume_anomalies"),
+        ]
+        group_by = [
+            TestRun.id,
+            TestRun.test_endtime,
+            TableGroup.id,
+            TableGroup.table_groups_name,
+            Project.project_name,
+        ]
+        if table_name:
+            projection.append(TestResult.table_name)
+            group_by.append(TestResult.table_name)
+
+        query = (
+            select(*projection)
+            .join(TableGroup, TableGroup.monitor_test_suite_id == TestRun.test_suite_id)
+            .join(Project, Project.project_code == TableGroup.project_code)
+            .join(TestResult, TestResult.test_run_id == TestRun.id)
+            .where(
+                TestRun.id == self.id,
+                (TestResult.table_name == table_name) if table_name else True,
+            )
+            .group_by(*group_by)
+        )
+
+        return TestRunMonitorSummary(**get_current_session().execute(query).first())
 
     @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:

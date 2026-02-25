@@ -15,6 +15,7 @@ from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
 )
+from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite
 
 LOG = logging.getLogger("testgen")
@@ -268,11 +269,13 @@ def _get_input_parameters(input_parameters):
             is_first = False
         elif len(items) == item_number:  # is last
             value = item
-            ret.append({"name": name.strip(), "value": value.strip()})
+            if value.strip():
+                ret.append({"name": name.strip(), "value": value.strip()})
         else:
             words = item.split(",")
             value = ",".join(words[:-1])  # everything but the last word
-            ret.append({"name": name.strip(), "value": value.strip()})
+            if value.strip():
+                ret.append({"name": name.strip(), "value": value.strip()})
             name = words[-1]  # the last word is the next name
     return ret
 
@@ -309,6 +312,7 @@ def export_test_results(test_suite_id):
         mark_exported_results(test_suite_id, updated_ids)
 
 
+@with_database_session
 def run_observability_exporter(project_code, test_suite):
     LOG.info("CurrentStep: Observability Export - Test Results")
     test_suites = TestSuite.select_minimal_where(

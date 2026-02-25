@@ -4,12 +4,13 @@ test_types:
   test_name_short: Aggregate Balance Percent
   test_name_long: Aggregate measure per group within percent of reference
   test_description: |-
-    Tests that aggregate measure for each set of column values fall within a percent range above or below the measure for reference dataset
+    Tests that aggregate measure for each set of column values falls within a percent range above or below the measure for reference dataset.
   except_message: |-
     Aggregate measure per set of column values is outside percent range of reference dataset.
   measure_uom: Mismatched measures
   measure_uom_description: null
   selection_criteria: null
+  generation_template: null
   dq_score_prevalence_formula: |-
     1
   dq_score_risk_factor: '1.0'
@@ -232,28 +233,343 @@ test_types:
   - id: '2509'
     test_type: Aggregate_Balance_Percent
     sql_flavor: bigquery
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2409'
     test_type: Aggregate_Balance_Percent
     sql_flavor: databricks
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2209'
     test_type: Aggregate_Balance_Percent
     sql_flavor: mssql
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2309'
     test_type: Aggregate_Balance_Percent
     sql_flavor: postgresql
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2009'
     test_type: Aggregate_Balance_Percent
     sql_flavor: redshift
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2509'
     test_type: Aggregate_Balance_Percent
     sql_flavor: redshift_spectrum
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));
   - id: '2109'
     test_type: Aggregate_Balance_Percent
     sql_flavor: snowflake
-    template_name: ex_aggregate_match_percent_generic.sql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             '{SKIP_ERRORS}' as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN COUNT (*) > {SKIP_ERRORS} THEN 0 ELSE 1 END as result_code,
+             CASE
+              WHEN COUNT(*) > 0 THEN
+                     CONCAT(
+                            CONCAT( CAST(COUNT(*) AS {VARCHAR_TYPE}), ' error(s) identified, ' ),
+                            CONCAT(
+                                   CASE
+                                     WHEN COUNT(*) > {SKIP_ERRORS} THEN 'exceeding limit of '
+                                                                              ELSE 'within limit of '
+                                   END,
+                                   '{SKIP_ERRORS}.'
+                                   )
+                            )
+              ELSE 'No errors found.'
+             END AS result_message,
+             COUNT(*) as result_measure
+      FROM ( SELECT {GROUPBY_NAMES}, SUM(TOTAL) as total, SUM(MATCH_TOTAL) as MATCH_TOTAL
+               FROM
+                    ( SELECT {GROUPBY_NAMES}, {COLUMN_NAME_NO_QUOTES} as total, NULL as match_total
+             FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+             WHERE {SUBSET_CONDITION}
+             GROUP BY {GROUPBY_NAMES}
+             {HAVING_CONDITION}
+                    UNION ALL
+                      SELECT {MATCH_GROUPBY_NAMES}, NULL as total, {MATCH_COLUMN_NAMES} as match_total
+             FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{MATCH_TABLE_NAME}{QUOTE}
+             WHERE {MATCH_SUBSET_CONDITION}
+             GROUP BY {MATCH_GROUPBY_NAMES}
+                      {MATCH_HAVING_CONDITION} ) a
+               GROUP BY {GROUPBY_NAMES} ) s
+               WHERE (total IS NOT NULL AND match_total IS NULL)
+                   OR (total IS NULL AND match_total IS NOT NULL)
+                   OR (total NOT BETWEEN match_total * (1 + {LOWER_TOLERANCE}/100.0) AND match_total * (1 + {UPPER_TOLERANCE}/100.0));

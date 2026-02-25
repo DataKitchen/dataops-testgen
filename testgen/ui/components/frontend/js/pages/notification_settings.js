@@ -7,7 +7,13 @@
  * @property {string[]} recipients
  * @property {string} trigger
  * @property {boolean} enabled
+ * @property {string[]} duplicates
  *
+ * @typedef Subtitle
+ * @type {object}
+ * @property {string} label
+ * @property {string} value
+ * 
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
@@ -28,6 +34,7 @@
  * @property {import('../components/select.js').Option[]} trigger_options
  * @property {Boolean} cde_enabled;
  * @property {Boolean} total_enabled;
+ * @property {Subtitle?} subtitle
  * @property {Result?} result
  */
 import van from '../van.min.js';
@@ -98,6 +105,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
         isEdit: van.state(false),
     };
 
+    const subtitle = getValue(props.subtitle);
+
     const resetForm = () => {
         newNotificationItemForm.id.val = null ;
         newNotificationItemForm.scope.val = null;
@@ -109,7 +118,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     }
 
     van.derive(() => {
-        if (getValue(props.result)?.success) {
+        if (getValue(props.result)?.success && newNotificationItemForm.isEdit.rawVal) {
             resetForm();
         }
     });
@@ -121,76 +130,90 @@ const NotificationSettings = (/** @type Properties */ props) => {
     ) => {
         const showTotalScore = totalScoreEnabled && item.total_score_threshold !== '0.0';
         const showCdeScore = cdeScoreEnabled && item.cde_score_threshold !== '0.0';
+        const duplicatedMessage = item.duplicates?.length
+            ? `This notification will be delivered multiple times for: ${item.duplicates.join(', ')}`
+            : '';
+
         return div(
-            { class: () => `table-row flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
-            event === 'score_drop'
-                ? div(
-                    { style: `flex: ${columns[0]}%`, class: 'flex-column fx-gap-1 score-threshold' },
-                    showTotalScore ? div('Total score: ', b(item.total_score_threshold)) : '',
-                    showCdeScore ? div(`${showTotalScore ? 'or ' : ''}CDE score: `, b(item.cde_score_threshold)) : '',
-                )
-                : div(
-                    { style: `flex: ${columns[0]}%` },
-                    div(scopeLabel(item.scope)),
-                    div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+            { class: 'flex-column table-row'},
+            div(
+                { class: () => `flex-row ${newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id ? 'notifications--editing-row' : ''}` },
+                event === 'score_drop'
+                    ? div(
+                        { style: `flex: ${columns[0]}%`, class: 'flex-column fx-gap-1 score-threshold' },
+                        showTotalScore ? div('Total score: ', b(item.total_score_threshold)) : '',
+                        showCdeScore ? div(`${showTotalScore ? 'or ' : ''}CDE score: `, b(item.cde_score_threshold)) : '',
+                    )
+                    : div(
+                        { style: `flex: ${columns[0]}%` },
+                        div(scopeLabel(item.scope)),
+                        div({ class: 'text-caption mt-1' }, triggerLabel(item.trigger)),
+                    ),
+                div(
+                    { style: `flex: ${columns[1]}%` },
+                    TruncatedText({ max: 6 }, ...item.recipients),
                 ),
-            div(
-                { style: `flex: ${columns[1]}%` },
-                TruncatedText({ max: 6 }, ...item.recipients),
-            ),
-            div(
-                { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
-                permissions.can_edit
-                ? (newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id
-                ? div(
-                    { class: 'flex-row fx-gap-1' },
-                    Icon({ size: 18, classes: 'notifications--editing' }, 'edit'),
-                    span({ class: 'notifications--editing' }, 'Editing'),
-                )
-                : [
-                    item.enabled
-                        ? Button({
+                div(
+                    { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
+                    permissions.can_edit
+                    ? (newNotificationItemForm.isEdit.val && newNotificationItemForm.id.val === item.id
+                    ? div(
+                        { class: 'flex-row fx-gap-1' },
+                        Icon({ size: 18, classes: 'notifications--editing' }, 'edit'),
+                        span({ class: 'notifications--editing' }, 'Editing'),
+                    )
+                    : [
+                        item.enabled
+                            ? Button({
+                                type: 'stroked',
+                                icon: 'pause',
+                                tooltip: 'Pause notification',
+                                style: 'height: 32px;',
+                                onclick: () => emitEvent('PauseNotification', { payload: item }),
+                            })
+                            : Button({
+                                type: 'stroked',
+                                icon: 'play_arrow',
+                                tooltip: 'Resume notification',
+                                style: 'height: 32px;',
+                                onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                            }),
+                        Button({
                             type: 'stroked',
-                            icon: 'pause',
-                            tooltip: 'Pause notification',
+                            icon: 'edit',
+                            tooltip: 'Edit notification',
                             style: 'height: 32px;',
-                            onclick: () => emitEvent('PauseNotification', { payload: item }),
-                        })
-                        : Button({
-                            type: 'stroked',
-                            icon: 'play_arrow',
-                            tooltip: 'Resume notification',
-                            style: 'height: 32px;',
-                            onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                            onclick: () => {
+                                newNotificationItemForm.isEdit.val = true;
+                                newNotificationItemForm.id.val = item.id;
+                                newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
+                                if (event === 'score_drop') {
+                                    newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
+                                    newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
+                                } else {
+                                    newNotificationItemForm.scope.val = item.scope;
+                                    newNotificationItemForm.trigger.val = item.trigger;
+                                }
+                            },
                         }),
-                    Button({
-                        type: 'stroked',
-                        icon: 'edit',
-                        tooltip: 'Edit notification',
-                        style: 'height: 32px;',
-                        onclick: () => {
-                            newNotificationItemForm.isEdit.val = true;
-                            newNotificationItemForm.id.val = item.id;
-                            newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
-                            if (event === 'score_drop') {
-                                newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
-                                newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
-                            } else {
-                                newNotificationItemForm.scope.val = item.scope;
-                                newNotificationItemForm.trigger.val = item.trigger;
-                            }
-                        },
-                    }),
-                    Button({
-                        type: 'stroked',
-                        icon: 'delete',
-                        tooltip: 'Delete notification',
-                        tooltipPosition: 'top-left',
-                        style: 'height: 32px;',
-                        onclick: () => emitEvent('DeleteNotification', { payload: item }),
-                    }),
-                ]) : null,
+                        Button({
+                            type: 'stroked',
+                            icon: 'delete',
+                            tooltip: 'Delete notification',
+                            tooltipPosition: 'top-left',
+                            style: 'height: 32px;',
+                            onclick: () => emitEvent('DeleteNotification', { payload: item }),
+                        }),
+                    ]) : null,
+                ),
             ),
+            duplicatedMessage
+                ? div(
+                    { class: 'flex-row fx-gap-1 text-caption warning-text' },
+                    Icon({ size: 12, classes: 'warning-text' }, 'warning'),
+                    span({}, duplicatedMessage),
+                )
+                : '',
         );
     }
 
@@ -199,11 +222,18 @@ const NotificationSettings = (/** @type Properties */ props) => {
 
     return div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
+        subtitle
+            ? div(
+                    { class: 'flex-row fx-gap-1 mb-5 text-large' },
+                    span({ class: 'text-secondary' }, `${subtitle.label}: `),
+                    span(subtitle.value),
+                )
+            : '',
         () => ExpansionPanel(
             {
                 title: newNotificationItemForm.isEdit.val
                     ? span({ class: 'notifications--editing' }, 'Edit Notification')
-                    : 'Add Notification',
+                    : span({ class: 'text-green' }, 'Add Notification'),
                 testId: 'notification-item-editor',
                 expanded: newNotificationItemForm.isEdit.val,
             },
@@ -246,15 +276,17 @@ const NotificationSettings = (/** @type Properties */ props) => {
                             onChange: (value) => newNotificationItemForm.scope.val = value,
                             portalClass: 'short-select-portal',
                         }),
-                        () => Select({
-                            label: 'When',
-                            options: triggerOptions.map(([value, label]) => ({
-                                label: label, value: value
-                            })),
-                            value: newNotificationItemForm.trigger,
-                            onChange: (value) => newNotificationItemForm.trigger.val = value,
-                            portalClass: 'short-select-portal',
-                        }),
+                        () => event !== 'monitor_run'
+                            ? Select({
+                                label: 'When',
+                                options: triggerOptions.map(([value, label]) => ({
+                                    label: label, value: value
+                                })),
+                                value: newNotificationItemForm.trigger,
+                                onChange: (value) => newNotificationItemForm.trigger.val = value,
+                                portalClass: 'short-select-portal',
+                            })
+                            : '',
                     ]),
                 ),
                 div(

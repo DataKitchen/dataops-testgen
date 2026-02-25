@@ -2,13 +2,11 @@ import time
 
 import streamlit as st
 
-from testgen.commands.run_generate_tests import run_test_gen_queries
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
-
-ALL_TYPES_LABEL = "All Test Types"
 
 
 @st.dialog(title="Generate Tests")
@@ -16,18 +14,17 @@ ALL_TYPES_LABEL = "All Test Types"
 def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
     test_suite_id = test_suite.id
     test_suite_name = test_suite.test_suite
-    table_group_id = test_suite.table_groups_id
 
     selected_set = ""
     generation_sets = get_generation_set_choices()
 
     if generation_sets:
-        generation_sets.insert(0, ALL_TYPES_LABEL)
-
+        try:
+            default_generation_set = generation_sets.index("Standard")
+        except ValueError:
+            default_generation_set = 0
         with st.container():
-            selected_set = st.selectbox("Generation Set", generation_sets)
-            if selected_set == ALL_TYPES_LABEL:
-                selected_set = ""
+            selected_set = st.selectbox("Generation Set", generation_sets, index=default_generation_set)
 
     test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(test_suite_id)
     if test_ct:
@@ -55,7 +52,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
         st.code(
-            f"testgen run-test-generation --table-group-id {table_group_id} --test-suite-key '{test_suite_name}'",
+            f"testgen run-test-generation --test-suite-id {test_suite_id} --generation-set '{selected_set}'",
             language="shellSession",
         )
 
@@ -73,7 +70,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
         status_container.info("Generating tests ...")
 
         try:
-            run_test_gen_queries(table_group_id, test_suite_name, selected_set)
+            run_test_generation(test_suite_id, selected_set)
         except Exception as e:
             status_container.error(f"Test generation encountered errors: {e!s}.")
 
@@ -86,7 +83,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     result = fetch_one_from_db(
         """
-        SELECT 
+        SELECT
             COUNT(*) AS test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) AS unlocked_test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' AND td.last_manual_update IS NOT NULL THEN 1 ELSE 0 END) AS unlocked_edits_ct

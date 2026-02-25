@@ -11,6 +11,7 @@ from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db, fetch_one_from_db
+from testgen.ui.utils import parse_fuzzy_date
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -109,7 +110,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
-    test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+    test_definition = TestDefinition.get(issue_data["test_definition_id"])
     if not test_definition:
         return None
 
@@ -118,15 +119,18 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_names"], # Don't quote this - queries already have quotes
         "COLUMN_TYPE": issue_data["column_type"],
-        "TEST_DATE": str(issue_data["test_date"]),
+        "TEST_DATE": str(parsed_test_date) if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
+            else None,
         "CUSTOM_QUERY": test_definition.custom_query,
         "BASELINE_VALUE": test_definition.baseline_value,
         "BASELINE_CT": test_definition.baseline_ct,
         "BASELINE_AVG": test_definition.baseline_avg,
         "BASELINE_SD": test_definition.baseline_sd,
-        "LOWER_TOLERANCE": test_definition.lower_tolerance,
-        "UPPER_TOLERANCE": test_definition.upper_tolerance,
-        "THRESHOLD_VALUE": test_definition.threshold_value,
+        "LOWER_TOLERANCE": "NULL" if test_definition.lower_tolerance in (None, "") else test_definition.lower_tolerance,
+        "UPPER_TOLERANCE": "NULL" if test_definition.upper_tolerance in (None, "") else test_definition.upper_tolerance,
+        "THRESHOLD_VALUE": test_definition.threshold_value or 0,
+        # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
+        # since the latter may contain the former
         "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
         "GROUPBY_NAMES": test_definition.groupby_names,
         "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
@@ -138,7 +142,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "MATCH_HAVING_CONDITION": f"HAVING {test_definition.match_having_condition}" if test_definition.having_condition else "",
         "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
         "WINDOW_DATE_COLUMN": test_definition.window_date_column,
-        "WINDOW_DAYS": test_definition.window_days,
+        "WINDOW_DAYS": test_definition.window_days or 0,
         "CONCAT_COLUMNS": concat_columns(issue_data["column_names"], "<NULL>"),
         "CONCAT_MATCH_GROUPBY": concat_columns(test_definition.match_groupby_names, "<NULL>"),
         "LIMIT": limit,
@@ -158,7 +162,7 @@ def get_test_issue_source_data(
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     lookup_query = None
     try:
-        test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+        test_definition = TestDefinition.get(issue_data["test_definition_id"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
 
@@ -184,7 +188,7 @@ def get_test_issue_source_data(
 def get_test_issue_source_query_custom(
     issue_data: dict,
 ) -> str:
-    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id_current"])
+    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
     if not lookup_data or not lookup_data.lookup_query:
         return None
 
@@ -201,7 +205,7 @@ def get_test_issue_source_data_custom(
     limit: int | None = None,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     try:
-        test_definition = TestDefinition.get(issue_data["test_definition_id_current"])
+        test_definition = TestDefinition.get(issue_data["test_definition_id"])
         if not test_definition:
             return "NA", "Test definition no longer exists.", None, None
 

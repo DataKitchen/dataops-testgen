@@ -1,0 +1,391 @@
+test_types:
+  id: '1515'
+  test_type: Freshness_Trend
+  test_name_short: Freshness
+  test_name_long: Table updated within expected time window
+  test_description: |-
+    Tests that table has been updated within expected time window.
+  except_message: |-
+    Table has not been updated within expected time window.
+  measure_uom: Interval since last update
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  generation_template: gen_Freshness_Trend.sql
+  dq_score_prevalence_formula: null
+  dq_score_risk_factor: null
+  column_name_prompt: |-
+    null
+  column_name_help: |-
+    null
+  default_parm_columns: subset_condition,history_calculation,history_calculation_upper,history_lookback
+  default_parm_values: null
+  default_parm_prompts: |-
+    Record Subset Condition,Lower Bound,Upper Bound,History Lookback
+  default_parm_help: |-
+    Condition defining a subset of records in main table
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: table
+  dq_dimension: Recency
+  health_dimension: Recency
+  threshold_description: |-
+    Expected time window
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Not updated on time","1":"Updated"}}}'
+  usage_notes: |-
+    This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated within the expectd time window. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
+  active: Y
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2517'
+    test_type: Freshness_Trend
+    sql_flavor: bigquery
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE) AS interval_minutes
+        FROM `{SCHEMA_NAME}.{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(CAST(interval_minutes AS STRING), 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2417'
+    test_type: Freshness_Trend
+    sql_flavor: databricks
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}') AS interval_minutes
+        FROM `{SCHEMA_NAME}`.`{TABLE_NAME}`
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::STRING, 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2217'
+    test_type: Freshness_Trend
+    sql_flavor: mssql
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' + CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          + CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2317'
+    test_type: Freshness_Trend
+    sql_flavor: postgresql
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::TEXT, 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2017'
+    test_type: Freshness_Trend
+    sql_flavor: redshift
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2517'
+    test_type: Freshness_Trend
+    sql_flavor: redshift_spectrum
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2117'
+    test_type: Freshness_Trend
+    sql_flavor: snowflake
+    template: |-
+      WITH test_data AS (
+        SELECT
+          {CUSTOM_QUERY} AS fingerprint,
+          DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal
+      FROM test_data;

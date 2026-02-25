@@ -1,0 +1,5 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_suites
+    DROP COLUMN view_mode,
+    ADD COLUMN is_monitor BOOLEAN DEFAULT FALSE;

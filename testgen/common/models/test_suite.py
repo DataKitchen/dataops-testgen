@@ -1,10 +1,11 @@
+import enum
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, String, asc, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -13,6 +14,11 @@ from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
+
+class PredictSensitivity(enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
 
 @dataclass
 class TestSuiteMinimal(EntityMinimal):
@@ -46,7 +52,6 @@ class TestSuiteSummary(EntityMinimal):
     last_run_log_ct: int
     last_run_dismissed_ct: int
 
-
 class TestSuite(Entity):
     __tablename__ = "test_suites"
 
@@ -63,7 +68,19 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
-    view_mode: str | None = Column(NullIfEmptyString, default=None)
+    is_monitor: bool = Column(Boolean, default=False)
+    monitor_lookback: int | None = Column(Integer)
+    monitor_regenerate_freshness: bool = Column(Boolean, default=True)
+    predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
+    predict_min_lookback: int | None = Column(Integer)
+    predict_exclude_weekends: bool = Column(Boolean, default=False)
+    predict_holiday_codes: str | None = Column(String)
+
+    @property
+    def holiday_codes_list(self) -> list[str] | None:
+        if not self.predict_holiday_codes:
+            return None
+        return [code.strip() for code in self.predict_holiday_codes.split(",")]
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
@@ -179,7 +196,8 @@ class TestSuite(Entity):
             ON (connections.connection_id = suites.connection_id)
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
-        WHERE suites.project_code = :project_code
+        WHERE suites.is_monitor IS NOT TRUE
+            AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
         ORDER BY LOWER(suites.test_suite);
         """

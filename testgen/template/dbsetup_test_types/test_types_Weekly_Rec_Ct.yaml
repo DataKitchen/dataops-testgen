@@ -4,14 +4,15 @@ test_types:
   test_name_short: Weekly Records
   test_name_long: At least one date per week present within date range
   test_description: |-
-    Tests for presence of at least one date per calendar week within min/max date range, per baseline data
+    Tests for presence of at least one date per calendar week within minimum and maximum date range, per baseline data.
   except_message: |-
-    At least one date per week expected in min/max date range.
+    Not every week between minimum and maximum date range has at least one date present.
   measure_uom: Missing weeks
   measure_uom_description: |-
     Calendar weeks without date values present
   selection_criteria: |-
     functional_data_type ILIKE 'Transactional Date%' AND date_days_present > 1 AND functional_table_type ILIKE  '%cumulative%' AND date_weeks_present > 3 AND date_weeks_present - (DATEDIFF('week', '1800-01-05'::DATE, max_date) - DATEDIFF('week', '1800-01-05'::DATE, min_date) + 1) = 0 AND future_date_ct::FLOAT / NULLIF(value_ct, 0) <= 0.75
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT*{PRO_RECORD_CT}::FLOAT/NULLIF({DATE_WEEKS_PRESENT}::FLOAT, 0)/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Outliers Below
   test_name_long: Consistent outlier counts under 2 SD below mean
   test_description: |-
-    Tests that percent of outliers over 2 SD below Mean doesn't exceed threshold
+    Tests that percent of outliers over two standard deviations below mean does not exceed threshold.
   except_message: |-
-    Percent of outliers exceeding 2 SD below the mean is greater than expected threshold.
+    Percent of outliers exceeding two standard deviations below the mean is greater than expected threshold.
   measure_uom: Pct records under limit
   measure_uom_description: null
   selection_criteria: |-
     functional_data_type = 'Measurement' AND distinct_value_ct > 30 AND NOT distinct_value_ct = max_value - min_value + 1 AND distinct_value_ct::FLOAT/value_ct::FLOAT > 0.1 AND stdev_value::FLOAT/avg_value::FLOAT > 0.01 AND column_name NOT ILIKE '%latitude%' AND column_name NOT ilike '%longitude%'
+  generation_template: null
   dq_score_prevalence_formula: |-
     GREATEST(0, {RESULT_MEASURE}::FLOAT-{THRESHOLD_VALUE}::FLOAT)
   dq_score_risk_factor: '0.75'

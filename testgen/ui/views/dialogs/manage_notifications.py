@@ -98,6 +98,22 @@ class NotificationSettingsDialogBase:
     def _get_component_props(self) -> dict[str, Any]:
         raise NotImplementedError
 
+    def _mark_duplicates(self, ns_json_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return a list of recipients that have duplicate rule (recipient + trigger + scope) combinations."""
+        rule_counts = {}
+        rule_items: dict[tuple, list[dict]] = {}
+        for item in ns_json_list:
+            for recipient in item["recipients"]:
+                rule = (recipient, item.get("trigger"), item.get("scope"))
+                rule_counts[rule] = rule_counts.get(rule, 0) + 1
+                rule_items.setdefault(rule, []).append(item)
+        for rule, ocurrence_count in rule_counts.items():
+            if ocurrence_count > 1:
+                items = rule_items[rule]
+                for item in items:
+                    item.setdefault("duplicates", []).append(rule[0])
+        return ns_json_list
+
     @with_database_session
     def render(self) -> None:
         user_can_edit = session.auth.user_has_permission("edit")
@@ -118,6 +134,15 @@ class NotificationSettingsDialogBase:
             }
             ns_json_list.append(ns_json)
 
+        component_props = {
+            **self.component_props,
+            **(self._get_component_props()),
+        }
+        scope_options_labels = dict(component_props.get("scope_options", []))
+        ns_json_list = sorted(
+            self._mark_duplicates(ns_json_list),
+            key=lambda item: "0" if not item["scope"] else scope_options_labels.get(item["scope"], "ZZZ"),
+        )
         widgets.css_class("m-dialog")
         widgets.testgen_component(
             "notification_settings",
@@ -129,8 +154,7 @@ class NotificationSettingsDialogBase:
                 "result": result,
                 "scope_options": [],
                 "scope_label": None,
-                **self.component_props,
-                **self._get_component_props(),
+                **component_props,
             },
             event_handlers={
                 "AddNotification": self.on_add_item,

@@ -1,16 +1,17 @@
 test_types:
   id: '1512'
   test_type: Schema_Drift
-  test_name_short: Schema Drift
+  test_name_short: Schema
   test_name_long: Table Schema Changed
   test_description: |-
-    Checks whether table schema has changed
+    Checks whether table schema has changed.
   except_message: |-
     Table schema has changed.
-  measure_uom: Was Schema Change Detected
+  measure_uom: Schema changes
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
+  generation_template: gen_Schema_Drift.sql
   dq_score_prevalence_formula: null
   dq_score_risk_factor: null
   column_name_prompt: null
@@ -19,7 +20,7 @@ test_types:
   default_parm_values: null
   default_parm_prompts: null
   default_parm_help: null
-  default_severity: Warning
+  default_severity: Fail
   run_type: METADATA
   test_scope: tablegroup
   dq_dimension: null
@@ -29,35 +30,392 @@ test_types:
   result_visualization_params: '{"legend":{"labels":{"0":"No Changes","1":"Changes"}}}'
   usage_notes: |-
     This test compares the current table column types with previous data, to check whether the table schema has changed. This test allows you to track any changes to the table structure.
-  active: N
+  active: Y
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:
   - id: '2514'
     test_type: Schema_Drift
     sql_flavor: bigquery
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2414'
     test_type: Schema_Drift
     sql_flavor: databricks
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2214'
     test_type: Schema_Drift
     sql_flavor: mssql
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2314'
     test_type: Schema_Drift
     sql_flavor: postgresql
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2014'
     test_type: Schema_Drift
     sql_flavor: redshift
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2614'
     test_type: Schema_Drift
     sql_flavor: redshift_spectrum
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;
   - id: '2114'
     test_type: Schema_Drift
     sql_flavor: snowflake
-    template_name: ex_schema_drift_generic.sql
+    template: |-
+      WITH prev_test AS (
+            SELECT MAX(test_starttime) AS last_run_time
+            FROM {APP_SCHEMA_NAME}.test_runs
+            WHERE test_suite_id = '{TEST_SUITE_ID}'::UUID
+                  -- Ignore current run
+                  AND id <> '{TEST_RUN_ID}'::UUID
+      ),
+      table_changes AS (
+            SELECT 
+                  dsl.table_name,
+                  MAX(prev_test.last_run_time) as window_start,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'A' THEN dsl.change_date ELSE NULL END) as last_add_date,
+                  MAX(CASE WHEN dsl.column_id IS NULL AND dsl.change = 'D' THEN dsl.change_date ELSE NULL END) as last_drop_date,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'A') AS column_adds,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'D') AS column_drops,
+                  COUNT(*) FILTER (WHERE dsl.column_id IS NOT NULL AND dsl.change = 'M') AS column_mods
+            FROM {APP_SCHEMA_NAME}.data_structure_log dsl
+                  CROSS JOIN prev_test
+            WHERE dsl.table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+                  -- if no previous tests, this comparision yelds null and nothing is counted
+                  AND dsl.change_date > prev_test.last_run_time
+            GROUP BY dsl.table_name
+      )
+      SELECT 
+            '{TEST_TYPE}'   AS test_type,
+            '{TEST_DEFINITION_ID}' AS test_definition_id,
+            '{TEST_SUITE_ID}' AS test_suite_id,
+            '{TEST_RUN_ID}' AS test_run_id,
+            '{RUN_DATE}'    AS test_time,
+            '{SCHEMA_NAME}' AS schema_name,
+            table_name,
+            '{INPUT_PARAMETERS}' AS input_parameters,
+            (CASE 
+                  WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
+                  WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'D'
+                  ELSE 'M' 
+            END)
+            || '|' || column_adds 
+            || '|' || column_drops 
+            || '|' || column_mods 
+            || '|' || window_start::TEXT
+            AS result_signal,
+            0 AS result_code,
+            CASE WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'Table added. ' ELSE '' END
+                  || CASE WHEN last_drop_date IS NOT NULL AND (last_add_date IS NULL OR last_drop_date > last_add_date) THEN 'Table dropped. ' ELSE '' END
+                  || CASE WHEN column_adds > 0 THEN column_adds || ' columns added. ' ELSE '' END
+                  || CASE WHEN column_drops > 0 THEN column_drops || ' columns dropped. ' ELSE '' END
+                  || CASE WHEN column_mods > 0 THEN column_mods || ' columns modified. ' ELSE '' END
+            AS result_message,
+            column_adds + column_drops + column_mods AS result_measure
+      FROM table_changes;

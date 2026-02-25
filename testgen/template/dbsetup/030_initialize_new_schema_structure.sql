@@ -39,6 +39,16 @@ CREATE TABLE stg_data_chars_updates (
    record_ct             BIGINT
 );
 
+CREATE TABLE stg_test_definition_updates (
+   test_suite_id      UUID,
+   test_definition_id UUID,
+   run_date           TIMESTAMP,
+   lower_tolerance    VARCHAR(1000),
+   upper_tolerance    VARCHAR(1000),
+   threshold_value    VARCHAR(1000),
+   prediction         JSONB
+);
+
 CREATE TABLE projects (
    id                    UUID DEFAULT gen_random_uuid(),
    project_code          VARCHAR(30) NOT NULL
@@ -89,6 +99,7 @@ CREATE TABLE table_groups
     connection_id            BIGINT
          CONSTRAINT table_groups_connections_connection_id_fk
          REFERENCES connections,
+    default_test_suite_id    UUID DEFAULT NULL,
     monitor_test_suite_id    UUID DEFAULT NULL,
     table_groups_name        VARCHAR(100),
     table_group_schema       VARCHAR(100),
@@ -159,8 +170,15 @@ CREATE TABLE test_suites (
    component_type          VARCHAR(100),
    component_name          VARCHAR(100),
    last_complete_test_run_id UUID,
-   dq_score_exclude        BOOLEAN default FALSE,
-   view_mode               VARCHAR(20) DEFAULT NULL,
+   dq_score_exclude        BOOLEAN DEFAULT FALSE,
+   is_monitor              BOOLEAN DEFAULT FALSE,
+   monitor_lookback        INTEGER DEFAULT NULL,
+   monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
+   predict_sensitivity     VARCHAR(6),
+   predict_min_lookback    INTEGER,
+   predict_exclude_weekends BOOLEAN DEFAULT FALSE,
+   predict_holiday_codes   VARCHAR(100),
+
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)
 );
@@ -202,8 +220,10 @@ CREATE TABLE test_definitions (
    match_subset_condition VARCHAR(500),
    match_groupby_names    VARCHAR,
    match_having_condition VARCHAR(500),
-   history_calculation    VARCHAR(20),
+   history_calculation    VARCHAR(1000),
+   history_calculation_upper VARCHAR(1000),
    history_lookback       INTEGER,
+   prediction             JSONB,
    test_mode              VARCHAR(20),
    custom_query           VARCHAR,
    test_active            VARCHAR(10) DEFAULT 'Y':: CHARACTER VARYING,
@@ -355,14 +375,18 @@ CREATE TABLE profile_pair_rules (
 
 
 CREATE TABLE data_structure_log (
-   log_id UUID DEFAULT gen_random_uuid()
-      CONSTRAINT pk_dsl_id
-         PRIMARY KEY,
-   element_id    UUID,
-   change_date   TIMESTAMP,
-   change        VARCHAR(10),
-   old_data_type VARCHAR(50),
-   new_data_type VARCHAR(50)
+   log_id UUID       DEFAULT gen_random_uuid()
+                        CONSTRAINT pk_dsl_id
+                        PRIMARY KEY,
+   table_groups_id   UUID,
+   table_id          UUID,
+   column_id         UUID,
+   table_name        VARCHAR(120),
+   column_name       VARCHAR(120),
+   change_date       TIMESTAMP,
+   change            VARCHAR(10),
+   old_data_type     VARCHAR(50),
+   new_data_type     VARCHAR(50)
 );
 
 CREATE TABLE data_table_chars (
@@ -452,6 +476,7 @@ CREATE TABLE test_types (
    measure_uom                   VARCHAR(100),
    measure_uom_description       VARCHAR(200),
    selection_criteria            TEXT,
+   generation_template           VARCHAR(100),
    dq_score_prevalence_formula   TEXT,
    dq_score_risk_factor          TEXT,
    column_name_prompt            TEXT,
@@ -478,7 +503,7 @@ CREATE TABLE test_templates (
       CONSTRAINT test_templates_test_types_test_type_fk
          REFERENCES test_types,
    sql_flavor    VARCHAR(20)  NOT NULL,
-   template_name VARCHAR(400),
+   template VARCHAR,
    CONSTRAINT test_templates_test_type_sql_flavor_pk
       PRIMARY KEY (test_type, sql_flavor)
 );
@@ -692,11 +717,6 @@ CREATE UNIQUE INDEX idx_tg_last_profile
   ON table_groups (last_complete_profile_run_id)
   WHERE last_complete_profile_run_id IS NOT NULL;
 
--- Index Profile Results - ORIGINAL -- still relevant?
-CREATE INDEX profile_results_tgid_sn_tn_cn
-    ON profile_results (table_groups_id, schema_name, table_name, column_name);
-
-
 -- Index test_suites
 CREATE UNIQUE INDEX uix_ts_id
    ON test_suites(id);
@@ -724,6 +744,24 @@ CREATE INDEX ix_td_tg
 CREATE INDEX ix_td_ts_tc
    ON test_definitions(test_suite_id, table_name, column_name, test_type);
 
+CREATE UNIQUE INDEX uix_td_autogen_schema
+   ON test_definitions (test_suite_id, test_type, schema_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NULL 
+      AND column_name IS NULL;
+
+CREATE UNIQUE INDEX uix_td_autogen_table
+   ON test_definitions (test_suite_id, test_type, schema_name, table_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NOT NULL 
+      AND column_name IS NULL;
+
+CREATE UNIQUE INDEX uix_td_autogen_column
+   ON test_definitions (test_suite_id, test_type, schema_name, table_name, column_name)
+   WHERE last_auto_gen_date IS NOT NULL 
+      AND table_name IS NOT NULL 
+      AND column_name IS NOT NULL;
+
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk
    ON test_runs(test_suite_id);
@@ -744,6 +782,9 @@ CREATE INDEX ix_tr_pc_ts
 CREATE INDEX ix_tr_trun
    ON test_results(test_run_id);
 
+CREATE INDEX ix_tr_trun_table
+   ON test_results(test_run_id, table_name);
+
 CREATE INDEX ix_tr_tt
    ON test_results(test_type);
 
@@ -752,6 +793,10 @@ CREATE INDEX ix_tr_pc_sctc_tt
 
 CREATE INDEX ix_tr_ts_tctt
    ON test_results(test_suite_id, table_name, column_names, test_type);
+
+-- Index data_structure_log
+CREATE INDEX ix_dsl_tg_tcd 
+   ON data_structure_log (table_groups_id, table_name, change_date);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 -- PROFILING OPTIMIZATION
@@ -777,6 +822,12 @@ CREATE INDEX ix_pr_prun
 CREATE INDEX ix_pr_pc_con
    ON profile_results(project_code, connection_id);
 
+CREATE INDEX ix_pr_tg_s_t_c
+   ON profile_results (table_groups_id, schema_name, table_name, column_name);
+
+CREATE INDEX ix_pr_tg_rd
+   ON profile_results (table_groups_id, run_date);
+
 CREATE UNIQUE INDEX uix_pr_tg_t_c_prun
    ON profile_results(table_groups_id, table_name, column_name, profile_run_id);
 
@@ -794,12 +845,21 @@ CREATE INDEX ix_ares_anid
    ON profile_anomaly_results(anomaly_id);
 
 -- Index data_table_chars
-CREATE INDEX idx_dtc_tgid_table
-  ON data_table_chars (table_groups_id, table_name);
+CREATE INDEX idx_dtc_tg_schema_table
+  ON data_table_chars (table_groups_id, schema_name, table_name);
+
+CREATE INDEX idx_dtc_id
+  ON data_table_chars (table_id);
 
 -- Index data_column_chars
-CREATE INDEX idx_dcc_tg_table_column
-  ON data_column_chars (table_groups_id, table_name, column_name);
+CREATE INDEX idx_dcc_tg_schema_table_column
+  ON data_column_chars (table_groups_id, schema_name, table_name, column_name);
+
+CREATE INDEX idx_dcc_tableid_column
+  ON data_column_chars (table_id, column_name);
+
+CREATE INDEX idx_dcc_id
+  ON data_column_chars (column_id);
 
 -- Conditional Index for dq_scoring views
 CREATE INDEX idx_test_results_filter_join

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Required Entry
   test_name_long: Required non-null value present
   test_description: |-
-    Tests that a non-null value is present in each record for the column, consistent with baseline data
+    Tests that a non-null value is present in each record for the column, consistent with baseline data.
   except_message: |-
-    Every record for this column is expected to be filled, but some are missing.
+    Not every record for the column is filled with non-null values.
   measure_uom: Missing values
   measure_uom_description: null
   selection_criteria: |-
     record_ct = value_ct AND record_ct > 10
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

@@ -11,7 +11,6 @@
  * 
  * @typedef Properties
  * @type {object}
- * @property {string} project_code
  * @property {string} message
  * @property {Constraint?} constraint
  * @property {Result?} result

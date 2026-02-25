@@ -11,7 +11,6 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
-from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
 
@@ -28,6 +27,8 @@ class TableGroupMinimal(EntityMinimal):
     profiling_exclude_mask: str
     profile_use_sampling: bool
     profiling_delay_days: str
+    monitor_test_suite_id: UUID | None
+    last_complete_profile_run_id: UUID | None
 
 
 @dataclass
@@ -62,6 +63,25 @@ class TableGroupSummary(EntityMinimal):
     latest_anomalies_likely_ct: int
     latest_anomalies_possible_ct: int
     latest_anomalies_dismissed_ct: int
+    monitor_test_suite_id: UUID | None
+    monitor_lookback: int | None
+    monitor_lookback_start: datetime | None
+    monitor_lookback_end: datetime | None
+    monitor_freshness_anomalies: int | None
+    monitor_schema_anomalies: int | None
+    monitor_volume_anomalies: int | None
+    monitor_metric_anomalies: int | None
+    monitor_freshness_has_errors: bool | None
+    monitor_volume_has_errors: bool | None
+    monitor_schema_has_errors: bool | None
+    monitor_metric_has_errors: bool | None
+    monitor_freshness_is_training: bool | None
+    monitor_volume_is_training: bool | None
+    monitor_metric_is_training: bool | None
+    monitor_freshness_is_pending: bool | None
+    monitor_volume_is_pending: bool | None
+    monitor_schema_is_pending: bool | None
+    monitor_metric_is_pending: bool | None
 
 
 class TableGroup(Entity):
@@ -70,6 +90,11 @@ class TableGroup(Entity):
     id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     project_code: str = Column(String, ForeignKey("projects.project_code"))
     connection_id: int = Column(BigInteger, ForeignKey("connections.connection_id"))
+    default_test_suite_id: UUID | None = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("test_suites.id"),
+        default=None,
+    )
     monitor_test_suite_id: UUID | None = Column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("test_suites.id"),
@@ -223,6 +248,59 @@ class TableGroup(Entity):
                     anomaly_types.id = latest_anomalies.anomaly_id
                 )
             GROUP BY latest_run.id
+        ),
+        ranked_test_runs AS (
+            SELECT
+                table_groups.id AS table_group_id,
+                test_runs.id,
+                test_runs.test_starttime,
+                COALESCE(test_suites.monitor_lookback, 1) AS lookback,
+                ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
+            FROM table_groups
+            INNER JOIN test_runs
+                ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
+            INNER JOIN test_suites
+                ON (table_groups.monitor_test_suite_id = test_suites.id)
+            WHERE table_groups.project_code = :project_code
+        ),
+        monitor_tables AS (
+            SELECT
+                ranked_test_runs.table_group_id,
+                SUM(CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS freshness_anomalies,
+                SUM(CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END) AS schema_anomalies,
+                SUM(CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS volume_anomalies,
+                SUM(CASE WHEN results.test_type = 'Metric_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END) AS metric_anomalies,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Freshness_Trend' AND ranked_test_runs.position = 1) AS freshness_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Volume_Trend' AND ranked_test_runs.position = 1) AS volume_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Schema_Drift' AND ranked_test_runs.position = 1) AS schema_has_errors,
+                BOOL_OR(results.result_status = 'Error') FILTER (WHERE results.test_type = 'Metric_Trend' AND ranked_test_runs.position = 1) AS metric_has_errors,
+                BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Freshness_Trend' AND ranked_test_runs.position = 1) AS freshness_is_training,
+                BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Volume_Trend' AND ranked_test_runs.position = 1) AS volume_is_training,
+                BOOL_AND(results.result_code = -1) FILTER (WHERE results.test_type = 'Metric_Trend' AND ranked_test_runs.position = 1) AS metric_is_training,
+                BOOL_OR(results.test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
+                BOOL_OR(results.test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
+                -- Schema monitor only creates results on schema changes (Failed)
+                -- Mark it as pending only if there are no results of any test type
+                BOOL_OR(results.test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending,
+                BOOL_OR(results.test_type = 'Metric_Trend') IS NOT TRUE AS metric_is_pending
+            FROM ranked_test_runs
+            INNER JOIN test_results AS results
+                ON (results.test_run_id = ranked_test_runs.id)
+            WHERE ranked_test_runs.position <= ranked_test_runs.lookback
+                AND results.table_name IS NOT NULL
+            GROUP BY ranked_test_runs.table_group_id
+        ),
+        lookback_windows AS (
+            SELECT
+                table_group_id,
+                lookback,
+                MIN(test_starttime) FILTER (WHERE position = LEAST(lookback + 1, max_position)) AS lookback_start,
+                MAX(test_starttime) FILTER (WHERE position = 1) AS lookback_end
+            FROM (
+                SELECT *, MAX(position) OVER (PARTITION BY table_group_id) as max_position
+                FROM ranked_test_runs
+            ) pos
+            GROUP BY table_group_id, lookback
         )
         SELECT groups.id,
             groups.table_groups_name,
@@ -240,10 +318,31 @@ class TableGroup(Entity):
             latest_profile.definite_ct AS latest_anomalies_definite_ct,
             latest_profile.likely_ct AS latest_anomalies_likely_ct,
             latest_profile.possible_ct AS latest_anomalies_possible_ct,
-            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct
+            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct,
+            groups.monitor_test_suite_id AS monitor_test_suite_id,
+            lookback_windows.lookback AS monitor_lookback,
+            lookback_windows.lookback_start AS monitor_lookback_start,
+            lookback_windows.lookback_end AS monitor_lookback_end,
+            monitor_tables.freshness_anomalies AS monitor_freshness_anomalies,
+            monitor_tables.schema_anomalies AS monitor_schema_anomalies,
+            monitor_tables.volume_anomalies AS monitor_volume_anomalies,
+            monitor_tables.metric_anomalies AS monitor_metric_anomalies,
+            monitor_tables.freshness_has_errors AS monitor_freshness_has_errors,
+            monitor_tables.volume_has_errors AS monitor_volume_has_errors,
+            monitor_tables.schema_has_errors AS monitor_schema_has_errors,
+            monitor_tables.metric_has_errors AS monitor_metric_has_errors,
+            monitor_tables.freshness_is_training AS monitor_freshness_is_training,
+            monitor_tables.volume_is_training AS monitor_volume_is_training,
+            monitor_tables.metric_is_training AS monitor_metric_is_training,
+            monitor_tables.freshness_is_pending AS monitor_freshness_is_pending,
+            monitor_tables.volume_is_pending AS monitor_volume_is_pending,
+            monitor_tables.schema_is_pending AS monitor_schema_is_pending,
+            monitor_tables.metric_is_pending AS monitor_metric_is_pending
         FROM table_groups AS groups
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
+            LEFT JOIN monitor_tables ON (groups.id = monitor_tables.table_group_id)
+            LEFT JOIN lookback_windows ON (groups.id = lookback_windows.table_group_id)
         WHERE groups.project_code = :project_code
             {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
         """
@@ -331,12 +430,7 @@ class TableGroup(Entity):
         cls.select_minimal_where.clear()
         cls.select_summary.clear()
 
-    def save(
-        self,
-        add_scorecard_definition: bool = False,
-        add_monitor_test_suite: bool = False,
-        monitor_schedule_timezone: str = "UTC",
-    ) -> None:
+    def save(self, add_scorecard_definition: bool = False) -> None:
         if self.id:
             values = {
                 column.key: getattr(self, column.key, None)
@@ -349,38 +443,6 @@ class TableGroup(Entity):
             db_session.commit()
         else:
             super().save()
-            db_session = get_current_session()
-
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
-
-            if add_monitor_test_suite:
-                test_suite = TestSuite(
-                    project_code=self.project_code,
-                    test_suite=f"{self.table_groups_name} Monitor",
-                    connection_id=self.connection_id,
-                    table_groups_id=self.id,
-                    export_to_observability=False,
-                    dq_score_exclude=True,
-                    view_mode="Monitor",
-                )
-                test_suite.save()
-
-                schedule_job = JobSchedule(
-                    project_code=self.project_code,
-                    key=RUN_TESTS_JOB_KEY,
-                    cron_expr="0 * * * *",
-                    cron_tz=monitor_schedule_timezone,
-                    args=[],
-                    kwargs={"test_suite_id": test_suite.id},
-                )
-                db_session.add(schedule_job)
-
-                self.monitor_test_suite_id = test_suite.id
-                db_session.execute(
-                    update(TableGroup)
-                    .where(TableGroup.id == self.id).values(monitor_test_suite_id=test_suite.id)
-                )
-                db_session.commit()
-
         TableGroup.clear_cache()

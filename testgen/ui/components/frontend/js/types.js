@@ -1,9 +1,18 @@
 /**
+ * @import { MonitorSummary } from '../js/components/monitor_anomalies_summary.js';
+ * 
  * @typedef FilterOption
  * @type {object}
  * @property {string} label
  * @property {string} value
  * @property {boolean} selected
+ * 
+ * @typedef CronSample
+ * @type {object}
+ * @property {string?} error
+ * @property {string[]?} samples
+ * @property {string?} readable_expr
+ * @property {string?} id
  * 
  * @typedef ProjectSummary
  * @type {object}
@@ -38,4 +47,5 @@
  * @property {number} last_run_error_ct
  * @property {number} last_run_log_ct
  * @property {number} last_run_dismissed_ct
+ * @property {MonitorSummary?} monitoring_summary
  */

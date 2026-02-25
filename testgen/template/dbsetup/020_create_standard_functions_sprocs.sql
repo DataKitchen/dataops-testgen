@@ -298,7 +298,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 
-DROP AGGREGATE IF EXISTS {SCHEMA_NAME}.sum_ln (double precision);
+DROP AGGREGATE IF EXISTS {SCHEMA_NAME}.sum_ln (double precision) CASCADE;
 
 CREATE AGGREGATE {SCHEMA_NAME}.sum_ln (double precision) (
     SFUNC     = sum_ln_agg_state,

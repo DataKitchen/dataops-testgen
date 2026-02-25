@@ -1,14 +1,14 @@
 import dataclasses
-import re
 from uuid import UUID
 
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.common import read_template_sql_file, read_template_yaml_file
-from testgen.common.database.database_service import replace_params
+from testgen.common.database.database_service import process_conditionals, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
+from testgen.utils import to_sql_timestamp
 
 
 @dataclasses.dataclass
@@ -58,7 +58,7 @@ class ProfilingSQL:
         self.connection = connection
         self.table_group = table_group
         self.profiling_run = profiling_run
-        self.run_date = profiling_run.profiling_starttime.strftime("%Y-%m-%d %H:%M:%S")
+        self.run_date = profiling_run.profiling_starttime
         self.flavor = connection.sql_flavor
         self._profiling_template: dict = None
 
@@ -68,7 +68,7 @@ class ProfilingSQL:
             "CONNECTION_ID": self.connection.connection_id,
             "TABLE_GROUPS_ID": self.table_group.id,
             "PROFILE_RUN_ID": self.profiling_run.id,
-            "RUN_DATE": self.run_date,
+            "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "PROFILE_ID_COLUMN_MASK": self.table_group.profile_id_column_mask,
@@ -106,7 +106,7 @@ class ProfilingSQL:
         params = {}
 
         if query:
-            query = self._process_conditionals(query, extra_params)
+            query = process_conditionals(query, extra_params)
             params.update(self._get_params(column_chars, table_sampling))
             if extra_params:
                 params.update(extra_params)
@@ -115,32 +115,6 @@ class ProfilingSQL:
             query = replace_templated_functions(query, self.flavor)
 
         return query, params
-
-    def _process_conditionals(self, query: str, extra_params: dict | None = None) -> str:
-        re_pattern = re.compile(r"^--\s+TG-(IF|ELSE|ENDIF)(?:\s+(\w+))?\s*$")
-        condition = None
-        updated_query = []
-        for line in query.splitlines(True):
-            if re_match := re_pattern.match(line):
-                match re_match.group(1):
-                    case "IF" if condition is None and (variable := re_match.group(2)) is not None:
-                        result = extra_params.get(variable)
-                        if result is None:
-                            result = getattr(self, variable, None)
-                        condition = bool(result)
-                    case "ELSE" if condition is not None:
-                        condition = not condition
-                    case "ENDIF" if condition is not None:
-                        condition = None
-                    case _:
-                        raise ValueError("Template conditional misused")
-            elif condition is not False:
-                updated_query.append(line)
-
-        if condition is not None:
-            raise ValueError("Template conditional misused")
-
-        return "".join(updated_query)
 
     def _get_profiling_template(self) -> dict:
         if not self._profiling_template:

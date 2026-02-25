@@ -33,7 +33,21 @@ TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
 @dataclass
-class TestDefinitionSummary(EntityMinimal):
+class TestTypeSummary(EntityMinimal):
+    test_name_short: str
+    default_test_description: str
+    measure_uom: str
+    measure_uom_description: str
+    default_parm_columns: str
+    default_parm_prompts: str
+    default_parm_help: str
+    default_severity: str
+    test_scope: TestScope
+    usage_notes: str
+
+
+@dataclass
+class TestDefinitionSummary(TestTypeSummary):
     id: UUID
     table_groups_id: UUID
     profile_run_id: UUID
@@ -67,25 +81,17 @@ class TestDefinitionSummary(EntityMinimal):
     match_having_condition: str
     custom_query: str
     history_calculation: str
+    history_calculation_upper: str
     history_lookback: int
-    test_active: str
+    test_active: bool
     test_definition_status: str
     severity: str
-    lock_refresh: str
+    lock_refresh: bool
     last_auto_gen_date: datetime
     profiling_as_of_date: datetime
     last_manual_update: datetime
-    export_to_observability: str
-    test_name_short: str
-    default_test_description: str
-    measure_uom: str
-    measure_uom_description: str
-    default_parm_columns: str
-    default_parm_prompts: str
-    default_parm_help: str
-    default_severity: str
-    test_scope: TestScope
-    usage_notes: str
+    export_to_observability: bool
+    prediction: str | None
 
 
 @dataclass
@@ -143,6 +149,17 @@ class TestType(Entity):
     usage_notes: str = Column(String)
     active: str = Column(String)
 
+    _summary_columns = (
+        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        test_description.label("default_test_description"),
+    )
+
+    @classmethod
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def select_summary_where(cls, *clauses) -> Iterable[TestTypeSummary]:
+        results = cls._select_columns_where(cls._summary_columns, *clauses)
+        return [TestTypeSummary(**row) for row in results]
+
 
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
@@ -179,6 +196,7 @@ class TestDefinition(Entity):
     match_groupby_names: str = Column(NullIfEmptyString)
     match_having_condition: str = Column(NullIfEmptyString)
     history_calculation: str = Column(NullIfEmptyString)
+    history_calculation_upper: str = Column(NullIfEmptyString)
     history_lookback: int = Column(ZeroIfEmptyInteger, default=0)
     test_mode: str = Column(String)
     custom_query: str = Column(QueryString)
@@ -192,10 +210,12 @@ class TestDefinition(Entity):
     profiling_as_of_date: datetime = Column(postgresql.TIMESTAMP)
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
+    prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
-        *[key for key in TestDefinitionSummary.__annotations__.keys() if key != "default_test_description"],
+        *TestDefinitionSummary.__annotations__.keys(),
+        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
         TestType.test_description.label("default_test_description"),
     )
     _minimal_columns = TestDefinitionMinimal.__annotations__.keys()
@@ -211,6 +231,7 @@ class TestDefinition(Entity):
         check_result,
         last_auto_gen_date,
         profiling_as_of_date,
+        prediction,
     )
 
     @classmethod

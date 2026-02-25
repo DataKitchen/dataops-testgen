@@ -4,7 +4,7 @@ test_types:
   test_name_short: Email Format
   test_name_long: Email is correctly formatted
   test_description: |-
-    Tests that non-blank, non-empty email addresses match the standard format
+    Tests that non-blank, non-empty email addresses match standard format.
   except_message: |-
     Invalid email address formats found.
   measure_uom: Invalid emails
@@ -12,6 +12,7 @@ test_types:
     Number of emails that do not match standard format
   selection_criteria: |-
     std_pattern_match='EMAIL'
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

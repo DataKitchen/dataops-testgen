@@ -4,6 +4,7 @@ import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import Enum
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -27,9 +28,25 @@ def to_int(value: float | int) -> int:
     return 0
 
 
+def to_sql_timestamp(value: datetime):
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def str_to_timestamp(value: str) -> int:
+    try:
+        return int(datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).timestamp())
+    except:
+        ...
+    try:
+        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp())
+    except:
+        ...
+
+
 def to_dataframe(
     data: Iterable[Any],
     columns: list[str] | None = None,
+    coerce_float: bool = False,
 ) -> pd.DataFrame:
     records = []
     for item in data:
@@ -40,7 +57,7 @@ def to_dataframe(
         else:
             row = dict(item)
         records.append(row)
-    return pd.DataFrame.from_records(records, columns=columns)
+    return pd.DataFrame.from_records(records, columns=columns, coerce_float=coerce_float)
 
 
 def is_uuid4(value: str) -> bool:
@@ -73,6 +90,8 @@ def make_json_safe(value: Any) -> str | bool | int | float | None:
         return int(value.replace(tzinfo=UTC).timestamp())
     elif isinstance(value, Decimal):
         return float(value)
+    elif isinstance(value, Enum):
+        return value.value
     elif isinstance(value, list):
         return [ make_json_safe(item) for item in value ]
     elif isinstance(value, dict):

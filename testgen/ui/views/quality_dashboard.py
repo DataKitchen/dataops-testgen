@@ -28,7 +28,7 @@ class QualityDashboardPage(Page):
     def render(self, *, project_code: str, **_kwargs) -> None:
         project_summary = Project.get_summary(project_code)
 
-        testgen.page_header(PAGE_TITLE)
+        testgen.page_header(PAGE_TITLE, "quality-scores")
         testgen.testgen_component(
             "quality_dashboard",
             props={

@@ -9,10 +9,9 @@ from testgen import settings
 from testgen.commands.queries.profiling_query import HygieneIssueType, ProfilingSQL, TableSampling
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.commands.run_generate_tests import run_test_gen_queries
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
-from testgen.commands.run_test_execution import run_test_execution_in_background
+from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -114,11 +113,8 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.save()
 
         send_profiling_run_notifications(profiling_run)
-
         _rollup_profiling_scores(profiling_run, table_group)
-
-        if bool(table_group.monitor_test_suite_id) and not table_group.last_complete_profile_run_id:
-            _generate_monitor_tests(table_group_id, table_group.monitor_test_suite_id)
+        _generate_tests(table_group)
     finally:
         MixpanelService().send_event(
             "run-profiling",
@@ -254,6 +250,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
                 LOG.info("Updating profiling results with frequency analysis and deleting staging")
                 execute_db_queries(sql_generator.update_frequency_analysis_results())
     except Exception as e:
+        LOG.exception("Error running frequency analysis")
         profiling_run.set_progress("freq_analysis", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         if error_data:
@@ -294,6 +291,7 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
             ]
         )
     except Exception as e:
+        LOG.exception("Error detecting hygiene issues")
         profiling_run.set_progress("hygiene_issues", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         profiling_run.set_progress("hygiene_issues", "Completed")
@@ -315,14 +313,24 @@ def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGrou
 
 
 @with_database_session
-def _generate_monitor_tests(table_group_id: str, test_suite_id: str) -> None:
-    try:
-        monitor_test_suite = TestSuite.get(test_suite_id)
-        if not monitor_test_suite:
-            LOG.info("Skipping test generation on missing monitor test suite")
-        else:
-            LOG.info("Generating monitor tests")
-            run_test_gen_queries(table_group_id, monitor_test_suite.test_suite, "Monitor")
-            run_test_execution_in_background(test_suite_id)
-    except Exception:
-        LOG.exception("Error generating monitor tests")
+def _generate_tests(table_group: TableGroup) -> None:
+    is_first_profile_run = not table_group.last_complete_profile_run_id
+
+    if bool(table_group.monitor_test_suite_id):
+        monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
+        try:
+            run_monitor_generation(
+                table_group.monitor_test_suite_id,
+                # Only Freshness depends on profiling results
+                ["Freshness_Trend"],
+                # Insert for new tables only, if user disabled regeneration
+                mode="upsert" if is_first_profile_run or monitor_suite.monitor_regenerate_freshness else "insert",
+            )
+        except Exception:
+            LOG.exception("Error generating Freshness monitors")
+
+    if is_first_profile_run and bool(table_group.default_test_suite_id):
+        try:
+            run_test_generation(table_group.default_test_suite_id, "Standard")
+        except Exception:
+            LOG.exception(f"Error generating tests for test suite: {table_group.default_test_suite_id}")

@@ -299,14 +299,6 @@ from env variable: `DEFAULT_TEST_SUITE_DESCRIPTION`
 defaults to: `default_suite_desc`
 """
 
-DEFAULT_MONITOR_TEST_SUITE_KEY: str = os.getenv("DEFAULT_MONITOR_TEST_SUITE_NAME", "default-monitor-suite-1")
-"""
-Key to be assgined to the auto generated monitoring test suite.
-
-from env variable: `DEFAULT_MONITOR_TEST_SUITE_NAME`
-defaults to: `default-monitor-suite-1`
-"""
-
 DEFAULT_PROFILING_TABLE_SET = os.getenv("DEFAULT_PROFILING_TABLE_SET", "")
 """
 Comma separated list of specific table names to include when running

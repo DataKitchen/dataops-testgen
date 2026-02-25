@@ -1,7 +1,7 @@
 WITH stats
    AS ( SELECT r.id as test_run_id,
                COALESCE(COUNT(tr.id), 0)                                                AS test_ct,
-               SUM(result_code)                                                         AS passed_ct,
+               COALESCE(SUM(CASE WHEN result_code = 1 THEN 1 END), 0)                   AS passed_ct,
                COALESCE(SUM(CASE WHEN tr.result_status = 'Failed' THEN 1 END), 0)       AS failed_ct,
                COALESCE(SUM(CASE WHEN tr.result_status = 'Warning' THEN 1 END), 0)      AS warning_ct,
                COALESCE(SUM(CASE WHEN tr.result_status = 'Log' THEN 1 END), 0)          AS log_ct,

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Valid Month
   test_name_long: Valid calendar month in expected format
   test_description: |-
-    Tests for the presence of a valid representation of a calendar month consistent with the format at baseline.
+    Tests for presence of valid representation of calendar months consistent with format at baseline.
   except_message: |-
-    Column values are not a valid representation of a calendar month consistent with the format at baseline.
+    Column values are not valid representations of calendar months.
   measure_uom: Invalid months
   measure_uom_description: null
   selection_criteria: |-
     functional_data_type = 'Period Month'
+  generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'

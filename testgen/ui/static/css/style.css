@@ -1,0 +1,614 @@
+body {
+    --primary-color: #06a04a;
+    --link-color: #1976d2;
+    --error-color: #EF5350;
+
+    --red: #EF5350;
+    --orange: #FF9800;
+    --yellow: #FDD835;
+    --green: #9CCC65;
+    --purple: #AB47BC;
+    --blue: #42A5F5;
+    --brown: #8D6E63;
+    --grey: #BDBDBD;
+
+    --primary-text-color: #000000de;
+    --secondary-text-color: #0000008a;
+    --disabled-text-color: #00000042;
+    --caption-text-color: rgba(49, 51, 63, 0.6); /* Match Streamlit's caption color */
+    --border-color: rgba(0, 0, 0, .12);
+
+    --sidebar-background-color: white;
+    --sidebar-item-hover-color: #f5f5f5;
+    --sidebar-active-item-color: #f5f5f5;
+    --sidebar-active-item-border-color: #b4e3c9;
+
+    --field-underline-color: #9e9e9e;
+
+    --dk-text-value-background: aliceblue;
+    --dk-card-background: #fff;
+
+    --dk-tooltip-background: rgb(255, 255, 255);
+
+    --portal-background: white;
+    --portal-box-shadow: rgba(0, 0, 0, 0.16) 0px 4px 16px;
+    --select-hover-background: rgb(240, 242, 246);
+
+    --app-background-color: #f8f9fa;
+}
+
+.stBidiComponent {
+    font-size: 14px;
+    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
+    color: var(--primary-text-color);
+}
+
+img.dk-logo-img {
+    margin: 0 0 30px 0;
+    width: 100%;
+}
+
+/* Header */
+.stAppHeader {
+    width: 85px !important; /* allows clicking on the breadcrumbs */
+    left: calc(24px - 1rem) !important;
+    background: transparent !important;
+    min-height: unset !important;
+    overflow: hidden !important; /* hides the running man animation */
+}
+
+/* - with breadcrumbs */
+.stAppHeader:has(~ .stMain .st-key-testgen-breadcrumbs) {
+    height: 65px !important;
+    top: 5px !important;
+}
+
+/* - without breadcrumbs */
+.stAppHeader:not(:has(~ .stMain .st-key-testgen-breadcrumbs)) {
+    top: 7px !important;
+    height: 39.59px !important;
+}
+
+/* hide while sidebar expanded */
+.stApp:has(.stSidebar[aria-expanded="true"]) .stAppHeader {
+    display: none;
+}
+
+.stStatusWidget {
+    display: none !important;
+}
+/* End Header */
+
+#stDecoration {
+    visibility: hidden;
+}
+
+/* Sidebar */
+div[data-testid="stSidebarContent"] {
+    padding-left: unset;
+    padding-right: unset;
+}
+
+[data-testid="stSidebarContent"] [data-testid="stSidebarHeader"] {
+    padding: 16px 20px 20px;
+    margin-bottom: 0;
+    height: auto;
+}
+
+[data-testid="stSidebarHeader"] .stLogo {
+    max-width: fit-content;
+}
+
+section.stSidebar {
+    width: 250px;
+    z-index: 999;
+    background-color: var(--sidebar-background-color);
+}
+
+section.stSidebar > [data-testid="stSidebarContent"] {
+    overflow: visible;
+}
+
+[data-testid="stSidebarNav"],
+[data-testid="stSidebarUserContent"] {
+    display: none;
+}
+/*  */
+
+/* Main content */
+.stMain {
+    background-color: var(--app-background-color);
+}
+
+.stMain > .stMainBlockContainer {
+    padding: 12px 24px 24px;
+}
+
+.stVerticalBlock[data-testid="stVerticalBlock"] {
+    gap: 0.5rem;
+}
+
+/* Dialog - sets the width of all st.dialog */
+/* There is no way to target "large" and "small" dialogs reliably */
+div[data-testid="stDialog"] div[role="dialog"] {
+    width: calc(55rem);
+}
+/*  */
+
+
+div[data-testid="stDialog"] div[role="dialog"]:has(i.s-dialog) {
+    width: calc(35rem);
+}
+
+div[data-testid="stDialog"] div[role="dialog"]:has(i.l-dialog) {
+    width: calc(75rem);
+}
+
+div[data-testid="stDialog"] div[role="dialog"]:has(i.xl-dialog) {
+    width: calc(95rem);
+}
+
+div[data-testid="stDialog"] button[aria-label="Close"]:focus {
+    outline: none;
+}
+
+div[data-testid="stSpinner"] {
+    background: transparent;
+}
+
+div[data-testid="stSpinner"] > div > i {
+    border-color: var(--primary-color) rgba(49, 51, 63, 0.2) rgba(49, 51, 63, 0.2);
+}
+
+div.st-key-data_catalog-spinner {
+    position: absolute;
+}
+
+/* Theming for buttons, tabs and form inputs */
+button[data-testid="stPopoverButton"]:hover,
+button[data-testid="stPopoverButton"]:focus:not(:active),
+button[data-testid="stBaseButton-secondary"]:hover,
+button[data-testid="stBaseButton-secondary"]:focus:not(:active),
+button[data-testid="stBaseButton-secondaryFormSubmit"]:hover,
+button[data-testid="stBaseButton-secondaryFormSubmit"]:focus:not(:active) {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+button[data-testid="stPopoverButton"]:active,
+button[data-testid="stBaseButton-secondary"]:active,
+button[data-testid="stBaseButton-secondaryFormSubmit"]:active,
+label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > span {
+    border-color: var(--primary-color);
+    background-color: var(--primary-color);
+}
+
+div[data-testid="stTextInputRootElement"]:focus-within,
+div[data-testid="stNumberInputContainer"]:focus-within,
+div[data-baseweb="select"]:focus-within > div,
+div[data-baseweb="select"] > div:has(input[aria-expanded="true"]) {
+    border-color: var(--primary-color);
+}
+
+button[data-testid="stTab"][aria-selected="true"],
+button[data-testid="stTab"]:hover {
+    color: var(--primary-color);
+}
+
+div[data-baseweb="tab-highlight"],
+label[data-baseweb="radio"]:has(input[tabindex="0"]) > div:first-child,
+label[data-baseweb="checkbox"]:has(input[aria-checked="true"]) > div:first-child {
+    background-color: var(--primary-color);
+}
+/* */
+
+/* Theming for links */
+body a,
+body a:active,
+body a:hover,
+body a:visited {
+    color: var(--link-color);
+}
+
+body a,
+body a:active,
+body a:visited {
+    text-decoration: unset;
+}
+/*  */
+
+button[title="Show password text"] {
+    display: none;
+}
+
+.element-container:has(iframe[height="0"][title="extra_streamlit_components.CookieManager.cookie_manager"]),
+.element-container:has(iframe[height="0"][title="streamlit_javascript.streamlit_javascript"]),
+.element-container:has(iframe[height="0"][title="testgen.ui.components.utils.component.testgen"]) {
+    display: none !important;
+}
+
+/* Cards Component */
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) .testgen_card-header > .testgen_card-title {
+    margin: unset;
+    padding: unset;
+    line-height: 25px;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.testgen_card) .testgen_card-header > .testgen_card-subtitle {
+    margin: unset;
+    padding: unset;
+    margin-top: 4px;
+    line-height: 15px;
+    color: var(--caption-text-color);
+    font-style: italic;
+}
+/* ... */
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.bg-white),
+[data-testid="stVerticalBlockBorderWrapper"]:has(> .stVerticalBlock > .stElementContainer > div.stHtml > i.bg-white) {
+    background-color: var(--dk-card-background);
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-row) {
+    width: 100%;
+    flex-direction: row;
+}
+
+/* Required after Streamlit upgrade to 1.53.0 */
+.stVerticalBlock > div.stElementContainer:has(> div.stHtml > i.flex-row) {
+    display: none;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-row) > div.stElementContainer:nth-child(2) {
+    width: auto;
+}
+/* ... */
+
+
+
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"],
+div[data-testid="stVerticalBlockBorderWrapper"]:has( > div > div[data-testid="stVerticalBlock"] > div.element-container > div.stHtml > i.flex-row) [data-testid="stVerticalBlock"] > div[data-testid="element-container"] > div[data-testid] {
+    width: auto !important;
+    max-height: 40px;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-start) {
+    justify-content: flex-start;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-end) {
+    justify-content: flex-end;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-center) {
+    justify-content: center;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.flex-end) {
+    flex-wrap: wrap;
+}
+
+.stVerticalBlock:has(> div.stElementContainer > div.stHtml > i.no-flex-gap) {
+    gap: unset;
+}
+
+/* Stylistic equivalent of st.caption("text") for customization
+Use as testgen.caption("text", "extra_styles") */
+.caption {
+    color: var(--caption-text-color);
+    font-size: 14px;
+    margin-bottom: 0;
+}
+
+/* Stylistic equivalent of testgen.link() to match font size/style of links
+Use as testgen.text("text", "extra_styles") */
+.text {
+    font-size: 14px;
+    font-family: 'Roboto', 'Helvetica Neue', sans-serif;
+    line-height: 16.5px;
+    margin-bottom: 0;
+}
+
+/* Tooltips */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::after {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+    content: attr(data-tooltip);
+    left: 0;
+    top: calc(100% + 10px);
+    border-radius: 4px;
+    box-shadow: 0 0 5px 2px rgba(100, 100, 100, 0.6);
+    color: var(--primary-text-color);
+    background-color: var(--dk-tooltip-background);
+    z-index: 10;
+    padding: 8px;
+    width: 200px;
+    transform: translateY(-20px);
+    transition: all 150ms cubic-bezier(.25, .8, .25, 1);
+}
+
+[data-tooltip]:hover::after {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: 300ms;
+}
+
+[data-tooltip-position="right"]::after {
+    left: unset;
+    right: 0;
+}
+/*  */
+
+/* Page header */
+.tg-header {
+    margin: 0;
+    padding: 0;
+    font-size: 26px;
+    font-weight: 500;
+    line-height: 1.2;
+    transition: padding 0.3s;
+}
+
+.st-key-testgen-breadcrumbs {
+    transition: padding 0.3s;
+}
+
+[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .tg-header,
+[data-testid="stSidebar"][aria-expanded="false"] ~ div > [data-testid="stMain"] .st-key-testgen-breadcrumbs {
+    padding-left: 85px;
+}
+
+.tg-header--line {
+    margin: 0;
+    border: none;
+    border-radius: 2px;
+    height: 2px;
+    background-color: var(--disabled-text-color);
+}
+
+/* Help menu */
+.st-key-tg-header--help {
+    position: relative;
+}
+
+.st-key-tg-header--help .stElementContainer:has([data-testid="stPageLink"]) {
+    position: absolute;
+    right: -7px;
+    z-index: 5;
+}
+
+.st-key-tg-header--help [data-testid="stPageLink"] [data-testid="stPageLink-NavLink"] {
+    line-height: 1;
+}
+
+.st-key-tg-header--help [data-testid="stPopover"] {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.st-key-tg-header--help button[data-testid="stPopoverButton"] {
+    border: none;
+    background: none;
+    padding: 0;
+    margin-top: 8px;
+    min-height: fit-content;
+}
+
+.st-key-tg-header--help button[data-testid="stPopoverButton"]:focus:not(:hover) {
+    color: inherit;
+}
+
+.st-key-tg-header--help-dummy [data-testid="stMarkdownContainer"] p {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+    min-height: fit-content;
+}
+
+.st-key-tg-header--help-dummy p span {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 1.25rem;
+    line-height: 1.25rem;
+    margin-top: 0.125rem;
+    margin-left: 0.125rem;
+    margin-right: -0.3125rem;
+}
+
+div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
+    padding: 0;
+}
+/*  */
+
+/* Summary bar component */
+.tg-summary-bar--label {
+    margin-bottom: 4px;
+}
+
+.tg-summary-bar {
+    height: 100%;
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.tg-summary-bar--item {
+    height: 100%;
+}
+
+.tg-summary-bar--caption {
+    margin-top: 4px;
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    color: var(--caption-text-color);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1;
+}
+
+.tg-summary-bar--legend {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: center;
+    width: auto;
+}
+
+.tg-summary-bar--legend:not(:last-child) {
+    margin-right: 8px;
+}
+
+.tg-summary-bar--legend-dot {
+    margin-right: 2px;
+    font-size: 4px;
+    font-style: normal;
+}
+
+.tg-summary-bar--legend-dot::before {
+    content: '⬤';
+}
+/*  */
+
+/* Summary counts component */
+.tg-summary-counts--label {
+    margin-bottom: 4px;
+}
+
+.tg-summary-counts {
+    height: 100%;
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 16px;
+}
+
+.tg-summary-counts--item {
+    display: flex;
+    flex-flow: row nowrap;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.tg-summary-counts--bar {
+    width: 4px;
+}
+
+.tg-summary-counts--value {
+    line-height: 1.2;
+}
+
+.tg-summary-counts--value > div:first-child {
+    color: var(--caption-text-color);
+    font-size: 12px;
+}
+
+.tg-summary-counts--value > div:last-child {
+    font-size: 16px;
+}
+/*  */
+
+/* Export Menu */
+/* .st-key-tg--export-popover [data-testid="stPopoverButton"] > div:last-child {
+    display: none;
+} */
+
+.st-key-tg--export-popover [data-testid="stPopover"] {
+    width: auto;
+}
+
+[data-testid="stLayoutWrapper"]:has(> .st-key-tg--export-popover > .stElementContainer > .stHtml > .flex-row) {
+    width: auto;
+}
+
+div[data-testid="stPopoverBody"]:has(i.tg--export-wrapper) {
+    min-width: 150px;
+    border-radius: 8px;
+    padding: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) {
+    gap: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) > .stElementContainer {
+    width: 100%;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) button {
+    width: 100%;
+    padding: 4px 16px;
+    justify-content: flex-start;
+    border-radius: 0;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"] button > div {
+    justify-content: flex-start;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"]:nth-child(2) button {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) [data-testid="stElementContainer"]:last-child button {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+div[data-testid="stPopoverBody"] [data-testid="stVerticalBlock"]:has(i.tg--export-wrapper) button:hover {
+    color: unset;
+    background: var(--select-hover-background);
+}
+/*  */
+
+input {
+    line-height: normal !important;
+}
+
+input::-ms-reveal,
+input::-ms-clear {
+    display: none;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    body {
+        --primary-text-color: rgba(255, 255, 255);
+        --secondary-text-color: rgba(255, 255, 255, .7);
+        --disabled-text-color: rgba(255, 255, 255, .5);
+        --caption-text-color: rgba(250, 250, 250, .6); /* Match Streamlit's caption color */
+        --border-color: rgba(255, 255, 255, .25);
+
+        --sidebar-background-color: #14181f;
+        --sidebar-item-hover-color: #10141b;
+        --sidebar-active-item-color: #10141b;
+        --sidebar-active-item-border-color: #b4e3c9;
+        --dk-text-value-background: unset;
+        --dk-card-background: #14181f;
+        --dk-tooltip-background: rgb(14, 17, 23);
+
+        --portal-background: #14181f;
+        --portal-box-shadow: rgba(0, 0, 0, 0.95) 0px 4px 16px;
+        --select-hover-background: rgba(255, 255, 255, .32);
+
+        --app-background-color: rgb(14, 17, 23);
+    }
+
+    div[data-modal-container='true']::before {
+        background-color: rgba(100, 100, 100, 0.5) !important;
+    }
+
+    div[data-modal-container='true'] > div:first-child > div:first-child {
+        background-color: var(--app-background-color) !important;
+    }
+}
+/* ... */

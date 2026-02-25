@@ -217,7 +217,7 @@ const Toolbar = (
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         div(
-            { class: 'flex-row fx-gap-4' },
+            { class: 'flex-row fx-gap-3' },
             () => Select({
                 label: 'Table Group',
                 value: getValue(props.table_group_options)?.find((op) => op.selected)?.value ?? null,
@@ -238,7 +238,7 @@ const Toolbar = (
             }),
         ),
         div(
-            { class: 'flex-row fx-gap-4' },
+            { class: 'flex-row fx-gap-3' },
             Button({
                 icon: 'notifications',
                 type: 'stroked',
@@ -246,7 +246,7 @@ const Toolbar = (
                 tooltip: 'Configure email notifications for test runs',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunNotificationsClicked', {}),
             }),
             Button({
@@ -256,7 +256,7 @@ const Toolbar = (
                 tooltip: 'Manage when test suites should run',
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
-                style: 'background: var(--dk-card-background);',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RunSchedulesClicked', {}),
             }),
             userCanEdit
@@ -265,16 +265,16 @@ const Toolbar = (
                     type: 'stroked',
                     label: 'Run Tests',
                     width: 'fit-content',
-                    style: 'background: var(--dk-card-background);',
+                    style: 'background: var(--button-generic-background-color);',
                     onclick: () => emitEvent('RunTestsClicked', {}),
                 })
                 : '',
             Button({
-                type: 'icon',
+                type: 'stroked',
                 icon: 'refresh',
                 tooltip: 'Refresh test runs list',
                 tooltipPosition: 'left',
-                style: 'border: var(--button-stroked-border); border-radius: 4px;',
+                style: 'background: var(--button-generic-background-color);',
                 onclick: () => emitEvent('RefreshData', {}),
                 testId: 'test-runs-refresh',
             }),
@@ -435,7 +435,7 @@ const ConditionalEmptyState = (
             color: 'primary',
             label: 'Run Tests',
             width: 'fit-content',
-            style: 'margin: auto; background: var(--dk-card-background);',
+            style: 'margin: auto; background: var(--button-generic-background-color);',
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',

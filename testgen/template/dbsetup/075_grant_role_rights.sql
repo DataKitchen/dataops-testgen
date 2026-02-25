@@ -22,6 +22,7 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.stg_functional_table_updates,
     {SCHEMA_NAME}.stg_secondary_profile_updates,
     {SCHEMA_NAME}.stg_data_chars_updates,
+    {SCHEMA_NAME}.stg_test_definition_updates,
     {SCHEMA_NAME}.test_runs,
     {SCHEMA_NAME}.functional_test_results,
     {SCHEMA_NAME}.connections,
@@ -39,7 +40,8 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.score_definition_results_history,
     {SCHEMA_NAME}.score_history_latest_runs,
     {SCHEMA_NAME}.job_schedules,
-    {SCHEMA_NAME}.settings
+    {SCHEMA_NAME}.settings,
+    {SCHEMA_NAME}.notification_settings
     TO testgen_execute_role;
 
 

@@ -4,13 +4,14 @@ test_types:
   test_name_short: Distribution Shift
   test_name_long: Probability distribution consistent with reference
   test_description: |-
-    Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test
+    Tests the closeness of match between two distributions of aggregate measures across combinations of column values, using Jensen-Shannon Divergence test.
   except_message: |-
     Divergence between two distributions exceeds specified threshold.
   measure_uom: Divergence level (0-1)
   measure_uom_description: |-
     Jensen-Shannon Divergence, from 0 (identical distributions), to 1.0 (max divergence)
   selection_criteria: null
+  generation_template: null
   dq_score_prevalence_formula: |-
     1
   dq_score_risk_factor: '0.75'
@@ -220,28 +221,372 @@ test_types:
   - id: '2503'
     test_type: Distribution_Shift
     sql_flavor: bigquery
-    template_name: ex_relative_entropy_bigquery.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver AS (
+        SELECT {CONCAT_COLUMNS} AS category,
+               CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
+        FROM `{SCHEMA_NAME}.{TABLE_NAME}` v1
+        WHERE {SUBSET_CONDITION}
+        GROUP BY {COLUMN_NAME_NO_QUOTES}
+      ),
+      older_ver AS (
+        SELECT {CONCAT_MATCH_GROUPBY} AS category,
+               CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
+        FROM `{MATCH_SCHEMA_NAME}.{TABLE_NAME}` v2
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
+      ),
+      dataset AS (
+        SELECT COALESCE(l.category, o.category) AS category,
+               COALESCE(o.pct_of_total, 0.0000001) AS old_pct,
+               COALESCE(l.pct_of_total, 0.0000001) AS new_pct,
+               (COALESCE(o.pct_of_total, 0.0000001) + COALESCE(l.pct_of_total, 0.0000001)) / 2.0 AS avg_pct
+        FROM latest_ver l
+        FULL JOIN older_ver o
+          ON l.category = o.category
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}' AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}' AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             -- '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' AS threshold_value,
+             NULL AS skip_errors,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             CONCAT('Divergence Level: ', CAST(js_divergence AS STRING), ', Threshold: {THRESHOLD_VALUE}.') AS result_message,
+             js_divergence AS result_measure
+      FROM (
+        SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+               + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) AS js_divergence
+        FROM dataset
+      ) rslt;
   - id: '2403'
     test_type: Distribution_Shift
     sql_flavor: databricks
-    template_name: ex_relative_entropy_generic.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS {VARCHAR_TYPE}),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+                       + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+                 FROM dataset ) rslt;
   - id: '2203'
     test_type: Distribution_Shift
     sql_flavor: mssql
-    template_name: ex_relative_entropy_mssql.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
+                FROM "{SCHEMA_NAME}"."{TABLE_NAME}" v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     CAST(COUNT(*) as FLOAT) / CAST(SUM(COUNT(*)) OVER () as FLOAT) AS pct_of_total
+                FROM "{MATCH_SCHEMA_NAME}"."{TABLE_NAME}" v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS VARCHAR),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LOG(new_pct/avg_pct)/LOG(2)))
+                       + 0.5 * ABS(SUM(old_pct * LOG(old_pct/avg_pct)/LOG(2))) as js_divergence
+                 FROM dataset ) rslt;
   - id: '2303'
     test_type: Distribution_Shift
     sql_flavor: postgresql
-    template_name: ex_relative_entropy_generic.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS {VARCHAR_TYPE}),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+                       + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+                 FROM dataset ) rslt;
   - id: '2003'
     test_type: Distribution_Shift
     sql_flavor: redshift
-    template_name: ex_relative_entropy_generic.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS {VARCHAR_TYPE}),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+                       + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+                 FROM dataset ) rslt;
   - id: '2503'
     test_type: Distribution_Shift
     sql_flavor: redshift_spectrum
-    template_name: ex_relative_entropy_generic.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS {VARCHAR_TYPE}),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+                       + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+                 FROM dataset ) rslt;
   - id: '2103'
     test_type: Distribution_Shift
     sql_flavor: snowflake
-    template_name: ex_relative_entropy_generic.sql
+    template: |-
+      -- Relative Entropy:  measured by Jensen-Shannon Divergence
+      --   Smoothed and normalized version of KL divergence,
+      --   with scores between 0 (identical) and 1 (maximally different),
+      --   when using the base-2 logarithm.   Formula is:
+      --   0.5 * kl_divergence(p, m) + 0.5 * kl_divergence(q, m)
+      --   Log base 2 of x = LN(x)/LN(2)
+      WITH latest_ver
+         AS ( SELECT {CONCAT_COLUMNS} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v1
+               WHERE {SUBSET_CONDITION}
+               GROUP BY {COLUMN_NAME_NO_QUOTES} ),
+      older_ver
+         AS ( SELECT {CONCAT_MATCH_GROUPBY} as category,
+                     COUNT(*)::FLOAT / SUM(COUNT(*)) OVER ()::FLOAT AS pct_of_total
+                FROM {QUOTE}{MATCH_SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE} v2
+               WHERE {MATCH_SUBSET_CONDITION}
+               GROUP BY {MATCH_GROUPBY_NAMES} ),
+      dataset
+         AS ( SELECT COALESCE(l.category, o.category) AS category,
+                     COALESCE(o.pct_of_total, 0.0000001)        AS old_pct,
+                     COALESCE(l.pct_of_total, 0.0000001)        AS new_pct,
+                     (COALESCE(o.pct_of_total, 0.0000001)
+                      + COALESCE(l.pct_of_total, 0.0000001))/2.0 AS avg_pct
+                FROM latest_ver l
+                FULL JOIN older_ver o
+                  ON (l.category = o.category) )
+      SELECT '{TEST_TYPE}' as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}' as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}' as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+      --        '{GROUPBY_NAMES}' as column_names,
+             '{THRESHOLD_VALUE}' as threshold_value,
+             NULL as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE WHEN js_divergence > {THRESHOLD_VALUE} THEN 0 ELSE 1 END as result_code,
+             CONCAT('Divergence Level: ',
+                    CONCAT(CAST(js_divergence AS {VARCHAR_TYPE}),
+                           ', Threshold: {THRESHOLD_VALUE}.')) as result_message,
+             js_divergence as result_measure
+        FROM (
+               SELECT 0.5 * ABS(SUM(new_pct * LN(new_pct/avg_pct)/LN(2)))
+                       + 0.5 * ABS(SUM(old_pct * LN(old_pct/avg_pct)/LN(2))) as js_divergence
+                 FROM dataset ) rslt;

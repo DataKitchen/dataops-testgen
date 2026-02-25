@@ -20,7 +20,10 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
         test_suite_id: str = str(test_suite.id)
         test_suite_name: str = test_suite.test_suite
     else:
-        test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code)
+        test_suites = TestSuite.select_minimal_where(
+            TestSuite.project_code == project_code,
+            TestSuite.is_monitor.isnot(True),
+        )
         test_suites_df = to_dataframe(test_suites, TestSuiteMinimal.columns())
         test_suite_id: str = testgen.select(
             label="Test Suite",
