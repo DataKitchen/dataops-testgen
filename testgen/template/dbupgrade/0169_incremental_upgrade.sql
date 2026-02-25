@@ -20,6 +20,50 @@ FROM test_results r
 WHERE d.last_auto_gen_date IS NOT NULL
   AND test_results.id = r.id;
 
+-- Handle duplicates before creating unique indexes
+
+UPDATE test_definitions
+  SET last_auto_gen_date = NULL
+WHERE last_auto_gen_date IS NOT NULL
+  AND table_name IS NULL
+  AND column_name IS NULL
+  AND id NOT IN (
+    SELECT DISTINCT ON (test_suite_id, test_type, schema_name) id
+    FROM test_definitions
+    WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NULL
+      AND column_name IS NULL
+    ORDER BY test_suite_id, test_type, schema_name, last_auto_gen_date
+  );
+
+UPDATE test_definitions
+  SET last_auto_gen_date = NULL
+WHERE last_auto_gen_date IS NOT NULL
+  AND table_name IS NOT NULL
+  AND column_name IS NULL
+  AND id NOT IN (
+    SELECT DISTINCT ON (test_suite_id, test_type, schema_name, table_name) id
+    FROM test_definitions
+    WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
+      AND column_name IS NULL
+    ORDER BY test_suite_id, test_type, schema_name, table_name, last_auto_gen_date
+  );
+
+UPDATE test_definitions
+  SET last_auto_gen_date = NULL
+WHERE last_auto_gen_date IS NOT NULL
+  AND table_name IS NOT NULL
+  AND column_name IS NOT NULL
+  AND id NOT IN (
+    SELECT DISTINCT ON (test_suite_id, test_type, schema_name, table_name, column_name) id
+      FROM test_definitions
+    WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
+      AND column_name IS NOT NULL
+    ORDER BY test_suite_id, test_type, schema_name, table_name, column_name, last_auto_gen_date
+  );
+
 CREATE UNIQUE INDEX uix_td_autogen_schema
   ON test_definitions (test_suite_id, test_type, schema_name)
   WHERE last_auto_gen_date IS NOT NULL 
