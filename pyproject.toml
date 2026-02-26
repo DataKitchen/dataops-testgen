@@ -56,8 +56,6 @@ dependencies = [
     "cryptography==44.0.1",
     "validators==0.33.0",
     "reportlab==4.2.2",
-    "pydantic==1.10.13",
-    "streamlit-pydantic==0.6.0",
     "cron-converter==1.2.1",
     "cron-descriptor==2.0.5",
     "pybars3==0.9.7",
@@ -70,6 +68,12 @@ dependencies = [
     "matplotlib==3.9.2",
     "scipy==1.14.1",
     "jinja2==3.1.6",
+
+    # MCP server
+    "mcp[cli]==1.26.0",
+    "uvicorn==0.41.0",
+    "PyJWT==2.11.0",
+    "bcrypt==5.0.0",
 ]
 
 [project.optional-dependencies]
