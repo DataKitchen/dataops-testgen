@@ -10,6 +10,10 @@ const Streamlit = {
         window.testgen = window.testgen || {};
         window.testgen.isPage = true;
     },
+    disableV2() {
+        this._v2 = false;
+        this._customSendDataHandler = null;
+    },
     setFrameHeight(height) {
         if (!this || !this._v2) {
             sendMessageToStreamlit('streamlit:setFrameHeight', { height: height });
