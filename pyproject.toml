@@ -215,6 +215,7 @@ exclude = [
     "_build",
     "build",
     "dist",
+    "deploy",
 ]
 
 [tool.ruff.lint]
