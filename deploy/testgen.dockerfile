@@ -15,6 +15,13 @@ RUN apk upgrade
 # Now install everything
 COPY . /tmp/dk/
 RUN python3 -m pip install --prefix=/dk /tmp/dk
+
+# Generate third-party license notices from installed packages
+RUN pip install pip-licenses \
+    && SCRIPT=$(find /tmp/dk -name generate_third_party_notices.py | head -1) \
+    && PYTHONPATH=/dk/lib/python3.12/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
+    && pip uninstall -y pip-licenses
+
 RUN rm -Rf /tmp/dk
 
 RUN tg-patch-streamlit
