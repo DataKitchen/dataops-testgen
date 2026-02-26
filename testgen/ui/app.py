@@ -77,6 +77,7 @@ def render(log_level: int = logging.INFO):
                 version=version_service.get_version(),
                 support_email=settings.SUPPORT_EMAIL,
                 global_context=is_global_context,
+                is_global_admin=session.auth.user_has_permission("global_admin") and bool(application.global_admin_paths),
             )
 
     application.router.run()

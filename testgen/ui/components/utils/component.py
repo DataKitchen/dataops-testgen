@@ -1,6 +1,5 @@
 import pathlib
 from collections.abc import Callable
-from functools import partial
 
 import streamlit as st
 from streamlit.components import v1 as components
@@ -11,11 +10,6 @@ components_dir = pathlib.Path(__file__).parent.parent.joinpath("frontend")
 component_function = components.declare_component("testgen", path=components_dir)
 
 
-class RefreshableComponentRenderer(ComponentRenderer):
-    def refresh(self) -> None:
-        pass
-
-
 def component(*, id_, props, key=None, default=None, on_change=None):
     component_props = props
     if not component_props:
@@ -23,7 +17,7 @@ def component(*, id_, props, key=None, default=None, on_change=None):
     return component_function(id=id_, props=component_props, key=key, default=default, on_change=on_change)
 
 
-def component_v2_wrapped(renderer: ComponentRenderer) -> RefreshableComponentRenderer:
+def component_v2_wrapped(renderer: ComponentRenderer) -> ComponentRenderer:
     def wrapped_renderer(key: str | None = None, **kwargs) -> BidiComponentResult:
         on_change_callbacks = {
             name: fn for name, fn, in kwargs.items()
@@ -40,7 +34,6 @@ def component_v2_wrapped(renderer: ComponentRenderer) -> RefreshableComponentRen
             on_change_callbacks[name] = _wrap_handler(key, name, callback)
 
         return renderer(**other_kwargs, **on_change_callbacks)
-    setattr(wrapped_renderer, "refresh", lambda: None)
     return wrapped_renderer
 
 

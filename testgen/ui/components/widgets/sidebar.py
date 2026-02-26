@@ -25,6 +25,7 @@ def sidebar(
     version: Version | None = None,
     support_email: str | None = None,
     global_context: bool = False,
+    is_global_admin: bool = False,
 ) -> None:
     """
     Testgen custom component to display a styled menu over streamlit's
@@ -50,7 +51,7 @@ def sidebar(
             "version": version.__dict__,
             "support_email": support_email,
             "global_context": global_context,
-            "is_global_admin": session.auth.user_has_permission("global_admin"),
+            "is_global_admin": is_global_admin,
         },
         key=key,
         on_change=on_change,

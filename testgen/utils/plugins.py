@@ -147,10 +147,6 @@ class Plugin:
 
     def load(self) -> type[PluginSpec]:
         """Lightweight load: import plugin module and populate PluginHook."""
-        plugin_pages: list[type[Page]] = []
-        plugin_auth = None
-        plugin_logo = None
-
         module = importlib.import_module(self.package)
         spec = _find_plugin_spec(module)
         if spec is not None:
@@ -166,7 +162,7 @@ class Plugin:
             return spec
 
         # Fallback: discover UI classes from module (backward compat for plugins without explicit PluginSpec)
-        _discoverable: dict[type, str] = {list[type[Page]]: "pages", Authentication: "auth", Logo: "logo"}
+        _discoverable: dict[type, str] = {Page: "page", Authentication: "auth", Logo: "logo"}
         attrs: dict[str, type] = {}
         module = importlib.import_module(self.package)
 
@@ -176,6 +172,9 @@ class Plugin:
                 continue
             for base, attr in _discoverable.items():
                 if issubclass(cls, base) and cls is not base:
-                    attrs[attr] = cls
+                    if attr == "page":
+                        attrs.setdefault("pages", []).append(cls)
+                    else:
+                        attrs[attr] = cls
 
         return type("AnyPlugin", (PluginSpec,), attrs) if attrs else PluginSpec
