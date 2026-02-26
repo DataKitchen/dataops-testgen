@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 
 import streamlit as st
 
@@ -52,17 +53,30 @@ def render(log_level: int = logging.INFO):
     if not session.auth.is_logged_in and not session.auth.logging_out:
         session.auth.load_user_session()
 
+    if session.auth.is_logged_in:
+        session.auth.load_user_role()
+
     application.logo.render()
 
     if session.auth.is_logged_in and not session.auth.logging_in:
+        current_page = session.current_page
+        if not current_page:
+            try:
+                current_page = urlparse(st.context.url).path.lstrip("/")
+            except Exception:
+                current_page = ""
+        is_global_context = current_page in application.global_admin_paths
         with st.sidebar:
             testgen.sidebar(
-                projects=Project.select_where(),
-                current_project=session.sidebar_project,
+                projects=[] if is_global_context else [
+                    p for p in Project.select_where() if session.auth.user_has_project_access(p.project_code)
+                ],
+                current_project=None if is_global_context else session.sidebar_project,
                 menu=application.menu,
                 current_page=session.current_page,
                 version=version_service.get_version(),
                 support_email=settings.SUPPORT_EMAIL,
+                global_context=is_global_context,
             )
 
     application.router.run()

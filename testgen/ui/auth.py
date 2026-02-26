@@ -13,7 +13,7 @@ from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
-Permission = Literal["catalog", "view", "disposition", "edit", "administer"]
+Permission = Literal["catalog", "view", "disposition", "edit", "administer", "global_admin"]
 
 
 class Authentication:
@@ -46,7 +46,7 @@ class Authentication:
         return "project-dashboard" if self.user else ""
 
     def user_has_permission(self, permission: Permission, /, project_code: str | None = None) -> bool:  # noqa: ARG002
-        return True
+        return True  # Dev/open-source: permissive, including global_admin
 
     def user_has_project_access(self, project_code: str) -> bool:  # noqa: ARG002
         return True
@@ -91,7 +91,9 @@ class Authentication:
     def load_user_role(self) -> None:
         if self.user and self.current_project:
             membership = ProjectMembership.get_by_user_and_project(self.user.id, self.current_project)
-            self.role = membership.role
+            self.role = membership.role if membership else None
+        else:
+            self.role = None
 
     def end_user_session(self) -> None:
         self._clear_jwt_cookie()

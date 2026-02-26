@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import streamlit as st
 from sqlalchemy import Column, ForeignKey, String, asc, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
