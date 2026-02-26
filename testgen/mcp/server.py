@@ -11,38 +11,28 @@ from testgen.common.models import with_database_session
 LOG = logging.getLogger("testgen")
 
 SERVER_INSTRUCTIONS = """\
-You are connected to a TestGen data quality testing server.
+TestGen is a data quality platform that profiles databases, generates tests, and monitors tables.
 
-## Available Tools (8)
+DATA MODEL
 
-- **get_data_inventory()** — Complete overview of projects, connections, table groups, test suites, and latest run stats. START HERE.
-- **list_projects()** — List all project codes and names.
-- **list_test_suites(project_code)** — List test suites with run stats for a project.
-- **get_recent_test_runs(project_code, test_suite?, limit?)** — Get recent test runs with pass/fail counts (default 5).
-- **get_test_results(test_run_id, status?, table_name?, test_type?, limit?)** — Get individual test results with filters.
-- **get_test_result_history(test_definition_id, limit?)** — Historical results for a test definition across runs (measure, threshold, status over time).
-- **get_failure_summary(test_run_id, group_by?)** — Failures grouped by test_type, table, or column.
-- **get_test_type(test_type)** — Detailed info about a test type (what it checks, thresholds, DQ dimension).
+Projects contain Connections (to target databases) and Table Groups (sets of tables to profile and test together).
+Table Groups contains Test Suites — collections of Test Definitions with configured thresholds.
+Test Runs execute a Test Suite and produce Test Results (one per Test Definition).
+Profiling Runs scan a Table Group and produce column-level statistics and detects data hygiene issues.
+Monitors track table health over time: freshness, volume, schema changes, and custom metrics.
 
-## Resources (2)
+NAVIGATION
 
-- **testgen://test-types** — Reference table of all active test types.
-- **testgen://glossary** — Entity hierarchy, result statuses, DQ dimensions, test scopes.
+Tools return entity IDs that feed into other tools. Start with get_data_inventory for broad discovery, then drill
+into specific entities.
 
-## Workflow
+Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess what a test checks.
+ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
-1. ALWAYS start with `get_data_inventory` to understand the landscape.
-2. Drill into specific runs with `get_recent_test_runs` and `get_test_results`.
-3. DO NOT assume what a test type checks. Look at `testgen://test-types`
-4. Use `get_failure_summary` to understand failure patterns, then `get_test_type` for each category.
-5. Use `get_test_result_history` to see how a specific test's measure and status changed over time.
-6. Reference `testgen://glossary` for definitions of statuses, dimensions, and scopes.
-
-## Conventions
-
-- UUIDs are used as identifiers — pass them as strings.
-- Dates are in ISO 8601 format.
-- Test results with disposition 'Dismissed' or 'Inactive' are excluded from counts by default.
+CONVENTIONS
+- Identifiers are UUIDs passed as strings.
+- Dates are ISO 8601 format.
+- Test results with disposition Dismissed or Inactive are excluded from counts and scores.
 """
 
 
@@ -73,7 +63,10 @@ def run_mcp() -> None:
     from testgen.utils.plugins import discover
 
     for plugin in discover():
-        plugin.load()
+        try:
+            plugin.load()
+        except Exception:
+            LOG.debug("Plugin %s skipped (not loadable in MCP context)", plugin.package)
 
     server_url = with_database_session(get_server_url)()
 
