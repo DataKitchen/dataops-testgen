@@ -23,13 +23,13 @@ def get_test_type(test_type: str) -> str:
     if tt.test_description:
         lines.append(f"- **Description:** {tt.test_description}")
     if tt.measure_uom:
-        lines.append(f"- **Measure UOM:** {tt.measure_uom}")
+        lines.append(f"- **Unit of Measure:** {tt.measure_uom}")
     if tt.measure_uom_description:
         lines.append(f"- **Measure Description:** {tt.measure_uom_description}")
     if tt.threshold_description:
         lines.append(f"- **Threshold:** {tt.threshold_description}")
     if tt.dq_dimension:
-        lines.append(f"- **DQ Dimension:** {tt.dq_dimension}")
+        lines.append(f"- **Quality Dimension:** {tt.dq_dimension}")
     if tt.test_scope:
         lines.append(f"- **Scope:** {tt.test_scope}")
     if tt.except_message:
@@ -42,15 +42,15 @@ def get_test_type(test_type: str) -> str:
 
 @with_database_session
 def test_types_resource() -> str:
-    """Reference table of all active test types with their descriptions and DQ dimensions."""
+    """Reference table of all test types with their descriptions and data quality dimensions."""
     test_types = TestType.select_where(TestType.active == "Y")
 
     if not test_types:
-        return "No active test types found."
+        return "No test types found."
 
     lines = [
         "# TestGen Test Types Reference\n",
-        "| Test Type | Name | DQ Dimension | Scope | Description |",
+        "| Test Type | Name | Quality Dimension | Scope | Description |",
         "|---|---|---|---|---|",
     ]
 
@@ -65,36 +65,36 @@ def test_types_resource() -> str:
 
 
 def glossary_resource() -> str:
-    """Glossary of TestGen concepts, entity hierarchy, result statuses, and DQ dimensions."""
+    """Glossary of TestGen concepts, entity hierarchy, result statuses, and quality dimensions."""
     return """\
 # TestGen Glossary
 
 ## Entity Hierarchy
 
-- **Project** — Top-level organizational unit. Contains connections and test suites.
-- **Connection** — Database connection configuration (host, credentials, flavor).
-- **Table Group** — A set of tables within a schema that are profiled and tested together.
+- **Project** — Top-level organizational unit. Contains connections and table groups.
+- **Connection** — Database connection configuration (database type, host, credentials).
+- **Table Group** — A set of tables within a schema that are profiled, tested, and monitored together.
 - **Test Suite** — A collection of test definitions scoped to a table group.
 - **Test Definition** — A configured test with parameters, thresholds, and target table/column.
 - **Test Run** — An execution of a test suite producing test results.
 - **Test Result** — The outcome of a single test definition within a test run.
+- **Monitor** — Tracks a table-level pattern (freshness, volume, schema, or a custom metric) over time and detects anomalies.
+## Test Result Statuses
 
-## Result Statuses
-
-- **Passed** — Test passed within acceptable thresholds.
-- **Warning** — Test exceeded the failure threshold.
-- **Failed** — Test exceeded the failure threshold. Higher severity.
-- **Error** — Test could not execute (e.g., SQL error, missing table).
-- **Log** — Informational result, not scored.
+- **Passed** — Data meets test criteria.
+- **Warning** — Data does not meet test criteria, but test severity is set to warn rather than fail.
+- **Failed** — Data does not meet test criteria.
+- **Error** — Test could not execute (e.g., missing table or permission issue).
+- **Log** — Informational result recorded for reference.
 
 ## Disposition
 
 Disposition is a user-assigned review status for test results:
 - **Confirmed** (default) — Result is valid and counts toward scoring.
 - **Dismissed** — Result reviewed and dismissed (excluded from scoring).
-- **Inactive** — Test was deactivated after this result (excluded from scoring).
+- **Muted** — Test was deactivated after this result (excluded from scoring).
 
-## DQ Dimensions
+## Data Quality Dimensions
 
 - **Accuracy** — Data values are correct and reflect real-world truth.
 - **Completeness** — Required data is present (no unexpected NULLs or blanks).
@@ -112,8 +112,8 @@ Disposition is a user-assigned review status for test results:
 
 ## Monitor Types
 
-- **Volume_Trend** — Tracks row count changes over time using statistical prediction.
-- **Freshness_Trend** — Detects when a table has not been updated as expected.
-- **Schema_Drift** — Detects column additions, deletions, or type changes.
-- **Metric_Trend** — Tracks changes in user-defined metrics over time.
+- **Freshness** — Detects when tables are not updated on their expected schedule.
+- **Volume** — Tracks row count changes and alerts on unexpected spikes or drops.
+- **Schema** — Detects column additions, deletions, or type changes.
+- **Metric** — Tracks user-defined metrics for anomalies.
 """

@@ -79,7 +79,7 @@ Please compare the two most recent test runs{suite_filter} to identify regressio
 5. Compare the two runs:
    - **Regressions:** Tests that passed before but now fail.
    - **Improvements:** Tests that failed before but now pass.
-   - **Persistent failures:** Tests that fail in both runs.
-   - **Stable passes:** Tests that pass in both runs.
+   - **Persistent failures:** Tests that failed in both runs.
+   - **Stable passes:** Tests that passed in both runs.
 6. Summarize the trend and highlight any concerning regressions.
 """
