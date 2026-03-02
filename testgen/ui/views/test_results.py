@@ -78,7 +78,7 @@ class TestResultsPage(Page):
 
         testgen.page_header(
             "Test Results",
-            "view-testgen-test-results",
+            "investigate-test-results",
             breadcrumbs=[
                 { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.test_suite} | {run_date}" },
@@ -311,9 +311,6 @@ class TestResultsPage(Page):
                 session.auth.user_has_permission("edit"),
                 multi_select,
             )
-
-        # Help Links
-        st.markdown("[Help on Test Types](https://docs.datakitchen.io/article/dataops-testgen-help/testgen-test-types)")
 
 
 @st.fragment
@@ -825,14 +822,6 @@ def source_data_dialog(selected_row):
         st.markdown("#### Result Detail")
         st.caption(selected_row["result_message"].replace("*", "\\*"))
 
-    st.markdown("#### SQL Query")
-    if selected_row["test_type"] == "CUSTOM":
-        query = get_test_issue_source_query_custom(selected_row)
-    else:
-        query = get_test_issue_source_query(selected_row)
-    if query:
-        st.code(query, language="sql", wrap_lines=True, height=100)
-
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
             bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
@@ -854,6 +843,14 @@ def source_data_dialog(selected_row):
             testgen.caption("* Top 500 records displayed", "text-align: right;")
         # Display the dataframe
         st.dataframe(df_bad, width=1050, hide_index=True)
+
+    st.markdown("#### SQL Query")
+    if selected_row["test_type"] == "CUSTOM":
+        query = get_test_issue_source_query_custom(selected_row)
+    else:
+        query = get_test_issue_source_query(selected_row)
+    if query:
+        st.code(query, language="sql", wrap_lines=True, height=100)
 
 
 def view_edit_test(button_container, test_definition_id):

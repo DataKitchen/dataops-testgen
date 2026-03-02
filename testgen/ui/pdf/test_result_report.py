@@ -123,7 +123,7 @@ def build_summary_table(document, tr_data):
         ("Test Run Date", test_timestamp, None, "Test Suite", tr_data["test_suite"]),
         ("Database/Schema", tr_data["schema_name"], None, "Table Group", tr_data["table_groups_name"]),
         ("Table", tr_data["table_name"], None, "Data Quality Dimension", tr_data["dq_dimension"]),
-        ("Column", tr_data["column_names"], None, "Disposition", tr_data["disposition"] or "No Decision"),
+        ("Column", tr_data["column_names"], None, "Action", tr_data["disposition"] or "No Decision"),
         (
             "Column Tags",
             (

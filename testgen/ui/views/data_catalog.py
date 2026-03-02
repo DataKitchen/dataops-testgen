@@ -57,6 +57,7 @@ class DataCatalogPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
+            "data-catalog",
         )
 
         _, loading_column = st.columns([.4, .6])
@@ -400,7 +401,9 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         profile_results.datatype_suggestion,
         table_chars.record_ct,
         profile_results.value_ct,
+        column_chars.add_date,
         column_chars.drop_date,
+        table_chars.add_date AS table_add_date,
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
         table_chars.critical_data_element AS table_critical_data_element,

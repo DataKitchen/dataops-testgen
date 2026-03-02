@@ -48,7 +48,7 @@
  * @type {object}
  * @property {string?} table_group_id
  * @property {string?} table_name_filter
- * @property {string?} only_tables_with_anomalies
+ * @property {string?} anomaly_type_filter
  * 
  * @typedef MonitorListSort
  * @type {object}
@@ -69,6 +69,7 @@
  * @property {Schedule?} schedule
  * @property {TableGroupFilterOption[]} table_group_filter_options
  * @property {boolean?} has_monitor_test_suite
+ * @property {string?} auto_open_table
  * @property {MonitorList} monitors
  * @property {MonitorListFilters} filters
  * @property {MonitorListSort?} sort
@@ -85,7 +86,6 @@ import { Checkbox } from '../components/checkbox.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { Icon } from '../components/icon.js';
 import { Table } from '../components/table.js';
-import { Toggle } from '../components/toggle.js';
 import { withTooltip } from '../components/tooltip.js';
 import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
 
@@ -100,7 +100,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
     let renderTime = new Date();
     const tableGroupFilterValue = van.derive(() => getValue(props.filters).table_group_id ?? null);
     const tableNameFilterValue = van.derive(() => getValue(props.filters).table_name_filter ?? null);
-    const onlyAnomaliesFilterValue = van.derive(() => getValue(props.filters).only_tables_with_anomalies === 'true');
+    const anomalyTypeFilterValue = van.derive(() => getValue(props.filters).anomaly_type_filter ?? []);
     const tableSort = van.derive(() => {
         const sort = getValue(props.sort);
         return {
@@ -132,6 +132,11 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             ),
         };
     });
+    const autoOpenTable = getValue(props.auto_open_table);
+    if (autoOpenTable) {
+        setTimeout(() => emitEvent('OpenMonitoringTrends', { payload: { table_name: autoOpenTable } }), 0);
+    }
+
     const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
 
 
@@ -289,10 +294,17 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     allowNull: false,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
-                    onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value}}),
+                    onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value, table_name: null}}),
                 }),
                 () => getValue(props.has_monitor_test_suite)
-                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies')
+                    ? AnomaliesSummary(getValue(props.summary), 'Total anomalies', {
+                        onTagClick: (type) => {
+                            const current = anomalyTypeFilterValue.val;
+                            const newFilter = current.length === 1 && current[0] === type ? null : type;
+                            emitEvent('SetParamValues', { payload: { anomaly_type_filter: newFilter, current_page: 0 } });
+                        },
+                        activeTypes: anomalyTypeFilterValue,
+                    })
                     : '',
                 () => getValue(props.has_monitor_test_suite) && userCanEdit
                     ? div(
@@ -330,7 +342,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             () => getValue(props.has_monitor_test_suite) ? Table(
                 {
                     header: () => div(
-                        {class: 'flex-row fx-gap-3 p-4 pt-2 pb-2'},
+                        {class: 'flex-row fx-align-flex-end fx-gap-3 p-4 pt-2 pb-2'},
                         Input({
                             id: 'search-tables',
                             name: 'search-tables',
@@ -341,14 +353,22 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             icon: 'search',
                             testId: 'search-tables',
                             value: tableNameFilterValue,
-                            onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value}}),
+                            onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value, current_page: 0}}),
                         }),
-                        Toggle({
-                            name: 'anomalies_only',
-                            label: 'Only tables with anomalies',
-                            style: 'font-size: 16px;',
-                            checked: onlyAnomaliesFilterValue,
-                            onChange: (checked) => emitEvent('SetParamValues', {payload: {only_tables_with_anomalies: String(checked).toLowerCase()}}),
+                        Select({
+                            label: 'Anomaly type',
+                            value: anomalyTypeFilterValue,
+                            options: [
+                                { label: 'Freshness', value: 'freshness' },
+                                { label: 'Volume', value: 'volume' },
+                                { label: 'Schema', value: 'schema' },
+                                { label: 'Metrics', value: 'metrics' },
+                            ],
+                            multiSelect: true,
+                            width: 200,
+                            onChange: (values) => emitEvent('SetParamValues', {
+                                payload: { anomaly_type_filter: values.length ? values.join(',') : null, current_page: 0 },
+                            }),
                         }),
                         span({class: 'fx-flex'}, ''),
                         () => {

@@ -24,6 +24,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "skip_errors": 0,
         "history_calculation": "NONE",
         "custom_query": "",
+        "prediction": None,
         "run_type": "CAT",
         "test_scope": "column",
         "template": "",
@@ -166,6 +167,51 @@ def test_build_prediction_partial_tolerance_is_training():
         history_calculation="PREDICT",
         lower_tolerance="50",
         upper_tolerance="",
+        varchar_type="VARCHAR",
+        concat_operator="||",
+    )
+    assert cond_expr == "'-1,'"
+
+
+def test_build_prediction_zero_tolerance_is_not_training():
+    """PREDICT with tolerance of 0 should produce normal condition, not training mode."""
+    _, cond_expr = build_cat_expressions(
+        measure="COUNT(*)",
+        test_operator=">=",
+        test_condition="100",
+        history_calculation="PREDICT",
+        lower_tolerance=0,
+        upper_tolerance=0,
+        varchar_type="VARCHAR",
+        concat_operator="||",
+    )
+    assert "CASE WHEN" in cond_expr
+
+
+def test_build_prediction_zero_lower_tolerance_is_not_training():
+    """PREDICT with lower_tolerance=0 and a valid upper should produce normal condition."""
+    _, cond_expr = build_cat_expressions(
+        measure="COUNT(*)",
+        test_operator=">=",
+        test_condition="100",
+        history_calculation="PREDICT",
+        lower_tolerance=0,
+        upper_tolerance="200",
+        varchar_type="VARCHAR",
+        concat_operator="||",
+    )
+    assert "CASE WHEN" in cond_expr
+
+
+def test_build_prediction_none_tolerance_is_training():
+    """PREDICT with None tolerances should return training mode."""
+    _, cond_expr = build_cat_expressions(
+        measure="COUNT(*)",
+        test_operator=">=",
+        test_condition="100",
+        history_calculation="PREDICT",
+        lower_tolerance=None,
+        upper_tolerance=None,
         varchar_type="VARCHAR",
         concat_operator="||",
     )

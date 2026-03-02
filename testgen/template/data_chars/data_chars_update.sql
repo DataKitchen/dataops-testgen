@@ -17,20 +17,37 @@ WITH new_chars AS (
       schema_name,
       table_name,
       run_date
+),
+updated_records AS (
+   UPDATE data_table_chars
+   SET approx_record_ct = n.approx_record_ct,
+      record_ct = n.record_ct,
+      column_ct = n.column_ct,
+      last_refresh_date = n.run_date,
+      drop_date = NULL
+   FROM new_chars n
+      INNER JOIN data_table_chars d ON (
+         n.table_groups_id = d.table_groups_id
+         AND n.schema_name = d.schema_name
+         AND n.table_name = d.table_name
+      )
+   WHERE data_table_chars.table_id = d.table_id
+   RETURNING data_table_chars.*, d.drop_date as old_drop_date
 )
-UPDATE data_table_chars
-SET approx_record_ct = n.approx_record_ct,
-   record_ct = n.record_ct,
-   column_ct = n.column_ct,
-   last_refresh_date = n.run_date,
-   drop_date = NULL
-FROM new_chars n
-   INNER JOIN data_table_chars d ON (
-      n.table_groups_id = d.table_groups_id
-      AND n.schema_name = d.schema_name
-      AND n.table_name = d.table_name
-   )
-WHERE data_table_chars.table_id = d.table_id;
+INSERT INTO data_structure_log (
+   table_groups_id,
+   table_id,
+   table_name,
+   change_date,
+   change
+)
+SELECT u.table_groups_id,
+   u.table_id,
+   u.table_name,
+   u.last_refresh_date,
+   'A'
+   FROM updated_records u
+   WHERE u.old_drop_date IS NOT NULL;
 
 -- Add new records
 WITH new_chars AS (
@@ -170,7 +187,7 @@ update_chars AS (
       )
    WHERE data_column_chars.table_id = d.table_id
       AND data_column_chars.column_name = d.column_name
-   RETURNING data_column_chars.*, d.db_data_type as old_data_type
+   RETURNING data_column_chars.*, d.db_data_type as old_data_type, d.drop_date as old_drop_date, n.run_date as run_date
 )
 INSERT INTO data_structure_log (
    table_groups_id,
@@ -193,7 +210,20 @@ SELECT u.table_groups_id,
    u.old_data_type,
    u.db_data_type
    FROM update_chars u
-   WHERE u.old_data_type <> u.db_data_type;
+   WHERE u.old_data_type <> u.db_data_type
+      AND u.old_drop_date IS NULL
+UNION ALL
+SELECT u.table_groups_id,
+   u.table_id,
+   u.column_id,
+   u.table_name,
+   u.column_name,
+   u.run_date,
+   'A',
+   NULL,
+   u.db_data_type
+   FROM update_chars u
+   WHERE u.old_drop_date IS NOT NULL;
 
 
 -- Add new records

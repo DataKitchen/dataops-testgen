@@ -17,3 +17,4 @@ venv/
 .ruff_cache/
 deploy
 !deploy/install_*.sh
+!deploy/generate_third_party_notices.py

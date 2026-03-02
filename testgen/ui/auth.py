@@ -1,13 +1,10 @@
-import base64
 import logging
-from datetime import UTC, datetime
 from typing import Literal
 
 import extra_streamlit_components as stx
-import jwt
 import streamlit as st
 
-from testgen import settings
+from testgen.common.auth import decode_jwt_token, get_jwt_signing_key
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.user import User
 from testgen.ui.services.javascript_service import execute_javascript
@@ -46,8 +43,8 @@ class Authentication:
 
     def get_jwt_hashing_key(self) -> bytes:
         try:
-            return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
-        except Exception as e:
+            return get_jwt_signing_key()
+        except Exception:
             st.error(
                 "Error reading the JWT signing key from settings.\n\n Make sure you have a valid "
                 "base64 string assigned to the TG_JWT_HASHING_KEY environment variable."
@@ -74,9 +71,8 @@ class Authentication:
         token = cookies.get(self.jwt_cookie_name)
         if token is not None:
             try:
-                token = jwt.decode(token, self.get_jwt_hashing_key(), algorithms=["HS256"])
-                if token["exp_date"] > datetime.now(UTC).timestamp():
-                    self.user = User.get(token["username"])
+                payload = decode_jwt_token(token)
+                self.user = User.get(payload["username"])
             except Exception:
                 LOG.debug("Invalid auth token found on cookies", exc_info=True, stack_info=True)
 

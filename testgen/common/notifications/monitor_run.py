@@ -8,7 +8,7 @@ from testgen.common.models.notification_settings import (
 from testgen.common.models.project import Project
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_result import TestResult
+from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.notifications import BaseNotificationTemplate
 from testgen.utils import log_and_swallow_exception
@@ -75,8 +75,8 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                     <table border="0" cellpadding="0" cellspacing="0" style="width: auto;">
                       <tbody>
                         <tr>
-                          {{#each anomaly_counts}}
-                            {{>anomaly_tag .}}
+                          {{#each summary_tags}}
+                            {{>summary_tag .}}
                           {{/each}}
                         </tr>
                       </tbody>
@@ -116,14 +116,14 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
             </div>
         """
 
-    def get_anomaly_tag_template(self):
+    def get_summary_tag_template(self):
         return """
             <td valign="middle" style="padding-right: 24px;">
               <table border="0" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
                   <td valign="middle">
-                    <div style="{{#if count}}background-color: #EF5350; min-width: 15px; padding: 0px 5px; border-radius: 10px; text-align: center; line-height: 20px;{{else}}background-color: #9CCC65; width: 20px; height: 20px; border-radius: 50%; text-align: center; line-height: 21px;{{/if}} color: #ffffff; font-weight: bold; font-size: 13px;">
-                      {{#if count}}{{count}}{{else}}&#10003;{{/if}}
+                    <div style="{{{badge_style}}}">
+                      {{{badge_content}}}
                     </div>
                   </td>
                   <td valign="middle" style="color: #111111; padding-left: 8px;">{{type}}</td>
@@ -191,20 +191,18 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
         table_name = notification.settings.get("table_name")
         test_results = list(TestResult.select_where(
             TestResult.test_run_id == test_run.id,
-            TestResult.result_code == 0,
             (TestResult.table_name == table_name) if table_name else True,
         ))
+        anomaly_results = [r for r in test_results if r.result_code == 0]
 
-        if len(test_results) <= 0:
+        if len(anomaly_results) <= 0:
             continue
 
         anomalies = []
-        anomaly_counts = { label: 0 for _, label in _TEST_TYPE_LABELS.items()}
-        for test_result in test_results:
+        for test_result in anomaly_results:
             label = _TEST_TYPE_LABELS.get(test_result.test_type)
-            anomaly_counts[label] = (anomaly_counts.get(label) or 0) + 1
             details = test_result.message or "N/A"
-            
+
             if test_result.test_type == "Freshness_Trend":
                 parts = details.split(". ", 1)
                 message = parts[1].rstrip(".") if len(parts) > 1 else None
@@ -241,11 +239,8 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
                         "project_name": project.project_name,
                         "table_name": table_name,
                     },
-                    "total_anomalies": len(test_results),
-                    "anomaly_counts": [
-                        {"type": key, "count": value}
-                        for key, value in anomaly_counts.items()
-                    ],
+                    "total_anomalies": len(anomaly_results),
+                    "summary_tags": _build_summary_tags(test_results),
                     "anomalies": anomalies[:result_list_ct],
                     "truncated": max(len(anomalies) - result_list_ct, 0),
                     "view_in_testgen_url": view_in_testgen_url,
@@ -261,3 +256,55 @@ _TEST_TYPE_LABELS = {
     "Schema_Drift": "Schema",
     "Metric_Trend": "Metric",
 }
+
+_BADGE_BASE = "text-align: center; font-weight: bold; font-size: 13px;"
+_BADGE_STYLES = {
+    "anomaly": f"background-color: #EF5350; min-width: 15px; padding: 0 5px; border-radius: 10px; line-height: 20px; color: #ffffff; {_BADGE_BASE}",
+    "error": f"width: 20px; height: 20px; line-height: 20px; color: #FFA726; font-size: 16px; {_BADGE_BASE}",
+    "training": f"border: 2px solid #42A5F5; width: 20px; height: 20px; border-radius: 50%; line-height: 16px; color: #42A5F5; box-sizing: border-box; {_BADGE_BASE}",
+    "pending": f"width: 20px; height: 20px; line-height: 20px; color: #9E9E9E; {_BADGE_BASE}",
+    "passed": f"background-color: #9CCC65; width: 20px; height: 20px; border-radius: 50%; line-height: 21px; color: #ffffff; {_BADGE_BASE}",
+}
+_BADGE_CONTENT = {
+    "error": "&#9888;",
+    "training": "&#183;&#183;&#183;",
+    "pending": "&#8212;",
+    "passed": "&#10003;",
+}
+
+
+def _build_summary_tags(test_results: list[TestResult]) -> list[dict]:
+    has_any_results = bool(test_results)
+    tags = []
+    for type_key, label in _TEST_TYPE_LABELS.items():
+        type_results = [r for r in test_results if r.test_type == type_key]
+        anomaly_count = sum(1 for r in type_results if r.result_code == 0)
+        has_errors = any(r.status == TestResultStatus.Error for r in type_results)
+
+        # Schema Drift only creates results on detected changes, and has no training phase.
+        # Pending = no results of any type; no Schema results but other types ran = passed.
+        if type_key == "Schema_Drift":
+            is_pending = not has_any_results
+            is_training = False
+        else:
+            is_pending = not type_results
+            is_training = bool(type_results) and all(r.result_code == -1 for r in type_results)
+
+        # Priority matches UI: anomalies > errors > training > pending > passed
+        if anomaly_count > 0:
+            state = "anomaly"
+        elif has_errors:
+            state = "error"
+        elif is_training:
+            state = "training"
+        elif is_pending:
+            state = "pending"
+        else:
+            state = "passed"
+
+        tags.append({
+            "type": label,
+            "badge_style": _BADGE_STYLES[state],
+            "badge_content": str(anomaly_count) if state == "anomaly" else _BADGE_CONTENT[state],
+        })
+    return tags

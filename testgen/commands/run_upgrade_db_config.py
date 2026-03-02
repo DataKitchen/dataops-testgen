@@ -51,32 +51,36 @@ def _get_upgrade_template_directory():
     return "dbupgrade"
 
 
-def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = "") -> tuple[list[tuple[str, dict]], str]:
+def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r"^.*sql$", min_val: str = "") -> list[tuple[str, str]]:
     files = sorted(get_template_files(mask=mask, sub_directory=sub_directory), key=lambda key: str(key))
 
-    max_prefix = ""
-    queries = []
+    scripts = []
     for file in files:
         if file.name > min_val:
             template = file.read_text("utf-8")
             query = replace_params(template, params_mapping)
-            queries.append((query, None))
-            max_prefix = file.name[0:4]
+            scripts.append((file.name[0:4], query))
 
-    if len(queries) == 0:
+    if not scripts:
         LOG.debug(f"No sql files were found for the mask {mask} in subdirectory {sub_directory}")
 
-    return queries, max_prefix
+    return scripts
 
 
-def _execute_upgrade_scripts(params_mapping: dict, lstScripts: list[tuple[str, dict]]):
-    # Run scripts using admin credentials
-    execute_db_queries(
-        lstScripts,
-        user_override=params_mapping["TESTGEN_ADMIN_USER"],
-        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
-        user_type="schema_admin",
-    )
+def _execute_upgrade_scripts(params_mapping: dict, scripts: list[tuple[str, str]]) -> bool:
+    admin_user = params_mapping["TESTGEN_ADMIN_USER"]
+    admin_password = params_mapping["TESTGEN_ADMIN_PASSWORD"]
+
+    for revision_prefix, query in scripts:
+        LOG.info(f"Applying upgrade script {revision_prefix}")
+        execute_db_queries(
+            [(query, None)],
+            user_override=admin_user,
+            password_override=admin_password,
+            user_type="schema_admin",
+        )
+        _update_revision_number(params_mapping, revision_prefix)
+
     return True
 
 
@@ -131,18 +135,17 @@ def run_upgrade_db_config() -> bool:
     next_revision = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
     upgrade_dir = _get_upgrade_template_directory()
 
-    queries, max_revision = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=next_revision)
-    LOG.info(f"Current revision: {current_revision}. Latest revision: {max_revision or current_revision}. Upgrade scripts: {len(queries)}")
-    if len(queries) > 0:
-        has_been_upgraded = _execute_upgrade_scripts(params_mapping, queries)
-    else:
-        has_been_upgraded = False
+    scripts = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=next_revision)
+    latest_revision = scripts[-1][0] if scripts else current_revision
+    LOG.info(f"Current revision: {current_revision}. Latest revision: {latest_revision}. Upgrade scripts: {len(scripts)}")
+    if scripts:
+        _execute_upgrade_scripts(params_mapping, scripts)
 
     LOG.info("Refreshing static metadata")
     _refresh_static_metadata(params_mapping)
 
+    has_been_upgraded = bool(scripts)
     if has_been_upgraded:
-        _update_revision_number(params_mapping, max_revision)
         LOG.info("Application data was successfully upgraded, and static metadata was refreshed.")
     else:
         LOG.info("Database upgrade was not required. Static metadata was refreshed.")
@@ -155,6 +158,5 @@ def is_db_revision_up_to_date():
     strNextPrefix = _format_revision_prefix(_get_next_revision_prefix(params_mapping))
     upgrade_dir = _get_upgrade_template_directory()
 
-    # Retrieve and execute upgrade scripts, if any
-    lstQueries, max_prefix = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
-    return len(lstQueries) == 0
+    scripts = _get_upgrade_scripts(upgrade_dir, params_mapping, min_val=strNextPrefix)
+    return len(scripts) == 0

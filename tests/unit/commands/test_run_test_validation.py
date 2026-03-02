@@ -19,6 +19,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "skip_errors": 0,
         "history_calculation": "NONE",
         "custom_query": "",
+        "prediction": None,
         "run_type": "CAT",
         "test_scope": "column",
         "template": "",
