@@ -194,7 +194,7 @@ const Input = (/** @type Properties */ props) => {
                 ? small({ class: 'tg-input--error' }, firstError)
                 : '',
         Portal(
-            { target: domId.val, targetRelative: true, opened: autocompleteOpened },
+            { target: domId.val, opened: autocompleteOpened },
             () => div(
                 { class: 'tg-input--options-wrapper' },
                 autocompleteOptions.val?.map(option =>

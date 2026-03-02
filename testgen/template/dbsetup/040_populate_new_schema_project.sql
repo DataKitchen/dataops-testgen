@@ -10,12 +10,13 @@ SELECT '{PROJECT_CODE}' as project_code,
 
 WITH inserted_user AS (
     INSERT INTO auth_users
-        (username, email, name, password)
+        (username, email, name, password, is_global_admin)
     SELECT
         '{UI_USER_USERNAME}' as username,
         '{UI_USER_EMAIL}' as email,
         '{UI_USER_NAME}' as name,
-        '{UI_USER_ENCRYPTED_PASSWORD}' as password
+        '{UI_USER_ENCRYPTED_PASSWORD}' as password,
+        true as is_global_admin
     RETURNING id
 )
 INSERT INTO project_memberships

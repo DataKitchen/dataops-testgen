@@ -100,7 +100,6 @@ stylesheet.replace(`
 .tg-dialog-content {
     padding: 0.75rem 1.5rem 1.5rem;
     overflow-y: auto;
-    font-size: 1rem;
     color: var(--primary-text-color);
 }
 

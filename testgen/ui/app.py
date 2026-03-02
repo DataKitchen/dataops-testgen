@@ -22,16 +22,9 @@ def render(log_level: int = logging.INFO):
         page_icon=get_asset_path("favicon.ico"),
         layout="wide",
         # Collapse when logging out because the sidebar takes some time to be removed from the DOM
-        # Collapse for Catalog role since they only have access to one page
         initial_sidebar_state="collapsed"
-        if session.auth and (
-            session.auth.logging_out
-            or (
-                session.auth.is_logged_in
-                and not session.auth.user_has_permission("view")
-            )
-        )
-        else "auto",
+            if session.auth and session.auth.logging_out
+            else "auto",
     )
 
     application = get_application(log_level=log_level)
@@ -53,12 +46,12 @@ def render(log_level: int = logging.INFO):
     if not session.auth.is_logged_in and not session.auth.logging_out:
         session.auth.load_user_session()
 
-    if session.auth.is_logged_in:
+    if session.auth.is_logged_in and not session.auth.logging_out:
         session.auth.load_user_role()
 
     application.logo.render()
 
-    if session.auth.is_logged_in and not session.auth.logging_in:
+    if session.auth.is_logged_in and not session.auth.logging_in and not session.auth.logging_out:
         current_page = session.current_page
         if not current_page:
             try:
