@@ -72,7 +72,7 @@ def test_test_types_resource_empty(mock_tt_cls, db_session_mock):
 
     result = test_types_resource()
 
-    assert "No active test types" in result
+    assert "No test types found" in result
 
 
 def test_glossary_resource():
@@ -82,7 +82,7 @@ def test_glossary_resource():
 
     assert "Entity Hierarchy" in result
     assert "Result Statuses" in result
-    assert "DQ Dimensions" in result
+    assert "Data Quality Dimensions" in result
     assert "Test Scopes" in result
-    assert "Monitor Types" in result
     assert "Disposition" in result
+    assert "Monitor Types" not in result

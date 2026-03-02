@@ -46,14 +46,14 @@ def test_select_results_with_all_filters(session_mock):
 
 def test_select_failures_by_test_type(session_mock):
     session_mock.execute.return_value.all.return_value = [
-        ("Alpha_Trunc", 5),
-        ("Unique_Pct", 3),
+        ("Alpha_Trunc", TestResultStatus.Failed, 5),
+        ("Unique_Pct", TestResultStatus.Warning, 3),
     ]
 
     results = TestResult.select_failures(test_run_id=uuid4(), group_by="test_type")
 
     assert len(results) == 2
-    assert results[0] == ("Alpha_Trunc", 5)
+    assert results[0] == ("Alpha_Trunc", TestResultStatus.Failed, 5)
 
 
 def test_select_failures_by_table_name(session_mock):

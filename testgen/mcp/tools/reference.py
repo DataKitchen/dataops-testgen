@@ -15,7 +15,7 @@ def get_test_type(test_type: str) -> str:
         return f"Test type `{test_type}` not found."
 
     lines = [
-        f"# Test Type: {tt.test_type}\n",
+        f"# {tt.test_name_short} (`{tt.test_type}`)\n",
         f"- **Name:** {tt.test_name_short}",
     ]
     if tt.test_name_long:
@@ -55,7 +55,7 @@ def test_types_resource() -> str:
     ]
 
     for tt in test_types:
-        desc = (tt.test_description or "")[:80]
+        desc = tt.test_description or ""
         lines.append(
             f"| {tt.test_type} | {tt.test_name_short or ''} | "
             f"{tt.dq_dimension or ''} | {tt.test_scope or ''} | {desc} |"
@@ -71,21 +71,21 @@ def glossary_resource() -> str:
 
 ## Entity Hierarchy
 
-- **Project** — Top-level organizational unit. Contains connections and table groups.
-- **Connection** — Database connection configuration (database type, host, credentials).
-- **Table Group** — A set of tables within a schema that are profiled, tested, and monitored together.
+- **Project** — Top-level organizational unit.
+- **Connection** — Database connection configuration (host, credentials).
+- **Table Group** — A set of tables within a schema that are profiled and tested together.
 - **Test Suite** — A collection of test definitions scoped to a table group.
 - **Test Definition** — A configured test with parameters, thresholds, and target table/column.
 - **Test Run** — An execution of a test suite producing test results.
 - **Test Result** — The outcome of a single test definition within a test run.
-- **Monitor** — Tracks a table-level pattern (freshness, volume, schema, or a custom metric) over time and detects anomalies.
+
 ## Test Result Statuses
 
-- **Passed** — Data meets test criteria.
-- **Warning** — Data does not meet test criteria, but test severity is set to warn rather than fail.
-- **Failed** — Data does not meet test criteria.
-- **Error** — Test could not execute (e.g., missing table or permission issue).
-- **Log** — Informational result recorded for reference.
+- **Passed** — Test passed within acceptable thresholds.
+- **Warning** — Test exceeded its threshold. Severity configured as Warning.
+- **Failed** — Test exceeded its threshold. Severity configured as Fail.
+- **Error** — Test could not execute (e.g., SQL error, missing table).
+- **Log** — Informational result, not scored.
 
 ## Disposition
 
@@ -109,11 +109,4 @@ Disposition is a user-assigned review status for test results:
 - **table** — Tests table-level properties (e.g., row count, freshness).
 - **referential** — Tests relationships between tables (e.g., foreign key match).
 - **custom** — User-defined SQL tests.
-
-## Monitor Types
-
-- **Freshness** — Detects when tables are not updated on their expected schedule.
-- **Volume** — Tracks row count changes and alerts on unexpected spikes or drops.
-- **Schema** — Detects column additions, deletions, or type changes.
-- **Metric** — Tracks user-defined metrics for anomalies.
 """

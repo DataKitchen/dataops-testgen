@@ -23,11 +23,12 @@ class DataTable(Entity):
     # dq_score_profiling, dq_score_testing
 
     @classmethod
-    def select_table_names(cls, table_groups_id: UUID, limit: int = 100) -> list[str]:
+    def select_table_names(cls, table_groups_id: UUID, limit: int = 100, offset: int = 0) -> list[str]:
         query = (
             select(cls.table_name)
             .where(cls.table_groups_id == table_groups_id)
             .order_by(asc(func.lower(cls.table_name)))
+            .offset(offset)
             .limit(limit)
         )
         return list(get_current_session().scalars(query).all())

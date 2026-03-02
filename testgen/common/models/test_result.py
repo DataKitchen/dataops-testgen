@@ -60,6 +60,7 @@ class TestResult(Entity):
         table_name: str | None = None,
         test_type: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[Self]:
         clauses = [
             cls.test_run_id == test_run_id,
@@ -71,7 +72,7 @@ class TestResult(Entity):
             clauses.append(cls.table_name == table_name)
         if test_type:
             clauses.append(cls.test_type == test_type)
-        query = select(cls).where(*clauses).order_by(cls.status, cls.table_name, cls.column_names).limit(limit)
+        query = select(cls).where(*clauses).order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
 
     @classmethod
@@ -93,6 +94,8 @@ class TestResult(Entity):
         # Column grouping includes table_name for context → (table, column, count)
         if group_by == "column_names":
             group_cols = (cls.table_name, cls.column_names)
+        elif group_by == "test_type":
+            group_cols = (cls.test_type, cls.status)
         else:
             group_cols = (getattr(cls, group_by),)
 
@@ -109,11 +112,13 @@ class TestResult(Entity):
         cls,
         test_definition_id: UUID,
         limit: int = 20,
+        offset: int = 0,
     ) -> list[Self]:
         query = (
             select(cls)
             .where(cls.test_definition_id == test_definition_id)
             .order_by(desc(cls.test_time))
+            .offset(offset)
             .limit(limit)
         )
         return get_current_session().scalars(query).all()

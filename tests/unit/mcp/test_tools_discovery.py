@@ -81,3 +81,12 @@ def test_list_test_suites_empty(mock_suite, db_session_mock):
     result = list_test_suites("nonexistent")
 
     assert "No test suites found" in result
+
+
+def test_list_test_suites_empty_project_code(db_session_mock):
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("")
+
+    assert "Missing required parameter" in result
+    assert "project_code" in result

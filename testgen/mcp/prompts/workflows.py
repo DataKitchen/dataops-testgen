@@ -7,7 +7,7 @@ def health_check() -> str:
 Please perform a data quality health check:
 
 1. Call `get_data_inventory()` to get a complete overview of all projects, connections, table groups, and test suites.
-2. For each project, call `get_recent_test_runs(project_code='...')` to get the most recent test run.
+2. For each project, call `get_recent_test_runs(...)` to get the latest test runs across all suites.
 3. Summarize the overall health:
    - Which projects/suites are healthy (all tests passing)?
    - Which have failures or warnings?
@@ -29,7 +29,7 @@ def investigate_failures(test_suite: str | None = None) -> str:
 Please investigate test failures and identify root causes:{suite_filter}
 
 1. Call `get_data_inventory()` to understand the project structure.
-2. Call `get_recent_test_runs(project_code='...')` to find the most recent run{f" for suite `{test_suite}`" if test_suite else ""}.
+2. Call `get_recent_test_runs(...)` to find the latest run per suite{f" for suite `{test_suite}`" if test_suite else ""}.
 3. Call `get_failure_summary(test_run_id='...')` to see failures grouped by test type.
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
 5. Call `get_test_results(test_run_id='...', status='Failed')` to see individual failure details.
@@ -50,14 +50,15 @@ def table_health(table_name: str) -> str:
     return f"""\
 Please assess the data quality health of table `{table_name}`:
 
-1. Call `get_data_inventory()` to find which table groups and test suites include this table.
-2. For each relevant test suite, call `get_recent_test_runs(project_code='...')` to find the latest run.
-3. Call `get_test_results(test_run_id='...', table_name='{table_name}')` to get all results for this table.
-4. Summarize the table's health:
+1. Call `get_data_inventory()` to discover all table groups.
+2. For each table group, call `list_tables(table_group_id='...')` to check if it contains `{table_name}`.
+3. For each relevant test suite, call `get_recent_test_runs(...)` to find the latest run.
+4. Call `get_test_results(test_run_id='...', table_name='{table_name}')` to get all results for this table.
+5. Summarize the table's health:
    - Which tests pass and which fail?
    - What data quality dimensions are affected?
    - Are there patterns in the failures (e.g., specific columns)?
-5. Provide recommendations for improving data quality for this table.
+6. Provide recommendations for improving data quality for this table.
 """
 
 

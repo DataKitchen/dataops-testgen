@@ -32,7 +32,6 @@ ALWAYS look them up using either the `testgen://test-types` resource or the `get
 CONVENTIONS
 - Identifiers are UUIDs passed as strings.
 - Dates are ISO 8601 format.
-- Test results with disposition Dismissed or Inactive are excluded from counts and scores.
 """
 
 
@@ -56,7 +55,7 @@ def run_mcp() -> None:
     """Start the MCP server with streamable HTTP transport."""
     from testgen.mcp import get_server_url
     from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
-    from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_test_suites
+    from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
     from testgen.mcp.tools.test_runs import get_recent_test_runs
@@ -82,9 +81,10 @@ def run_mcp() -> None:
         token_verifier=JWTTokenVerifier(),
     )
 
-    # Tools (8)
+    # Tools (9)
     mcp.tool()(get_data_inventory)
     mcp.tool()(list_projects)
+    mcp.tool()(list_tables)
     mcp.tool()(list_test_suites)
     mcp.tool()(get_recent_test_runs)
     mcp.tool()(get_test_results)
@@ -103,4 +103,19 @@ def run_mcp() -> None:
     mcp.prompt()(compare_runs)
 
     LOG.info("Starting MCP server on %s:%s (auth issuer: %s)", settings.MCP_HOST, settings.MCP_PORT, server_url)
-    mcp.run(transport="streamable-http")
+
+    if settings.IS_DEBUG:
+        import uvicorn
+        from starlette.middleware.cors import CORSMiddleware
+
+        app = mcp.streamable_http_app()
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["Mcp-Session-Id"],
+        )
+        uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT)
+    else:
+        mcp.run(transport="streamable-http")

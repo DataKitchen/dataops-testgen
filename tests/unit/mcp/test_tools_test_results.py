@@ -6,12 +6,14 @@ import pytest
 from testgen.common.models.test_result import TestResultStatus
 
 
+@patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_basic(mock_result, db_session_mock):
+def test_get_test_results_basic(mock_result, mock_tt_cls, db_session_mock):
     run_id = str(uuid4())
     r1 = MagicMock()
     r1.status = TestResultStatus.Failed
     r1.test_type = "Alpha_Trunc"
+    r1.test_definition_id = uuid4()
     r1.table_name = "orders"
     r1.column_names = "customer_name"
     r1.result_measure = "15.3"
@@ -19,11 +21,17 @@ def test_get_test_results_basic(mock_result, db_session_mock):
     r1.message = "Truncation detected"
     mock_result.select_results.return_value = [r1]
 
+    tt = MagicMock()
+    tt.test_type = "Alpha_Trunc"
+    tt.test_name_short = "Alpha Truncation"
+    mock_tt_cls.select_where.return_value = [tt]
+
     from testgen.mcp.tools.test_results import get_test_results
 
     result = get_test_results(run_id)
 
-    assert "Alpha_Trunc" in result
+    assert "Alpha Truncation" in result
+    assert "`Alpha_Trunc`" in result
     assert "orders" in result
     assert "15.3" in result
     assert "Truncation detected" in result
@@ -66,12 +74,20 @@ def test_get_test_results_invalid_status(db_session_mock):
         get_test_results(str(uuid4()), status="BadStatus")
 
 
+@patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_failure_summary_by_test_type(mock_result, db_session_mock):
+def test_get_failure_summary_by_test_type(mock_result, mock_tt_cls, db_session_mock):
     mock_result.select_failures.return_value = [
-        ("Alpha_Trunc", 5),
-        ("Unique_Pct", 3),
+        ("Alpha_Trunc", TestResultStatus.Failed, 5),
+        ("Unique_Pct", TestResultStatus.Warning, 3),
     ]
+    tt1 = MagicMock()
+    tt1.test_type = "Alpha_Trunc"
+    tt1.test_name_short = "Alpha Truncation"
+    tt2 = MagicMock()
+    tt2.test_type = "Unique_Pct"
+    tt2.test_name_short = "Unique Percent"
+    mock_tt_cls.select_where.return_value = [tt1, tt2]
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
@@ -79,7 +95,12 @@ def test_get_failure_summary_by_test_type(mock_result, db_session_mock):
 
     assert "Failed + Warning" in result
     assert "8" in result
+    assert "Alpha Truncation" in result
     assert "Alpha_Trunc" in result
+    assert "Test Name" in result
+    assert "Severity" in result
+    assert "Failed" in result
+    assert "Warning" in result
     assert "get_test_type" in result
 
 
@@ -128,8 +149,9 @@ def test_get_failure_summary_invalid_uuid(db_session_mock):
         get_failure_summary("bad-uuid")
 
 
+@patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_result_history_basic(mock_result, db_session_mock):
+def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock):
     def_id = str(uuid4())
     r1 = MagicMock()
     r1.test_type = "Unique_Pct"
@@ -149,11 +171,17 @@ def test_get_test_result_history_basic(mock_result, db_session_mock):
     r2.status = TestResultStatus.Failed
     mock_result.select_history.return_value = [r1, r2]
 
+    tt = MagicMock()
+    tt.test_type = "Unique_Pct"
+    tt.test_name_short = "Unique Percent"
+    mock_tt_cls.select_where.return_value = [tt]
+
     from testgen.mcp.tools.test_results import get_test_result_history
 
     result = get_test_result_history(def_id)
 
-    assert "Unique_Pct" in result
+    assert "Unique Percent" in result
+    assert "`Unique_Pct`" in result
     assert "orders" in result
     assert "99.5" in result
     assert "88.0" in result

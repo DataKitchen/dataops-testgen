@@ -17,6 +17,7 @@ def _make_run_summary(**overrides):
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_mock):
+    """Default limit=1 returns one run per suite."""
     runs = [_make_run_summary(test_run_id=uuid4()) for _ in range(7)]
     mock_run.select_summary.return_value = runs
 
@@ -24,7 +25,8 @@ def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_moc
 
     result = get_recent_test_runs("demo")
 
-    assert "Showing 5 of 7" in result
+    # All 7 runs have test_suite="Quality Suite", so only 1 should appear
+    assert "1 run(s)" in result
     assert "Quality Suite" in result
     assert "92.5" in result
     mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=None)
@@ -33,6 +35,7 @@ def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_moc
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_get_recent_test_runs_custom_limit(mock_suite, mock_run, db_session_mock):
+    """Custom limit returns up to N runs per suite."""
     runs = [_make_run_summary() for _ in range(3)]
     mock_run.select_summary.return_value = runs
 
@@ -40,7 +43,29 @@ def test_get_recent_test_runs_custom_limit(mock_suite, mock_run, db_session_mock
 
     result = get_recent_test_runs("demo", limit=10)
 
-    assert "Showing 3 of 3" in result
+    assert "3 run(s)" in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_get_recent_test_runs_per_suite_grouping(mock_suite, mock_run, db_session_mock):
+    """With multiple suites, returns limit runs per suite."""
+    runs = [
+        _make_run_summary(test_suite="Suite A", test_run_id=uuid4()),
+        _make_run_summary(test_suite="Suite A", test_run_id=uuid4()),
+        _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
+        _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
+    ]
+    mock_run.select_summary.return_value = runs
+
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("demo")
+
+    # limit=1 (default), so 1 per suite = 2 total
+    assert "2 run(s)" in result
+    assert "Suite A" in result
+    assert "Suite B" in result
 
 
 @patch("testgen.mcp.tools.test_runs.TestRun")
@@ -94,4 +119,14 @@ def test_get_recent_test_runs_shows_failure_counts(mock_suite, mock_run, db_sess
 
     result = get_recent_test_runs("demo")
 
-    assert "5F/2W" in result
+    assert "5 failed" in result
+    assert "2 warnings" in result
+
+
+def test_get_recent_test_runs_empty_project_code(db_session_mock):
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("")
+
+    assert "Missing required parameter" in result
+    assert "project_code" in result
