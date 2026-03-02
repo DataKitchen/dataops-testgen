@@ -51,9 +51,10 @@ const Portal = (/** @type Options */ options, ...args) => {
         const anchor = document.getElementById(target);
         if (!anchor) return;
 
+        const fixed = hasFixedAncestor(anchor);
         const coords = position === 'bottom'
-            ? calculateBottomPosition(anchor, align)
-            : calculateTopPosition(anchor, align);
+            ? calculateBottomPosition(anchor, align, fixed)
+            : calculateTopPosition(anchor, align, fixed);
 
         if (!portalEl) {
             portalEl = document.createElement('div');
@@ -71,26 +72,37 @@ const Portal = (/** @type Options */ options, ...args) => {
 
         portalEl.id = id;
         portalEl.className = getValue(options.class) ?? '';
-        portalEl.style.cssText = `position: absolute; z-index: 1001; ${coords} ${getValue(options.style) ?? ''}`;
+        portalEl.style.cssText = `position: ${fixed ? 'fixed' : 'absolute'}; z-index: 1001; ${coords} ${getValue(options.style) ?? ''}`;
     });
 
     return '';
 };
 
-function calculateBottomPosition(anchor, align) {
-    const r = anchor.getBoundingClientRect();
-    const top = r.top + r.height + window.scrollY;
-    const left = r.left + window.scrollX;
-    const right = window.innerWidth - r.right;
-    return `min-width: ${r.width}px; top: ${top}px; ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
+function hasFixedAncestor(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+        if (getComputedStyle(node).position === 'fixed') return true;
+        node = node.parentElement;
+    }
+    return false;
 }
 
-function calculateTopPosition(anchor, align) {
+function calculateBottomPosition(anchor, align, fixed = false) {
     const r = anchor.getBoundingClientRect();
-    const bottom = window.innerHeight - r.top + window.scrollY;
-    const left = r.left + window.scrollX;
+    const top  = fixed ? r.bottom               : r.bottom + window.scrollY;
+    const left = fixed ? r.left                 : r.left   + window.scrollX;
     const right = window.innerWidth - r.right;
-    return `min-width: ${r.width}px; bottom: ${bottom}px; ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
+    const constrain = fixed ? `max-height: calc(100vh - ${r.bottom}px - 8px); overflow-y: auto;` : '';
+    return `min-width: ${r.width}px; top: ${top}px; ${constrain} ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
+}
+
+function calculateTopPosition(anchor, align, fixed = false) {
+    const r = anchor.getBoundingClientRect();
+    const bottom = fixed ? window.innerHeight - r.top : window.innerHeight - r.top + window.scrollY;
+    const left   = fixed ? r.left                     : r.left + window.scrollX;
+    const right  = window.innerWidth - r.right;
+    const constrain = fixed ? `max-height: calc(${r.top}px - 8px); overflow-y: auto;` : '';
+    return `min-width: ${r.width}px; bottom: ${bottom}px; ${constrain} ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
 }
 
 export { Portal };
