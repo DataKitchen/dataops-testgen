@@ -120,11 +120,31 @@ function sizeLimit(limit) {
     return validator;
 }
 
+/**
+ * @typedef NotInOptions
+ * @type {object}
+ * @property {function(any): any} formatter
+ * @property {string} errorMessage
+ *
+ * @param {any[]} values
+ * @param {NotInOptions?} options
+ * @returns {Validator}
+ */
+function notIn(values, options) {
+    return (value) => {
+        if (value && values.includes(!!options?.formatter ? options.formatter(value) : value)) {
+            return options?.errorMessage ?? `Value cannot be any of: ${values.join(', ')}.`;
+        }
+        return null;
+    };
+}
+
 export {
     maxLength,
     minLength,
     numberBetween,
     noSpaces,
+    notIn,
     required,
     requiredIf,
     sizeLimit,
