@@ -63,6 +63,13 @@ class ScoreDetailsPage(Page):
             )
             return
 
+        if not session.auth.user_has_project_access(score_definition.project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "quality-dashboard",
+            )
+            return
+
         session.set_sidebar_project(score_definition.project_code)
 
         testgen.page_header(

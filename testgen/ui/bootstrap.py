@@ -50,12 +50,13 @@ LOG = logging.getLogger("testgen")
 
 
 class Application(singleton.Singleton):
-    def __init__(self, auth_class: Authentication, logo: plugins.Logo, router: Router, menu: Menu, logger: logging.Logger) -> None:
+    def __init__(self, auth_class: Authentication, logo: plugins.Logo, router: Router, menu: Menu, logger: logging.Logger, global_admin_paths: frozenset[str]) -> None:
         self.auth_class = auth_class
         self.logo = logo
         self.router = router
         self.menu = menu
         self.logger = logger
+        self.global_admin_paths = global_admin_paths
 
 
 def run(log_level: int = logging.INFO) -> Application:
@@ -79,8 +80,7 @@ def run(log_level: int = logging.INFO) -> Application:
     for plugin in installed_plugins:
         spec = plugin.load_streamlit()
 
-        if spec.page:
-            pages.append(spec.page)
+        pages.extend(spec.pages)
 
         if spec.auth:
             auth_class = spec.auth
@@ -104,4 +104,5 @@ def run(log_level: int = logging.INFO) -> Application:
             ),
         ),
         logger=LOG,
+        global_admin_paths=frozenset(page.path for page in pages if page.permission == "global_admin"),
     )

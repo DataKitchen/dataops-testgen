@@ -59,6 +59,13 @@ class HygieneIssuesPage(Page):
             )
             return
 
+        if not session.auth.user_has_project_access(run.project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "profiling-runs",
+            )
+            return
+
         run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
         session.set_sidebar_project(run.project_code)
 

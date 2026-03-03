@@ -49,6 +49,7 @@ class TestRunSummary(EntityMinimal):
     test_endtime: datetime
     table_groups_name: str
     test_suite: str
+    project_code: str
     project_name: str
     status: TestRunStatus
     progress: list[ProgressStep]
@@ -247,6 +248,7 @@ class TestRun(Entity):
             test_runs.test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
+            test_suites.project_code,
             projects.project_name,
             test_runs.status,
             test_runs.progress,

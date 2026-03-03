@@ -113,7 +113,7 @@ class RBACProvider:
 class PluginSpec:
     rbac: ClassVar[type[RBACProvider]] = RBACProvider
     auth: ClassVar[type[Authentication] | None] = None
-    page: ClassVar[type[Page] | None] = None
+    pages: ClassVar[list[type[Page]]] = []
     logo: ClassVar[type[Logo] | None] = None
     component: ClassVar[ComponentSpec | None] = None
 
@@ -172,6 +172,9 @@ class Plugin:
                 continue
             for base, attr in _discoverable.items():
                 if issubclass(cls, base) and cls is not base:
-                    attrs[attr] = cls
+                    if attr == "page":
+                        attrs.setdefault("pages", []).append(cls)
+                    else:
+                        attrs[attr] = cls
 
         return type("AnyPlugin", (PluginSpec,), attrs) if attrs else PluginSpec
