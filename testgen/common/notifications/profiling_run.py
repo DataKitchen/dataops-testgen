@@ -258,7 +258,13 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         return
 
     profiling_run_issues_url = "".join(
-        (PersistedSetting.get("BASE_URL", ""), "/profiling-runs:hygiene?run_id=", str(profiling_run.id), "&source=email")
+        (
+          PersistedSetting.get("BASE_URL", ""),
+          "/profiling-runs:hygiene?project_code=",
+          str(profiling_run.project_code),
+          "&run_id=", str(profiling_run.id),
+          "&source=email"
+        )
     )
 
     hygiene_issues_summary = []
@@ -304,7 +310,14 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "id": str(profiling_run.id),
             "issues_url": profiling_run_issues_url,
             "results_url": "".join(
-                (PersistedSetting.get("BASE_URL", ""), "/profiling-runs:results?run_id=", str(profiling_run.id), "&source=email")
+                (
+                    PersistedSetting.get("BASE_URL", ""),
+                    "/profiling-runs:results?project_code=",
+                    str(profiling_run.project_code),
+                    "&run_id=",
+                    str(profiling_run.id),
+                    "&source=email"
+                )
             ),
             "start_time": profiling_run.profiling_starttime,
             "end_time": profiling_run.profiling_endtime,

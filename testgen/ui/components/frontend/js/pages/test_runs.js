@@ -185,7 +185,7 @@ const TestRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => TestRunItem(item, columns, selectedRuns[item.test_run_id], userCanEdit)),
+                            paginatedRuns.val.map(item => TestRunItem(item, columns, selectedRuns[item.test_run_id], userCanEdit, projectSummary.project_code)),
                         ),
                     ),
                     Paginator({
@@ -287,6 +287,7 @@ const TestRunItem = (
     /** @type string[] */ columns,
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
+    /** @type string */ projectCode,
 ) => {
     const runningStep = item.progress?.find((item) => item.status === 'Running');
 
@@ -307,7 +308,7 @@ const TestRunItem = (
             Link({
                 label: formatTimestamp(item.test_starttime),
                 href: 'test-runs:results',
-                params: { 'run_id': item.test_run_id },
+                params: { 'run_id': item.test_run_id, 'project_code': projectCode },
                 underline: true,
             }),
             div(

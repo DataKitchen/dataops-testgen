@@ -62,7 +62,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     return userCanEdit ? div(
                         { class: 'flex-row tg-test-suites--card-actions' },
                         Button({ type: 'icon', icon: 'notifications', tooltip: 'Configure Notifications', onclick: () => emitEvent('EditNotifications', {}) }),
-                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id } }) }),
+                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id, project_code: score.project_code } }) }),
                         Button({ type: 'icon', icon: 'delete', tooltip: 'Delete Scorecard', onclick: () => emitEvent('DeleteScoreRequested', { payload: score.id }) }),
                     ) : '';
                 },
@@ -86,7 +86,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     getValue(props.score_type),
                     getValue(props.category),
                     getValue(props.drilldown),
-                    (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, score_type, category } }),
+                    (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, project_code, score_type, category } }),
                 )
                 : ScoreBreakdown(
                     props.score,
@@ -95,7 +95,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     props.score_type,
                     (project_code, name, score_type, category, drilldown) => emitEvent(
                         'LinkClicked',
-                        { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, score_type, category, drilldown }
+                        { href: 'quality-dashboard:score-details', params: { definition_id: scoreId, project_code, score_type, category, drilldown }
                     }),
                 )
             );

@@ -78,7 +78,7 @@ const stateProto = Object.getPrototypeOf(van.state());
 /**
  * Get value from van.state
  * @template T
- * @param {T} prop
+ * @param {(import('./van.min.js').VanState<T> | T)} prop
  * @returns {T}
  */
 function getValue(prop) { // van state or static value

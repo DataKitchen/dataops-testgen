@@ -67,7 +67,7 @@ import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profilin
 import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
-import { capitalize, caseInsensitiveIncludes } from '../display_utils.js';
+import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
@@ -573,6 +573,7 @@ const TestSuitesCard = (/** @type Table | Column */ item) => {
                         test_suite_id: id,
                         table_name: item.table_name,
                         column_name: item.column_name,
+                        project_code: item.project_code,
                     },
                     open_new: true,
                     label: name,

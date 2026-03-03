@@ -53,3 +53,9 @@ edit_table_monitors = component_v2_wrapped(components_v2.component(
     js="pages/edit_table_monitors.js",
     isolate_styles=False,
 ))
+
+project_settings = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.project_settings",
+    js="index.js",
+    isolate_styles=False,
+))

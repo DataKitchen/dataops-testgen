@@ -178,7 +178,9 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                 "scorecard_url": "".join(
                     (
                         PersistedSetting.get("BASE_URL", ""),
-                        "/quality-dashboard:score-details?definition_id=",
+                        "/quality-dashboard:score-details?project_code=",
+                        str(definition.project_code),
+                        "&definition_id=",
                         str(definition.id),
                         "&source=email",
                     )

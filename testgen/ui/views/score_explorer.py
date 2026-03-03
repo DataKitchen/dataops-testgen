@@ -74,6 +74,14 @@ class ScoreExplorerPage(Page):
                 return
 
             project_code = original_score_definition.project_code
+
+            if not session.auth.user_has_project_access(project_code):
+                self.router.navigate_with_warning(
+                    "You don't have access to view this resource. Redirecting ...",
+                    "quality-dashboard",
+                )
+                return
+
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
 
