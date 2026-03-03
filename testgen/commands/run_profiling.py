@@ -6,7 +6,12 @@ from uuid import UUID
 
 import testgen.common.process_service as process_service
 from testgen import settings
-from testgen.commands.queries.profiling_query import HygieneIssueType, ProfilingSQL, TableSampling
+from testgen.commands.queries.profiling_query import (
+    HygieneIssueType,
+    ProfilingSQL,
+    TableSampling,
+    calculate_sampling_params,
+)
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
@@ -142,25 +147,17 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
     LOG.info(f"Running column profiling queries: {len(data_chars)}")
     table_group = sql_generator.table_group
     sampling_params: dict[str, TableSampling] = {}
-    sample_percent = (
-        float(table_group.profile_sample_percent)
-        if str(table_group.profile_sample_percent).replace(".", "", 1).isdigit()
-        else 30
-    )
-    if table_group.profile_use_sampling and 0 < sample_percent < 100:
-        min_sample = table_group.profile_sample_min_count
-        max_sample = 999000
+    if table_group.profile_use_sampling:
         for column in data_chars:
-            if not sampling_params.get(column.table_name) and column.record_ct > min_sample:
-                calc_sample = round(sample_percent * column.record_ct / 100)
-                sample_count = min(max(calc_sample, min_sample), max_sample)
-
-                sampling_params[column.table_name] = TableSampling(
+            if not sampling_params.get(column.table_name):
+                result = calculate_sampling_params(
                     table_name=column.table_name,
-                    sample_count=sample_count,
-                    sample_ratio=column.record_ct / sample_count,
-                    sample_percent=round(100 * sample_count / column.record_ct, 4),
+                    record_count=column.record_ct,
+                    sample_percent_raw=table_group.profile_sample_percent,
+                    min_sample=table_group.profile_sample_min_count,
                 )
+                if result:
+                    sampling_params[column.table_name] = result
 
     def update_column_progress(progress: ThreadedProgress) -> None:
         profiling_run.set_progress(
