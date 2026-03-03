@@ -21,9 +21,9 @@ def render(log_level: int = logging.INFO):
         page_title="TestGen",
         page_icon=get_asset_path("favicon.ico"),
         layout="wide",
-        # Collapse when logging out because the sidebar takes some time to be removed from the DOM
+        # Collapse when logging out or on the no-project page (no sidebar content on either)
         initial_sidebar_state="collapsed"
-            if session.auth and session.auth.logging_out
+            if (session.auth and session.auth.logging_out) or session.current_page == "no-project"
             else "auto",
     )
 
@@ -39,9 +39,12 @@ def render(log_level: int = logging.INFO):
 
     set_locale()
 
-    session.sidebar_project = (
-        session.page_args_pending_router and session.page_args_pending_router.get("project_code")
-    ) or st.query_params.get("project_code", session.sidebar_project)
+    if session.auth.logging_out:
+        session.sidebar_project = None
+    else:
+        session.sidebar_project = (
+            session.page_args_pending_router and session.page_args_pending_router.get("project_code")
+        ) or st.query_params.get("project_code", session.sidebar_project)
 
     if not session.auth.is_logged_in and not session.auth.logging_out:
         session.auth.load_user_session()
@@ -59,19 +62,20 @@ def render(log_level: int = logging.INFO):
             except Exception:
                 current_page = ""
         is_global_context = current_page in application.global_admin_paths
-        with st.sidebar:
-            testgen.sidebar(
-                projects=[] if is_global_context else [
-                    p for p in Project.select_where() if session.auth.user_has_project_access(p.project_code)
-                ],
-                current_project=None if is_global_context else session.sidebar_project,
-                menu=application.menu,
-                current_page=session.current_page,
-                version=version_service.get_version(),
-                support_email=settings.SUPPORT_EMAIL,
-                global_context=is_global_context,
-                is_global_admin=session.auth.user_has_permission("global_admin") and bool(application.global_admin_paths),
-            )
+        if current_page != "no-project":
+            with st.sidebar:
+                testgen.sidebar(
+                    projects=[] if is_global_context else [
+                        p for p in Project.select_where() if session.auth.user_has_project_access(p.project_code)
+                    ],
+                    current_project=None if is_global_context else session.sidebar_project,
+                    menu=application.menu,
+                    current_page=session.current_page,
+                    version=version_service.get_version(),
+                    support_email=settings.SUPPORT_EMAIL,
+                    global_context=is_global_context,
+                    is_global_admin=session.auth.user_has_permission("global_admin") and bool(application.global_admin_paths),
+                )
 
     application.router.run()
 

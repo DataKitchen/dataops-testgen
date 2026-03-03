@@ -87,7 +87,8 @@ def on_change():
         # (even though it works fine locally)
         time.sleep(0.3)
     else:
+        query_params = event_data.get("params", {})
         Router().queue_navigation(
-            to=event_data.get("path") or session.auth.default_page,
-            with_args=event_data.get("params", {}),
+            to=event_data.get("path") or session.auth.get_default_page(project_code=query_params.get("project_code")),
+            with_args=query_params,
         )

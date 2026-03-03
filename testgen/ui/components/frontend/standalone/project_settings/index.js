@@ -159,6 +159,7 @@ export default (component) => {
   }
 
   return () => {
+    Streamlit.disableV2(setTriggerValue);
     parentElement.state = null;
   };
 };

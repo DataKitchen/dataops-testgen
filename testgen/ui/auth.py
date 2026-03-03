@@ -41,12 +41,11 @@ class Authentication:
     def current_project(self) -> str | None:
         return session.sidebar_project
 
-    @property
-    def default_page(self) -> str | None:
+    def get_default_page(self, _project_code: str | None = None) -> str:
         return "project-dashboard" if self.user else ""
 
     def user_has_permission(self, permission: Permission, /, project_code: str | None = None) -> bool:  # noqa: ARG002
-        return True  # Dev/open-source: permissive, including global_admin
+        return True
 
     def user_has_project_access(self, project_code: str) -> bool:  # noqa: ARG002
         return True
