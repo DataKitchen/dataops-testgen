@@ -1,9 +1,11 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.mcp.permissions import get_project_access, mcp_permission
 
 
 @with_database_session
+@mcp_permission("view")
 def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit: int = 1) -> str:
     """Get the latest test runs for each test suite in a project, optionally filtered by test suite name.
 
@@ -14,6 +16,9 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
     """
     if not project_code:
         return "Missing required parameter `project_code`."
+
+    access = get_project_access()
+    access.verify_access(project_code, not_found=f"No completed test runs found in project `{project_code}`.")
 
     test_suite_id = None
     if test_suite:

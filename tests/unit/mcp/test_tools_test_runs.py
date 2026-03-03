@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+from testgen.mcp.permissions import ProjectAccess
+
 
 def _make_run_summary(**overrides):
     defaults = {
@@ -130,3 +132,42 @@ def test_get_recent_test_runs_empty_project_code(db_session_mock):
 
     assert "Missing required parameter" in result
     assert "project_code" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_recent_test_runs_returns_not_found_for_inaccessible_project(
+    mock_compute, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"other_project": "admin"},
+        permission="view",
+        allowed_codes=frozenset(["other_project"]),
+    )
+
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("secret_project")
+
+    assert "No completed test runs found in project `secret_project`" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_recent_test_runs_returns_denial_for_insufficient_permission(
+    mock_compute, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"other_project": "admin", "secret_project": "catalog"},
+        permission="view",
+        allowed_codes=frozenset(["other_project"]),
+    )
+
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("secret_project")
+
+    assert "necessary permission" in result
+    assert "role" in result.lower()

@@ -10,7 +10,7 @@ import shutil
 from collections.abc import Generator
 from pathlib import Path
 from types import ModuleType
-from typing import ClassVar
+from typing import ClassVar, get_args
 
 from testgen.ui.assets import get_asset_path
 from testgen.ui.auth import Authentication
@@ -109,6 +109,13 @@ class RBACProvider:
     def check_permission(_user: object, _permission: str) -> bool:
         return True
 
+    @staticmethod
+    def get_roles_with_permission(_permission: str) -> list[str]:
+        """Return roles that have the given permission. OS default: all roles."""
+        from testgen.common.models.project_membership import RoleType
+
+        return list(get_args(RoleType))
+
 
 class PluginSpec:
     rbac: ClassVar[type[RBACProvider]] = RBACProvider
@@ -116,6 +123,14 @@ class PluginSpec:
     pages: ClassVar[list[type[Page]]] = []
     logo: ClassVar[type[Logo] | None] = None
     component: ClassVar[ComponentSpec | None] = None
+
+    @classmethod
+    def configure_ui(cls) -> None:
+        """Populate UI-related class attributes (pages, auth, logo, component).
+
+        Override this in plugins to defer Streamlit-dependent imports until Streamlit
+        is actually running. Called by ``Plugin.load_streamlit()``, never by ``Plugin.load()``.
+        """
 
 
 class PluginHook:
@@ -156,8 +171,9 @@ class Plugin:
         return spec or PluginSpec
 
     def load_streamlit(self) -> type[PluginSpec]:
-        """Full Streamlit load. Calls load() first, then returns spec for UI access."""
+        """Full Streamlit load. Calls load() first, then configure_ui() for UI attributes."""
         spec = self.load()
+        spec.configure_ui()
         if spec is not PluginSpec:
             return spec
 

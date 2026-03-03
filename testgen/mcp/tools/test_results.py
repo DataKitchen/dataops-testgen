@@ -3,6 +3,7 @@ from uuid import UUID
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
+from testgen.mcp.permissions import get_project_access, mcp_permission
 
 
 def _parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -21,6 +22,7 @@ def _parse_status(value: str) -> TestResultStatus:
 
 
 @with_database_session
+@mcp_permission("view")
 def get_test_results(
     test_run_id: str,
     status: str | None = None,
@@ -43,6 +45,8 @@ def get_test_results(
     status_enum = _parse_status(status) if status else None
     offset = (page - 1) * limit
 
+    access = get_project_access()
+
     results = TestResult.select_results(
         test_run_id=run_uuid,
         status=status_enum,
@@ -50,6 +54,7 @@ def get_test_results(
         test_type=test_type,
         limit=limit,
         offset=offset,
+        project_codes=access.query_codes,
     )
 
     if not results:
@@ -88,6 +93,7 @@ def get_test_results(
 
 
 @with_database_session
+@mcp_permission("view")
 def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
     """Get a summary of test failures (Failed and Warning) grouped by test type, table name, or column.
 
@@ -97,10 +103,12 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
     """
     run_uuid = _parse_uuid(test_run_id, "test_run_id")
 
+    access = get_project_access()
+
     # Map public param names to model field names
     model_group_map = {"table": "table_name", "column": "column_names"}
     model_group_by = model_group_map.get(group_by, group_by)
-    failures = TestResult.select_failures(test_run_id=run_uuid, group_by=model_group_by)
+    failures = TestResult.select_failures(test_run_id=run_uuid, group_by=model_group_by, project_codes=access.query_codes)
 
     if not failures:
         return f"No confirmed failures found for run `{test_run_id}`."
@@ -150,6 +158,7 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
 
 
 @with_database_session
+@mcp_permission("view")
 def get_test_result_history(
     test_definition_id: str,
     limit: int = 20,
@@ -164,7 +173,10 @@ def get_test_result_history(
     """
     def_uuid = _parse_uuid(test_definition_id, "test_definition_id")
     offset = (page - 1) * limit
-    results = TestResult.select_history(test_definition_id=def_uuid, limit=limit, offset=offset)
+
+    access = get_project_access()
+
+    results = TestResult.select_history(test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=access.query_codes)
 
     if not results:
         return f"No historical results found for test definition `{test_definition_id}`."

@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+from testgen.mcp.permissions import ProjectAccess
+
 
 @patch("testgen.mcp.services.inventory_service.get_inventory")
 def test_get_data_inventory_returns_markdown(mock_get_inventory, db_session_mock):
@@ -12,6 +14,67 @@ def test_get_data_inventory_returns_markdown(mock_get_inventory, db_session_mock
 
     assert "Data Inventory" in result
     mock_get_inventory.assert_called_once()
+
+
+@patch("testgen.mcp.services.inventory_service.get_inventory")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_data_inventory_passes_project_codes_for_scoped_user(
+    mock_compute, mock_get_inventory, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "catalog"},
+        permission="catalog",
+        allowed_codes=frozenset(["proj_a"]),
+    )
+    mock_get_inventory.return_value = "# Data Inventory"
+
+    from testgen.mcp.tools.discovery import get_data_inventory
+
+    get_data_inventory()
+
+    # query_codes_for("view") calls PluginHook — but catalog != view, so it goes through the branch.
+    # For this test, we verify the call was made with list form of allowed_codes for project_codes.
+    call_kwargs = mock_get_inventory.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
+
+
+@patch("testgen.mcp.services.inventory_service.get_inventory")
+@patch("testgen.mcp.permissions.PluginHook")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_data_inventory_view_codes_for_scoped_user(
+    mock_compute, mock_hook, mock_get_inventory, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "catalog", "proj_b": "admin"},
+        permission="catalog",
+        allowed_codes=frozenset(["proj_a", "proj_b"]),
+    )
+    # "view" allows admin but not catalog
+    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+    mock_get_inventory.return_value = "# Data Inventory"
+
+    from testgen.mcp.tools.discovery import get_data_inventory
+
+    get_data_inventory()
+
+    call_kwargs = mock_get_inventory.call_args.kwargs
+    assert call_kwargs["view_project_codes"] == ["proj_b"]
+
+
+@patch("testgen.mcp.services.inventory_service.get_inventory")
+def test_get_data_inventory_passes_none_for_global_admin(mock_get_inventory, db_session_mock, mcp_user):
+    mcp_user.is_global_admin = True
+    mock_get_inventory.return_value = "# Data Inventory"
+
+    from testgen.mcp.tools.discovery import get_data_inventory
+
+    get_data_inventory()
+
+    mock_get_inventory.assert_called_once_with(project_codes=None, view_project_codes=None)
 
 
 @patch("testgen.mcp.tools.discovery.Project")
@@ -42,6 +105,33 @@ def test_list_projects_empty(mock_project, db_session_mock):
     result = list_projects()
 
     assert "No projects found" in result
+
+
+@patch("testgen.mcp.tools.discovery.Project")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_list_projects_filters_for_scoped_user(mock_compute, mock_project, db_session_mock, mcp_user):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"demo": "admin"},
+        permission="catalog",
+        allowed_codes=frozenset(["demo"]),
+    )
+
+    proj1 = MagicMock()
+    proj1.project_name = "Demo Project"
+    proj1.project_code = "demo"
+    proj2 = MagicMock()
+    proj2.project_name = "Secret"
+    proj2.project_code = "secret"
+    mock_project.select_where.return_value = [proj1, proj2]
+
+    from testgen.mcp.tools.discovery import list_projects
+
+    result = list_projects()
+
+    assert "Demo Project" in result
+    assert "Secret" not in result
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
@@ -90,3 +180,67 @@ def test_list_test_suites_empty_project_code(db_session_mock):
 
     assert "Missing required parameter" in result
     assert "project_code" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_list_test_suites_returns_not_found_for_inaccessible_project(
+    mock_compute, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"other_project": "admin"},
+        permission="view",
+        allowed_codes=frozenset(["other_project"]),
+    )
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("secret_project")
+
+    assert "No test suites found for project `secret_project`" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_list_test_suites_returns_denial_for_insufficient_permission(
+    mock_compute, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"other_project": "admin", "secret_project": "catalog"},
+        permission="view",
+        allowed_codes=frozenset(["other_project"]),
+    )
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    result = list_test_suites("secret_project")
+
+    assert "necessary permission" in result
+    assert "role" in result.lower()
+
+
+@patch("testgen.mcp.tools.discovery.DataTable")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_list_tables_returns_not_found_for_inaccessible_group(
+    mock_compute, mock_dt, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "admin"},
+        permission="catalog",
+        allowed_codes=frozenset(["proj_a"]),
+    )
+    mock_dt.select_table_names.return_value = []
+    mock_dt.count_tables.return_value = 0
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    result = list_tables(str(uuid4()))
+
+    assert "No tables found" in result
+    mock_dt.select_table_names.assert_called_once()
+    call_kwargs = mock_dt.select_table_names.call_args
+    assert call_kwargs.kwargs["project_codes"] == ["proj_a"]

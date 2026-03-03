@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
+from testgen.common.models.test_suite import TestSuite
 
 
 class TestResultStatus(enum.Enum):
@@ -59,6 +60,7 @@ class TestResult(Entity):
         status: TestResultStatus | None = None,
         table_name: str | None = None,
         test_type: str | None = None,
+        project_codes: list[str] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[Self]:
@@ -72,13 +74,19 @@ class TestResult(Entity):
             clauses.append(cls.table_name == table_name)
         if test_type:
             clauses.append(cls.test_type == test_type)
-        query = select(cls).where(*clauses).order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
+        query = select(cls).where(*clauses)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
 
     @classmethod
     def select_failures(
         cls,
         test_run_id: UUID,
+        project_codes: list[str] | None = None,
         group_by: str = "test_type",
     ) -> list[tuple]:
         allowed = {"test_type", "table_name", "column_names"}
@@ -99,28 +107,28 @@ class TestResult(Entity):
         else:
             group_cols = (getattr(cls, group_by),)
 
-        query = (
-            select(*group_cols, func.count().label("failure_count"))
-            .where(*where)
-            .group_by(*group_cols)
-            .order_by(func.count().desc())
-        )
+        query = select(*group_cols, func.count().label("failure_count")).where(*where)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.group_by(*group_cols).order_by(func.count().desc())
         return get_current_session().execute(query).all()
 
     @classmethod
     def select_history(
         cls,
         test_definition_id: UUID,
+        project_codes: list[str] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[Self]:
-        query = (
-            select(cls)
-            .where(cls.test_definition_id == test_definition_id)
-            .order_by(desc(cls.test_time))
-            .offset(offset)
-            .limit(limit)
-        )
+        query = select(cls).where(cls.test_definition_id == test_definition_id)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.order_by(desc(cls.test_time)).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
 
     @classmethod

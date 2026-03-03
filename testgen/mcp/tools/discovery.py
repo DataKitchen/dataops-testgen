@@ -4,27 +4,33 @@ from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
 from testgen.common.models.test_suite import TestSuite
+from testgen.mcp.permissions import get_project_access, mcp_permission
 
 
 @with_database_session
+@mcp_permission("catalog")
 def get_data_inventory() -> str:
-    """Get a structural inventory of all projects, connections, table groups, and test suites.
+    """Get a structural inventory of all projects, connections, table groups, and test suites
+    accessible to the authenticated user.
 
     This is the recommended starting point for understanding the data quality landscape.
-    Returns a structured markdown overview of the entire TestGen configuration.
+    Returns a structured markdown overview of the TestGen configuration.
     """
     from testgen.mcp.services.inventory_service import get_inventory
 
-    return get_inventory()
+    access = get_project_access()
+    return get_inventory(project_codes=access.query_codes, view_project_codes=access.query_codes_for("view"))
 
 
 @with_database_session
+@mcp_permission("catalog")
 def list_projects() -> str:
-    """List all configured projects.
+    """List all projects the authenticated user has access to.
 
     Returns project codes and names. Use these to scope queries to specific projects.
     """
-    projects = Project.select_where()
+    access = get_project_access()
+    projects = [p for p in Project.select_where() if access.has_access(p.project_code)]
 
     if not projects:
         return "No projects found."
@@ -37,6 +43,7 @@ def list_projects() -> str:
 
 
 @with_database_session
+@mcp_permission("view")
 def list_test_suites(project_code: str) -> str:
     """List all test suites for a project with their latest run statistics.
 
@@ -45,6 +52,9 @@ def list_test_suites(project_code: str) -> str:
     """
     if not project_code:
         return "Missing required parameter `project_code`."
+
+    access = get_project_access()
+    access.verify_access(project_code, not_found=f"No test suites found for project `{project_code}`.")
 
     summaries = TestSuite.select_summary(project_code)
 
@@ -79,6 +89,7 @@ def list_test_suites(project_code: str) -> str:
 
 
 @with_database_session
+@mcp_permission("catalog")
 def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
     """List tables in a table group.
 
@@ -92,9 +103,12 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
     except (ValueError, AttributeError) as err:
         raise ValueError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
 
+    access = get_project_access()
+    project_codes = access.query_codes
+
     offset = (page - 1) * limit
-    table_names = DataTable.select_table_names(group_uuid, limit=limit, offset=offset)
-    total = DataTable.count_tables(group_uuid)
+    table_names = DataTable.select_table_names(group_uuid, limit=limit, offset=offset, project_codes=project_codes)
+    total = DataTable.count_tables(group_uuid, project_codes=project_codes)
 
     if not table_names:
         if page > 1:

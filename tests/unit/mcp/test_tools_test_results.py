@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.test_result import TestResultStatus
+from testgen.mcp.permissions import ProjectAccess
 
 
 @patch("testgen.mcp.tools.test_results.TestType")
@@ -72,6 +73,26 @@ def test_get_test_results_invalid_status(db_session_mock):
 
     with pytest.raises(ValueError, match="Invalid status"):
         get_test_results(str(uuid4()), status="BadStatus")
+
+
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_test_results_passes_project_codes(mock_compute, mock_result, db_session_mock, mcp_user):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "admin"},
+        permission="view",
+        allowed_codes=frozenset(["proj_a"]),
+    )
+    mock_result.select_results.return_value = []
+
+    from testgen.mcp.tools.test_results import get_test_results
+
+    get_test_results(str(uuid4()))
+
+    call_kwargs = mock_result.select_results.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
 
 
 @patch("testgen.mcp.tools.test_results.TestType")
@@ -149,6 +170,28 @@ def test_get_failure_summary_invalid_uuid(db_session_mock):
         get_failure_summary("bad-uuid")
 
 
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_failure_summary_passes_project_codes(
+    mock_compute, mock_result, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "admin"},
+        permission="view",
+        allowed_codes=frozenset(["proj_a"]),
+    )
+    mock_result.select_failures.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    get_failure_summary(str(uuid4()))
+
+    call_kwargs = mock_result.select_failures.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
+
+
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock):
@@ -205,3 +248,25 @@ def test_get_test_result_history_invalid_uuid(db_session_mock):
 
     with pytest.raises(ValueError, match="not a valid UUID"):
         get_test_result_history("bad-uuid")
+
+
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_access")
+def test_get_test_result_history_passes_project_codes(
+    mock_compute, mock_result, db_session_mock, mcp_user,
+):
+    mcp_user.is_global_admin = False
+    mock_compute.return_value = ProjectAccess(
+        is_unrestricted=False,
+        memberships={"proj_a": "admin"},
+        permission="view",
+        allowed_codes=frozenset(["proj_a"]),
+    )
+    mock_result.select_history.return_value = []
+
+    from testgen.mcp.tools.test_results import get_test_result_history
+
+    get_test_result_history(str(uuid4()))
+
+    call_kwargs = mock_result.select_history.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]

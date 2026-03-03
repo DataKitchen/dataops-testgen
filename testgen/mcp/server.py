@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 from testgen import settings
 from testgen.common.auth import decode_jwt_token
 from testgen.common.models import with_database_session
+from testgen.mcp.permissions import set_mcp_username
 
 LOG = logging.getLogger("testgen")
 
@@ -41,6 +42,7 @@ class JWTTokenVerifier:
     async def verify_token(self, token: str) -> AccessToken | None:
         try:
             payload = decode_jwt_token(token)
+            set_mcp_username(payload["username"])
             return AccessToken(
                 token=token,
                 client_id=payload["username"],
@@ -49,6 +51,30 @@ class JWTTokenVerifier:
             )
         except (ValueError, KeyError):
             return None
+
+
+# Uvicorn log config: strip default handlers so logs propagate to the testgen logger.
+_UVICORN_LOG_CONFIG: dict = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "loggers": {
+        "uvicorn": {"handlers": [], "propagate": True},
+        "uvicorn.access": {"handlers": [], "propagate": True},
+        "uvicorn.error": {"handlers": [], "propagate": True},
+    },
+}
+
+
+def _configure_mcp_logging() -> None:
+    """Route FastMCP and uvicorn logs through the testgen logger."""
+    testgen_logger = logging.getLogger("testgen")
+
+    # FastMCP.__init__ calls basicConfig() which adds a RichHandler to the root logger — remove it
+    logging.getLogger().handlers.clear()
+
+    # Reparent top-level third-party loggers so they (and their children) propagate through testgen's handler
+    for name in ("mcp", "uvicorn"):
+        logging.getLogger(name).parent = testgen_logger
 
 
 def run_mcp() -> None:
@@ -62,10 +88,7 @@ def run_mcp() -> None:
     from testgen.utils.plugins import discover
 
     for plugin in discover():
-        try:
-            plugin.load()
-        except Exception:
-            LOG.debug("Plugin %s skipped (not loadable in MCP context)", plugin.package)
+        plugin.load()
 
     server_url = with_database_session(get_server_url)()
 
@@ -80,6 +103,7 @@ def run_mcp() -> None:
         ),
         token_verifier=JWTTokenVerifier(),
     )
+    _configure_mcp_logging()
 
     # Tools (9)
     mcp.tool()(get_data_inventory)
@@ -104,11 +128,13 @@ def run_mcp() -> None:
 
     LOG.info("Starting MCP server on %s:%s (auth issuer: %s)", settings.MCP_HOST, settings.MCP_PORT, server_url)
 
+    import uvicorn
+
+    app = mcp.streamable_http_app()
+
     if settings.IS_DEBUG:
-        import uvicorn
         from starlette.middleware.cors import CORSMiddleware
 
-        app = mcp.streamable_http_app()
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -116,6 +142,5 @@ def run_mcp() -> None:
             allow_headers=["*"],
             expose_headers=["Mcp-Session-Id"],
         )
-        uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT)
-    else:
-        mcp.run(transport="streamable-http")
+
+    uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT, log_config=_UVICORN_LOG_CONFIG)

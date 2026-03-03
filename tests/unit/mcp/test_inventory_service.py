@@ -99,3 +99,72 @@ def test_get_inventory_compact_groups(mock_select, session_mock):
     # Compact groups: single line with "X test suites", no "#### Table Group:" headers
     assert "test suites)" in result
     assert "#### Table Group:" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_hides_suites_without_view_permission(mock_select, session_mock):
+    """Suites are hidden for projects where user lacks view permission."""
+    tg_id = uuid4()
+    suite_id = uuid4()
+    row = _make_row(table_group_id=tg_id, test_suite_id=suite_id, test_suite="Secret Suite")
+    session_mock.execute.return_value.all.return_value = [row]
+
+    from testgen.mcp.services.inventory_service import get_inventory
+
+    result = get_inventory(project_codes=["demo"], view_project_codes=[])
+
+    assert "Demo" in result
+    assert "Secret Suite" not in result
+    assert str(suite_id) not in result
+    assert "requires `view` permission" in result
+    assert "1 test suite(s)" in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_shows_suites_with_view_permission(mock_select, session_mock):
+    """Suites are shown for projects where user has view permission."""
+    tg_id = uuid4()
+    suite_id = uuid4()
+    row = _make_row(table_group_id=tg_id, test_suite_id=suite_id, test_suite="Visible Suite")
+    session_mock.execute.return_value.all.return_value = [row]
+
+    from testgen.mcp.services.inventory_service import get_inventory
+
+    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+
+    assert "Visible Suite" in result
+    assert str(suite_id) in result
+    assert "requires `view` permission" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_view_none_shows_all_suites(mock_select, session_mock):
+    """When view_project_codes is None (global admin), all suites shown."""
+    tg_id = uuid4()
+    suite_id = uuid4()
+    row = _make_row(table_group_id=tg_id, test_suite_id=suite_id, test_suite="Admin Suite")
+    session_mock.execute.return_value.all.return_value = [row]
+
+    from testgen.mcp.services.inventory_service import get_inventory
+
+    result = get_inventory(project_codes=None, view_project_codes=None)
+
+    assert "Admin Suite" in result
+    assert "requires `view` permission" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_no_suites_without_view_shows_no_suites(mock_select, session_mock):
+    """When group has no suites and user lacks view, shows 'No test suites'."""
+    tg_id = uuid4()
+    row = _make_row(table_group_id=tg_id, test_suite_id=None, test_suite=None)
+    # Remove the suite from the row
+    row.test_suite_id = None
+    session_mock.execute.return_value.all.return_value = [row]
+
+    from testgen.mcp.services.inventory_service import get_inventory
+
+    result = get_inventory(project_codes=["demo"], view_project_codes=[])
+
+    assert "No test suites" in result
+    assert "requires `view` permission" not in result

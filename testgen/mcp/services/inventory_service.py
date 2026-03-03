@@ -7,8 +7,17 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 
 
-def get_inventory() -> str:
-    """Build a markdown inventory of all projects, connections, table groups, and test suites."""
+def get_inventory(
+    project_codes: list[str] | None = None,
+    view_project_codes: list[str] | None = None,
+) -> str:
+    """Build a markdown inventory of all projects, connections, table groups, and test suites.
+
+    Args:
+        project_codes: Projects the user can see (None = all).
+        view_project_codes: Projects where the user has 'view' permission (None = all).
+            When set, suites are hidden for projects not in this list.
+    """
     session = get_current_session()
 
     query = (
@@ -32,7 +41,13 @@ def get_inventory() -> str:
                 TestSuite.is_monitor.isnot(True),
             ),
         )
-        .order_by(Project.project_name, Connection.connection_name, TableGroup.table_groups_name, TestSuite.test_suite)
+    )
+
+    if project_codes is not None:
+        query = query.where(Project.project_code.in_(project_codes))
+
+    query = query.order_by(
+        Project.project_name, Connection.connection_name, TableGroup.table_groups_name, TestSuite.test_suite,
     )
 
     rows = session.execute(query).all()
@@ -78,6 +93,7 @@ def get_inventory() -> str:
     lines = ["# Data Inventory\n"]
 
     for project_code, proj in projects.items():
+        can_view_suites = view_project_codes is None or project_code in view_project_codes
         lines.append(f"## Project: {proj['name']} (`{project_code}`)\n")
 
         if not proj["connections"]:
@@ -102,6 +118,15 @@ def get_inventory() -> str:
                 lines.append(
                     f"#### Table Group: {group['name']} (id: `{group_id}`, schema: `{group['schema']}`)\n"
                 )
+
+                if not can_view_suites:
+                    if group["suites"]:
+                        lines.append(
+                            f"_{len(group['suites'])} test suite(s) — requires `view` permission._\n"
+                        )
+                    else:
+                        lines.append("_No test suites._\n")
+                    continue
 
                 if not group["suites"]:
                     lines.append("_No test suites._\n")

@@ -5,6 +5,7 @@ from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
+from testgen.common.models.table_group import TableGroup
 
 
 class DataTable(Entity):
@@ -23,17 +24,22 @@ class DataTable(Entity):
     # dq_score_profiling, dq_score_testing
 
     @classmethod
-    def select_table_names(cls, table_groups_id: UUID, limit: int = 100, offset: int = 0) -> list[str]:
-        query = (
-            select(cls.table_name)
-            .where(cls.table_groups_id == table_groups_id)
-            .order_by(asc(func.lower(cls.table_name)))
-            .offset(offset)
-            .limit(limit)
-        )
+    def select_table_names(
+        cls, table_groups_id: UUID, project_codes: list[str] | None = None, limit: int = 100, offset: int = 0,
+    ) -> list[str]:
+        query = select(cls.table_name).where(cls.table_groups_id == table_groups_id)
+        if project_codes is not None:
+            query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
+                TableGroup.project_code.in_(project_codes)
+            )
+        query = query.order_by(asc(func.lower(cls.table_name))).offset(offset).limit(limit)
         return list(get_current_session().scalars(query).all())
 
     @classmethod
-    def count_tables(cls, table_groups_id: UUID) -> int:
-        query = select(func.count()).where(cls.table_groups_id == table_groups_id)
+    def count_tables(cls, table_groups_id: UUID, project_codes: list[str] | None = None) -> int:
+        query = select(func.count()).select_from(cls).where(cls.table_groups_id == table_groups_id)
+        if project_codes is not None:
+            query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
+                TableGroup.project_code.in_(project_codes)
+            )
         return get_current_session().scalar(query) or 0
