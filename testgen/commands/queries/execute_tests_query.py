@@ -78,6 +78,150 @@ class AggregateResult(TypedDict):
     result_codes: str
 
 
+def build_cat_expressions(
+    measure: str,
+    test_operator: str,
+    test_condition: str,
+    history_calculation: str,
+    lower_tolerance: str,
+    upper_tolerance: str,
+    varchar_type: str,
+    concat_operator: str,
+    null_value: str = "<NULL>",
+) -> tuple[str, str]:
+    """Build measure_expression and condition_expression for a CAT test.
+
+    Args:
+        measure: Already-resolved measure SQL expression.
+        test_operator: Comparison operator (e.g., "=", "BETWEEN").
+        test_condition: Already-resolved test condition SQL expression.
+        history_calculation: "PREDICT" for prediction mode, anything else for normal.
+        lower_tolerance: Lower tolerance value (empty/None means training mode for PREDICT).
+        upper_tolerance: Upper tolerance value (empty/None means training mode for PREDICT).
+        varchar_type: DB-specific varchar type (e.g., "VARCHAR", "STRING").
+        concat_operator: DB-specific concat operator (e.g., "||", "+").
+        null_value: Sentinel string for NULL values.
+
+    Returns:
+        (measure_expression, condition_expression)
+    """
+    measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{null_value}|')"
+
+    # For prediction mode, return -1 during training period
+    if history_calculation == "PREDICT" and (lower_tolerance in (None, "") or upper_tolerance in (None, "")):
+        condition_expression = "'-1,'"
+    else:
+        condition = (
+            f"{measure} {test_operator} {test_condition}"
+            if "BETWEEN" in test_operator
+            else f"{measure}{test_operator}{test_condition}"
+        )
+        condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
+
+    return measure_expression, condition_expression
+
+
+def group_cat_tests(
+    test_defs: list[TestExecutionDef],
+    max_query_chars: int,
+    concat_operator: str,
+    single: bool = False,
+) -> list[list[TestExecutionDef]]:
+    """Group test defs into batches respecting character limit.
+
+    All test defs must have measure_expression and condition_expression set.
+
+    Args:
+        test_defs: List of test defs with expressions already set.
+        max_query_chars: Maximum characters per query.
+        concat_operator: DB-specific concat operator for calculating expression size.
+        single: If True, put each test def in its own group.
+
+    Returns:
+        List of groups, where each group is a list of test defs.
+    """
+    if single:
+        return [[td] for td in test_defs]
+
+    test_defs_by_table: dict[tuple[str, str], list[TestExecutionDef]] = {}
+    for td in test_defs:
+        table = (td.schema_name, td.table_name)
+        if not test_defs_by_table.get(table):
+            test_defs_by_table[table] = []
+        test_defs_by_table[table].append(td)
+
+    groups: list[list[TestExecutionDef]] = []
+    for table_test_defs in test_defs_by_table.values():
+        current_chars = 0
+        current_group: list[TestExecutionDef] = []
+
+        for td in table_test_defs:
+            td_chars = len(td.measure_expression) + len(td.condition_expression) + 2 * len(concat_operator)
+            if (current_chars + td_chars) > max_query_chars:
+                if current_group:
+                    groups.append(current_group)
+                current_chars = 0
+                current_group = []
+
+            current_chars += td_chars
+            current_group.append(td)
+
+        if current_group:
+            groups.append(current_group)
+
+    return groups
+
+
+def parse_cat_results(
+    aggregate_results: list[AggregateResult],
+    aggregate_test_defs: list[list[TestExecutionDef]],
+    test_run_id: UUID,
+    test_suite_id: UUID | str,
+    test_starttime: datetime,
+    input_parameters_fn,
+    null_value: str = "<NULL>",
+) -> list[list]:
+    """Parse aggregate query results into individual test result rows.
+
+    Args:
+        aggregate_results: List of aggregate result dicts from DB.
+        aggregate_test_defs: List of test def groups matching the queries.
+        test_run_id: ID of the current test run.
+        test_suite_id: ID of the test suite.
+        test_starttime: Start time of the test run.
+        input_parameters_fn: Callable that takes a TestExecutionDef and returns input params string.
+        null_value: Sentinel string for NULL values.
+
+    Returns:
+        List of result rows (each row is a list of values).
+    """
+    test_results: list[list] = []
+    for result in aggregate_results:
+        test_defs = aggregate_test_defs[result["query_index"]]
+        result_measures = result["result_measures"].split("|")
+        result_codes = result["result_codes"].split(",")
+
+        for index, td in enumerate(test_defs):
+            test_results.append([
+                test_run_id,
+                test_suite_id,
+                test_starttime,
+                td.id,
+                td.test_type,
+                td.schema_name,
+                td.table_name,
+                td.column_name,
+                td.skip_errors or 0,
+                input_parameters_fn(td),
+                result_codes[index],
+                None,  # result_status will be calculated later
+                None,  # No result_message
+                result_measures[index] if result_measures[index] != null_value else None,
+            ])
+
+    return test_results
+
+
 class TestExecutionSQL:
 
     null_value = "<NULL>"
@@ -225,7 +369,7 @@ class TestExecutionSQL:
             query = query.replace(":", "\\:")
 
         return query, None if no_bind else params
-    
+
     def has_schema_changes(self) -> tuple[dict]:
         # Runs on App database
         return self._get_query("has_schema_changes.sql")
@@ -313,69 +457,37 @@ class TestExecutionSQL:
 
                 measure = replace_params(td.measure, params)
                 measure = replace_templated_functions(measure, self.flavor)
-                td.measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{self.null_value}|')"
+                condition = replace_params(td.test_condition, params)
+                condition = replace_templated_functions(condition, self.flavor)
 
-                # For prediction mode, return -1 during training period
-                if td.history_calculation == "PREDICT" and (td.lower_tolerance in (None, "") or td.upper_tolerance in (None, "")):
-                    td.condition_expression = "'-1,'"
-                else:
-                    condition = (
-                        f"{td.measure} {td.test_operator} {td.test_condition}"
-                        if "BETWEEN" in td.test_operator
-                        else f"{td.measure}{td.test_operator}{td.test_condition}"
-                    )
-                    condition = replace_params(condition, params)
-                    condition = replace_templated_functions(condition, self.flavor)
-                    td.condition_expression = f"CASE WHEN {condition} THEN '0,' ELSE '1,' END"
+                td.measure_expression, td.condition_expression = build_cat_expressions(
+                    measure=measure,
+                    test_operator=td.test_operator,
+                    test_condition=condition,
+                    history_calculation=td.history_calculation,
+                    lower_tolerance=td.lower_tolerance,
+                    upper_tolerance=td.upper_tolerance,
+                    varchar_type=varchar_type,
+                    concat_operator=concat_operator,
+                    null_value=self.null_value,
+                )
+
+        max_query_chars = self.connection.max_query_chars - 400
+        groups = group_cat_tests(test_defs, max_query_chars, concat_operator, single)
 
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
-
-        def add_query(test_defs: list[TestExecutionDef]) -> str:
-            if not test_defs:
-                return
-
+        for group in groups:
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
-                f"{concat_operator.join([td.measure_expression for td in test_defs])} AS result_measures, "
-                f"{concat_operator.join([td.condition_expression for td in test_defs])} AS result_codes "
-                f"FROM {quote}{test_defs[0].schema_name}{quote}.{quote}{test_defs[0].table_name}{quote}"
+                f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
+                f"{concat_operator.join([td.condition_expression for td in group])} AS result_codes "
+                f"FROM {quote}{group[0].schema_name}{quote}.{quote}{group[0].table_name}{quote}"
             )
             query = query.replace(":", "\\:")
 
             aggregate_queries.append((query, None))
-            aggregate_test_defs.append(test_defs)
-
-        if single:
-            for td in test_defs:
-                # Add separate query for each test
-                add_query([td])
-        else:
-            test_defs_by_table: dict[tuple[str, str], list[TestExecutionDef]] = {}
-            for td in test_defs:
-                table = (td.schema_name, td.table_name)
-                if not test_defs_by_table.get(table):
-                    test_defs_by_table[table] = []
-                test_defs_by_table[table].append(td)
-
-            max_query_chars = self.connection.max_query_chars - 400
-            for test_defs in test_defs_by_table.values():
-                # Add new query for each table
-                current_chars = 0
-                current_test_defs = []
-
-                for td in test_defs:
-                    td_chars = len(td.measure_expression) + len(td.condition_expression) + 2 * len(concat_operator)
-                    # Add new query if current query will become bigger than character limit
-                    if (current_chars + td_chars) > max_query_chars:
-                        add_query(current_test_defs)
-                        current_chars = 0
-                        current_test_defs = []
-
-                    current_chars += td_chars
-                    current_test_defs.append(td)
-
-                add_query(current_test_defs)
+            aggregate_test_defs.append(group)
 
         return aggregate_queries, aggregate_test_defs
 
@@ -384,31 +496,15 @@ class TestExecutionSQL:
         aggregate_results: list[AggregateResult],
         aggregate_test_defs: list[list[TestExecutionDef]],
     ) -> list[list[UUID | str | datetime | int | None]]:
-        test_results: list[list[UUID | str | datetime | int | None]] = []
-        for result in aggregate_results:
-            test_defs = aggregate_test_defs[result["query_index"]]
-            result_measures = result["result_measures"].split("|")
-            result_codes = result["result_codes"].split(",")
-
-            for index, td in enumerate(test_defs):
-                test_results.append([
-                    self.test_run.id,
-                    self.test_run.test_suite_id,
-                    self.test_run.test_starttime,
-                    td.id,
-                    td.test_type,
-                    td.schema_name,
-                    td.table_name,
-                    td.column_name,
-                    td.skip_errors or 0,
-                    self._get_input_parameters(td),
-                    result_codes[index],
-                    None, # result_status will be calculated later
-                    None, # No result_message
-                    result_measures[index] if result_measures[index] != self.null_value else None,
-                ])
-
-        return test_results
+        return parse_cat_results(
+            aggregate_results=aggregate_results,
+            aggregate_test_defs=aggregate_test_defs,
+            test_run_id=self.test_run.id,
+            test_suite_id=self.test_run.test_suite_id,
+            test_starttime=self.test_run.test_starttime,
+            input_parameters_fn=self._get_input_parameters,
+            null_value=self.null_value,
+        )
 
     def update_test_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
