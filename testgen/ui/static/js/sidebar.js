@@ -5,6 +5,7 @@
  * @property {(string|null)} icon
  * @property {string} label
  * @property {(string|null)} page
+ * @property {(string|null)} permission
  * @property {(Array.<MenuItem>|null)} items
  *
  * @typedef Version
@@ -33,6 +34,8 @@
  * @property {string} logout_path
  * @property {Version} version
  * @property {string} support_email
+ * @property {boolean} global_context
+ * @property {boolean} is_global_admin
  */
 const van = window.top.van;
 const { a, button, div, i, img, label, option, select, span } = van.tags;
@@ -55,29 +58,45 @@ const Sidebar = (/** @type {Properties} */ props) => {
         {class: 'menu'},
         div(
             {class: 'fx-flex', style: 'overflow-y: auto;'},
+            // Project dropdown — hidden in global admin context
             div(
-                { class: 'menu--project' },
+                {
+                    class: 'menu--project',
+                    style: () => props.global_context?.val ? 'display: none' : '',
+                },
                 div({ class: 'caption' }, 'Project'),
                 () => props.projects.val.length > 1
                     ? ProjectSelect(props.projects, currentProject)
                     : div(currentProject.val?.name ?? '...'),
             ),
             () => {
-                const menuItems = props.menu?.val.items || [];
-                return div(
-                    {class: 'content'},
-                    menuItems.map(item =>
-                        item.items?.length > 0
-                        ? MenuSection(item, props.current_page, currentProject.val?.code)
-                        : MenuItem(item, props.current_page, currentProject.val?.code))
-                );
+                const allItems = props.menu?.val.items || [];
+                if (props.global_context?.val) {
+                    // Global admin context: only show global_admin permission items, flat
+                    const adminItems = allItems.filter(item => !item.items && item.permission === 'global_admin');
+                    return div(
+                        {class: 'content'},
+                        adminItems.map(item => AdminMenuItem(item, props.current_page)),
+                    );
+                } else {
+                    // Project context: filter out global_admin items (they have no section, appear at root level)
+                    const projectItems = allItems.filter(item => item.items || item.permission !== 'global_admin');
+                    return div(
+                        {class: 'content'},
+                        projectItems.map(item =>
+                            item.items?.length > 0
+                            ? MenuSection(item, props.current_page, currentProject.val?.code)
+                            : MenuItem(item, props.current_page, currentProject.val?.code)
+                        ),
+                    );
+                }
             },
         ),
         div(
             div(
                 { class: 'menu--user' },
                 span({class: 'menu--username', title: props.username}, props.username),
-                span({class: 'menu--role'}, props.role.val?.replace('_', ' ')),
+                span({class: 'menu--role'}, () => props.role.val?.replace('_', ' ')),
             ),
             div(
                 { class: 'menu--buttons' },
@@ -100,6 +119,8 @@ const Sidebar = (/** @type {Properties} */ props) => {
                 ) : null,
             ),
         ),
+        // Administration CTA — project context only, global admins only, opens in new tab
+        AdminCTA({ style: () => (!props.global_context?.val && props.is_global_admin?.val) ? '' : 'display: none' }),
     );
 };
 
@@ -183,6 +204,47 @@ const MenuItem = (
         span({class: 'menu--item--label'}, item.label),
     );
 };
+
+// Menu item for global admin context (no project_code in navigation)
+const AdminMenuItem = (
+    /** @type {MenuItem} */ item,
+    /** @type {string} */ currentPage,
+) => {
+    const classes = van.derive(() => {
+        if (isCurrentPage(item.page, currentPage?.val)) {
+            return 'menu--item active';
+        }
+        return 'menu--item';
+    });
+
+    return a(
+        {
+            class: classes,
+            href: `/${item.page}`,
+            onclick: (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                emitEvent({ path: item.page, params: {} });
+            },
+        },
+        i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
+        span({class: 'menu--item--label'}, item.label),
+    );
+};
+
+// Single CTA shown in project context for global admins — opens admin area in new tab
+const AdminCTA = ({ style } = {}) => a(
+    {
+        class: 'menu--item menu--admin-cta',
+        href: '/admin-projects',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        style,
+    },
+    i({class: 'menu--item--icon material-symbols-rounded'}, 'admin_panel_settings'),
+    span({class: 'menu--item--label'}, 'Administration'),
+    i({class: 'menu--admin-cta--icon material-symbols-rounded'}, 'open_in_new'),
+);
 
 function emitEvent(/** @type Object */ data) {
     if (Sidebar.StreamlitInstance) {
@@ -326,7 +388,6 @@ stylesheet.replace(`
 .menu .menu--buttons {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 16px;
 }
 
 .menu--buttons a {
@@ -364,6 +425,18 @@ button.tg-button:hover {
 
 button.tg-button > i:has(+ span:not(.tg-tooltip)) {
     margin-right: 8px;
+}
+
+.menu--admin-cta {
+    margin-top: 4px;
+    border-top: 1px solid var(--disabled-text-color);
+}
+
+.menu--admin-cta--icon {
+    margin-left: auto;
+    font-size: 16px !important;
+    line-height: 16px !important;
+    opacity: 0.6;
 }
 /* ... */
 `);

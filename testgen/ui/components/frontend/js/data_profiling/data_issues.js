@@ -65,7 +65,7 @@ const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Colum
     const potentialPII = item.hygiene_issues.filter(({ issue_likelihood }) => issue_likelihood === 'Potential PII');
     const linkProps = props.noLinks ? null : {
         href: 'profiling-runs:hygiene',
-        params: { run_id: item.profile_run_id, issue_class: 'Potential PII' },
+        params: { run_id: item.profile_run_id, issue_class: 'Potential PII', project_code: item.project_code },
     };
     const noneContent = item.profile_run_id && !item.profiling_error
         ? 'No potential PII detected'
@@ -101,6 +101,7 @@ const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Colu
             run_id: item.profile_run_id,
             table_name: item.table_name,
             column_name: item.column_name,
+            project_code: item.project_code,
         },
     };
     const noneContent = item.profile_run_id && !item.profiling_error
@@ -141,6 +142,7 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
                             table_name: item.table_name,
                             column_name: item.column_name,
                             selected: issue.id,
+                            project_code: item.project_code,
                         },
                         open_new: true,
                         label: formatTimestamp(issue.test_run_date),

@@ -299,3 +299,7 @@ asset_dir = "ui/components/frontend/js"
 [[tool.streamlit.component.components]]
 name = "edit_table_monitors"
 asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "project_settings"
+asset_dir = "ui/components/frontend/standalone/project_settings"

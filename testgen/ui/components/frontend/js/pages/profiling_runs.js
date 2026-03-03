@@ -190,7 +190,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit)),
+                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit, projectSummary.project_code)),
                         ),
                     ),
                     Paginator({
@@ -280,6 +280,7 @@ const ProfilingRunItem = (
     /** @type string[] */ columns,
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
+    /** @type string */ projectCode,
 ) => {
     const runningStep = item.progress?.find((item) => item.status === 'Running');
 
@@ -363,7 +364,7 @@ const ProfilingRunItem = (
             item.status === 'Complete' && item.column_ct ? Link({
                 label: 'View results',
                 href: 'profiling-runs:results',
-                params: { 'run_id': item.id },
+                params: { 'run_id': item.id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
             }) : null,
@@ -381,7 +382,7 @@ const ProfilingRunItem = (
             item.anomaly_ct ? Link({
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
-                params: { 'run_id': item.id },
+                params: { 'run_id': item.id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 4px;',

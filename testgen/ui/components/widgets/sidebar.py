@@ -2,6 +2,7 @@ import logging
 import time
 from collections.abc import Iterable
 
+from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.version_service import Version
 from testgen.ui.components.utils.component import component
@@ -23,6 +24,8 @@ def sidebar(
     current_page: str | None = None,
     version: Version | None = None,
     support_email: str | None = None,
+    global_context: bool = False,
+    is_global_admin: bool = False,
 ) -> None:
     """
     Testgen custom component to display a styled menu over streamlit's
@@ -33,6 +36,7 @@ def sidebar(
     :param username: username to display at the bottom of the menu
     :param menu: menu object with all root pages
     :param current_page: page address to highlight the selected item
+    :param global_context: when True, renders admin-only sidebar (no project nav)
     """
     component(
         id_="sidebar",
@@ -42,16 +46,19 @@ def sidebar(
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
             "username": session.auth.user_display,
-            "role": session.auth.user.role if session.auth.user else None,
+            "role": "" if global_context else (session.auth.role or "-"),
             "logout_path": LOGOUT_PATH,
             "version": version.__dict__,
             "support_email": support_email,
+            "global_context": global_context,
+            "is_global_admin": is_global_admin,
         },
         key=key,
         on_change=on_change,
     )
 
 
+@with_database_session
 def on_change():
     # We cannot navigate directly here
     # because st.switch_page uses st.rerun under the hood
@@ -80,7 +87,8 @@ def on_change():
         # (even though it works fine locally)
         time.sleep(0.3)
     else:
+        query_params = event_data.get("params", {})
         Router().queue_navigation(
-            to=event_data.get("path") or session.auth.default_page,
-            with_args=event_data.get("params", {}),
+            to=event_data.get("path") or session.auth.get_default_page(project_code=query_params.get("project_code")),
+            with_args=query_params,
         )

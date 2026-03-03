@@ -32,13 +32,61 @@ const Tooltip = (/** @type Properties */ props) => {
     );
 };
 
-const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */ tooltipProps) => {
-    const showTooltip = van.state(false);
-    const tooltip = Tooltip({ ...tooltipProps, show: showTooltip });
+const computeTooltipStyle = (rect, position) => {
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const gap = 5;
 
-    component.onmouseenter = () => showTooltip.val = true;
-    component.onmouseleave = () => showTooltip.val = false;
-    component.appendChild(tooltip);
+    const variants = {
+        'top':          { left: cx,         top: rect.top,    transform: `translateX(-50%) translateY(calc(-100% - ${gap}px))` },
+        'top-left':     { left: cx + 20,    top: rect.top,    transform: `translateX(-100%) translateY(calc(-100% - ${gap}px))` },
+        'top-right':    { left: cx - 20,    top: rect.top,    transform: `translateY(calc(-100% - ${gap}px))` },
+        'bottom':       { left: cx,         top: rect.bottom, transform: `translateX(-50%) translateY(${gap}px)` },
+        'bottom-left':  { left: cx + 20,    top: rect.bottom, transform: `translateX(-100%) translateY(${gap}px)` },
+        'bottom-right': { left: cx - 20,    top: rect.bottom, transform: `translateY(${gap}px)` },
+        'right':        { left: rect.right, top: cy,          transform: `translateX(${gap}px) translateY(-50%)` },
+        'left':         { left: rect.left,  top: cy,          transform: `translateX(calc(-100% - ${gap}px)) translateY(-50%)` },
+    };
+
+    const { left, top, transform } = variants[position] || variants['top'];
+    return `position: fixed; left: ${left}px; top: ${top}px; bottom: auto; right: auto; transform: ${transform};`;
+};
+
+const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */ tooltipProps) => {
+    loadStylesheet('tooltip', stylesheet);
+
+    const showTooltip = van.state(false);
+    const positionStyle = van.state('');
+
+    const tooltipEl = span(
+        {
+            class: () => `tg-tooltip portal ${getValue(tooltipProps.position) || defaultPosition} ${showTooltip.val ? '' : 'hidden'}`,
+            style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; max-width: ${getValue(tooltipProps.width) || '400'}px; ${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
+        },
+        tooltipProps.text,
+        div({ class: 'tg-tooltip--triangle' }),
+    );
+
+    van.add(document.body, tooltipEl);
+
+    requestAnimationFrame(() => {
+        if (!component.isConnected) return;
+        const observer = new MutationObserver(() => {
+            if (!component.isConnected) {
+                tooltipEl.remove();
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
+
+    component.addEventListener('mouseenter', () => {
+        positionStyle.val = computeTooltipStyle(component.getBoundingClientRect(), getValue(tooltipProps.position) || defaultPosition);
+        showTooltip.val = true;
+    });
+    component.addEventListener('mouseleave', () => {
+        showTooltip.val = false;
+    });
 
     return component;
 };
@@ -58,6 +106,16 @@ stylesheet.replace(`
     text-align: center;
     text-wrap: wrap;
     transition: opacity 0.3s;
+}
+
+.tg-tooltip.portal {
+    position: fixed;
+    z-index: 9999;
+    top: unset;
+    bottom: unset;
+    left: unset;
+    right: unset;
+    transform: unset;
 }
 
 .tg-tooltip--triangle {

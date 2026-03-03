@@ -185,7 +185,7 @@ const Select = (/** @type {Properties} */ props) => {
             ),
 
         Portal(
-            {target: domId.val, targetRelative: true, position: props.portalPosition?.val ?? props?.portalPosition, opened},
+            {target: domId.val, position: props.portalPosition?.val ?? props?.portalPosition, opened},
             () => div(
                 {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,
@@ -288,7 +288,7 @@ const MultiSelect = (props) => {
         ),
 
         Portal(
-            {target: domId.val, targetRelative: true, position: props.portalPosition?.val ?? props?.portalPosition, opened},
+            {target: domId.val, position: props.portalPosition?.val ?? props?.portalPosition, opened},
             () => div(
                 {
                     class: () => `tg-select--options-wrapper mt-1 ${getValue(props.portalClass) ?? ''}`,

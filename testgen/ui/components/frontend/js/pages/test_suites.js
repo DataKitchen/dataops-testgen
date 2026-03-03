@@ -140,7 +140,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 { class: 'flex-column' },
                                 Link({
                                     href: 'test-suites:definitions',
-                                    params: { test_suite_id: testSuite.id },
+                                    params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
                                     label: `View ${testSuite.test_ct ?? 0} test definitions`,
                                     right_icon: 'chevron_right',
                                     right_icon_size: 20,
@@ -156,7 +156,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                     ? [
                                         Link({
                                             href: 'test-runs:results',
-                                            params: { run_id: testSuite.latest_run_id },
+                                            params: { run_id: testSuite.latest_run_id, project_code: projectSummary.project_code },
                                             label: formatTimestamp(testSuite.latest_run_start),
                                             class: 'mb-4',
                                         }),
