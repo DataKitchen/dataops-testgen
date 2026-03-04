@@ -19,6 +19,40 @@ class TableSampling:
     sample_percent: float
 
 
+def calculate_sampling_params(
+    table_name: str,
+    record_count: int,
+    sample_percent_raw: str | float,
+    min_sample: int,
+    max_sample: int = 999000,
+) -> TableSampling | None:
+    """Calculate sampling parameters for a table based on record count and sample percent.
+
+    Returns None if sampling is not applicable (invalid percent, or record_count <= min_sample).
+    """
+    if isinstance(sample_percent_raw, str):
+        cleaned = sample_percent_raw.replace(".", "", 1) if sample_percent_raw else ""
+        sample_percent = float(sample_percent_raw) if cleaned.isdigit() else 30
+    else:
+        sample_percent = float(sample_percent_raw) if sample_percent_raw is not None else 30
+
+    if not (0 < sample_percent < 100):
+        return None
+
+    if record_count <= min_sample:
+        return None
+
+    calc_sample = round(sample_percent * record_count / 100)
+    sample_count = min(max(calc_sample, min_sample), max_sample)
+
+    return TableSampling(
+        table_name=table_name,
+        sample_count=sample_count,
+        sample_ratio=record_count / sample_count,
+        sample_percent=round(100 * sample_count / record_count, 4),
+    )
+
+
 @dataclasses.dataclass
 class HygieneIssueType:
     id: str
