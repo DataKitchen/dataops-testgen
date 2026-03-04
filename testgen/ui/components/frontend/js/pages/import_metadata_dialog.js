@@ -13,6 +13,10 @@ import { Button } from '../components/button.js';
 import { Alert } from '../components/alert.js';
 import { Table } from '../components/table.js';
 import { capitalize } from '../display_utils.js';
+import { withTooltip } from '../components/tooltip.js';
+import { sizeLimit } from '../form_validators.js';
+
+const CSV_SIZE_LIMIT = 2 * 1024 * 1024; // 2 MB
 
 const { div, i, span } = van.tags;
 
@@ -30,19 +34,11 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
 
     return div(
         { id: wrapperId, class: 'flex-column fx-gap-4' },
-        RadioGroup({
-            label: 'When import value is blank',
-            options: [
-                { label: 'Keep existing values', value: 'keep' },
-                { label: 'Clear existing values', value: 'clear' },
-            ],
-            value: blankBehavior,
-            onChange: (value) => blankBehavior.val = value,
-            layout: 'vertical',
-        }),
         FileInput({
             name: 'csv_file',
-            label: 'Drop CSV file here or click to browse',
+            label: 'Upload metadata CSV file',
+            help: 'Use the Export menu on the Data Catalog page to download the current metadata as a CSV template.',
+            validators: [sizeLimit(CSV_SIZE_LIMIT)],
             value: fileValue,
             onChange: (value) => {
                 fileValue.val = value;
@@ -57,6 +53,17 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                     emitEvent('FileCleared', {});
                 }
             },
+        }),
+        RadioGroup({
+            label: 'When CSV values are blank',
+            help: 'Controls whether blank cells in the CSV overwrite existing metadata or leave it unchanged.',
+            options: [
+                { label: 'Keep existing values', value: 'keep' },
+                { label: 'Clear existing values', value: 'clear' },
+            ],
+            value: blankBehavior,
+            onChange: (value) => blankBehavior.val = value,
+            layout: 'default',
         }),
         () => {
             const result = getValue(props.result);
@@ -73,8 +80,21 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
             }
 
             const hasError = !!preview.error;
-            const totalMatched = hasError ? 0 : (preview.table_count || 0) + (preview.column_count || 0);
-            const hasMatches = totalMatched > 0;
+            const tableCount = hasError ? 0 : (preview.table_count || 0);
+            const columnCount = hasError ? 0 : (preview.column_count || 0);
+            const skippedCount = hasError ? 0 : (preview.skipped_count || 0);
+            const hasMatches = tableCount + columnCount > 0;
+
+            const plural = (n, word) => `${n} ${n === 1 ? word : word + 's'}`;
+            const importedParts = [
+                tableCount ? plural(tableCount, 'table') : '',
+                columnCount ? plural(columnCount, 'column') : '',
+            ].filter(Boolean);
+            const importedText = importedParts.length
+                ? `Metadata for ${importedParts.join(', ')} will be imported`
+                : 'No metadata will be imported';
+            const skippedText = skippedCount ? `${plural(skippedCount, 'row')} skipped` : '';
+            const summaryText = [importedText, skippedText].filter(Boolean).join(' | ');
 
             return div(
                 { class: 'flex-column fx-gap-3' },
@@ -82,7 +102,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                     ? ''
                     : span(
                         { class: 'text-secondary' },
-                        `Summary: ${preview.table_count || 0} table(s), ${preview.column_count || 0} column(s) matched`,
+                        summaryText,
                     ),
                 hasError
                     ? Alert({ type: 'error', icon: 'error' }, span(preview.error))
@@ -116,7 +136,7 @@ const PreviewTable = (preview) => {
     const previewRows = preview.preview_rows || [];
 
     const columns = [
-        { name: '_status_icon', label: '', width: 32 },
+        { name: '_status_icon', label: '', width: 32, overflow: 'visible' },
         { name: 'table_name', label: 'Table', width: 150 },
         { name: 'column_name', label: 'Column', width: 150 },
         ...metadataColumns.map(col => ({
@@ -131,16 +151,19 @@ const PreviewTable = (preview) => {
         const icon = STATUS_ICONS[status] || STATUS_ICONS.ok;
         const truncatedFields = row._truncated_fields || [];
 
+        const statusIcon = i(
+            {
+                class: `material-symbols-rounded import-status-${status}`,
+                style: 'font-size: 16px; cursor: default; overflow: visible; position: relative',
+            },
+            icon,
+        );
+
         const tableRow = {
             _status: status,
-            _status_icon: i(
-                {
-                    class: `material-symbols-rounded import-status-${status}`,
-                    style: 'font-size: 16px; cursor: default',
-                    title: row._status_detail || '',
-                },
-                icon,
-            ),
+            _status_icon: row._status_detail
+                ? withTooltip(statusIcon, { text: row._status_detail, position: 'right', width: 200 })
+                : statusIcon,
             table_name: row.table_name ?? '',
             column_name: row.column_name ?? '',
         };

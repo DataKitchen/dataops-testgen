@@ -264,10 +264,14 @@ def test_preview_props_basic():
             {"table_name": "t1", "column_name": "", "description": "desc", "_status": "ok", "_status_detail": "", "_truncated_fields": []},
         ],
         "metadata_columns": ["description"],
+        "matched_tables": 1,
+        "matched_columns": 0,
+        "skipped_count": 0,
     }
     result = _build_preview_props(preview)
     assert result["table_count"] == 1
     assert result["column_count"] == 0
+    assert result["skipped_count"] == 0
     assert len(result["preview_rows"]) == 1
     assert result["preview_rows"][0]["description"] == "desc"
 

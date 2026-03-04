@@ -414,19 +414,17 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                         'Selected columns',
                     )
                     : null,
-                userCanEdit
-                    ? div(
-                        {
-                            class: 'tg-dh--export-option',
-                            style: 'border-top: var(--button-stroked-border);',
-                            onclick: () => {
-                                emitEvent('ExportCsvClicked', {});
-                                exportOptionsOpened.val = false;
-                            },
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        style: 'border-top: var(--button-stroked-border);',
+                        onclick: () => {
+                            emitEvent('ExportCsvClicked', {});
+                            exportOptionsOpened.val = false;
                         },
-                        'Metadata CSV',
-                    )
-                    : null,
+                    },
+                    'Metadata CSV',
+                ),
             ),
         ),
     ];

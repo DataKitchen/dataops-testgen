@@ -178,18 +178,26 @@ def _match_and_validate(
     # Determine which metadata columns are present in the CSV
     metadata_columns = [c for c in METADATA_COLUMNS if c in df.columns]
 
+    # Count matched vs skipped rows from preview
+    matched_tables = sum(1 for r in preview_rows if not r.get("column_name") and r.get("_status") != "unmatched")
+    matched_columns = sum(1 for r in preview_rows if r.get("column_name") and r.get("_status") != "unmatched")
+    skipped = sum(1 for r in preview_rows if r.get("_status") == "unmatched")
+
     return {
         "table_rows": table_rows,
         "column_rows": column_rows,
         "preview_rows": preview_rows,
         "metadata_columns": metadata_columns,
         "blank_behavior": blank_behavior,
+        "matched_tables": matched_tables,
+        "matched_columns": matched_columns,
+        "skipped_count": skipped,
     }
 
 
-def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict, int]:
+def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict, bool]:
     fields = {}
-    bad_cde = 0
+    bad_cde = False
     for col in METADATA_COLUMNS:
         if col not in row.index:
             continue
@@ -207,7 +215,7 @@ def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict,
                 # "keep" → skip this field
             else:
                 # Unrecognized value — skip (don't set field at all)
-                bad_cde = 1
+                bad_cde = True
         else:
             if value:
                 fields[col] = value
@@ -235,7 +243,7 @@ def _set_row_status(preview_row: dict, bad_cde: int, truncated: list[str]) -> No
     if bad_cde:
         issues.append("Unrecognized CDE value (expected Yes/No) — skipped")
     if truncated:
-        issues.append(f"Value(s) truncated: {', '.join(truncated)}")
+        issues.append(f"Values truncated: {', '.join(truncated)}")
 
     if bad_cde:
         preview_row["_status"] = "error"
@@ -324,7 +332,7 @@ def import_metadata_dialog(table_group_id: str) -> None:
     result = None
     if should_import() and preview and not preview.get("error"):
         try:
-            counts = apply_metadata_import(preview)
+            apply_metadata_import(preview)
 
             # Clear caches
             from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
@@ -334,9 +342,16 @@ def import_metadata_dialog(table_group_id: str) -> None:
                 func.clear()
             st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
+            parts = []
+            if tc := preview.get("matched_tables", 0):
+                parts.append(f"{tc} {'table' if tc == 1 else 'tables'}")
+            if cc := preview.get("matched_columns", 0):
+                parts.append(f"{cc} {'column' if cc == 1 else 'columns'}")
+            summary = f"Metadata for {', '.join(parts)} imported." if parts else "No metadata was imported."
+
             result = {
                 "success": True,
-                "message": f"Metadata imported: {counts['table_count']} table(s), {counts['column_count']} column(s) updated.",
+                "message": summary,
             }
         except Exception:
             LOG.exception("Metadata import failed")
@@ -394,8 +409,9 @@ def _build_preview_props(preview: dict) -> dict:
         formatted_rows.append(formatted_row)
 
     return {
-        "table_count": len(preview.get("table_rows", [])),
-        "column_count": len(preview.get("column_rows", [])),
+        "table_count": preview.get("matched_tables", 0),
+        "column_count": preview.get("matched_columns", 0),
+        "skipped_count": preview.get("skipped_count", 0),
         "metadata_columns": metadata_columns,
         "preview_rows": formatted_rows,
     }
