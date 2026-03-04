@@ -148,7 +148,7 @@ def _match_and_validate(
 
             fields, bad_cde = _extract_metadata_fields(row, blank_behavior)
             fields, truncated = _truncate_fields(fields)
-            if fields:
+            if fields and not bad_cde:
                 table_rows.append({"table_id": table_id, "table_name": table_name, **fields})
 
             preview_row.update(fields)
@@ -166,7 +166,7 @@ def _match_and_validate(
 
             fields, bad_cde = _extract_metadata_fields(row, blank_behavior)
             fields, truncated = _truncate_fields(fields)
-            if fields:
+            if fields and not bad_cde:
                 column_rows.append(
                     {"column_id": column_id, "table_name": table_name, "column_name": column_name, **fields}
                 )
@@ -179,9 +179,11 @@ def _match_and_validate(
     metadata_columns = [c for c in METADATA_COLUMNS if c in df.columns]
 
     # Count matched vs skipped rows from preview
-    matched_tables = sum(1 for r in preview_rows if not r.get("column_name") and r.get("_status") != "unmatched")
-    matched_columns = sum(1 for r in preview_rows if r.get("column_name") and r.get("_status") != "unmatched")
-    skipped = sum(1 for r in preview_rows if r.get("_status") == "unmatched")
+    # "ok" and "warning" rows will be imported; "error" and "unmatched" rows are skipped
+    _importable = {"ok", "warning"}
+    matched_tables = sum(1 for r in preview_rows if not r.get("column_name") and r.get("_status") in _importable)
+    matched_columns = sum(1 for r in preview_rows if r.get("column_name") and r.get("_status") in _importable)
+    skipped = sum(1 for r in preview_rows if r.get("_status") not in _importable)
 
     return {
         "table_rows": table_rows,
@@ -238,7 +240,7 @@ def _truncate_fields(fields: dict) -> tuple[dict, list[str]]:
     return fields, truncated
 
 
-def _set_row_status(preview_row: dict, bad_cde: int, truncated: list[str]) -> None:
+def _set_row_status(preview_row: dict, bad_cde: bool, truncated: list[str]) -> None:
     issues = []
     if bad_cde:
         issues.append("Unrecognized CDE value (expected Yes/No) — skipped")
