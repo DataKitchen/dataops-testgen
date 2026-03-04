@@ -7,16 +7,16 @@ def get_test_type(test_type: str) -> str:
     """Get detailed information about a specific test type.
 
     Args:
-        test_type: The test type code (e.g., 'Alpha_Trunc', 'Unique_Pct').
+        test_type: The test type (e.g., 'Alpha Truncation', 'Unique Percent').
     """
-    tt = TestType.get(test_type)
+    matches = TestType.select_where(TestType.test_name_short == test_type)
+    tt = matches[0] if matches else None
 
     if not tt:
-        return f"Test type `{test_type}` not found."
+        return f"Test type `{test_type}` not found. Use `testgen://test-types` to see available types."
 
     lines = [
-        f"# {tt.test_name_short} (`{tt.test_type}`)\n",
-        f"- **Name:** {tt.test_name_short}",
+        f"# {tt.test_name_short}\n",
     ]
     if tt.test_name_long:
         lines.append(f"- **Full Name:** {tt.test_name_long}")
@@ -50,14 +50,14 @@ def test_types_resource() -> str:
 
     lines = [
         "# TestGen Test Types Reference\n",
-        "| Test Type | Name | Quality Dimension | Scope | Description |",
-        "|---|---|---|---|---|",
+        "| Test Type | Quality Dimension | Scope | Description |",
+        "|---|---|---|---|",
     ]
 
     for tt in test_types:
         desc = tt.test_description or ""
         lines.append(
-            f"| {tt.test_type} | {tt.test_name_short or ''} | "
+            f"| {tt.test_name_short or ''} | "
             f"{tt.dq_dimension or ''} | {tt.test_scope or ''} | {desc} |"
         )
 

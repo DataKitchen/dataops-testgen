@@ -21,6 +21,14 @@ def _parse_status(value: str) -> TestResultStatus:
         raise ValueError(f"Invalid status `{value}`. Valid values: {valid}") from err
 
 
+def _resolve_test_type(short_name: str) -> str:
+    """Resolve a test type short name to its internal code."""
+    matches = TestType.select_where(TestType.test_name_short == short_name)
+    if not matches:
+        raise ValueError(f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types.")
+    return matches[0].test_type
+
+
 @with_database_session
 @mcp_permission("view")
 def get_test_results(
@@ -37,7 +45,7 @@ def get_test_results(
         test_run_id: The UUID of the test run.
         status: Filter by result status (Passed, Failed, Warning, Error, Log).
         table_name: Filter by table name.
-        test_type: Filter by test type code.
+        test_type: Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent').
         limit: Maximum number of results per page (default 50).
         page: Page number, starting from 1 (default 1).
     """
@@ -45,13 +53,15 @@ def get_test_results(
     status_enum = _parse_status(status) if status else None
     offset = (page - 1) * limit
 
+    test_type_code = _resolve_test_type(test_type) if test_type else None
+
     access = get_project_access()
 
     results = TestResult.select_results(
         test_run_id=run_uuid,
         status=status_enum,
         table_name=table_name,
-        test_type=test_type,
+        test_type=test_type_code,
         limit=limit,
         offset=offset,
         project_codes=access.query_codes,
@@ -76,8 +86,11 @@ def get_test_results(
     for r in results:
         status_str = r.status.value if r.status else "Unknown"
         test_name = type_names.get(r.test_type, r.test_type)
-        lines.append(f"## [{status_str}] {test_name} on `{r.table_name}`")
-        lines.append(f"- **Test Type:** `{r.test_type}`")
+        if r.column_names:
+            title = f"## [{status_str}] {test_name} on `{r.column_names}` in `{r.table_name}`"
+        else:
+            title = f"## [{status_str}] {test_name} on `{r.table_name}`"
+        lines.append(title)
         lines.append(f"- Test definition: `{r.test_definition_id}`")
         if r.column_names:
             lines.append(f"- Column: `{r.column_names}`")
@@ -124,8 +137,8 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
     ]
 
     if group_by == "test_type":
-        lines.append("| Test Type | Test Name | Severity | Count |")
-        lines.append("|---|---|---|---|")
+        lines.append("| Test Type | Severity | Count |")
+        lines.append("|---|---|---|")
     else:
         group_label = {"table": "Table Name", "column": "Column"}[group_by]
         lines.append(f"| {group_label} | Count |")
@@ -136,7 +149,7 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
         if group_by == "column":
             # Row is (table_name, column_names, count)
             table, column = row[0], row[1]
-            label = f"{table}.{column}" if column else f"{table} (table-level)"
+            label = f"`{column}` in `{table}`" if column else f"`{table}` (table-level)"
             lines.append(f"| {label} | {count} |")
         elif group_by == "test_type":
             # Row is (test_type, status, count)
@@ -144,14 +157,14 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
             status = row[1]
             name = type_names.get(code, code)
             severity = status.value if status else "Unknown"
-            lines.append(f"| {code} | `{name}` | {severity} | {count} |")
+            lines.append(f"| {name} | {severity} | {count} |")
         else:
-            lines.append(f"| {row[0]} | {count} |")
+            lines.append(f"| `{row[0]}` | {count} |")
 
     if group_by == "test_type":
         lines.append(
             "\nCheck `testgen://test-types` to understand what each test type checks "
-            "and `get_test_type(test_type='...')` to fetch more details."
+            "and `get_test_type(test_type='Alpha Truncation')` to fetch more details."
         )
 
     return "\n".join(lines)
@@ -187,7 +200,7 @@ def get_test_result_history(
     test_name = type_names.get(first.test_type, first.test_type)
     lines = [
         "# Test Result History\n",
-        f"- **Test Type:** {test_name} (`{first.test_type}`)",
+        f"- **Test Type:** {test_name}",
         f"- **Table:** `{first.table_name}`",
     ]
     if first.column_names:

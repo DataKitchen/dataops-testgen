@@ -32,10 +32,38 @@ def test_get_test_results_basic(mock_result, mock_tt_cls, db_session_mock):
     result = get_test_results(run_id)
 
     assert "Alpha Truncation" in result
-    assert "`Alpha_Trunc`" in result
-    assert "orders" in result
+    assert "Alpha_Trunc" not in result
+    assert "on `customer_name` in `orders`" in result
     assert "15.3" in result
     assert "Truncation detected" in result
+
+
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+def test_get_test_results_table_level_title(mock_result, mock_tt_cls, db_session_mock):
+    run_id = str(uuid4())
+    r1 = MagicMock()
+    r1.status = TestResultStatus.Passed
+    r1.test_type = "Row_Ct"
+    r1.test_definition_id = uuid4()
+    r1.table_name = "orders"
+    r1.column_names = None
+    r1.result_measure = "1000"
+    r1.threshold_value = "500"
+    r1.message = None
+    mock_result.select_results.return_value = [r1]
+
+    tt = MagicMock()
+    tt.test_type = "Row_Ct"
+    tt.test_name_short = "Row Count"
+    mock_tt_cls.select_where.return_value = [tt]
+
+    from testgen.mcp.tools.test_results import get_test_results
+
+    result = get_test_results(run_id)
+
+    assert "Row Count on `orders`" in result
+    assert "` in `" not in result
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
@@ -49,16 +77,22 @@ def test_get_test_results_empty(mock_result, db_session_mock):
     assert "No test results found" in result
 
 
+@patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_with_filters(mock_result, db_session_mock):
+def test_get_test_results_with_filters(mock_result, mock_tt_cls, db_session_mock):
+    tt = MagicMock()
+    tt.test_type = "Alpha_Trunc"
+    tt.test_name_short = "Alpha Truncation"
+    mock_tt_cls.select_where.return_value = [tt]
     mock_result.select_results.return_value = []
 
     from testgen.mcp.tools.test_results import get_test_results
 
-    result = get_test_results(str(uuid4()), status="Failed", table_name="orders", test_type="Alpha_Trunc")
+    result = get_test_results(str(uuid4()), status="Failed", table_name="orders", test_type="Alpha Truncation")
 
     assert "status=Failed" in result
     assert "table=orders" in result
+    assert "type=Alpha Truncation" in result
 
 
 def test_get_test_results_invalid_uuid(db_session_mock):
@@ -117,8 +151,7 @@ def test_get_failure_summary_by_test_type(mock_result, mock_tt_cls, db_session_m
     assert "Failed + Warning" in result
     assert "8" in result
     assert "Alpha Truncation" in result
-    assert "Alpha_Trunc" in result
-    assert "Test Name" in result
+    assert "Alpha_Trunc" not in result
     assert "Severity" in result
     assert "Failed" in result
     assert "Warning" in result
@@ -158,8 +191,8 @@ def test_get_failure_summary_by_column(mock_result, db_session_mock):
     result = get_failure_summary(str(uuid4()), group_by="column")
 
     assert "Column" in result
-    assert "orders.total_value" in result
-    assert "orders (table-level)" in result
+    assert "`total_value` in `orders`" in result
+    assert "`orders` (table-level)" in result
     assert "get_test_type" not in result
 
 
@@ -224,7 +257,7 @@ def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock
     result = get_test_result_history(def_id)
 
     assert "Unique Percent" in result
-    assert "`Unique_Pct`" in result
+    assert "Unique_Pct" not in result
     assert "orders" in result
     assert "99.5" in result
     assert "88.0" in result

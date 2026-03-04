@@ -15,13 +15,14 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
     tt.test_scope = "column"
     tt.except_message = "Alpha truncation detected"
     tt.usage_notes = "Best for VARCHAR columns"
-    mock_tt_cls.get.return_value = tt
+    mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.reference import get_test_type
 
-    result = get_test_type("Alpha_Trunc")
+    result = get_test_type("Alpha Truncation")
 
     assert "Alpha Truncation" in result
+    assert "Alpha_Trunc" not in result
     assert "Accuracy" in result
     assert "column" in result
     assert "truncated" in result.lower()
@@ -29,11 +30,11 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
 
 @patch("testgen.mcp.tools.reference.TestType")
 def test_get_test_type_not_found(mock_tt_cls, db_session_mock):
-    mock_tt_cls.get.return_value = None
+    mock_tt_cls.select_where.return_value = []
 
     from testgen.mcp.tools.reference import get_test_type
 
-    result = get_test_type("Nonexistent_Type")
+    result = get_test_type("Nonexistent Type")
 
     assert "not found" in result
 
@@ -58,8 +59,10 @@ def test_test_types_resource(mock_tt_cls, db_session_mock):
 
     result = test_types_resource()
 
-    assert "Alpha_Trunc" in result
-    assert "Unique_Pct" in result
+    assert "Alpha Truncation" in result
+    assert "Unique Percent" in result
+    assert "Alpha_Trunc" not in result
+    assert "Unique_Pct" not in result
     assert "Accuracy" in result
     assert "Uniqueness" in result
 
