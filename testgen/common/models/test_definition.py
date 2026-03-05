@@ -123,6 +123,8 @@ class QueryString(TypeDecorator):
 class TestType(Entity):
     __tablename__ = "test_types"
 
+    _get_by = "test_type"
+
     id: str = Column(String)
     test_type: str = Column(String, primary_key=True, nullable=False)
     test_name_short: str = Column(String)
@@ -148,6 +150,8 @@ class TestType(Entity):
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
     active: str = Column(String)
+
+    # Unmapped columns: generation_template, result_visualization, result_visualization_params
 
     _summary_columns = (
         *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],

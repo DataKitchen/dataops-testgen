@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple, Self, TypedDict
+from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -63,6 +63,15 @@ class TestRunSummary(EntityMinimal):
     log_ct: int
     dismissed_ct: int
     dq_score_testing: float
+
+    STATUS_LABEL: ClassVar[dict[str, str]] = {
+        "Complete": "Completed",
+        "Cancelled": "Canceled",
+    }
+
+    @property
+    def status_label(self) -> str:
+        return self.STATUS_LABEL.get(self.status, self.status)
 
 
 @dataclass
