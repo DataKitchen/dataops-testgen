@@ -37,6 +37,7 @@ from testgen.ui.services.database_service import execute_db_query, fetch_all_fro
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
+from testgen.ui.views.dialogs.import_metadata_dialog import open_import_metadata_dialog
 from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
 from testgen.ui.views.dialogs.table_create_script_dialog import table_create_script_dialog
 from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
@@ -54,13 +55,15 @@ class DataCatalogPage(Page):
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
 
-    def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
+    def render(
+        self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs
+    ) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "data-catalog",
         )
 
-        _, loading_column = st.columns([.4, .6])
+        _, loading_column = st.columns([0.4, 0.6])
         spinner_container = loading_column.container(key="data_catalog:spinner")
 
         with spinner_container:
@@ -74,7 +77,7 @@ class DataCatalogPage(Page):
                 user_can_navigate = session.auth.user_has_permission("view")
                 table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
-                if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
+                if not table_group_id or table_group_id not in [str(item.id) for item in table_groups]:
                     table_group_id = str(table_groups[0].id) if table_groups else None
                     on_table_group_selected(table_group_id)
 
@@ -89,7 +92,7 @@ class DataCatalogPage(Page):
             selected_item["connection_id"] = str(selected_table_group.connection_id)
         else:
             on_item_selected(None)
-        
+
         testgen_component(
             "data_catalog",
             props={
@@ -99,7 +102,8 @@ class DataCatalogPage(Page):
                         "value": str(table_group.id),
                         "label": table_group.table_groups_name,
                         "selected": table_group_id == str(table_group.id),
-                    } for table_group in table_groups
+                    }
+                    for table_group in table_groups
                 ],
                 "columns": json.dumps(make_json_safe(columns)) if columns else None,
                 "selected_item": json.dumps(make_json_safe(selected_item)) if selected_item else None,
@@ -114,7 +118,9 @@ class DataCatalogPage(Page):
                 "RunProfilingClicked": lambda _: run_profiling_dialog(
                     project_code=project_code,
                     table_group_id=selected_table_group.id,
-                ) if selected_table_group else None,
+                )
+                if selected_table_group
+                else None,
                 "TableGroupSelected": on_table_group_selected,
                 "ItemSelected": on_item_selected,
                 "ExportClicked": lambda items: download_dialog(
@@ -140,32 +146,41 @@ class DataCatalogPage(Page):
                     item["column_name"],
                     item["add_date"],
                 ),
+                "ImportClicked": lambda _: open_import_metadata_dialog(str(selected_table_group.id))
+                if selected_table_group
+                else None,
+                "ExportCsvClicked": lambda _: export_metadata_csv(selected_table_group)
+                if selected_table_group
+                else None,
             },
-            event_handlers={ "TagsChanged": partial(on_tags_changed, spinner_container) },
+            event_handlers={"TagsChanged": partial(on_tags_changed, spinner_container)},
         )
 
 
 def on_table_group_selected(table_group_id: str | None) -> None:
-    Router().set_query_params({ "table_group_id": table_group_id })
+    Router().set_query_params({"table_group_id": table_group_id})
 
 
 def on_item_selected(item_id: str | None) -> None:
-    Router().set_query_params({ "selected": item_id })
+    Router().set_query_params({"selected": item_id})
 
 
 class ExportItem(typing.TypedDict):
     id: str
     type: typing.Literal["table", "column"]
 
-def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None) -> None:
+
+def get_excel_report_data(
+    update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None
+) -> None:
     if items:
         table_data = get_tables_by_id(
-            table_ids=[ item["id"] for item in items if item["type"] == "table" ],
+            table_ids=[item["id"] for item in items if item["type"] == "table"],
             include_tags=True,
             include_active_tests=True,
         )
         column_data = get_columns_by_id(
-            column_ids=[ item["id"] for item in items if item["type"] == "column" ],
+            column_ids=[item["id"] for item in items if item["type"] == "column"],
             include_tags=True,
             include_active_tests=True,
         )
@@ -180,10 +195,13 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
             include_tags=True,
             include_active_tests=True,
         )
-        
 
     data = pd.DataFrame(table_data + column_data)
-    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
+    data = data.sort_values(
+        by=["table_name", "ordinal_position"],
+        na_position="first",
+        key=lambda x: x.str.lower() if x.dtype == "object" else x,
+    )
 
     for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
@@ -192,11 +210,18 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
-        data[key] = data[key].apply(
-            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
-        )
+        data[key] = data[key].apply(lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None)
 
-    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
+    for key in [
+        "data_source",
+        "source_system",
+        "source_process",
+        "business_domain",
+        "stakeholder_group",
+        "transform_level",
+        "aggregation_level",
+        "data_product",
+    ]:
         data[key] = data.apply(
             lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
             axis=1,
@@ -206,16 +231,18 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
 
     data["critical_data_element"] = data.apply(
-        lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
+        lambda row: "Yes"
+        if row["critical_data_element"] == True or row["table_critical_data_element"] == True
+        else None,
         axis=1,
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
+        lambda val: "\n".join([f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ")])
         if not pd.isna(val)
         else None
     )
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
+        lambda val: "".join([f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
         if not pd.isna(val)
         else None
     )
@@ -304,7 +331,7 @@ def remove_table_dialog(item: dict) -> None:
     st.html(f"Are you sure you want to remove the table <b>{item['table_name']}</b> from the data catalog?")
     st.warning("This action cannot be undone.")
 
-    _, button_column = st.columns([.85, .15])
+    _, button_column = st.columns([0.85, 0.15])
     with button_column:
         testgen.button(
             label="Remove",
@@ -326,7 +353,7 @@ def remove_table_dialog(item: dict) -> None:
 
         st.success("Table has been removed.")
         time.sleep(1)
-        for func in [ get_table_group_columns, get_tag_values ]:
+        for func in [get_table_group_columns, get_tag_values]:
             func.clear()
         st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
         st.rerun()
@@ -337,14 +364,14 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
     attributes.extend(TAG_FIELDS)
 
     tags = payload["tags"]
-    set_attributes = [ f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags ]
-    params = { key: tags.get(key) or "" for key in attributes if key in tags }
+    set_attributes = [f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags]
+    params = {key: tags.get(key) or "" for key in attributes if key in tags}
     if "critical_data_element" in tags:
         set_attributes.append("critical_data_element = :critical_data_element")
         params.update({"critical_data_element": tags.get("critical_data_element")})
 
-    params["table_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "table" ]
-    params["column_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "column" ]
+    params["table_ids"] = [item["id"] for item in payload["items"] if item["type"] == "table"]
+    params["column_ids"] = [item["id"] for item in payload["items"] if item["type"] == "column"]
 
     with spinner_container:
         with st.spinner("Saving tags"):
@@ -378,17 +405,70 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                     params,
                 )
 
-    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values ]:
+    for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
     st.rerun()
+
+
+def export_metadata_csv(table_group: TableGroupMinimal) -> None:
+    def _get_csv_data(update_progress: PROGRESS_UPDATE_TYPE) -> FILE_DATA_TYPE:
+        table_data = fetch_all_from_db(
+            f"""
+            SELECT table_name, '' AS column_name,
+                description,
+                critical_data_element,
+                {", ".join(TAG_FIELDS)}
+            FROM data_table_chars
+            WHERE table_groups_id = :table_group_id
+            ORDER BY LOWER(table_name)
+            """,
+            {"table_group_id": str(table_group.id)},
+        )
+
+        column_data = fetch_all_from_db(
+            f"""
+            SELECT c.table_name, c.column_name,
+                c.description,
+                c.critical_data_element,
+                {", ".join([ f"c.{tag}" for tag in TAG_FIELDS ])}
+            FROM data_column_chars c
+                LEFT JOIN data_table_chars t ON (c.table_id = t.table_id)
+            WHERE c.table_groups_id = :table_group_id
+            ORDER BY LOWER(c.table_name), c.ordinal_position
+            """,
+            {"table_group_id": str(table_group.id)},
+        )
+
+        rows = []
+        for row in list(table_data) + list(column_data):
+            csv_row = {
+                "Table": row["table_name"],
+                "Column": row["column_name"],
+                "Description": row["description"] or "",
+                "Critical Data Element": "Yes" if row["critical_data_element"] is True else "No" if row["critical_data_element"] is False else "",
+            }
+            for tag in TAG_FIELDS:
+                header = tag.replace("_", " ").title()
+                csv_row[header] = row[tag] or ""
+            rows.append(csv_row)
+
+        df = pd.DataFrame(rows)
+        csv_content = df.to_csv(index=False)
+        update_progress(1.0)
+        return "Data Catalog Metadata.csv", "text/csv", csv_content
+
+    download_dialog(
+        dialog_title="Download Metadata CSV",
+        file_content_func=_get_csv_data,
+    )
 
 
 @st.cache_data(show_spinner=False)
 def get_table_group_columns(table_group_id: str) -> list[dict]:
     if not is_uuid4(table_group_id):
         return []
-    
+
     query = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
         CONCAT('table_', table_chars.table_id) AS table_id,
@@ -424,7 +504,7 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
     params = {"table_group_id": table_group_id}
 
     results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    return [dict(row) for row in results]
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
@@ -445,8 +525,12 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item["dq_score_profiling"] = friendly_score(item["dq_score_profiling"])
         item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["hygiene_issues"] = get_hygiene_issues(item["profile_run_id"], item["table_name"], item.get("column_name"))
-        item["test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
-        item["test_suites"] = get_related_test_suites(item["table_group_id"], item["table_name"], item.get("column_name"))
+        item["test_issues"] = get_latest_test_issues(
+            item["table_group_id"], item["table_name"], item.get("column_name")
+        )
+        item["test_suites"] = get_related_test_suites(
+            item["table_group_id"], item["table_name"], item.get("column_name")
+        )
         return item
 
 
@@ -491,7 +575,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
     }
 
     results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    return [dict(row) for row in results]
 
 
 @st.cache_data(show_spinner=False)
@@ -518,7 +602,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
     }
 
     results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    return [dict(row) for row in results]
 
 
 @st.cache_data(show_spinner=False)
