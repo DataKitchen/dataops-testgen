@@ -33,10 +33,10 @@ dependencies = [
     "sqlalchemy==1.4.46",
     "databricks-sql-connector==2.9.3",
     "databricks-sdk>=0.20.0",
-    "snowflake-sqlalchemy==1.6.1",
+    "snowflake-sqlalchemy==1.9.0",
     "sqlalchemy-bigquery==1.14.1",
     "oracledb==3.4.0",
-    "hdbcli==2.23.26",
+    "hdbcli==2.25.31",
     "sqlalchemy-hana==2.1.0",
     "pyodbc==5.0.0",
     "psycopg2-binary==2.9.9",
@@ -57,7 +57,7 @@ dependencies = [
     "xlsxwriter==3.2.0",
     "psutil==5.9.8",
     "concurrent_log_handler==0.9.25",
-    "cryptography==44.0.1",
+    "cryptography==46.0.5",
     "validators==0.33.0",
     "reportlab==4.2.2",
     "cron-converter==1.2.1",
@@ -72,12 +72,18 @@ dependencies = [
     "matplotlib==3.9.2",
     "scipy==1.14.1",
     "jinja2==3.1.6",
+    "pillow==12.1.1",
+    "protobuf==6.33.5",
 
     # MCP server
     "mcp[cli]==1.26.0",
     "uvicorn==0.41.0",
     "PyJWT==2.11.0",
     "bcrypt==5.0.0",
+
+    # API & OAuth server
+    "authlib~=1.6.6",
+    "fastapi==0.115.12",
 ]
 
 [project.optional-dependencies]
