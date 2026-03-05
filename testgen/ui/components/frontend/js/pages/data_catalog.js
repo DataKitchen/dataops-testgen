@@ -208,7 +208,22 @@ const DataCatalog = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                ExportOptions(treeNodes, multiSelectedItems),
+                div(
+                    { class: 'flex-row fx-gap-2' },
+                    userCanEdit
+                        ? Button({
+                            icon: 'upload',
+                            type: 'stroked',
+                            label: 'Import',
+                            tooltip: 'Import metadata from CSV',
+                            tooltipPosition: 'left',
+                            width: 'fit-content',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emitEvent('ImportClicked', {}),
+                        })
+                        : null,
+                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                ),
             ),
             () => treeNodes.val.length
                 ? div(
@@ -322,7 +337,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes) => {
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, /** @type boolean */ userCanEdit) => {
     const exportOptionsDomId = `data-catalog-export-${getRandomId()}`;
     const exportOptionsOpened = van.state(false);
 
@@ -399,6 +414,17 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                         'Selected columns',
                     )
                     : null,
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        style: 'border-top: var(--button-stroked-border);',
+                        onclick: () => {
+                            emitEvent('ExportCsvClicked', {});
+                            exportOptionsOpened.val = false;
+                        },
+                    },
+                    'Metadata CSV',
+                ),
             ),
         ),
     ];

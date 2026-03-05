@@ -8,6 +8,7 @@
  * @typedef Properties
  * @type {object}
  * @property {string} label
+ * @property {string?} help
  * @property {Option[]} options
  * @property {string | number | boolean | null} value
  * @property {function(string | number | boolean | null)?} onChange
@@ -30,8 +31,14 @@ const RadioGroup = (/** @type Properties */ props) => {
     return div(
         { class: () => `tg-radio-group--wrapper ${layout}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
-            { class: 'text-caption tg-radio-group--label' },
+            { class: 'text-caption tg-radio-group--label flex-row fx-gap-1' },
             props.label,
+            () => getValue(props.help)
+                ? withTooltip(
+                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: props.help, position: 'top', width: 200 }
+                )
+                : null,
         ),
         () => div(
             { class: 'tg-radio-group' },
