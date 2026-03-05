@@ -81,11 +81,11 @@ def glossary_resource() -> str:
 
 ## Test Result Statuses
 
-- **Passed** — Test passed within acceptable thresholds.
-- **Warning** — Test exceeded its threshold. Severity configured as Warning.
-- **Failed** — Test exceeded its threshold. Severity configured as Fail.
-- **Error** — Test could not execute (e.g., SQL error, missing table).
-- **Log** — Informational result, not scored.
+- **Passed** — Data meets test criteria.
+- **Warning** — Data does not meet test criteria. Severity configured as Warning.
+- **Failed** — Data does not meet test criteria. Severity configured as Fail.
+- **Error** — Test could not execute (e.g., missing table or permission issue).
+- **Log** — Informational result recorded for reference.
 
 ## Disposition
 

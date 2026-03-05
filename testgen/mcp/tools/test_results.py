@@ -3,7 +3,7 @@ from uuid import UUID
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
-from testgen.mcp.permissions import get_project_access, mcp_permission
+from testgen.mcp.permissions import get_project_permissions, mcp_permission
 
 
 def _parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -55,7 +55,7 @@ def get_test_results(
 
     test_type_code = _resolve_test_type(test_type) if test_type else None
 
-    access = get_project_access()
+    perms = get_project_permissions()
 
     results = TestResult.select_results(
         test_run_id=run_uuid,
@@ -64,7 +64,7 @@ def get_test_results(
         test_type=test_type_code,
         limit=limit,
         offset=offset,
-        project_codes=access.query_codes,
+        project_codes=perms.allowed_codes,
     )
 
     if not results:
@@ -116,12 +116,12 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
     """
     run_uuid = _parse_uuid(test_run_id, "test_run_id")
 
-    access = get_project_access()
+    perms = get_project_permissions()
 
     # Map public param names to model field names
     model_group_map = {"table": "table_name", "column": "column_names"}
     model_group_by = model_group_map.get(group_by, group_by)
-    failures = TestResult.select_failures(test_run_id=run_uuid, group_by=model_group_by, project_codes=access.query_codes)
+    failures = TestResult.select_failures(test_run_id=run_uuid, group_by=model_group_by, project_codes=perms.allowed_codes)
 
     if not failures:
         return f"No confirmed failures found for run `{test_run_id}`."
@@ -164,7 +164,7 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
     if group_by == "test_type":
         lines.append(
             "\nCheck `testgen://test-types` to understand what each test type checks "
-            "and `get_test_type(test_type='Alpha Truncation')` to fetch more details."
+            "and `get_test_type(test_type='...')` to fetch more details."
         )
 
     return "\n".join(lines)
@@ -187,9 +187,9 @@ def get_test_result_history(
     def_uuid = _parse_uuid(test_definition_id, "test_definition_id")
     offset = (page - 1) * limit
 
-    access = get_project_access()
+    perms = get_project_permissions()
 
-    results = TestResult.select_history(test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=access.query_codes)
+    results = TestResult.select_history(test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=perms.allowed_codes)
 
     if not results:
         return f"No historical results found for test definition `{test_definition_id}`."

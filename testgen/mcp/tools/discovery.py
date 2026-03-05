@@ -4,7 +4,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
 from testgen.common.models.test_suite import TestSuite
-from testgen.mcp.permissions import get_project_access, mcp_permission
+from testgen.mcp.permissions import get_project_permissions, mcp_permission
 
 
 @with_database_session
@@ -18,8 +18,11 @@ def get_data_inventory() -> str:
     """
     from testgen.mcp.services.inventory_service import get_inventory
 
-    access = get_project_access()
-    return get_inventory(project_codes=access.query_codes, view_project_codes=access.query_codes_for("view"))
+    perms = get_project_permissions()
+    return get_inventory(
+        project_codes=perms.allowed_codes,
+        view_project_codes=perms.codes_allowed_to("view"),
+    )
 
 
 @with_database_session
@@ -29,8 +32,8 @@ def list_projects() -> str:
 
     Returns project codes and names. Use these to scope queries to specific projects.
     """
-    access = get_project_access()
-    projects = [p for p in Project.select_where() if access.has_access(p.project_code)]
+    perms = get_project_permissions()
+    projects = [p for p in Project.select_where() if perms.has_access(p.project_code)]
 
     if not projects:
         return "No projects found."
@@ -53,8 +56,8 @@ def list_test_suites(project_code: str) -> str:
     if not project_code:
         return "Missing required parameter `project_code`."
 
-    access = get_project_access()
-    access.verify_access(project_code, not_found=f"No test suites found for project `{project_code}`.")
+    perms = get_project_permissions()
+    perms.verify_access(project_code, not_found=f"No test suites found for project `{project_code}`.")
 
     summaries = TestSuite.select_summary(project_code)
 
@@ -103,8 +106,8 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
     except (ValueError, AttributeError) as err:
         raise ValueError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
 
-    access = get_project_access()
-    project_codes = access.query_codes
+    perms = get_project_permissions()
+    project_codes = perms.allowed_codes
 
     offset = (page - 1) * limit
     table_names = DataTable.select_table_names(group_uuid, limit=limit, offset=offset, project_codes=project_codes)

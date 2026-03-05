@@ -8,15 +8,16 @@ from testgen.common.models.test_suite import TestSuite
 
 
 def get_inventory(
-    project_codes: list[str] | None = None,
-    view_project_codes: list[str] | None = None,
+    project_codes: list[str],
+    view_project_codes: list[str],
 ) -> str:
     """Build a markdown inventory of all projects, connections, table groups, and test suites.
 
     Args:
-        project_codes: Projects the user can see (None = all).
-        view_project_codes: Projects where the user has 'view' permission (None = all).
-            When set, suites are hidden for projects not in this list.
+        project_codes: Projects the user can see (based on decorator permission).
+        view_project_codes: Projects where the user has 'view' permission.
+            Connection names and test suites are only shown for these projects.
+            Table groups are always shown so catalog users can browse tables.
     """
     session = get_current_session()
 
@@ -43,8 +44,7 @@ def get_inventory(
         )
     )
 
-    if project_codes is not None:
-        query = query.where(Project.project_code.in_(project_codes))
+    query = query.where(Project.project_code.in_(project_codes))
 
     query = query.order_by(
         Project.project_name, Connection.connection_name, TableGroup.table_groups_name, TestSuite.test_suite,
@@ -89,44 +89,42 @@ def get_inventory(
     )
     compact_groups = total_groups > 50
 
+    view_codes_set = set(view_project_codes)
+
     # Format as Markdown
     lines = ["# Data Inventory\n"]
 
     for project_code, proj in projects.items():
-        can_view_suites = view_project_codes is None or project_code in view_project_codes
+        can_view = project_code in view_codes_set
         lines.append(f"## Project: {proj['name']} (`{project_code}`)\n")
 
         if not proj["connections"]:
-            lines.append("_No connections configured._\n")
+            if can_view:
+                lines.append("_No connections configured._\n")
+            else:
+                lines.append("_No table groups._\n")
             continue
 
         for _conn_id, conn in proj["connections"].items():
-            lines.append(f"### Connection: {conn['name']}\n")
+            if can_view:
+                lines.append(f"### Connection: {conn['name']}\n")
 
             if not conn["groups"]:
-                lines.append("_No table groups._\n")
+                if can_view:
+                    lines.append("_No table groups._\n")
                 continue
 
             for group_id, group in conn["groups"].items():
-                if compact_groups:
+                if compact_groups or not can_view:
                     lines.append(
-                        f"- **{group['name']}** (schema: `{group['schema']}`, "
-                        f"{len(group['suites'])} test suites)"
+                        f"- **{group['name']}**: id: `{group_id}`, schema: `{group['schema']}`, "
+                        f"test suites: {len(group['suites'])}"
                     )
                     continue
 
                 lines.append(
                     f"#### Table Group: {group['name']} (id: `{group_id}`, schema: `{group['schema']}`)\n"
                 )
-
-                if not can_view_suites:
-                    if group["suites"]:
-                        lines.append(
-                            f"_{len(group['suites'])} test suite(s) — requires `view` permission._\n"
-                        )
-                    else:
-                        lines.append("_No test suites._\n")
-                    continue
 
                 if not group["suites"]:
                     lines.append("_No test suites._\n")

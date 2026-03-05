@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from testgen.mcp.permissions import ProjectAccess
+from testgen.mcp.permissions import ProjectPermissions
 
 
 def _make_run_summary(**overrides):
@@ -134,16 +134,13 @@ def test_get_recent_test_runs_empty_project_code(db_session_mock):
     assert "project_code" in result
 
 
-@patch("testgen.mcp.permissions._compute_project_access")
+@patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_recent_test_runs_returns_not_found_for_inaccessible_project(
-    mock_compute, db_session_mock, mcp_user,
+    mock_compute, db_session_mock,
 ):
-    mcp_user.is_global_admin = False
-    mock_compute.return_value = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"other_project": "admin"},
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"other_project": "role_a"},
         permission="view",
-        allowed_codes=frozenset(["other_project"]),
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
@@ -153,16 +150,13 @@ def test_get_recent_test_runs_returns_not_found_for_inaccessible_project(
     assert "No completed test runs found in project `secret_project`" in result
 
 
-@patch("testgen.mcp.permissions._compute_project_access")
+@patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_recent_test_runs_returns_denial_for_insufficient_permission(
-    mock_compute, db_session_mock, mcp_user,
+    mock_compute, db_session_mock,
 ):
-    mcp_user.is_global_admin = False
-    mock_compute.return_value = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"other_project": "admin", "secret_project": "catalog"},
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"other_project": "role_a", "secret_project": "role_c"},
         permission="view",
-        allowed_codes=frozenset(["other_project"]),
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs

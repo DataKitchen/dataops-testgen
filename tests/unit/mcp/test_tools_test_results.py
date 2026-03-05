@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.test_result import TestResultStatus
-from testgen.mcp.permissions import ProjectAccess
+from testgen.mcp.permissions import ProjectPermissions
 
 
 @patch("testgen.mcp.tools.test_results.TestType")
@@ -110,14 +110,11 @@ def test_get_test_results_invalid_status(db_session_mock):
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
-@patch("testgen.mcp.permissions._compute_project_access")
-def test_get_test_results_passes_project_codes(mock_compute, mock_result, db_session_mock, mcp_user):
-    mcp_user.is_global_admin = False
-    mock_compute.return_value = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin"},
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_results_passes_project_codes(mock_compute, mock_result, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
         permission="view",
-        allowed_codes=frozenset(["proj_a"]),
     )
     mock_result.select_results.return_value = []
 
@@ -204,16 +201,13 @@ def test_get_failure_summary_invalid_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
-@patch("testgen.mcp.permissions._compute_project_access")
+@patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_passes_project_codes(
-    mock_compute, mock_result, db_session_mock, mcp_user,
+    mock_compute, mock_result, db_session_mock,
 ):
-    mcp_user.is_global_admin = False
-    mock_compute.return_value = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin"},
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
         permission="view",
-        allowed_codes=frozenset(["proj_a"]),
     )
     mock_result.select_failures.return_value = []
 
@@ -284,16 +278,13 @@ def test_get_test_result_history_invalid_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
-@patch("testgen.mcp.permissions._compute_project_access")
+@patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_test_result_history_passes_project_codes(
-    mock_compute, mock_result, db_session_mock, mcp_user,
+    mock_compute, mock_result, db_session_mock,
 ):
-    mcp_user.is_global_admin = False
-    mock_compute.return_value = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin"},
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
         permission="view",
-        allowed_codes=frozenset(["proj_a"]),
     )
     mock_result.select_history.return_value = []
 

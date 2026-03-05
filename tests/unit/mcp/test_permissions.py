@@ -6,13 +6,12 @@ import pytest
 from testgen.mcp.permissions import (
     _NOT_SET,
     MCPPermissionDenied,
-    ProjectAccess,
-    _compute_project_access,
-    _mcp_project_access,
+    ProjectPermissions,
+    _compute_project_permissions,
+    _mcp_project_permissions,
     get_current_mcp_user,
-    get_project_access,
+    get_project_permissions,
     mcp_permission,
-    resolve_project_access,
     set_mcp_username,
 )
 
@@ -20,10 +19,10 @@ from testgen.mcp.permissions import (
 @pytest.fixture(autouse=True)
 def _reset_contextvars():
     set_mcp_username(None)
-    tok = _mcp_project_access.set(_NOT_SET)
+    tok = _mcp_project_permissions.set(_NOT_SET)
     yield
     set_mcp_username(None)
-    _mcp_project_access.reset(tok)
+    _mcp_project_permissions.reset(tok)
 
 
 # --- get_current_mcp_user ---
@@ -55,350 +54,169 @@ def test_get_current_mcp_user_returns_user(mock_user):
     mock_user.get.assert_called_once_with("admin")
 
 
-# --- _compute_project_access ---
+# --- _compute_project_permissions ---
 
 
-def test_compute_project_access_global_admin():
+@patch("testgen.mcp.permissions.ProjectMembership")
+def test_compute_project_permissions_returns_memberships(mock_membership):
     user = MagicMock()
-    user.is_global_admin = True
+    user.id = uuid4()
 
-    result = _compute_project_access(user, "view")
+    m1 = MagicMock()
+    m1.project_code = "proj_a"
+    m1.role = "role_a"
+    m2 = MagicMock()
+    m2.project_code = "proj_b"
+    m2.role = "role_c"
+    mock_membership.get_memberships_for_user.return_value = [m1, m2]
 
-    assert result.is_unrestricted is True
+    result = _compute_project_permissions(user, "view")
+
+    assert result.memberships == {"proj_a": "role_a", "proj_b": "role_c"}
+    assert result.permission == "view"
+    mock_membership.get_memberships_for_user.assert_called_once_with(user.id)
+
+
+@patch("testgen.mcp.permissions.ProjectMembership")
+def test_compute_project_permissions_no_memberships(mock_membership):
+    user = MagicMock()
+    user.id = uuid4()
+    mock_membership.get_memberships_for_user.return_value = []
+
+    result = _compute_project_permissions(user, "view")
+
     assert result.memberships == {}
     assert result.permission == "view"
-    assert result.allowed_codes == frozenset()
 
 
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-def test_compute_project_access_os_default_all_roles_allowed(mock_hook, mock_membership):
-    """OS default: get_roles_with_permission returns all roles — all memberships returned."""
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = [
-        "admin", "data_quality", "analyst", "business", "catalog",
-    ]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_a"
-    m1.role = "admin"
-    m2 = MagicMock()
-    m2.project_code = "proj_b"
-    m2.role = "catalog"
-    mock_membership.get_memberships_for_user.return_value = [m1, m2]
-
-    result = _compute_project_access(user, "view")
-
-    assert result.is_unrestricted is False
-    assert result.memberships == {"proj_a": "admin", "proj_b": "catalog"}
-    assert result.allowed_codes == frozenset(["proj_a", "proj_b"])
+# --- ProjectPermissions.codes_allowed_to ---
+# These rely on the conftest's PluginHook mock (TEST_PERM_MATRIX).
 
 
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-def test_compute_project_access_filters_by_role(mock_hook, mock_membership):
-    """Enterprise: only memberships with allowed roles are returned."""
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-
-    # "view" permission: admin, data_quality, analyst, business — NOT catalog
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = [
-        "admin", "data_quality", "analyst", "business",
-    ]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_a"
-    m1.role = "admin"
-    m2 = MagicMock()
-    m2.project_code = "proj_b"
-    m2.role = "catalog"
-    mock_membership.get_memberships_for_user.return_value = [m1, m2]
-
-    result = _compute_project_access(user, "view")
-
-    assert result.allowed_codes == frozenset(["proj_a"])
-    assert result.memberships == {"proj_a": "admin", "proj_b": "catalog"}
-
-
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-def test_compute_project_access_catalog_user_with_catalog_permission(mock_hook, mock_membership):
-    """Catalog user calling catalog-permission tool gets their projects."""
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = [
-        "admin", "data_quality", "analyst", "business", "catalog",
-    ]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_a"
-    m1.role = "catalog"
-    mock_membership.get_memberships_for_user.return_value = [m1]
-
-    result = _compute_project_access(user, "catalog")
-
-    assert result.allowed_codes == frozenset(["proj_a"])
-
-
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-def test_compute_project_access_catalog_user_with_view_permission_gets_empty(mock_hook, mock_membership):
-    """Catalog user calling view-permission tool gets empty allowed set."""
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-
-    # "view" excludes catalog role
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = [
-        "admin", "data_quality", "analyst", "business",
-    ]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_a"
-    m1.role = "catalog"
-    mock_membership.get_memberships_for_user.return_value = [m1]
-
-    result = _compute_project_access(user, "view")
-
-    assert result.allowed_codes == frozenset()
-
-
-# --- ProjectAccess.verify_access ---
-
-
-def test_verify_access_admin_always_passes():
-    access = ProjectAccess(is_unrestricted=True, memberships={}, permission="view", allowed_codes=frozenset())
-    access.verify_access("any_project", not_found="not found")
-
-
-def test_verify_access_allowed_passes():
-    access = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin"},
-        permission="view",
-        allowed_codes=frozenset(["proj_a"]),
-    )
-    access.verify_access("proj_a", not_found="not found")
-
-
-def test_verify_access_membership_but_wrong_role_raises():
-    access = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin", "proj_b": "catalog"},
-        permission="view",
-        allowed_codes=frozenset(["proj_a"]),
-    )
-    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
-        access.verify_access("proj_b", not_found="not found")
-
-
-def test_verify_access_no_membership_raises_not_found():
-    access = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin"},
-        permission="view",
-        allowed_codes=frozenset(["proj_a"]),
-    )
-    with pytest.raises(MCPPermissionDenied, match="not found"):
-        access.verify_access("secret", not_found="not found")
-
-
-# --- ProjectAccess.has_access ---
-
-
-def test_has_access_admin():
-    access = ProjectAccess(is_unrestricted=True, memberships={}, permission="view", allowed_codes=frozenset())
-    assert access.has_access("anything") is True
-
-
-def test_has_access_allowed():
-    access = ProjectAccess(
-        is_unrestricted=False, memberships={"proj_a": "admin"}, permission="view", allowed_codes=frozenset(["proj_a"]),
-    )
-    assert access.has_access("proj_a") is True
-    assert access.has_access("proj_b") is False
-
-
-# --- ProjectAccess.query_codes ---
-
-
-def test_query_codes_admin():
-    access = ProjectAccess(is_unrestricted=True, memberships={}, permission="view", allowed_codes=frozenset())
-    assert access.query_codes is None
-
-
-def test_query_codes_scoped():
-    access = ProjectAccess(
-        is_unrestricted=False, memberships={"proj_a": "admin"}, permission="view", allowed_codes=frozenset(["proj_a"]),
-    )
-    assert access.query_codes == ["proj_a"]
-
-
-# --- ProjectAccess.query_codes_for ---
-
-
-@patch("testgen.mcp.permissions.PluginHook")
-def test_query_codes_for_admin(mock_hook):
-    access = ProjectAccess(is_unrestricted=True, memberships={}, permission="catalog", allowed_codes=frozenset())
-    assert access.query_codes_for("view") is None
-
-
-def test_query_codes_for_same_permission():
-    access = ProjectAccess(
-        is_unrestricted=False, memberships={"proj_a": "admin"}, permission="view", allowed_codes=frozenset(["proj_a"]),
-    )
-    assert access.query_codes_for("view") == ["proj_a"]
-
-
-@patch("testgen.mcp.permissions.PluginHook")
-def test_query_codes_for_different_permission(mock_hook):
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
-    access = ProjectAccess(
-        is_unrestricted=False,
-        memberships={"proj_a": "admin", "proj_b": "catalog"},
+def test_codes_allowed_to_filters_by_role():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="catalog",
-        allowed_codes=frozenset(["proj_a", "proj_b"]),
     )
-    result = access.query_codes_for("view")
+    # "view" includes role_a but not role_c
+    result = perms.codes_allowed_to("view")
     assert result == ["proj_a"]
 
 
-# --- get_project_access ---
+def test_codes_allowed_to_all_matching():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_b"},
+        permission="catalog",
+    )
+    # "catalog" includes all roles
+    result = perms.codes_allowed_to("catalog")
+    assert sorted(result) == ["proj_a", "proj_b"]
 
 
-def test_get_project_access_raises_without_decorator():
+def test_codes_allowed_to_none_matching():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_c"},
+        permission="catalog",
+    )
+    # "view" excludes role_c
+    result = perms.codes_allowed_to("view")
+    assert result == []
+
+
+# --- ProjectPermissions.allowed_codes ---
+
+
+def test_allowed_codes_uses_decorator_permission():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_c"},
+        permission="view",
+    )
+    # "view" includes role_a but not role_c
+    assert perms.allowed_codes == ["proj_a"]
+
+
+# --- ProjectPermissions.verify_access ---
+
+
+def test_verify_access_allowed_passes():
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    perms.verify_access("proj_a", not_found="not found")
+
+
+def test_verify_access_membership_but_wrong_role_raises():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_c"},
+        permission="view",
+    )
+    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
+        perms.verify_access("proj_b", not_found="not found")
+
+
+def test_verify_access_no_membership_raises_not_found():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+    )
+    with pytest.raises(MCPPermissionDenied, match="not found"):
+        perms.verify_access("secret", not_found="not found")
+
+
+# --- ProjectPermissions.has_access ---
+
+
+def test_has_access():
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    assert perms.has_access("proj_a") is True
+    assert perms.has_access("proj_b") is False
+
+
+# --- get_project_permissions ---
+
+
+def test_get_project_permissions_raises_without_decorator():
     with pytest.raises(RuntimeError, match="add the decorator"):
-        get_project_access()
+        get_project_permissions()
 
 
-def test_get_project_access_returns_set_value():
-    access = ProjectAccess(is_unrestricted=True, memberships={}, permission="view", allowed_codes=frozenset())
-    token = _mcp_project_access.set(access)
+def test_get_project_permissions_returns_set_value():
+    perms = ProjectPermissions(memberships={}, permission="view")
+    token = _mcp_project_permissions.set(perms)
     try:
-        assert get_project_access() is access
+        assert get_project_permissions() is perms
     finally:
-        _mcp_project_access.reset(token)
-
-
-# --- resolve_project_access ---
-
-
-@patch("testgen.mcp.permissions.User")
-def test_resolve_project_access_global_admin(mock_user):
-    user = MagicMock()
-    user.is_global_admin = True
-    mock_user.get.return_value = user
-    set_mcp_username("admin")
-
-    result = resolve_project_access("view")
-
-    assert result.is_unrestricted is True
-
-
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-@patch("testgen.mcp.permissions.User")
-def test_resolve_project_access_scoped_user(mock_user, mock_hook, mock_membership):
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-    mock_user.get.return_value = user
-    set_mcp_username("scoped")
-
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_a"
-    m1.role = "admin"
-    mock_membership.get_memberships_for_user.return_value = [m1]
-
-    result = resolve_project_access("view")
-
-    assert result.allowed_codes == frozenset(["proj_a"])
+        _mcp_project_permissions.reset(token)
 
 
 # --- mcp_permission decorator ---
+# These rely on conftest's mocks (User, ProjectMembership, PluginHook).
 
 
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_sets_contextvar_for_global_admin(mock_user):
-    user = MagicMock()
-    user.is_global_admin = True
-    mock_user.get.return_value = user
-    set_mcp_username("admin")
+def test_mcp_permission_sets_contextvar():
+    set_mcp_username("test")
 
     captured = {}
 
     @mcp_permission("view")
     def tool_fn():
-        access = get_project_access()
-        captured["access"] = access
+        perms = get_project_permissions()
+        captured["perms"] = perms
         return "ok"
 
     result = tool_fn()
 
     assert result == "ok"
-    assert captured["access"].is_unrestricted is True
-    assert captured["access"].query_codes is None
+    assert "demo" in captured["perms"].allowed_codes
+    assert captured["perms"].memberships == {"demo": "role_a"}
 
 
 @patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_sets_contextvar_for_scoped_user(mock_user, mock_hook, mock_membership):
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-    mock_user.get.return_value = user
-    set_mcp_username("scoped")
-
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = [
-        "admin", "data_quality", "analyst", "business", "catalog",
-    ]
-
-    m1 = MagicMock()
-    m1.project_code = "proj_x"
-    m1.role = "admin"
-    mock_membership.get_memberships_for_user.return_value = [m1]
-
-    captured = {}
-
-    @mcp_permission("view")
-    def tool_fn():
-        access = get_project_access()
-        captured["access"] = access
-        return "ok"
-
-    result = tool_fn()
-
-    assert result == "ok"
-    assert captured["access"].allowed_codes == frozenset(["proj_x"])
-    assert captured["access"].memberships == {"proj_x": "admin"}
-
-
-@patch("testgen.mcp.permissions.ProjectMembership")
-@patch("testgen.mcp.permissions.PluginHook")
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_early_return_when_no_allowed_codes(mock_user, mock_hook, mock_membership):
+def test_mcp_permission_early_return_when_no_allowed_codes(mock_membership):
     """Decorator returns early if user has no projects with the required permission."""
-    user = MagicMock()
-    user.is_global_admin = False
-    user.id = uuid4()
-    mock_user.get.return_value = user
-    set_mcp_username("scoped")
-
-    # "view" excludes catalog role
-    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+    set_mcp_username("test")
 
     m1 = MagicMock()
     m1.project_code = "proj_a"
-    m1.role = "catalog"
+    m1.role = "role_c"
     mock_membership.get_memberships_for_user.return_value = [m1]
 
     @mcp_permission("view")
@@ -411,13 +229,9 @@ def test_mcp_permission_early_return_when_no_allowed_codes(mock_user, mock_hook,
     assert "role" in result.lower()
 
 
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_catches_mcp_permission_denied(mock_user):
+def test_mcp_permission_catches_mcp_permission_denied():
     """Decorator catches MCPPermissionDenied and returns str(e)."""
-    user = MagicMock()
-    user.is_global_admin = True
-    mock_user.get.return_value = user
-    set_mcp_username("admin")
+    set_mcp_username("test")
 
     @mcp_permission("view")
     def tool_fn():
@@ -428,12 +242,8 @@ def test_mcp_permission_catches_mcp_permission_denied(mock_user):
     assert result == "Access denied for testing"
 
 
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_resets_contextvar_after_call(mock_user):
-    user = MagicMock()
-    user.is_global_admin = True
-    mock_user.get.return_value = user
-    set_mcp_username("admin")
+def test_mcp_permission_resets_contextvar_after_call():
+    set_mcp_username("test")
 
     @mcp_permission("view")
     def tool_fn():
@@ -441,15 +251,10 @@ def test_mcp_permission_resets_contextvar_after_call(mock_user):
 
     tool_fn()
 
-    assert _mcp_project_access.get() is _NOT_SET
+    assert _mcp_project_permissions.get() is _NOT_SET
 
 
-@patch("testgen.mcp.permissions.User")
-def test_mcp_permission_preserves_function_metadata(mock_user):
-    user = MagicMock()
-    user.is_global_admin = True
-    mock_user.get.return_value = user
-
+def test_mcp_permission_preserves_function_metadata():
     @mcp_permission("view")
     def my_tool(x: int, y: str = "default") -> str:
         """Tool docstring."""
