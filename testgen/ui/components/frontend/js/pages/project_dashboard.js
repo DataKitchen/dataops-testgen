@@ -121,8 +121,8 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     { class: 'flex-column mt-4' },
                     getValue(filteredTableGroups).map(tableGroup =>
                         tableGroup.monitoring_summary
-                            ? TableGroupCardWithMonitor(tableGroup)
-                            : TableGroupCard(tableGroup)
+                            ? TableGroupCardWithMonitor(tableGroup, getValue(props.project_summary)?.project_code)
+                            : TableGroupCard(tableGroup, getValue(props.project_summary)?.project_code)
                     )
                 )
                 : div(
@@ -133,7 +133,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     );
 }
 
-const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
+const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
 
     return Card({
@@ -158,12 +158,12 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
                         ${formatNumber(useApprox ? tableGroup.approx_data_point_ct : tableGroup.data_point_ct)} data points
                         ${useApprox ? '*' : ''}`,
                     ),
-                    TableGroupTestSuiteSummary(tableGroup.test_suites),
+                    TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode),
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupLatestProfile(tableGroup),
+            TableGroupLatestProfile(tableGroup, projectCode),
             useApprox
                 ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
                 : null,
@@ -171,7 +171,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup) => {
     });
 };
 
-const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup) => {
+const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
     return Card({
         testId: 'table-group-summary-card',
@@ -205,9 +205,9 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup) =>
             ),
 
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupTestSuiteSummary(tableGroup.test_suites),
+            TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode),
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupLatestProfile(tableGroup),
+            TableGroupLatestProfile(tableGroup, projectCode),
             useApprox
                 ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
                 : null,
@@ -215,7 +215,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup) =>
     });
 };
 
-const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
+const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
     if (!tableGroup.latest_profile_start) {
         return div(
             { class: 'mt-1 mb-1 text-secondary' },
@@ -233,7 +233,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
             Link({
                 label: formatTimestamp(tableGroup.latest_profile_start),
                 href: 'profiling-runs:results',
-                params: { run_id: tableGroup.latest_profile_id },
+                params: { run_id: tableGroup.latest_profile_id, project_code: projectCode },
             }),
             daysAgo > staleProfileDays
                 ? span({ class: 'text-error' }, `(${daysAgo} days ago)`)
@@ -246,6 +246,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
                 href: 'profiling-runs:hygiene',
                 params: {
                     run_id: tableGroup.latest_profile_id,
+                    project_code: projectCode,
                 },
                 width: 150,
                 style: 'flex: 0 0 auto;',
@@ -264,7 +265,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup) => {
     );
 };
 
-const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) => {
+const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /** @type string */ projectCode) => {
     if (!testSuites?.length) {
         return div(
             { class: 'mt-1 mb-1 text-secondary' },
@@ -287,7 +288,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                 Link({
                     label: suite.test_suite,
                     href: 'test-suites:definitions',
-                    params: { test_suite_id: suite.id },
+                    params: { test_suite_id: suite.id, project_code: projectCode },
                 }),
                 span({ class: 'text-caption' }, `${suite.test_ct ?? 0} tests`),
             ),
@@ -295,7 +296,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites) =
                 ? Link({
                     label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
-                    params: { run_id: suite.latest_run_id },
+                    params: { run_id: suite.latest_run_id, project_code: projectCode },
                     style: 'flex: 1 1 25%;',
                 })
                 : span({ style: 'flex: 1 1 25%;' }, '--'),

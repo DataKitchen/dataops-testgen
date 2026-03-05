@@ -2,13 +2,15 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import Column, String, asc, func, text
+from sqlalchemy import Column, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.custom_types import NullIfEmptyString
-from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.project_membership import ProjectMembership
+from testgen.common.models.user import User
 
 
 @dataclass
@@ -22,6 +24,12 @@ class ProjectSummary(EntityMinimal):
     test_definition_count: int
     test_run_count: int
     can_export_to_observability: bool
+
+
+@dataclass
+class ProjectMember(EntityMinimal):
+    user: User
+    membership: ProjectMembership
 
 
 class Project(Entity):
@@ -99,3 +107,22 @@ class Project(Entity):
     def clear_cache(cls) -> bool:
         super().clear_cache()
         cls.get_summary.clear()
+        cls.get_project_members.clear()
+
+    @classmethod
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def get_project_members(
+        cls,
+        project_code: str,
+        *filters,
+        _order_by: tuple = (asc(func.lower(User.username)),),
+    ) -> list[ProjectMember]:
+        """Get all users who have access to this project."""
+        query = (
+            select(User, ProjectMembership)
+            .join(ProjectMembership, User.id == ProjectMembership.user_id)
+            .where(ProjectMembership.project_code == project_code, *filters)
+            .order_by(*_order_by)
+        )
+        rows = get_current_session().execute(query).all()
+        return [ProjectMember(user=user, membership=membership) for user, membership in rows]

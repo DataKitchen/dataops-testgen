@@ -84,7 +84,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         data_chars = run_data_chars_refresh(connection, table_group, test_run.test_starttime)
         test_run.set_progress("data_chars", "Completed")
 
-        sql_generator = TestExecutionSQL(connection, table_group, test_run)
+        sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run)
 
         if test_suite.is_monitor:
             _sync_monitor_definitions(sql_generator)

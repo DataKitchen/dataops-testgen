@@ -13,8 +13,10 @@
  * @property {string} functional_data_type
  * @property {number} record_ct
  * @property {number} value_ct
- * @property {number} drop_date
- * @property {number} table_drop_date
+ * @property {string} add_date
+ * @property {string} drop_date
+ * @property {string} table_add_date
+ * @property {string} table_drop_date
  * @property {boolean} critical_data_element
  * @property {boolean} table_critical_data_element
  * @property {string} data_source
@@ -65,7 +67,7 @@ import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profilin
 import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
-import { capitalize, caseInsensitiveIncludes } from '../display_utils.js';
+import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
@@ -117,12 +119,12 @@ const DataCatalog = (/** @type Properties */ props) => {
 
         const tables = {};
         columns.forEach((item) => {
-            const { column_id, table_id, column_name, table_name, record_ct, value_ct, drop_date, table_drop_date } = item;
+            const { column_id, table_id, column_name, table_name, record_ct, value_ct, add_date, drop_date, table_add_date, table_drop_date } = item;
             if (!tables[table_id]) {
                 tables[table_id] = {
                     id: table_id,
                     label: table_name,
-                    classes: table_drop_date ? 'text-disabled' : '',
+                    classes: table_drop_date ? 'text-disabled' : (table_add_date && (Date.now() - new Date(table_add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
                     ...TABLE_ICON,
                     iconColor: record_ct === 0 ? 'red' : null,
                     iconTooltip: record_ct === 0 ? 'No records detected' : null,
@@ -134,7 +136,7 @@ const DataCatalog = (/** @type Properties */ props) => {
             const columnNode = {
                 id: column_id,
                 label: column_name,
-                classes: drop_date ? 'text-disabled' : '',
+                classes: drop_date ? 'text-disabled' : (add_date && (Date.now() - new Date(add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
                 ...getColumnIcon(item),
                 iconColor: value_ct === 0 ? 'red' : null,
                 iconTooltip: value_ct === 0 ? 'No non-null values detected' : null,
@@ -206,7 +208,22 @@ const DataCatalog = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                ExportOptions(treeNodes, multiSelectedItems),
+                div(
+                    { class: 'flex-row fx-gap-2' },
+                    userCanEdit
+                        ? Button({
+                            icon: 'upload',
+                            type: 'stroked',
+                            label: 'Import',
+                            tooltip: 'Import metadata from CSV',
+                            tooltipPosition: 'left',
+                            width: 'fit-content',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emitEvent('ImportClicked', {}),
+                        })
+                        : null,
+                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                ),
             ),
             () => treeNodes.val.length
                 ? div(
@@ -320,7 +337,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes) => {
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, /** @type boolean */ userCanEdit) => {
     const exportOptionsDomId = `data-catalog-export-${getRandomId()}`;
     const exportOptionsOpened = van.state(false);
 
@@ -397,6 +414,17 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                         'Selected columns',
                     )
                     : null,
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        style: 'border-top: var(--button-stroked-border);',
+                        onclick: () => {
+                            emitEvent('ExportCsvClicked', {});
+                            exportOptionsOpened.val = false;
+                        },
+                    },
+                    'Metadata CSV',
+                ),
             ),
         ),
     ];
@@ -571,6 +599,7 @@ const TestSuitesCard = (/** @type Table | Column */ item) => {
                         test_suite_id: id,
                         table_name: item.table_name,
                         column_name: item.column_name,
+                        project_code: item.project_code,
                     },
                     open_new: true,
                     label: name,

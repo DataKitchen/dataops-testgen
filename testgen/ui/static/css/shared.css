@@ -205,6 +205,10 @@ body {
     color: var(--disabled-text-color);
 }
 
+.text-bold {
+    font-weight: 500;
+}
+
 .text-small {
     font-size: 13px;
 }
@@ -744,3 +748,39 @@ input::-ms-clear {
 .warning-text {
     color: var(--orange);
 }
+
+/* Base Styles - Using standard system fonts for that Material feel */
+.display, .headline, .title, .body, .label {
+  margin: 0;
+  padding: 0;
+}
+
+/* --- Display: For prominent, large-scale text --- */
+.display { font-weight: 400; letter-spacing: -0.25px; }
+.display.l { font-size: 57px; line-height: 64px; }
+.display.m { font-size: 45px; line-height: 52px; }
+.display.s { font-size: 36px; line-height: 44px; }
+
+/* --- Headline: High-emphasis, shorter text --- */
+.headline { font-weight: 400; }
+.headline.l { font-size: 32px; line-height: 40px; }
+.headline.m { font-size: 28px; line-height: 36px; }
+.headline.s { font-size: 24px; line-height: 32px; }
+
+/* --- Title: Medium-emphasis, usually for UI headers --- */
+.title { font-weight: 400; } /* Title Large is 400, M/S are 500 */
+.title.l { font-size: 22px; line-height: 28px; }
+.title.m { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0.15px; }
+.title.s { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; }
+
+/* --- Body: For extended reading and long-form content --- */
+.body { font-weight: 400; }
+.body.l { font-size: 16px; line-height: 24px; letter-spacing: 0.5px; }
+.body.m { font-size: 14px; line-height: 20px; letter-spacing: 0.25px; }
+.body.s { font-size: 12px; line-height: 16px; letter-spacing: 0.4px; }
+
+/* --- Label: For small functional text (buttons, captions) --- */
+.label { font-weight: 500; }
+.label.l { font-size: 14px; line-height: 20px; letter-spacing: 0.1px; }
+.label.m { font-size: 12px; line-height: 16px; letter-spacing: 0.5px; }
+.label.s { font-size: 11px; line-height: 16px; letter-spacing: 0.5px; }

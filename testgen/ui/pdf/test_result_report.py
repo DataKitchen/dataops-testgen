@@ -152,7 +152,7 @@ def build_summary_table(document, tr_data):
         ),
         (
             Paragraph(
-                f"""<a href="{PersistedSetting.get("BASE_URL")}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}">
+                f"""<a href="{PersistedSetting.get("BASE_URL")}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}&project_code={tr_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

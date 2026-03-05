@@ -42,7 +42,8 @@ SELECT * FROM new_sales;
 
 
 UPDATE demo.d_ebike_customers
-SET last_contact = :RUN_DATE
+SET last_contact = :RUN_DATE,
+    customer_decile = customer_decile + 1
 WHERE ctid IN (
     SELECT ctid
     FROM demo.d_ebike_customers

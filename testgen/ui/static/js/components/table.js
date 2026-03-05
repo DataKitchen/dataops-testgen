@@ -43,6 +43,7 @@
  * @property {string?} class
  * @property {((row: any, index: number) => string)?} rowClass
  * @property {string?} height
+ * @property {string?} maxHeight
  * @property {string?} width
  * @property {boolean?} highDensity
  * @property {boolean?} dynamicWidth
@@ -157,7 +158,7 @@ const Table = (options, rows) => {
     return div(
         {
             class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${options.onRowsSelected ? 'tg-table-hoverable' : ''}`,
-            style: () => `height: ${getValue(options.height) ? getValue(options.height) + 'px' : defaultHeight};`,
+            style: () => `height: ${getValue(options.height) ? getValue(options.height) : defaultHeight}; ${getValue(options.maxHeight) ? 'max-height: ' + getValue(options.maxHeight) + ';' : ''}`,
         },
         options.header,
         div(
@@ -201,7 +202,7 @@ const Table = (options, rows) => {
                             {class: 'tg-table-empty-state-body'},
                             tr(
                                 td(
-                                    {colspan: dataColumns.length},
+                                    {colspan: dataColumns.val.length},
                                     options.emptyState,
                                 ),
                             ),

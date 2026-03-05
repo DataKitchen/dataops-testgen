@@ -4,6 +4,7 @@
  * @property {string} label
  * @property {string?} name
  * @property {boolean?} checked
+ * @property {boolean?} disabled
  * @property {string?} style
  * @property {function(boolean)?} onChange
  */
@@ -15,14 +16,17 @@ const { input, label } = van.tags;
 const Toggle = (/** @type Properties */ props) => {
     loadStylesheet('toggle', stylesheet);
 
+    const disabled = props.disabled?.val ?? props.disabled ?? false;
+
     return label(
-        { class: 'flex-row fx-gap-2 clickable', style: props.style ?? '', 'data-testid': props.name ?? '' },
+        { class: `flex-row fx-gap-2 ${disabled ? '' : 'clickable'}`, style: props.style ?? '', 'data-testid': props.name ?? '' },
         input({
             type: 'checkbox',
             role: 'switch',
             class: 'tg-toggle--input clickable',
             name: props.name ?? '',
             checked: props.checked,
+            disabled,
             onchange: van.derive(() => {
                 const onChange = props.onChange?.val ?? props.onChange;
                 return onChange ? (/** @type Event */ event) => onChange(event.target.checked) : null;
@@ -83,6 +87,11 @@ stylesheet.replace(`
 
 .tg-toggle--input:checked::after {
     left: 14px;
+}
+
+.tg-toggle--input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 `);
 

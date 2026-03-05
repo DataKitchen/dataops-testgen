@@ -1,4 +1,4 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
-ALTER TABLE test_definitions
-    ADD COLUMN IF NOT EXISTS flagged BOOLEAN DEFAULT FALSE NOT NULL;
+ALTER TABLE stg_test_definition_updates
+    ADD COLUMN IF NOT EXISTS threshold_value VARCHAR(1000);

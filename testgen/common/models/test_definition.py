@@ -355,7 +355,7 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
-        modified_columns = [cls.table_groups_id, cls.profile_run_id, cls.test_suite_id]
+        modified_columns = [cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
 
         select_columns = [
             literal(target_table_group_id).label("table_groups_id"),
@@ -364,6 +364,7 @@ class TestDefinition(Entity):
                 else_=None,
             ).label("profile_run_id"),
             literal(target_test_suite_id).label("test_suite_id"),
+            literal(None).label("last_auto_gen_date"),
         ]
 
         if target_table_name:

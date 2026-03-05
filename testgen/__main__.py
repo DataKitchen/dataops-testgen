@@ -56,6 +56,8 @@ from testgen.utils import plugins
 LOG = logging.getLogger("testgen")
 
 APP_MODULES = ["ui", "scheduler"]
+if settings.MCP_ENABLED:
+    APP_MODULES.append("mcp")
 VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
 
@@ -72,6 +74,8 @@ class CliGroup(click.Group):
     def invoke(self, ctx: Context):
         try:
             super().invoke(ctx)
+        except click.exceptions.UsageError:
+            raise
         except Exception:
             LOG.exception("There was an unexpected error")
 
@@ -428,7 +432,7 @@ def quick_start(
     click.echo("loading initial data")
     run_quick_start_increment(0)
     now_date = datetime.now(UTC)
-    time_delta = timedelta(days=-30) # 1 month ago
+    time_delta = timedelta(days=-35) # before the first monitor iteration (~34 days back)
     table_group_id = "0ea85e17-acbe-47fe-8394-9970725ad37d"
     test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
@@ -449,16 +453,19 @@ def quick_start(
         run_quick_start_increment(iteration)
         run_test_execution(test_suite_id, run_date=run_date)
 
-    monitor_iterations = 42  # 3 weeks
+    monitor_iterations = 68  # ~5 weeks
     monitor_interval = timedelta(hours=12)
     monitor_test_suite_id = "823a1fef-9b6d-48d5-9d0f-2db9812cc318"
     # Round down to nearest 12-hour mark (12:00 AM or 12:00 PM UTC)
     now = datetime.now(UTC)
     nearest_12h_mark = now.replace(hour=12 if now.hour >= 12 else 0, minute=0, second=0, microsecond=0)
     monitor_run_date = nearest_12h_mark - monitor_interval * (monitor_iterations - 1)
+    weekday_morning_count = 0
     for iteration in range(1, monitor_iterations + 1):
         click.echo(f"Running monitor iteration: {iteration} / {monitor_iterations}")
-        run_monitor_increment(monitor_run_date, iteration)
+        if monitor_run_date.weekday() < 5 and monitor_run_date.hour < 12:
+            weekday_morning_count += 1
+        run_monitor_increment(monitor_run_date, iteration, weekday_morning_count)
         run_test_execution(monitor_test_suite_id, run_date=monitor_run_date)
         monitor_run_date += monitor_interval
 
@@ -761,6 +768,10 @@ def run_app(module):
         case "scheduler":
             run_scheduler()
 
+        case "mcp":
+            from testgen.mcp.server import run_mcp
+            run_mcp()
+
         case "all":
             children = [
                 subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
@@ -788,6 +799,34 @@ def run_app(module):
                             terminating = True
                             term_children(signal.SIGTERM, None)
 
+
+
+@cli.command("mcp-token", help="Generate a JWT token for MCP server authentication.")
+@click.option("--username", required=True, help="TestGen username")
+@click.option("--password", required=True, hide_input=True, help="TestGen password")
+@with_database_session
+def mcp_token(username: str, password: str):
+    from testgen.mcp import get_server_url
+    from testgen.mcp.auth import authenticate_user
+    try:
+        token = authenticate_user(username, password)
+    except ValueError as e:
+        click.secho(str(e), fg="red")
+        sys.exit(1)
+
+    mcp_url = f"{get_server_url()}/mcp"
+
+    click.echo()
+    click.echo(token)
+    click.echo()
+    click.secho("MCP server URL:", bold=True)
+    click.echo(f"  {mcp_url}")
+    click.echo()
+    click.secho("Pass the token as a Bearer header when connecting from any MCP client.", dim=True)
+    click.echo()
+    click.secho("Example — Claude Code:", bold=True)
+    click.echo(f'  claude mcp add --transport http testgen {mcp_url} --header "Authorization: Bearer {token}"')
+    click.echo()
 
 
 if __name__ == "__main__":

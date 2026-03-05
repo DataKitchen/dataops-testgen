@@ -15,14 +15,16 @@
  * @property {string} name
  * @property {string} value
  * @property {string?} class
+ * @property {string?} help
  * @property {Array<Validator>?} validators
  * @property {function(FileValue?, InputState)?} onChange
- * 
+ *
  */
 import van from '../van.min.js';
 import { checkIsRequired, getRandomId, getValue, loadStylesheet } from "../utils.js";
 import { Icon } from './icon.js';
 import { Button } from './button.js';
+import { withTooltip } from './tooltip.js';
 import { humanReadableSize } from '../display_utils.js';
 
 const { div, input, label, span } = van.tags;
@@ -112,12 +114,18 @@ const FileInput = (options) => {
 
     return div(
         { class: cssClass },
-        label(
+        div(
             { class: 'tg-file-uploader--label text-caption flex-row fx-gap-1' },
             options.label,
             () => isRequired.val
                 ? span({ class: 'text-error' }, '*')
                 : '',
+            () => getValue(options.help)
+                ? withTooltip(
+                    Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                    { text: options.help, position: 'bottom', width: 200 }
+                )
+                : null,
         ),
         div(
             { class: () => `tg-file-uploader--dropzone flex-column clickable ${fileOver.val ? 'on-dragover' : ''}` },
@@ -177,7 +185,9 @@ const FileSelectionDropZone = (placeholder, sizeLimit) => {
         div(
             { class: 'flex-column fx-gap-1' },
             span({}, placeholder),
-            span({ class: 'text-secondary text-caption' }, `Limit ${humanReadableSize(sizeLimit)} per file`),
+            sizeLimit
+                ? span({ class: 'text-secondary text-caption' }, `Limit ${humanReadableSize(sizeLimit)} per file`)
+                : null,
         ),
     );
 };

@@ -45,6 +45,7 @@ CREATE TABLE stg_test_definition_updates (
    run_date           TIMESTAMP,
    lower_tolerance    VARCHAR(1000),
    upper_tolerance    VARCHAR(1000),
+   threshold_value    VARCHAR(1000),
    prediction         JSONB
 );
 
@@ -631,13 +632,36 @@ CREATE TABLE auth_users (
 	email 		 VARCHAR(256),
 	name 			 VARCHAR(256),
 	password 	 VARCHAR(120),
-	role         VARCHAR(20),
+	is_global_admin BOOLEAN NOT NULL DEFAULT FALSE,
    latest_login TIMESTAMP
 );
 
 ALTER TABLE auth_users
 ADD CONSTRAINT unique_username
 UNIQUE (username);
+
+CREATE TABLE project_memberships (
+    id UUID DEFAULT gen_random_uuid()
+        CONSTRAINT pk_project_memberships_id
+            PRIMARY KEY,
+    user_id UUID NOT NULL
+        CONSTRAINT fk_project_memberships_auth_users
+            REFERENCES auth_users(id)
+            ON DELETE CASCADE,
+    project_code VARCHAR(30) NOT NULL
+        CONSTRAINT fk_project_memberships_projects
+            REFERENCES projects(project_code)
+            ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_project_memberships_user_project
+        UNIQUE (user_id, project_code)
+);
+
+CREATE INDEX ix_pm_user_id ON project_memberships(user_id);
+CREATE INDEX ix_pm_project_code ON project_memberships(project_code);
+CREATE INDEX ix_pm_role ON project_memberships(role);
 
 CREATE TABLE tg_revision (
    component     VARCHAR(50) NOT NULL

@@ -48,6 +48,7 @@ const componentLoaders = {
     test_definition_notes: () => import('./pages/test_definition_notes.js').then(m => m.TestDefinitionNotes),
     schema_changes_list: () => import('./components/schema_changes_list.js').then(m => m.SchemaChangesList),
     edit_monitor_settings: () => import('./pages/edit_monitor_settings.js').then(m => m.EditMonitorSettings),
+    import_metadata_dialog: () => import('./pages/import_metadata_dialog.js').then(m => m.ImportMetadataDialog),
 };
 
 const TestGenComponent = async (/** @type {string} */ id, /** @type {object} */ props) => {

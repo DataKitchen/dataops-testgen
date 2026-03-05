@@ -8,7 +8,6 @@ import streamlit as st
 from streamlit.runtime.state.query_params_proxy import QueryParamsProxy
 
 import testgen.ui.navigation.router
-from testgen.common.models.project import Project
 from testgen.ui.auth import Permission
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.session import session
@@ -33,20 +32,37 @@ class Page(abc.ABC):
 
     def _navigate(self) -> None:
         self.router.navigate_to_pending()
+
+        is_admin_page = self.permission == "global_admin"
+        requested_project = st.query_params.get("project_code")
+        if not is_admin_page and session.auth.user and requested_project and not session.auth.user_has_project_access(requested_project):
+            default_page = session.auth.get_default_page()
+            project_codes = session.auth.user.get_accessible_projects()
+            return self.router.navigate_with_warning(
+                "You do not have access to this project or it does not exist. Redirecting ...",
+                to=default_page,
+                with_args={"project_code": project_codes[0] if project_codes else None},
+            )
+
+        sidebar_project = session.sidebar_project
+        if not sidebar_project and session.auth.user:
+            project_codes = [requested_project] if requested_project else session.auth.user.get_accessible_projects()
+            sidebar_project = project_codes[0] if project_codes else None
+        session.sidebar_project = sidebar_project
+
         permission_guard = lambda: session.auth.user_has_permission(self.permission) if self.permission else True
         for guard in [ permission_guard, *(self.can_activate or []) ]:
             can_activate = guard()
             if can_activate != True:
-                session.sidebar_project = session.sidebar_project or Project.select_where()[0].project_code
-
                 if type(can_activate) == str:
                     return self.router.navigate(to=can_activate, with_args={ "project_code": session.sidebar_project })
 
                 session.page_pending_login = self.path
                 session.page_args_pending_login = st.query_params.to_dict()
 
-                default_page = session.auth.default_page or ""
+                default_page = session.auth.get_default_page(project_code=session.sidebar_project)
                 with_args = { "project_code": session.sidebar_project } if default_page else {}
+
                 return self.router.navigate(to=default_page, with_args=with_args)
 
         self.render(**self._query_params_to_kwargs(st.query_params))

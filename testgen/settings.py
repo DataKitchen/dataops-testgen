@@ -1,13 +1,13 @@
 import os
 import typing
 
-IS_DEBUG_LOG_LEVEL: bool = os.getenv("TESTGEN_DEBUG_LOG_LEVEL", "no").lower() == "yes"
+IS_DEBUG_LOG_LEVEL: bool = os.getenv("TESTGEN_DEBUG_LOG_LEVEL", "no").lower() in ("yes", "true")
 """
 When set, logs will be at debug level.
 defaults to: `no`
 """
 
-IS_DEBUG: bool = os.getenv("TESTGEN_DEBUG", "no").lower() == "yes"
+IS_DEBUG: bool = os.getenv("TESTGEN_DEBUG", "no").lower() in ("yes", "true")
 """
 When True invalidates the cache with the bootstrapped application
 causing the changes to the routing and plugins to take effect on every
@@ -17,7 +17,7 @@ from env variable: `TESTGEN_DEBUG`
 defaults to: `True`
 """
 
-LOG_TO_FILE: bool = os.getenv("TESTGEN_LOG_TO_FILE", "yes").lower() == "yes"
+LOG_TO_FILE: bool = os.getenv("TESTGEN_LOG_TO_FILE", "yes").lower() in ("yes", "true")
 """
 When set, rotating file logs will be generated.
 defaults to: `True`
@@ -266,7 +266,7 @@ from env variable: `PROJECT_DATABASE_PORT`
 defaults to: `environ[DATABASE_PORT]`
 """
 
-SKIP_DATABASE_CERTIFICATE_VERIFICATION: bool = os.getenv("TG_TARGET_DB_TRUST_SERVER_CERTIFICATE", "no").lower() == "yes"
+SKIP_DATABASE_CERTIFICATE_VERIFICATION: bool = os.getenv("TG_TARGET_DB_TRUST_SERVER_CERTIFICATE", "no").lower() in ("yes", "true")
 """
 When True for supported SQL flavors, set up the SQLAlchemy connection to
 trust the database server certificate.
@@ -372,7 +372,7 @@ You can configure this from the UI settings page.
 from env variable: `OBSERVABILITY_API_KEY`
 """
 
-OBSERVABILITY_VERIFY_SSL: bool = os.getenv("TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL", "yes").lower() in ["yes", "true"]
+OBSERVABILITY_VERIFY_SSL: bool = os.getenv("TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL", "yes").lower() in ("yes", "true")
 """
 When False, exporting events to your instance of Observability will skip
 SSL verification.
@@ -456,7 +456,7 @@ INSTANCE_ID: str | None = os.getenv("TG_INSTANCE_ID", None)
 Random ID that uniquely identifies the instance.
 """
 
-ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("true", "yes")
+ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("yes", "true")
 """
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
@@ -499,4 +499,28 @@ Email: SMTP username
 SMTP_PASSWORD: str | None = os.getenv("TG_SMTP_PASSWORD")
 """
 Email: SMTP password
+"""
+
+MCP_PORT: int = int(os.getenv("TG_MCP_PORT", "8510"))
+"""
+Port for the MCP server.
+
+from env variable: `TG_MCP_PORT`
+defaults to: `8510`
+"""
+
+MCP_HOST: str = os.getenv("TG_MCP_HOST", "0.0.0.0")  # noqa: S104
+"""
+Host for the MCP server.
+
+from env variable: `TG_MCP_HOST`
+defaults to: `0.0.0.0`
+"""
+
+MCP_ENABLED: bool = os.getenv("TG_MCP_ENABLED", "no").lower() in ("yes", "true")
+"""
+Enable the MCP server when running `testgen run-app all`.
+
+from env variable: `TG_MCP_ENABLED`
+defaults to: `Yes`
 """

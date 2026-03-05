@@ -80,7 +80,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
 
     query = f"""
     SELECT
-        id::VARCHAR,
+        profile_results.id::VARCHAR,
         'column' AS type,
         schema_name,
         table_name,
@@ -107,8 +107,11 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
         ) THEN 'Yes' END AS hygiene_issues,
-        CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details
+        CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details,
+        tg.project_code,
+        tg.connection_id::VARCHAR AS connection_id
     FROM profile_results
+    LEFT JOIN table_groups tg ON (profile_results.table_groups_id = tg.id)
     WHERE profile_run_id = :profiling_run_id
         AND table_name ILIKE :table_name
         AND column_name ILIKE :column_name
@@ -242,16 +245,16 @@ def get_tables_by_condition(
         -- Profile Run
         table_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         profiling_starttime AS profile_run_date,
-        TRUE AS is_latest_profile
+        TRUE AS is_latest_profile,
+        table_groups.project_code,
+        table_groups.connection_id::VARCHAR AS connection_id
     FROM data_table_chars table_chars
         LEFT JOIN profiling_runs ON (
             table_chars.last_complete_profile_run_id = profiling_runs.id
         )
-        {"""
         LEFT JOIN table_groups ON (
             table_chars.table_groups_id = table_groups.id
         )
-        """ if include_tags else ""}
         {"""
         LEFT JOIN active_test_definitions active_tests ON (
             table_chars.table_groups_id = active_tests.table_groups_id
@@ -404,16 +407,16 @@ def get_columns_by_condition(
         column_chars.dq_score_testing,
         """ if include_scores else ""}
         table_chars.approx_record_ct,
+        table_groups.project_code,
+        table_groups.connection_id::VARCHAR AS connection_id,
         {COLUMN_PROFILING_FIELDS}
     FROM data_column_chars column_chars
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
-        {"""
         LEFT JOIN table_groups ON (
             column_chars.table_groups_id = table_groups.id
         )
-        """ if include_tags else ""}
         LEFT JOIN profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.schema_name = profile_results.schema_name
@@ -516,7 +519,7 @@ def get_profiling_anomalies(
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.suggested_action,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-        tg.table_groups_name,
+        tg.table_groups_name, tg.project_code,
 
         -- These are used in the PDF report
         dcc.functional_data_type,

@@ -86,7 +86,7 @@ const CrontabInput = (/** @type Options */ props) => {
             }),
         ),
         Portal(
-            {target: domId.val, targetRelative: true, align: 'right', style: 'width: 500px;', opened},
+            {target: domId.val, align: 'right', style: 'width: 500px;', opened},
             () => CrontabEditorPortal(
                 {
                     onChange: onEditorChange,

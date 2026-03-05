@@ -65,6 +65,14 @@ class TestDefinitionsPage(Page):
 
         table_group = TableGroup.get_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
+
+        if not session.auth.user_has_project_access(project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "test-suites",
+            )
+            return
+
         session.set_sidebar_project(project_code)
         user_can_edit = session.auth.user_has_permission("edit")
         user_can_disposition = session.auth.user_has_permission("disposition")
@@ -637,7 +645,7 @@ def show_test_form(
             with container:
                 testgen.link(
                     href="profiling-runs:results",
-                    params={"run_id": str(profile_run_id)},
+                    params={"run_id": str(profile_run_id), "project_code": table_group.project_code},
                     label=formatted_time,
                     open_new=True,
                 )
