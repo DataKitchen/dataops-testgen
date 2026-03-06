@@ -19,19 +19,10 @@ import { Icon } from '../components/icon.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import { ExpansionPanel } from '../components/expansion_panel.js';
+import { formatTimestamp } from '../display_utils.js';
 
 const minHeight = 400;
 const { div, span, textarea, p } = van.tags;
-
-/**
- * @param {string?} isoString
- * @returns {string}
- */
-function formatDate(isoString) {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
 
 /**
  * @param {Properties} props
@@ -64,22 +55,42 @@ const TestDefinitionNotes = (props) => {
         return div(
             { class: () => `tdn-note ${isEdit.val && editNoteId.val === note.id ? 'tdn-editing' : ''}` },
             div(
-                { class: 'tdn-note-header' },
-                span({ class: 'tdn-note-author' }, `@${note.created_by}`),
+                { class: 'flex-row fx-gap-2' },
+                span({ class: 'text-bold text-small' }, `@${note.created_by}`),
                 span({ class: 'tdn-note-separator' }, '\u2014'),
                 span({ class: 'tdn-note-date' },
-                    formatDate(note.created_at),
+                    formatTimestamp(new Date(note.created_at), true),
                     note.updated_at ? ' (edited)' : '',
                 ),
                 isOwner ? div(
                     { class: 'tdn-note-actions' },
-                    () => isEdit.val && editNoteId.val === note.id
-                        ? div(
-                            { class: 'flex-row fx-gap-1 fx-align-center' },
-                            Icon({ size: 18, classes: 'tdn-editing-indicator' }, 'edit'),
-                            span({ class: 'tdn-editing-indicator text-caption' }, 'Editing'),
-                        )
-                        : div(
+                    () => {
+                        if (isEdit.val && editNoteId.val === note.id) {
+                            return div(
+                                { class: 'flex-row fx-gap-1 fx-align-center' },
+                                Icon({ size: 18, classes: 'tdn-editing-indicator' }, 'edit'),
+                                span({ class: 'tdn-editing-indicator text-caption' }, 'Editing'),
+                            );
+                        }
+                        if (confirmingDelete.val) {
+                            return div(
+                                { class: 'flex-row fx-gap-1 fx-align-center' },
+                                span({ class: 'text-caption' }, 'Delete?'),
+                                Button({
+                                    label: 'Yes',
+                                    type: 'stroked',
+                                    color: 'warn',
+                                    onclick: () => emitEvent('NoteDeleted', { payload: { id: note.id } }),
+                                }),
+                                Button({
+                                    label: 'No',
+                                    type: 'stroked',
+                                    color: 'basic',
+                                    onclick: () => { confirmingDelete.val = false; },
+                                }),
+                            );
+                        }
+                        return div(
                             { class: 'flex-row fx-gap-1' },
                             Button({
                                 type: 'icon',
@@ -91,31 +102,15 @@ const TestDefinitionNotes = (props) => {
                                     noteText.val = note.detail;
                                 },
                             }),
-                            () => confirmingDelete.val
-                                ? div(
-                                    { class: 'flex-row fx-gap-1 fx-align-center' },
-                                    span({ class: 'text-caption' }, 'Delete?'),
-                                    Button({
-                                        label: 'Yes',
-                                        type: 'stroked',
-                                        color: 'warn',
-                                        onclick: () => emitEvent('NoteDeleted', { payload: { id: note.id } }),
-                                    }),
-                                    Button({
-                                        label: 'No',
-                                        type: 'stroked',
-                                        color: 'basic',
-                                        onclick: () => { confirmingDelete.val = false; },
-                                    }),
-                                )
-                                : Button({
-                                    type: 'icon',
-                                    icon: 'delete',
-                                    tooltip: 'Delete note',
-                                    tooltipPosition: 'top-left',
-                                    onclick: () => { confirmingDelete.val = true; },
-                                }),
-                        ),
+                            Button({
+                                type: 'icon',
+                                icon: 'delete',
+                                tooltip: 'Delete note',
+                                tooltipPosition: 'top-left',
+                                onclick: () => { confirmingDelete.val = true; },
+                            }),
+                        );
+                    },
                 ) : null,
             ),
             p({ class: 'tdn-note-detail' }, note.detail),
@@ -127,7 +122,7 @@ const TestDefinitionNotes = (props) => {
         () => {
             const label = getValue(props.test_label);
             return div(
-                { class: 'tdn-label' },
+                { class: 'flex-row fx-flex-wrap fx-gap-1' },
                 span({ class: 'text-secondary' }, 'Table: '), span(label.table),
                 span({ class: 'tdn-separator' }, '|'),
                 span({ class: 'text-secondary' }, 'Column: '), span(label.column),
@@ -188,12 +183,13 @@ const TestDefinitionNotes = (props) => {
 
             return notes.length > 0
                 ? div(
-                    { class: 'tdn-notes-list' },
+                    { class: 'flex-column fx-gap-2' },
                     ...notes.map(note => NoteItem(note, currentUser)),
                 )
                 : div(
-                    { class: 'tdn-empty-state text-secondary' },
-                    'No notes yet. Add one above.',
+                    { class: 'flex-column fx-gap-2 fx-align-flex-center mt-7 text-secondary' },
+                    span({ class: 'text-large' }, 'No notes yet'),
+                    span('Document context, decisions, or issues related to this test definition.'),
                 );
         },
     );
@@ -201,13 +197,6 @@ const TestDefinitionNotes = (props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tdn-label {
-    font-size: 14px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-}
 .tdn-separator {
     color: var(--disabled-text-color);
     margin: 0 4px;
@@ -234,35 +223,21 @@ stylesheet.replace(`
     font-style: italic;
     color: var(--disabled-text-color);
 }
-.tdn-notes-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
 .tdn-note {
-    padding: 12px;
+    padding: 4px 12px 12px;
     border-radius: 8px;
-    background-color: var(--dk-card-background);
-    border: 1px solid var(--dk-card-border-color, rgba(0,0,0,0.06));
-    transition: background-color 0.2s;
+    background-color: var(--app-background-color);
+}
+@media (prefers-color-scheme: dark) {
+    .tdn-note {
+        background-color: var(--dk-card-background);
+    }
 }
 .tdn-note.tdn-editing {
     background-color: var(--select-hover-background);
 }
-.tdn-note-header {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
-}
 .tdn-editing-indicator {
     color: var(--purple);
-}
-.tdn-note-author {
-    font-weight: 600;
-    font-size: 13px;
-    color: var(--primary-text-color);
 }
 .tdn-note-separator {
     color: var(--disabled-text-color);
@@ -285,11 +260,6 @@ stylesheet.replace(`
     line-height: 1.5;
     color: var(--primary-text-color);
     white-space: pre-wrap;
-}
-.tdn-empty-state {
-    text-align: center;
-    padding: 24px 0;
-    font-style: italic;
 }
 `);
 

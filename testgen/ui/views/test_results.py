@@ -244,7 +244,7 @@ class TestResultsPage(Page):
                         parts.append(f"📝 {row['notes_count']}")
                     return "  ·  ".join(parts)
 
-                df["review"] = df.apply(build_review_column, axis=1)
+                df["review"] = df.apply(build_review_column, axis=1) if not df.empty else ""
 
                 test_suite = TestSuite.get_minimal(run.test_suite_id)
                 table_group = TableGroup.get_minimal(test_suite.table_groups_id)
