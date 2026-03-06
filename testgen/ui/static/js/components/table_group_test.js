@@ -111,7 +111,7 @@ const TableGroupTest = (preview, options) => {
                                 ),
                             )
                             : div(
-                                { class: 'flex-row fx-justify-center', style: 'height: 50px; font-size: 16px;'},
+                                { class: 'flex-row fx-justify-center p-3', style: 'min-height: 50px; font-size: 14px;'},
                                 tableGroupPreview.message ?? 'No tables found.'
                             ),
                     ),
