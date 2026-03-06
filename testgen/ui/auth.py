@@ -41,7 +41,7 @@ class Authentication:
     def current_project(self) -> str | None:
         return session.sidebar_project
 
-    def get_default_page(self, _project_code: str | None = None) -> str:
+    def get_default_page(self, project_code: str | None = None) -> str:  # noqa: ARG002
         return "project-dashboard" if self.user else ""
 
     def user_has_permission(self, permission: Permission, /, project_code: str | None = None) -> bool:  # noqa: ARG002

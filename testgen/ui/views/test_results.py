@@ -241,8 +241,8 @@ class TestResultsPage(Page):
                     if row["flagged"]:
                         parts.append("🚩")
                     if row.get("notes_count", 0) > 0:
-                        parts.append(f"📝{row['notes_count']}")
-                    return " ".join(parts)
+                        parts.append(f"📝 {row['notes_count']}")
+                    return "  ·  ".join(parts)
 
                 df["review"] = df.apply(build_review_column, axis=1)
 
