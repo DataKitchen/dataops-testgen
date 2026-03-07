@@ -15,6 +15,7 @@ def get_test_results(
     column_name: str | None = None,
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
+    flagged: bool | None = None,
 ) -> pd.DataFrame:
     query = f"""
     WITH run_results
@@ -59,6 +60,8 @@ def get_test_results(
             c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
             r.test_definition_id::VARCHAR,
             r.auto_gen,
+            td.flagged,
+            (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,
 
             -- These are used in the PDF report
             tt.threshold_description, tt.usage_notes, r.test_time,
@@ -94,6 +97,9 @@ def get_test_results(
         AND  r.column_names = dcc.column_name)
     LEFT JOIN data_table_chars dtc
         ON dcc.table_id = dtc.table_id
+    LEFT JOIN test_definitions td
+        ON (r.test_definition_id = td.id)
+    {"WHERE td.flagged = :flagged" if flagged is not None else ""}
     {f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}" if sorting_columns else ""};
     """
     params = {
@@ -105,10 +111,12 @@ def get_test_results(
         "disposition": {
             "Muted": "Inactive",
         }.get(action, action),
+        "flagged": flagged,
     }
 
     df = fetch_df_from_db(query, params)
     df["test_date"] = pd.to_datetime(df["test_date"])
+    df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
     return df
 
 

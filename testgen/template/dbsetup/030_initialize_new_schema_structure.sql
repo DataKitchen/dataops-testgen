@@ -236,9 +236,21 @@ CREATE TABLE test_definitions (
    profiling_as_of_date   TIMESTAMP,
    last_manual_update     TIMESTAMP DEFAULT NULL,
    export_to_observability VARCHAR(5),
+   flagged                BOOLEAN DEFAULT FALSE NOT NULL,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
+
+CREATE TABLE test_definition_notes (
+   id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+   test_definition_id   UUID NOT NULL REFERENCES test_definitions ON DELETE CASCADE,
+   detail               TEXT NOT NULL,
+   created_by           VARCHAR(100) NOT NULL,
+   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at           TIMESTAMP
+);
+
+CREATE INDEX ix_tdn_tdid ON test_definition_notes(test_definition_id, created_at DESC);
 
 CREATE TABLE profile_results (
    id                    UUID DEFAULT gen_random_uuid()
@@ -769,20 +781,20 @@ CREATE INDEX ix_td_ts_tc
 
 CREATE UNIQUE INDEX uix_td_autogen_schema
    ON test_definitions (test_suite_id, test_type, schema_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_table
    ON test_definitions (test_suite_id, test_type, schema_name, table_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NOT NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_column
    ON test_definitions (test_suite_id, test_type, schema_name, table_name, column_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NOT NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
       AND column_name IS NOT NULL;
 
 -- Index test_runs
@@ -818,7 +830,7 @@ CREATE INDEX ix_tr_ts_tctt
    ON test_results(test_suite_id, table_name, column_names, test_type);
 
 -- Index data_structure_log
-CREATE INDEX ix_dsl_tg_tcd 
+CREATE INDEX ix_dsl_tg_tcd
    ON data_structure_log (table_groups_id, table_name, change_date);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
