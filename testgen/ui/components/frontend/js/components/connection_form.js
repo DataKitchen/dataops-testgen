@@ -766,10 +766,11 @@ const DatabricksForm = (
 ) => {
     const isValid = van.state(true);
     const connectByUrl = van.state(connection.rawVal?.connect_by_url ?? false);
+    const useOAuth = van.state(connection.rawVal?.connect_by_key ?? false);
     const connectionHost = van.state(connection.rawVal?.project_host ?? '');
     const connectionPort = van.state(connection.rawVal?.project_port || defaultPorts[flavor.flavor]);
     const connectionHttpPath = van.state(connection.rawVal?.http_path ?? '');
-    const connectionDatabase = van.state(connection.rawVal?.project_db ?? '');
+    const connectionCatalog = van.state(connection.rawVal?.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal?.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
     const connectionUrl = van.state(connection.rawVal?.url ?? '');
@@ -780,13 +781,13 @@ const DatabricksForm = (
         onChange({
             project_host: connectionHost.val,
             project_port: connectionPort.val,
-            project_db: connectionDatabase.val,
-            project_user: connectionUsername.val,
+            project_db: connectionCatalog.val,
+            project_user: useOAuth.val ? connectionUsername.val : 'token',
             project_pw_encrypted: connectionPassword.val,
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
             url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
-            connect_by_key: false,
+            connect_by_key: useOAuth.val,
         }, isValid.val);
     });
 
@@ -803,7 +804,7 @@ const DatabricksForm = (
             { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
 
-            RadioGroup({
+            () => useOAuth.val ? div() : RadioGroup({
                 label: 'Connect by',
                 options: [
                     {
@@ -868,16 +869,17 @@ const DatabricksForm = (
                 },
                 validators: [
                     requiredIf(() => !connectByUrl.val),
-                    maxLength(50),
+                    maxLength(200),
                 ],
             }),
             Input({
                 name: 'db_name',
-                label: 'Database',
-                value: connectionDatabase,
+                label: 'Catalog',
+                value: connectionCatalog,
+                value: connectionCatalog,
                 disabled: connectByUrl,
                 onChange: (value, state) => {
-                    connectionDatabase.val = value;
+                    connectionCatalog.val = value;
                     validityPerField['db_name'] = state.valid;
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
@@ -906,38 +908,84 @@ const DatabricksForm = (
                 }),
             ),
         ),
-
         div(
             { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
             Caption({content: 'Authentication', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
 
-            Input({
-                name: 'db_user',
-                label: 'Username',
-                value: connectionUsername,
-                onChange: (value, state) => {
-                    connectionUsername.val = value;
-                    validityPerField['db_user'] = state.valid;
-                    isValid.val = Object.values(validityPerField).every(v => v);
-                },
-                validators: [
-                    required,
-                    maxLength(50),
+            RadioGroup({
+                label: 'Authentication method',
+                options: [
+                    {label: 'Access Token (PAT)', value: false},
+                    {label: 'Service Principal (OAuth)', value: true},
                 ],
-            }),
-            Input({
-                name: 'password',
-                label: 'Password',
-                value: connectionPassword,
-                type: 'password',
-                passwordSuggestions: false,
-                placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
-                onChange: (value, state) => {
-                    connectionPassword.val = value;
-                    validityPerField['password'] = state.valid;
+                value: useOAuth,
+                onChange: (value) => {
+                    useOAuth.val = value;
+                    connectionPassword.val = '';
+                    delete validityPerField['password'];
+                    if (value) {
+                        connectByUrl.val = false;
+                        delete validityPerField['db_user'];
+                    }
                     isValid.val = Object.values(validityPerField).every(v => v);
                 },
+                layout: 'inline',
             }),
+
+            () => {
+                if (useOAuth.val) {
+                    return div(
+                        { class: 'flex-column fx-gap-3' },
+                        Input({
+                            name: 'db_user',
+                            label: 'Client ID',
+                            value: connectionUsername,
+                            onChange: (value, state) => {
+                                connectionUsername.val = value;
+                                validityPerField['db_user'] = state.valid;
+                                isValid.val = Object.values(validityPerField).every(v => v);
+                            },
+                            validators: [
+                                required,
+                                maxLength(100),
+                            ],
+                        }),
+                        Input({
+                            name: 'password',
+                            label: 'Client Secret',
+                            value: connectionPassword,
+                            type: 'password',
+                            passwordSuggestions: false,
+                            placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
+                            onChange: (value, state) => {
+                                connectionPassword.val = value;
+                                validityPerField['password'] = state.valid;
+                                isValid.val = Object.values(validityPerField).every(v => v);
+                            },
+                            validators: [
+                                requiredIf(() => !originalConnection?.connection_id || !originalConnection?.project_pw_encrypted),
+                            ],
+                        }),
+                    );
+                }
+
+                return Input({
+                    name: 'password',
+                    label: 'Access Token',
+                    value: connectionPassword,
+                    type: 'password',
+                    passwordSuggestions: false,
+                    placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
+                    onChange: (value, state) => {
+                        connectionPassword.val = value;
+                        validityPerField['password'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        requiredIf(() => !originalConnection?.connection_id || !originalConnection?.project_pw_encrypted),
+                    ],
+                });
+            },
         ),
     );
 };

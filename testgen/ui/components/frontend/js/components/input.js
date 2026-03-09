@@ -132,7 +132,7 @@ const Input = (/** @type Properties */ props) => {
                     props.prefix,
                 )
                 : undefined,
-            input({
+            () => input({
                 value,
                 name: props.name ?? '',
                 type: inputType,
@@ -173,7 +173,7 @@ const Input = (/** @type Properties */ props) => {
                                 style: `top: ${((getValue(props.height) || defaultHeight) - addonIconSize) / 2}px`,
                                 onclick: () => inputType.val = passwordFieldTypeSwitch[inputType.val],
                             },
-                            inputType.val === 'password' ? 'visibility' : 'visibility_off',
+                            () => inputType.val === 'password' ? 'visibility' : 'visibility_off',
                         )
                         : '',
                     showClearable
