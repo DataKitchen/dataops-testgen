@@ -43,6 +43,7 @@ class TestTypeSummary(EntityMinimal):
     default_parm_columns: str
     default_parm_prompts: str
     default_parm_help: str
+    default_parm_required: str
     default_severity: str
     test_scope: TestScope
     usage_notes: str
@@ -145,6 +146,7 @@ class TestType(Entity):
     default_parm_values: str = Column(Text)
     default_parm_prompts: str = Column(Text)
     default_parm_help: str = Column(Text)
+    default_parm_required: str = Column(Text)
     default_severity: str = Column(String)
     run_type: TestRunType = Column(String)
     test_scope: TestScope = Column(String)

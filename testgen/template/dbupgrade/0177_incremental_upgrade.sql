@@ -1,0 +1,3 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_types ADD COLUMN IF NOT EXISTS default_parm_required TEXT;
