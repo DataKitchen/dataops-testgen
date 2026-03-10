@@ -101,6 +101,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8028'
+    test_type: Unique
+    sql_flavor: oracle
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8028'
+    test_type: Unique
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(*) - COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1391'
     test_id: '1034'
@@ -162,5 +178,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8028'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8028'
+    test_id: '1034'
+    test_type: Unique
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

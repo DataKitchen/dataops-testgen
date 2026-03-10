@@ -72,3 +72,19 @@ profile_anomaly_types:
     lookup_query: |-
       created_in_ui
     error_type: Profile Anomaly
+  - id: '1518'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1518'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly

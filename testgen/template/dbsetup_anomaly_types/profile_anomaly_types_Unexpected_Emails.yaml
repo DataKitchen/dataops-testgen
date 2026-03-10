@@ -77,3 +77,19 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1521'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1521'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
+    error_type: Profile Anomaly

@@ -53,3 +53,4 @@ IS_DATE: CASE
               ELSE 0
               END
 
+DATEDIFF_WEEK: (DATEADD('day', 1 - DAYOFWEEKISO({$2}::DATE), {$2}::DATE)::DATE - DATEADD('day', 1 - DAYOFWEEKISO({$1}::DATE), {$1}::DATE)::DATE) / 7

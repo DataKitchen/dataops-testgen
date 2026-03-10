@@ -47,14 +47,15 @@ def get_preview_data(
 
     if connection:
         flavor_service = get_flavor_service(connection.sql_flavor)
-        use_top = flavor_service.use_top
+        row_limiting = flavor_service.row_limiting_clause
         quote = flavor_service.quote_character
         query = f"""
         SELECT DISTINCT
-            {"TOP 100" if use_top else ""}
+            {"TOP 100" if row_limiting == "top" else ""}
             {f"{quote}{column_name}{quote}" if column_name else "*"}
         FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
-        {"LIMIT 100" if not use_top else ""}
+        {"LIMIT 100" if row_limiting == "limit" else ""}
+        {"FETCH FIRST 100 ROWS ONLY" if row_limiting == "fetch" else ""}
         """
 
         try:

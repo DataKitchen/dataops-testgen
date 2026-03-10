@@ -92,3 +92,19 @@ profile_anomaly_types:
       WHERE "{COLUMN_NAME}" < 'A' AND LEFT("{COLUMN_NAME}", 1) NOT IN ('"', ' ') AND RIGHT("{COLUMN_NAME}", 1) <> ''''
       GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '1528'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < 'A' AND SUBSTR("{COLUMN_NAME}", 1, 1) NOT IN ('"', ' ') AND SUBSTR("{COLUMN_NAME}", -1, 1) <> '''' GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1528'
+    test_id: '1030'
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < 'A' AND SUBSTR("{COLUMN_NAME}", 1, 1) NOT IN ('"', ' ') AND SUBSTR("{COLUMN_NAME}", -1, 1) <> '''' GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Profile Anomaly

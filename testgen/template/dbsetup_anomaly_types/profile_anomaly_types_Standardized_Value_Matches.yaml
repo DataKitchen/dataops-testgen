@@ -87,3 +87,19 @@ profile_anomaly_types:
     lookup_query: |-
       WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", ' '',.-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", ' '',.-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1516'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(TRANSLATE("{COLUMN_NAME}", 'X '',.-', 'X')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") AS cnt FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(TRANSLATE("{COLUMN_NAME}", 'X '',.-', 'X')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(TRANSLATE(a."{COLUMN_NAME}", 'X '',.-', 'X')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1516'
+    test_id: '1017'
+    test_type: Standardized_Value_Matches
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") AS cnt FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT DISTINCT a."{COLUMN_NAME}", possible_standard_value, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(a."{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}", possible_standard_value ORDER BY possible_standard_value ASC, count DESC LIMIT {LIMIT}
+    error_type: Profile Anomaly

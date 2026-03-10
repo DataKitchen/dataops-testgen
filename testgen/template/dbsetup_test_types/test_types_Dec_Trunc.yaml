@@ -101,6 +101,22 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8006'
+    test_type: Dec_Trunc
+    sql_flavor: oracle
+    measure: |-
+      SUM(ROUND(ABS(MOD({COLUMN_NAME}, 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8006'
+    test_type: Dec_Trunc
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(ROUND(ABS(MOD({COLUMN_NAME}, 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1369'
     test_id: '1011'
@@ -165,5 +181,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8006'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE INSTR(TO_CHAR("{COLUMN_NAME}"), '.') > 0 GROUP BY LENGTH(SUBSTR(TO_CHAR("{COLUMN_NAME}"), INSTR(TO_CHAR("{COLUMN_NAME}"), '.') + 1)) FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8006'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') > 0 GROUP BY LENGTH(SUBSTR(TO_VARCHAR("{COLUMN_NAME}"), LOCATE(TO_VARCHAR("{COLUMN_NAME}"), '.') + 1)) LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

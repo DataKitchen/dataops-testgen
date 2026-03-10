@@ -88,3 +88,19 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY table_name LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '1507'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, table_name FROM all_tab_columns WHERE owner = '{TARGET_SCHEMA}' AND column_name = '{COLUMN_NAME}' ORDER BY table_name FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1507'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT COLUMN_NAME, TABLE_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = '{TARGET_SCHEMA}' AND COLUMN_NAME = '{COLUMN_NAME}' ORDER BY TABLE_NAME LIMIT {LIMIT}
+    error_type: Profile Anomaly
