@@ -20,6 +20,8 @@ RUN apk update && apk upgrade && apk add --no-cache \
     gpg \
     gpgv \
     openssl \
+    # glibc compatibility layer for packages that only ship manylinux wheels (e.g. hdbcli)
+    gcompat \
     # Additional libraries needed and their dev counterparts. We add both so that we can remove
     # the *-dev later, keeping the libraries
     openblas=0.3.30-r2 \
@@ -40,6 +42,19 @@ RUN mkdir /dk
 
 # Upgrading pip for security
 RUN python3 -m pip install --upgrade pip==26.0
+
+# hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
+# We download the wheel for the correct arch, then extract it directly into site-packages
+# (wheels are zip files). gcompat provides the glibc shim needed at runtime.
+RUN ARCH=$(uname -m) && \
+    pip download --platform manylinux2014_${ARCH} --python-version 3.12 --only-binary :all: \
+        --no-deps -d /tmp/wheels hdbcli==2.25.31 && \
+    python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.12/site-packages/ && \
+    rm -rf /tmp/wheels
+
+# Strip hdbcli from pyproject.toml before installing — it's already extracted above and
+# pip 26+ would fail trying to resolve it from PyPI on musl
+RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml
 
 RUN python3 -m pip install --prefix=/dk /tmp/dk
 
