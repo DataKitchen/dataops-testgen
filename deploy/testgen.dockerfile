@@ -1,4 +1,4 @@
-ARG TESTGEN_BASE_LABEL=v11
+ARG TESTGEN_BASE_LABEL=v12
 
 FROM datakitchen/dataops-testgen-base:${TESTGEN_BASE_LABEL} AS release-image
 
