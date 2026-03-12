@@ -12,9 +12,10 @@ ENV PATH=$PATH:/dk/bin
 
 RUN apk upgrade
 
-# Now install everything
+# Now install everything (hdbcli is pre-installed in the base image via manual wheel extraction)
 COPY . /tmp/dk/
-RUN python3 -m pip install --prefix=/dk /tmp/dk
+RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml /tmp/dk/testgen/pyproject.toml 2>/dev/null; \
+    python3 -m pip install --prefix=/dk /tmp/dk
 
 # Generate third-party license notices from installed packages
 RUN pip install pip-licenses \
