@@ -50,6 +50,10 @@ RUN ARCH=$(uname -m) && \
     pip download --platform manylinux2014_${ARCH} --python-version 3.12 --only-binary :all: \
         --no-deps -d /tmp/wheels hdbcli==2.25.31 && \
     python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.12/site-packages/ && \
+    # Copy dist-info to system site-packages so pip sees hdbcli as installed during
+    # dependency resolution (sqlalchemy-hana transitively depends on hdbcli~=2.10)
+    cp -r /dk/lib/python3.12/site-packages/hdbcli-*.dist-info \
+        "$(python3 -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"/ && \
     rm -rf /tmp/wheels
 
 # Strip hdbcli from pyproject.toml before installing — it's already extracted above and
