@@ -23,7 +23,7 @@ RUN pip install pip-licenses \
     && PYTHONPATH=/dk/lib/python3.12/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
     && pip uninstall -y pip-licenses
 
-RUN rm -Rf /tmp/dk
+RUN rm -Rf /tmp/dk /root/.cache/pip
 
 RUN tg-patch-streamlit
 

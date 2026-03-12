@@ -78,4 +78,4 @@ RUN apk del \
     unixodbc-dev \
     apache-arrow-dev
 
-RUN rm /tmp/dk/install_linuxodbc.sh
+RUN rm -rf /root/.cache/pip /tmp/dk/install_linuxodbc.sh
