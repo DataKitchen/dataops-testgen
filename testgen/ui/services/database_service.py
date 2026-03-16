@@ -11,11 +11,12 @@ if TYPE_CHECKING:
 
 from typing import Any
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import Row, RowMapping
 from sqlalchemy.engine.cursor import CursorResult
 
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import get_current_session
 
 
@@ -54,17 +55,13 @@ def fetch_one_from_db(query: str, params: dict | None = None) -> RowMapping | No
 
 
 def fetch_from_target_db(connection: Connection, query: str, params: dict | None = None) -> list[Row]:
+    connection_params = connection.to_dict()
     flavor_service = get_flavor_service(connection.sql_flavor)
-    flavor_service.init(connection.to_dict())
-
-    engine = create_engine(
-        flavor_service.get_connection_string(),
-        connect_args=flavor_service.get_connect_args(),
-        **flavor_service.get_engine_args(),
-    )
+    resolved = resolve_connection_params(connection_params)
+    engine = flavor_service.create_engine(connection_params)
 
     with engine.connect() as conn:
-        for pre_query, pre_params in flavor_service.get_pre_connection_queries():
+        for pre_query, pre_params in flavor_service.get_pre_connection_queries(resolved):
             conn.execute(text(pre_query), pre_params)
         cursor: CursorResult = conn.execute(text(query), params)
         return cursor.fetchall()

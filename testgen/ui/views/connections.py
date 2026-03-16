@@ -18,6 +18,7 @@ from sqlalchemy.exc import DatabaseError, DBAPIError
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
@@ -170,8 +171,8 @@ class ConnectionsPage(Page):
 
         connection_string: str | None = None
         flavor_service = get_flavor_service(connection.sql_flavor)
-        flavor_service.init({**connection.to_dict(), "project_pw_encrypted": "<password>"})
-        connection_string = flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
+        params = resolve_connection_params({**connection.to_dict(), "project_pw_encrypted": "<password>"})
+        connection_string = flavor_service.get_connection_string(params).replace("%3E", ">").replace("%3C", "<")
 
         if should_save():
             success = True
