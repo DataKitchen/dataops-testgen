@@ -51,6 +51,7 @@
  * @property {string} default_parm_columns
  * @property {string} default_parm_prompts
  * @property {string} default_parm_help
+ * @property {string?} default_parm_required
  * @property {string} default_severity
  * @property {'column'|'referential'|'table'|'tablegroup'|'custom'} test_scope
  * @property {string?} prediction
@@ -69,7 +70,7 @@ import { Select } from './select.js';
 import { Textarea } from './textarea.js';
 import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
-import { numberBetween } from '../form_validators.js';
+import { numberBetween, required } from '../form_validators.js';
 
 const { div, span } = van.tags;
 
@@ -97,6 +98,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
     const paramColumns = (definition.default_parm_columns || '').split(',').map(v => v.trim());
     const paramLabels = (definition.default_parm_prompts || '').split(',').map(v => v.trim());
     const paramHelp = (definition.default_parm_help || '').split('|').map(v => v.trim());
+    const paramRequired = (definition.default_parm_required || '').split(',').map(v => v.trim().toUpperCase() === 'Y');
 
     const hasThresholds = paramColumns.includes('history_calculation');
     const dynamicParamColumns = paramColumns
@@ -105,6 +107,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             column,
             label: paramLabels[index] || column.replaceAll('_', ' '),
             help: paramHelp[index] || null,
+            validators: paramRequired[index] ? [required] : undefined,
         }))
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
 
@@ -171,6 +174,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                             type: 'number',
                             value: currentValue(),
                             step: config.step,
+                            validators: config.validators,
                             onChange: (value, state) => {
                                 setFieldValues({ [column]: value || null })
                                 setFieldValidity(column, state.valid);
@@ -188,8 +192,10 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                             help: config.help,
                             value: currentValue(),
                             height: 100,
-                            onChange: (value) => {
-                                setFieldValues({ [column]: value || null })
+                            validators: config.validators,
+                            onChange: (value, state) => {
+                                setFieldValues({ [column]: value || null });
+                                setFieldValidity(column, state.valid);
                             },
                         }),
                     );
@@ -202,6 +208,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                         label: config.label,
                         help: config.help,
                         value: currentValue(),
+                        validators: config.validators,
                         onChange: (value, state) => {
                             setFieldValues({ [column]: value || null })
                             setFieldValidity(column, state.valid);
@@ -291,6 +298,21 @@ const ThresholdForm = (options, definition) => {
                     'lower_tolerance': newMode === 'static' ? lowerTolerance.val : newMode === 'prediction' ? definition.lower_tolerance : null,
                     'upper_tolerance': newMode === 'static' ? upperTolerance.val : newMode === 'prediction' ? definition.upper_tolerance : null,
                 });
+                if (newMode === 'static') {
+                    if (!isFreshnessTrend) {
+                        setFieldValidity('lower_tolerance', !!lowerTolerance.val);
+                    }
+                    setFieldValidity('upper_tolerance', !!upperTolerance.val);
+                    setFieldValidity('history_lookback', true);
+                } else if (newMode === 'historical') {
+                    setFieldValidity('lower_tolerance', true);
+                    setFieldValidity('upper_tolerance', true);
+                    setFieldValidity('history_lookback', !!historyLookback.val);
+                } else {
+                    setFieldValidity('lower_tolerance', true);
+                    setFieldValidity('upper_tolerance', true);
+                    setFieldValidity('history_lookback', true);
+                }
             },
         }),
         () => {
@@ -376,8 +398,8 @@ const ThresholdForm = (options, definition) => {
 
             if (mode.val === 'static') {
                 return div(
-                    { class: 'flex-row fx-gap-3 fx-flex-wrap mt-2' },
-                    !isFreshnessTrend 
+                    { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start mt-2' },
+                    !isFreshnessTrend
                         ? div(
                             { class: 'td-form--field' },
                             Input({
@@ -385,6 +407,7 @@ const ThresholdForm = (options, definition) => {
                                 label: 'Lower Bound',
                                 type: 'number',
                                 value: lowerTolerance,
+                                validators: [required],
                                 onChange: (value, state) => {
                                     lowerTolerance.val = value;
                                     setFieldValues({ lower_tolerance: value });
@@ -400,6 +423,7 @@ const ThresholdForm = (options, definition) => {
                             label: isFreshnessTrend ? 'Maximum interval since last update (minutes)' : 'Upper Bound',
                             type: 'number',
                             value: upperTolerance,
+                            validators: [required],
                             onChange: (value, state) => {
                                 upperTolerance.val = value;
                                 setFieldValues({ upper_tolerance: value });
