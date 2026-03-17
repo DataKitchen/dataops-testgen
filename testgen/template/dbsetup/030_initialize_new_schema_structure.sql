@@ -497,6 +497,7 @@ CREATE TABLE test_types (
    default_parm_values           TEXT,
    default_parm_prompts          TEXT,
    default_parm_help             TEXT,
+   default_parm_required         TEXT,
    default_severity              VARCHAR(10),
    run_type                      VARCHAR(10),
    test_scope                    VARCHAR,

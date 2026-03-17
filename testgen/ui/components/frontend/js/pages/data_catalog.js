@@ -459,7 +459,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             PotentialPIICard({ noLinks: !userCanNavigate }, item),
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestSuitesCard(item),
+            TestSuitesCard({ noLinks: !userCanNavigate }, item),
             item.type === 'table'
                 ? TableCreateScriptCard({}, item)
                 : null,
@@ -586,44 +586,48 @@ const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ 
     });
 };
 
-const TestSuitesCard = (/** @type Table | Column */ item) => {
+const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
     return Card({
         title: 'Related Test Suites',
         content: div(
             { class: 'flex-column fx-gap-2' },
             item.test_suites.map(({ id, name, test_count }) => div(
                 { class: 'flex-row fx-gap-1' },
-                Link({
-                    href: 'test-suites:definitions',
-                    params: {
-                        test_suite_id: id,
-                        table_name: item.table_name,
-                        column_name: item.column_name,
-                        project_code: item.project_code,
-                    },
-                    open_new: true,
-                    label: name,
-                }),
+                props.noLinks
+                    ? span(name)
+                    : Link({
+                        href: 'test-suites:definitions',
+                        params: {
+                            test_suite_id: id,
+                            table_name: item.table_name,
+                            column_name: item.column_name,
+                            project_code: item.project_code,
+                        },
+                        open_new: true,
+                        label: name,
+                    }),
                 span({ class: 'text-caption' }, `(${test_count} test definitions)`),
             ))
         ),
         actionContent: item.test_suites.length
-            ? null 
+            ? null
             : item.drop_date
             ? span({ class: 'text-secondary' }, `No test definitions for ${item.type}`)
             : span(
                 { class: 'text-secondary flex-row fx-gap-1 fx-justify-content-flex-end' },
                 `No test definitions yet for ${item.type}.`,
-                Link({
-                    href: 'test-suites',
-                    params: {
-                        project_code: item.project_code,
-                        table_group_id: item.table_group_id,
-                    },
-                    open_new: true,
-                    label: 'Go to Test Suites',
-                    right_icon: 'chevron_right',
-                }),
+                props.noLinks
+                    ? null
+                    : Link({
+                        href: 'test-suites',
+                        params: {
+                            project_code: item.project_code,
+                            table_group_id: item.table_group_id,
+                        },
+                        open_new: true,
+                        label: 'Go to Test Suites',
+                        right_icon: 'chevron_right',
+                    }),
             ),
     });
 };
