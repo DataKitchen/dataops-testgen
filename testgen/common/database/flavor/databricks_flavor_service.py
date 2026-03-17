@@ -1,6 +1,6 @@
 from urllib.parse import quote_plus
 
-from testgen.common.database.flavor.flavor_service import FlavorService
+from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
 
 
 class DatabricksFlavorService(FlavorService):
@@ -8,43 +8,44 @@ class DatabricksFlavorService(FlavorService):
     quote_character = "`"
     escaped_single_quote = "\\'"
     varchar_type = "STRING"
+    url_scheme = "databricks"
 
-    def get_pre_connection_queries(self) -> list[tuple[str, dict | None]]:
-        if self.dbname:
-            return [(f"USE CATALOG `{self.dbname}`", None)]
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
+        if params.dbname:
+            return [(f"USE CATALOG `{params.dbname}`", None)]
         return []
 
-    def get_connect_args(self) -> dict:
+    def get_connect_args(self, params: ResolvedConnectionParams) -> dict:
         args = {}
-        if self.dbname:
-            args["catalog"] = self.dbname
-        if self.connect_by_key:
-            args["credentials_provider"] = self._get_oauth_credentials_provider()
+        if params.dbname:
+            args["catalog"] = params.dbname
+        if params.connect_by_key:
+            args["credentials_provider"] = self._get_oauth_credentials_provider(params)
         return args
 
-    def get_connection_string_head(self):
-        if self.connect_by_key:
-            return f"{self.flavor}://oauth:@"
-        return f"{self.flavor}://token:{quote_plus(self.password)}@"
+    def get_connection_string_head(self, params: ResolvedConnectionParams) -> str:
+        if params.connect_by_key:
+            return f"{self.url_scheme}://oauth:@"
+        return f"{self.url_scheme}://token:{quote_plus(params.password)}@"
 
-    def get_connection_string_from_fields(self):
-        if self.connect_by_key:
+    def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
+        if params.connect_by_key:
             return (
-                f"{self.flavor}://oauth:@{self.host}:{self.port}/{self.dbname}"
-                f"?http_path={self.http_path}&catalog={self.dbname}"
+                f"{self.url_scheme}://oauth:@{params.host}:{params.port}/{params.dbname}"
+                f"?http_path={params.http_path}&catalog={params.dbname}"
             )
         return (
-            f"{self.flavor}://token:{quote_plus(self.password)}@{self.host}:{self.port}/{self.dbname}"
-            f"?http_path={self.http_path}&catalog={self.dbname}"
+            f"{self.url_scheme}://token:{quote_plus(params.password)}@{params.host}:{params.port}/{params.dbname}"
+            f"?http_path={params.http_path}&catalog={params.dbname}"
         )
 
-    def _get_oauth_credentials_provider(self):
+    def _get_oauth_credentials_provider(self, params: ResolvedConnectionParams):
         from databricks.sdk.core import Config, oauth_service_principal
 
         config = Config(
-            host=f"https://{self.host}",
-            client_id=self.username,
-            client_secret=self.password,
+            host=f"https://{params.host}",
+            client_id=params.username,
+            client_secret=params.password,
         )
         # oauth_service_principal(config) returns an OAuthCredentialsProvider,
         # which is callable: provider() -> Dict[str, str] (auth headers).

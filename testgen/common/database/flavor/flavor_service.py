@@ -1,6 +1,10 @@
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Any, Literal, TypedDict
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import quote_plus
+
+from sqlalchemy import create_engine as sqlalchemy_create_engine
+from sqlalchemy.engine.base import Engine
 
 from testgen.common.encrypt import DecryptText
 
@@ -26,6 +30,59 @@ class ConnectionParams(TypedDict):
     connect_with_identity: bool
     sql_flavor_code: str
 
+
+@dataclass(frozen=True, slots=True)
+class ResolvedConnectionParams:
+    url: str = ""
+    connect_by_url: bool = False
+    username: str = ""
+    password: str | None = None
+    host: str = ""
+    port: str = ""
+    dbname: str = ""
+    dbschema: str | None = None
+    sql_flavor: str = ""
+    sql_flavor_code: str = ""
+    connect_by_key: bool = False
+    private_key: str | None = None
+    private_key_passphrase: str | None = None
+    http_path: str = ""
+    catalog: str = ""
+    warehouse: str = ""
+    service_account_key: dict[str, Any] | None = None
+    connect_with_identity: bool = False
+
+
+def _decrypt_if_needed(value: Any) -> str | None:
+    if isinstance(value, memoryview | bytes):
+        return DecryptText(value)
+    return value
+
+
+def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedConnectionParams:
+    sql_flavor = connection_params.get("sql_flavor") or ""
+    return ResolvedConnectionParams(
+        url=connection_params.get("url") or "",
+        connect_by_url=connection_params.get("connect_by_url", False),
+        username=connection_params.get("project_user") or "",
+        password=_decrypt_if_needed(connection_params.get("project_pw_encrypted")),
+        host=connection_params.get("project_host") or "",
+        port=connection_params.get("project_port") or "",
+        dbname=connection_params.get("project_db") or "",
+        dbschema=connection_params.get("table_group_schema"),
+        sql_flavor=sql_flavor,
+        sql_flavor_code=connection_params.get("sql_flavor_code") or sql_flavor,
+        connect_by_key=connection_params.get("connect_by_key", False),
+        private_key=_decrypt_if_needed(connection_params.get("private_key")),
+        private_key_passphrase=_decrypt_if_needed(connection_params.get("private_key_passphrase")),
+        http_path=connection_params.get("http_path") or "",
+        catalog=connection_params.get("catalog") or "",
+        warehouse=connection_params.get("warehouse") or "",
+        service_account_key=connection_params.get("service_account_key"),
+        connect_with_identity=connection_params.get("connect_with_identity") or False,
+    )
+
+
 class FlavorService:
 
     concat_operator = "||"
@@ -38,102 +95,36 @@ class FlavorService:
     row_limiting_clause: RowLimitingClause = "limit"
     default_uppercase = False
     test_query = "SELECT 1"
+    url_scheme = "postgresql"
 
-    def init(self, connection_params: ConnectionParams):
-        self.url = connection_params.get("url") or ""
-        self.connect_by_url = connection_params.get("connect_by_url", False)
-        self.username = connection_params.get("project_user") or ""
-        self.host = connection_params.get("project_host") or ""
-        self.port = connection_params.get("project_port") or ""
-        self.dbname = connection_params.get("project_db") or ""
-        self.flavor = connection_params.get("sql_flavor")
-        self.dbschema = connection_params.get("table_group_schema", None)
-        self.connect_by_key = connection_params.get("connect_by_key", False)
-        self.http_path = connection_params.get("http_path") or ""
-        self.catalog = connection_params.get("catalog") or ""
-        self.warehouse = connection_params.get("warehouse") or ""
-        self.service_account_key = connection_params.get("service_account_key", None)
-        self.connect_with_identity = connection_params.get("connect_with_identity") or False
-        self.sql_flavor_code = connection_params.get("sql_flavor_code") or self.flavor
-
-        password = connection_params.get("project_pw_encrypted", None)
-        if isinstance(password, memoryview) or isinstance(password, bytes):
-            password = DecryptText(password)
-        self.password = password
-
-        private_key = connection_params.get("private_key", None)
-        if isinstance(private_key, memoryview) or isinstance(private_key, bytes):
-            private_key = DecryptText(private_key)
-        self.private_key = private_key
-
-        private_key_passphrase = connection_params.get("private_key_passphrase", None)
-        if isinstance(private_key_passphrase, memoryview) or isinstance(private_key_passphrase, bytes):
-            private_key_passphrase = DecryptText(private_key_passphrase)
-        self.private_key_passphrase = private_key_passphrase
-
-    def get_pre_connection_queries(self) -> list[tuple[str, dict | None]]:
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return []
 
-    def get_connect_args(self) -> dict:
+    def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {"connect_timeout": 3600}
 
-    def get_engine_args(self) -> dict[str,Any]:
+    def get_engine_args(self, params: ResolvedConnectionParams) -> dict[str, Any]:  # noqa: ARG002
         return {}
 
-    def get_connection_string(self) -> str:
-        if self.connect_by_url:
-            header = self.get_connection_string_head()
-            url = header + self.url
-            return url
+    def create_engine(self, connection_params: ConnectionParams) -> Engine:
+        params = resolve_connection_params(connection_params)
+        return sqlalchemy_create_engine(
+            self.get_connection_string(params),
+            connect_args=self.get_connect_args(params),
+            **self.get_engine_args(params),
+        )
+
+    def get_connection_string(self, params: ResolvedConnectionParams) -> str:
+        if params.connect_by_url:
+            header = self.get_connection_string_head(params)
+            return header + params.url
         else:
-            return self.get_connection_string_from_fields()
+            return self.get_connection_string_from_fields(params)
 
     @abstractmethod
-    def get_connection_string_from_fields(self) -> str:
+    def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         raise NotImplementedError("Subclasses must implement this method")
 
-    @abstractmethod
-    def get_connection_string_head(self) -> str:
-        raise NotImplementedError("Subclasses must implement this method")
+    def get_connection_string_head(self, params: ResolvedConnectionParams) -> str:
+        return f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@"
 
-    def get_parts_from_connection_string(self) -> dict[str, Any]:
-        if self.connect_by_url:
-            if not self.url:
-                return {}
-
-            parsed_url = urlparse(self.get_connection_string())
-            credentials, location = (
-                parsed_url.netloc if "@" in parsed_url.netloc else f"@{parsed_url.netloc}"
-            ).split("@")
-            username, password = (
-                credentials if ":" in credentials else f"{credentials}:"
-            ).split(":")
-            host, port = (
-                location if ":" in location else f"{location}:"
-            ).split(":")
-
-            database = (path_patrs[0] if (path_patrs := parsed_url.path.strip("/").split("/")) else "")
-
-            extras = {
-                param_name: param_values[0]
-                for param_name, param_values in parse_qs(parsed_url.query or "").items()
-            }
-
-            return {
-                "username": username,
-                "password": password,
-                "host": host,
-                "port": port,
-                "dbname": database,
-                **extras,
-            }
-
-        return {
-            "username": self.username,
-            "password": self.password,
-            "host": self.host,
-            "port": self.port,
-            "dbname": self.dbname,
-            "http_path": self.http_path,
-            "catalog": self.catalog,
-        }

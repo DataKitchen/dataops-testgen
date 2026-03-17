@@ -3,7 +3,7 @@ from urllib.parse import quote_plus
 
 import oracledb
 
-from testgen.common.database.flavor.flavor_service import FlavorService
+from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
 
 # https://stackoverflow.com/a/74105559
 oracledb.version = "8.3.0"
@@ -18,17 +18,15 @@ class OracleFlavorService(FlavorService):
     default_uppercase = True
     row_limiting_clause = "fetch"
     test_query = "SELECT 1 FROM DUAL"
+    url_scheme = "oracle"
 
-    def get_connection_string_head(self):
-        return f"oracle://{self.username}:{quote_plus(self.password)}@"
+    def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
+        return f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@{params.host}:{params.port}?service_name={params.dbname}"
 
-    def get_connection_string_from_fields(self):
-        return f"oracle://{self.username}:{quote_plus(self.password)}@{self.host}:{self.port}?service_name={self.dbname}"
-
-    def get_pre_connection_queries(self):
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return [
             ("ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'", None),
         ]
 
-    def get_connect_args(self) -> dict:
+    def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {}
