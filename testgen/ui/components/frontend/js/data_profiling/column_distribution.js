@@ -17,7 +17,7 @@ import { PercentBar } from '../components/percent_bar.js';
 import { FrequencyBars } from '../components/frequency_bars.js';
 import { BoxPlot } from '../components/box_plot.js';
 import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '../utils.js';
-import { formatNumber, formatTimestamp } from '../display_utils.js';
+import { formatNumber, formatTimestamp, PII_REDACTED } from '../display_utils.js';
 
 const { div, span } = van.tags;
 const columnTypeFunctionMap = {
@@ -150,15 +150,17 @@ function AlphaColumn(/** @type Column */ item) {
         ),
         item.top_freq_values || item.top_patterns ? div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-5 tg-profile--plot-block' },
-            item.top_freq_values ? FrequencyBars({
-                title: 'Frequent Values',
-                total: item.record_ct,
-                nullCount: item.null_value_ct,
-                items: item.top_freq_values.substring(2).split('\n| ').map(parts => {
-                    const [value, count] = parts.split(' | ');
-                    return { value, count: Number(count) };
-                }),
-            }) : null,
+            item.top_freq_values === PII_REDACTED
+                ? Attribute({ label: 'Frequent Values', value: PII_REDACTED, width: attributeWidth })
+                : item.top_freq_values ? FrequencyBars({
+                    title: 'Frequent Values',
+                    total: item.record_ct,
+                    nullCount: item.null_value_ct,
+                    items: item.top_freq_values.substring(2).split('\n| ').map(parts => {
+                        const [value, count] = parts.split(' | ');
+                        return { value, count: Number(count) };
+                    }),
+                }) : null,
             item.top_patterns ? FrequencyBars({
                 title: 'Frequent Patterns',
                 total: item.record_ct,
@@ -292,19 +294,19 @@ function NumericColumn(/** @type Column */ item) {
             Attribute({ label: 'Median Value', value: formatNumber(item.percentile_50), width: attributeWidth }),
             Attribute({ label: '75th Percentile', value: formatNumber(item.percentile_75), width: attributeWidth }),
         ),
-        div(
-            { class: 'flex-row fx-justify-center tg-profile--plot-block' },
-            BoxPlot({
-                minimum: item.min_value,
-                maximum: item.max_value,
-                median: item.percentile_50,
-                lowerQuartile: item.percentile_25,
-                upperQuartile: item.percentile_75,
-                average: item.avg_value,
-                standardDeviation: item.stdev_value,
-                width: boxPlotWidth,
-            }),
-        ),
+        item.min_value === PII_REDACTED || item.max_value === PII_REDACTED ? null : div(
+                { class: 'flex-row fx-justify-center tg-profile--plot-block' },
+                BoxPlot({
+                    minimum: item.min_value,
+                    maximum: item.max_value,
+                    median: item.percentile_50,
+                    lowerQuartile: item.percentile_25,
+                    upperQuartile: item.percentile_75,
+                    average: item.avg_value,
+                    standardDeviation: item.stdev_value,
+                    width: boxPlotWidth,
+                }),
+            ),
     );
 }
 

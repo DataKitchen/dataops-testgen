@@ -10,7 +10,14 @@ selected_columns AS (
   SELECT p.*
   FROM profile_results p
   INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  LEFT JOIN data_column_chars dcc ON (
+    p.table_groups_id = dcc.table_groups_id
+    AND p.schema_name = dcc.schema_name
+    AND p.table_name = dcc.table_name
+    AND p.column_name = dcc.column_name
+  )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND dcc.excluded_data_element IS NOT TRUE
     AND {SELECTION_CRITERIA}
 )
 INSERT INTO test_definitions (

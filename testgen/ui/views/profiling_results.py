@@ -10,6 +10,7 @@ import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -130,6 +131,10 @@ class ProfilingResultsPage(Page):
                     sorting_columns=sorting_columns,
                 )
 
+            if not session.auth.user_has_permission("view_pii"):
+                pii_columns = get_pii_columns(str(run.table_groups_id))
+                mask_profiling_pii(df, pii_columns)
+
         selected, selected_row = fm.render_grid_select(
             df,
             ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues", "result_details"],
@@ -197,6 +202,10 @@ def get_excel_report_data(
         data = profiling_queries.get_profiling_results(run_id)
     date_service.accommodate_dataframe_to_timezone(data, st.session_state)
 
+    if not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(data["table_group_id"].iloc[0] if "table_group_id" in data.columns else "")
+        mask_profiling_pii(data, pii_columns)
+
     for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
 
@@ -205,7 +214,7 @@ def get_excel_report_data(
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(
-            lambda val: parse_fuzzy_date(val) if not pd.isna(val) and val != "NaT" else None
+            lambda val: parse_fuzzy_date(val) if not pd.isna(val) and val != "NaT" and val != PII_REDACTED else val
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)
@@ -215,13 +224,13 @@ def get_excel_report_data(
 
     data["top_freq_values"] = data["top_freq_values"].apply(
         lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
-        if val
-        else None
+        if val and val != PII_REDACTED
+        else val
     )
     data["top_patterns"] = data["top_patterns"].apply(
         lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
-        if val
-        else None
+        if val and val != PII_REDACTED
+        else val
     )
 
     columns = {

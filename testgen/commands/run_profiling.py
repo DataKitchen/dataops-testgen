@@ -28,6 +28,7 @@ from testgen.common.database.database_service import ThreadedProgress, empty_cac
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -85,6 +86,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
         data_chars = run_data_chars_refresh(connection, table_group, profiling_run.profiling_starttime)
+        data_chars = _exclude_xde_columns(data_chars, table_group.id)
         distinct_tables = {(column.table_name, column.record_ct) for column in data_chars}
 
         profiling_run.set_progress("data_chars", "Completed")
@@ -142,6 +144,22 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         {"Profiling encountered an error. Check log for details." if profiling_run.status == "Error" else "Profiling completed."}
         Run ID: {profiling_run.id}
     """
+
+
+def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:
+    """Filter out columns marked as excluded_data_element in data_column_chars."""
+    xde_columns = DataColumnChars.select_where(
+        DataColumnChars.table_groups_id == table_group_id,
+        DataColumnChars.excluded_data_element.is_(True),
+    )
+    if not xde_columns:
+        return data_chars
+
+    excluded = {(col.table_name, col.column_name) for col in xde_columns}
+    filtered = [col for col in data_chars if (col.table_name, col.column_name) not in excluded]
+    if len(filtered) < len(data_chars):
+        LOG.info(f"Excluding {len(data_chars) - len(filtered)} XDE columns from profiling")
+    return filtered
 
 
 def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnChars]) -> None:

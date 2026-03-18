@@ -8,11 +8,12 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.models import with_database_session
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.queries.profiling_queries import TAG_FIELDS
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import temp_value
+from testgen.ui.session import session, temp_value
 
 LOG = logging.getLogger("testgen")
 
@@ -22,6 +23,11 @@ HEADER_MAP = {
     "description": "description",
     "critical data element": "critical_data_element",
     "cde": "critical_data_element",
+    "excluded": "excluded_data_element",
+    "excluded data element": "excluded_data_element",
+    "xde": "excluded_data_element",
+    "pii": "pii_flag",
+    "pii flag": "pii_flag",
     "data source": "data_source",
     "source system": "source_system",
     "source process": "source_process",
@@ -29,13 +35,13 @@ HEADER_MAP = {
     "stakeholder group": "stakeholder_group",
     "transform level": "transform_level",
     "aggregation level": "aggregation_level",
-    "data product": "data_product",
+    "data product": "data_product",    
 }
 
-METADATA_COLUMNS = ["description", "critical_data_element", *TAG_FIELDS]
+METADATA_COLUMNS = ["description", "critical_data_element", "excluded_data_element", "pii_flag", *TAG_FIELDS]
 
-CDE_TRUE_VALUES = {"yes", "y", "true", "1"}
-CDE_FALSE_VALUES = {"no", "n", "false", "0"}
+TRUE_VALUES = {"yes", "y", "true", "1"}
+FALSE_VALUES = {"no", "n", "false", "0"}
 
 TAG_MAX_LENGTH = 40
 DESCRIPTION_MAX_LENGTH = 1000
@@ -147,13 +153,13 @@ def _match_and_validate(
                 preview_rows.append(preview_row)
                 continue
 
-            fields, bad_cde = _extract_metadata_fields(row, blank_behavior)
+            fields, bad_cde, bad_xde, bad_pii = _extract_metadata_fields(row, blank_behavior)
             fields, truncated = _truncate_fields(fields)
-            if fields and not bad_cde:
+            if fields and not bad_cde and not bad_xde and not bad_pii:
                 table_rows.append({"table_id": table_id, "table_name": table_name, **fields})
 
             preview_row.update(fields)
-            _set_row_status(preview_row, bad_cde, truncated)
+            _set_row_status(preview_row, bad_cde, bad_xde, bad_pii, truncated)
             preview_rows.append(preview_row)
         else:
             column_id = column_lookup.get((table_name, column_name))
@@ -165,19 +171,25 @@ def _match_and_validate(
                 preview_rows.append(preview_row)
                 continue
 
-            fields, bad_cde = _extract_metadata_fields(row, blank_behavior)
+            fields, bad_cde, bad_xde, bad_pii = _extract_metadata_fields(row, blank_behavior)
             fields, truncated = _truncate_fields(fields)
-            if fields and not bad_cde:
+            if fields and not bad_cde and not bad_xde and not bad_pii:
                 column_rows.append(
                     {"column_id": column_id, "table_name": table_name, "column_name": column_name, **fields}
                 )
 
             preview_row.update(fields)
-            _set_row_status(preview_row, bad_cde, truncated)
+            _set_row_status(preview_row, bad_cde, bad_xde, bad_pii, truncated)
             preview_rows.append(preview_row)
 
     # Determine which metadata columns are present in the CSV
     metadata_columns = [c for c in METADATA_COLUMNS if c in df.columns]
+
+    # Strip PII column if user lacks permission
+    pii_skipped = False
+    if "pii_flag" in metadata_columns and not session.auth.user_has_permission("view_pii"):
+        metadata_columns.remove("pii_flag")
+        pii_skipped = True
 
     # Count matched vs skipped rows from preview
     # "ok" and "warning" rows will be imported; "error" and "unmatched" rows are skipped
@@ -185,6 +197,8 @@ def _match_and_validate(
     matched_tables = sum(1 for r in preview_rows if not r.get("column_name") and r.get("_status") in _importable)
     matched_columns = sum(1 for r in preview_rows if r.get("column_name") and r.get("_status") in _importable)
     skipped = sum(1 for r in preview_rows if r.get("_status") not in _importable)
+
+    table_group = TableGroup.get(table_group_id)
 
     return {
         "table_rows": table_rows,
@@ -195,12 +209,17 @@ def _match_and_validate(
         "matched_tables": matched_tables,
         "matched_columns": matched_columns,
         "skipped_count": skipped,
+        "warn_cde": bool("critical_data_element" in metadata_columns and table_group.profile_flag_cdes),
+        "warn_pii": bool("pii_flag" in metadata_columns and table_group.profile_flag_pii),
+        "pii_skipped": pii_skipped,
     }
 
 
-def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict, bool]:
+def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict, bool, bool, bool]:
     fields = {}
     bad_cde = False
+    bad_xde = False
+    bad_pii = False
     for col in METADATA_COLUMNS:
         if col not in row.index:
             continue
@@ -208,9 +227,9 @@ def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict,
         value = row[col]
 
         if col == "critical_data_element":
-            if value.lower() in CDE_TRUE_VALUES:
+            if value.lower() in TRUE_VALUES:
                 fields[col] = True
-            elif value.lower() in CDE_FALSE_VALUES:
+            elif value.lower() in FALSE_VALUES:
                 fields[col] = False
             elif not value:
                 if blank_behavior == "clear":
@@ -219,6 +238,26 @@ def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict,
             else:
                 # Unrecognized value — skip (don't set field at all)
                 bad_cde = True
+        elif col == "excluded_data_element":
+            if value.lower() in TRUE_VALUES:
+                fields[col] = True
+            elif value.lower() in FALSE_VALUES:
+                fields[col] = False
+            elif not value:
+                if blank_behavior == "clear":
+                    fields[col] = False
+            else:
+                bad_xde = True
+        elif col == "pii_flag":
+            if value.lower() in TRUE_VALUES:
+                fields[col] = "MANUAL"
+            elif value.lower() in FALSE_VALUES:
+                fields[col] = None
+            elif not value:
+                if blank_behavior == "clear":
+                    fields[col] = None
+            else:
+                bad_pii = True
         else:
             if value:
                 fields[col] = value
@@ -226,7 +265,7 @@ def _extract_metadata_fields(row: pd.Series, blank_behavior: str) -> tuple[dict,
                 fields[col] = ""
             # "keep" with blank value → skip this field
 
-    return fields, bad_cde
+    return fields, bad_cde, bad_xde, bad_pii
 
 
 def _truncate_fields(fields: dict) -> tuple[dict, list[str]]:
@@ -241,14 +280,18 @@ def _truncate_fields(fields: dict) -> tuple[dict, list[str]]:
     return fields, truncated
 
 
-def _set_row_status(preview_row: dict, bad_cde: bool, truncated: list[str]) -> None:
+def _set_row_status(preview_row: dict, bad_cde: bool, bad_xde: bool, bad_pii: bool, truncated: list[str]) -> None:
     issues = []
     if bad_cde:
         issues.append("Unrecognized CDE value (expected Yes/No) — skipped")
+    if bad_xde:
+        issues.append("Unrecognized XDE value (expetced Yes/No) - skipped")
+    if bad_pii:
+        issues.append("Unrecognized PII value (expected Yes/No) - skipped")
     if truncated:
         issues.append(f"Values truncated: {', '.join(truncated)}")
 
-    if bad_cde:
+    if bad_cde or bad_xde or bad_pii:
         preview_row["_status"] = "error"
     elif truncated:
         preview_row["_status"] = "warning"
@@ -258,12 +301,12 @@ def _set_row_status(preview_row: dict, bad_cde: bool, truncated: list[str]) -> N
     preview_row["_truncated_fields"] = truncated
 
 
-def apply_metadata_import(preview: dict) -> dict:
+def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> dict:
     table_count = 0
     column_count = 0
 
     for row in preview.get("table_rows", []):
-        set_clauses, params = _build_update_params(row, preview["metadata_columns"])
+        set_clauses, params = _build_update_params(row, preview["metadata_columns"], is_column=False)
         if not set_clauses:
             continue
         params["table_id"] = row["table_id"]
@@ -274,7 +317,7 @@ def apply_metadata_import(preview: dict) -> dict:
         table_count += 1
 
     for row in preview.get("column_rows", []):
-        set_clauses, params = _build_update_params(row, preview["metadata_columns"])
+        set_clauses, params = _build_update_params(row, preview["metadata_columns"], is_column=True)
         if not set_clauses:
             continue
         params["column_id"] = row["column_id"]
@@ -284,10 +327,26 @@ def apply_metadata_import(preview: dict) -> dict:
         )
         column_count += 1
 
+    if table_group_id:
+        _disable_autoflags(table_group_id, preview.get("metadata_columns", []))
+
     return {"table_count": table_count, "column_count": column_count}
 
 
-def _build_update_params(row: dict, metadata_columns: list[str]) -> tuple[list[str], dict]:
+def _disable_autoflags(table_group_id: str, metadata_columns: list[str]) -> None:
+    table_group = TableGroup.get(table_group_id)
+    changed = False
+    if "critical_data_element" in metadata_columns and table_group.profile_flag_cdes:
+        table_group.profile_flag_cdes = False
+        changed = True
+    if "pii_flag" in metadata_columns and table_group.profile_flag_pii:
+        table_group.profile_flag_pii = False
+        changed = True
+    if changed:
+        table_group.save()
+
+
+def _build_update_params(row: dict, metadata_columns: list[str], is_column: bool = False) -> tuple[list[str], dict]:
     set_clauses = []
     params = {}
 
@@ -299,6 +358,15 @@ def _build_update_params(row: dict, metadata_columns: list[str]) -> tuple[list[s
         if col == "critical_data_element":
             set_clauses.append("critical_data_element = :critical_data_element")
             params["critical_data_element"] = value
+        elif col == "excluded_data_element":
+            if is_column:
+                set_clauses.append("excluded_data_element = :excluded_data_element")
+                params["excluded_data_element"] = value
+        elif col == "pii_flag":
+            # Prevent user from editing PII flag if they cannot view PII
+            if is_column and session.auth.user_has_permission("view_pii"):
+                set_clauses.append("pii_flag = :pii_flag")
+                params["pii_flag"] = value
         else:
             set_clauses.append(f"{col} = NULLIF(:{col}, '')")
             params[col] = value if value is not None else ""
@@ -335,7 +403,7 @@ def import_metadata_dialog(table_group_id: str) -> None:
     result = None
     if should_import() and preview and not preview.get("error"):
         try:
-            apply_metadata_import(preview)
+            apply_metadata_import(preview, table_group_id)
 
             # Clear caches
             from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
@@ -406,9 +474,12 @@ def _build_preview_props(preview: dict) -> dict:
         for col in metadata_columns:
             if col in row:
                 val = row[col]
-                formatted_row[col] = (
-                    "Yes" if val is True else "No" if val is False else ("" if val is None else str(val))
-                )
+                if col in ["excluded_data_element", "pii_flag"]:
+                    formatted_row[col] = "Yes" if val else "No"
+                else:
+                    formatted_row[col] = (
+                        "Yes" if val is True else "No" if val is False else ("" if val is None else str(val))
+                    )
         formatted_rows.append(formatted_row)
 
     return {
@@ -417,4 +488,7 @@ def _build_preview_props(preview: dict) -> dict:
         "skipped_count": preview.get("skipped_count", 0),
         "metadata_columns": metadata_columns,
         "preview_rows": formatted_rows,
+        "warn_cde": preview.get("warn_cde", False),
+        "warn_pii": preview.get("warn_pii", False),
+        "pii_skipped": preview.get("pii_skipped", False),
     }

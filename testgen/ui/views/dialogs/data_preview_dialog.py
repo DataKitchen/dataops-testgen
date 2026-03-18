@@ -3,8 +3,10 @@ import streamlit as st
 
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models.connection import Connection
+from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.session import session
 from testgen.utils import to_dataframe
 
 
@@ -25,6 +27,10 @@ def data_preview_dialog(
 
     with st.spinner("Loading data ..."):
         data = get_preview_data(table_group_id, schema_name, table_name, column_name)
+
+    if not data.empty and not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(table_group_id, schema_name, table_name)
+        mask_dataframe_pii(data, pii_columns)
 
     if data.empty:
         st.warning("The preview data could not be loaded.")

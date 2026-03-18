@@ -368,6 +368,8 @@ def get_columns_by_condition(
         -- Column Tags
         column_chars.description,
         column_chars.critical_data_element,
+        column_chars.excluded_data_element,
+        column_chars.pii_flag,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         -- Table Tags
         table_chars.critical_data_element AS table_critical_data_element,
@@ -525,6 +527,7 @@ def get_profiling_anomalies(
         dcc.functional_data_type,
         dcc.description as column_description,
         COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+        dcc.pii_flag,
         COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
         COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
         COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,

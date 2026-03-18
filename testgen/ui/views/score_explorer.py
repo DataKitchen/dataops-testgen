@@ -244,11 +244,13 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            hygiene_issue_report.create_report(buffer, issue)
+            mask_pii = not session.auth.user_has_permission("view_pii")
+            hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            test_result_report.create_report(buffer, issue)
+            mask_pii = not session.auth.user_has_permission("view_pii")
+            test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
 
         update_progress(1.0)
         buffer.seek(0)

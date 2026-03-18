@@ -92,7 +92,7 @@ SELECT
          THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'ZIP_USA'
     WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[[:alnum:]_[:space:]-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$'
          THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'FILE_NAME'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([0-9]{4}[- ]){3}[0-9]{4}$'
+    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([0-9]{4}[- ]?){3}[0-9]{4}$'
          THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'CREDIT_CARD'
     WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([^,|' || CHAR(9) || ']{1,20}[,|' || CHAR(9) || ']){2,}[^,|' || CHAR(9) || ']{0,20}([,|' || CHAR(9) || ']?[^,|' || CHAR(9) || ']{0,20})*$'
                     AND NOT "{COL_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]'

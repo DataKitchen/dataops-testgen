@@ -11,6 +11,7 @@ from reportlab.platypus import (
 )
 
 from testgen.common.models.settings import PersistedSetting
+from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -131,6 +132,10 @@ def build_summary_table(document, tr_data):
                     "<b>Critical data element</b>: Yes" if tr_data["critical_data_element"] else "<i>Critical data element</i>: No",
                     style=PARA_STYLE_CELL,
                 ),
+                Paragraph(
+                    "<b>PII</b>: Yes" if tr_data["pii_flag"] else "<i>PII</i>: No",
+                    style=PARA_STYLE_CELL,
+                ),
                 Paragraph(f"<i>Description</i>: {tr_data['column_description']}", style=PARA_STYLE_CELL)
                 if tr_data["column_description"]
                 else [],
@@ -227,7 +232,7 @@ def build_sql_query_content(sample_data_tuple):
         return Paragraph("No sample data lookup query registered for this test.")
 
 
-def get_report_content(document, tr_data):
+def get_report_content(document, tr_data, mask_pii: bool = False):
     yield Paragraph("TestGen Test Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, tr_data)
 
@@ -246,6 +251,11 @@ def get_report_content(document, tr_data):
     else:
         sample_data_tuple = get_test_issue_source_data(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
 
+    # Mask PII in sample data
+    if sample_data_tuple[3] is not None and mask_pii:
+        pii_columns = get_pii_columns(str(tr_data["table_groups_id"]), table_name=tr_data["table_name"])
+        mask_dataframe_pii(sample_data_tuple[3], pii_columns)
+
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)
     yield from build_sample_data_content(document, sample_data_tuple)
@@ -256,6 +266,6 @@ def get_report_content(document, tr_data):
     ])
 
 
-def create_report(filename, tr_data):
+def create_report(filename, tr_data, mask_pii: bool = False):
     doc = DatakitchenTemplate(filename)
-    doc.build(flowables=list(get_report_content(doc, tr_data)))
+    doc.build(flowables=list(get_report_content(doc, tr_data, mask_pii=mask_pii)))

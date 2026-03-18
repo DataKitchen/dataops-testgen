@@ -20,6 +20,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -893,6 +894,12 @@ def source_data_dialog(selected_row):
     else:
         if bad_data_msg:
             st.info(bad_data_msg)
+        if not session.auth.user_has_permission("view_pii"):
+            pii_columns = get_pii_columns(
+                selected_row["table_groups_id"],
+                table_name=selected_row["table_name"],
+            )
+            mask_dataframe_pii(df_bad, pii_columns)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
         df_bad.fillna("<null>", inplace=True)
@@ -916,7 +923,7 @@ def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     file_name = f"testgen_test_issue_report_{tr_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:
-        create_report(buffer, tr_data)
+        create_report(buffer, tr_data, mask_pii=not session.auth.user_has_permission("view_pii"))
         update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()

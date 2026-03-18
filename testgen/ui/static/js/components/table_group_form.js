@@ -14,6 +14,7 @@
  * @property {string?} profile_sk_column_mask
  * @property {number?} profiling_delay_days
  * @property {boolean?} profile_flag_cdes
+ * @property {boolean?} profile_flag_pii
  * @property {boolean?} include_in_dashboard
  * @property {boolean?} add_scorecard_definition
  * @property {boolean?} profile_use_sampling
@@ -81,6 +82,7 @@ const TableGroupForm = (props) => {
     const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '%_sk');
     const profilingDelayDays = van.state(tableGroup.profiling_delay_days ?? 0);
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
+    const profileFlagPii = van.state(tableGroup.profile_flag_pii ?? true);
     const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
@@ -120,6 +122,7 @@ const TableGroupForm = (props) => {
             profile_sk_column_mask: profileSkColumnMask.val,
             profiling_delay_days: profilingDelayDays.val,
             profile_flag_cdes: profileFlagCdes.val,
+            profile_flag_pii: profileFlagPii.val,
             include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
             profile_use_sampling: profileUseSampling.val,
@@ -186,6 +189,7 @@ const TableGroupForm = (props) => {
             { editMode: !!tableGroup.id, setValidity: setFieldValidity },
             profilingDelayDays,
             profileFlagCdes,
+            profileFlagPii,
             includeInDashboard,
             addScorecardDefinition,
         ),
@@ -325,6 +329,7 @@ const SettingsForm = (
     options,
     profilingDelayDays,
     profileFlagCdes,
+    profileFlagPii,
     includeInDashboard,
     addScorecardDefinition,
 ) => {
@@ -338,6 +343,12 @@ const SettingsForm = (
                 label: 'Detect critical data elements (CDE) during profiling',
                 checked: profileFlagCdes,
                 onChange: (value) => profileFlagCdes.val = value,
+            }),
+            Checkbox({
+                name: 'profile_flag_pii',
+                label: 'Detect PII during profiling',
+                checked: profileFlagPii,
+                onChange: (value) => profileFlagPii.val = value,
             }),
             Checkbox({
                 name: 'include_in_dashboard',

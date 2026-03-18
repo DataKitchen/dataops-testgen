@@ -5,6 +5,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
 from testgen.common.models.settings import PersistedSetting
+from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -118,6 +119,10 @@ def build_summary_table(document, hi_data):
                     "<b>Critical data element</b>: Yes" if hi_data["critical_data_element"] else "<i>Critical data element</i>: No",
                     style=PARA_STYLE_CELL,
                 ),
+                Paragraph(
+                    "<b>PII</b>: Yes" if hi_data["pii_flag"] else "<i>PII</i>: No",
+                    style=PARA_STYLE_CELL,
+                ),
                 Paragraph(f"<i>Description</i>: {hi_data['column_description']}", style=PARA_STYLE_CELL)
                 if hi_data["column_description"]
                 else [],
@@ -178,7 +183,7 @@ def build_sql_query_content(sample_data_tuple):
         return Paragraph("No sample data lookup query registered for this issue.")
 
 
-def get_report_content(document, hi_data):
+def get_report_content(document, hi_data, mask_pii: bool = False):
     yield Paragraph("TestGen Hygiene Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, hi_data)
 
@@ -187,6 +192,11 @@ def get_report_content(document, hi_data):
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
     sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
+
+    # Mask PII in sample data
+    if sample_data_tuple[3] is not None and mask_pii:
+        pii_columns = get_pii_columns(str(hi_data["table_groups_id"]), table_name=hi_data["table_name"])
+        mask_dataframe_pii(sample_data_tuple[3], pii_columns)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)
@@ -198,6 +208,6 @@ def get_report_content(document, hi_data):
     ])
 
 
-def create_report(filename, hi_data):
+def create_report(filename, hi_data, mask_pii: bool = False):
     doc = DatakitchenTemplate(filename)
-    doc.build(flowables=list(get_report_content(doc, hi_data)))
+    doc.build(flowables=list(get_report_content(doc, hi_data, mask_pii=mask_pii)))

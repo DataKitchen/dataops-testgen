@@ -68,7 +68,7 @@ test_types:
                ELSE 1
              END AS result_measure
       FROM (
-        SELECT {CUSTOM_QUERY} AS fingerprint
+        SELECT TO_HEX(MD5({CUSTOM_QUERY})) AS fingerprint
         FROM `{SCHEMA_NAME}.{TABLE_NAME}`
         WHERE {SUBSET_CONDITION}
       ) test;
@@ -100,7 +100,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -132,7 +132,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) as fingerprint
                  FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -164,7 +164,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -196,7 +196,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -228,7 +228,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -260,7 +260,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT MD5({CUSTOM_QUERY}) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test;
@@ -292,7 +292,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT LOWER(RAWTOHEX(STANDARD_HASH({CUSTOM_QUERY}, 'MD5'))) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test
@@ -324,7 +324,7 @@ test_types:
                WHEN '{LOWER_TOLERANCE}' = 'NULL' OR fingerprint = '{LOWER_TOLERANCE}' THEN 0
                ELSE 1
              END AS result_measure
-        FROM ( SELECT {CUSTOM_QUERY} as fingerprint
+        FROM ( SELECT LOWER(BINTOHEX(HASH_MD5(TO_BINARY({CUSTOM_QUERY})))) as fingerprint
                  FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
                 WHERE {SUBSET_CONDITION}
              ) test
