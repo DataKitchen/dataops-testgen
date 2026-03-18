@@ -37,7 +37,7 @@ class ProjectSettingsPage(Page):
 
         testgen.page_header(
             PAGE_TITLE,
-            "manage-projects",
+            "manage-projects/",
         )
 
         get_test_results, set_test_results = temp_value(f"project_settings:{project_code}", default=None)

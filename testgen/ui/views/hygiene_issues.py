@@ -71,7 +71,7 @@ class HygieneIssuesPage(Page):
 
         testgen.page_header(
             "Hygiene Issues",
-            "data-hygiene-issues",
+            "data-profiling/data-hygiene-issues/",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },

@@ -87,7 +87,7 @@ class TestResultsPage(Page):
 
         testgen.page_header(
             "Test Results",
-            "investigate-test-results",
+            "data-quality-testing/investigate-test-results/",
             breadcrumbs=[
                 { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.test_suite} | {run_date}" },

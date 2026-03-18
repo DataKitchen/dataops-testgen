@@ -66,7 +66,7 @@ class ConnectionsPage(Page):
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "manage-connections",
+            "connect-your-database/manage-connections/",
         )
 
         connections = Connection.select_where(Connection.project_code == project_code)
