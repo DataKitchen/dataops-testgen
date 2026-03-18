@@ -2,12 +2,12 @@ import logging
 
 from sqlalchemy import case, literal, select
 
+from testgen import settings
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
 )
-from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
@@ -323,7 +323,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     test_run_url = "".join(
         (
-            PersistedSetting.get("BASE_URL", ""),
+            settings.UI_BASE_URL,
             "/test-runs:results?project_code=",
             str(tr_summary.project_code),
             "&run_id=",

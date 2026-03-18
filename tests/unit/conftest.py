@@ -5,12 +5,8 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def patched_settings():
-    settings = {
-        "BASE_URL": "http://tg-base-url",
-    }
-    with patch("testgen.common.models.settings.PersistedSetting.get") as mock:
-        mock.side_effect = settings.get
-        yield mock
+    with patch("testgen.settings.UI_BASE_URL", "http://tg-base-url"):
+        yield
 
 
 @pytest.fixture

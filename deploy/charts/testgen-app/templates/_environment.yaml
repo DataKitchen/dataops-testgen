@@ -43,6 +43,10 @@
 - name: TG_EMAIL_FROM_ADDRESS
   value: {{ .fromAddress | quote }}
 {{- end -}}
+{{- if .Values.testgen.uiBaseUrl }}
+- name: TG_UI_BASE_URL
+  value: {{ .Values.testgen.uiBaseUrl | quote }}
+{{- end }}
 {{- end -}}
 
 {{- define "testgen.hookEnvironment" -}}

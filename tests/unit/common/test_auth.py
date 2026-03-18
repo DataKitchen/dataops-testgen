@@ -7,6 +7,7 @@ import jwt
 import pytest
 
 from testgen.common.auth import (
+    authorize_token,
     check_permission,
     create_jwt_token,
     decode_jwt_token,
@@ -17,11 +18,11 @@ JWT_KEY = base64.b64encode(b"test-secret-key-for-jwt-signing!").decode("ascii")
 TEST_PASSWORD = "testpass"  # noqa: S105
 
 
-def _make_token(username="testuser", exp_days=30):
+def _make_token(username="testuser", exp_seconds=86400 * 30):
     key = base64.b64decode(JWT_KEY.encode("ascii"))
     payload = {
         "username": username,
-        "exp_date": (datetime.now(UTC) + timedelta(days=exp_days)).timestamp(),
+        "exp": (datetime.now(UTC) + timedelta(seconds=exp_seconds)).timestamp(),
     }
     return jwt.encode(payload, key, algorithm="HS256")
 
@@ -29,12 +30,12 @@ def _make_token(username="testuser", exp_days=30):
 @patch("testgen.common.auth.settings")
 def test_create_jwt_token_creates_valid_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
-    token = create_jwt_token("testuser", expiry_days=7)
+    token = create_jwt_token("testuser", expiry_seconds=604800)
 
     key = base64.b64decode(JWT_KEY.encode("ascii"))
     payload = jwt.decode(token, key, algorithms=["HS256"])
     assert payload["username"] == "testuser"
-    assert payload["exp_date"] > datetime.now(UTC).timestamp()
+    assert payload["exp"] > datetime.now(UTC).timestamp()
 
 
 @patch("testgen.common.auth.settings")
@@ -48,8 +49,8 @@ def test_decode_jwt_token_decodes_valid_token(mock_settings):
 @patch("testgen.common.auth.settings")
 def test_decode_jwt_token_raises_for_expired_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
-    token = _make_token(exp_days=-1)
-    with pytest.raises(ValueError, match="Token has expired"):
+    token = _make_token(exp_seconds=-3600)
+    with pytest.raises(ValueError, match="Invalid token"):
         decode_jwt_token(token)
 
 
@@ -68,6 +69,55 @@ def test_verify_password_correct():
 def test_verify_password_wrong():
     hashed = bcrypt.hashpw(TEST_PASSWORD.encode(), bcrypt.gensalt()).decode()
     assert verify_password("wrongpass", hashed) is False
+
+
+# --- authorize_token ---
+
+
+def test_authorize_token_returns_user():
+    mock_session = MagicMock()
+    mock_user = MagicMock()
+    mock_user.username = "testuser"
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    result = authorize_token("some_token", "testuser", mock_session)
+    assert result is mock_user
+
+
+def test_authorize_token_rejects_revoked():
+    mock_session = MagicMock()
+    mock_user = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
+
+    mock_token_record = MagicMock()
+    mock_token_record.access_token_revoked_at = 1700000000
+    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token_record
+
+    with pytest.raises(ValueError, match="Token has been revoked"):
+        authorize_token("revoked_token", "testuser", mock_session)
+
+
+def test_authorize_token_allows_unknown_token():
+    """When no OAuth2Token record exists (e.g. session cookie), authorization passes."""
+    mock_session = MagicMock()
+    mock_user = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+    result = authorize_token("session_cookie_jwt", "testuser", mock_session)
+    assert result is mock_user
+
+
+def test_authorize_token_raises_when_user_not_found():
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter.return_value.first.return_value = None
+
+    with pytest.raises(ValueError, match="User not found"):
+        authorize_token("some_token", "ghost", mock_session)
+
+
+# --- check_permission ---
 
 
 def test_check_permission_allowed_with_plugin():

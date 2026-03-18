@@ -1,12 +1,12 @@
 import logging
 
+from testgen import settings
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
 )
 from testgen.common.models.project import Project
-from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
@@ -219,7 +219,7 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
 
         view_in_testgen_url = "".join(
             (
-                PersistedSetting.get("BASE_URL", ""),
+                settings.UI_BASE_URL,
                 "/monitors?project_code=",
                 str(table_group.project_code),
                 "&table_group_id=",

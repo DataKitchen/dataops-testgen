@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 from sqlalchemy import select
 
+from testgen import settings
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.notification_settings import (
@@ -11,7 +12,6 @@ from testgen.common.models.notification_settings import (
 )
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
-from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.notifications import BaseNotificationTemplate
 from testgen.utils import log_and_swallow_exception
@@ -259,7 +259,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
 
     profiling_run_issues_url = "".join(
         (
-          PersistedSetting.get("BASE_URL", ""),
+          settings.UI_BASE_URL,
           "/profiling-runs:hygiene?project_code=",
           str(profiling_run.project_code),
           "&run_id=", str(profiling_run.id),
@@ -311,7 +311,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "issues_url": profiling_run_issues_url,
             "results_url": "".join(
                 (
-                    PersistedSetting.get("BASE_URL", ""),
+                    settings.UI_BASE_URL,
                     "/profiling-runs:results?project_code=",
                     str(profiling_run.project_code),
                     "&run_id=",

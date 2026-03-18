@@ -14,7 +14,7 @@ def authenticate_user(username: str, password: str) -> str:
     if not verify_password(password, user.password):
         raise ValueError("Invalid username or password")
 
-    return create_jwt_token(user.username)
+    return create_jwt_token(user.username, expiry_seconds=3600)
 
 
 def validate_token(token: str) -> User:

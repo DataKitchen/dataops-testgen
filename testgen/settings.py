@@ -444,6 +444,31 @@ Both files must be provided.
 """
 
 
+def _ssl_files_present() -> bool:
+    return bool(SSL_CERT_FILE) and os.path.isfile(SSL_CERT_FILE) and bool(SSL_KEY_FILE) and os.path.isfile(SSL_KEY_FILE)
+
+
+_ui_tls_env = os.getenv("TG_UI_TLS_ENABLED", "").lower()
+UI_TLS_ENABLED: bool = _ui_tls_env in ("yes", "true") if _ui_tls_env else _ssl_files_present()
+"""
+Enable TLS for the Streamlit UI server.
+When not set, auto-detects from SSL_CERT_FILE / SSL_KEY_FILE presence.
+
+from env variable: `TG_UI_TLS_ENABLED`
+defaults to: auto-detect
+"""
+
+_api_tls_env = os.getenv("TG_API_TLS_ENABLED", "").lower()
+API_TLS_ENABLED: bool = _api_tls_env in ("yes", "true") if _api_tls_env else _ssl_files_present()
+"""
+Enable TLS for the API/MCP server (uvicorn).
+When not set, auto-detects from SSL_CERT_FILE / SSL_KEY_FILE presence.
+
+from env variable: `TG_API_TLS_ENABLED`
+defaults to: auto-detect
+"""
+
+
 MIXPANEL_URL: str = "https://api.mixpanel.com"
 MIXPANEL_TIMEOUT: int = 3
 MIXPANEL_TOKEN: str = "973680ddf8c2b512e6f6d1f2959149eb"
@@ -501,26 +526,54 @@ SMTP_PASSWORD: str | None = os.getenv("TG_SMTP_PASSWORD")
 Email: SMTP password
 """
 
-MCP_PORT: int = int(os.getenv("TG_MCP_PORT", "8510"))
-"""
-Port for the MCP server.
-
-from env variable: `TG_MCP_PORT`
-defaults to: `8510`
-"""
-
-MCP_HOST: str = os.getenv("TG_MCP_HOST", "0.0.0.0")  # noqa: S104
-"""
-Host for the MCP server.
-
-from env variable: `TG_MCP_HOST`
-defaults to: `0.0.0.0`
-"""
-
 MCP_ENABLED: bool = os.getenv("TG_MCP_ENABLED", "no").lower() in ("yes", "true")
 """
 Enable the MCP server when running `testgen run-app all`.
 
 from env variable: `TG_MCP_ENABLED`
 defaults to: `Yes`
+"""
+
+API_PORT: int = int(os.getenv("TG_API_PORT", "8530"))
+"""
+Port for the API server.
+
+from env variable: `TG_API_PORT`
+defaults to: `8530`
+"""
+
+API_HOST: str = os.getenv("TG_API_HOST", "0.0.0.0")  # noqa: S104
+"""
+Host for the API server.
+
+from env variable: `TG_API_HOST`
+defaults to: `0.0.0.0`
+"""
+
+def _default_base_url() -> str:
+    scheme = "https" if API_TLS_ENABLED else "http"
+    return f"{scheme}://localhost:{API_PORT}"
+
+
+BASE_URL: str = os.getenv("TG_BASE_URL", "") or _default_base_url()
+"""
+Externally-reachable base URL for the API/MCP/OAuth server.
+
+from env variable: `TG_BASE_URL`
+defaults to: computed from API_TLS_ENABLED and API_PORT
+"""
+
+
+def _default_ui_base_url() -> str:
+    scheme = "https" if UI_TLS_ENABLED else "http"
+    port = os.getenv("STREAMLIT_SERVER_PORT", "8501")
+    return f"{scheme}://localhost:{port}"
+
+
+UI_BASE_URL: str = os.getenv("TG_UI_BASE_URL", "") or _default_ui_base_url()
+"""
+Externally-reachable base URL for the Streamlit UI (used in email links, PDFs).
+
+from env variable: `TG_UI_BASE_URL`
+defaults to: computed from UI_TLS_ENABLED and STREAMLIT_SERVER_PORT
 """

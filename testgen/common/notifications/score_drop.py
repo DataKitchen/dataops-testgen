@@ -3,11 +3,11 @@ from collections import defaultdict
 
 from sqlalchemy import select
 
+from testgen import settings
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import ScoreDropNotificationSettings
 from testgen.common.models.project import Project
 from testgen.common.models.scores import ScoreDefinition
-from testgen.common.models.settings import PersistedSetting
 from testgen.common.notifications.notifications import BaseNotificationTemplate
 from testgen.utils import log_and_swallow_exception
 
@@ -177,7 +177,7 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
                 "definition": definition,
                 "scorecard_url": "".join(
                     (
-                        PersistedSetting.get("BASE_URL", ""),
+                        settings.UI_BASE_URL,
                         "/quality-dashboard:score-details?project_code=",
                         str(definition.project_code),
                         "&definition_id=",
