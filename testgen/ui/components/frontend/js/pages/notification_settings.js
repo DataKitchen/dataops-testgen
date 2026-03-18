@@ -66,7 +66,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
             class: 'notifications--empty',
             link: {
                 label: 'View documentation',
-                href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
+                href: 'https://docs.datakitchen.io/testgen/administer/configure-email-server/',
                 open_new: true,
             },
         });

@@ -60,7 +60,7 @@ class DataCatalogPage(Page):
     ) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "data-catalog",
+            "data-catalog/",
         )
 
         _, loading_column = st.columns([0.4, 0.6])

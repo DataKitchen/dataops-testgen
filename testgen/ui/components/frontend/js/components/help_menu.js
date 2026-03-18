@@ -23,9 +23,9 @@ import { Icon } from './icon.js';
 
 const { a, div, span } = van.tags;
 
-const baseHelpUrl = 'https://docs.datakitchen.io/articles/dataops-testgen-help/';
-const releaseNotesTopic = 'testgen-release-notes';
-const upgradeTopic = 'upgrade-testgen';
+const baseHelpUrl = 'https://docs.datakitchen.io/testgen/';
+const releaseNotesTopic = 'release-notes/';
+const upgradeTopic = 'administer/upgrade-testgen/';
 
 const slackUrl = 'https://data-observability-slack.datakitchen.io/join';
 const trainingUrl = 'https://info.datakitchen.io/data-quality-training-and-certifications';
