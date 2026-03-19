@@ -1,13 +1,11 @@
 import logging
-import subprocess
-import threading
+import os
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal
 from uuid import UUID
 
-import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
@@ -21,7 +19,7 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
-from testgen.common.database.database_service import ThreadedProgress, empty_cache
+from testgen.common.database.database_service import ThreadedProgress
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -30,7 +28,6 @@ from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.monitor_run import send_monitor_notifications
 from testgen.common.notifications.test_run import send_test_run_notifications
-from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
 from .run_refresh_data_chars import run_data_chars_refresh
@@ -39,20 +36,16 @@ from .run_test_validation import run_test_validation
 LOG = logging.getLogger("testgen")
 
 
+@with_database_session
 def run_test_execution_in_background(test_suite_id: str | UUID):
-    msg = f"Triggering test run for test suite {test_suite_id}"
-    if settings.IS_DEBUG:
-        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
-        empty_cache()
-        background_thread = threading.Thread(
-            target=run_test_execution,
-            args=(test_suite_id, session.auth.user_display if session.auth else None),
-        )
-        background_thread.start()
-    else:
-        LOG.info(msg)
-        script = ["testgen", "run-tests", "--test-suite-id", str(test_suite_id)]
-        subprocess.Popen(script)  # NOQA S603
+    from testgen.common.models.job_execution import JobExecution
+
+    LOG.info("Submitting test execution job for test suite %s", test_suite_id)
+    JobExecution.submit(
+        job_key="run-tests",
+        kwargs={"test_suite_id": str(test_suite_id)},
+        source="ui",
+    )
 
 
 @with_database_session
@@ -73,14 +66,18 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     test_run = TestRun(
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
-        process_id=process_service.get_current_process_id(),
+        process_id=os.getpid(),
     )
-    test_run.init_progress()
-    test_run.set_progress("data_chars", "Running")
-    test_run.save()
+    if job_execution_id := os.environ.get("TG_JOB_EXECUTION_ID"):
+        test_run.job_execution_id = job_execution_id
+
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
     session = get_current_session()
+
+    test_run.init_progress()
+    test_run.set_progress("data_chars", "Running")
+    test_run.save()
     session.commit()
 
     try:

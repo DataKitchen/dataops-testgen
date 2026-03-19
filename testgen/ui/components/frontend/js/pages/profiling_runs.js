@@ -18,6 +18,7 @@
  * @property {ProgressStep[]} progress
  * @property {string} log_message
  * @property {string} process_id
+ * @property {string} job_execution_id
  * @property {string} table_group_schema
  * @property {number} column_ct
  * @property {number} table_ct
@@ -309,11 +310,13 @@ const ProfilingRunItem = (
             div(
                 { class: 'flex-row' },
                 ProfilingRunStatus(item),
-                item.status === 'Running' && item.process_id && userCanEdit ? Button({
+                item.status === 'Running' && item.job_execution_id && userCanEdit ? Button({
                     type: 'stroked',
                     label: 'Cancel',
                     style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
-                    onclick: () => emitEvent('RunCanceled', { payload: item }),
+                    onclick: () => {
+                        emitEvent('RunCanceled', { payload: item });
+                    },
                 }) : null,
             ),
             item.profiling_endtime

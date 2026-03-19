@@ -6,9 +6,9 @@ from typing import Any
 
 import streamlit as st
 
-import testgen.common.process_service as process_service
 import testgen.ui.services.form_service as fm
 from testgen.common.models import with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
@@ -18,7 +18,6 @@ from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
-from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
@@ -29,7 +28,7 @@ from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.utils import friendly_score, to_int
+from testgen.utils import friendly_score
 
 PAGE_ICON = "labs"
 PAGE_TITLE = "Test Runs"
@@ -189,13 +188,15 @@ class TestRunScheduleDialog(ScheduleDialog):
         return [], {"test_suite_id": str(arg_value)}
 
 
+@with_database_session
 def on_cancel_run(test_run: dict) -> None:
-    process_status, process_message = process_service.kill_test_run(to_int(test_run["process_id"]))
-    if process_status:
+    if (job_execution_id := test_run.get("job_execution_id")) and (job_exec := JobExecution.get(job_execution_id)) and job_exec.request_cancel():
+        # Stopgap: also update the run status so the UI reflects cancellation immediately.
+        # The proper flow is subprocess catches SIGTERM and updates its own status on exit.
         TestRun.cancel_run(test_run["test_run_id"])
-        send_test_run_notifications(TestRun.get(test_run["test_run_id"]))
-
-    fm.reset_post_updates(str_message=f":{'green' if process_status else 'red'}[{process_message}]", as_toast=True)
+        fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
+    else:
+        fm.reset_post_updates(str_message=":red[This run cannot be cancelled.]", as_toast=True)
 
 
 @st.dialog(title="Delete Test Runs")
@@ -237,11 +238,10 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
             with st.spinner("Deleting runs ..."):
                 test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id, test_run_ids)
                 for test_run in test_runs:
-                    if test_run.status == "Running":
-                        process_status, _ = process_service.kill_test_run(to_int(test_run.process_id))
-                        if process_status:
-                            TestRun.cancel_run(test_run.test_run_id)
-                            send_test_run_notifications(TestRun.get(test_run.test_run_id))
+                    if test_run.status == "Running" and test_run.job_execution_id:
+                        job_exec = JobExecution.get(test_run.job_execution_id)
+                        if job_exec:
+                            job_exec.request_cancel()
                 TestRun.cascade_delete(test_run_ids)
             safe_rerun()
         except Exception:

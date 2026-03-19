@@ -136,6 +136,7 @@ def run_profile(table_group_id: str):
     click.echo("\n" + message)
 
 
+@register_scheduler_job
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
 @click.option(
     "-t",

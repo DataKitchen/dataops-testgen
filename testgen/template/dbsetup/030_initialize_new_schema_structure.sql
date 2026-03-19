@@ -154,7 +154,8 @@ CREATE TABLE profiling_runs (
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_profiling      FLOAT,
-   process_id              INTEGER
+   process_id              INTEGER,
+   job_execution_id        UUID
 );
 
 CREATE TABLE test_suites (
@@ -557,6 +558,7 @@ CREATE TABLE test_runs (
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
    process_id              INTEGER,
+   job_execution_id        UUID,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -957,6 +959,24 @@ CREATE TABLE job_schedules (
 );
 
 CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
+
+CREATE TABLE job_executions (
+    id              UUID            NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    job_key         VARCHAR(100)    NOT NULL,
+    args            JSONB           NOT NULL DEFAULT '[]'::jsonb,
+    kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    source          VARCHAR(20)     NOT NULL,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'pending',
+    job_schedule_id UUID            REFERENCES job_schedules(id) ON DELETE SET NULL,
+    error_message   TEXT,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    claimed_at      TIMESTAMPTZ,
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
+CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

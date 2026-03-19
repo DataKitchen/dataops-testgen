@@ -466,6 +466,13 @@ ANALYTICS_JOB_SOURCE: str = os.getenv("TG_JOB_SOURCE", "CLI")
 Identifies the job trigger for analytics purposes.
 """
 
+JOB_POLL_INTERVAL: int = int(os.getenv("TG_JOB_POLL_INTERVAL", "5"))
+"""
+Seconds between polls for pending job executions.
+from env variable: 'TG_JOB_POLL_INTERVAL'
+defaults to: 5
+"""
+
 JWT_HASHING_KEY_B64: str = os.getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token

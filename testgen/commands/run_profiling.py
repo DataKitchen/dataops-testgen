@@ -1,10 +1,8 @@
 import logging
-import subprocess
-import threading
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import testgen.common.process_service as process_service
 from testgen import settings
 from testgen.commands.queries.profiling_query import (
     HygieneIssueType,
@@ -24,7 +22,7 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
-from testgen.common.database.database_service import ThreadedProgress, empty_cache
+from testgen.common.database.database_service import ThreadedProgress
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -33,26 +31,21 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
-from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
 
+@with_database_session
 def run_profiling_in_background(table_group_id: str | UUID) -> None:
-    msg = f"Triggering profiling run for table group {table_group_id}"
-    if settings.IS_DEBUG:
-        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
-        empty_cache()
-        background_thread = threading.Thread(
-            target=run_profiling,
-            args=(table_group_id, session.auth.user_display if session.auth else None),
-        )
-        background_thread.start()
-    else:
-        LOG.info(msg)
-        script = ["testgen", "run-profile", "-tg", str(table_group_id)]
-        subprocess.Popen(script)  # NOQA S603
+    from testgen.common.models.job_execution import JobExecution
+
+    LOG.info("Submitting profiling job for table group %s", table_group_id)
+    JobExecution.submit(
+        job_key="run-profile",
+        kwargs={"table_group_id": str(table_group_id)},
+        source="ui",
+    )
 
 
 @with_database_session
@@ -74,14 +67,19 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         connection_id=connection.connection_id,
         table_groups_id=table_group.id,
         profiling_starttime=datetime.now(UTC) + time_delta,
-        process_id=process_service.get_current_process_id(),
+        process_id=os.getpid(),
     )
+    if job_execution_id := os.environ.get("TG_JOB_EXECUTION_ID"):
+        profiling_run.job_execution_id = job_execution_id
+
+    # This runs in a subprocess — commit after every save so progress is visible
+    # to the UI (separate session) and to execute_db_queries (independent connection).
+    session = get_current_session()
+
     profiling_run.init_progress()
     profiling_run.set_progress("data_chars", "Running")
     profiling_run.save()
-    # This runs in a subprocess — commit after every save so progress is visible
-    # to the UI (separate session) and to execute_db_queries (independent connection).
-    get_current_session().commit()
+    session.commit()
 
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
@@ -115,7 +113,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
-        get_current_session().commit()
+        session.commit()
 
         send_profiling_run_notifications(profiling_run)
     else:
@@ -123,7 +121,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
-        get_current_session().commit()
+        session.commit()
 
         send_profiling_run_notifications(profiling_run)
         _rollup_profiling_scores(profiling_run, table_group)
