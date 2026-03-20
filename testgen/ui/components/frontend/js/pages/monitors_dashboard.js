@@ -254,6 +254,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         type: 'icon',
                         tooltip: 'View table trends',
                         tooltipPosition: 'top-left',
+                        disabled: monitor.freshness_is_pending && monitor.volume_is_pending && monitor.schema_is_pending && monitor.metric_is_pending,
                         style: 'color: var(--secondary-text-color);',
                         onclick: () => openChartsDialog(monitor),
                     }),

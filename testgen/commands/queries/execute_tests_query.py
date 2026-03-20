@@ -374,6 +374,10 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("has_schema_changes.sql")
 
+    def get_missing_freshness_monitors(self) -> tuple[str, dict]:
+        # Runs on App database
+        return self._get_query("get_missing_freshness_monitors.sql")
+
     def get_errored_autogen_monitors(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("get_errored_autogen_monitors.sql")
