@@ -196,6 +196,13 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
         # Freshness monitors will be inserted after profiling
         run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
 
+    # Autogenerate missing freshness monitors if profiling data exists
+    if sql_generator.table_group.last_complete_profile_run_id:
+        missing_monitors = fetch_dict_from_db(*sql_generator.get_missing_freshness_monitors())
+        if missing_monitors:
+            table_names = [row["table_name"] for row in missing_monitors]
+            run_monitor_generation(test_suite_id, ["Freshness_Trend"], mode="insert", table_names=table_names)
+
     # Regenerate monitors that errored in previous run
     errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
     if errored_monitors:

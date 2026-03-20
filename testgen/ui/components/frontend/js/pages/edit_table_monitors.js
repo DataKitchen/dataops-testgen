@@ -190,9 +190,12 @@ const EditTableMonitors = (/** @type Properties */ props) => {
 
                 const selectedDef = getValue(props.definitions).find(td => td.test_type === type);
                 if (!selectedDef) {
+                    const message = type === 'Freshness_Trend'
+                        ? 'Freshness monitor not yet configured. Run profiling to auto-generate.'
+                        : 'Monitor not configured for this table.';
                     return Card({
                         class: 'edit-monitors--empty flex-row fx-justify-center',
-                        content: 'Monitor not configured for this table.',
+                        content: message,
                     });
                 }
 
