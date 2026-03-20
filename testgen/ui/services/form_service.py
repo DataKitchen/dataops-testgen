@@ -11,6 +11,7 @@ from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBu
 
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 
 """
 Shared rendering of UI elements
@@ -77,7 +78,7 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
                 fcn.clear()
         else:
             st.cache_data.clear()
-    st.rerun()
+    safe_rerun()
 
 
 def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_width=300, lst_labels=None):
