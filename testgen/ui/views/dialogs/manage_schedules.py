@@ -6,9 +6,10 @@ import cron_descriptor
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.models import Session, with_database_session
+from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -44,17 +45,17 @@ class ScheduleDialog:
         @with_database_session
         def on_delete_sched(item):
             JobSchedule.delete(item["id"])
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         @with_database_session
         def on_pause_sched(item):
             JobSchedule.update_active(item["id"], False)
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         @with_database_session
         def on_resume_sched(item):
             JobSchedule.update_active(item["id"], True)
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         def on_add_schedule(payload: dict[str, str]):
             set_arg_value(payload["arg_value"])
@@ -98,7 +99,8 @@ class ScheduleDialog:
                         args=args,
                         kwargs=kwargs,
                     )
-                    with_database_session(sched_model.save)()
+                    with database_session():
+                        sched_model.save()
                 else:
                     success = False
                     message = "Complete all the fields before adding the schedule"
@@ -113,26 +115,26 @@ class ScheduleDialog:
                 message = "Error validating the Cron expression"
             results = {"success": success, "message": message}
 
-        with Session() as db_session:
-            scheduled_jobs = (
-                db_session.query(JobSchedule)
-                .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
-            )
-            scheduled_jobs_json = []
-            for job in scheduled_jobs:
-                job_json = {
-                    "id": str(job.id),
-                    "argValue": self.get_arg_value(job),
-                    "cronExpr": job.cron_expr,
-                    "readableExpr": cron_descriptor.get_description(job.cron_expr),
-                    "cronTz": job.cron_tz_str,
-                    "sample": [
-                        sample.strftime("%a %b %-d, %-I:%M %p")
-                        for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
-                    ],
-                    "active": job.active,
-                }
-                scheduled_jobs_json.append(job_json)
+        db_session = get_current_session()
+        scheduled_jobs = (
+            db_session.query(JobSchedule)
+            .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
+        )
+        scheduled_jobs_json = []
+        for job in scheduled_jobs:
+            job_json = {
+                "id": str(job.id),
+                "argValue": self.get_arg_value(job),
+                "cronExpr": job.cron_expr,
+                "readableExpr": cron_descriptor.get_description(job.cron_expr),
+                "cronTz": job.cron_tz_str,
+                "sample": [
+                    sample.strftime("%a %b %-d, %-I:%M %p")
+                    for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
+                ],
+                "active": job.active,
+            }
+            scheduled_jobs_json.append(job_json)
 
         testgen.css_class("l-dialog")
         testgen.testgen_component(

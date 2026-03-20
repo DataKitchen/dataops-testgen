@@ -34,6 +34,7 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
@@ -356,7 +357,7 @@ def remove_table_dialog(item: dict) -> None:
         for func in [get_table_group_columns, get_tag_values]:
             func.clear()
         st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-        st.rerun()
+        safe_rerun()
 
 
 def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
@@ -408,7 +409,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
     for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-    st.rerun()
+    safe_rerun()
 
 
 def export_metadata_csv(table_group: TableGroupMinimal) -> None:

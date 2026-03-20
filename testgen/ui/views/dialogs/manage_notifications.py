@@ -6,10 +6,11 @@ from uuid import UUID
 
 import streamlit as st
 
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.notification_settings import NotificationSettings, NotificationSettingsValidationError
 from testgen.common.models.settings import PersistedSetting
 from testgen.ui.components import widgets
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 
 LOG = logging.getLogger("testgen")
@@ -41,7 +42,8 @@ class NotificationSettingsDialogBase:
             @wraps(method)
             def wrapper(self, *args, **kwargs):
                 try:
-                    with_database_session(method)(self, *args, **kwargs)
+                    with database_session():
+                        method(self, *args, **kwargs)
                 except NotificationSettingsValidationError as e:
                     success = False
                     message = str(e)
@@ -55,7 +57,7 @@ class NotificationSettingsDialogBase:
 
                 # The ever-changing "idx" is useful to force refreshing the component
                 self.set_result({"success": success, "message": message, "idx": next(self._result_idx)})
-                st.rerun(scope="fragment")
+                safe_rerun(scope="fragment")
 
             return wrapper
         return decorator

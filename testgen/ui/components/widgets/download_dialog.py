@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common import date_service
+from testgen.ui.services.rerun_service import safe_rerun
 
 PROGRESS_UPDATE_TYPE = Callable[[float], None]
 
@@ -152,7 +153,7 @@ def download_dialog(
                 mime=file_type,
                 use_container_width=True,
             ):
-                st.rerun()
+                safe_rerun()
 
         with button_col:
             render_button()

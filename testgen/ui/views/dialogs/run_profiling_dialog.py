@@ -8,6 +8,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 
 LINK_HREF = "profiling-runs"
@@ -69,4 +70,4 @@ def run_profiling_dialog(project_code: str, table_group_id: str | UUID | None = 
     if result and result["success"] and not result["show_link"]:
         time.sleep(2)
         ProfilingRun.select_summary.clear()
-        st.rerun()
+        safe_rerun()

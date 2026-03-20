@@ -28,6 +28,7 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -305,7 +306,7 @@ class ConnectionsPage(Page):
 
         get_close_dialog, set_close_dialog = temp_value(f"connections:{connection_id}:close", default=False)
         if (get_close_dialog()):
-            st.rerun()
+            safe_rerun()
 
         get_new_table_group, set_new_table_group = temp_value(
             f"connections:{connection_id}:table_group",
@@ -467,7 +468,7 @@ class ConnectionsPage(Page):
                             LOG.exception(message)
                     else:
                         LOG.info("Table group %s created", table_group.id)
-                        st.rerun()
+                        safe_rerun()
                 except Exception as error:
                     message = "Error creating table group"
                     success = False
