@@ -557,7 +557,10 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
+                monitors: list[str] = ["Volume_Trend", "Schema_Drift"]
+                if updated_table_group.last_complete_profile_run_id:
+                    monitors.append("Freshness_Trend")
+                run_monitor_generation(monitor_suite.id, monitors)
 
             st.rerun()
 
