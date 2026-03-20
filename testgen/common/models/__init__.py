@@ -4,7 +4,7 @@ import platform
 import threading
 import urllib.parse
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.orm import sessionmaker
@@ -50,6 +50,7 @@ def database_session():
         return
     with Session() as session:
         _current_session_wrapper.value = session
+        _current_session_wrapper.session_flushed = False
         try:
             yield session
         except Exception:
@@ -73,3 +74,19 @@ def with_database_session(func):
 
 def get_current_session() -> SQLAlchemySession:
     return getattr(_current_session_wrapper, "value", None)
+
+
+def session_had_writes() -> bool:
+    """Check and reset the write-tracking flag.
+
+    Returns True if the session flushed any writes since the flag was
+    last reset (i.e. since the owning ``database_session()`` opened).
+    """
+    had_writes = getattr(_current_session_wrapper, "session_flushed", False)
+    _current_session_wrapper.session_flushed = False
+    return had_writes
+
+
+@event.listens_for(Session, "after_flush")
+def _track_writes(_session, _flush_context):
+    _current_session_wrapper.session_flushed = True
