@@ -77,7 +77,6 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
         status_container.success(f"Test generation completed for test suite **{test_suite_name}**.")
         time.sleep(1)
-        st.cache_data.clear()
         safe_rerun()
 
 

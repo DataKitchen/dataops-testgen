@@ -4,7 +4,6 @@ from uuid import UUID
 import streamlit as st
 
 from testgen.commands.run_profiling import run_profiling_in_background
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
@@ -69,5 +68,4 @@ def run_profiling_dialog(project_code: str, table_group_id: str | UUID | None = 
 
     if result and result["success"] and not result["show_link"]:
         time.sleep(2)
-        ProfilingRun.select_summary.clear()
         safe_rerun()

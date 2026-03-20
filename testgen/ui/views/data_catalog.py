@@ -354,8 +354,6 @@ def remove_table_dialog(item: dict) -> None:
 
         st.success("Table has been removed.")
         time.sleep(1)
-        for func in [get_table_group_columns, get_tag_values]:
-            func.clear()
         st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
         safe_rerun()
 
@@ -406,8 +404,6 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                     params,
                 )
 
-    for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values]:
-        func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
     safe_rerun()
 

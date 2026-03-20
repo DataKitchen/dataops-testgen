@@ -618,7 +618,6 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             with st.spinner("Deleting monitors ..."):
                 monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
                 TestSuite.cascade_delete([monitor_suite.id])
-            st.cache_data.clear()
             safe_rerun()
         except Exception:
             LOG.exception("Failed to delete monitor suite")

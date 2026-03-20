@@ -234,8 +234,6 @@ class TestDefinitionsPage(Page):
                         fm.reset_post_updates(
                             update_test_definition(selected, action["attribute"], action["value"], action["message"]),
                             as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[],
                         )
 
         if actions_column.button(
@@ -918,7 +916,6 @@ def show_test_form(
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
-            get_test_suite_columns.clear()
             safe_rerun()
 
 
@@ -1030,14 +1027,12 @@ def copy_move_test_dialog(
         TestDefinition.move(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been moved."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
         safe_rerun()
     elif copy:
         TestDefinition.copy(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been copied."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
         safe_rerun()
 

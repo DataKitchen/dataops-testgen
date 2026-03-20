@@ -88,5 +88,4 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
                 )
             else:
                 time.sleep(2)
-                st.cache_data.clear()
                 safe_rerun()
