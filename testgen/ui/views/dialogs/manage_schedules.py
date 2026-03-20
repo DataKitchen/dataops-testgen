@@ -6,7 +6,7 @@ import cron_descriptor
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.models import database_session, get_current_session, with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.rerun_service import safe_rerun
@@ -115,26 +115,26 @@ class ScheduleDialog:
                 message = "Error validating the Cron expression"
             results = {"success": success, "message": message}
 
-        db_session = get_current_session()
-        scheduled_jobs = (
-            db_session.query(JobSchedule)
-            .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
-        )
-        scheduled_jobs_json = []
-        for job in scheduled_jobs:
-            job_json = {
-                "id": str(job.id),
-                "argValue": self.get_arg_value(job),
-                "cronExpr": job.cron_expr,
-                "readableExpr": cron_descriptor.get_description(job.cron_expr),
-                "cronTz": job.cron_tz_str,
-                "sample": [
-                    sample.strftime("%a %b %-d, %-I:%M %p")
-                    for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
-                ],
-                "active": job.active,
-            }
-            scheduled_jobs_json.append(job_json)
+        with database_session() as db_session:
+            scheduled_jobs = (
+                db_session.query(JobSchedule)
+                .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
+            )
+            scheduled_jobs_json = []
+            for job in scheduled_jobs:
+                job_json = {
+                    "id": str(job.id),
+                    "argValue": self.get_arg_value(job),
+                    "cronExpr": job.cron_expr,
+                    "readableExpr": cron_descriptor.get_description(job.cron_expr),
+                    "cronTz": job.cron_tz_str,
+                    "sample": [
+                        sample.strftime("%a %b %-d, %-I:%M %p")
+                        for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
+                    ],
+                    "active": job.active,
+                }
+                scheduled_jobs_json.append(job_json)
 
         testgen.css_class("l-dialog")
         testgen.testgen_component(
