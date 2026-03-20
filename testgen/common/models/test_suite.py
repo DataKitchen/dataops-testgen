@@ -246,7 +246,6 @@ class TestSuite(Entity):
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod

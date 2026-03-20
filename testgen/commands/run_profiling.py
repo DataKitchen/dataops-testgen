@@ -26,7 +26,7 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import ThreadedProgress, empty_cache
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
@@ -78,6 +78,9 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     profiling_run.init_progress()
     profiling_run.set_progress("data_chars", "Running")
     profiling_run.save()
+    # This runs in a subprocess — commit after every save so progress is visible
+    # to the UI (separate session) and to execute_db_queries (independent connection).
+    get_current_session().commit()
 
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
@@ -109,6 +112,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
+        get_current_session().commit()
 
         send_profiling_run_notifications(profiling_run)
     else:
@@ -116,6 +120,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
+        get_current_session().commit()
 
         send_profiling_run_notifications(profiling_run)
         _rollup_profiling_scores(profiling_run, table_group)
@@ -143,6 +148,7 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     LOG.info(f"Running column profiling queries: {len(data_chars)}")
     table_group = sql_generator.table_group
@@ -169,6 +175,7 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
             else None,
         )
         profiling_run.save()
+        get_current_session().commit()
 
     profiling_results, result_columns, error_data = fetch_from_db_threaded(
         [sql_generator.run_column_profiling(column, sampling_params.get(column.table_name)) for column in data_chars],
@@ -216,6 +223,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("freq_analysis", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     error_data = None
     try:
@@ -230,6 +238,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
                     "freq_analysis", "Running", detail=f"{progress['processed']} of {progress['total']}"
                 )
                 profiling_run.save()
+                get_current_session().commit()
 
             frequency_results, result_columns, error_data = fetch_from_db_threaded(
                 [sql_generator.run_frequency_analysis(ColumnChars(**column)) for column in frequency_columns],
@@ -262,6 +271,7 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("hygiene_issues", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     try:
         LOG.info("Detecting functional data types and critical data elements")

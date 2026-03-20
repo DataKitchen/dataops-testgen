@@ -118,7 +118,6 @@ class Entity(Base):
         query = delete(cls).where(*clauses)
         db_session = get_current_session()
         db_session.execute(query)
-        db_session.commit()
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
@@ -145,14 +144,12 @@ class Entity(Base):
         db_session = get_current_session()
         db_session.add(self)
         db_session.flush([self])
-        db_session.commit()
         db_session.refresh(self, ["id"])
 
     def delete(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
         db_session.delete(self)
-        db_session.commit()
 
     def to_dict(self, json_safe: bool = False):
         result = {col.name: getattr(self, col.name) for col in self.__table__.columns}

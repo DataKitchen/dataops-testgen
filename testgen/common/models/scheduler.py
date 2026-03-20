@@ -63,24 +63,12 @@ class JobSchedule(Base):
     @classmethod
     def delete(cls, job_id: str | UUID) -> None:
         query = delete(cls).where(JobSchedule.id == job_id)
-        db_session = get_current_session()
-        try:
-            db_session.execute(query)
-        except ValueError:
-            db_session.rollback()
-        else:
-            db_session.commit()
+        get_current_session().execute(query)
 
     @classmethod
     def update_active(cls, job_id: str | UUID, active: bool) -> None:
         query = update(cls).where(JobSchedule.id == job_id).values(active=active)
-        db_session = get_current_session()
-        try:
-            db_session.execute(query)
-        except ValueError:
-            db_session.rollback()
-        else:
-            db_session.commit()
+        get_current_session().execute(query)
 
     @classmethod
     def count(cls):
@@ -101,4 +89,3 @@ class JobSchedule(Base):
     def save(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
-        db_session.commit()

@@ -246,7 +246,7 @@ class ProfilingRun(Entity):
         )
         db_session = get_current_session()
         rows = db_session.execute(query)
-        db_session.commit()
+        db_session.flush()
         return [r.id for r in rows]
 
     @classmethod
@@ -254,7 +254,6 @@ class ProfilingRun(Entity):
         query = update(cls).where(cls.id == run_id).values(status="Cancelled", profiling_endtime=datetime.now(UTC))
         db_session = get_current_session()
         db_session.execute(query)
-        db_session.commit()
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
@@ -270,7 +269,6 @@ class ProfilingRun(Entity):
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"profiling_run_ids": tuple(ids)})
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod
