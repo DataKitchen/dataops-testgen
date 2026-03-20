@@ -349,7 +349,6 @@ class TestRun(Entity):
         db_session = get_current_session()
         rows = db_session.execute(query)
         db_session.commit()
-        cls.clear_cache()
         return [r.id for r in rows]
 
     @classmethod
@@ -358,7 +357,6 @@ class TestRun(Entity):
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:

@@ -445,4 +445,3 @@ class TableGroup(Entity):
             super().save()
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
-        TableGroup.clear_cache()

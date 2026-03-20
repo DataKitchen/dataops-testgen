@@ -70,7 +70,6 @@ class JobSchedule(Base):
             db_session.rollback()
         else:
             db_session.commit()
-            cls.clear_cache()
 
     @classmethod
     def update_active(cls, job_id: str | UUID, active: bool) -> None:
@@ -82,7 +81,6 @@ class JobSchedule(Base):
             db_session.rollback()
         else:
             db_session.commit()
-            cls.clear_cache()
 
     @classmethod
     def count(cls):
@@ -104,4 +102,3 @@ class JobSchedule(Base):
         db_session = get_current_session()
         db_session.add(self)
         db_session.commit()
-        self.__class__.clear_cache()

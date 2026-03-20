@@ -119,8 +119,6 @@ class Entity(Base):
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()
-        # We clear all because cached data like Project.select_summary will be affected
-        st.cache_data.clear()
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
@@ -144,24 +142,17 @@ class Entity(Base):
         db_session.refresh(self)
 
     def save(self) -> None:
-        is_new = self.id is None
         db_session = get_current_session()
         db_session.add(self)
         db_session.flush([self])
         db_session.commit()
         db_session.refresh(self, ["id"])
-        if is_new:
-            # We clear all because cached data like Project.select_summary will be affected
-            st.cache_data.clear()
-        else:
-            self.__class__.clear_cache()
 
     def delete(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
         db_session.delete(self)
         db_session.commit()
-        self.__class__.clear_cache()
 
     def to_dict(self, json_safe: bool = False):
         result = {col.name: getattr(self, col.name) for col in self.__table__.columns}

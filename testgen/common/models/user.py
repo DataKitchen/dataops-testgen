@@ -37,7 +37,6 @@ class User(Entity):
             db_session = get_current_session()
             db_session.execute(query)
             db_session.commit()
-            User.clear_cache()
         else:
             if update_latest_login:
                 self.latest_login = datetime.now(UTC)

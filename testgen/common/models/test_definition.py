@@ -314,7 +314,6 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), params)
         db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def move(
@@ -350,7 +349,6 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), params)
         db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def copy(
@@ -392,7 +390,6 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         db_session.execute(query)
         db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def clear_cache(cls) -> bool:
@@ -412,8 +409,6 @@ class TestDefinition(Entity):
             db_session.commit()
         else:
             super().save()
-
-        TestDefinition.clear_cache()
 
 
 class TestDefinitionNote(Base):
