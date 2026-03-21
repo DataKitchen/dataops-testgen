@@ -45,7 +45,7 @@ test_types:
     sql_flavor: bigquery
     measure: |-
       DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), DAY), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), DAY), DAY) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, DAY))
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '6005'
@@ -53,7 +53,7 @@ test_types:
     sql_flavor: databricks
     measure: |-
       <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '3005'
@@ -93,7 +93,7 @@ test_types:
     sql_flavor: snowflake
     measure: |-
       DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '5005'
