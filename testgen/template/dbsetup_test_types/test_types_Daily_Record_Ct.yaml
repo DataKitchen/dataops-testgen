@@ -205,15 +205,13 @@ test_types:
                                           FROM check_periods c
                                         LEFT JOIN data_by_period d
                                           ON (c.check_period = d.data_period) )
-      SELECT TOP {LIMIT} check_period, record_ct,
+      SELECT TOP {LIMIT} check_period AS missing_period, record_ct,
              CASE
                WHEN record_ct = 0 THEN 'MISSING'
                ELSE 'Present'
              END as status
         FROM data_by_prd_with_prior_next
        WHERE record_ct = 0
-          OR last_record_ct = 0
-          OR next_record_ct = 0
       ORDER BY check_period DESC;
     error_type: Test Results
   - id: '1087'
