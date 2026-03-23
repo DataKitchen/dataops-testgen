@@ -61,7 +61,7 @@ test_types:
     sql_flavor: mssql
     measure: |-
       DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '4005'
