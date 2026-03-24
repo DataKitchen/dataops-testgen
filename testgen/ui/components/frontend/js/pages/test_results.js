@@ -216,7 +216,6 @@ const EditTestDialog = (props) => {
 
 const TestResults = (/** @type Properties */ props) => {
     loadStylesheet('test-results', stylesheet);
-    Streamlit.setFrameHeight();
 
     const items = van.derive(() => getValue(props.items) ?? []);
     const summary = van.derive(() => getValue(props.summary) ?? []);

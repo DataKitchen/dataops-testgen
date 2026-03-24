@@ -181,7 +181,6 @@ const DetailPanel = (selectedRow) => {
 
 const HygieneIssues = (/** @type Properties */ props) => {
     loadStylesheet('hygiene-issues', stylesheet);
-    Streamlit.setFrameHeight();
 
     const items = van.derive(() => getValue(props.items) ?? []);
     const summaries = van.derive(() => getValue(props.summaries) ?? []);

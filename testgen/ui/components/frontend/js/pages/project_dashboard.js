@@ -114,7 +114,7 @@ const ProjectDashboard = (/** @type Properties */ props) => {
         () => getValue(tableGroups).length
             ? getValue(filteredTableGroups).length
                 ? div(
-                    { class: 'flex-column mt-4' },
+                    { class: 'flex-column mt-4 fx-gap-3' },
                     getValue(filteredTableGroups).map(tableGroup =>
                         tableGroup.monitoring_summary
                             ? TableGroupCardWithMonitor(tableGroup, getValue(props.project_summary)?.project_code)

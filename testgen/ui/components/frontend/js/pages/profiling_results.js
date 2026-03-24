@@ -119,7 +119,6 @@ const ExportMenu = (tableFilter, columnFilter, selectedRowId) => {
 
 const ProfilingResults = (/** @type Properties */ props) => {
     loadStylesheet('profiling-results', stylesheet);
-    Streamlit.setFrameHeight();
 
     const items = van.derive(() => getValue(props.items) ?? []);
 
