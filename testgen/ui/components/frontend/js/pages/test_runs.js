@@ -43,6 +43,7 @@
  * @property {object?} run_tests_dialog
  * @property {object?} schedule_dialog
  * @property {object?} notifications_dialog
+ * @property {object?} delete_dialog
  */
 import van from '/app/static/js/van.min.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
@@ -110,12 +111,13 @@ const TestRuns = (/** @type Properties */ props) => {
     van.derive(() => initializeSelectedStates(testRuns.val));
 
     const deleteDialogOpen = van.state(false);
-    const runsToDelete = van.state([]);
     const deleteConstraintChecked = van.state(false);
+    van.derive(() => { if (getValue(props.delete_dialog)?.open) deleteDialogOpen.val = true; });
 
     const closeDeleteDialog = () => {
         deleteDialogOpen.val = false;
         deleteConstraintChecked.val = false;
+        emitEvent('DeleteDialogClosed', {});
     };
 
     const scheduleDialogOpen = van.state(false);
@@ -159,9 +161,7 @@ const TestRuns = (/** @type Properties */ props) => {
                                     disabled: !someRunSelected,
                                     width: 'auto',
                                     onclick: () => {
-                                        runsToDelete.val = selectedItems;
-                                        deleteConstraintChecked.val = false;
-                                        deleteDialogOpen.val = true;
+                                        emitEvent('DeleteRunsClicked', { payload: selectedItems.map(r => r.test_run_id) });
                                     },
                                 }),
                             );
@@ -236,17 +236,21 @@ const TestRuns = (/** @type Properties */ props) => {
             div(
                 { class: 'flex-column fx-gap-4' },
                 () => {
-                    const runs = runsToDelete.val;
-                    const hasRunning = runs.some(r => r.status === 'Running');
+                    const info = getValue(props.delete_dialog);
+                    if (!info) return div();
+                    const runCount = info.run_ids?.length ?? 0;
+                    const hasActiveJob = info.has_active_job ?? false;
                     return div(
                         { class: 'flex-column fx-gap-3' },
-                        div('Are you sure you want to delete ', b(runs.length), ` test run${runs.length !== 1 ? 's' : ''}?`),
-                        hasRunning
+                        div('Are you sure you want to delete ', b(runCount), ` test run${runCount !== 1 ? 's' : ''}?`),
+                        hasActiveJob
                             ? div(
                                 { class: 'flex-column fx-gap-2' },
-                                div({ style: 'color: var(--orange);' }, 'One or more selected runs are currently running and will be canceled.'),
+                                div({ style: 'color: var(--orange);' }, 'Any running processes will be canceled.'),
                                 Checkbox({
-                                    label: 'I understand the running test run will be canceled',
+                                    label: runCount === 1
+                                        ? 'Yes, cancel and delete the test run'
+                                        : 'Yes, cancel and delete the test runs',
                                     checked: deleteConstraintChecked,
                                     onChange: (checked) => { deleteConstraintChecked.val = checked; },
                                 }),
@@ -256,16 +260,20 @@ const TestRuns = (/** @type Properties */ props) => {
                 },
                 div(
                     { class: 'flex-row fx-justify-flex-end' },
-                    () => Button({
-                        label: 'Delete',
-                        color: 'warn',
-                        type: 'flat',
-                        disabled: runsToDelete.val.some(r => r.status === 'Running') && !deleteConstraintChecked.val,
-                        onclick: () => {
-                            emitEvent('RunsDeleted', { payload: runsToDelete.val.map(r => r.test_run_id) });
-                            closeDeleteDialog();
-                        },
-                    }),
+                    () => {
+                        const info = getValue(props.delete_dialog);
+                        const hasActiveJob = info?.has_active_job ?? false;
+                        return Button({
+                            label: 'Delete',
+                            color: 'warn',
+                            type: 'flat',
+                            disabled: hasActiveJob && !deleteConstraintChecked.val,
+                            onclick: () => {
+                                emitEvent('RunsDeleted', { payload: info?.run_ids ?? [] });
+                                closeDeleteDialog();
+                            },
+                        });
+                    },
                 ),
             ),
         ),

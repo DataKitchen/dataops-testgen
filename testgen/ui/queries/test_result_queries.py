@@ -176,15 +176,25 @@ def get_test_results_count(
     table_name: str | None = None,
     column_name: str | None = None,
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+    flagged: bool | None = None,
 ) -> int:
     where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    flagged_join = ""
+    flagged_clause = ""
+    if flagged is not None:
+        flagged_join = "INNER JOIN test_definitions td ON (r.test_definition_id = td.id)"
+        flagged_clause = "AND td.flagged = :flagged"
     query = f"""
     SELECT COUNT(*) as cnt
     FROM test_results r
+    {flagged_join}
     WHERE r.test_run_id = :run_id
-        {where_clause};
+        {where_clause}
+        {flagged_clause};
     """
     params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    if flagged is not None:
+        params["flagged"] = flagged
     result = fetch_one_from_db(query, params)
     return int(result["cnt"]) if result else 0
 
@@ -197,16 +207,26 @@ def get_test_result_ids(
     table_name: str | None = None,
     column_name: str | None = None,
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+    flagged: bool | None = None,
 ) -> list[str]:
     where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    flagged_join = ""
+    flagged_clause = ""
+    if flagged is not None:
+        flagged_join = "INNER JOIN test_definitions td ON (r.test_definition_id = td.id)"
+        flagged_clause = "AND td.flagged = :flagged"
     query = f"""
     SELECT r.id::VARCHAR as test_result_id
     FROM test_results r
+    {flagged_join}
     WHERE
         r.test_run_id = :run_id
-        {where_clause};
+        {where_clause}
+        {flagged_clause};
     """
     params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    if flagged is not None:
+        params["flagged"] = flagged
     df = fetch_df_from_db(query, params)
     return df["test_result_id"].tolist()
 

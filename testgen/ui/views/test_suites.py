@@ -1,13 +1,13 @@
-import time
 import typing
-from collections.abc import Iterable
-from functools import partial
 
 import streamlit as st
 
 from testgen.commands.run_observability_exporter import export_test_results
+from testgen.commands.run_test_execution import run_test_execution_in_background
+from testgen.commands.test_generation import run_test_generation
 from testgen.common.models import with_database_session
-from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.notification_settings import TestRunNotificationSettings
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
@@ -15,16 +15,27 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.services.query_cache import get_project_summary, get_test_suite_summaries
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
-from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.ui.views.test_runs import TestRunScheduleDialog, manage_notifications
-from testgen.utils import to_dataframe
+from testgen.ui.views.dialogs.generate_tests_dialog import (
+    get_generation_set_choices,
+    get_test_suite_refresh_warning,
+    lock_edited_tests,
+)
+from testgen.ui.views.test_runs import TestRunNotificationSettingsDialog, TestRunScheduleDialog
 
 PAGE_ICON = "rule"
 PAGE_TITLE = "Test Suites"
+
+ADD_DIALOG_KEY = "ts:add_dialog"
+EDIT_DIALOG_KEY = "ts:edit_dialog"
+RUN_TESTS_DIALOG_KEY = "ts:run_tests_dialog"
+RUN_TESTS_RESULT_KEY = "ts:run_tests_result"
+GENERATE_TESTS_DIALOG_KEY = "ts:generate_tests_dialog"
+GENERATE_TESTS_RESULT_KEY = "ts:generate_tests_result"
+GENERATE_TESTS_LOCK_RESULT_KEY = "ts:generate_tests_lock_result"
+RUN_SCHEDULES_DIALOG_KEY = "ts:run_schedules_dialog"
+RUN_NOTIFICATIONS_DIALOG_KEY = "ts:run_notifications_dialog"
+PAGE_RESULT_KEY = "ts:page_result"
 
 class TestSuitesPage(Page):
     path = "test-suites"
@@ -39,20 +50,185 @@ class TestSuitesPage(Page):
         order=2,
     )
 
+    @with_database_session
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_name: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "connect-your-database/manage-test-suites/",
+            "manage-test-suites",
         )
 
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
         user_can_edit = session.auth.user_has_permission("edit")
         test_suites = get_test_suite_summaries(project_code, table_group_id, test_suite_name)
         project_summary = get_project_summary(project_code)
+        delete_dialog = st.session_state.get("ts_delete_dialog")
+        page_result = st.session_state.pop(PAGE_RESULT_KEY, None)
 
-        testgen.testgen_component(
-            "test_suites",
-            props={
+        # Build form_dialog prop from session state
+        table_group_options = [{"value": str(tg.id), "label": tg.table_groups_name} for tg in table_groups]
+        form_dialog = None
+        if st.session_state.get(ADD_DIALOG_KEY):
+            form_dialog = {
+                "open": True,
+                "mode": "add",
+                "title": "Add Test Suite",
+                "table_groups": table_group_options,
+                "initial_values": None,
+                "result": st.session_state.get("ts_form_dialog:result"),
+            }
+        elif edit_ts_id := st.session_state.get(EDIT_DIALOG_KEY):
+            selected = TestSuite.get(edit_ts_id)
+            form_dialog = {
+                "open": True,
+                "mode": "edit",
+                "title": "Edit Test Suite",
+                "test_suite_id": str(selected.id),
+                "table_groups": table_group_options,
+                "initial_values": {
+                    "test_suite": selected.test_suite,
+                    "table_groups_id": str(selected.table_groups_id) if selected.table_groups_id else None,
+                    "test_suite_description": selected.test_suite_description or "",
+                    "severity": selected.severity,
+                    "export_to_observability": bool(selected.export_to_observability),
+                    "dq_score_exclude": bool(selected.dq_score_exclude),
+                    "component_key": selected.component_key or "",
+                    "component_type": selected.component_type or "dataset",
+                    "component_name": selected.component_name or "",
+                },
+                "result": st.session_state.get("ts_form_dialog:result"),
+            }
+
+        def on_add_ts_clicked(*_) -> None:
+            st.session_state[ADD_DIALOG_KEY] = True
+
+        def on_edit_ts_clicked(test_suite_id: str) -> None:
+            st.session_state[EDIT_DIALOG_KEY] = test_suite_id
+
+        def on_run_tests_clicked(test_suite_id: str) -> None:
+            st.session_state[RUN_TESTS_DIALOG_KEY] = test_suite_id
+
+        def on_generate_tests_clicked(test_suite_id: str) -> None:
+            st.session_state[GENERATE_TESTS_DIALOG_KEY] = test_suite_id
+
+        def on_run_schedules_clicked(*_) -> None:
+            st.session_state[RUN_SCHEDULES_DIALOG_KEY] = True
+
+        def on_run_notifications_clicked(*_) -> None:
+            st.session_state[RUN_NOTIFICATIONS_DIALOG_KEY] = True
+
+        schedule_obj = TestRunScheduleDialog(project_code)
+        ns_obj = TestRunNotificationSettingsDialog(
+            TestRunNotificationSettings, {"project_code": project_code}
+        )
+
+        run_tests_data = None
+        if run_tests_ts_id := st.session_state.get(RUN_TESTS_DIALOG_KEY):
+            run_tests_data = {
+                "title": "Run Tests",
+                "project_code": project_code,
+                "test_suites": [{"value": str(ts.id), "label": ts.test_suite} for ts in test_suites],
+                "default_test_suite_id": str(run_tests_ts_id) if run_tests_ts_id else None,
+                "result": st.session_state.get(RUN_TESTS_RESULT_KEY),
+            }
+
+        generate_tests_data = None
+        if generate_tests_ts_id := st.session_state.get(GENERATE_TESTS_DIALOG_KEY):
+            generate_ts = TestSuite.get_minimal(generate_tests_ts_id)
+            generation_sets = get_generation_set_choices()
+            default_set = "Standard" if "Standard" in generation_sets else (generation_sets[0] if generation_sets else "")
+            test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(str(generate_ts.id))
+            refresh_warning = {
+                "test_ct": test_ct,
+                "unlocked_test_ct": unlocked_test_ct or 0,
+                "unlocked_edits_ct": unlocked_edits_ct or 0,
+            } if test_ct else None
+            generate_tests_data = {
+                "title": "Generate Tests",
+                "test_suite_id": str(generate_ts.id),
+                "test_suite_name": generate_ts.test_suite,
+                "generation_sets": generation_sets,
+                "default_generation_set": default_set,
+                "refresh_warning": refresh_warning,
+                "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
+                "result": st.session_state.get(GENERATE_TESTS_RESULT_KEY),
+            }
+
+        schedule_data = None
+        if st.session_state.get(RUN_SCHEDULES_DIALOG_KEY):
+            schedule_data = schedule_obj.build_data()
+            schedule_data["open"] = True
+
+        notifications_data = None
+        if st.session_state.get(RUN_NOTIFICATIONS_DIALOG_KEY):
+            notifications_data = ns_obj.build_data()
+            notifications_data["open"] = True
+
+        def on_run_tests_confirmed(data: dict) -> None:
+            selected_id = data.get("test_suite_id")
+            selected_name = data.get("test_suite_name")
+            success = True
+            message = f"Test run started for test suite '{selected_name}'."
+            show_link = session.current_page != "test-runs"
+            try:
+                run_test_execution_in_background(selected_id)
+            except Exception as error:
+                success = False
+                message = f"Test run could not be started: {error!s}."
+                show_link = False
+            st.session_state[RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            if success and not show_link:
+                st.cache_data.clear()
+                st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
+                st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
+
+        def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
+            Router().navigate(to="test-runs", with_args=payload)
+
+        def on_run_tests_dialog_closed(*_) -> None:
+            st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
+
+        def on_lock_edited_tests(*_) -> None:
+            if ts_id := st.session_state.get(GENERATE_TESTS_DIALOG_KEY):
+                lock_edited_tests(ts_id)
+            st.session_state[GENERATE_TESTS_LOCK_RESULT_KEY] = "Edited tests have been successfully locked."
+
+        def on_generate_tests_confirmed(data: dict) -> None:
+            selected_id = data.get("test_suite_id")
+            selected_set = data.get("generation_set", "")
+            ts_name = data.get("test_suite_name", "")
+            try:
+                run_test_generation(selected_id, selected_set)
+                st.session_state[GENERATE_TESTS_RESULT_KEY] = {"success": True, "message": f"Test generation completed for test suite '{ts_name}'."}
+                st.cache_data.clear()
+                st.session_state.pop(GENERATE_TESTS_DIALOG_KEY, None)
+                st.session_state.pop(GENERATE_TESTS_RESULT_KEY, None)
+                st.session_state.pop(GENERATE_TESTS_LOCK_RESULT_KEY, None)
+            except Exception as e:
+                st.session_state[GENERATE_TESTS_RESULT_KEY] = {"success": False, "message": f"Test generation encountered errors: {e!s}."}
+
+        def on_generate_tests_dialog_closed(*_) -> None:
+            st.session_state.pop(GENERATE_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(GENERATE_TESTS_RESULT_KEY, None)
+            st.session_state.pop(GENERATE_TESTS_LOCK_RESULT_KEY, None)
+
+        def on_schedule_dialog_closed(*_) -> None:
+            schedule_obj.clear_state()
+            st.session_state.pop(RUN_SCHEDULES_DIALOG_KEY, None)
+
+        def on_notifications_dialog_closed(*_) -> None:
+            ns_obj.clear_state()
+            st.session_state.pop(RUN_NOTIFICATIONS_DIALOG_KEY, None)
+
+        def on_close_form_dialog(*_) -> None:
+            st.session_state.pop(ADD_DIALOG_KEY, None)
+            st.session_state.pop(EDIT_DIALOG_KEY, None)
+            st.session_state.pop("ts_form_dialog:result", None)
+
+        testgen.test_suites_widget(
+            key="test_suites",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "test_suites": [test_suite.to_dict(json_safe=True) for test_suite in test_suites],
                 "table_group_filter_options": [
@@ -62,231 +238,130 @@ class TestSuitesPage(Page):
                         "selected": str(table_group_id) == str(table_group.id),
                     } for table_group in table_groups
                 ],
-                "test_suite_name": test_suite_name,
                 "permissions": {
                     "can_edit": user_can_edit,
-                }
+                },
+                "delete_dialog": delete_dialog,
+                "form_dialog": form_dialog,
+                "run_tests_dialog": run_tests_data,
+                "generate_tests_dialog": generate_tests_data,
+                "schedule_dialog": schedule_data,
+                "notifications_dialog": notifications_data,
+                "page_result": page_result,
             },
-            on_change_handlers={
-                "FilterApplied": on_test_suites_filtered,
-                "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
-                "AddTestSuiteClicked": lambda *_: add_test_suite_dialog(project_code, table_groups),
-                "ExportActionClicked": observability_export_dialog,
-                "EditActionClicked": partial(edit_test_suite_dialog, project_code, table_groups),
-                "DeleteActionClicked": delete_test_suite_dialog,
-                "RunTestsClicked": lambda test_suite_id: run_tests_dialog(project_code, TestSuite.get_minimal(test_suite_id)),
-                "RunNotificationsClicked": manage_notifications(project_code),
-                "GenerateTestsClicked": lambda test_suite_id: generate_tests_dialog(TestSuite.get_minimal(test_suite_id)),
-            },
+            on_FilterApplied_change=on_test_suites_filtered,
+            on_RunSchedulesClicked_change=on_run_schedules_clicked,
+            on_AddTestSuiteClicked_change=on_add_ts_clicked,
+            on_ExportActionClicked_change=observability_export_action,
+            on_EditActionClicked_change=on_edit_ts_clicked,
+            on_DeleteActionClicked_change=prepare_ts_delete_dialog,
+            on_DeleteTestSuiteConfirmed_change=execute_ts_delete,
+            on_DeleteDialogDismissed_change=lambda *_: st.session_state.pop("ts_delete_dialog", None),
+            on_RunTestsClicked_change=on_run_tests_clicked,
+            on_RunNotificationsClicked_change=on_run_notifications_clicked,
+            on_GenerateTestsClicked_change=on_generate_tests_clicked,
+            on_SaveTestSuiteForm_change=save_test_suite_form,
+            on_FormDialogClosed_change=on_close_form_dialog,
+            # RunTestsDialog events
+            on_RunTestsConfirmed_change=on_run_tests_confirmed,
+            on_GoToTestRunsClicked_change=on_go_to_test_runs,
+            on_RunTestsDialogClosed_change=on_run_tests_dialog_closed,
+            # GenerateTestsDialog events
+            on_LockEditedTests_change=on_lock_edited_tests,
+            on_GenerateTestsConfirmed_change=on_generate_tests_confirmed,
+            on_GenerateTestsDialogClosed_change=on_generate_tests_dialog_closed,
+            # ScheduleList events
+            on_PauseSchedule_change=schedule_obj.on_pause,
+            on_ResumeSchedule_change=schedule_obj.on_resume,
+            on_DeleteSchedule_change=schedule_obj.on_delete,
+            on_GetCronSample_change=schedule_obj.on_cron_sample,
+            on_AddSchedule_change=schedule_obj.on_add,
+            on_ScheduleDialogClosed_change=on_schedule_dialog_closed,
+            # NotificationSettings events
+            on_AddNotification_change=ns_obj.on_add_item,
+            on_UpdateNotification_change=ns_obj.on_update_item,
+            on_DeleteNotification_change=ns_obj.on_delete_item,
+            on_PauseNotification_change=ns_obj.on_pause_item,
+            on_ResumeNotification_change=ns_obj.on_resume_item,
+            on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
         )
 
 
-def on_test_suites_filtered(params: dict) -> None:
-    Router().set_query_params(params)
+def on_test_suites_filtered(table_group_id: str | None = None) -> None:
+    Router().set_query_params({ "table_group_id": table_group_id })
 
 
-@st.dialog(title="Add Test Suite")
 @with_database_session
-def add_test_suite_dialog(project_code, table_groups):
-    show_test_suite("add", project_code, table_groups)
+def save_test_suite_form(data: dict) -> None:
+    mode = data.get("mode")
+    if not data.get("test_suite"):
+        st.session_state["ts_form_dialog:result"] = {"success": False, "message": "Test Suite Name is required."}
+        return
+
+    if mode == "edit":
+        test_suite_id = data.get("test_suite_id")
+        test_suite = TestSuite.get(test_suite_id)
+        test_suite.test_suite_description = data.get("test_suite_description", "")
+        test_suite.severity = data.get("severity")
+        test_suite.export_to_observability = data.get("export_to_observability", False)
+        test_suite.dq_score_exclude = data.get("dq_score_exclude", False)
+        test_suite.component_key = data.get("component_key", "")
+        test_suite.component_type = data.get("component_type", "dataset")
+        test_suite.component_name = data.get("component_name", "")
+        test_suite.save()
+        st.session_state.pop("ts_form_dialog:result", None)
+        st.session_state.pop(EDIT_DIALOG_KEY, None)
+        TestSuite.select_summary.clear()
+        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "Changes have been saved successfully."}
+    else:
+        table_group = TableGroup.get(data.get("table_groups_id"))
+        test_suite = TestSuite()
+        test_suite.project_code = table_group.project_code
+        test_suite.test_suite = data.get("test_suite")
+        test_suite.connection_id = table_group.connection_id
+        test_suite.table_groups_id = table_group.id
+        test_suite.test_suite_description = data.get("test_suite_description", "")
+        test_suite.severity = data.get("severity")
+        test_suite.export_to_observability = data.get("export_to_observability", False)
+        test_suite.dq_score_exclude = data.get("dq_score_exclude", False)
+        test_suite.component_key = data.get("component_key", "")
+        test_suite.component_type = data.get("component_type", "dataset")
+        test_suite.component_name = data.get("component_name", "")
+        test_suite.save()
+        st.session_state.pop("ts_form_dialog:result", None)
+        st.session_state.pop(ADD_DIALOG_KEY, None)
+        TestSuite.select_summary.clear()
+        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "New test suite added successfully."}
 
 
-@st.dialog(title="Edit Test Suite")
 @with_database_session
-def edit_test_suite_dialog(project_code, table_groups, test_suite_id: str) -> None:
-    selected = TestSuite.get(test_suite_id)
-    show_test_suite("edit", project_code, table_groups, selected)
+def prepare_ts_delete_dialog(test_suite_id: str) -> None:
+    selected = TestSuite.get_minimal(test_suite_id)
+    is_in_use = TestSuite.is_in_use([selected.id])
+    st.session_state["ts_delete_dialog"] = {
+        "open": True,
+        "test_suite_id": str(selected.id),
+        "test_suite_name": selected.test_suite,
+        "is_in_use": is_in_use,
+    }
 
 
-def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal], selected: TestSuite | None = None):
-    severity_options = [None, "Log", "Failed", "Warning"]
-    selected_test_suite = selected if mode == "edit" else None
-    table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
+@with_database_session
+def execute_ts_delete(test_suite_id: str) -> None:
+    test_suite_name = st.session_state.get("ts_delete_dialog", {}).get("test_suite_name", "")
+    if TestRun.has_active_job_for(TestSuite, test_suite_id):
+        st.session_state[PAGE_RESULT_KEY] = {"success": False, "message": "This Test Suite is in use by a running process and cannot be deleted."}
+    else:
+        TestSuite.cascade_delete([test_suite_id])
+        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Test Suite {test_suite_name} has been deleted."}
+    st.session_state.pop("ts_delete_dialog", None)
 
-    # establish default values
-    test_suite_id = selected_test_suite.id if mode == "edit" else None
-    test_suite_name = empty_if_null(selected_test_suite.test_suite) if mode == "edit" else ""
-    connection_id = selected_test_suite.connection_id if mode == "edit" else None
-    table_groups_id = selected_test_suite.table_groups_id if mode == "edit" else None
-    test_suite_description = empty_if_null(selected_test_suite.test_suite_description) if mode == "edit" else ""
+
+@with_database_session
+def observability_export_action(test_suite_id: str) -> None:
+    selected_test_suite = TestSuite.get_minimal(test_suite_id)
     try:
-        severity_index = severity_options.index(selected_test_suite.severity) if mode == "edit" else 0
-    except ValueError:
-        severity_index = 0
-    export_to_observability = selected_test_suite.export_to_observability if mode == "edit" else False
-    dq_score_exclude = selected_test_suite.dq_score_exclude if mode == "edit" else False
-    component_key = empty_if_null(selected_test_suite.component_key) if mode == "edit" else ""
-    component_type = empty_if_null(selected_test_suite.component_type) if mode == "edit" else "dataset"
-    component_name = empty_if_null(selected_test_suite.component_name) if mode == "edit" else ""
-
-    left_column, right_column = st.columns([0.50, 0.50])
-    expander = st.expander("", expanded=True)
-    with expander:
-        expander_left_column, expander_right_column = st.columns([0.50, 0.50])
-
-    with st.form("Test Suite Add / Edit", clear_on_submit=True, border=False):
-        entity = {
-            "id": test_suite_id,
-            "project_code": project_code,
-            "test_suite": left_column.text_input(
-                label="Test Suite Name", max_chars=40, value=test_suite_name, disabled=(mode != "add")
-            ),
-            "connection_id": connection_id,
-            "table_groups_id": table_groups_id,
-            "table_groups_name": right_column.selectbox(
-                label="Table Group",
-                options=table_groups_df["table_groups_name"],
-                index=int(table_groups_df[table_groups_df["id"] == table_groups_id].index[0]) if table_groups_id else 0,
-                disabled=(mode != "add"),
-            ),
-            "test_suite_description": left_column.text_input(
-                label="Test Suite Description", max_chars=40, value=test_suite_description
-            ),
-            "severity": right_column.selectbox(
-                label="Severity",
-                options=severity_options,
-                format_func=lambda value: "Inherit" if value is None else value,
-                index=severity_index,
-                help="Overrides the default severity in 'Test Definition' and/or 'Test Run'.",
-            ),
-            "export_to_observability": left_column.checkbox(
-                "Export to Observability",
-                value=export_to_observability,
-                help="Fields below are only required when overriding the Table Group defaults.",
-            ),
-            "dq_score_exclude": right_column.checkbox(
-                "Exclude from quality scoring",
-                value=dq_score_exclude,
-            ),
-            "component_key": expander_left_column.text_input(
-                label="Component Key",
-                max_chars=40,
-                value=component_key,
-                placeholder="Optional Field",
-                help="Overrides the default component key mapping, which is set at Table Group level.",
-            ),
-            "component_type": expander_right_column.text_input(
-                label="Component Type", max_chars=40, value=component_type, disabled=True
-            ),
-            "component_name": expander_left_column.text_input(
-                label="Component Name",
-                max_chars=40,
-                value=component_name,
-                placeholder="Optional Field",
-                help="Overrides the default component name mapping, which is set at the Table Group level.",
-            ),
-        }
-
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            submit = st.form_submit_button(
-                "Save" if mode == "edit" else "Add",
-                use_container_width=True,
-            )
-
-        if submit:
-            if not entity["test_suite"]:
-                st.error(
-                    "Test Suite Name is required"
-                )
-            else:
-                test_suite = selected or TestSuite()
-                for key, value in entity.items():
-                    setattr(test_suite, key, value)
-
-                if mode == "edit":
-                    test_suite.save()
-                else:
-                    selected_table_group_name = entity["table_groups_name"]
-                    selected_table_group = table_groups_df[table_groups_df["table_groups_name"] == selected_table_group_name].iloc[0]
-                    test_suite.connection_id = int(selected_table_group["connection_id"])
-                    test_suite.table_groups_id = selected_table_group["id"]
-                    test_suite.save()
-                success_message = (
-                    "Changes have been saved successfully. "
-                    if mode == "edit"
-                    else "New test suite added successfully. "
-                )
-                st.success(success_message)
-                time.sleep(1)
-                safe_rerun()
-
-
-@st.dialog(title="Delete Test Suite")
-@with_database_session
-def delete_test_suite_dialog(test_suite_id: str) -> None:
-    selected_test_suite = TestSuite.get_minimal(test_suite_id)
-    test_suite_id = selected_test_suite.id
-    test_suite_name = selected_test_suite.test_suite
-    is_in_use = TestSuite.is_in_use([test_suite_id])
-
-    st.markdown(f"Are you sure you want to delete the test suite **{test_suite_name}**?")
-
-    if is_in_use:
-        st.warning(
-            """This Test Suite has related data, which may include test definitions and test results.
-            \nIf you proceed, all related data will be permanently deleted."""
-        )
-        accept_cascade_delete = st.toggle(f"Yes, delete the test suite **{test_suite_name}** and related TestGen data.")
-
-    with st.form("Delete Test Suite", clear_on_submit=True, border=False):
-        delete = False
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            delete = st.form_submit_button(
-                "Delete",
-                type="primary",
-                disabled=is_in_use and not accept_cascade_delete,
-                use_container_width=True,
-            )
-
-        if delete:
-            if TestRun.has_active_job_for(TestSuite, test_suite_id):
-                st.error("This Test Suite is in use by a running process and cannot be deleted.")
-            else:
-                TestSuite.cascade_delete([test_suite_id])
-                success_message = f"Test Suite {test_suite_name} has been deleted. "
-                st.success(success_message)
-                time.sleep(1)
-                safe_rerun()
-
-
-@st.dialog(title="Export to Observability")
-def observability_export_dialog(test_suite_id: str) -> None:
-    selected_test_suite = TestSuite.get_minimal(test_suite_id)
-    project_key = selected_test_suite.project_code
-    test_suite_key = selected_test_suite.test_suite
-    start_process_button_message = "Start"
-
-    with st.container():
-        st.markdown(f"Execute the test export for test suite :green[{test_suite_key}]?")
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:export-tests-show-cli"):
-        st.code(
-            f"testgen export-observability --project-key {project_key} --test-suite-key '{test_suite_key}'",
-            language="shellSession"
-        )
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    test_generation_button = None
-    with button_container:
-        _, button_column = st.columns([.85, .15])
-        with button_column:
-            test_generation_button = st.button(start_process_button_message, use_container_width=True)
-
-    if test_generation_button:
-        button_container.empty()
-
-        status_container.info("Executing Export ...")
-
-        try:
-            qty_of_exported_events = export_test_results(selected_test_suite.id)
-            status_container.empty()
-            status_container.success(
-                f"Process has successfully finished, {qty_of_exported_events} events have been exported."
-            )
-        except Exception as e:
-            status_container.empty()
-            status_container.error(f"Process has finished with errors: {e!s}.")
+        qty_of_exported_events = export_test_results(selected_test_suite.id)
+        st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Export finished: {qty_of_exported_events} events exported."}
+    except Exception as e:
+        st.session_state[PAGE_RESULT_KEY] = {"success": False, "message": f"Export failed: {e!s}"}
