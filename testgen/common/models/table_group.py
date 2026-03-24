@@ -30,6 +30,7 @@ class TableGroupMinimal(EntityMinimal):
     monitor_test_suite_id: UUID | None
     profile_flag_cdes: bool
     profile_flag_pii: bool
+    profile_exclude_xde: bool
     last_complete_profile_run_id: UUID | None
 
 
@@ -115,6 +116,7 @@ class TableGroup(Entity):
     profiling_delay_days: str = Column(String, default="0")
     profile_flag_cdes: bool = Column(Boolean, default=True)
     profile_flag_pii: bool = Column(Boolean, default=True)
+    profile_exclude_xde: bool = Column(Boolean, default=True)
     profile_do_pair_rules: bool = Column(YNString, default="N")
     profile_pair_rule_pct: int = Column(Integer, default=95)
     include_in_dashboard: bool = Column(Boolean, default=True)

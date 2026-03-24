@@ -20,7 +20,6 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
-from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -880,11 +879,12 @@ def source_data_dialog(selected_row):
         st.markdown("#### Result Detail")
         st.caption(selected_row["result_message"].replace("*", "\\*"))
 
+    mask_pii = not session.auth.user_has_permission("view_pii")
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
-            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500, mask_pii=mask_pii)
         else:
-            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data(selected_row, limit=500)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data(selected_row, limit=500, mask_pii=mask_pii)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
@@ -894,12 +894,6 @@ def source_data_dialog(selected_row):
     else:
         if bad_data_msg:
             st.info(bad_data_msg)
-        if not session.auth.user_has_permission("view_pii"):
-            pii_columns = get_pii_columns(
-                selected_row["table_groups_id"],
-                table_name=selected_row["table_name"],
-            )
-            mask_dataframe_pii(df_bad, pii_columns)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
         df_bad.fillna("<null>", inplace=True)

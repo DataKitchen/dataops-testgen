@@ -451,6 +451,7 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
         anomaly_name,
         issue_likelihood,
         detail,
+        detail_redactable,
         pii_risk
     FROM profile_anomaly_results anomaly_results
         LEFT JOIN profile_anomaly_types anomaly_types ON (
@@ -519,7 +520,7 @@ def get_profiling_anomalies(
             WHEN t.issue_likelihood = 'Likely'   THEN 2
             WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
-        t.anomaly_description, r.detail, t.suggested_action,
+        t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
         tg.table_groups_name, tg.project_code,
 

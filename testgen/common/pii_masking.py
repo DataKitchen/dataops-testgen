@@ -33,7 +33,7 @@ def get_pii_columns(table_group_id: str, schema: str | None = None, table_name: 
     return {row.column_name for row in results}
 
 
-def mask_dataframe_pii(df: pd.DataFrame, pii_columns: set[str]) -> None:
+def mask_source_data_pii(df: pd.DataFrame, pii_columns: set[str]) -> None:
     """In-place mask values in PII columns with PII_REDACTED."""
     if df.empty or not pii_columns:
         return
@@ -42,6 +42,34 @@ def mask_dataframe_pii(df: pd.DataFrame, pii_columns: set[str]) -> None:
         for df_col in df.columns:
             if df_col.lower() == col.lower():
                 df[df_col] = PII_REDACTED
+
+
+def mask_hygiene_detail(data: pd.DataFrame | list[dict], pii_columns: set[str] | None = None) -> None:
+    """Redact hygiene issue detail for PII columns where detail_redactable is true.
+
+    Accepts:
+    - DataFrame with detail_redactable, pii_flag, and detail columns (hygiene issues grid/export)
+    - List of issue dicts, each with detail_redactable and either pii_flag or column_name
+      (when pii_columns set is provided, matches column_name against it)
+    """
+    if isinstance(data, pd.DataFrame):
+        if data.empty or "detail_redactable" not in data.columns:
+            return
+        pii_mask = data["detail_redactable"].fillna(False) & data["pii_flag"].notna()
+        data.loc[pii_mask, "detail"] = PII_REDACTED
+        return
+
+    if not data:
+        return
+    pii_lower = {c.lower() for c in pii_columns} if pii_columns else None
+    for issue in data:
+        if not issue.get("detail_redactable"):
+            continue
+        if pii_lower is not None:
+            if issue.get("column_name", "").lower() in pii_lower:
+                issue["detail"] = PII_REDACTED
+        elif issue.get("pii_flag"):
+            issue["detail"] = PII_REDACTED
 
 
 def mask_profiling_pii(data: pd.DataFrame | dict, pii_columns: set[str]) -> None:

@@ -497,6 +497,9 @@ class ConnectionsPage(Page):
             data={
                 "project_code": project_code,
                 "table_group": table_group.to_dict(json_safe=True),
+                "permissions": {
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
+                },
                 "table_group_preview": table_group_preview,
                 "steps": [
                     "tableGroup",

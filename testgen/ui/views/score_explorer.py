@@ -23,6 +23,7 @@ from testgen.common.models.scores import (
     SelectedIssue,
 )
 from testgen.common.models.test_run import TestRun
+from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -36,6 +37,7 @@ from testgen.ui.queries.scoring_queries import (
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
+from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
 
 PAGE_PATH = "quality-dashboard:explorer"
@@ -154,10 +156,10 @@ class ScoreExplorerPage(Page):
                     breakdown_category,
                 )
             if drilldown:
-                issues = format_score_card_issues(
-                    score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown),
-                    breakdown_category,
-                )
+                raw_issues = score_definition.get_score_card_issues(breakdown_score_type, breakdown_category, drilldown)
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_hygiene_detail(raw_issues)
+                issues = format_score_card_issues(raw_issues, breakdown_category)
             score_definition_dict = score_definition.to_dict()
 
         testgen.testgen_component(
@@ -182,6 +184,11 @@ class ScoreExplorerPage(Page):
                 "ScoreTypeChanged": set_breakdown_score_type,
                 "DrilldownChanged": set_breakdown_drilldown,
                 "IssueReportsExported": export_issue_reports,
+                "ColumnProfilingClicked": lambda payload: profiling_results_dialog(
+                    payload["column_name"],
+                    payload["table_name"],
+                    payload["table_group_id"],
+                ),
                 "ScoreDefinitionSaved": save_score_definition,
                 "ColumnSelectorOpened": partial(column_selector_dialog, project_code, score_definition_dict),
                 "FilterModeChanged": change_score_definition_filter_mode,
@@ -240,16 +247,19 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
+    mask_pii = not session.auth.user_has_permission("view_pii")
+    if mask_pii:
+        issue = {**issue}
+        mask_hygiene_detail([issue])
+
     with BytesIO() as buffer:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            mask_pii = not session.auth.user_has_permission("view_pii")
             hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            mask_pii = not session.auth.user_has_permission("view_pii")
             test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
 
         update_progress(1.0)

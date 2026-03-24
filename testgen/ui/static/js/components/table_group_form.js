@@ -42,6 +42,7 @@
  * @property {boolean?} showConnectionSelector
  * @property {boolean?} disableConnectionSelector
  * @property {boolean?} disableSchemaField
+ * @property {boolean?} disablePiiFlag
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
@@ -83,6 +84,7 @@ const TableGroupForm = (props) => {
     const profilingDelayDays = van.state(tableGroup.profiling_delay_days ?? 0);
     const profileFlagCdes = van.state(tableGroup.profile_flag_cdes ?? true);
     const profileFlagPii = van.state(tableGroup.profile_flag_pii ?? true);
+    const profileExcludeXde = van.state(tableGroup.profile_exclude_xde ?? true);
     const includeInDashboard = van.state(tableGroup.include_in_dashboard ?? true);
     const addScorecardDefinition = van.state(tableGroup.add_scorecard_definition ?? true);
     const profileUseSampling = van.state(tableGroup.profile_use_sampling ?? false);
@@ -123,6 +125,7 @@ const TableGroupForm = (props) => {
             profiling_delay_days: profilingDelayDays.val,
             profile_flag_cdes: profileFlagCdes.val,
             profile_flag_pii: profileFlagPii.val,
+            profile_exclude_xde: profileExcludeXde.val,
             include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
             profile_use_sampling: profileUseSampling.val,
@@ -186,10 +189,11 @@ const TableGroupForm = (props) => {
             profileSkColumnMask,
         ),
         SettingsForm(
-            { editMode: !!tableGroup.id, setValidity: setFieldValidity },
+            { editMode: !!tableGroup.id, disablePiiFlag: getValue(props.disablePiiFlag) ?? false, setValidity: setFieldValidity },
             profilingDelayDays,
             profileFlagCdes,
             profileFlagPii,
+            profileExcludeXde,
             includeInDashboard,
             addScorecardDefinition,
         ),
@@ -330,6 +334,7 @@ const SettingsForm = (
     profilingDelayDays,
     profileFlagCdes,
     profileFlagPii,
+    profileExcludeXde,
     includeInDashboard,
     addScorecardDefinition,
 ) => {
@@ -349,6 +354,13 @@ const SettingsForm = (
                 label: 'Detect PII during profiling',
                 checked: profileFlagPii,
                 onChange: (value) => profileFlagPii.val = value,
+                disabled: options.disablePiiFlag,
+            }),
+            Checkbox({
+                name: 'profile_exclude_xde',
+                label: 'Exclude XDE columns from profiling',
+                checked: profileExcludeXde,
+                onChange: (value) => profileExcludeXde.val = value,
             }),
             Checkbox({
                 name: 'include_in_dashboard',

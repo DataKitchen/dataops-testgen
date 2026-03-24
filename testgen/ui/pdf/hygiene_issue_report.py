@@ -5,7 +5,6 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
 from testgen.common.models.settings import PersistedSetting
-from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -191,12 +190,7 @@ def get_report_content(document, hi_data, mask_pii: bool = False):
     yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
-    sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
-
-    # Mask PII in sample data
-    if sample_data_tuple[3] is not None and mask_pii:
-        pii_columns = get_pii_columns(str(hi_data["table_groups_id"]), table_name=hi_data["table_name"])
-        mask_dataframe_pii(sample_data_tuple[3], pii_columns)
+    sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT, mask_pii=mask_pii)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)

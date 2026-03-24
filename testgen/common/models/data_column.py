@@ -17,6 +17,8 @@ class DataColumnChars(Entity):
     excluded_data_element: bool | None = Column(Boolean, nullable=True)
     pii_flag: str | None = Column(String(50), nullable=True)
 
+    _default_order_by = (id,)
+
     # Unmapped columns: table_id, ordinal_position, general_type, column_type,
     # db_data_type, functional_data_type, description, critical_data_element,
     # data_source, source_system, source_process, business_domain,

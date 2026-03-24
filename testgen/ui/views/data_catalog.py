@@ -12,7 +12,7 @@ from streamlit.delta_generator import DeltaGenerator
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_profiling_pii
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.components.widgets.download_dialog import (
@@ -579,6 +579,7 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         if not session.auth.user_has_permission("view_pii"):
             pii_columns = get_pii_columns(item["table_group_id"], table_name=item["table_name"])
             mask_profiling_pii(item, pii_columns)
+            mask_hygiene_detail(item.get("hygiene_issues", []), pii_columns)
         return item
 
 

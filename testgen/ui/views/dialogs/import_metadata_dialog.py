@@ -285,7 +285,7 @@ def _set_row_status(preview_row: dict, bad_cde: bool, bad_xde: bool, bad_pii: bo
     if bad_cde:
         issues.append("Unrecognized CDE value (expected Yes/No) — skipped")
     if bad_xde:
-        issues.append("Unrecognized XDE value (expetced Yes/No) - skipped")
+        issues.append("Unrecognized XDE value (expected Yes/No) - skipped")
     if bad_pii:
         issues.append("Unrecognized PII value (expected Yes/No) - skipped")
     if truncated:

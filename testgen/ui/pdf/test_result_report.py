@@ -11,7 +11,6 @@ from reportlab.platypus import (
 )
 
 from testgen.common.models.settings import PersistedSetting
-from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -29,7 +28,10 @@ from testgen.ui.pdf.style import (
     get_formatted_datetime,
 )
 from testgen.ui.pdf.templates import DatakitchenTemplate
-from testgen.ui.queries.source_data_queries import get_test_issue_source_data, get_test_issue_source_data_custom
+from testgen.ui.queries.source_data_queries import (
+    get_test_issue_source_data,
+    get_test_issue_source_data_custom,
+)
 from testgen.ui.queries.test_result_queries import (
     get_test_result_history,
 )
@@ -247,14 +249,9 @@ def get_report_content(document, tr_data, mask_pii: bool = False):
     yield build_history_table(document, tr_data)
 
     if tr_data["test_type"] == "CUSTOM":
-        sample_data_tuple = get_test_issue_source_data_custom(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
+        sample_data_tuple = get_test_issue_source_data_custom(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT, mask_pii=mask_pii)
     else:
-        sample_data_tuple = get_test_issue_source_data(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
-
-    # Mask PII in sample data
-    if sample_data_tuple[3] is not None and mask_pii:
-        pii_columns = get_pii_columns(str(tr_data["table_groups_id"]), table_name=tr_data["table_name"])
-        mask_dataframe_pii(sample_data_tuple[3], pii_columns)
+        sample_data_tuple = get_test_issue_source_data(tr_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT, mask_pii=mask_pii)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)

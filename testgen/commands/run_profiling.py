@@ -86,7 +86,8 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
         data_chars = run_data_chars_refresh(connection, table_group, profiling_run.profiling_starttime)
-        data_chars = _exclude_xde_columns(data_chars, table_group.id)
+        if table_group.profile_exclude_xde:
+            data_chars = _exclude_xde_columns(data_chars, table_group.id)
         distinct_tables = {(column.table_name, column.record_ct) for column in data_chars}
 
         profiling_run.set_progress("data_chars", "Completed")

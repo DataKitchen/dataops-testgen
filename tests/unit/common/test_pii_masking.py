@@ -1,43 +1,43 @@
 import pandas as pd
 
-from testgen.common.pii_masking import PII_REDACTED, mask_dataframe_pii, mask_profiling_pii
+from testgen.common.pii_masking import PII_REDACTED, mask_hygiene_detail, mask_profiling_pii, mask_source_data_pii
 
 
-class Test_mask_dataframe_pii:
+class Test_mask_source_data_pii:
     def test_masks_pii_columns(self):
         df = pd.DataFrame({
             "name": ["Alice", "Bob"],
             "ssn": ["123-45-6789", "987-65-4321"],
             "age": [30, 25],
         })
-        mask_dataframe_pii(df, {"ssn"})
+        mask_source_data_pii(df, {"ssn"})
         assert df["ssn"].tolist() == [PII_REDACTED, PII_REDACTED]
         assert df["age"].tolist() == [30, 25]
         assert df["name"].tolist() == ["Alice", "Bob"]
 
     def test_preserves_non_pii_columns(self):
         df = pd.DataFrame({"col_a": [1, 2], "col_b": ["x", "y"]})
-        mask_dataframe_pii(df, {"col_a"})
+        mask_source_data_pii(df, {"col_a"})
         assert df["col_b"].tolist() == ["x", "y"]
 
     def test_handles_empty_dataframe(self):
         df = pd.DataFrame(columns=["name", "ssn"])
-        mask_dataframe_pii(df, {"ssn"})
+        mask_source_data_pii(df, {"ssn"})
         assert df.empty
 
     def test_handles_missing_pii_column(self):
         df = pd.DataFrame({"col_a": [1, 2]})
-        mask_dataframe_pii(df, {"nonexistent_col"})
+        mask_source_data_pii(df, {"nonexistent_col"})
         assert df["col_a"].tolist() == [1, 2]
 
     def test_handles_empty_pii_set(self):
         df = pd.DataFrame({"col_a": [1, 2]})
-        mask_dataframe_pii(df, set())
+        mask_source_data_pii(df, set())
         assert df["col_a"].tolist() == [1, 2]
 
     def test_case_insensitive_matching(self):
         df = pd.DataFrame({"SSN": ["123-45-6789"], "Name": ["Alice"]})
-        mask_dataframe_pii(df, {"ssn"})
+        mask_source_data_pii(df, {"ssn"})
         assert df["SSN"].tolist() == [PII_REDACTED]
         assert df["Name"].tolist() == ["Alice"]
 
@@ -48,7 +48,7 @@ class Test_mask_dataframe_pii:
             "email": ["a@b.com"],
             "age": [30],
         })
-        mask_dataframe_pii(df, {"ssn", "email"})
+        mask_source_data_pii(df, {"ssn", "email"})
         assert df["ssn"].tolist() == [PII_REDACTED]
         assert df["email"].tolist() == [PII_REDACTED]
         assert df["name"].tolist() == ["Alice"]
@@ -189,3 +189,112 @@ class Test_mask_profiling_pii_dict:
         assert data["top_freq_values"] == PII_REDACTED
         assert data["record_ct"] == 100
         assert data["distinct_value_ct"] == 50
+
+
+class Test_mask_hygiene_detail_dataframe:
+    def test_masks_detail_for_pii_redactable_rows(self):
+        df = pd.DataFrame({
+            "column_name": ["ssn", "age", "email"],
+            "detail": ["SSN range: 100-999", "Count: 50", "Email range: a@b - z@y"],
+            "detail_redactable": [True, False, True],
+            "pii_flag": ["A/ID/SSN", None, "B/CONTACT/Email"],
+        })
+        mask_hygiene_detail(df)
+        assert df.loc[0, "detail"] == PII_REDACTED
+        assert df.loc[1, "detail"] == "Count: 50"
+        assert df.loc[2, "detail"] == PII_REDACTED
+
+    def test_preserves_non_redactable_pii_rows(self):
+        df = pd.DataFrame({
+            "column_name": ["ssn"],
+            "detail": ["Non-printing chars: 5"],
+            "detail_redactable": [False],
+            "pii_flag": ["A/ID/SSN"],
+        })
+        mask_hygiene_detail(df)
+        assert df.loc[0, "detail"] == "Non-printing chars: 5"
+
+    def test_preserves_redactable_non_pii_rows(self):
+        df = pd.DataFrame({
+            "column_name": ["age"],
+            "detail": ["Date range: 2020-2024"],
+            "detail_redactable": [True],
+            "pii_flag": [None],
+        })
+        mask_hygiene_detail(df)
+        assert df.loc[0, "detail"] == "Date range: 2020-2024"
+
+    def test_handles_empty_dataframe(self):
+        df = pd.DataFrame(columns=["column_name", "detail", "detail_redactable", "pii_flag"])
+        mask_hygiene_detail(df)
+        assert df.empty
+
+    def test_handles_missing_detail_redactable_column(self):
+        df = pd.DataFrame({
+            "column_name": ["ssn"],
+            "detail": ["some detail"],
+            "pii_flag": ["A/ID/SSN"],
+        })
+        mask_hygiene_detail(df)
+        assert df.loc[0, "detail"] == "some detail"
+
+    def test_handles_null_detail_redactable(self):
+        df = pd.DataFrame({
+            "column_name": ["ssn"],
+            "detail": ["SSN range: 100-999"],
+            "detail_redactable": [None],
+            "pii_flag": ["A/ID/SSN"],
+        })
+        mask_hygiene_detail(df)
+        assert df.loc[0, "detail"] == "SSN range: 100-999"
+
+
+class Test_mask_hygiene_detail_list_with_pii_flag:
+    def test_masks_detail_when_redactable_and_pii(self):
+        issues = [
+            {"detail": "Date range: 2020-2024", "detail_redactable": True, "pii_flag": "A/ID/SSN"},
+            {"detail": "Count: 50", "detail_redactable": False, "pii_flag": "A/ID/SSN"},
+            {"detail": "Min text: Alice", "detail_redactable": True, "pii_flag": None},
+        ]
+        mask_hygiene_detail(issues)
+        assert issues[0]["detail"] == PII_REDACTED
+        assert issues[1]["detail"] == "Count: 50"
+        assert issues[2]["detail"] == "Min text: Alice"
+
+    def test_handles_empty_list(self):
+        issues = []
+        mask_hygiene_detail(issues)
+        assert issues == []
+
+    def test_handles_missing_fields(self):
+        issues = [{"detail": "some detail"}]
+        mask_hygiene_detail(issues)
+        assert issues[0]["detail"] == "some detail"
+
+
+class Test_mask_hygiene_detail_list_with_pii_columns:
+    def test_masks_detail_when_column_is_pii(self):
+        issues = [
+            {"column_name": "ssn", "detail": "Date range: 2020-2024", "detail_redactable": True},
+            {"column_name": "age", "detail": "Count: 50", "detail_redactable": True},
+            {"column_name": "email", "detail": "Min text: a@b", "detail_redactable": True},
+        ]
+        mask_hygiene_detail(issues, pii_columns={"ssn", "email"})
+        assert issues[0]["detail"] == PII_REDACTED
+        assert issues[1]["detail"] == "Count: 50"
+        assert issues[2]["detail"] == PII_REDACTED
+
+    def test_case_insensitive_column_matching(self):
+        issues = [{"column_name": "SSN", "detail": "range: 100-999", "detail_redactable": True}]
+        mask_hygiene_detail(issues, pii_columns={"ssn"})
+        assert issues[0]["detail"] == PII_REDACTED
+
+    def test_empty_pii_columns_skips_masking(self):
+        issues = [{"column_name": "ssn", "detail": "range: 100-999", "detail_redactable": True}]
+        mask_hygiene_detail(issues, pii_columns=set())
+        assert issues[0]["detail"] == "range: 100-999"
+
+    def test_non_redactable_issues_preserved(self):
+        issues = [{"column_name": "ssn", "detail": "Non-printing: 5", "detail_redactable": False}]
+        mask_hygiene_detail(issues, pii_columns={"ssn"})
+        assert issues[0]["detail"] == "Non-printing: 5"

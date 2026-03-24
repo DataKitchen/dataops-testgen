@@ -4,6 +4,10 @@
  * @import { TableGroup } from '../components/table_group_form.js'
  * @import { CronSample } from '../types.js'
  * 
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_view_pii
+ * 
  * @typedef WizardResult
  * @type {object}
  * @property {boolean} success
@@ -20,6 +24,7 @@
  * @property {Connection[]} connections
  * @property {string[]?} steps
  * @property {boolean?} is_in_use
+ * @property {Permissions} permissions
  * @property {TableGroupPreview?} table_group_preview
  * @property {CronSample?} standard_cron_sample
  * @property {CronSample?} monitor_cron_sample
@@ -189,6 +194,7 @@ const TableGroupWizard = (props) => {
         showConnectionSelector: connections.length > 1,
         disableConnectionSelector: false,
         disableSchemaField: props.is_in_use ?? false,
+        disablePiiFlag: !getValue(props.permissions)?.can_view_pii,
         onChange: (updatedTableGroup, state) => {
           stepsState.tableGroup.val = updatedTableGroup;
           stepsValidity.tableGroup.val = state.valid;

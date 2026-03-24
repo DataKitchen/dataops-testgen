@@ -114,6 +114,7 @@ CREATE TABLE table_groups
     profiling_delay_days     VARCHAR(3) DEFAULT '0',
     profile_flag_cdes        BOOLEAN DEFAULT TRUE,
     profile_flag_pii         BOOLEAN DEFAULT TRUE,
+    profile_exclude_xde      BOOLEAN DEFAULT TRUE,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
     profile_pair_rule_pct    INTEGER DEFAULT 95,
     include_in_dashboard     BOOLEAN DEFAULT TRUE,
@@ -342,6 +343,7 @@ CREATE TABLE profile_anomaly_types (
    anomaly_description VARCHAR(500),
    anomaly_criteria    VARCHAR(2000),
    detail_expression   VARCHAR(2000),
+   detail_redactable   BOOLEAN DEFAULT FALSE,
    issue_likelihood    VARCHAR(50),  -- Potential, Likely, Certain
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
@@ -612,6 +614,7 @@ CREATE TABLE target_data_lookups (
    sql_flavor   VARCHAR(20)  NOT NULL,
    lookup_type  VARCHAR(10),
    lookup_query VARCHAR,
+   lookup_redactable_columns VARCHAR(100),
    error_type   VARCHAR(30)  NOT NULL,
    CONSTRAINT target_data_lookups_test_id_sql_flavor_error_type_pk
       PRIMARY KEY (test_id, sql_flavor, error_type)

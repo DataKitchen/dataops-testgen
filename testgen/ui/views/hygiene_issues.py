@@ -12,7 +12,7 @@ from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
+from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -184,6 +184,10 @@ class HygieneIssuesPage(Page):
             with st.spinner("Loading data ..."):
                 # Get hygiene issue list
                 df_pa = get_profiling_anomalies(run_id, likelihood, issue_type_id, table_name, column_name, action, sorting_columns)
+
+                # Mask detail for PII columns with redactable details
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_hygiene_detail(df_pa)
 
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_anomaly_disposition(run_id)
@@ -438,6 +442,10 @@ def get_excel_report_data(
     if data is None:
         data = get_profiling_anomalies(run_id)
 
+    if not session.auth.user_has_permission("view_pii"):
+        data = data.copy()
+        mask_hygiene_detail(data)
+
     columns = {
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
@@ -468,8 +476,9 @@ def source_data_dialog(selected_row):
     st.markdown("#### Hygiene Issue Detail")
     st.caption(selected_row["detail"])
 
+    mask_pii = not session.auth.user_has_permission("view_pii")
     with st.spinner("Retrieving source data..."):
-        bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
+        bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500, mask_pii=mask_pii)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
@@ -479,12 +488,6 @@ def source_data_dialog(selected_row):
     else:
         if bad_data_msg:
             st.info(bad_data_msg)
-        if not session.auth.user_has_permission("view_pii"):
-            pii_columns = get_pii_columns(
-                selected_row["table_groups_id"],
-                table_name=selected_row["table_name"],
-            )
-            mask_dataframe_pii(df_bad, pii_columns)
         # Pretify the dataframe
         df_bad.columns = [col.replace("_", " ").title() for col in df_bad.columns]
         df_bad.fillna("<null>", inplace=True)

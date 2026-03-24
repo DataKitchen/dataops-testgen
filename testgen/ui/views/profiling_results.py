@@ -10,7 +10,7 @@ import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_profiling_pii
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -173,6 +173,9 @@ class ProfilingResultsPage(Page):
             st.markdown(":orange[Select a row to see profiling details.]")
         else:
             selected_row["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, selected_row["table_name"], selected_row.get("column_name"))
+            if not session.auth.user_has_permission("view_pii"):
+                pii_cols = get_pii_columns(selected_row["table_group_id"], table_name=selected_row["table_name"])
+                mask_hygiene_detail(selected_row["hygiene_issues"], pii_cols)
             testgen_component(
                 "column_profiling_results",
                 props={ "column": json.dumps(selected_row), "data_preview": True },
