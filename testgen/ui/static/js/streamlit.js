@@ -8,7 +8,6 @@ const Streamlit = {
         this._v2 = true;
         this._customSendDataHandler = handler;
         window.testgen = window.testgen || {};
-        window.testgen.isPage = true;
     },
     disableV2(handler) {
         if (this._customSendDataHandler === handler) {

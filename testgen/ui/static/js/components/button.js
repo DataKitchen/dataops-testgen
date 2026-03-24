@@ -15,9 +15,8 @@
  * @property {string?} style
  * @property {string?} testId
  */
-import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { withTooltip } from './tooltip.js';
 
 const { button, i, span } = van.tags;
@@ -36,43 +35,25 @@ const Button = (/** @type Properties */ props) => {
     const width = getValue(props.width);
     const isIconOnly = getValue(props.type) === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(40);
-        if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
-            enforceElementWidth(window.frameElement, 40);
-        }
-
-        if (width) {
-            enforceElementWidth(window.frameElement, width);
-        }
-        if (props.tooltip) {
-            window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
-            window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
-        }
-    }
-
     const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
-
-    const buttonEl = button(
-        {
-            id: getValue(props.id) ?? undefined,
-            class: () => `tg-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
-            style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
-            onclick: onClickHandler,
-            disabled: props.disabled,
-            'data-testid': getValue(props.testId) ?? '',
-        },
-        span({class: 'tg-button-focus-state-indicator'}, ''),
-        props.icon ? i({
-            class: 'material-symbols-rounded',
-            style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
-        }, props.icon) : undefined,
-        !isIconOnly ? span(props.label) : undefined,
+    return withTooltip(
+        button(
+            {
+                id: getValue(props.id) ?? undefined,
+                class: () => `tg-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+                style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
+                onclick: onClickHandler,
+                disabled: props.disabled,
+                'data-testid': getValue(props.testId) ?? '',
+            },
+            span({class: 'tg-button-focus-state-indicator'}, ''),
+            props.icon ? i({
+                class: 'material-symbols-rounded',
+                style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
+            }, props.icon) : undefined,
+            !isIconOnly ? span(props.label) : undefined,
+        ), { text: props.tooltip, position: props.tooltipPosition },
     );
-
-    return getValue(props.tooltip)
-        ? withTooltip(buttonEl, { text: props.tooltip, position: props.tooltipPosition })
-        : buttonEl;
 };
 
 const stylesheet = new CSSStyleSheet();

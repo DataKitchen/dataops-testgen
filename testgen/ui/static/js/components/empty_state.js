@@ -17,6 +17,7 @@
 * @property {Link?} link
 * @property {any?} button
 * @property {string?} class
+* @property {string?} testId
 */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -68,6 +69,7 @@ const EmptyState = (/** @type Properties */ props) => {
     loadStylesheet('empty-state', stylesheet);
 
     return Card({
+        testId: getValue(props.testId),
         class: `tg-empty-state flex-column fx-align-flex-center ${getValue(props.class ?? '')}`,
         content: [
             span({ class: 'tg-empty-state--title mb-5' }, props.label),

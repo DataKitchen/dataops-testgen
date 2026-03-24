@@ -1,42 +1,5 @@
-import van from './van.min.js';
 import { Streamlit } from './streamlit.js';
-
-function enforceElementWidth(
-    /** @type Element */element,
-    /** @type number */width,
-) {
-    const observer = new ResizeObserver(() => {
-        element.width = width;
-    });
-
-    observer.observe(element);
-}
-
-function resizeFrameHeightToElement(/** @type string */elementId) {
-    const observer = new ResizeObserver(() => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            const height = element.offsetHeight;
-            if (height) {
-                Streamlit.setFrameHeight(height);
-            }
-        }
-    });
-    observer.observe(window.frameElement);
-}
-
-function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
-    const observer = new MutationObserver(() => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            const height = element.offsetHeight;
-            if (height) {
-                Streamlit.setFrameHeight(height);
-            }
-        }
-    });
-    observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});
-}
+import van from './van.min.js';
 
 /**
  * @param {string} elementId
@@ -197,6 +160,26 @@ function isEqual(value, other) {
     return true;
 }
 
+/**
+ * Makes an element fill the viewport height from its current top position.
+ * Sets `height: calc(100vh - <top>px - <bottomPadding>px)` and re-applies on resize.
+ * @param {HTMLElement} element
+ * @param {{ bottomPadding?: number }} [options]
+ * @returns {() => void} Cleanup function that disconnects the observer
+ */
+function fillViewportHeight(element, { bottomPadding = 16 } = {}) {
+    const apply = () => {
+        const top = element.getBoundingClientRect().top;
+        if (top > 0) {
+            element.style.height = `calc(100vh - ${top + bottomPadding}px)`;
+        }
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+}
+
 function afterMount(/** @ype Function */ callback) {
     const trigger = van.state(false);
     van.derive(() => trigger.val && callback());
@@ -239,4 +222,4 @@ function parseDate(value) {
     return value;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };
+export { afterMount, debounce, emitEvent, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };

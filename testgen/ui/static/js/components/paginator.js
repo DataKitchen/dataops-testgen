@@ -5,10 +5,10 @@
  * @property {number} pageSize
  * @property {number?} pageIndex
  * @property {function(number)?} onChange
+ * @property {string?} testId
  */
 
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '../utils.js';
 
 const { div, span, i, button } = van.tags;
@@ -16,11 +16,8 @@ const { div, span, i, button } = van.tags;
 const Paginator = (/** @type Properties */ props) => {
     loadStylesheet('paginator', stylesheet);
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(32);
-    }
-
     const { count, pageSize } = props;
+    const testId = getValue(props.testId) ?? '';
     const pageIndexState = van.derive(() => getValue(props.pageIndex) ?? 0);
 
     van.derive(() => {
@@ -29,9 +26,9 @@ const Paginator = (/** @type Properties */ props) => {
     });
 
     return div(
-        { class: 'tg-paginator' },
+        { class: 'tg-paginator', 'data-testid': testId },
         span(
-            { class: 'tg-paginator--label' },
+            { class: 'tg-paginator--label', 'data-testid': testId ? `${testId}-info` : '' },
             () => {
                 const pageIndex = pageIndexState.val;
                 const countValue = getValue(count);
@@ -42,6 +39,7 @@ const Paginator = (/** @type Properties */ props) => {
         button(
             {
                 class: 'tg-paginator--button',
+                'data-testid': testId ? `${testId}-first` : '',
                 onclick: () => pageIndexState.val = 0,
                 disabled: () => pageIndexState.val === 0,
             },
@@ -50,6 +48,7 @@ const Paginator = (/** @type Properties */ props) => {
         button(
             {
                 class: 'tg-paginator--button',
+                'data-testid': testId ? `${testId}-prev` : '',
                 onclick: () => pageIndexState.val--,
                 disabled: () => pageIndexState.val === 0,
             },
@@ -58,6 +57,7 @@ const Paginator = (/** @type Properties */ props) => {
         button(
             {
                 class: 'tg-paginator--button',
+                'data-testid': testId ? `${testId}-next` : '',
                 onclick: () => pageIndexState.val++,
                 disabled: () => pageIndexState.val === Math.ceil(getValue(count) / getValue(pageSize)) - 1,
             },
@@ -66,6 +66,7 @@ const Paginator = (/** @type Properties */ props) => {
         button(
             {
                 class: 'tg-paginator--button',
+                'data-testid': testId ? `${testId}-last` : '',
                 onclick: () => pageIndexState.val = Math.ceil(getValue(count) / getValue(pageSize)) - 1,
                 disabled: () => pageIndexState.val === Math.ceil(getValue(count) / getValue(pageSize)) - 1,
             },

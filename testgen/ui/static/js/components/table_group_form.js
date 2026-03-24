@@ -376,7 +376,7 @@ const SettingsForm = (
                     checked: addScorecardDefinition,
                     onChange: (value) => addScorecardDefinition.val = value,
                 })
-                : null,
+                : '',
         ),
         Input({
             name: 'profiling_delay_days',

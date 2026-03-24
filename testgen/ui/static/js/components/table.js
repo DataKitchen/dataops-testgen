@@ -20,6 +20,7 @@
  * @type {object}
  * @property {boolean?} multi
  * @property {((rowIndexes: number[]) => void)?} onRowsSelected
+ * @property {((row: any, idx: number) => boolean)?} isInitiallySelected
  * 
  * @typedef SortOptions
  * @type {object}
@@ -34,6 +35,7 @@
  * @property {number?} currentPageIdx
  * @property {((a: number, b: number) => void)?} onPageChange
  * @property {HTMLElement?} leftContent
+ * @property {number[]?} pageSizeOptions
  * 
  * @typedef Options
  * @type {object}
@@ -94,9 +96,10 @@ const Table = (options, rows) => {
     const selectedRows = [];
     van.derive(() => {
         const rows_ = getValue(rows);
-        rows_.forEach((_, idx) => {
-            selectedRows[idx] = selectedRows[idx] ?? van.state(false)
-            selectedRows[idx].val = false;
+        rows_.forEach((row, idx) => {
+            const isRowSelected = options.selection?.isInitiallySelected?.(row, idx) ?? false;
+            selectedRows[idx] = selectedRows[idx] ?? van.state(isRowSelected)
+            selectedRows[idx].val = isRowSelected;
         });
     });
     van.derive(() => {
@@ -131,6 +134,7 @@ const Table = (options, rows) => {
             currentPageIdx: p?.currentPageIdx ?? 0,
             onPageChange: p?.onPageChange,
             leftContent: p?.leftContent,
+            pageSizeOptions: p?.pageSizeOptions,
         };
     });
 
@@ -140,17 +144,31 @@ const Table = (options, rows) => {
         return {
             field: s?.field,
             order: s?.order,
+            columns: s?.columns,
             onSortChange: (columnName) => {
-                let newSortOrder = 'desc';
-                let columnNameOrClear = columnName;
-                if (s?.field === columnName && s?.order === 'desc') {
-                    newSortOrder = 'asc';
-                } else if (s?.field === columnName && s?.order === 'asc') {
-                    newSortOrder = null;
-                    columnNameOrClear = null;
+                const sortCols = s?.columns;
+                if (sortCols !== undefined) {
+                    const existing = sortCols.find(c => c.field === columnName);
+                    let newColumns;
+                    if (!existing) {
+                        newColumns = [...sortCols, { field: columnName, order: 'desc' }];
+                    } else if (existing.order === 'desc') {
+                        newColumns = sortCols.map(c => c.field === columnName ? { ...c, order: 'asc' } : c);
+                    } else {
+                        newColumns = sortCols.filter(c => c.field !== columnName);
+                    }
+                    s?.onSortChange?.(newColumns);
+                } else {
+                    let newSortOrder = 'desc';
+                    let columnNameOrClear = columnName;
+                    if (s?.field === columnName && s?.order === 'desc') {
+                        newSortOrder = 'asc';
+                    } else if (s?.field === columnName && s?.order === 'asc') {
+                        newSortOrder = null;
+                        columnNameOrClear = null;
+                    }
+                    s?.onSortChange?.({field: columnNameOrClear, order: newSortOrder});
                 }
-
-                s?.onSortChange?.({field: columnNameOrClear, order: newSortOrder});
             },
         };
     });
@@ -168,11 +186,15 @@ const Table = (options, rows) => {
                     class: () => getValue(options.class) ?? '',
                     style: () => {
                         const dynamicWidth = getValue(options.dynamicWidth) ?? false;
-                        let widthNumber = getValue(options.width) ?? widthSum.val;
-                        if (widthNumber < window.innerWidth) {
-                            widthNumber = window.innerWidth;
+                        if (!dynamicWidth) {
+                            return `width: ${defaultWidth};`;
                         }
-                        return `width: ${(widthNumber && dynamicWidth) ? widthNumber + 'px' : defaultWidth}; ${dynamicWidth ? 'table-layout: fixed;' : ''}`;
+                        let currentSum = 0;
+                        for (let i = 0; i < columnWidths.length; i++) {
+                            currentSum += columnWidths[i]?.val ?? 0;
+                        }
+                        const widthNumber = getValue(options.width) ?? currentSum;
+                        return `width: ${widthNumber ? widthNumber + 'px' : defaultWidth}; table-layout: fixed;`;
                     },
                 },
                 () => colgroup(
@@ -231,6 +253,7 @@ const Table = (options, rows) => {
                 getValue(options.highDensity),
                 getValue(paginatorOptions).onPageChange,
                 getValue(paginatorOptions).leftContent,
+                getValue(paginatorOptions).pageSizeOptions,
             )
             : undefined,
     );
@@ -260,9 +283,10 @@ const TableHeaderColumn = (
 ) => {
     let startX, startWidth;
 
+    const minWidth = Math.min(column.width ?? 50, 50);
     const doDrag = (e) => {
         const newWidth = startWidth + (e.clientX - startX);
-        if (newWidth > 50) {
+        if (newWidth > minWidth) {
             columnWidths[columnIndex].val = newWidth;
         }
     };
@@ -289,13 +313,24 @@ const TableHeaderColumn = (
         if (!isDataColumn || !column.sortable) {
             return null;
         }
-        
+
+        const sortCols = sortOptions.val.columns;
+        if (sortCols) {
+            const colSort = sortCols.find(c => c.field === column.name);
+            if (!colSort) {
+                return Icon({style: 'font-size: 13px; cursor: pointer; color: var(--disabled-text-color)'}, 'expand_all');
+            }
+            const isPrimary = sortCols[0]?.field === column.name;
+            return Icon(
+                {style: `font-size: 13px; cursor: pointer; color: var(${isPrimary ? '--primary-text-color' : '--secondary-text-color'})`},
+                colSort.order === 'desc' ? 'south' : 'north',
+            );
+        }
+
         const isSorted = sortOptions.val.field === column.name;
-        return (
-            Icon(
-                {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
-                isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
-            )
+        return Icon(
+            {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
+            isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
         );
     });
 
@@ -359,6 +394,8 @@ const TableCell = (column, row, index) => {
  * @param {HTMLElement?} leftContent
  * @returns {HTMLElement}
  */
+const defaultPageSizeOptions = [20, 50, 100];
+
 const Paginatior = (
     itemsPerPage,
     totalItems,
@@ -366,10 +403,13 @@ const Paginatior = (
     highDensity,
     onPageChange,
     leftContent = undefined,
+    pageSizeOptions = undefined,
 ) => {
     const pageStart = itemsPerPage * currentPageIdx + 1;
     const pageEnd = Math.min(pageStart + itemsPerPage - 1, totalItems);
     const lastPage = (Math.floor(totalItems / itemsPerPage) + (totalItems % itemsPerPage > 0) - 1);
+
+    const sizeOptions = (pageSizeOptions ?? defaultPageSizeOptions).map(n => ({ label: String(n), value: n }));
 
     return div(
         {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
@@ -382,11 +422,7 @@ const Paginatior = (
             triggerStyle: 'inline',
             testId: 'items-per-page',
             value: itemsPerPage,
-            options: [
-                {label: '20', value: 20},
-                {label: '50', value: 50},
-                {label: '100', value: 100},
-            ],
+            options: sizeOptions,
             portalPosition: 'top',
             onChange: (value) => onPageChange(currentPageIdx, parseInt(value)),
         }),
@@ -521,6 +557,10 @@ stylesheet.replace(`
 
 .tg-table.tg-table-high-density > .tg-table-scrollable > table .tg-table-cell {
     padding: 0px 8px;
+    height: 27px;
+}
+
+.tg-table.tg-table-high-density > .tg-table-scrollable > table > tbody > tr {
     height: 27px;
 }
 

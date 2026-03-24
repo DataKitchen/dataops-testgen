@@ -18,11 +18,18 @@ const Tab = ({ label }, ...children) => ({
 });
 
 /**
- * @param {object} props
+ * @typedef {Object} TabsProps
+ * @property {string?} testId
+ * @property {string?} class
+ *
+ * @param {TabsProps} props
  * @param {...Tab} tabs
  */
 const Tabs = (props, ...tabs) => {
     loadStylesheet('tabs', stylesheet);
+
+    const { testId: testIdProp, ...restProps } = props;
+    const testId = getValue(testIdProp) ?? '';
 
     const activeTab = van.state(0);
 
@@ -31,10 +38,10 @@ const Tabs = (props, ...tabs) => {
 
     const updateHighlight = () => {
         if (!labelsContainerEl?.isConnected || !labelsContainerEl.children.length) return;
-        
+
         const activeLabel = labelsContainerEl.children[activeTab.val];
         if (!activeLabel) return;
-        
+
         highlightEl.style.width = `${activeLabel.offsetWidth}px`;
         highlightEl.style.left = `${activeLabel.offsetLeft}px`;
         highlightEl.style.opacity = '1';
@@ -45,6 +52,7 @@ const Tabs = (props, ...tabs) => {
         ...tabs.map((tab, i) =>
             button({
                 class: () => `tg-tabs--tab--label ${i === activeTab.val ? 'active' : ''}`,
+                'data-testid': testId ? `${testId}-tab-${i}` : '',
                 onclick: () => (activeTab.val = i),
             },
             tab.label
@@ -52,9 +60,9 @@ const Tabs = (props, ...tabs) => {
         highlightEl,
     );
 
-    const tabsContainerEl = div({ ...props, class: () => `${getValue(props.class) ?? ''} tg-tabs--container` },
+    const tabsContainerEl = div({ ...restProps, 'data-testid': testId, class: () => `${getValue(restProps.class) ?? ''} tg-tabs--container` },
         labelsContainerEl,
-        div({ class: "tg-tabs--content" }, () => div({class: "tg-tabs--content-inner"}, tabs[activeTab.val].children)),
+        div({ class: "tg-tabs--content", 'data-testid': testId ? `${testId}-panel` : '' }, () => div({class: "tg-tabs--content-inner"}, tabs[activeTab.val].children)),
     );
 
     van.derive(() => {

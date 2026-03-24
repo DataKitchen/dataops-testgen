@@ -131,8 +131,8 @@ const IssuesTable = (
             div(
                 { class: 'table-header issues-columns flex-row' },
                 Checkbox({
-                    checked: () => selectedIssues.val.length === PAGE_SIZE,
-                    indeterminate: () => !!selectedIssues.val.length,
+                    checked: () => selectedIssues.val.length > 0,
+                    indeterminate: () => selectedIssues.val.length > 0 && selectedIssues.val.length < displayedIssues.val.length,
                     onChange: (checked) => {
                         if (checked) {
                             selectedIssues.val = displayedIssues.val.map(({ id, issue_type }) => ({ id, issue_type }));

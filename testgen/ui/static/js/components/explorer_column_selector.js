@@ -20,7 +20,6 @@
  * @property {Array<Column>} columns
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, isEqual, loadStylesheet, slugify } from '../utils.js';
 import { Tree } from './tree.js';
 import { Icon } from './icon.js';
@@ -39,9 +38,6 @@ const TRANSLATIONS = {
 
 const ColumnSelector = (/** @type Properties */ props) => {
     loadStylesheet('column-selector', stylesheet);
-
-    window.testgen.isPage = true;
-    Streamlit.setFrameHeight(400);
 
     const initialSelection = van.state([]);
     const selection = van.state([]);

@@ -17,8 +17,7 @@
  * @property {Permissions} permissions
 */
 import van from '../van.min.js';
-import { emitEvent, getRandomId, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Streamlit } from '../streamlit.js';
+import { emitEvent, getRandomId, getValue, loadStylesheet } from '../utils.js';
 import { Icon } from './icon.js';
 
 const { a, div, span } = van.tags;
@@ -32,14 +31,9 @@ const trainingUrl = 'https://info.datakitchen.io/data-quality-training-and-certi
 
 const HelpMenu = (/** @type Properties */ props) => {
     loadStylesheet('help-menu', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const domId = `help-menu-${getRandomId()}`;
     const version = getValue(props.version) ?? {};
-    
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);    
 
     return div(
         { id: domId },

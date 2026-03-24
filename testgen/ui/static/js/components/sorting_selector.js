@@ -26,10 +26,6 @@ const SortingSelector = (/** @type {Properties} */ props) => {
 
     const columnLabel = columns.reduce((acc, [colLabel, colId]) => ({ ...acc, [colId]: colLabel}), {});
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(100 + 30 * columns.length);
-    }
-
     const componentState = columns.reduce(
         (state, [colLabel, colId]) => (
             { ...state, [colId]: van.state(prevComponentState[colId] || { direction: "ASC", order: null })}

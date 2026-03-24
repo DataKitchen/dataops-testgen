@@ -5,6 +5,7 @@
  * @property {string?} expandLabel
  * @property {string?} collapseLabel
  * @property {string?} style
+ * @property {'left'|'right'?} labelPosition
  * @property {Function?} onExpand
  * @property {Function?} onCollapse
  */
@@ -17,17 +18,23 @@ const { div, span, i } = van.tags;
 const ExpanderToggle = (/** @type Properties */ props) => {
     loadStylesheet('expanderToggle', stylesheet);
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(24);
-    }
-
     const expandedState = van.state(!!getValue(props.default));
     const expandLabel = getValue(props.expandLabel) || 'Expand';
     const collapseLabel = getValue(props.collapseLabel) || 'Collapse';
+    const labelLeft = getValue(props.labelPosition) === 'left';
+
+    const label = span(
+        { class: 'expander-toggle--label' },
+        () => expandedState.val ? collapseLabel : expandLabel,
+    );
+    const icon = i(
+        { class: 'material-symbols-rounded' },
+        () => expandedState.val ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
+    );
 
     return div(
         {
-            class: 'expander-toggle',
+            class: () => `expander-toggle${labelLeft ? ' expander-toggle--left' : ''}`,
             style: () => getValue(props.style) ?? '',
             onclick: () => {
                 expandedState.val = !expandedState.val;
@@ -35,14 +42,7 @@ const ExpanderToggle = (/** @type Properties */ props) => {
                 handler(expandedState.val);
             }
         },
-        span(
-            { class: 'expander-toggle--label' },
-            () => expandedState.val ? collapseLabel : expandLabel,
-        ),
-        i(
-            { class: 'material-symbols-rounded' },
-            () => expandedState.val ? 'keyboard_arrow_up' : 'keyboard_arrow_down',
-        ),
+        ...(labelLeft ? [icon, label] : [label, icon]),
     );
 };
 
@@ -55,6 +55,10 @@ stylesheet.replace(`
     align-items: center;
     cursor: pointer;
     color: #1976d2;
+}
+
+.expander-toggle--left {
+    justify-content: flex-start;
 }
 `);
 
