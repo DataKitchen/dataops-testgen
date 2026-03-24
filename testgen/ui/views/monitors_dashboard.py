@@ -8,7 +8,7 @@ import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -25,7 +25,6 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
-from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -46,6 +45,11 @@ ANOMALY_TYPE_FILTERS = {
     "metrics": "metric_anomalies",
 }
 DIALOG_AUTO_OPENED_KEY = "monitors:dialog_auto_opened"
+EDIT_MONITOR_SETTINGS_DIALOG_KEY = "monitors:edit_monitor_settings_open"
+EDIT_TABLE_MONITORS_DIALOG_KEY = "monitors:edit_table_monitors_table"
+TABLE_TRENDS_DIALOG_KEY = "monitors:trends_table"
+SCHEMA_CHANGES_DIALOG_KEY = "monitors:schema_changes_payload"
+EDIT_NOTIFICATIONS_DIALOG_KEY = "monitors:edit_notifications_open"
 
 
 class MonitorsDashboardPage(Page):
@@ -76,7 +80,7 @@ class MonitorsDashboardPage(Page):
     ) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "monitor-tables/",
+            "monitor-tables",
         )
 
         project_summary = get_project_summary(project_code)
@@ -137,9 +141,96 @@ class MonitorsDashboardPage(Page):
                 else:
                     st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
 
-        return testgen.testgen_component(
-            "monitors_dashboard",
-            props={
+        edit_settings_open = st.session_state.get(EDIT_MONITOR_SETTINGS_DIALOG_KEY)
+        edit_monitors_table = st.session_state.get(EDIT_TABLE_MONITORS_DIALOG_KEY)
+        trends_table = st.session_state.get(TABLE_TRENDS_DIALOG_KEY)
+
+        def on_open_monitor_settings(*_) -> None:
+            st.session_state[EDIT_MONITOR_SETTINGS_DIALOG_KEY] = True
+
+        def on_open_table_trends(payload) -> None:
+            table_name_val = payload.get("table_name") if isinstance(payload, dict) else payload
+            st.session_state[DIALOG_AUTO_OPENED_KEY] = table_name_val
+            Router().set_query_params({"table_name": table_name_val})
+            st.session_state[TABLE_TRENDS_DIALOG_KEY] = table_name_val
+
+        def on_open_edit_table_monitors(payload) -> None:
+            table_name_val = payload.get("table_name") if isinstance(payload, dict) else payload
+            st.session_state[EDIT_TABLE_MONITORS_DIALOG_KEY] = table_name_val
+
+        def on_open_schema_changes(payload: dict) -> None:
+            st.session_state[SCHEMA_CHANGES_DIALOG_KEY] = payload
+
+        def on_edit_notifications(*_) -> None:
+            st.session_state[EDIT_NOTIFICATIONS_DIALOG_KEY] = True
+
+        ns_obj = None
+        notifications_data = None
+        if st.session_state.get(EDIT_NOTIFICATIONS_DIALOG_KEY) and selected_table_group:
+            ns_obj = MonitorNotificationSettingsDialog(
+                MonitorNotificationSettings,
+                ns_attrs={
+                    "project_code": project_code,
+                    "table_group_id": str(selected_table_group.id),
+                    "test_suite_id": str(selected_table_group.monitor_test_suite_id),
+                },
+                component_props={
+                    "subtitle": {
+                        "label": "Table Group",
+                        "value": selected_table_group.table_groups_name,
+                    },
+                },
+            )
+            notifications_data = ns_obj.build_data()
+            notifications_data["open"] = True
+
+        def on_notifications_dialog_closed(*_) -> None:
+            if ns_obj:
+                ns_obj.clear_state()
+            st.session_state.pop(EDIT_NOTIFICATIONS_DIALOG_KEY, None)
+
+        # Build dialog data
+        edit_settings_data = None
+        edit_settings_handlers = {}
+        if edit_settings_open and selected_table_group:
+            is_configured = bool(selected_table_group.monitor_test_suite_id)
+            monitor_suite_title = "Edit Monitor Settings" if is_configured else "Configure Monitors"
+            edit_settings_data, edit_settings_handlers = build_edit_monitor_settings_data(
+                selected_table_group,
+                monitor_schedule,
+                dialog={"open": True, "title": monitor_suite_title},
+            )
+
+        trends_data = None
+        trends_handlers = {}
+        if trends_table and selected_table_group:
+            trends_data, trends_handlers = build_table_trends_data(
+                selected_table_group,
+                {"table_name": trends_table},
+                dialog={"open": True, "title": f"Table: {trends_table}"},
+            )
+
+        edit_monitors_data = None
+        edit_monitors_handlers = {}
+        if edit_monitors_table and selected_table_group:
+            edit_monitors_data, edit_monitors_handlers = build_edit_table_monitors_data(
+                selected_table_group,
+                {"table_name": edit_monitors_table},
+                dialog={"open": True, "title": f"Table Monitors: {edit_monitors_table}"},
+            )
+
+        schema_changes_data = None
+        schema_changes_handlers = {}
+        if schema_changes_payload := st.session_state.get(SCHEMA_CHANGES_DIALOG_KEY):
+            if selected_table_group:
+                schema_changes_data, schema_changes_handlers = build_schema_changes_data(
+                    selected_table_group,
+                    schema_changes_payload,
+                )
+
+        testgen.monitors_dashboard_widget(
+            key="monitors_dashboard",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "summary": make_json_safe(monitor_changes_summary),
                 "schedule": {
@@ -175,36 +266,35 @@ class MonitorsDashboardPage(Page):
                 "permissions": {
                     "can_edit": session.auth.user_has_permission("edit"),
                 },
+                "notifications_dialog": notifications_data,
+                "edit_monitor_settings_dialog": edit_settings_data,
+                "trends_dialog": trends_data,
+                "edit_table_monitors_dialog": edit_monitors_data,
+                "schema_changes_dialog": schema_changes_data,
             },
-            on_change_handlers={
-                "OpenSchemaChanges": lambda payload: open_schema_changes(selected_table_group, payload),
-                "OpenMonitoringTrends": lambda payload: open_table_trends(selected_table_group, payload),
-                "SetParamValues": lambda payload: set_param_values(payload),
-                "EditNotifications": manage_notifications(project_code, selected_table_group),
-                "EditMonitorSettings": lambda *_: edit_monitor_settings(selected_table_group, monitor_schedule),
-                "DeleteMonitorSuite": lambda *_: delete_monitor_suite(selected_table_group),
-                "EditTableMonitors": lambda payload: edit_table_monitors(selected_table_group, payload),
-            },
+            on_OpenSchemaChanges_change=on_open_schema_changes,
+            on_OpenMonitoringTrends_change=on_open_table_trends,
+            on_SetParamValues_change=lambda payload: set_param_values(payload),
+            on_EditNotifications_change=on_edit_notifications,
+            on_EditMonitorSettings_change=on_open_monitor_settings,
+            on_DeleteMonitorSuiteConfirmed_change=lambda *_: delete_monitor_suite(selected_table_group),
+            on_EditTableMonitors_change=on_open_edit_table_monitors,
+            # NotificationSettings events
+            on_AddNotification_change=lambda item: ns_obj.on_add_item(item) if ns_obj else None,
+            on_UpdateNotification_change=lambda item: ns_obj.on_update_item(item) if ns_obj else None,
+            on_DeleteNotification_change=lambda item: ns_obj.on_delete_item(item) if ns_obj else None,
+            on_PauseNotification_change=lambda item: ns_obj.on_pause_item(item) if ns_obj else None,
+            on_ResumeNotification_change=lambda item: ns_obj.on_resume_item(item) if ns_obj else None,
+            on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
+            # Edit monitor settings events
+            **edit_settings_handlers,
+            # Trends events
+            **trends_handlers,
+            # Edit table monitors events
+            **edit_monitors_handlers,
+            # Schema changes events
+            **schema_changes_handlers,
         )
-
-
-def manage_notifications(project_code: str, selected_table_group: TableGroupMinimal):
-    def open_dialog(*_):
-        MonitorNotificationSettingsDialog(
-            MonitorNotificationSettings,
-            ns_attrs={
-                "project_code": project_code,
-                "table_group_id": str(selected_table_group.id),
-                "test_suite_id": str(selected_table_group.monitor_test_suite_id),
-            },
-            component_props={
-                "subtitle": {
-                    "label": "Table Group",
-                    "value": selected_table_group.table_groups_name,
-                },
-            },
-        ).open(),
-    return open_dialog
 
 
 class MonitorNotificationSettingsDialog(NotificationSettingsDialogBase):
@@ -498,161 +588,118 @@ def set_param_values(payload: dict) -> None:
     Router().set_query_params(payload)
 
 
-def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule | None):
+@with_database_session
+def build_edit_monitor_settings_data(
+    table_group: TableGroupMinimal, schedule: JobSchedule | None, dialog: dict | None = None,
+) -> tuple[dict, dict]:
     monitor_suite_id = table_group.monitor_test_suite_id
 
-    @with_database_session
-    def show_dialog():
-        if monitor_suite_id:
-            monitor_suite = TestSuite.get(monitor_suite_id)
-        else:
-            monitor_suite = TestSuite(
-                project_code=table_group.project_code,
-                test_suite=f"{table_group.table_groups_name} Monitors",
-                connection_id=table_group.connection_id,
-                table_groups_id=table_group.id,
-                export_to_observability=False,
-                dq_score_exclude=True,
-                is_monitor=True,
-            )
-
-        def on_save_settings_clicked(payload: dict) -> None:
-            set_save(True)
-            set_schedule(payload["schedule"])
-            set_monitor_suite(payload["monitor_suite"])
-
-        cron_sample_result, on_cron_sample = get_cron_sample_handler("monitors:cron_expr_validation", sample_count=2)
-        should_save, set_save = temp_value(f"monitors:save:{monitor_suite_id}", default=False)
-        get_schedule, set_schedule = temp_value(f"monitors:updated_schedule:{monitor_suite_id}", default={})
-        get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})
-
-        if should_save():
-            for key, value in get_monitor_suite().items():
-                setattr(monitor_suite, key, value)
-
-            is_new = not monitor_suite.id
-            monitor_suite.save()
-
-            new_schedule_config = get_schedule()
-            if ( # Check if schedule has to be created/recreated
-                not schedule
-                or schedule.cron_tz != new_schedule_config["cron_tz"]
-                or schedule.cron_expr != new_schedule_config["cron_expr"]
-            ):
-                if schedule:
-                    JobSchedule.delete(schedule.id)
-
-                new_schedule = JobSchedule(
-                    project_code=table_group.project_code,
-                    key=RUN_MONITORS_JOB_KEY,
-                    args=[],
-                    kwargs={"test_suite_id": str(monitor_suite.id)},
-                    **new_schedule_config,
-                )
-                new_schedule.save()
-
-            elif schedule.active != new_schedule_config["active"]: # Only active status changed
-                JobSchedule.update_active(schedule.id, new_schedule_config["active"])
-
-            if is_new:
-                updated_table_group = TableGroup.get(table_group.id)
-                updated_table_group.monitor_test_suite_id = monitor_suite.id
-                updated_table_group.save()
-                monitors: list[str] = ["Volume_Trend", "Schema_Drift"]
-                if updated_table_group.last_complete_profile_run_id:
-                    monitors.append("Freshness_Trend")
-                # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
-                get_current_session().commit()
-                run_monitor_generation(monitor_suite.id, monitors)
-
-            safe_rerun()
-
-        testgen.edit_monitor_settings(
-            key="edit_monitor_settings",
-            data={
-                "table_group": table_group.to_dict(json_safe=True),
-                "monitor_suite": monitor_suite.to_dict(json_safe=True),
-                "schedule": {
-                    "cron_tz": schedule.cron_tz,
-                    "cron_expr": schedule.cron_expr,
-                    "active": schedule.active,
-                } if schedule else None,
-                "cron_sample": cron_sample_result(),
-            },
-            on_SaveSettingsClicked_change=on_save_settings_clicked,
-            on_GetCronSample_change=on_cron_sample,
+    if monitor_suite_id:
+        monitor_suite = TestSuite.get(monitor_suite_id)
+    else:
+        monitor_suite = TestSuite(
+            project_code=table_group.project_code,
+            test_suite=f"{table_group.table_groups_name} Monitors",
+            connection_id=table_group.connection_id,
+            table_groups_id=table_group.id,
+            export_to_observability=False,
+            dq_score_exclude=True,
+            is_monitor=True,
         )
 
-    return st.dialog(title="Edit Monitor Settings" if monitor_suite_id else "Configure Monitors")(show_dialog)()
+    def on_save_settings_clicked(payload: dict) -> None:
+        set_save(True)
+        set_schedule(payload["schedule"])
+        set_monitor_suite(payload["monitor_suite"])
+
+    cron_sample_result, on_cron_sample = get_cron_sample_handler("monitors:cron_expr_validation", sample_count=2)
+    should_save, set_save = temp_value(f"monitors:save:{monitor_suite_id}", default=False)
+    get_schedule, set_schedule = temp_value(f"monitors:updated_schedule:{monitor_suite_id}", default={})
+    get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})
+
+    if should_save():
+        for key, value in get_monitor_suite().items():
+            setattr(monitor_suite, key, value)
+
+        is_new = not monitor_suite.id
+        monitor_suite.save()
+
+        new_schedule_config = get_schedule()
+        if ( # Check if schedule has to be created/recreated
+            not schedule
+            or schedule.cron_tz != new_schedule_config["cron_tz"]
+            or schedule.cron_expr != new_schedule_config["cron_expr"]
+        ):
+            if schedule:
+                JobSchedule.delete(schedule.id)
+
+            new_schedule = JobSchedule(
+                project_code=table_group.project_code,
+                key=RUN_MONITORS_JOB_KEY,
+                args=[],
+                kwargs={"test_suite_id": str(monitor_suite.id)},
+                **new_schedule_config,
+            )
+            new_schedule.save()
+
+        elif schedule.active != new_schedule_config["active"]: # Only active status changed
+            JobSchedule.update_active(schedule.id, new_schedule_config["active"])
+
+        if is_new:
+            updated_table_group = TableGroup.get(table_group.id)
+            updated_table_group.monitor_test_suite_id = monitor_suite.id
+            updated_table_group.save()
+            run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
+
+        st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None)
+        st.rerun()
+
+    data = {
+        "table_group": table_group.to_dict(json_safe=True),
+        "monitor_suite": monitor_suite.to_dict(json_safe=True),
+        "schedule": {
+            "cron_tz": schedule.cron_tz,
+            "cron_expr": schedule.cron_expr,
+            "active": schedule.active,
+        } if schedule else None,
+        "cron_sample": cron_sample_result(),
+        "dialog": dialog,
+    }
+    handlers = {
+        "on_SaveSettingsClicked_change": on_save_settings_clicked,
+        "on_GetCronSample_change": on_cron_sample,
+        "on_CloseSettingsDialog_change": lambda *_: st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None),
+    }
+    return data, handlers
 
 
-@st.dialog(title="Delete Monitors")
 @with_database_session
 def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
-    def on_delete_confirmed(*_args) -> None:
-        set_delete_confirmed(True)
-
-    message = f"Are you sure you want to delete all monitors for the table group '{table_group.table_groups_name}'?"
-    constraint = {
-        "warning": "All monitor configuration and historical results will be deleted.",
-        "confirmation": "Yes, delete all monitors and historical results.",
-    }
-
-    result, set_result = temp_value(f"monitors:result-value:{table_group.id}", default=None)
-    delete_confirmed, set_delete_confirmed = temp_value(f"monitors:confirm-delete:{table_group.id}", default=False)
-
-    testgen.testgen_component(
-        "confirm_dialog",
-        props={
-            "message": message,
-            "constraint": constraint,
-            "button_label": "Delete",
-            "button_color": "warn",
-            "result": result(),
-        },
-        on_change_handlers={
-            "ActionConfirmed": on_delete_confirmed,
-        },
-    )
-
-    if delete_confirmed():
-        try:
-            with st.spinner("Deleting monitors ..."):
-                monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
-                TestSuite.cascade_delete([monitor_suite.id])
-            safe_rerun()
-        except Exception:
-            LOG.exception("Failed to delete monitor suite")
-            set_result({
-                "success": False,
-                "message": "Something went wrong while deleting the monitors.",
-            })
-            safe_rerun(scope="fragment")
+    try:
+        monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
+        TestSuite.cascade_delete([monitor_suite.id])
+        st.cache_data.clear()
+    except Exception:
+        LOG.exception("Failed to delete monitor suite")
+        st.toast("Unable to delete monitors for the table group, try again.", icon=":material/error:")
 
 
-def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
+@with_database_session
+def build_schema_changes_data(table_group: TableGroupMinimal, payload: dict) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
     start_time = payload.get("start_time")
     end_time = payload.get("end_time")
-
-    @with_database_session
-    def show_dialog():
-        testgen.css_class("s-dialog")
-
-        data_structure_logs = get_data_structure_logs(
-            table_group.id, table_name, start_time, end_time,
-        )
-
-        testgen.testgen_component(
-            "schema_changes_list",
-            props={
-                "window_start": start_time,
-                "window_end": end_time,
-                "data_structure_logs": make_json_safe(data_structure_logs),
-            },
-        )
-
-    return st.dialog(title=f"Table: {table_name}")(show_dialog)()
+    data_structure_logs = get_data_structure_logs(table_group.id, table_name, start_time, end_time)
+    data = {
+        "dialog": {"open": True, "title": f"Table: {table_name}"},
+        "window_start": start_time,
+        "window_end": end_time,
+        "data_structure_logs": make_json_safe(data_structure_logs),
+    }
+    handlers = {
+        "on_CloseSchemaChangesDialog_change": lambda *_: st.session_state.pop(SCHEMA_CHANGES_DIALOG_KEY, None),
+    }
+    return data, handlers
 
 
 def _resolve_holiday_dates(test_suite: TestSuite) -> set[date] | None:
@@ -663,163 +710,161 @@ def _resolve_holiday_dates(test_suite: TestSuite) -> set[date] | None:
     return resolve_holiday_dates(test_suite.holiday_codes_list, idx)
 
 
-def open_table_trends(table_group: TableGroupMinimal, payload: dict):
+@with_database_session
+def build_table_trends_data(
+    table_group: TableGroupMinimal, payload: dict, dialog: dict | None = None,
+) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
-    st.session_state[DIALOG_AUTO_OPENED_KEY] = table_name
-    Router().set_query_params({"table_name": table_name})
-
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
     extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
-
-    @with_database_session
-    def show_dialog():
-        testgen.css_class("l-dialog")
-
-        extended_history = st.session_state.get(extended_history_key, False)
-
-        selected_data_point = get_selected_data_point()
-        data_structure_logs = None
-        if selected_data_point:
-            data_structure_logs = get_data_structure_logs(
-                table_group.id, table_name, *selected_data_point,
-            )
-
-        lookback_multiplier = 3 if extended_history else 1
-        events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
-        definitions = TestDefinition.select_where(
-            TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
-            TestDefinition.table_name == table_name,
-            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
-        )
-
-        predictions = {}
-        if len(definitions) > 0:
-            test_suite = TestSuite.get(table_group.monitor_test_suite_id)
-            monitor_schedule = JobSchedule.get(
-                JobSchedule.key == RUN_MONITORS_JOB_KEY,
-                JobSchedule.kwargs["test_suite_id"].astext == str(table_group.monitor_test_suite_id),
-            )
-            monitor_lookback = test_suite.monitor_lookback
-            predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
-
-            last_run_time_per_test_key: dict[str, datetime] = {
-                "volume_trend": max(e["time"] for e in events["volume_events"]),
-            }
-            for metric_group in events["metric_events"]:
-                metric_definition_id = metric_group["test_definition_id"]
-                last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
-
-            for definition in definitions:
-                test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
-                if definition.history_calculation == "PREDICT" and definition.prediction and (base_mean_predictions := definition.prediction.get("mean")):
-                    predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
-                    # Limit predictions to 1/3 of the lookback, with minimum 3 points
-                    predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
-
-                    mean_predictions: dict = {}
-                    lower_tolerance_predictions: dict = {}
-                    upper_tolerance_predictions: dict = {}
-                    for timestamp in predicted_times:
-                        mean_predictions[timestamp] = base_mean_predictions[timestamp]
-                        lower_tolerance_predictions[timestamp] = definition.prediction[f"lower_tolerance|{predict_sensitivity.value}"][timestamp]
-                        upper_tolerance_predictions[timestamp] = definition.prediction[f"upper_tolerance|{predict_sensitivity.value}"][timestamp]
-
-                    predictions[test_key] = {
-                        "method": "predict",
-                        "mean": mean_predictions,
-                        "lower_tolerance": lower_tolerance_predictions,
-                        "upper_tolerance": upper_tolerance_predictions,
-                    }
-                elif definition.history_calculation is None and (definition.lower_tolerance is not None or definition.upper_tolerance is not None):
-                    cron_sample = get_cron_sample(
-                        monitor_schedule.cron_expr,
-                        monitor_schedule.cron_tz,
-                        sample_count=ceil(min(max(3, monitor_lookback / 3), 10)),
-                        reference_time=last_run_time_per_test_key.get(test_key),
-                    )
-                    mean_predictions: dict = {}
-                    lower_tolerance_predictions: dict = {}
-                    upper_tolerance_predictions: dict = {}
-                    sample_next_runs = [timestamp * 1000 for timestamp in (cron_sample.get("samples") or [])]
-                    for timestamp in sample_next_runs:
-                        mean_predictions[timestamp] = None
-                        lower_tolerance_predictions[timestamp] = definition.lower_tolerance
-                        upper_tolerance_predictions[timestamp] = definition.upper_tolerance
-
-                    predictions[test_key] = {
-                        "method": "static",
-                        "mean": mean_predictions,
-                        "lower_tolerance": lower_tolerance_predictions,
-                        "upper_tolerance": upper_tolerance_predictions,
-                    }
-                elif (
-                    definition.test_type == "Freshness_Trend"
-                    and definition.history_calculation == "PREDICT"
-                    and (not definition.prediction or definition.prediction.get("schedule_stage"))
-                    and definition.upper_tolerance is not None
-                ):
-                    last_update_events = [
-                        e for e in events["freshness_events"]
-                        if e["changed"] and not e["is_training"] and not e["is_pending"]
-                    ]
-                    if last_update_events:
-                        last_detection_time = max(e["time"] for e in last_update_events)
-                        holiday_dates = _resolve_holiday_dates(test_suite)
-                        tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
-                        sched = get_schedule_params(definition.prediction)
-
-                        window_end = add_business_minutes(
-                            pd.Timestamp(last_detection_time),
-                            float(definition.upper_tolerance),
-                            test_suite.predict_exclude_weekends,
-                            holiday_dates, tz,
-                            excluded_days=sched.excluded_days,
-                        )
-                        window_start = None
-                        if lower_minutes := float(definition.lower_tolerance) if definition.lower_tolerance else None:
-                            window_start = add_business_minutes(
-                                pd.Timestamp(last_detection_time),
-                                lower_minutes,
-                                test_suite.predict_exclude_weekends,
-                                holiday_dates, tz,
-                                excluded_days=sched.excluded_days,
-                            )
-
-                        predictions["freshness_trend"] = {
-                            "method": "freshness_window",
-                            "window": {
-                                "start": int(window_start.timestamp() * 1000) if window_start else None,
-                                "end": int(window_end.timestamp() * 1000),
-                            },
-                        }
-
-        testgen.table_monitoring_trends(
-            "table_monitoring_trends",
-            data={
-                **make_json_safe(events),
-                "data_structure_logs": make_json_safe(data_structure_logs),
-                "predictions": predictions,
-                "extended_history": extended_history,
-            },
-            on_ShowDataStructureLogs_change=on_show_data_structure_logs,
-            on_ToggleExtendedHistory_change=on_toggle_extended_history,
-        )
 
     def on_show_data_structure_logs(payload):
         try:
             set_selected_data_point(
                 (float(payload.get("start_time")) / 1000, float(payload.get("end_time")) / 1000)
             )
-        except: pass  # noqa: S110
+        except Exception:  # noqa: S110
+            pass
 
     def on_toggle_extended_history(_payload):
         st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
 
-    def on_dismiss():
+    def on_close_trends(_payload=None):
+        st.session_state.pop(TABLE_TRENDS_DIALOG_KEY, None)
         st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
         Router().set_query_params({"table_name": None})
 
-    return st.dialog(title=f"Table: {table_name}", on_dismiss=on_dismiss)(show_dialog)()
+    extended_history = st.session_state.get(extended_history_key, False)
+
+    selected_data_point = get_selected_data_point()
+    data_structure_logs = None
+    if selected_data_point:
+        data_structure_logs = get_data_structure_logs(
+            table_group.id, table_name, *selected_data_point,
+        )
+
+    lookback_multiplier = 3 if extended_history else 1
+    events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
+    definitions = TestDefinition.select_where(
+        TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
+        TestDefinition.table_name == table_name,
+        TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
+    )
+
+    predictions = {}
+    if len(definitions) > 0:
+        test_suite = TestSuite.get(table_group.monitor_test_suite_id)
+        monitor_schedule = JobSchedule.get(
+            JobSchedule.key == RUN_MONITORS_JOB_KEY,
+            JobSchedule.kwargs["test_suite_id"].astext == str(table_group.monitor_test_suite_id),
+        )
+        monitor_lookback = test_suite.monitor_lookback
+        predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
+
+        last_run_time_per_test_key: dict[str, datetime] = {
+            "volume_trend": max(e["time"] for e in events["volume_events"]),
+        }
+        for metric_group in events["metric_events"]:
+            metric_definition_id = metric_group["test_definition_id"]
+            last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
+
+        for definition in definitions:
+            test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
+            if definition.history_calculation == "PREDICT" and definition.prediction and (base_mean_predictions := definition.prediction.get("mean")):
+                predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
+                # Limit predictions to 1/3 of the lookback, with minimum 3 points
+                predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
+
+                mean_predictions: dict = {}
+                lower_tolerance_predictions: dict = {}
+                upper_tolerance_predictions: dict = {}
+                for timestamp in predicted_times:
+                    mean_predictions[timestamp] = base_mean_predictions[timestamp]
+                    lower_tolerance_predictions[timestamp] = definition.prediction[f"lower_tolerance|{predict_sensitivity.value}"][timestamp]
+                    upper_tolerance_predictions[timestamp] = definition.prediction[f"upper_tolerance|{predict_sensitivity.value}"][timestamp]
+
+                predictions[test_key] = {
+                    "method": "predict",
+                    "mean": mean_predictions,
+                    "lower_tolerance": lower_tolerance_predictions,
+                    "upper_tolerance": upper_tolerance_predictions,
+                }
+            elif definition.history_calculation is None and (definition.lower_tolerance is not None or definition.upper_tolerance is not None):
+                cron_sample = get_cron_sample(
+                    monitor_schedule.cron_expr,
+                    monitor_schedule.cron_tz,
+                    sample_count=ceil(min(max(3, monitor_lookback / 3), 10)),
+                    reference_time=last_run_time_per_test_key.get(test_key),
+                )
+                mean_predictions: dict = {}
+                lower_tolerance_predictions: dict = {}
+                upper_tolerance_predictions: dict = {}
+                sample_next_runs = [timestamp * 1000 for timestamp in (cron_sample.get("samples") or [])]
+                for timestamp in sample_next_runs:
+                    mean_predictions[timestamp] = None
+                    lower_tolerance_predictions[timestamp] = definition.lower_tolerance
+                    upper_tolerance_predictions[timestamp] = definition.upper_tolerance
+
+                predictions[test_key] = {
+                    "method": "static",
+                    "mean": mean_predictions,
+                    "lower_tolerance": lower_tolerance_predictions,
+                    "upper_tolerance": upper_tolerance_predictions,
+                }
+            elif (
+                definition.test_type == "Freshness_Trend"
+                and definition.history_calculation == "PREDICT"
+                and (not definition.prediction or definition.prediction.get("schedule_stage"))
+                and definition.upper_tolerance is not None
+            ):
+                last_update_events = [
+                    e for e in events["freshness_events"]
+                    if e["changed"] and not e["is_training"] and not e["is_pending"]
+                ]
+                if last_update_events:
+                    last_detection_time = max(e["time"] for e in last_update_events)
+                    holiday_dates = _resolve_holiday_dates(test_suite)
+                    tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
+                    sched = get_schedule_params(definition.prediction)
+
+                    window_end = add_business_minutes(
+                        pd.Timestamp(last_detection_time),
+                        float(definition.upper_tolerance),
+                        test_suite.predict_exclude_weekends,
+                        holiday_dates, tz,
+                        excluded_days=sched.excluded_days,
+                    )
+                    window_start = None
+                    if lower_minutes := float(definition.lower_tolerance) if definition.lower_tolerance else None:
+                        window_start = add_business_minutes(
+                            pd.Timestamp(last_detection_time),
+                            lower_minutes,
+                            test_suite.predict_exclude_weekends,
+                            holiday_dates, tz,
+                            excluded_days=sched.excluded_days,
+                        )
+
+                    predictions["freshness_trend"] = {
+                        "method": "freshness_window",
+                        "window": {
+                            "start": int(window_start.timestamp() * 1000) if window_start else None,
+                            "end": int(window_end.timestamp() * 1000),
+                        },
+                    }
+
+    data = {
+        **make_json_safe(events),
+        "data_structure_logs": make_json_safe(data_structure_logs),
+        "predictions": predictions,
+        "extended_history": extended_history,
+        "dialog": dialog,
+    }
+    handlers = {
+        "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
+        "on_ToggleExtendedHistory_change": on_toggle_extended_history,
+        "on_CloseTrendsDialog_change": on_close_trends,
+    }
+    return data, handlers
 
 
 @st.cache_data(show_spinner=False)
@@ -967,93 +1012,94 @@ def get_data_structure_logs(table_group_id: str, table_name: str, start_time: st
     return [ dict(row) for row in results ]
 
 
-def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
+@with_database_session
+def build_edit_table_monitors_data(
+    table_group: TableGroupMinimal, payload: dict, dialog: dict | None = None,
+) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
+    definitions = TestDefinition.select_where(
+        TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
+        TestDefinition.table_name == table_name,
+        TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
+    )
 
-    @with_database_session
-    def show_dialog():
-        definitions = TestDefinition.select_where(
-            TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
-            TestDefinition.table_name == table_name,
-            TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
-        )
+    def on_save_test_definition(payload: dict) -> None:
+        set_save(True)
+        set_close(payload.get("close", False))
+        set_updated_definitions(payload.get("updated_definitions", []))
+        set_new_metrics(payload.get("new_metrics", []))
+        set_deleted_metric_ids(payload.get("deleted_metric_ids", []))
 
-        def on_save_test_definition(payload: dict) -> None:
-            set_save(True)
-            set_close(payload.get("close", False))
-            set_updated_definitions(payload.get("updated_definitions", []))
-            set_new_metrics(payload.get("new_metrics", []))
-            set_deleted_metric_ids(payload.get("deleted_metric_ids", []))
+    should_save, set_save = temp_value(f"edit_table_monitors:save:{table_name}", default=False)
+    should_close, set_close = temp_value(f"edit_table_monitors:close:{table_name}", default=False)
+    get_updated_definitions, set_updated_definitions = temp_value(f"edit_table_monitors:updated_definitions:{table_name}", default=[])
+    get_new_metrics, set_new_metrics = temp_value(f"edit_table_monitors:new_metrics:{table_name}", default=[])
+    get_deleted_metric_ids, set_deleted_metric_ids = temp_value(f"edit_table_monitors:deleted_metric_ids:{table_name}", default=[])
+    get_result, set_result = temp_value(f"edit_table_monitors:result:{table_name}", default=None)
 
-        should_save, set_save = temp_value(f"edit_table_monitors:save:{table_name}", default=False)
-        should_close, set_close = temp_value(f"edit_table_monitors:close:{table_name}", default=False)
-        get_updated_definitions, set_updated_definitions = temp_value(f"edit_table_monitors:updated_definitions:{table_name}", default=[])
-        get_new_metrics, set_new_metrics = temp_value(f"edit_table_monitors:new_metrics:{table_name}", default=[])
-        get_deleted_metric_ids, set_deleted_metric_ids = temp_value(f"edit_table_monitors:deleted_metric_ids:{table_name}", default=[])
-        get_result, set_result = temp_value(f"edit_table_monitors:result:{table_name}", default=None)
+    if should_save():
+        valid_columns = {col.name for col in TestDefinition.__table__.columns}
 
-        if should_save():
-            valid_columns = {col.name for col in TestDefinition.__table__.columns}
+        for updated_def in get_updated_definitions():
+            current_def: TestDefinitionSummary = TestDefinition.get(updated_def.get("id"))
+            if current_def:
+                merged = {key: getattr(current_def, key, None) for key in valid_columns}
+                merged.update({key: value for key, value in updated_def.items() if key in valid_columns})
+                merged["lock_refresh"] = True
 
-            for updated_def in get_updated_definitions():
-                current_def: TestDefinitionSummary = TestDefinition.get(updated_def.get("id"))
-                if current_def:
-                    merged = {key: getattr(current_def, key, None) for key in valid_columns}
-                    merged.update({key: value for key, value in updated_def.items() if key in valid_columns})
-                    merged["lock_refresh"] = True
+                # For Freshness static mode: set threshold_value and lower_tolerance
+                # so the SQL template's staleness and BETWEEN checks work correctly.
+                # Also clear prediction JSON to avoid stale schedule-based exclusions.
+                if merged.get("test_type") == "Freshness_Trend" and merged.get("history_calculation") != "PREDICT":
+                    merged["threshold_value"] = merged.get("upper_tolerance")
+                    merged["lower_tolerance"] = 0
+                    merged["prediction"] = None
 
-                    # For Freshness static mode: set threshold_value and lower_tolerance
-                    # so the SQL template's staleness and BETWEEN checks work correctly.
-                    # Also clear prediction JSON to avoid stale schedule-based exclusions.
-                    if merged.get("test_type") == "Freshness_Trend" and merged.get("history_calculation") != "PREDICT":
-                        merged["threshold_value"] = merged.get("upper_tolerance")
-                        merged["lower_tolerance"] = 0
-                        merged["prediction"] = None
+                merged["last_manual_update"] = datetime.now(UTC)
+                TestDefinition(**merged).save()
 
-                    merged["last_manual_update"] = datetime.now(UTC)
-                    TestDefinition(**merged).save()
+        for new_metric in get_new_metrics():
+            new_def = TestDefinition(
+                table_groups_id=table_group.id,
+                test_type="Metric_Trend",
+                test_suite_id=table_group.monitor_test_suite_id,
+                schema_name=table_group.table_group_schema,
+                table_name=table_name,
+                test_active=True,
+                lock_refresh=True,
+            )
+            for key, value in new_metric.items():
+                if key in valid_columns:
+                    setattr(new_def, key, value)
+            new_def.last_manual_update = datetime.now(UTC)
+            new_def.save()
 
-            for new_metric in get_new_metrics():
-                new_def = TestDefinition(
-                    table_groups_id=table_group.id,
-                    test_type="Metric_Trend",
-                    test_suite_id=table_group.monitor_test_suite_id,
-                    schema_name=table_group.table_group_schema,
-                    table_name=table_name,
-                    test_active=True,
-                    lock_refresh=True,
-                )
-                for key, value in new_metric.items():
-                    if key in valid_columns:
-                        setattr(new_def, key, value)
-                new_def.last_manual_update = datetime.now(UTC)
-                new_def.save()
+        deleted_ids = get_deleted_metric_ids()
+        if deleted_ids:
+            TestDefinition.delete_where(
+                TestDefinition.id.in_(deleted_ids),
+                TestDefinition.test_type == "Metric_Trend",
+            )
 
-            deleted_ids = get_deleted_metric_ids()
-            if deleted_ids:
-                TestDefinition.delete_where(
-                    TestDefinition.id.in_(deleted_ids),
-                    TestDefinition.test_type == "Metric_Trend",
-                )
+        if should_close():
+            st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None)
+            st.rerun()
 
-            if should_close():
-                safe_rerun()
+        set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
+        st.rerun()
 
-            set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
-            safe_rerun(scope="fragment")
+    metric_test_types = get_test_type_summaries(test_type="Metric_Trend")
+    metric_test_type = metric_test_types[0] if metric_test_types else None
 
-        metric_test_types = get_test_type_summaries(test_type="Metric_Trend")
-        metric_test_type = metric_test_types[0] if metric_test_types else None
-
-        testgen.edit_table_monitors(
-            key="edit_table_monitors",
-            data={
-                "table_name": table_name,
-                "definitions": [td.to_dict(json_safe=True) for td in definitions],
-                "metric_test_type": metric_test_type.to_dict(json_safe=True) if metric_test_type else {},
-                "result": get_result(),
-            },
-            on_SaveTestDefinition_change=on_save_test_definition,
-        )
-
-    return st.dialog(title=f"Table Monitors: {table_name}")(show_dialog)()
+    data = {
+        "table_name": table_name,
+        "definitions": [td.to_dict(json_safe=True) for td in definitions],
+        "metric_test_type": metric_test_type.to_dict(json_safe=True) if metric_test_type else {},
+        "result": get_result(),
+        "dialog": dialog,
+    }
+    handlers = {
+        "on_SaveTestDefinition_change": on_save_test_definition,
+        "on_CloseEditMonitorsDialog_change": lambda *_: st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None),
+    }
+    return data, handlers
