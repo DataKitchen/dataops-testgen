@@ -309,8 +309,6 @@ class HygieneIssuesPage(Page):
                     int_data_width=700,
                 )
 
-        cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
-
         disposition_actions = [
             { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
             { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
@@ -334,8 +332,6 @@ class HygieneIssuesPage(Page):
                     fm.reset_post_updates(
                         do_disposition_update(selected, d_action["status"]),
                         as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=cached_functions,
                     )
 
         # Needs to be after all data loading/updating

@@ -306,8 +306,6 @@ class TestResultsPage(Page):
                     )
 
         # Need to render toolbar buttons after grid, so selection status is maintained
-        affected_cached_functions = [get_test_disposition, test_result_queries.get_test_results]
-
         # === Action buttons (left side, near the grid) ===
 
         if actions_column.button(
@@ -417,8 +415,6 @@ class TestResultsPage(Page):
                     fm.reset_post_updates(
                         do_disposition_update(selected, action["status"]),
                         as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=affected_cached_functions,
                     )
 
         if session.auth.user_has_permission("disposition"):
@@ -437,8 +433,6 @@ class TestResultsPage(Page):
                     fm.reset_post_updates(
                         None,
                         as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=affected_cached_functions,
                     )
 
         # Needs to be after all data loading/updating

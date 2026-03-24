@@ -7,6 +7,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.rerun_service import safe_rerun
 
 
 @st.dialog(title="Generate Tests")
@@ -76,8 +77,7 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
         status_container.success(f"Test generation completed for test suite **{test_suite_name}**.")
         time.sleep(1)
-        st.cache_data.clear()
-        st.rerun()
+        safe_rerun()
 
 
 def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:

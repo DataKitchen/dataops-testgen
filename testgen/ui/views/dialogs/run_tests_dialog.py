@@ -6,6 +6,7 @@ from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.utils import to_dataframe
 
@@ -87,5 +88,4 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
                 )
             else:
                 time.sleep(2)
-                st.cache_data.clear()
-                st.rerun()
+                safe_rerun()

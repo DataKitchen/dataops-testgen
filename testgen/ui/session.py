@@ -11,6 +11,7 @@ from collections.abc import Callable
 import streamlit as st
 from streamlit.runtime.state import SessionStateProxy
 
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.utils.singleton import Singleton
 
 T = TypeVar("T")
@@ -59,7 +60,7 @@ class TestgenSession(Singleton):
     def set_sidebar_project(self, project_code: str) -> None:
         if project_code != self.sidebar_project:
             self.sidebar_project = project_code
-            st.rerun()
+            safe_rerun()
 
 
 def temp_value(session_key: str, *, default: T | None = None) -> tuple[TempValueGetter[T | None], TempValueSetter[T]]:

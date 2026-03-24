@@ -30,6 +30,7 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
@@ -233,8 +234,6 @@ class TestDefinitionsPage(Page):
                         fm.reset_post_updates(
                             update_test_definition(selected, action["attribute"], action["value"], action["message"]),
                             as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[],
                         )
 
         if actions_column.button(
@@ -395,7 +394,7 @@ def delete_test_dialog(test_definitions: list[dict]):
         TestDefinition.delete_where(TestDefinition.id.in_([ item["id"] for item in test_definitions ]))
         st.success("Test definitions have been deleted.")
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
 
 def show_test_form_by_id(test_definition_id):
@@ -917,8 +916,7 @@ def show_test_form(
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
-            get_test_suite_columns.clear()
-            st.rerun()
+            safe_rerun()
 
 
 @st.dialog(title="Add Test")
@@ -1029,16 +1027,14 @@ def copy_move_test_dialog(
         TestDefinition.move(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been moved."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
     elif copy:
         TestDefinition.copy(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been copied."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
 def validate_form(test_scope, test_definition, column_name_label):
     if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
@@ -1097,7 +1093,7 @@ def confirm_unlocking_test_definition(test_definitions: list[dict]):
     if unlock_confirmed():
         update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
     _, button_column = st.columns([.85, .15])
     with button_column:

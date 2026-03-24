@@ -11,6 +11,7 @@ from testgen.common.models import with_database_session
 from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.queries.profiling_queries import TAG_FIELDS
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import temp_value
 
 LOG = logging.getLogger("testgen")
@@ -387,7 +388,7 @@ def import_metadata_dialog(table_group_id: str) -> None:
 
     if result and result["success"]:
         time.sleep(2)
-        st.rerun()
+        safe_rerun()
 
 
 def _build_preview_props(preview: dict) -> dict:

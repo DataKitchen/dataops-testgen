@@ -25,6 +25,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -562,7 +563,7 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                     monitors.append("Freshness_Trend")
                 run_monitor_generation(monitor_suite.id, monitors)
 
-            st.rerun()
+            safe_rerun()
 
         testgen.edit_monitor_settings(
             key="edit_monitor_settings",
@@ -617,15 +618,14 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             with st.spinner("Deleting monitors ..."):
                 monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
                 TestSuite.cascade_delete([monitor_suite.id])
-            st.cache_data.clear()
-            st.rerun()
+            safe_rerun()
         except Exception:
             LOG.exception("Failed to delete monitor suite")
             set_result({
                 "success": False,
                 "message": "Unable to delete monitors for the table group, try again.",
             })
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
 
 def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
@@ -1033,10 +1033,10 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                 )
 
             if should_close():
-                st.rerun()
+                safe_rerun()
 
             set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         metric_test_types = TestType.select_summary_where(TestType.test_type == "Metric_Trend")
         metric_test_type = metric_test_types[0] if metric_test_types else None

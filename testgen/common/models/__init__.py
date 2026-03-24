@@ -1,3 +1,4 @@
+import contextlib
 import functools
 import platform
 import threading
@@ -32,26 +33,41 @@ _current_session_wrapper = threading.local()
 _current_session_wrapper.value = None
 
 
-def with_database_session(func):
-    """
-    Set up a thread-global SQLAlchemy session to be accessed
-    calling `get_current_session()` from any place.
+@contextlib.contextmanager
+def database_session():
+    """Provide a thread-local SQLAlchemy session.
 
-    NOTE: Call once on the main entry point.
+    Nested: yields existing session, no lifecycle management.
+    Owning: commits on clean exit, rolls back on Exception.
+
+    Uses ``except Exception`` (not ``BaseException``) so that Streamlit's
+    ``RerunException`` (a ``BaseException`` subclass) bypasses both rollback
+    and auto-commit.  If ``safe_rerun()`` was called, it already committed.
     """
+    existing = get_current_session()
+    if existing:
+        yield existing
+        return
+    with Session() as session:
+        _current_session_wrapper.value = session
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+        else:
+            session.commit()
+        finally:
+            _current_session_wrapper.value = None
+
+
+def with_database_session(func):
+    """Decorator form of :func:`database_session`."""
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        try:
-            session = get_current_session()
-            if session:
-                return func(*args, **kwargs)
-
-            with Session() as session:
-                _current_session_wrapper.value = session
-                return func(*args, **kwargs)
-        finally:
-            _current_session_wrapper.value = None
+        with database_session():
+            return func(*args, **kwargs)
     return wrapper
 
 

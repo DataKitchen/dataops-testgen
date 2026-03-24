@@ -420,7 +420,6 @@ class TableGroup(Entity):
         params = {"table_group_ids": tuple(ids)}
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod
@@ -440,9 +439,7 @@ class TableGroup(Entity):
             query = update(TableGroup).where(TableGroup.id == self.id).values(**values)
             db_session = get_current_session()
             db_session.execute(query)
-            db_session.commit()
         else:
             super().save()
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
-        TableGroup.clear_cache()
