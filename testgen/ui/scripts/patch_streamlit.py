@@ -21,9 +21,11 @@ STATIC_FILES = [
     "css/shared.css",
     "css/roboto-font-faces.css",
     "css/material-symbols-rounded.css",
+    "css/highlight-default-theme.min.css",
     "js/scripts.js",
     "js/sidebar.js",
     "js/van.min.js",
+    "js/highlight.min.js",
 ]
 
 

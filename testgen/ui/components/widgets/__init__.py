@@ -36,26 +36,98 @@ table_group_wizard = component_v2_wrapped(components_v2.component(
     isolate_styles=False,
 ))
 
-edit_monitor_settings = component_v2_wrapped(components_v2.component(
-    name="dataops-testgen.edit_monitor_settings",
-    js="pages/edit_monitor_settings.js",
-    isolate_styles=False,
-))
-
-table_monitoring_trends = component_v2_wrapped(components_v2.component(
-    name="dataops-testgen.table_monitoring_trends",
-    js="pages/table_monitoring_trends.js",
-    isolate_styles=False,
-))
-
-edit_table_monitors = component_v2_wrapped(components_v2.component(
-    name="dataops-testgen.edit_table_monitors",
-    js="pages/edit_table_monitors.js",
-    isolate_styles=False,
-))
-
 project_settings = component_v2_wrapped(components_v2.component(
     name="dataops-testgen.project_settings",
     js="index.js",
+    isolate_styles=False,
+))
+
+quality_dashboard_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.quality_dashboard",
+    js="pages/quality_dashboard.js",
+    isolate_styles=False,
+))
+
+connections_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.connections",
+    js="pages/connections.js",
+    isolate_styles=False,
+))
+
+project_dashboard_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.project_dashboard",
+    js="pages/project_dashboard.js",
+    isolate_styles=False,
+))
+
+test_suites_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.test_suites",
+    js="pages/test_suites.js",
+    isolate_styles=False,
+))
+
+test_runs_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.test_runs",
+    js="pages/test_runs.js",
+    isolate_styles=False,
+))
+
+profiling_runs_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.profiling_runs",
+    js="pages/profiling_runs.js",
+    isolate_styles=False,
+))
+
+table_group_list_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.table_group_list",
+    js="pages/table_group_list.js",
+    isolate_styles=False,
+))
+
+data_catalog_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.data_catalog",
+    js="pages/data_catalog.js",
+    isolate_styles=False,
+))
+
+monitors_dashboard_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.monitors_dashboard",
+    js="pages/monitors_dashboard.js",
+    isolate_styles=False,
+))
+
+score_details_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.score_details",
+    js="pages/score_details.js",
+    isolate_styles=False,
+))
+
+score_explorer_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.score_explorer",
+    js="pages/score_explorer.js",
+    isolate_styles=False,
+))
+
+test_definitions_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.test_definitions",
+    js="pages/test_definitions.js",
+    isolate_styles=False,
+))
+
+profiling_results_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.profiling_results",
+    js="pages/profiling_results.js",
+    isolate_styles=False,
+))
+
+test_results_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.test_results",
+    js="pages/test_results.js",
+    isolate_styles=False,
+))
+
+hygiene_issues_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.hygiene_issues",
+    js="pages/hygiene_issues.js",
     isolate_styles=False,
 ))

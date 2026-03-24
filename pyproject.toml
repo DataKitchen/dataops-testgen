@@ -313,3 +313,63 @@ asset_dir = "ui/components/frontend/js"
 [[tool.streamlit.component.components]]
 name = "project_settings"
 asset_dir = "ui/components/frontend/standalone/project_settings"
+
+[[tool.streamlit.component.components]]
+name = "quality_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "connections"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "project_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_suites"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_runs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "profiling_runs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "table_group_list"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "data_catalog"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "monitors_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "score_details"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "score_explorer"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_definitions"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "profiling_results"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "hygiene_issues"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_results"
+asset_dir = "ui/components/frontend/js"
