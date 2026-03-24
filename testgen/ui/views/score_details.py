@@ -29,11 +29,11 @@ from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, downlo
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
+from testgen.ui.queries.profiling_queries import get_column_by_name
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
-from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
-from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
+from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, make_json_safe
 
 LOG = logging.getLogger("testgen")
 PAGE_PATH = "quality-dashboard:score-details"
@@ -135,8 +135,16 @@ class ScoreDetailsPage(Page):
             ns_obj.clear_state()
             st.session_state.pop(SD_EDIT_NOTIFICATIONS_DIALOG_KEY, None)
 
+        @with_database_session
         def on_column_profiling_clicked(payload: dict) -> None:
-            st.session_state[SD_COLUMN_PROFILING_DIALOG_KEY] = payload
+            column = get_column_by_name(payload["column_name"], payload["table_name"], payload["table_group_id"])
+            if column:
+                st.session_state[SD_COLUMN_PROFILING_DIALOG_KEY] = make_json_safe(column)
+
+        def on_profiling_results_dialog_closed(*_) -> None:
+            st.session_state.pop(SD_COLUMN_PROFILING_DIALOG_KEY, None)
+
+        profiling_column = st.session_state.get(SD_COLUMN_PROFILING_DIALOG_KEY)
 
         testgen.score_details_widget(
             key="score_details",
@@ -151,6 +159,7 @@ class ScoreDetailsPage(Page):
                     "can_edit": user_can_edit,
                 },
                 "notifications_dialog": notifications_data,
+                "profiling_column": profiling_column,
             },
             on_DeleteScoreConfirmed_change=delete_score_card,
             on_EditNotifications_change=on_edit_notifications,
@@ -159,6 +168,7 @@ class ScoreDetailsPage(Page):
             on_IssueReportsExported_change=export_issue_reports,
             on_ColumnProflingClicked_change=on_column_profiling_clicked,
             on_RecalculateHistory_change=recalculate_score_history,
+            on_ProfilingResultsDialogClosed_change=on_profiling_results_dialog_closed,
             # NotificationSettings events
             on_AddNotification_change=ns_obj.on_add_item,
             on_UpdateNotification_change=ns_obj.on_update_item,
@@ -167,13 +177,6 @@ class ScoreDetailsPage(Page):
             on_ResumeNotification_change=ns_obj.on_resume_item,
             on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
         )
-
-        if column_profiling_payload := st.session_state.pop(SD_COLUMN_PROFILING_DIALOG_KEY, None):
-            profiling_results_dialog(
-                column_profiling_payload["column_name"],
-                column_profiling_payload["table_name"],
-                column_profiling_payload["table_group_id"],
-            )
 
 
 def select_category(category: str) -> None:

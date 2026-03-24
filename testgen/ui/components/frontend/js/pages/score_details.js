@@ -37,6 +37,7 @@ import { IssuesTable } from '/app/static/js/components/score_issues.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
+import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 
 const { b, div, i } = van.tags;
 
@@ -154,6 +155,10 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 result: result,
             }),
         ),
+        ProfilingResultsDialog({
+            profilingColumn: props.profiling_column,
+            onClose: () => emitEvent('ProfilingResultsDialogClosed', {}),
+        }),
     );
 };
 
