@@ -18,6 +18,8 @@ import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span } = van.tags;
 const defaultPosition = 'top';
+const STREAMLIT_DIALOG_ZINDEX = 1000060;
+const STREAMLIT_DIALOG_CLASS = 'stDialog';
 
 const Tooltip = (/** @type Properties */ props) => {
     loadStylesheet('tooltip', stylesheet);
@@ -57,11 +59,12 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
 
     const showTooltip = van.state(false);
     const positionStyle = van.state('');
+    const zIndex = van.state(9999);
 
     const tooltipEl = span(
         {
             class: () => `tg-tooltip portal ${getValue(tooltipProps.position) || defaultPosition} ${showTooltip.val ? '' : 'hidden'}`,
-            style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; max-width: ${getValue(tooltipProps.width) || '400'}px; ${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
+            style: () => `opacity: ${showTooltip.val ? 1 : 0}; pointer-events: none; z-index: ${zIndex.val ?? 9999}; max-width: ${getValue(tooltipProps.width) || '400'}px; ${positionStyle.val}${getValue(tooltipProps.style) ?? ''}`,
         },
         tooltipProps.text,
         div({ class: 'tg-tooltip--triangle' }),
@@ -71,6 +74,11 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
 
     requestAnimationFrame(() => {
         if (!component.isConnected) return;
+
+        if (hasStreamlitDialogAncestor(component)) {
+            zIndex.val = STREAMLIT_DIALOG_ZINDEX + 1;
+        }
+
         const observer = new MutationObserver(() => {
             if (!component.isConnected) {
                 tooltipEl.remove();
@@ -91,6 +99,15 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
     return component;
 };
 
+function hasStreamlitDialogAncestor(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+        if (node.classList.contains(STREAMLIT_DIALOG_CLASS)) return true;
+        node = node.parentElement;
+    }
+    return false;
+}
+
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-tooltip {
@@ -110,7 +127,6 @@ stylesheet.replace(`
 
 .tg-tooltip.portal {
     position: fixed;
-    z-index: 9999;
     top: unset;
     bottom: unset;
     left: unset;
