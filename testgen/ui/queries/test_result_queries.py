@@ -3,7 +3,52 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
-from testgen.ui.services.database_service import fetch_df_from_db
+from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
+
+DEFAULT_ORDER_BY = "ORDER BY LOWER(r.table_name), LOWER(r.column_names), tt.test_name_short"
+
+
+def _build_where_clause(
+    test_statuses: list[str] | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> str:
+    clauses = []
+    if test_statuses:
+        clauses.append("AND r.result_status IN :test_statuses")
+    if test_type_id:
+        clauses.append("AND r.test_type = :test_type_id")
+    if table_name:
+        clauses.append("AND r.table_name = :table_name")
+    if column_name:
+        clauses.append("AND r.column_names ILIKE :column_name")
+    if action == "No Action":
+        clauses.append("AND r.disposition IS NULL")
+    elif action:
+        clauses.append("AND r.disposition = :disposition")
+    return "\n                ".join(clauses)
+
+
+def _build_params(
+    run_id: str,
+    test_statuses: list[str] | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> dict:
+    return {
+        "run_id": run_id,
+        "test_statuses": tuple(test_statuses or []),
+        "test_type_id": test_type_id,
+        "table_name": table_name,
+        "column_name": column_name,
+        "disposition": {
+            "Muted": "Inactive",
+        }.get(action, action),
+    }
 
 
 @st.cache_data(show_spinner="Loading data ...")
@@ -16,18 +61,27 @@ def get_test_results(
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
     flagged: bool | None = None,
+    page: int = 0,
+    page_size: int = 0,
 ) -> pd.DataFrame:
+    where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    order_clause = (
+        f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}"
+        if sorting_columns
+        else DEFAULT_ORDER_BY
+    )
+    pagination_clause = ""
+    if page_size > 0:
+        offset = page * page_size
+        pagination_clause = f"OFFSET {offset} LIMIT {page_size}"
+
     query = f"""
     WITH run_results
         AS (SELECT *
                 FROM test_results r
             WHERE
                 r.test_run_id = :run_id
-                {"AND r.result_status IN :test_statuses" if test_statuses else ""}
-                {"AND r.test_type = :test_type_id" if test_type_id else ""}
-                {"AND r.table_name = :table_name" if table_name else ""}
-                {"AND r.column_names ILIKE :column_name" if column_name else ""}
-                {"AND r.disposition IS NULL" if action == "No Action" else "AND r.disposition = :disposition" if action else ""}
+                {where_clause}
             )
     SELECT r.table_name,
             p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
@@ -101,24 +155,97 @@ def get_test_results(
     LEFT JOIN test_definitions td
         ON (r.test_definition_id = td.id)
     {"WHERE td.flagged = :flagged" if flagged is not None else ""}
-    {f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}" if sorting_columns else ""};
+    {order_clause}
+    {pagination_clause};
     """
-    params = {
-        "run_id": run_id,
-        "test_statuses": tuple(test_statuses or []),
-        "test_type_id": test_type_id,
-        "table_name": table_name,
-        "column_name": column_name,
-        "disposition": {
-            "Muted": "Inactive",
-        }.get(action, action),
-        "flagged": flagged,
-    }
+    params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    if flagged is not None:
+        params["flagged"] = flagged
 
     df = fetch_df_from_db(query, params)
     df["test_date"] = pd.to_datetime(df["test_date"])
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
     return df
+
+
+@st.cache_data(show_spinner=False)
+def get_test_results_count(
+    run_id: str,
+    test_statuses: list[str] | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> int:
+    where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    query = f"""
+    SELECT COUNT(*) as cnt
+    FROM test_results r
+    WHERE r.test_run_id = :run_id
+        {where_clause};
+    """
+    params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    result = fetch_one_from_db(query, params)
+    return int(result["cnt"]) if result else 0
+
+
+@st.cache_data(show_spinner=False)
+def get_test_result_ids(
+    run_id: str,
+    test_statuses: list[str] | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> list[str]:
+    where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    query = f"""
+    SELECT r.id::VARCHAR as test_result_id
+    FROM test_results r
+    WHERE
+        r.test_run_id = :run_id
+        {where_clause};
+    """
+    params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    df = fetch_df_from_db(query, params)
+    return df["test_result_id"].tolist()
+
+
+@st.cache_data(show_spinner=False)
+def get_filter_options(run_id: str) -> dict:
+    query = """
+    SELECT DISTINCT r.table_name
+    FROM test_results r
+    WHERE r.test_run_id = :run_id
+    ORDER BY r.table_name;
+    """
+    df_tables = fetch_df_from_db(query, {"run_id": run_id})
+
+    query = """
+    SELECT DISTINCT r.column_names
+    FROM test_results r
+    WHERE r.test_run_id = :run_id AND r.column_names IS NOT NULL AND r.column_names != ''
+    ORDER BY r.column_names;
+    """
+    df_columns = fetch_df_from_db(query, {"run_id": run_id})
+
+    query = """
+    SELECT DISTINCT r.test_type, tt.test_name_short
+    FROM test_results r
+    INNER JOIN test_types tt ON (r.test_type = tt.test_type)
+    WHERE r.test_run_id = :run_id
+    ORDER BY tt.test_name_short;
+    """
+    df_test_types = fetch_df_from_db(query, {"run_id": run_id})
+
+    return {
+        "table_names": df_tables["table_name"].tolist(),
+        "column_names": df_columns["column_names"].tolist(),
+        "test_types": [
+            {"test_type": row["test_type"], "test_name_short": row["test_name_short"]}
+            for _, row in df_test_types.iterrows()
+        ],
+    }
 
 
 @st.cache_data(show_spinner=False)

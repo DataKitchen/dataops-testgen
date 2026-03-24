@@ -26,6 +26,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
     if profile_ids:
         profile_query = """
         SELECT
+            results.project_code AS project_code,
             results.id::VARCHAR,
             'hygiene' AS issue_type,
             types.issue_likelihood,
@@ -79,6 +80,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
     if test_ids:
         test_query = """
         SELECT
+            suites.project_code AS project_code,
             results.id::VARCHAR AS test_result_id,
             'test' AS issue_type,
             results.result_status,
