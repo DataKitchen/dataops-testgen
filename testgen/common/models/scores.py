@@ -186,14 +186,12 @@ class ScoreDefinition(Base):
         db_session = get_current_session()
         db_session.add(self)
         db_session.flush([self])
-        db_session.commit()
         db_session.refresh(self, ["id"])
 
     def delete(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
         db_session.delete(self)
-        db_session.commit()
 
     def clear_results(self) -> None:
         db_session = get_current_session()

@@ -11,6 +11,7 @@ from st_aggrid import AgGrid, ColumnsAutoSizeMode, DataReturnMode, GridOptionsBu
 
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 
 """
 Shared rendering of UI elements
@@ -24,7 +25,7 @@ def render_refresh_button(button_container):
     with button_container:
         do_refresh = st.button(":material/refresh:", help="Refresh page data", use_container_width=False)
         if do_refresh:
-            reset_post_updates("Refreshing page", True, True)
+            reset_post_updates("Refreshing page", as_toast=True)
 
 
 def show_prompt(str_prompt=None):
@@ -61,7 +62,7 @@ def ut_prettify_header(str_header, expand=False):
     return str_new
 
 
-def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_cached_functions=None, style="success"):
+def reset_post_updates(str_message=None, as_toast=False, style="success"):
     if str_message:
         if as_toast:
             st.toast(str_message)
@@ -71,13 +72,7 @@ def reset_post_updates(str_message=None, as_toast=False, clear_cache=True, lst_c
             st.success(str_message)
         sleep(1.5)
 
-    if clear_cache:
-        if lst_cached_functions:
-            for fcn in lst_cached_functions:
-                fcn.clear()
-        else:
-            st.cache_data.clear()
-    st.rerun()
+    safe_rerun()
 
 
 def render_html_list(dct_row, lst_columns, str_section_header=None, int_data_width=300, lst_labels=None):

@@ -14,6 +14,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import generate_tests_dialog
@@ -206,7 +207,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
                 )
                 st.success(success_message)
                 time.sleep(1)
-                st.rerun()
+                safe_rerun()
 
 
 @st.dialog(title="Delete Test Suite")
@@ -245,7 +246,7 @@ def delete_test_suite_dialog(test_suite_id: str) -> None:
                 success_message = f"Test Suite {test_suite_name} has been deleted. "
                 st.success(success_message)
                 time.sleep(1)
-                st.rerun()
+                safe_rerun()
 
 
 @st.dialog(title="Export to Observability")

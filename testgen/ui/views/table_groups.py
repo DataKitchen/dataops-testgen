@@ -19,6 +19,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import table_group_queries
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
@@ -165,7 +166,7 @@ class TableGroupsPage(Page):
 
         get_close_dialog, set_close_dialog = temp_value("table_groups:close:new", default=False)
         if (get_close_dialog()):
-            st.rerun()
+            safe_rerun()
 
         should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
         should_verify_access, mark_for_access_preview = temp_value("table_groups:preview_access:new", default=False)
@@ -418,7 +419,7 @@ class TableGroupsPage(Page):
             if not TableGroup.has_running_process([table_group_id]):
                 TableGroup.cascade_delete([table_group_id])
                 message = f"Table Group {table_group.table_groups_name} has been deleted. "
-                st.rerun()
+                safe_rerun()
             else:
                 message = "This Table Group is in use by a running process and cannot be deleted."
             result = {"success": success, "message": message}

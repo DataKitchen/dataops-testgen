@@ -34,6 +34,7 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_issue_reports,
     get_score_category_values,
 )
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
 
@@ -261,7 +262,7 @@ def column_selector_dialog(project_code: str, score_definition_dict: dict, _) ->
 
     def dialog_content() -> None:
         if not is_column_selector_opened():
-            st.rerun()
+            safe_rerun()
 
         selected_filters = set()
         if score_definition_dict.get("filter_by_columns"):

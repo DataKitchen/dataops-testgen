@@ -313,8 +313,6 @@ class TestDefinition(Entity):
 
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def move(
@@ -349,8 +347,6 @@ class TestDefinition(Entity):
 
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def copy(
@@ -391,8 +387,6 @@ class TestDefinition(Entity):
         )
         db_session = get_current_session()
         db_session.execute(query)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def clear_cache(cls) -> bool:
@@ -409,11 +403,8 @@ class TestDefinition(Entity):
             query = update(TestDefinition).where(TestDefinition.id == self.id).values(**values)
             db_session = get_current_session()
             db_session.execute(query)
-            db_session.commit()
         else:
             super().save()
-
-        TestDefinition.clear_cache()
 
 
 class TestDefinitionNote(Base):
@@ -434,7 +425,6 @@ class TestDefinitionNote(Base):
         db_session.execute(
             insert(cls).values(test_definition_id=test_definition_id, detail=detail, created_by=username)
         )
-        db_session.commit()
 
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
@@ -442,13 +432,11 @@ class TestDefinitionNote(Base):
         db_session.execute(
             update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now())
         )
-        db_session.commit()
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:
         db_session = get_current_session()
         db_session.execute(delete(cls).where(cls.id == note_id))
-        db_session.commit()
 
     @classmethod
     def get_notes_count_by_ids(cls, test_definition_ids: list[str]) -> dict[str, int]:
