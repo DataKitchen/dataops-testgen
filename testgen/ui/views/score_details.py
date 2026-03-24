@@ -30,13 +30,16 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
 from testgen.ui.queries.scoring_queries import get_all_score_cards, get_score_card_issue_reports
-from testgen.ui.session import session, temp_value
+from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues
 
 LOG = logging.getLogger("testgen")
 PAGE_PATH = "quality-dashboard:score-details"
+
+SD_EDIT_NOTIFICATIONS_DIALOG_KEY = "sd:edit_notifications_open"
+SD_COLUMN_PROFILING_DIALOG_KEY = "sd:column_profiling_payload"
 
 
 class ScoreDetailsPage(Page):
@@ -75,7 +78,7 @@ class ScoreDetailsPage(Page):
 
         testgen.page_header(
             "Score Details",
-            "quality-scores/view-score-details/",
+            "view-score-details",
             breadcrumbs=[
                 {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": score_definition.project_code}},
                 {"label": score_definition.name},
@@ -114,9 +117,30 @@ class ScoreDetailsPage(Page):
                     mask_hygiene_detail(raw_issues)
                 issues = format_score_card_issues(raw_issues, category)
 
-        testgen.testgen_component(
-            "score_details",
-            props={
+        def on_edit_notifications(*_) -> None:
+            st.session_state[SD_EDIT_NOTIFICATIONS_DIALOG_KEY] = True
+
+        ns_obj = ScoreDropNotificationSettingsDialog(
+            ScoreDropNotificationSettings,
+            ns_attrs={"project_code": score_definition.project_code, "score_definition_id": score_definition.id},
+            component_props={"cde_enabled": score_definition.cde_score, "total_enabled": score_definition.total_score},
+        )
+
+        notifications_data = None
+        if st.session_state.get(SD_EDIT_NOTIFICATIONS_DIALOG_KEY):
+            notifications_data = ns_obj.build_data()
+            notifications_data["open"] = True
+
+        def on_notifications_dialog_closed(*_) -> None:
+            ns_obj.clear_state()
+            st.session_state.pop(SD_EDIT_NOTIFICATIONS_DIALOG_KEY, None)
+
+        def on_column_profiling_clicked(payload: dict) -> None:
+            st.session_state[SD_COLUMN_PROFILING_DIALOG_KEY] = payload
+
+        testgen.score_details_widget(
+            key="score_details",
+            data={
                 "category": category,
                 "score_type": score_type,
                 "drilldown": drilldown,
@@ -125,24 +149,31 @@ class ScoreDetailsPage(Page):
                 "issues": issues,
                 "permissions": {
                     "can_edit": user_can_edit,
-                }
+                },
+                "notifications_dialog": notifications_data,
             },
-            event_handlers={
-                "DeleteScoreRequested": delete_score_card,
-                "EditNotifications": manage_notifications(score_definition),
-            },
-            on_change_handlers={
-                "CategoryChanged": select_category,
-                "ScoreTypeChanged": select_score_type,
-                "IssueReportsExported": export_issue_reports,
-                "ColumnProfilingClicked": lambda payload: profiling_results_dialog(
-                    payload["column_name"],
-                    payload["table_name"],
-                    payload["table_group_id"],
-                ),
-                "RecalculateHistory": recalculate_score_history,
-            },
+            on_DeleteScoreConfirmed_change=delete_score_card,
+            on_EditNotifications_change=on_edit_notifications,
+            on_CategoryChanged_change=select_category,
+            on_ScoreTypeChanged_change=select_score_type,
+            on_IssueReportsExported_change=export_issue_reports,
+            on_ColumnProflingClicked_change=on_column_profiling_clicked,
+            on_RecalculateHistory_change=recalculate_score_history,
+            # NotificationSettings events
+            on_AddNotification_change=ns_obj.on_add_item,
+            on_UpdateNotification_change=ns_obj.on_update_item,
+            on_DeleteNotification_change=ns_obj.on_delete_item,
+            on_PauseNotification_change=ns_obj.on_pause_item,
+            on_ResumeNotification_change=ns_obj.on_resume_item,
+            on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
         )
+
+        if column_profiling_payload := st.session_state.pop(SD_COLUMN_PROFILING_DIALOG_KEY, None):
+            profiling_results_dialog(
+                column_profiling_payload["column_name"],
+                column_profiling_payload["table_name"],
+                column_profiling_payload["table_group_id"],
+            )
 
 
 def select_category(category: str) -> None:
@@ -153,6 +184,7 @@ def select_score_type(score_type: str) -> None:
     Router().set_query_params({"score_type": score_type})
 
 
+@with_database_session
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
     MixpanelService().send_event(
         "download-issue-report",
@@ -178,20 +210,15 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
-    mask_pii = not session.auth.user_has_permission("view_pii")
-    if mask_pii:
-        issue = {**issue}
-        mask_hygiene_detail([issue])
-
     with BytesIO() as buffer:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
+            hygiene_issue_report.create_report(buffer, issue)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
+            test_result_report.create_report(buffer, issue)
 
         update_progress(1.0)
         buffer.seek(0)
@@ -200,42 +227,15 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         return file_name, "application/pdf", buffer.read()
 
 
-@st.dialog(title="Delete Scorecard")
 @with_database_session
 def delete_score_card(definition_id: str) -> None:
     score_definition = ScoreDefinition.get(definition_id)
-
-    delete_clicked, set_delelte_clicked = temp_value(
-        "score-details:confirm-delete-score-val"
-    )
-    st.html(f"Are you sure you want to delete the scorecard <b>{score_definition.name}</b>?")
-
-    _, button_column = st.columns([.85, .15])
-    with button_column:
-        testgen.button(
-            label="Delete",
-            type_="flat",
-            color="warn",
-            key="score-details:confirm-delete-score-btn",
-            on_click=lambda: set_delelte_clicked(True),
-        )
-
-    if delete_clicked():
-        score_definition.delete()
-        get_all_score_cards.clear()
-        Router().navigate("quality-dashboard", { "project_code": score_definition.project_code })
+    score_definition.delete()
+    get_all_score_cards.clear()
+    Router().queue_navigation("quality-dashboard", {"project_code": score_definition.project_code})
 
 
-def manage_notifications(score_definition):
-    def open_dialog(*_):
-        ScoreDropNotificationSettingsDialog(
-            ScoreDropNotificationSettings,
-            ns_attrs={"project_code": score_definition.project_code, "score_definition_id": score_definition.id},
-            component_props={"cde_enabled": score_definition.cde_score, "total_enabled": score_definition.total_score},
-        ).open()
-    return open_dialog
-
-
+@with_database_session
 def recalculate_score_history(definition_id: str) -> None:
     try:
         score_definition = ScoreDefinition.get(definition_id)
@@ -243,7 +243,7 @@ def recalculate_score_history(definition_id: str) -> None:
         st.toast("Scorecard trend recalculated", icon=":material/task_alt:")
     except:
         LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
-        st.toast("Something went wrong while recalculating the trend.", icon=":material/error:")
+        st.toast("Recalculating the trend failed. Try again", icon=":material/error:")
 
 
 class ScoreDropNotificationSettingsDialog(NotificationSettingsDialogBase):

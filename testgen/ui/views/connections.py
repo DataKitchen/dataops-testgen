@@ -190,9 +190,9 @@ class ConnectionsPage(Page):
                 "message": message,
             }
 
-        return testgen.testgen_component(
-            "connections",
-            props={
+        return testgen.connections_widget(
+            key="connections",
+            data={
                 "project_code": project_code,
                 "connection": self._format_connection(connection, should_test=should_check_status()),
                 "has_table_groups": has_table_groups,
@@ -203,12 +203,10 @@ class ConnectionsPage(Page):
                 "generated_connection_url": connection_string,
                 "results": results,
             },
-            on_change_handlers={
-                "TestConnectionClicked": on_test_connection_clicked,
-                "SaveConnectionClicked": on_save_connection_clicked,
-                "SetupTableGroupClicked": on_setup_table_group_clicked,
-                "ConnectionUpdated": on_connection_updated,
-            },
+            on_TestConnectionClicked_change=on_test_connection_clicked,
+            on_SaveConnectionClicked_change=on_save_connection_clicked,
+            on_SetupTableGroupClicked_change=on_setup_table_group_clicked,
+            on_ConnectionUpdated_change=on_connection_updated,
         )
 
     def _get_sql_flavor_from_value(self, value: str) -> "ConnectionFlavor | None":
@@ -475,7 +473,6 @@ class ConnectionsPage(Page):
                             LOG.exception(message)
                     else:
                         LOG.info("Table group %s created", table_group.id)
-                        safe_rerun()
                 except Exception as error:
                     message = "Something went wrong while creating the table group."
                     success = False
