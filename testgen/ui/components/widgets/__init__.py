@@ -131,3 +131,9 @@ hygiene_issues_widget = component_v2_wrapped(components_v2.component(
     js="pages/hygiene_issues.js",
     isolate_styles=False,
 ))
+
+application_logs_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.application_logs",
+    js="pages/application_logs.js",
+    isolate_styles=False,
+))

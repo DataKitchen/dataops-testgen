@@ -373,3 +373,7 @@ asset_dir = "ui/components/frontend/js"
 [[tool.streamlit.component.components]]
 name = "test_results"
 asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "application_logs"
+asset_dir = "ui/components/frontend/js"
