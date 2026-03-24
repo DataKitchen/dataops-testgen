@@ -87,6 +87,8 @@ import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TableCreateScriptCard } from '../data_profiling/table_create_script.js';
 import { MetadataTagsCard, MetadataTagsMultiEdit, TAG_KEYS } from '../data_profiling/metadata_tags.js';
 import { RunProfilingDialog } from '/app/static/js/components/run_profiling_dialog.js';
+import { ColumnHistoryDialog } from '../shared/column_history_dialog.js';
+import { DataPreviewDialog } from '../shared/data_preview_dialog.js';
 
 const { div, h2, span } = van.tags;
 
@@ -383,6 +385,15 @@ const DataCatalog = (/** @type Properties */ props) => {
                     onClose: () => emitEvent('RunProfilingDialogClosed', {}),
                 });
             },
+            ColumnHistoryDialog({
+                historyData: props.history_dialog,
+                onClose: () => emitEvent('HistoryDialogClosed', {}),
+                onRunSelected: (runId) => emitEvent('HistoryRunSelected', { payload: runId }),
+            }),
+            DataPreviewDialog({
+                previewData: props.data_preview_dialog,
+                onClose: () => emitEvent('DataPreviewDialogClosed', {}),
+            }),
         )
         : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
@@ -454,9 +465,9 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
 
     return item
         ? div(
-            { class: 'tg-dh--details' },
+            { class: 'tg-dh--details flex-column fx-gap-2' },
             div(
-                { class: 'mb-2' },
+                { },
                 h2(
                     { class: 'tg-dh--title' },
                     item.type === 'column' ? [

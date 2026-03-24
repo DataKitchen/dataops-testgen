@@ -6,10 +6,13 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.commands.run_profiling import run_profiling_in_background
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
@@ -24,6 +27,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import (
+    COLUMN_PROFILING_FIELDS,
     TAG_FIELDS,
     get_column_by_id,
     get_columns_by_id,
@@ -33,11 +37,9 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_id,
     get_tables_by_table_group,
 )
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
 from testgen.ui.services.query_cache import get_project_summary
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
-from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 from testgen.ui.views.dialogs.table_create_script_dialog import table_create_script_dialog_widget
 from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
 
@@ -145,11 +147,49 @@ class DataCatalogPage(Page):
         def on_create_script_clicked(item) -> None:
             st.session_state[DC_CREATE_SCRIPT_DIALOG_KEY] = item
 
+        @with_database_session
         def on_data_preview_clicked(item) -> None:
-            st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = item
+            preview_data = get_preview_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item.get("column_name"),
+            )
+            st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = preview_data
 
+        def on_data_preview_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_DATA_PREVIEW_DIALOG_KEY, None)
+
+        @with_database_session
         def on_history_clicked(item) -> None:
-            st.session_state[DC_HISTORY_DIALOG_KEY] = item
+            history_data = _build_history_dialog_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item["column_name"],
+                item["add_date"],
+            )
+            if history_data:
+                st.session_state[DC_HISTORY_DIALOG_KEY] = history_data
+
+        @with_database_session
+        def on_history_run_selected(run_id: str) -> None:
+            history_data = st.session_state.get(DC_HISTORY_DIALOG_KEY)
+            if history_data:
+                column = _get_history_run_column(
+                    run_id,
+                    history_data["schema_name"],
+                    history_data["table_name"],
+                    history_data["column_name"],
+                )
+                history_data["selected_item"] = column
+                st.session_state[DC_HISTORY_DIALOG_KEY] = history_data
+
+        def on_history_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_HISTORY_DIALOG_KEY, None)
+
+        history_dialog_data = st.session_state.get(DC_HISTORY_DIALOG_KEY)
+        data_preview_dialog_data = st.session_state.get(DC_DATA_PREVIEW_DIALOG_KEY)
 
         testgen.data_catalog_widget(
             key="data_catalog",
@@ -176,6 +216,8 @@ class DataCatalogPage(Page):
                     "profile_flag_pii": selected_table_group.profile_flag_pii if selected_table_group else None,
                 },
                 "run_profiling_dialog": run_profiling_data,
+                "history_dialog": history_dialog_data,
+                "data_preview_dialog": data_preview_dialog_data,
             },
             on_RunProfilingClicked_change=on_run_profiling_clicked,
             on_TableGroupSelected_change=on_table_group_selected,
@@ -190,6 +232,11 @@ class DataCatalogPage(Page):
             on_RunProfilingConfirmed_change=on_run_profiling_confirmed,
             on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs_clicked,
             on_RunProfilingDialogClosed_change=on_run_profiling_dialog_closed,
+            # HistoryDialog events
+            on_HistoryRunSelected_change=on_history_run_selected,
+            on_HistoryDialogClosed_change=on_history_dialog_closed,
+            # DataPreviewDialog events
+            on_DataPreviewDialogClosed_change=on_data_preview_dialog_closed,
         )
 
         if DC_EXPORT_DIALOG_KEY in st.session_state:
@@ -206,23 +253,6 @@ class DataCatalogPage(Page):
                 columns,
                 dialog={"open": True, "title": f"Table CREATE Script: {create_script_item['table_name']}"},
                 on_close=lambda *_: st.session_state.pop(DC_CREATE_SCRIPT_DIALOG_KEY, None),
-            )
-
-        if preview_item := st.session_state.pop(DC_DATA_PREVIEW_DIALOG_KEY, None):
-            data_preview_dialog(
-                preview_item["table_group_id"],
-                preview_item["schema_name"],
-                preview_item["table_name"],
-                preview_item.get("column_name"),
-            )
-
-        if history_item := st.session_state.pop(DC_HISTORY_DIALOG_KEY, None):
-            column_history_dialog(
-                history_item["table_group_id"],
-                history_item["schema_name"],
-                history_item["table_name"],
-                history_item["column_name"],
-                history_item["add_date"],
             )
 
 
@@ -589,6 +619,103 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
 
     results = fetch_all_from_db(query, params)
     return [ dict(row) for row in results ]
+
+
+def _build_history_dialog_data(
+    table_group_id: str,
+    schema_name: str,
+    table_name: str,
+    column_name: str,
+    add_date: int,
+) -> dict | None:
+    profiling_runs = ProfilingRun.select_minimal_where(
+        ProfilingRun.table_groups_id == table_group_id,
+        ProfilingRun.profiling_starttime >= sa_func.to_timestamp(add_date),
+    )
+    if not profiling_runs:
+        return None
+
+    profiling_runs_data = [
+        {"run_id": run.id, "run_date": run.profiling_starttime}
+        for run in profiling_runs
+    ]
+    first_run_id = profiling_runs_data[0]["run_id"]
+    selected_item = _get_history_run_column(first_run_id, schema_name, table_name, column_name)
+
+    return make_json_safe({
+        "table_name": table_name,
+        "column_name": column_name,
+        "schema_name": schema_name,
+        "profiling_runs": profiling_runs_data,
+        "selected_item": selected_item,
+    })
+
+
+@st.cache_data(show_spinner=False)
+def _get_history_run_column(run_id: str, schema_name: str, table_name: str, column_name: str) -> dict | None:
+    query = f"""
+    SELECT
+        profile_run_id::VARCHAR,
+        general_type,
+        {COLUMN_PROFILING_FIELDS}
+    FROM profile_results
+    WHERE profile_run_id = :run_id
+        AND schema_name = :schema_name
+        AND table_name = :table_name
+        AND column_name = :column_name;
+    """
+    params = {
+        "run_id": run_id,
+        "schema_name": schema_name,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
+    from testgen.ui.services.database_service import fetch_one_from_db
+    result = fetch_one_from_db(query, params)
+    return make_json_safe(dict(result)) if result else None
+
+
+def get_preview_data(
+    table_group_id: str,
+    schema_name: str,
+    table_name: str,
+    column_name: str | None = None,
+) -> dict:
+    title = (
+        f"Table > Column: {table_name} > {column_name}"
+        if column_name else
+        f"Table: {table_name}"
+    )
+    connection = Connection.get_by_table_group(table_group_id)
+    if not connection:
+        return {"title": title, "status": "ERR", "message": "Connection not found."}
+
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    use_top = flavor_service.use_top
+    quote = flavor_service.quote_character
+    query = f"""
+    SELECT DISTINCT
+        {"TOP 100" if use_top else ""}
+        {f"{quote}{column_name}{quote}" if column_name else "*"}
+    FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
+    {"LIMIT 100" if not use_top else ""}
+    """
+
+    try:
+        results = fetch_from_target_db(connection, query)
+    except Exception:
+        return {"title": title, "status": "ERR", "message": "The preview data could not be loaded."}
+
+    if not results:
+        return {"title": title, "status": "ND", "message": "No data found."}
+
+    columns_list = list(results[0]._mapping.keys())
+    rows = [list(row) for row in results]
+    return {
+        "title": title,
+        "columns": columns_list,
+        "rows": make_json_safe(rows),
+    }
 
 
 @st.cache_data(show_spinner=False)
