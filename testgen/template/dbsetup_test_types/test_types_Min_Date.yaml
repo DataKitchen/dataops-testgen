@@ -112,7 +112,7 @@ test_types:
     test_type: Min_Date
     sql_flavor: sap_hana
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') THEN 1 ELSE 0 END)
+      SUM(CASE WHEN {COLUMN_NAME} < CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -191,6 +191,6 @@ test_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []
