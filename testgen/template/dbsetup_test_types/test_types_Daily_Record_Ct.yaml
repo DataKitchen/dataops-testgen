@@ -45,7 +45,7 @@ test_types:
     sql_flavor: bigquery
     measure: |-
       DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), DAY), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), DAY), DAY) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, DAY))
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '6005'
@@ -53,7 +53,7 @@ test_types:
     sql_flavor: databricks
     measure: |-
       <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '3005'
@@ -61,7 +61,7 @@ test_types:
     sql_flavor: mssql
     measure: |-
       DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '4005'
@@ -93,7 +93,7 @@ test_types:
     sql_flavor: snowflake
     measure: |-
       DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '5005'
@@ -205,15 +205,13 @@ test_types:
                                           FROM check_periods c
                                         LEFT JOIN data_by_period d
                                           ON (c.check_period = d.data_period) )
-      SELECT TOP {LIMIT} check_period, record_ct,
+      SELECT TOP {LIMIT} check_period AS missing_period, record_ct,
              CASE
                WHEN record_ct = 0 THEN 'MISSING'
                ELSE 'Present'
              END as status
         FROM data_by_prd_with_prior_next
        WHERE record_ct = 0
-          OR last_record_ct = 0
-          OR next_record_ct = 0
       ORDER BY check_period DESC;
     error_type: Test Results
   - id: '1087'
