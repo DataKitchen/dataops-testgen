@@ -335,6 +335,9 @@ class TableGroupsPage(Page):
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
 
+                    if table_group_id and success:
+                        st.rerun()
+
                 except IntegrityError:
                     success = False
                     message = "A Table Group with the same name already exists."
