@@ -12,7 +12,6 @@
  * @property {Column} selected_item
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
 import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
@@ -22,8 +21,6 @@ const { div, span } = van.tags;
 
 const ColumnProfilingHistory = (/** @type Properties */ props) => {
     loadStylesheet('column-profiling-history', stylesheet);
-    Streamlit.setFrameHeight(600);
-    window.testgen.isPage = true;
 
     const selectedRunId = van.state(null);
 
@@ -32,11 +29,15 @@ const ColumnProfilingHistory = (/** @type Properties */ props) => {
         () => div(
             { class: 'column-history--list' },
             getValue(props.profiling_runs).map(({ run_id, run_date }, index) => div(
-                { 
+                {
                     class: () => `column-history--item clickable ${selectedRunId.val === run_id ? 'selected' : ''}`,
                     onclick: () => {
                         selectedRunId.val = run_id;
-                        emitEvent('RunSelected', { payload: run_id });
+                        if (props.onRunSelected) {
+                            props.onRunSelected(run_id);
+                        } else {
+                            emitEvent('RunSelected', { payload: run_id });
+                        }
                     },
                 },
                 div(formatTimestamp(run_date)),
