@@ -24,6 +24,7 @@ import van from '/app/static/js/van.min.js';
 import { Streamlit } from '/app/static/js/streamlit.js';
 import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ConnectionForm } from '/app/static/js/components/connection_form.js';
+import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Link } from '/app/static/js/components/link.js';
 import { Alert } from '/app/static/js/components/alert.js';
@@ -107,6 +108,11 @@ const Connections = (props) => {
                     : '';
             },
         ),
+        () => {
+            const wizardData = getValue(props.setup_wizard);
+            if (!wizardData) return div();
+            return TableGroupWizard(wizardData);
+        },
     );
 }
 

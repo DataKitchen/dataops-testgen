@@ -164,7 +164,7 @@ class ConnectionsPage(Page):
 
         def on_setup_table_group_clicked(*_args) -> None:
             table_group_queries.reset_table_group_preview()
-            self.setup_data_configuration(project_code, connection.connection_id)
+            st.session_state["connections:setup_dialog"] = connection.connection_id
 
         results = None
         for key, value in get_updated_connection().items():
@@ -190,7 +190,12 @@ class ConnectionsPage(Page):
                 "message": message,
             }
 
-        return testgen.connections_widget(
+        setup_wizard_data = None
+        setup_wizard_handlers = {}
+        if setup_connection_id := st.session_state.get("connections:setup_dialog"):
+            setup_wizard_data, setup_wizard_handlers = self.setup_data_configuration(project_code, setup_connection_id)
+
+        testgen.connections_widget(
             key="connections",
             data={
                 "project_code": project_code,
@@ -202,11 +207,13 @@ class ConnectionsPage(Page):
                 },
                 "generated_connection_url": connection_string,
                 "results": results,
+                "setup_wizard": setup_wizard_data,
             },
             on_TestConnectionClicked_change=on_test_connection_clicked,
             on_SaveConnectionClicked_change=on_save_connection_clicked,
             on_SetupTableGroupClicked_change=on_setup_table_group_clicked,
             on_ConnectionUpdated_change=on_connection_updated,
+            **setup_wizard_handlers,
         )
 
     def _get_sql_flavor_from_value(self, value: str) -> "ConnectionFlavor | None":
@@ -273,7 +280,6 @@ class ConnectionsPage(Page):
             LOG.exception("Error testing database connection")
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
 
-    @st.dialog(title="Data Configuration Setup")
     @with_database_session
     def setup_data_configuration(self, project_code: str, connection_id: str) -> None:
         def on_save_table_group_clicked(payload: dict) -> None:
@@ -300,11 +306,7 @@ class ConnectionsPage(Page):
             mark_for_access_preview(verify_table_access)
 
         def on_close_clicked(_params: dict) -> None:
-            set_close_dialog(True)
-
-        get_close_dialog, set_close_dialog = temp_value(f"connections:{connection_id}:close", default=False)
-        if (get_close_dialog()):
-            safe_rerun()
+            st.session_state.pop("connections:setup_dialog", None)
 
         get_new_table_group, set_new_table_group = temp_value(
             f"connections:{connection_id}:table_group",
@@ -496,32 +498,33 @@ class ConnectionsPage(Page):
                     "test_suite_name": None,
                 }
 
-        return testgen.table_group_wizard(
-            key="setup_data_configuration",
-            data={
-                "project_code": project_code,
-                "table_group": table_group.to_dict(json_safe=True),
-                "permissions": {
-                    "can_view_pii": session.auth.user_has_permission("view_pii"),
-                },
-                "table_group_preview": table_group_preview,
-                "steps": [
-                    "tableGroup",
-                    "testTableGroup",
-                    "runProfiling",
-                    "testSuite",
-                    "monitorSuite",
-                ],
-                "results": results,
-                "standard_cron_sample": standard_cron_sample_result(),
-                "monitor_cron_sample": monitor_cron_sample_result(),
+        wizard_data = {
+            "dialog": {"open": True, "title": "Data Configuration Setup"},
+            "project_code": project_code,
+            "table_group": table_group.to_dict(json_safe=True),
+            "permissions": {
+                "can_view_pii": session.auth.user_has_permission("view_pii"),
             },
-            on_SaveTableGroupClicked_change=on_save_table_group_clicked,
-            on_PreviewTableGroupClicked_change=on_preview_table_group,
-            on_CloseClicked_change=on_close_clicked,
-            on_GetCronSample_change=on_get_monitor_cron_sample,
-            on_GetCronSampleAux_change=on_get_standard_cron_sample,
-        )
+            "table_group_preview": table_group_preview,
+            "steps": [
+                "tableGroup",
+                "testTableGroup",
+                "runProfiling",
+                "testSuite",
+                "monitorSuite",
+            ],
+            "results": results,
+            "standard_cron_sample": standard_cron_sample_result(),
+            "monitor_cron_sample": monitor_cron_sample_result(),
+        }
+        wizard_handlers = {
+            "on_SaveTableGroupClicked_change": on_save_table_group_clicked,
+            "on_PreviewTableGroupClicked_change": on_preview_table_group,
+            "on_CloseClicked_change": on_close_clicked,
+            "on_GetCronSample_change": on_get_monitor_cron_sample,
+            "on_GetCronSampleAux_change": on_get_standard_cron_sample,
+        }
+        return wizard_data, wizard_handlers
 
 
 @dataclass(frozen=True, slots=True)
