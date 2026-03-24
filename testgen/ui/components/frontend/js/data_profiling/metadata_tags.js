@@ -142,6 +142,7 @@ const MetadataTagsCard = (props, item) => {
             if (key === 'critical_data_element') {
                 return RadioGroup({
                     label,
+                    help: 'Mark columns that are important for business decisions or regulatory compliance. CDEs are highlighted in the catalog and can be tracked separately in quality scores.',
                     options: item.type === 'column' ? [...booleanOptions, { label: 'Inherit', value: null }] : booleanOptions,
                     width: attributeWidth,
                     value: state.rawVal,
@@ -151,6 +152,7 @@ const MetadataTagsCard = (props, item) => {
             if (key === 'excluded_data_element') {
                 return RadioGroup({
                     label,
+                    help: 'Exclude this column from profiling and test generation. The column remains in the catalog but will not be analyzed.',
                     options: booleanOptions,
                     width: attributeWidth,
                     value: state.rawVal,
@@ -160,6 +162,7 @@ const MetadataTagsCard = (props, item) => {
             if (key === 'pii_flag') {
                 return RadioGroup({
                     label,
+                    help: 'Mark columns containing personally identifiable information. PII values are redacted for users without viewing permissions.',
                     options: piiOptions,
                     width: attributeWidth,
                     value: state.rawVal ? 'MANUAL' : null,

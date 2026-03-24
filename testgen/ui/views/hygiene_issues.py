@@ -11,8 +11,8 @@ from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
-from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.pii_masking import get_pii_columns, mask_dataframe_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
