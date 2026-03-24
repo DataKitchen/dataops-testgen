@@ -23,6 +23,7 @@ from testgen.common.models.scores import (
     SelectedIssue,
 )
 from testgen.common.models.test_run import TestRun
+from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -34,7 +35,6 @@ from testgen.ui.queries.scoring_queries import (
     get_score_card_issue_reports,
     get_score_category_values,
 )
-from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.session import session
 from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
 
