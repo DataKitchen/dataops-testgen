@@ -18,6 +18,9 @@
 import van from '../van.min.js';
 import { getValue } from '../utils.js';
 
+const STREAMLIT_DIALOG_ZINDEX = 1000060;
+const STREAMLIT_DIALOG_CLASS = 'stDialog';
+
 const Portal = (/** @type Options */ options, ...args) => {
     const { target, align = 'left', position = 'bottom' } = getValue(options);
     const id = `${target}-portal`;
@@ -52,6 +55,8 @@ const Portal = (/** @type Options */ options, ...args) => {
         if (!anchor) return;
 
         const fixed = hasFixedAncestor(anchor);
+        const fromDialog = hasStreamlitDialogAncestor(anchor);
+        const zIndex = fromDialog ? (STREAMLIT_DIALOG_ZINDEX + 1) : 1001;
         const coords = position === 'bottom'
             ? calculateBottomPosition(anchor, align, fixed)
             : calculateTopPosition(anchor, align, fixed);
@@ -72,7 +77,7 @@ const Portal = (/** @type Options */ options, ...args) => {
 
         portalEl.id = id;
         portalEl.className = getValue(options.class) ?? '';
-        portalEl.style.cssText = `position: ${fixed ? 'fixed' : 'absolute'}; z-index: 1001; ${coords} ${getValue(options.style) ?? ''}`;
+        portalEl.style.cssText = `position: ${fixed ? 'fixed' : 'absolute'}; z-index: ${zIndex}; ${coords} ${getValue(options.style) ?? ''}`;
     });
 
     return '';
@@ -82,6 +87,15 @@ function hasFixedAncestor(el) {
     let node = el.parentElement;
     while (node && node !== document.body) {
         if (getComputedStyle(node).position === 'fixed') return true;
+        node = node.parentElement;
+    }
+    return false;
+}
+
+function hasStreamlitDialogAncestor(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+        if (node.classList.contains(STREAMLIT_DIALOG_CLASS)) return true;
         node = node.parentElement;
     }
     return false;

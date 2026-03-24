@@ -4,6 +4,7 @@
  * @property {string} label
  * @property {string} value
  * @property {string?} icon
+ * @property {string?} caption
  *
  * @typedef Properties
  * @type {object}
@@ -194,17 +195,19 @@ const Select = (/** @type {Properties} */ props) => {
                 getValue(filteredOptions).map(option =>
                     div(
                         {
-                            class: () => `tg-select--option ${getValue(value) === option.value ? 'selected' : ''}`,
+                            class: () => `tg-select--option flex-column fx-justify-center ${getValue(value) === option.value ? 'selected' : ''} ${option.caption ? 'has-caption' : ''}`,
                             onclick: (/** @type Event */ event) => {
                                 changeSelection(option);
                                 event.stopPropagation();
                             },
                             'data-testid': 'select-options-item',
                         },
-                        option.icon
-                            ? Icon({ classes: 'mr-2' }, option.icon)
-                            : undefined,
-                        span(option.label),
+                        div(
+                            {class: 'flex-row fx-gap-2'}, 
+                            option.icon ? Icon({}, option.icon) : '',
+                            span(option.label),
+                        ),
+                        option.caption ? span({class: 'text-small text-secondary'}, option.caption) : '',
                     )
                 ),
             ),
@@ -408,8 +411,6 @@ stylesheet.replace(`
 }
 
 .tg-select--option {
-    display: flex;
-    align-items: center;
     height: 40px;
     padding: 0px 16px;
     cursor: pointer;
@@ -418,6 +419,11 @@ stylesheet.replace(`
 }
 .tg-select--option:hover {
     background: var(--select-hover-background);
+}
+
+.tg-select--option.has-caption {
+    height: auto;
+    padding: 2px 16px;
 }
 
 .tg-select--option.selected {
