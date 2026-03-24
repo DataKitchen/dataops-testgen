@@ -5,21 +5,21 @@
  * @property {string} key - user key of the specific component to be rendered
  * @property {object} props - object with the props to pass to the rendered component
  */
-import van from './van.min.js';
+import van from '/app/static/js/van.min.js';
 import pluginSpec from './plugins.js';
-import { Streamlit } from './streamlit.js';
-import { isEqual, getParents } from './utils.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { isEqual, getParents } from '/app/static/js/utils.js';
 
 let currentWindowVan = van;
 let topWindowVan = window.top.van;
 
 const componentLoaders = {
-    breadcrumbs: () => import('./components/breadcrumbs.js').then(m => m.Breadcrumbs),
-    button: () => import('./components/button.js').then(m => m.Button),
-    expander_toggle: () => import('./components/expander_toggle.js').then(m => m.ExpanderToggle),
-    link: () => import('./components/link.js').then(m => m.Link),
-    paginator: () => import('./components/paginator.js').then(m => m.Paginator),
-    sorting_selector: () => import('./components/sorting_selector.js').then(m => m.SortingSelector),
+    breadcrumbs: () => import('/app/static/js/components/breadcrumbs.js').then(m => m.Breadcrumbs),
+    button: () => import('/app/static/js/components/button.js').then(m => m.Button),
+    expander_toggle: () => import('/app/static/js/components/expander_toggle.js').then(m => m.ExpanderToggle),
+    link: () => import('/app/static/js/components/link.js').then(m => m.Link),
+    paginator: () => import('/app/static/js/components/paginator.js').then(m => m.Paginator),
+    sorting_selector: () => import('/app/static/js/components/sorting_selector.js').then(m => m.SortingSelector),
     sidebar: () => Promise.resolve(window.top.testgen.components.Sidebar),
     test_runs: () => import('./pages/test_runs.js').then(m => m.TestRuns),
     profiling_runs: () => import('./pages/profiling_runs.js').then(m => m.ProfilingRuns),
@@ -32,10 +32,10 @@ const componentLoaders = {
     score_details: () => import('./pages/score_details.js').then(m => m.ScoreDetails),
     score_explorer: () => import('./pages/score_explorer.js').then(m => m.ScoreExplorer),
     schedule_list: () => import('./pages/schedule_list.js').then(m => m.ScheduleList),
-    column_selector: () => import('./components/explorer_column_selector.js').then(m => m.ColumnSelector),
+    column_selector: () => import('/app/static/js/components/explorer_column_selector.js').then(m => m.ColumnSelector),
     connections: () => import('./pages/connections.js').then(m => m.Connections),
     table_group_wizard: () => import('./pages/table_group_wizard.js').then(m => m.TableGroupWizard),
-    help_menu: () => import('./components/help_menu.js').then(m => m.HelpMenu),
+    help_menu: () => import('/app/static/js/components/help_menu.js').then(m => m.HelpMenu),
     table_group_list: () => import('./pages/table_group_list.js').then(m => m.TableGroupList),
     table_group_delete: () => import('./pages/table_group_delete_confirmation.js').then(m => m.TableGroupDeleteConfirmation),
     run_profiling_dialog: () => import('./pages/run_profiling_dialog.js').then(m => m.RunProfilingDialog),
@@ -43,7 +43,6 @@ const componentLoaders = {
     test_definition_summary: () => import('./pages/test_definition_summary.js').then(m => m.TestDefinitionSummary),
     notification_settings: () => import('./pages/notification_settings.js').then(m => m.NotificationSettings),
     monitors_dashboard: () => import('./pages/monitors_dashboard.js').then(m => m.MonitorsDashboard),
-    table_monitoring_trends: () => import('./pages/table_monitoring_trends.js').then(m => m.TableMonitoringTrend),
     test_results_chart: () => import('./pages/test_results_chart.js').then(m => m.TestResultsChart),
     test_definition_notes: () => import('./pages/test_definition_notes.js').then(m => m.TestDefinitionNotes),
     schema_changes_list: () => import('./components/schema_changes_list.js').then(m => m.SchemaChangesList),

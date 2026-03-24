@@ -13,36 +13,110 @@
  * @property {FilterOption[]} table_group_filter_options
  * @property {string?} test_suite_name
  * @property {Permissions} permissions
+ * @property {object?} run_tests_dialog
+ * @property {object?} generate_tests_dialog
+ * @property {object?} schedule_dialog
+ * @property {object?} notifications_dialog
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { formatTimestamp, DISABLED_ACTION_TEXT } from '../display_utils.js';
-import { Input } from '../components/input.js';
-import { Select } from '../components/select.js';
-import { Button } from '../components/button.js';
-import { Card } from '../components/card.js';
-import { Link } from '../components/link.js';
-import { Caption } from '../components/caption.js';
-import { SummaryBar } from '../components/summary_bar.js';
-import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { formatTimestamp, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Caption } from '/app/static/js/components/caption.js';
+import { SummaryBar } from '/app/static/js/components/summary_bar.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
+import { GenerateTestsDialog } from '/app/static/js/components/generate_tests_dialog.js';
+import { ScheduleList } from '/app/static/js/components/schedule_list.js';
+import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
+import { Alert } from '/app/static/js/components/alert.js';
+import { Toggle } from '/app/static/js/components/toggle.js';
+import { Input } from '/app/static/js/components/input.js';
+import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 
-const { div, h4, small, span, i } = van.tags;
+const { b, div, h4, pre, small, span, i } = van.tags;
 
 const TestSuites = (/** @type Properties */ props) => {
     loadStylesheet('testsuites', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const userCanEdit = getValue(props.permissions).can_edit;
     const testSuites = van.derive(() => getValue(props.test_suites));
     const wrapperId = 'test-suites-list-wrapper';
 
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
+    // Delete dialog state (driven by Python prop)
+    const deleteDialogInfo = van.derive(() => getValue(props.delete_dialog) ?? null);
+    const deleteDialogOpen = van.state(false);
+    const confirmCascadeDelete = van.state(false);
+    van.derive(() => { if (deleteDialogInfo.val?.open) deleteDialogOpen.val = true; });
+    const closeDeleteDialog = () => {
+        deleteDialogOpen.val = false;
+        confirmCascadeDelete.val = false;
+        emitEvent('DeleteDialogDismissed', {});
+    };
+
+    // Observability export dialog state (pure JS, no Python round-trip needed)
+    const exportDialogOpen = van.state(false);
+    const exportTestSuite = van.state(null);
+
+    // Add/Edit test suite form dialog state (driven by Python prop)
+    const formDialogInfo = van.derive(() => getValue(props.form_dialog) ?? null);
+    const formDialogOpen = van.state(false);
+    van.derive(() => { if (formDialogInfo.val?.open) formDialogOpen.val = true; });
+
+    const formState = {
+        testSuiteName: van.state(''),
+        tableGroupId: van.state(null),
+        description: van.state(''),
+        severity: van.state(null),
+        exportToObservability: van.state(false),
+        dqScoreExclude: van.state(false),
+        componentKey: van.state(''),
+        componentType: van.state('dataset'),
+        componentName: van.state(''),
+    };
+
+    van.derive(() => {
+        const info = formDialogInfo.val;
+        if (!info?.open) return;
+        const v = info.initial_values ?? {};
+        formState.testSuiteName.val = v.test_suite ?? '';
+        formState.tableGroupId.val = v.table_groups_id ?? null;
+        formState.description.val = v.test_suite_description ?? '';
+        formState.severity.val = v.severity ?? null;
+        formState.exportToObservability.val = v.export_to_observability ?? false;
+        formState.dqScoreExclude.val = v.dq_score_exclude ?? false;
+        formState.componentKey.val = v.component_key ?? '';
+        formState.componentType.val = v.component_type ?? 'dataset';
+        formState.componentName.val = v.component_name ?? '';
+    });
+
+    const closeFormDialog = () => {
+        formDialogOpen.val = false;
+        emitEvent('FormDialogClosed', {});
+    };
+
+    const scheduleDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.schedule_dialog)?.open === true) scheduleDialogOpen.val = true; });
+
+    const notificationsDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.notifications_dialog)?.open === true) notificationsDialogOpen.val = true; });
+
+    // Page-level result message (replaces st.toast)
+    const pageResult = van.derive(() => getValue(props.page_result) ?? null);
 
     return div(
-        { id: wrapperId, style: 'overflow-y: auto;' },
+        { id: wrapperId, 'data-testid': 'test-suites', style: 'overflow-y: auto;' },
+        () => {
+            const result = pageResult.val;
+            return result
+                ? Alert({ type: result.success ? 'success' : 'error', style: 'margin-bottom: 16px;' }, result.message)
+                : '';
+        },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.test_suite_count > 0
@@ -121,7 +195,7 @@ const TestSuites = (/** @type Properties */ props) => {
                 },
                 () => getValue(testSuites)?.length
                 ? div(
-                    { class: 'flex-column' },
+                    { class: 'flex-column fx-gap-4' },
                     getValue(testSuites).map((/** @type TestSuiteSummary */ testSuite) => Card({
                         border: true,
                         testId: 'test-suite-card',
@@ -144,7 +218,10 @@ const TestSuites = (/** @type Properties */ props) => {
                                             : 'Export results to Observability',
                                         tooltipPosition: 'left',
                                         disabled: !projectSummary.can_export_to_observability || !testSuite.export_to_observability,
-                                        onclick: () => emitEvent('ExportActionClicked', {payload: testSuite.id}),
+                                        onclick: () => {
+                                            exportTestSuite.val = { ...testSuite, project_code: projectSummary.project_code };
+                                            exportDialogOpen.val = true;
+                                        },
                                     }),
                                     Button({
                                         type: 'icon',
@@ -236,6 +313,284 @@ const TestSuites = (/** @type Properties */ props) => {
             )
             : ConditionalEmptyState(projectSummary, userCanEdit);
         },
+        // Delete test suite dialog (driven by Python prop for is_in_use data)
+        () => {
+            const info = deleteDialogInfo.val;
+            if (!info) return div();
+            const isInUse = info.is_in_use;
+            const deleteDisabled = van.derive(() => isInUse && !confirmCascadeDelete.val);
+            return Dialog(
+                { title: 'Delete Test Suite', open: deleteDialogOpen, onClose: closeDeleteDialog, width: '36rem' },
+                div(
+                    { class: 'flex-column fx-gap-4' },
+                    div('Are you sure you want to delete the test suite ', b(info.test_suite_name), '?'),
+                    isInUse
+                        ? div(
+                            { class: 'flex-column fx-gap-4' },
+                            Alert(
+                                { type: 'warn' },
+                                div('This Test Suite has related data, which may include test definitions and test results.'),
+                                div({ class: 'mt-2' }, 'If you proceed, all related data will be permanently deleted.'),
+                            ),
+                            Toggle({
+                                name: 'confirm-cascade-delete',
+                                label: span('Yes, delete the test suite ', b(info.test_suite_name), ' and related TestGen data.'),
+                                checked: confirmCascadeDelete,
+                                onChange: (value) => confirmCascadeDelete.val = value,
+                            }),
+                        )
+                        : '',
+                    div(
+                        { class: 'flex-row fx-justify-content-flex-end' },
+                        () => Button({
+                            type: deleteDisabled.val ? 'stroked' : 'flat',
+                            color: deleteDisabled.val ? 'basic' : 'warn',
+                            label: 'Delete',
+                            style: 'width: auto;',
+                            disabled: deleteDisabled,
+                            onclick: () => {
+                                emitEvent('DeleteTestSuiteConfirmed', { payload: info.test_suite_id });
+                                closeDeleteDialog();
+                            },
+                        }),
+                    ),
+                ),
+            );
+        },
+        // Add/Edit test suite form dialog (driven by Python prop)
+        () => {
+            const info = formDialogInfo.val;
+            if (!info) return div();
+            const isEdit = info.mode === 'edit';
+            const tableGroups = info.table_groups ?? [];
+            const severityOptions = [
+                { value: null, label: 'Inherit' },
+                { value: 'Log', label: 'Log' },
+                { value: 'Failed', label: 'Failed' },
+                { value: 'Warning', label: 'Warning' },
+            ];
+            const formResult = info.result;
+            const showObservabilitySection = van.state(false);
+            return Dialog(
+                {
+                    title: info.title ?? (isEdit ? 'Edit Test Suite' : 'Add Test Suite'),
+                    open: formDialogOpen,
+                    onClose: closeFormDialog,
+                    width: '52rem',
+                },
+                div(
+                    { class: 'flex-column fx-gap-3' },
+                    div(
+                        { class: 'flex-row fx-gap-3' },
+                        Input({
+                            label: 'Test Suite Name',
+                            value: formState.testSuiteName,
+                            disabled: isEdit,
+                            style: 'flex: 1;',
+                            onChange: (value) => { formState.testSuiteName.val = value; },
+                        }),
+                        Select({
+                            label: 'Table Group',
+                            value: formState.tableGroupId,
+                            options: tableGroups,
+                            allowNull: false,
+                            disabled: isEdit,
+                            style: 'flex: 1;',
+                            onChange: (value) => { formState.tableGroupId.val = value; },
+                            portalClass: 'ts-form--select',
+                        }),
+                    ),
+                    div(
+                        { class: 'flex-row fx-gap-3' },
+                        Input({
+                            label: 'Test Suite Description',
+                            value: formState.description,
+                            style: 'flex: 1;',
+                            onChange: (value) => { formState.description.val = value; },
+                        }),
+                        Select({
+                            label: 'Severity',
+                            value: formState.severity,
+                            options: severityOptions,
+                            allowNull: false,
+                            style: 'flex: 1;',
+                            onChange: (value) => { formState.severity.val = value; },
+                            portalClass: 'ts-form--select',
+                        }),
+                    ),
+                    div(
+                        { class: 'flex-row fx-gap-4' },
+                        Toggle({
+                            name: 'export-to-observability',
+                            label: 'Export to Observability',
+                            checked: formState.exportToObservability,
+                            onChange: (value) => { formState.exportToObservability.val = value; },
+                        }),
+                        Toggle({
+                            name: 'dq-score-exclude',
+                            label: 'Exclude from quality scoring',
+                            checked: formState.dqScoreExclude,
+                            onChange: (value) => { formState.dqScoreExclude.val = value; },
+                        }),
+                    ),
+                    ExpanderToggle({
+                        expandLabel: 'Observability overrides',
+                        collapseLabel: 'Observability overrides',
+                        labelPosition: 'left',
+                        onExpand: () => { showObservabilitySection.val = true; },
+                        onCollapse: () => { showObservabilitySection.val = false; },
+                    }),
+                    () => showObservabilitySection.val
+                        ? div(
+                            { class: 'flex-row fx-gap-3' },
+                            Input({
+                                label: 'Component Key',
+                                value: formState.componentKey,
+                                placeholder: 'Optional',
+                                style: 'flex: 1;',
+                                onChange: (value) => { formState.componentKey.val = value; },
+                            }),
+                            Input({
+                                label: 'Component Type',
+                                value: formState.componentType,
+                                disabled: true,
+                                style: 'flex: 1;',
+                            }),
+                            Input({
+                                label: 'Component Name',
+                                value: formState.componentName,
+                                placeholder: 'Optional',
+                                style: 'flex: 1;',
+                                onChange: (value) => { formState.componentName.val = value; },
+                            }),
+                        )
+                        : '',
+                    formResult
+                        ? Alert({ type: formResult.success ? 'success' : 'error' }, formResult.message)
+                        : '',
+                    div(
+                        { class: 'flex-row fx-justify-content-flex-end' },
+                        Button({
+                            type: 'stroked',
+                            color: 'primary',
+                            label: isEdit ? 'Save' : 'Add',
+                            width: 'auto',
+                            style: 'width: auto;',
+                            onclick: () => emitEvent('SaveTestSuiteForm', {
+                                payload: {
+                                    mode: info.mode,
+                                    test_suite_id: info.test_suite_id ?? null,
+                                    test_suite: formState.testSuiteName.val,
+                                    table_groups_id: formState.tableGroupId.val,
+                                    test_suite_description: formState.description.val,
+                                    severity: formState.severity.val,
+                                    export_to_observability: formState.exportToObservability.val,
+                                    dq_score_exclude: formState.dqScoreExclude.val,
+                                    component_key: formState.componentKey.val,
+                                    component_type: formState.componentType.val,
+                                    component_name: formState.componentName.val,
+                                },
+                            }),
+                        }),
+                    ),
+                ),
+            );
+        },
+        // Observability export dialog (pure JS — no Python round-trip for open)
+        () => {
+            const ts = exportTestSuite.val;
+            if (!ts) return div();
+            return Dialog(
+                {
+                    title: 'Export to Observability',
+                    open: exportDialogOpen,
+                    onClose: () => { exportDialogOpen.val = false; },
+                    width: '36rem',
+                },
+                div(
+                    { class: 'flex-column fx-gap-4' },
+                    div('Execute the test export for test suite ', b(ts.test_suite), '?'),
+                    div(
+                        { class: 'flex-column fx-gap-2' },
+                        Caption({ content: 'CLI command' }),
+                        pre(
+                            { style: 'background: var(--secondary-background-color); padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all;' },
+                            `testgen export-observability --project-key ${ts.project_code} --test-suite-key '${ts.test_suite}'`,
+                        ),
+                    ),
+                    div(
+                        { class: 'flex-row fx-justify-content-flex-end' },
+                        Button({
+                            type: 'flat',
+                            color: 'primary',
+                            label: 'Start',
+                            style: 'width: auto;',
+                            onclick: () => {
+                                emitEvent('ExportActionClicked', { payload: ts.id });
+                                exportDialogOpen.val = false;
+                            },
+                        }),
+                    ),
+                ),
+            );
+        },
+        () => {
+            const info = getValue(props.run_tests_dialog);
+            if (!info) return div();
+            return RunTestsDialog({
+                dialog: { title: info.title ?? 'Run Tests', open: true },
+                project_code: info.project_code,
+                test_suites: info.test_suites ?? [],
+                default_test_suite_id: info.default_test_suite_id,
+                result: info.result,
+                onClose: () => emitEvent('RunTestsDialogClosed', {}),
+            });
+        },
+        () => {
+            const info = getValue(props.generate_tests_dialog);
+            if (!info) return div();
+            return GenerateTestsDialog({
+                dialog: { title: info.title ?? 'Generate Tests', open: true },
+                test_suite_id: info.test_suite_id,
+                test_suite_name: info.test_suite_name,
+                generation_sets: info.generation_sets ?? [],
+                default_generation_set: info.default_generation_set,
+                refresh_warning: info.refresh_warning,
+                lock_result: info.lock_result,
+                result: info.result,
+                onClose: () => emitEvent('GenerateTestsDialogClosed', {}),
+            });
+        },
+        ScheduleList({
+            dialog: van.derive(() => ({
+                title: getValue(props.schedule_dialog)?.title ?? 'Schedules',
+                open: scheduleDialogOpen,
+            })),
+            items: van.derive(() => getValue(props.schedule_dialog)?.items ?? []),
+            permissions: van.derive(() => getValue(props.schedule_dialog)?.permissions ?? { can_edit: false }),
+            arg_label: van.derive(() => getValue(props.schedule_dialog)?.arg_label ?? ''),
+            arg_values: van.derive(() => getValue(props.schedule_dialog)?.arg_values ?? []),
+            sample: van.derive(() => getValue(props.schedule_dialog)?.sample),
+            results: van.derive(() => getValue(props.schedule_dialog)?.results),
+            onClose: () => emitEvent('ScheduleDialogClosed', {}),
+        }),
+        NotificationSettings({
+            dialog: van.derive(() => ({
+                title: getValue(props.notifications_dialog)?.title ?? 'Notifications',
+                open: notificationsDialogOpen,
+            })),
+            smtp_configured: van.derive(() => getValue(props.notifications_dialog)?.smtp_configured ?? false),
+            event: van.derive(() => getValue(props.notifications_dialog)?.event),
+            items: van.derive(() => getValue(props.notifications_dialog)?.items ?? []),
+            permissions: van.derive(() => getValue(props.notifications_dialog)?.permissions ?? { can_edit: false }),
+            scope_label: van.derive(() => getValue(props.notifications_dialog)?.scope_label),
+            scope_options: van.derive(() => getValue(props.notifications_dialog)?.scope_options ?? []),
+            trigger_options: van.derive(() => getValue(props.notifications_dialog)?.trigger_options ?? []),
+            cde_enabled: van.derive(() => getValue(props.notifications_dialog)?.cde_enabled ?? false),
+            total_enabled: van.derive(() => getValue(props.notifications_dialog)?.total_enabled ?? false),
+            result: van.derive(() => getValue(props.notifications_dialog)?.result),
+            onClose: () => emitEvent('NotificationsDialogClosed', {}),
+        }),
     );
 };
 
@@ -300,6 +655,10 @@ stylesheet.replace(`
     text-transform: initial;
 }
 
+.ts-form--select {
+    max-height: 220px !important;
+}
+
 .tg-test-suites--card-title small {
     margin: 0;
     margin-top: 4px;
@@ -313,3 +672,27 @@ stylesheet.replace(`
 `);
 
 export { TestSuites };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, TestSuites(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

@@ -1,5 +1,5 @@
 /**
- * @import { Score } from '../components/score_card.js';
+ * @import { Score } from '/app/static/js/components/score_card.js';
  * @import { ProjectSummary } from '../types.js';
  *
  * @typedef Category
@@ -12,29 +12,24 @@
  * @property {ProjectSummary} project_summary
  * @property {Array<Score>} scores
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Input } from '../components/input.js';
-import { Select } from '../components/select.js';
-import { Link } from '../components/link.js';
-import { Button } from '../components/button.js';
-import { ScoreCard } from '../components/score_card.js';
-import { ScoreLegend } from '../components/score_legend.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Button } from '/app/static/js/components/button.js';
+import { ScoreCard } from '/app/static/js/components/score_card.js';
+import { ScoreLegend } from '/app/static/js/components/score_legend.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { caseInsensitiveSort, caseInsensitiveIncludes } from '/app/static/js/display_utils.js';
 
 const { div, span } = van.tags;
 
 const QualityDashboard = (/** @type {Properties} */ props) => {
-    window.testgen.isPage = true;
-
     loadStylesheet('quality-dashboard', stylesheet);
-    Streamlit.setFrameHeight(1);
 
     const domId = 'score-dashboard-page';
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);
 
     const sortedBy = van.state('name');
     const filterTerm = van.state('');
@@ -58,7 +53,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     });
 
     return div(
-        { id: domId, style: 'overflow-y: auto;' },
+        { id: domId, 'data-testid': 'quality-dashboard', style: 'overflow-y: auto;' },
         () => getValue(props.scores).length > 0
             ? div(
                 ScoreLegend(),
@@ -191,3 +186,27 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace('');
 
 export { QualityDashboard };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, QualityDashboard(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

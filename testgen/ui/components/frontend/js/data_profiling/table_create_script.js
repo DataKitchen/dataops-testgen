@@ -4,10 +4,10 @@
  * @typedef Properties
  * @type {object}
  */
-import van from '../van.min.js';
-import { Card } from '../components/card.js';
-import { Button } from '../components/button.js';
-import { emitEvent } from '../utils.js';
+import van from '/app/static/js/van.min.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Button } from '/app/static/js/components/button.js';
+import { emitEvent } from '/app/static/js/utils.js';
 
 const { div } = van.tags;
 

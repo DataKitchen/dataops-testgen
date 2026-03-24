@@ -1,7 +1,7 @@
 /**
  * @import { FilterOption, ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
- * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
+ * @import { MonitorSummary } from '/app/static/js/components/monitor_anomalies_summary.js';
  * 
  * @typedef TableGroupSummary
  * @type {object}
@@ -39,19 +39,19 @@
  * @property {TableGroupSummary[]} table_groups
  * @property {SortOption[]} table_groups_sort_options
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
-import { Card } from '../components/card.js';
-import { Select } from '../components/select.js';
-import { Input } from '../components/input.js';
-import { Link } from '../components/link.js';
-import { SummaryBar } from '../components/summary_bar.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { ScoreMetric } from '../components/score_metric.js';
-import { SummaryCounts } from '../components/summary_counts.js';
-import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '/app/static/js/display_utils.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Link } from '/app/static/js/components/link.js';
+import { SummaryBar } from '/app/static/js/components/summary_bar.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { ScoreMetric } from '/app/static/js/components/score_metric.js';
+import { SummaryCounts } from '/app/static/js/components/summary_counts.js';
+import { AnomaliesSummary } from '/app/static/js/components/monitor_anomalies_summary.js';
 
 const { div, h3, hr, span } = van.tags;
 
@@ -59,8 +59,6 @@ const staleProfileDays = 60;
 
 const ProjectDashboard = (/** @type Properties */ props) => {
     loadStylesheet('project-dashboard', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const tableGroups = van.derive(() => getValue(props.table_groups));
     const tableGroupsSearchTerm = van.state('');
@@ -89,11 +87,9 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     van.derive(onFiltersChange);
 
     const wrapperId = 'overview-wrapper';
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, class: 'flex-column tg-overview' },
+        { id: wrapperId, 'data-testid': 'project-dashboard', class: 'flex-column tg-overview' },
         () => getValue(tableGroups).length
             ? div(
                 { class: 'flex-row fx-align-flex-end fx-gap-3' },
@@ -382,3 +378,30 @@ hr.tg-overview--table-group-divider {
 `);
 
 export { ProjectDashboard };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, ProjectDashboard(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => {
+        Streamlit.disableV2(setTriggerValue);
+        parentElement.state = null;
+    };
+};

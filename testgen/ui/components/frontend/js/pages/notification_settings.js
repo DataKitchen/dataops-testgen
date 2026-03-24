@@ -30,37 +30,39 @@
  * @property {NotificationItem[]} items
  * @property {Permissions} permissions
  * @property {String} scope_label
- * @property {import('../components/select.js').Option[]} scope_options
- * @property {import('../components/select.js').Option[]} trigger_options
+ * @property {import('/app/static/js/components/select.js').Option[]} scope_options
+ * @property {import('/app/static/js/components/select.js').Option[]} trigger_options
  * @property {Boolean} cde_enabled;
  * @property {Boolean} total_enabled;
  * @property {Subtitle?} subtitle
  * @property {Result?} result
  */
-import van from '../van.min.js';
-import { Button } from '../components/button.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { ExpansionPanel } from '../components/expansion_panel.js';
-import { Select } from '../components/select.js';
-import { Alert } from '../components/alert.js';
-import { Textarea } from '../components/textarea.js';
-import { Icon } from '../components/icon.js';
-import { TruncatedText } from '../components/truncated_text.js';
-import { Input } from '../components/input.js';
-import { numberBetween } from '../form_validators.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
+import van from '/app/static/js/van.min.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Alert } from '/app/static/js/components/alert.js';
+import { Textarea } from '/app/static/js/components/textarea.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { TruncatedText } from '/app/static/js/components/truncated_text.js';
+import { Input } from '/app/static/js/components/input.js';
+import { numberBetween } from '/app/static/js/form_validators.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
 
 const minHeight = 500;
 const { div, span, b } = van.tags;
 
 const NotificationSettings = (/** @type Properties */ props) => {
     loadStylesheet('notification-settings', stylesheet);
-    window.testgen.isPage = true;
+
+    const dialogProp = getValue(props.dialog);
+    const dialogOpen = van.state(dialogProp?.open === true);
 
     if (!getValue(props.smtp_configured)) {
-        Streamlit.setFrameHeight(400);
-        return EmptyState({
+        const emptyContent = EmptyState({
             label: 'Email server not configured.',
             message: EMPTY_STATE_MESSAGE.notifications,
             class: 'notifications--empty',
@@ -70,11 +72,23 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 open_new: true,
             },
         });
+        if (dialogProp) {
+            const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+            return Dialog(
+                {
+                    title: dialogTitle,
+                    open: dialogOpen,
+                    onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                    width: '65rem',
+                },
+                emptyContent,
+            );
+        }
+        return emptyContent;
     }
 
     const nsItems = van.derive(() => {
         const items = getValue(props.items);
-        Streamlit.setFrameHeight(Math.max(minHeight, 70 * items.length || 150));
         return items;
     });
 
@@ -99,7 +113,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         id: van.state(null),
         scope: van.state(null),
         recipientsString: van.state(''),
-        trigger: van.state(triggerOptions ? triggerOptions[0][0] : null),
+        trigger: van.state(triggerOptions && triggerOptions.length > 0 ? triggerOptions[0][0] : null),
         totalScoreThreshold: van.state(0),
         cdeScoreThreshold: van.state(0),
         isEdit: van.state(false),
@@ -220,7 +234,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     const columns = [30, 50, 20];
     const domId = 'notifications-table';
 
-    return div(
+    const content = div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
         subtitle
             ? div(
@@ -373,6 +387,20 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No notifications defined yet.'),
         ),
     );
+
+    if (dialogProp) {
+        const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+        return Dialog(
+            {
+                title: dialogTitle,
+                open: dialogOpen,
+                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                width: '65rem',
+            },
+            content,
+        );
+    }
+    return content;
 }
 
 const stylesheet = new CSSStyleSheet();
@@ -395,3 +423,27 @@ stylesheet.replace(`
 `);
 
 export { NotificationSettings };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, NotificationSettings(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

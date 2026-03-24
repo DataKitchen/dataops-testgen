@@ -1,5 +1,5 @@
 /**
- * @import { TableGroup } from '../components/table_group_form.js';
+ * @import { TableGroup } from '/app/static/js/components/table_group_form.js';
  * 
  * @typedef Result
  * @type {object}
@@ -14,13 +14,13 @@
  * @property {Result?} result
  */
 
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Button } from '../components/button.js';
-import { Toggle } from '../components/toggle.js';
-import { Attribute } from '../components/attribute.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Toggle } from '/app/static/js/components/toggle.js';
+import { Attribute } from '/app/static/js/components/attribute.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, h3, hr, span, b } = van.tags;
 
@@ -30,16 +30,12 @@ const { div, h3, hr, span, b } = van.tags;
  */
 const TableGroupDeleteConfirmation = (props) => {
     loadStylesheet('tablegroup-delete-confirmation', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const wrapperId = 'tablegroup-delete-wrapper';
     const tableGroup = getValue(props.table_group);
     const confirmDeleteRelated = van.state(false);
     const deleteDisabled = van.derive(() => !getValue(props.can_be_deleted) && !confirmDeleteRelated.val);
 
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
         { id: wrapperId, class: 'flex-column' },
@@ -112,3 +108,27 @@ stylesheet.replace(`
 `);
 
 export { TableGroupDeleteConfirmation };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, TableGroupDeleteConfirmation(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

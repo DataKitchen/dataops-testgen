@@ -191,9 +191,9 @@
  * * Test Suites
  * @property {TestSuite[]?} test_suites
  */
-import van from '../van.min.js';
-import { Link } from '../components/link.js';
-import { formatTimestamp } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Link } from '/app/static/js/components/link.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 
 const { span, b } = van.tags;
 

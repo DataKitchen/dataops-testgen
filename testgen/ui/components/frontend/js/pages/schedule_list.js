@@ -24,20 +24,21 @@
  * @property {Schedule[]} items
  * @property {Permissions} permissions
  * @property {string} arg_label
- * @property {import('../components/select.js').Option[]} arg_values
+ * @property {import('/app/static/js/components/select.js').Option[]} arg_values
  * @property {CronSample?} sample
  * @property {Results?} results
  */
-import van from '../van.min.js';
-import { Button } from '../components/button.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { withTooltip } from '../components/tooltip.js';
-import { ExpansionPanel } from '../components/expansion_panel.js';
-import { Select } from '../components/select.js';
-import { CrontabInput } from '../components/crontab_input.js';
-import { timezones } from '../values.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
+import { Select } from '/app/static/js/components/select.js';
+import { CrontabInput } from '/app/static/js/components/crontab_input.js';
+import { timezones } from '/app/static/js/values.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const minHeight = 500;
 const { div, span, i } = van.tags;
@@ -45,7 +46,8 @@ const { div, span, i } = van.tags;
 const ScheduleList = (/** @type Properties */ props) => {
     loadStylesheet('schedule-list', stylesheet);
 
-    window.testgen.isPage = true;
+    const dialogProp = getValue(props.dialog);
+    const dialogOpen = van.state(dialogProp?.open === true);
 
     const scheduleItems = van.derive(() => {
         let items = [];
@@ -54,7 +56,6 @@ const ScheduleList = (/** @type Properties */ props) => {
         } catch (e) {
             console.log(e)
         }
-        Streamlit.setFrameHeight(Math.max(minHeight, 100 * items.length || 150));
         return items;
     });
 
@@ -71,7 +72,7 @@ const ScheduleList = (/** @type Properties */ props) => {
     const columns = ['25%', '45%', '20%', '10%'];
     const domId = 'schedules-table';
 
-    return div(
+    const content = div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
         ExpansionPanel(
             {title: span({ class: 'text-green' }, 'Add Schedule'), testId: 'scheduler-cron-editor'},
@@ -171,6 +172,20 @@ const ScheduleList = (/** @type Properties */ props) => {
                 : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No schedules defined yet.'),
         ),
     );
+
+    if (dialogProp) {
+        const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+        return Dialog(
+            {
+                title: dialogTitle,
+                open: dialogOpen,
+                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                width: '65rem',
+            },
+            content,
+        );
+    }
+    return content;
 }
 
 const ScheduleListItem = (
@@ -270,3 +285,27 @@ stylesheet.replace(`
 `);
 
 export { ScheduleList };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, ScheduleList(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

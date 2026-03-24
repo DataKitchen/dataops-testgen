@@ -1,5 +1,5 @@
 /**
- * @import { TableGroupStats } from '../components/table_group_stats.js'
+ * @import { TableGroupStats } from '/app/static/js/components/table_group_stats.js'
  * 
  * @typedef Result
  * @type {object}
@@ -14,16 +14,17 @@
  * @property {boolean} allow_selection
  * @property {Result?} result
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { Alert } from '../components/alert.js';
-import { ExpanderToggle } from '../components/expander_toggle.js';
-import { Icon } from '../components/icon.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Code } from '../components/code.js';
-import { Button } from '../components/button.js';
-import { Select } from '../components/select.js';
-import { TableGroupStats } from '../components/table_group_stats.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { Alert } from '/app/static/js/components/alert.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Code } from '/app/static/js/components/code.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Select } from '/app/static/js/components/select.js';
+import { TableGroupStats } from '/app/static/js/components/table_group_stats.js';
 
 const { div, span, strong } = van.tags;
 
@@ -32,13 +33,11 @@ const { div, span, strong } = van.tags;
  */
 const RunProfilingDialog = (props) => {
     loadStylesheet('run-profiling', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
+
+    const dialogProp = getValue(props.dialog);
+    const dialogOpen = van.state(dialogProp?.open === true);
 
     const wrapperId = 'run-profiling-wrapper';
-
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     const tableGroups = getValue(props.table_groups);
     const allowSelection = getValue(props.allow_selection);
@@ -46,7 +45,7 @@ const RunProfilingDialog = (props) => {
     const selectedTableGroup = van.derive(() => tableGroups.find(({ id }) => id === selectedId.val));
     const showCLICommand = van.state(false);
 
-    return div(
+    const content = div(
         { id: wrapperId },
         div(
             { class: `flex-column fx-gap-3 ${allowSelection ? 'run-profiling--allow-selection' : ''}` },
@@ -110,6 +109,20 @@ const RunProfilingDialog = (props) => {
             })
             : '',
     );
+
+    if (dialogProp) {
+        const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? 'Run Profiling');
+        return Dialog(
+            {
+                title: dialogTitle,
+                open: dialogOpen,
+                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                width: '32rem',
+            },
+            content,
+        );
+    }
+    return content;
 };
 
 const stylesheet = new CSSStyleSheet();
@@ -124,3 +137,27 @@ stylesheet.replace(`
 `);
 
 export { RunProfilingDialog };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, RunProfilingDialog(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

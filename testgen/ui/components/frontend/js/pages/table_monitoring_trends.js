@@ -1,8 +1,8 @@
 /**
- * @import {Point} from '../components/chart_canvas.js';
- * @import {FreshnessEvent} from '../components/freshness_chart.js';
- * @import {SchemaEvent} from '../components/schema_changes_chart.js';
- * @import {DataStructureLog} from '../components/schema_changes_list.js';
+ * @import {Point} from '/app/static/js/components/chart_canvas.js';
+ * @import {FreshnessEvent} from '/app/static/js/components/freshness_chart.js';
+ * @import {SchemaEvent} from '/app/static/js/components/schema_changes_chart.js';
+ * @import {DataStructureLog} from '/app/static/js/components/schema_changes_list.js';
  *
  * @typedef VolumeTrendEvent
  * @type {object}
@@ -52,10 +52,10 @@
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
  * @property {boolean} extended_history
+ * @property {{ open: boolean, title: string }?} dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
+import { emitEvent, getValue, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { FreshnessChart } from '/app/static/js/components/freshness_chart.js';
 import { colorMap, formatNumber } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
@@ -64,6 +64,7 @@ import { getAdaptiveTimeTicksV2, scale } from '/app/static/js/axis_utils.js';
 import { Tooltip } from '/app/static/js/components/tooltip.js';
 import { DualPane } from '/app/static/js/components/dual_pane.js';
 import { Button } from '/app/static/js/components/button.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
 
 const { div, span } = van.tags;
@@ -90,8 +91,14 @@ const tickWidth = 90;
  * @param {Properties} props
  */
 const TableMonitoringTrend = (props) => {
-  window.testgen.isPage = true;
   loadStylesheet('table-monitoring-trends', stylesheet);
+
+  const dialogOpen = van.state(false);
+  van.derive(() => {
+    const d = getValue(props.dialog);
+    if (d?.open) dialogOpen.val = true;
+    else dialogOpen.val = false;
+  });
 
   const shouldShowSidebar = van.state(false);
   const schemaChartSelection = van.state(null);
@@ -103,7 +110,7 @@ const TableMonitoringTrend = (props) => {
     schemaChartSelection.val = event;
   };
 
-  return DualPane(
+  const content = DualPane(
     {
       id: 'monitoring-trends-container',
       class: () => `table-monitoring-trend-wrapper ${shouldShowSidebar.val ? 'has-sidebar' : ''}`,
@@ -126,7 +133,10 @@ const TableMonitoringTrend = (props) => {
           }),
         );
       },
-      () => ChartsSection(props, { schemaChartSelection, getDataStructureLogs }),
+      () => {
+        if (!getValue(props.dialog)?.open) return div();
+        return ChartsSection(props, { schemaChartSelection, getDataStructureLogs });
+      },
       ChartLegend({
         '': {
           items: [
@@ -214,6 +224,17 @@ const TableMonitoringTrend = (props) => {
       );
     },
   );
+
+  const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+  return Dialog(
+    {
+      title: dialogTitle,
+      open: dialogOpen,
+      onClose: () => { dialogOpen.val = false; emitEvent('CloseTrendsDialog', {}); },
+      width: '75rem',
+    },
+    content,
+  );
 };
 
 /**
@@ -231,7 +252,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
     + metricEvents.length * ((spacing * 4) + metricTrendChartHeight)
   );
 
-  const predictions = getValue(props.predictions);
+  const predictions = getValue(props.predictions) ?? {};
   const freshnessWindow = predictions?.freshness_trend?.window;
   const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
     ...predictionTimes,
@@ -857,30 +878,3 @@ stylesheet.replace(`
 `);
 
 export { TableMonitoringTrend };
-
-export default (component) => {
-  const { data, setStateValue, setTriggerValue, parentElement } = component;
-
-  Streamlit.enableV2(setTriggerValue);
-
-  let componentState = parentElement.state;
-  if (componentState === undefined) {
-    componentState = {};
-    for (const [ key, value ] of Object.entries(data)) {
-      componentState[key] = van.state(value);
-    }
-
-    parentElement.state = componentState;
-    van.add(parentElement, TableMonitoringTrend(componentState));
-  } else {
-    for (const [ key, value ] of Object.entries(data)) {
-      if (!isEqual(componentState[key].val, value)) {
-        componentState[key].val = value;
-      }
-    }
-  }
-
-  return () => {
-    parentElement.state = null;
-  };
-};

@@ -11,12 +11,12 @@
  * @property {ProfilingRun} profiling_runs
  * @property {Column} selected_item
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { formatTimestamp } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
-import { Card } from '../components/card.js';
+import { Card } from '/app/static/js/components/card.js';
 
 const { div, span } = van.tags;
 

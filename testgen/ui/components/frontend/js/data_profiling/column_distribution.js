@@ -7,17 +7,17 @@
  * @property {boolean?} dataPreview
  * @property {boolean?} history
  */
-import van from '../van.min.js';
-import { Card } from '../components/card.js';
-import { Attribute } from '../components/attribute.js';
-import { Button } from '../components/button.js';
-import { Alert } from '../components/alert.js';
-import { SummaryBar } from '../components/summary_bar.js';
-import { PercentBar } from '../components/percent_bar.js';
-import { FrequencyBars } from '../components/frequency_bars.js';
-import { BoxPlot } from '../components/box_plot.js';
-import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '../utils.js';
-import { formatNumber, formatTimestamp, PII_REDACTED } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Attribute } from '/app/static/js/components/attribute.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Alert } from '/app/static/js/components/alert.js';
+import { SummaryBar } from '/app/static/js/components/summary_bar.js';
+import { PercentBar } from '/app/static/js/components/percent_bar.js';
+import { FrequencyBars } from '/app/static/js/components/frequency_bars.js';
+import { BoxPlot } from '/app/static/js/components/box_plot.js';
+import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '/app/static/js/utils.js';
+import { formatNumber, formatTimestamp, PII_REDACTED } from '/app/static/js/display_utils.js';
 
 const { div, span } = van.tags;
 const columnTypeFunctionMap = {

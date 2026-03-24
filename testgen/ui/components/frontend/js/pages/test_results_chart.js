@@ -1,11 +1,11 @@
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getValue, loadStylesheet, onFrameResized, parseDate, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { ChartCanvas } from '../components/chart_canvas.js';
-import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '../components/monitoring_sparkline.js';
-import { ThresholdChart } from '../components/threshold_chart.js';
-import { colorMap } from '../display_utils.js';
-import { FreshnessChart } from '../components/freshness_chart.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { ChartCanvas } from '/app/static/js/components/chart_canvas.js';
+import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
+import { ThresholdChart } from '/app/static/js/components/threshold_chart.js';
+import { colorMap } from '/app/static/js/display_utils.js';
+import { FreshnessChart } from '/app/static/js/components/freshness_chart.js';
 
 const { div } = van.tags;
 const { circle, g, rect, text } = van.tags("http://www.w3.org/2000/svg");
@@ -22,8 +22,6 @@ const staleColorByStatus = {
 
 const TestResultsChart = (/** @type Properties */ props) => {
     loadStylesheet('testResultsChart', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const width = van.state(0);
     const height = van.state(0);
@@ -145,7 +143,8 @@ const TestResultsChart = (/** @type Properties */ props) => {
             ),
         );
         markers.val = (getPoint, showTooltip, hideTooltip) => {
-            const markerPoints = points.val.map((point) => getPoint(point)).filter((point) => !Number.isNaN(point.x) && !Number.isNaN(point.y));
+            if (!width.rawVal || !height.rawVal) return g();
+            const markerPoints = points.val.map((point) => getPoint(point)).filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
             return MonitoringSparklineMarkers({showTooltip, hideTooltip}, markerPoints);
         };
     };
@@ -220,23 +219,15 @@ const TestResultsChart = (/** @type Properties */ props) => {
 
     van.derive(() => {
         const data = getValue(props.data);
+        if (!data?.length) return;
 
         sharedInitialization(data);
         visualizationType.val = data[0]?.result_visualization ?? 'line_chart';
         initializers[visualizationType.rawVal]?.(data);
     });
 
-    const wrapperId = 'test-results-chart-wrapper';
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
-
-    onFrameResized(wrapperId, (box, element) => {
-        width.val = box.width;
-        height.val = box.height;
-    });
-
-    return div(
-        { id: wrapperId },
+    const wrapperEl = div(
+        { id: 'test-results-chart-wrapper' },
         ChartCanvas(
             {
                 width,
@@ -301,6 +292,19 @@ const TestResultsChart = (/** @type Properties */ props) => {
             },
         ),
     );
+
+    // Observe the wrapper element directly instead of window.frameElement (which is null in V2)
+    const resizeObserver = new ResizeObserver(() => {
+        const box = wrapperEl.getBoundingClientRect();
+        if (box.width > 0 || box.height > 0) {
+            width.val = box.width;
+            height.val = box.height;
+        }
+    });
+    // Defer observation until the element is in the DOM
+    requestAnimationFrame(() => resizeObserver.observe(wrapperEl));
+
+    return wrapperEl;
 };
 
 const stylesheet = new CSSStyleSheet();
@@ -311,3 +315,27 @@ stylesheet.replace(`
 `);
 
 export { TestResultsChart };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, TestResultsChart(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

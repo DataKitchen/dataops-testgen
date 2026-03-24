@@ -49,20 +49,22 @@
  * @property {string} breakdown_score_type
  * @property {boolean} is_new
  * @property {Permissions} permissions
+ * @property {object?} column_selector_dialog
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { debounce, emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement, afterMount, getRandomId, isEqual } from '../utils.js';
-import { Input } from '../components/input.js';
-import { Select } from '../components/select.js';
-import { Button } from '../components/button.js';
-import { ScoreCard } from '../components/score_card.js';
-import { Checkbox } from '../components/checkbox.js';
-import { Portal } from '../components/portal.js';
-import { ScoreBreakdown } from '../components/score_breakdown.js';
-import { IssuesTable } from '../components/score_issues.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { ColumnFilter } from '../components/explorer_column_selector.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { debounce, emitEvent, getValue, loadStylesheet, afterMount, getRandomId, isEqual } from '/app/static/js/utils.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Button } from '/app/static/js/components/button.js';
+import { ScoreCard } from '/app/static/js/components/score_card.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
+import { Portal } from '/app/static/js/components/portal.js';
+import { ScoreBreakdown } from '/app/static/js/components/score_breakdown.js';
+import { IssuesTable } from '/app/static/js/components/score_issues.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { ColumnFilter } from '/app/static/js/components/explorer_column_selector.js';
+import { ColumnSelectorDialog } from '/app/static/js/components/column_selector_dialog.js';
 
 const { div, i, span } = van.tags;
 
@@ -81,10 +83,7 @@ const TRANSLATIONS = {
 };
 
 const ScoreExplorer = (/** @type {Properties} */ props) => {
-    window.testgen.isPage = true;
-
     loadStylesheet('score-explorer', stylesheet);
-    Streamlit.setFrameHeight(1);
 
     const domId = 'score-explorer-page';
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
@@ -101,11 +100,11 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
         return null;
     });
 
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);
+    const columnSelectorDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.column_selector_dialog) != null) columnSelectorDialogOpen.val = true; });
 
     return div(
-        { id: domId, class: 'score-explorer' },
+        { id: domId, 'data-testid': 'score-explorer', class: 'score-explorer' },
         Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit, updateToolbarFilters),
         span({ class: 'mb-4', style: 'display: block;' }),
         () => {
@@ -150,6 +149,11 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
                 },
             );
         },
+        ColumnSelectorDialog({
+            dialog: van.derive(() => ({ title: getValue(props.column_selector_dialog)?.title ?? 'Select Columns', open: columnSelectorDialogOpen })),
+            columns: van.derive(() => getValue(props.column_selector_dialog)?.columns ?? []),
+            onClose: () => emitEvent('ColumnSelectorDialogClosed', {}),
+        }),
     );
 };
 
@@ -566,3 +570,27 @@ stylesheet.replace(`
 `);
 
 export { ScoreExplorer };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, ScoreExplorer(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

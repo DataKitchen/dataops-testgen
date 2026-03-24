@@ -1,5 +1,5 @@
 /**
- * @import { Connection, Flavor } from '../components/connection_form.js';
+ * @import { Connection, Flavor } from '/app/static/js/components/connection_form.js';
  * 
  * @typedef Results
  * @type {object}
@@ -20,13 +20,13 @@
  * @property {string?} generated_connection_url
  * @property {Results?} results
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, getValue, emitEvent } from '../utils.js';
-import { ConnectionForm } from '../components/connection_form.js';
-import { Button } from '../components/button.js';
-import { Link } from '../components/link.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { Streamlit } from '/app/static/js/streamlit.js';
+import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { ConnectionForm } from '/app/static/js/components/connection_form.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, span } = van.tags;
 
@@ -37,8 +37,6 @@ const { div, span } = van.tags;
  */
 const Connections = (props) => {
     loadStylesheet('connections', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const wrapperId = 'connections-list-wrapper';
     const projectCode = getValue(props.project_code);
@@ -47,11 +45,9 @@ const Connections = (props) => {
     const updatedConnection = van.state(connection);
     const formState = van.state({dirty: false, valid: false});
 
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, class: 'flex-column fx-gap-4' },
+        { id: wrapperId, 'data-testid': 'connections', class: 'flex-column fx-gap-4' },
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             () => getValue(props.has_table_groups)
@@ -127,3 +123,27 @@ stylesheet.replace(`
 `);
 
 export { Connections };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    Streamlit.enableV2(setTriggerValue);
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        van.add(parentElement, Connections(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};
