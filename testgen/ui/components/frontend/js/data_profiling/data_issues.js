@@ -22,11 +22,6 @@ import { formatTimestamp } from '../display_utils.js';
 
 const { div, span, i } = van.tags;
 
-const RISK_COLORS = {
-    High: 'red',
-    Moderate: 'orange',
-};
-
 const LIKELIHOOD_COLORS = {
     Definite: 'red',
     Likely: 'orange',
@@ -38,40 +33,6 @@ const STATUS_COLORS = {
     Warning: 'yellow',
     Error: 'brown',
     Log: 'blue',
-};
-
-const PotentialPIICard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
-    const title = `Potential PII ${item.is_latest_profile ? '*' : ''}`;
-    const attributes = [
-        {
-            key: 'detail', width: 150, label: 'Type',
-            value_function: (issue) => (issue.detail || '').split('Type: ')[1],
-        },
-        {
-            key: 'pii_risk', width: 100, label: 'Risk', classes: 'text-secondary',
-            value_function: (issue) => div(
-                { class: 'flex-row' },
-                span({ class: 'dot mr-2', style: `color: var(--${RISK_COLORS[issue.pii_risk]});` }),
-                issue.pii_risk,
-            ),
-        },
-    ];
-    if (item.type === 'table') {
-        attributes.unshift(
-            { key: 'column_name', width: 150, label: 'Column' },
-        );
-    }
-
-    const potentialPII = item.hygiene_issues.filter(({ issue_likelihood }) => issue_likelihood === 'Potential PII');
-    const linkProps = props.noLinks ? null : {
-        href: 'profiling-runs:hygiene',
-        params: { run_id: item.profile_run_id, issue_class: 'Potential PII', project_code: item.project_code },
-    };
-    const noneContent = item.profile_run_id && !item.profiling_error
-        ? 'No potential PII detected'
-        : span({ class: 'text-secondary' }, `No profiling results for ${item.type}`);
-
-    return IssuesCard(props, title, potentialPII, attributes, linkProps, noneContent);
 };
 
 const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
@@ -250,4 +211,4 @@ const IssuesCard = (
     });
 }
 
-export { PotentialPIICard, HygieneIssuesCard, TestIssuesCard };
+export { HygieneIssuesCard, TestIssuesCard };

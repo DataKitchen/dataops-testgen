@@ -12,6 +12,7 @@ from streamlit.delta_generator import DeltaGenerator
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.components.widgets.download_dialog import (
@@ -113,7 +114,12 @@ class DataCatalogPage(Page):
                 "permissions": {
                     "can_edit": session.auth.user_has_permission("disposition"),
                     "can_navigate": user_can_navigate,
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
                 },
+                "autoflag_settings": {
+                    "profile_flag_cdes": selected_table_group.profile_flag_cdes,
+                    "profile_flag_pii": selected_table_group.profile_flag_pii,
+                } if selected_table_group else None,
             },
             on_change_handlers={
                 "RunProfilingClicked": lambda _: run_profiling_dialog(
@@ -154,7 +160,7 @@ class DataCatalogPage(Page):
                 if selected_table_group
                 else None,
             },
-            event_handlers={"TagsChanged": partial(on_tags_changed, spinner_container)},
+            event_handlers={"TagsChanged": partial(on_tags_changed, spinner_container, table_group_id)},
         )
 
 
@@ -198,6 +204,11 @@ def get_excel_report_data(
         )
 
     data = pd.DataFrame(table_data + column_data)
+
+    if not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(str(table_group.id))
+        mask_profiling_pii(data, pii_columns)
+
     data = data.sort_values(
         by=["table_name", "ordinal_position"],
         na_position="first",
@@ -211,7 +222,7 @@ def get_excel_report_data(
         data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
-        data[key] = data[key].apply(lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None)
+        data[key] = data[key].apply(lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val)
 
     for key in [
         "data_source",
@@ -237,22 +248,26 @@ def get_excel_report_data(
         else None,
         axis=1,
     )
+    data["excluded_data_element"] = data["excluded_data_element"].apply(lambda val: "Yes" if val else None)
+    data["pii_flag"] = data["pii_flag"].apply(lambda val: "Yes" if val else None)
     data["top_freq_values"] = data["top_freq_values"].apply(
         lambda val: "\n".join([f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ")])
-        if not pd.isna(val)
-        else None
+        if not pd.isna(val) and val != PII_REDACTED
+        else val
     )
     data["top_patterns"] = data["top_patterns"].apply(
         lambda val: "".join([f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
-        if not pd.isna(val)
-        else None
+        if not pd.isna(val) and val != PII_REDACTED
+        else val
     )
 
     file_columns = {
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
-        "critical_data_element": {},
+        "critical_data_element": {"header": "Critical data element (CDE)"},
+        "excluded_data_element": {"header": "Excluded data element (XDE)"},
+        "pii_flag": {"header": "PII"},
         "active_test_count": {"header": "Active tests"},
         "ordinal_position": {"header": "Position"},
         "general_type": {},
@@ -358,7 +373,7 @@ def remove_table_dialog(item: dict) -> None:
         safe_rerun()
 
 
-def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
+def on_tags_changed(spinner_container: DeltaGenerator, table_group_id: str, payload: dict) -> FILE_DATA_TYPE:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
 
@@ -374,7 +389,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
 
     with spinner_container:
         with st.spinner("Saving tags"):
-            if params["table_ids"]:
+            if params["table_ids"] and set_attributes:
                 execute_db_query(
                     f"""
                     WITH selected as (
@@ -390,6 +405,15 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                 )
 
             if params["column_ids"]:
+                if "excluded_data_element" in tags:
+                    set_attributes.append("excluded_data_element = :excluded_data_element")
+                    params.update({"excluded_data_element": tags.get("excluded_data_element")})
+
+                # Prevent user from editing PII flag if they cannot view PII
+                if "pii_flag" in tags and session.auth.user_has_permission("view_pii"):
+                    set_attributes.append("pii_flag = :pii_flag")
+                    params.update({"pii_flag": tags.get("pii_flag")})
+
                 execute_db_query(
                     f"""
                     WITH selected as (
@@ -404,8 +428,26 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                     params,
                 )
 
+    _disable_autoflags(table_group_id, payload.get("disable_flags"))
+
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
     safe_rerun()
+
+
+def _disable_autoflags(table_group_id: str, disable_flags: list[str] | None) -> None:
+    if not disable_flags or not (table_group := TableGroup.get(table_group_id)):
+        return
+
+    changed = False
+    if "profile_flag_cdes" in disable_flags:
+        table_group.profile_flag_cdes = False
+        changed = True
+    if "profile_flag_pii" in disable_flags:
+        table_group.profile_flag_pii = False
+        changed = True
+
+    if changed:
+        table_group.save()
 
 
 def export_metadata_csv(table_group: TableGroupMinimal) -> None:
@@ -428,6 +470,8 @@ def export_metadata_csv(table_group: TableGroupMinimal) -> None:
             SELECT c.table_name, c.column_name,
                 c.description,
                 c.critical_data_element,
+                c.excluded_data_element,
+                c.pii_flag,
                 {", ".join([ f"c.{tag}" for tag in TAG_FIELDS ])}
             FROM data_column_chars c
                 LEFT JOIN data_table_chars t ON (c.table_id = t.table_id)
@@ -444,6 +488,8 @@ def export_metadata_csv(table_group: TableGroupMinimal) -> None:
                 "Column": row["column_name"],
                 "Description": row["description"] or "",
                 "Critical Data Element": "Yes" if row["critical_data_element"] is True else "No" if row["critical_data_element"] is False else "",
+                "Excluded Data Element": "Yes" if row.get("excluded_data_element") else "No",
+                "PII": "Yes" if row.get("pii_flag") else "No",
             }
             for tag in TAG_FIELDS:
                 header = tag.replace("_", " ").title()
@@ -484,6 +530,8 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
         table_chars.critical_data_element AS table_critical_data_element,
+        column_chars.excluded_data_element,
+        column_chars.pii_flag,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
     FROM data_column_chars column_chars
@@ -528,6 +576,10 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item["test_suites"] = get_related_test_suites(
             item["table_group_id"], item["table_name"], item.get("column_name")
         )
+        if not session.auth.user_has_permission("view_pii"):
+            pii_columns = get_pii_columns(item["table_group_id"], table_name=item["table_name"])
+            mask_profiling_pii(item, pii_columns)
+            mask_hygiene_detail(item.get("hygiene_issues", []), pii_columns)
         return item
 
 

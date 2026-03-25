@@ -75,7 +75,7 @@ SELECT
          THEN 1 END)::FLOAT/COUNT("{COL_NAME}")::FLOAT > 0.9 THEN 'ZIP_USA'
     WHEN SUM(CASE WHEN "{COL_NAME}" ~ '^[\\w\\s\-]+\\.(txt|(c|t|p)sv|dat|doc|docx|json|pdf|xlsx|xml)$'
          THEN 1 END)::FLOAT/COUNT("{COL_NAME}")::FLOAT > 0.9 THEN 'FILE_NAME'
-    WHEN SUM(CASE WHEN "{COL_NAME}" ~ '^([0-9]{4}[- ]){3}[0-9]{4}$'
+    WHEN SUM(CASE WHEN "{COL_NAME}" ~ '^([0-9]{4}[- ]?){3}[0-9]{4}$'
          THEN 1 END)::FLOAT/COUNT("{COL_NAME}")::FLOAT > 0.8 THEN 'CREDIT_CARD'
     WHEN SUM(CASE WHEN "{COL_NAME}" ~ '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$'
                     AND "{COL_NAME}" !~ '\\s(and|but|or|yet)\\s'

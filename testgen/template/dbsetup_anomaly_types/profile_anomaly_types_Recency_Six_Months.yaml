@@ -9,6 +9,7 @@ profile_anomaly_types:
     MAX(p.max_date) >= CURRENT_DATE - INTERVAL '1 year' AND MAX(p.max_date) < CURRENT_DATE - INTERVAL '6 months'
   detail_expression: |-
     'Most Recent Date: ' || MAX(p.max_date)::VARCHAR
+  detail_redactable: true
   issue_likelihood: Possible
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether dates in table should be more recent.

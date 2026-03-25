@@ -13,7 +13,7 @@ from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
-Permission = Literal["catalog", "view", "disposition", "edit", "administer", "global_admin"]
+Permission = Literal["catalog", "view", "disposition", "view_pii", "edit", "administer", "global_admin"]
 
 
 class Authentication:

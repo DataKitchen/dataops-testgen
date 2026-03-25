@@ -2,6 +2,9 @@ function formatTimestamp(
     /** @type number | string */ timestamp,
     /** @type boolean */ showYear,
 ) {
+    if (timestamp === PII_REDACTED) {
+        return timestamp;
+    }
     if (timestamp) {
         let date = timestamp;
         if (typeof timestamp === 'number') {
@@ -81,6 +84,9 @@ function humanReadableDuration(/** @type string */ duration, /** @type boolean *
 }
 
 function formatNumber(/** @type number | string */ number, /** @type number */ decimals = 3) {
+    if (number === PII_REDACTED) {
+        return number;
+    }
     if (!['number', 'string'].includes(typeof number) || isNaN(number)) {
         return '--';
     }
@@ -173,6 +179,7 @@ const colorMap = {
 }
 
 const DISABLED_ACTION_TEXT = 'You do not have permissions to perform this action. Contact your administrator.';
+const PII_REDACTED = '[PII Redacted]';
 
 export {
     formatTimestamp,
@@ -187,4 +194,5 @@ export {
     viewPortUnitsToPixels,
     colorMap,
     DISABLED_ACTION_TEXT,
+    PII_REDACTED,
 };

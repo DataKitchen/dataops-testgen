@@ -904,6 +904,113 @@ class Test_MinutesToNextDeadline:
         assert 1700 <= result <= 1800
 
 
+class Test_WeekendScheduleInteraction:
+    """Test that schedule-inferred active_days supersedes exclude_weekends.
+
+    Scenario: Tables update Mon-Fri evenings, monitor runs at midnight & noon.
+    Schedule inference detects active_days = Tue-Sat (detection days, shifted
+    by one from update days). excluded_days = {Mon, Sun}.
+
+    Once the schedule is active, excluded_days should be the single source
+    of truth — Saturday (a detection day) should NOT be treated as excluded.
+    """
+
+    def _make_midnight_detection_schedule(self):
+        """Schedule for tables that update on weekday evenings and are detected
+        the following morning at midnight: Tue-Sat active, midnight window."""
+        return _make_schedule(
+            active_days=frozenset({1, 2, 3, 4, 5}),  # Tue-Sat
+            window_start=0.0,
+            window_end=0.0,
+        )
+
+    def test_saturday_check_update_detected_passes(self):
+        """Friday update detected at Saturday midnight check should pass.
+
+        With the fix: exclude_weekends=False when excluded_days is present,
+        so Saturday is NOT excluded. Deadline lands on Saturday (next active day
+        after Friday), giving upper ~1620 min — well above the ~1440 min gap.
+        """
+        schedule = self._make_midnight_detection_schedule()
+        excluded_days = frozenset({0, 6})  # Mon, Sun
+        zi = zoneinfo.ZoneInfo(TZ)
+        # Friday midnight ET = 05:00 UTC (EST)
+        last_update = pd.Timestamp("2026-02-06T05:00", tz="UTC").tz_localize(None)
+
+        upper = minutes_to_next_deadline(
+            last_update, schedule,
+            exclude_weekends=False,  # The fix: schedule supersedes this
+            holiday_dates=None, tz=TZ, buffer_hours=3.0,
+            excluded_days=excluded_days,
+        )
+        assert upper is not None
+        # ~1620 min (Fri midnight to Sat 3AM, no excluded time on Saturday)
+        assert upper > 1500
+
+        # The actual gap (Fri midnight to Sat midnight) is ~1440 min
+        # which should be well within the tolerance
+        assert 1440 < upper
+
+    def test_saturday_check_is_not_excluded_day(self):
+        """Saturday should not be IS_EXCLUDED_DAY when schedule says it's active."""
+        zi = zoneinfo.ZoneInfo(TZ)
+        excluded_days = frozenset({0, 6})  # Mon, Sun
+        # Saturday midnight ET = 05:00 UTC (EST, Feb before DST)
+        sat_run = pd.Timestamp("2026-02-07T05:00", tz="UTC").tz_localize(None)
+
+        result = is_excluded_day(
+            sat_run,
+            exclude_weekends=False,  # The fix
+            holiday_dates=None,
+            tz=TZ,
+            excluded_days=excluded_days,
+        )
+        # Saturday (weekday 5) is NOT in excluded_days {0, 6}
+        assert result is False
+
+    def test_sunday_still_excluded(self):
+        """Sunday should remain excluded (in excluded_days={0, 6})."""
+        excluded_days = frozenset({0, 6})
+        sun_run = pd.Timestamp("2026-02-08T05:00", tz="UTC").tz_localize(None)
+
+        result = is_excluded_day(
+            sun_run,
+            exclude_weekends=False,
+            holiday_dates=None,
+            tz=TZ,
+            excluded_days=excluded_days,
+        )
+        assert result is True
+
+    def test_monday_still_excluded(self):
+        """Monday should remain excluded (in excluded_days={0, 6}, weekday 0)."""
+        excluded_days = frozenset({0, 6})
+        mon_run = pd.Timestamp("2026-02-09T05:00", tz="UTC").tz_localize(None)
+
+        result = is_excluded_day(
+            mon_run,
+            exclude_weekends=False,
+            holiday_dates=None,
+            tz=TZ,
+            excluded_days=excluded_days,
+        )
+        assert result is True
+
+    def test_saturday_excluded_minutes_zero_for_weekday_gap(self):
+        """No excluded minutes between Friday and Saturday when Saturday is active."""
+        excluded_days = frozenset({0, 6})
+        fri = pd.Timestamp("2026-02-06T05:00")  # Fri midnight ET
+        sat = pd.Timestamp("2026-02-07T05:00")  # Sat midnight ET
+
+        excl = count_excluded_minutes(
+            fri, sat,
+            exclude_weekends=False,
+            holiday_dates=None,
+            tz=TZ,
+            excluded_days=excluded_days,
+        )
+        assert excl == 0
+
 
 # ---------------------------------------------------------------------------
 # is_excluded_day with window_start/window_end Tests

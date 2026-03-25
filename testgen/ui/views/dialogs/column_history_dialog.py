@@ -3,10 +3,12 @@ from sqlalchemy.sql.expression import func
 
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets import testgen_component
 from testgen.ui.queries.profiling_queries import COLUMN_PROFILING_FIELDS
 from testgen.ui.services.database_service import fetch_one_from_db
+from testgen.ui.session import session
 from testgen.utils import make_json_safe
 
 
@@ -39,6 +41,10 @@ def _column_history_dialog(
             profiling_runs = [run.to_dict(json_safe=True) for run in profiling_runs]
             run_id = st.session_state.get("column_history_dialog:run_id") or profiling_runs[0]["id"]
             selected_item = get_run_column(run_id, schema_name, table_name, column_name)
+
+    if selected_item and not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(table_group_id, table_name=table_name)
+        mask_profiling_pii(selected_item, pii_columns)
 
     testgen_component(
         "column_profiling_history",

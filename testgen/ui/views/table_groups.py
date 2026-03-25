@@ -335,6 +335,9 @@ class TableGroupsPage(Page):
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
 
+                    if table_group_id and success:
+                        safe_rerun()
+
                 except IntegrityError:
                     success = False
                     message = "A Table Group with the same name already exists."
@@ -349,6 +352,9 @@ class TableGroupsPage(Page):
                 "connections": connections,
                 "table_group": table_group.to_dict(json_safe=True),
                 "is_in_use": is_table_group_used,
+                "permissions": {
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
+                },
                 "table_group_preview": table_group_preview,
                 "steps": steps,
                 "results": {

@@ -107,6 +107,19 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                 hasError
                     ? Alert({ type: 'error', icon: 'error' }, span(preview.error))
                     : PreviewTable(preview),
+                preview.pii_skipped
+                    ? Alert(
+                        { type: 'info', icon: 'info' },
+                        'PII data in this CSV will be ignored because you do not have permission to edit PII flags.',
+                    )
+                    : null,
+                preview.warn_cde || preview.warn_pii
+                    ? Alert(
+                        { type: 'warn', icon: 'warning' },
+                        `This table group is currently configured to detect ${preview.warn_cde ? 'CDEs' : ''}${preview.warn_cde && preview.warn_pii ? ' and ' : ''}${preview.warn_pii ? 'PIIs' : ''} during profiling.
+                            To preserve your imported edits, autodetection will be turned off.`,
+                    )
+                    : null,
                 div(
                     { class: 'flex-row fx-justify-content-flex-end' },
                     Button({
@@ -131,6 +144,12 @@ const STATUS_ICONS = {
     unmatched: 'block',
 };
 
+const COLUMN_LABELS = {
+    critical_data_element: 'CDE',
+    excluded_data_element: 'XDE',
+    pii_flag: 'PII',
+};
+
 const PreviewTable = (preview) => {
     const metadataColumns = preview.metadata_columns || [];
     const previewRows = preview.preview_rows || [];
@@ -141,7 +160,7 @@ const PreviewTable = (preview) => {
         { name: 'column_name', label: 'Column', width: 150 },
         ...metadataColumns.map(col => ({
             name: col,
-            label: col === 'critical_data_element' ? 'CDE' : capitalize(col.replaceAll('_', ' ')),
+            label: COLUMN_LABELS[col] ?? capitalize(col.replaceAll('_', ' ')),
             width: col === 'description' ? 200 : 120,
         })),
     ];

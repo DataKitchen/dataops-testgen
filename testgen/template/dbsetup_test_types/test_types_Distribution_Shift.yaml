@@ -44,6 +44,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: bigquery
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver AS (
         SELECT {CONCAT_COLUMNS} AS category,
@@ -61,6 +62,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: databricks
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -88,6 +90,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: mssql
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -114,6 +117,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: postgresql
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -141,6 +145,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: redshift
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -168,6 +173,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: redshift_spectrum
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -195,6 +201,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: snowflake
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -222,6 +229,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: oracle
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,
@@ -249,6 +257,7 @@ test_types:
     test_type: Distribution_Shift
     sql_flavor: sap_hana
     lookup_type: null
+    lookup_redactable_columns: category
     lookup_query: |-
       WITH latest_ver
          AS ( SELECT {CONCAT_COLUMNS} as category,

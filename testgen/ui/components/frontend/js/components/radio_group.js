@@ -14,6 +14,7 @@
  * @property {function(string | number | boolean | null)?} onChange
  * @property {number?} width
  * @property {('default' | 'inline' | 'vertical')?} layout
+ * @property {boolean?} disabled
  */
 import van from '../van.min.js';
 import { getRandomId, getValue, loadStylesheet } from '../utils.js';
@@ -27,9 +28,10 @@ const RadioGroup = (/** @type Properties */ props) => {
 
     const groupName = getRandomId();
     const layout = getValue(props.layout) ?? 'default';
+    const disabled = getValue(props.disabled) ?? false;
 
     return div(
-        { class: () => `tg-radio-group--wrapper ${layout}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
+        { class: () => `tg-radio-group--wrapper ${layout}${disabled ? ' disabled' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
         div(
             { class: 'text-caption tg-radio-group--label flex-row fx-gap-1' },
             props.label,
@@ -49,6 +51,7 @@ const RadioGroup = (/** @type Properties */ props) => {
                     name: groupName,
                     value: option.value,
                     checked: () => option.value === getValue(props.value),
+                    disabled,
                     onchange: van.derive(() => {
                         const onChange = props.onChange?.val ?? props.onChange;
                         return onChange ? () => onChange(option.value) : null;
@@ -154,6 +157,11 @@ stylesheet.replace(`
     height: 10px;
     background-color: var(--primary-color);
     border-radius: 5px;
+}
+
+.tg-radio-group--wrapper.disabled {
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 .tg-radio-group--help {

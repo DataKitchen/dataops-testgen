@@ -192,7 +192,7 @@ const ColumnProfilingButton = (
         style: 'color: var(--secondary-text-color);',
         tooltip: 'View profiling for column',
         tooltipPosition: 'top-right',
-        onclick: () => emitEvent('ColumnProflingClicked', { payload: { column_name, table_name, table_group_id } }),
+        onclick: () => emitEvent('ColumnProfilingClicked', { payload: { column_name, table_name, table_group_id } }),
     });
 };
 

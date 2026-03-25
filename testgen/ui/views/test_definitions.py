@@ -662,7 +662,7 @@ def show_test_form(
 
     st.divider()
 
-    has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
+    has_match_attributes = "match_schema_name" in dynamic_attributes or "match_table_name" in dynamic_attributes
     left_column, right_column = st.columns([0.5, 0.5]) if has_match_attributes else (st.container(), None)
 
     test_definition["schema_name"] = left_column.text_input(

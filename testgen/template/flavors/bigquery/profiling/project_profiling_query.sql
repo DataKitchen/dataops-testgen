@@ -104,7 +104,7 @@ SELECT
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.9 THEN 'ZIP_USA'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^[\w\s\-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.9 THEN 'FILE_NAME'
-    WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([0-9]{4}[- ]){3}[0-9]{4}$')
+    WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([0-9]{4}[- ]?){3}[0-9]{4}$')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.8 THEN 'CREDIT_CARD'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$')
     AND NOT REGEXP_CONTAINS(`{COL_NAME}`, r'\s(and|but|or|yet)\s')
