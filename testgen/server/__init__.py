@@ -14,6 +14,7 @@ if settings.IS_DEBUG:
     os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
 from testgen.api.app import router as api_router
+from testgen.api.jobs import router as jobs_router
 from testgen.api.oauth.metadata import router as metadata_router
 from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(metadata_router)
     app.include_router(oauth_router)
     app.include_router(api_router)
+    app.include_router(jobs_router)
 
     if settings.MCP_ENABLED:
         app.mount("", mcp_app)
