@@ -79,6 +79,7 @@ SELECT
     WHEN CAST(SUM(CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^(\\+1|1)?[ .-]?(\\([2-9][0-9]{2}\\)|[2-9][0-9]{2})[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}$')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'PHONE_USA'
     WHEN CAST(SUM(CASE WHEN REGEXP_LIKE("{COL_NAME}"::VARCHAR, '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
+                        AND "{COL_NAME}"::VARCHAR NOT LIKE '%://%'
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
     WHEN CAST(SUM(CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
                         THEN 1 END) AS FLOAT) / CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'ZIP_USA'
