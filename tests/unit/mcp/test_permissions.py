@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.mcp.exceptions import MCPPermissionDenied
 from testgen.mcp.permissions import (
     _NOT_SET,
-    MCPPermissionDenied,
     ProjectPermissions,
     _compute_project_permissions,
     _mcp_project_permissions,
@@ -210,8 +210,8 @@ def test_mcp_permission_sets_contextvar():
 
 
 @patch("testgen.mcp.permissions.ProjectMembership")
-def test_mcp_permission_early_return_when_no_allowed_codes(mock_membership):
-    """Decorator returns early if user has no projects with the required permission."""
+def test_mcp_permission_raises_when_no_allowed_codes(mock_membership):
+    """Decorator raises MCPPermissionDenied if user has no projects with the required permission."""
     set_mcp_username("test")
 
     m1 = MagicMock()
@@ -223,23 +223,20 @@ def test_mcp_permission_early_return_when_no_allowed_codes(mock_membership):
     def tool_fn():
         raise AssertionError("Should not be called")
 
-    result = tool_fn()
-
-    assert "permission" in result
-    assert "role" in result.lower()
+    with pytest.raises(MCPPermissionDenied, match="permission"):
+        tool_fn()
 
 
-def test_mcp_permission_catches_mcp_permission_denied():
-    """Decorator catches MCPPermissionDenied and returns str(e)."""
+def test_mcp_permission_propagates_mcp_permission_denied():
+    """Decorator lets MCPPermissionDenied propagate — safe_tool handles conversion."""
     set_mcp_username("test")
 
     @mcp_permission("view")
     def tool_fn():
         raise MCPPermissionDenied("Access denied for testing")
 
-    result = tool_fn()
-
-    assert result == "Access denied for testing"
+    with pytest.raises(MCPPermissionDenied, match="Access denied for testing"):
+        tool_fn()
 
 
 def test_mcp_permission_resets_contextvar_after_call():

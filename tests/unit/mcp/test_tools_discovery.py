@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
+from testgen.mcp.exceptions import MCPPermissionDenied
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -144,7 +147,7 @@ def test_list_test_suites_empty(mock_suite, db_session_mock):
 
     from testgen.mcp.tools.discovery import list_test_suites
 
-    result = list_test_suites("nonexistent")
+    result = list_test_suites("demo")
 
     assert "No test suites found" in result
 
@@ -159,7 +162,7 @@ def test_list_test_suites_empty_project_code(db_session_mock):
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_list_test_suites_returns_not_found_for_inaccessible_project(
+def test_list_test_suites_raises_not_found_for_inaccessible_project(
     mock_compute, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
@@ -169,13 +172,12 @@ def test_list_test_suites_returns_not_found_for_inaccessible_project(
 
     from testgen.mcp.tools.discovery import list_test_suites
 
-    result = list_test_suites("secret_project")
-
-    assert "No test suites found for project `secret_project`" in result
+    with pytest.raises(MCPPermissionDenied, match="No test suites found for project `secret_project`"):
+        list_test_suites("secret_project")
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_list_test_suites_returns_denial_for_insufficient_permission(
+def test_list_test_suites_raises_denial_for_insufficient_permission(
     mock_compute, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
@@ -185,10 +187,8 @@ def test_list_test_suites_returns_denial_for_insufficient_permission(
 
     from testgen.mcp.tools.discovery import list_test_suites
 
-    result = list_test_suites("secret_project")
-
-    assert "necessary permission" in result
-    assert "role" in result.lower()
+    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
+        list_test_suites("secret_project")
 
 
 @patch("testgen.mcp.tools.discovery.DataTable")

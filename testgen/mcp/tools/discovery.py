@@ -4,6 +4,7 @@ from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
 from testgen.common.models.test_suite import TestSuite
+from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 
 
@@ -104,7 +105,7 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
     try:
         group_uuid = UUID(table_group_id)
     except (ValueError, AttributeError) as err:
-        raise ValueError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
+        raise MCPUserError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
 
     perms = get_project_permissions()
     project_codes = perms.allowed_codes
