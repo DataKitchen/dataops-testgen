@@ -39,6 +39,13 @@ def _column_history_dialog(
                 ProfilingRun.profiling_starttime >= func.to_timestamp(add_date),
             )
             profiling_runs = [run.to_dict(json_safe=True) for run in profiling_runs]
+
+    if not profiling_runs:
+        st.info("No profiling runs are available for this column. Run profiling first to see column history.")
+        return
+
+    with loading_column:
+        with st.spinner("Loading data ..."):
             run_id = st.session_state.get("column_history_dialog:run_id") or profiling_runs[0]["id"]
             selected_item = get_run_column(run_id, schema_name, table_name, column_name)
 
