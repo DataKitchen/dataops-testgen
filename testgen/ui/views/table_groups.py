@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.commands.test_generation import run_monitor_generation
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
@@ -309,6 +309,8 @@ class TableGroupsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
