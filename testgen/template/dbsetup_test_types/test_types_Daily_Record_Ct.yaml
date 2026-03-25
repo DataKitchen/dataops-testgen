@@ -52,7 +52,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: databricks
     measure: |-
-      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -60,7 +60,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: mssql
     measure: |-
-      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -68,7 +68,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: postgresql
     measure: |-
-      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -76,7 +76,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: redshift
     measure: |-
-      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -84,7 +84,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: redshift_spectrum
     measure: |-
-      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -92,7 +92,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: snowflake
     measure: |-
-      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -100,7 +100,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: trino
     measure: |-
-      DATE_DIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATE_DIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
