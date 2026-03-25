@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.user import User
+from testgen.mcp.exceptions import MCPPermissionDenied
 from testgen.utils.plugins import PluginHook
 
 _NOT_SET = object()
@@ -15,10 +16,6 @@ _mcp_username: contextvars.ContextVar[str | None] = contextvars.ContextVar("mcp_
 _mcp_project_permissions: contextvars.ContextVar["ProjectPermissions | object"] = contextvars.ContextVar(
     "mcp_project_permissions", default=_NOT_SET
 )
-
-
-class MCPPermissionDenied(Exception):
-    """Raised by ProjectPermissions when access is denied. Caught by the decorator."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,9 +102,9 @@ def mcp_permission(permission: str) -> Callable:
     permission, and stores it in a ContextVar. The tool retrieves the value
     via ``get_project_permissions()``.
 
-    If the user has no projects with the required permission, returns an
-    early denial message. Catches MCPPermissionDenied raised by tool code
-    and returns str(e) as the tool response.
+    Raises ``MCPPermissionDenied`` if the user has no projects with the required
+    permission. Other ``MCPPermissionDenied`` exceptions from tool code propagate
+    through — the ``safe_tool`` error boundary handles conversion to text.
     """
 
     def decorator(fn: Callable) -> Callable:
@@ -116,12 +113,12 @@ def mcp_permission(permission: str) -> Callable:
             user = get_current_mcp_user()
             perms = _compute_project_permissions(user, permission)
             if not perms.allowed_codes:
-                return "Your role does not include the necessary permission for this operation on any project."
+                raise MCPPermissionDenied(
+                    "Your role does not include the necessary permission for this operation on any project."
+                )
             tok = _mcp_project_permissions.set(perms)
             try:
                 return fn(*args, **kwargs)
-            except MCPPermissionDenied as e:
-                return str(e)
             finally:
                 _mcp_project_permissions.reset(tok)
 

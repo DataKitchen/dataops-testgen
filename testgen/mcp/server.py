@@ -80,6 +80,7 @@ def _configure_mcp_logging() -> None:
 def run_mcp() -> None:
     """Start the MCP server with streamable HTTP transport."""
     from testgen.mcp import get_server_url
+    from testgen.mcp.exceptions import mcp_error_handler
     from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
@@ -105,26 +106,35 @@ def run_mcp() -> None:
     )
     _configure_mcp_logging()
 
+    def safe_tool(fn):
+        mcp.tool()(mcp_error_handler(fn))
+
+    def safe_resource(uri, fn):
+        mcp.resource(uri)(mcp_error_handler(fn))
+
+    def safe_prompt(fn):
+        mcp.prompt()(mcp_error_handler(fn))
+
     # Tools (9)
-    mcp.tool()(get_data_inventory)
-    mcp.tool()(list_projects)
-    mcp.tool()(list_tables)
-    mcp.tool()(list_test_suites)
-    mcp.tool()(get_recent_test_runs)
-    mcp.tool()(get_test_results)
-    mcp.tool()(get_test_result_history)
-    mcp.tool()(get_failure_summary)
-    mcp.tool()(get_test_type)
+    safe_tool(get_data_inventory)
+    safe_tool(list_projects)
+    safe_tool(list_tables)
+    safe_tool(list_test_suites)
+    safe_tool(get_recent_test_runs)
+    safe_tool(get_test_results)
+    safe_tool(get_test_result_history)
+    safe_tool(get_failure_summary)
+    safe_tool(get_test_type)
 
     # Resources (2)
-    mcp.resource("testgen://test-types")(test_types_resource)
-    mcp.resource("testgen://glossary")(glossary_resource)
+    safe_resource("testgen://test-types", test_types_resource)
+    safe_resource("testgen://glossary", glossary_resource)
 
     # Prompts (4)
-    mcp.prompt()(health_check)
-    mcp.prompt()(investigate_failures)
-    mcp.prompt()(table_health)
-    mcp.prompt()(compare_runs)
+    safe_prompt(health_check)
+    safe_prompt(investigate_failures)
+    safe_prompt(table_health)
+    safe_prompt(compare_runs)
 
     LOG.info("Starting MCP server on %s:%s (auth issuer: %s)", settings.MCP_HOST, settings.MCP_PORT, server_url)
 
