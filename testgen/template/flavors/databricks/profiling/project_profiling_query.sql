@@ -114,7 +114,7 @@ SELECT
                           OR `{COL_NAME}` LIKE '%.pdf'
                           OR `{COL_NAME}` LIKE '%.xlsx')
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.9 THEN 'FILE_NAME'
-    WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '[0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]'
+    WHEN CAST(SUM( CASE WHEN `{COL_NAME}` RLIKE '^([0-9]{4}[- ]?){3}[0-9]{4}$'
          THEN 1 END) AS FLOAT)/CAST(COUNT(`{COL_NAME}`) AS FLOAT) > 0.8 THEN 'CREDIT_CARD'
     WHEN CAST(SUM( CASE WHEN ( `{COL_NAME}` LIKE '%,%,%,%'
                             OR `{COL_NAME}` LIKE '%|%|%|%'

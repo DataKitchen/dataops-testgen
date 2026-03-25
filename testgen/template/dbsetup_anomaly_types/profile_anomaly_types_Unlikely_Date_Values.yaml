@@ -11,6 +11,7 @@ profile_anomaly_types:
         OR p.max_date > CURRENT_DATE + INTERVAL '30 year')
   detail_expression: |-
     'Date Range: ' || p.min_date::VARCHAR || ' thru ' || p.max_date::VARCHAR
+  detail_redactable: true
   issue_likelihood: Likely
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether this data needs to be corrected or removed.

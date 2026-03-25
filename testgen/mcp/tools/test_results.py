@@ -3,6 +3,7 @@ from uuid import UUID
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
+from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 
 
@@ -10,7 +11,7 @@ def _parse_uuid(value: str, label: str = "ID") -> UUID:
     try:
         return UUID(value)
     except (ValueError, AttributeError) as err:
-        raise ValueError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
+        raise MCPUserError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
 
 
 def _parse_status(value: str) -> TestResultStatus:
@@ -18,14 +19,14 @@ def _parse_status(value: str) -> TestResultStatus:
         return TestResultStatus(value)
     except ValueError as err:
         valid = ", ".join(s.value for s in TestResultStatus)
-        raise ValueError(f"Invalid status `{value}`. Valid values: {valid}") from err
+        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}") from err
 
 
 def _resolve_test_type(short_name: str) -> str:
     """Resolve a test type short name to its internal code."""
     matches = TestType.select_where(TestType.test_name_short == short_name)
     if not matches:
-        raise ValueError(f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types.")
+        raise MCPUserError(f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types.")
     return matches[0].test_type
 
 

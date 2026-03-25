@@ -879,11 +879,12 @@ def source_data_dialog(selected_row):
         st.markdown("#### Result Detail")
         st.caption(selected_row["result_message"].replace("*", "\\*"))
 
+    mask_pii = not session.auth.user_has_permission("view_pii")
     with st.spinner("Retrieving source data..."):
         if selected_row["test_type"] == "CUSTOM":
-            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data_custom(selected_row, limit=500, mask_pii=mask_pii)
         else:
-            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data(selected_row, limit=500)
+            bad_data_status, bad_data_msg, _, df_bad = get_test_issue_source_data(selected_row, limit=500, mask_pii=mask_pii)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
@@ -916,7 +917,7 @@ def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     file_name = f"testgen_test_issue_report_{tr_id}_{tr_time}.pdf"
 
     with BytesIO() as buffer:
-        create_report(buffer, tr_data)
+        create_report(buffer, tr_data, mask_pii=not session.auth.user_has_permission("view_pii"))
         update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()

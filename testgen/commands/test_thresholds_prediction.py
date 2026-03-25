@@ -213,6 +213,11 @@ def compute_freshness_threshold(
     if schedule.stage == "active":
         excluded_days = frozenset(range(7)) - schedule.active_days if schedule.active_days else None
 
+        # Once the schedule is active, excluded_days is the single source of truth
+        # for day exclusion — it supersedes exclude_weekends, which was the user's
+        # initial hint before enough data was available for schedule inference.
+        schedule_exclude_weekends = False if excluded_days else exclude_weekends
+
         # For sub-daily schedules, apply window exclusion for overnight gaps
         has_window = (
             schedule.frequency == "sub_daily"
@@ -228,7 +233,7 @@ def compute_freshness_threshold(
                     upper_percentile=upper_percentile,
                     floor_multiplier=floor_multiplier,
                     lower_percentile=lower_percentile,
-                    exclude_weekends=exclude_weekends,
+                    exclude_weekends=schedule_exclude_weekends,
                     holiday_codes=holiday_codes,
                     tz=schedule_tz,
                     staleness_factor=staleness_factor,
@@ -246,7 +251,7 @@ def compute_freshness_threshold(
             holiday_dates = resolve_holiday_dates(holiday_codes, history.index) if holiday_codes else None
             schedule_upper = minutes_to_next_deadline(
                 result.last_update, schedule,
-                exclude_weekends, holiday_dates, schedule_tz,
+                schedule_exclude_weekends, holiday_dates, schedule_tz,
                 deadline_buffer, excluded_days=excluded_days,
             )
             if schedule_upper is not None:

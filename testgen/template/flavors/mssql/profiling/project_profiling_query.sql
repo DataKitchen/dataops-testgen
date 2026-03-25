@@ -124,6 +124,7 @@ SELECT
                           OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.xlsx')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'FILE_NAME'
     WHEN CAST(SUM(CASE WHEN "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]'
+                      OR "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'CREDIT_CARD'
     WHEN CAST(SUM(CASE WHEN ( "{COL_NAME}" LIKE '%,%,%,%'
                             OR "{COL_NAME}" LIKE '%|%|%|%'
