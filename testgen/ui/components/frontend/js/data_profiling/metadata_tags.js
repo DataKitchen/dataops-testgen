@@ -15,7 +15,7 @@ import { Attribute } from '../components/attribute.js';
 import { Input } from '../components/input.js';
 import { Icon } from '../components/icon.js';
 import { withTooltip } from '../components/tooltip.js';
-import { emitEvent } from '../utils.js';
+import { emitEvent, loadStylesheet } from '../utils.js';
 import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { capitalize } from '../display_utils.js';
@@ -26,7 +26,7 @@ import { Alert } from '../components/alert.js';
 
 const { div, span } = van.tags;
 
-const attributeWidth = 300;
+const attributeWidth = 250;
 const descriptionWidth = 932;
 const multiEditWidth = 400;
 
@@ -79,10 +79,12 @@ const TAG_HELP = {
  * @returns
  */
 const MetadataTagsCard = (props, item) => {
+    loadStylesheet('metadata-tags', stylesheet);
+
     const title = `${item.type} Tags `;
     const attributes = [
         'critical_data_element',
-        ...(item.type === 'column' ? ['excluded_data_element', 'pii_flag'] : []),
+        ...(item.type === 'column' ? ['pii_flag', 'excluded_data_element'] : []),
         'description',
         ...TAG_KEYS,
     ].map(key => {
@@ -235,33 +237,40 @@ const InheritedIcon = (/** @type string */ inheritedFrom) => withTooltip(
  * @returns
  */
 const CdeDisplay = (value, isColumn, isInherited) => {
+    if (value) {
+        return div(
+            { style: `width: ${attributeWidth}px` },
+            span(
+                { class: 'flex-row fx-gap-1 metadata-badge cde' },
+                Icon({ size: 24, classes: 'text-purple' }, 'star'),
+                span(isColumn ? 'Critical data element' : 'All critical data elements'),
+                (isColumn && isInherited) ? InheritedIcon('table') : null,
+            ),
+        );
+    }
     return span(
         { class: 'flex-row fx-gap-1', style: `width: ${attributeWidth}px` },
-        Icon(
-            { size: value ? 24 : 20, classes: value ? 'text-purple' : 'text-disabled' },
-            value ? 'star' : 'cancel',
-        ),
-        span(
-            { class: value ? '' : 'text-secondary' },
-            isColumn
-                ? (value ? 'Critical data element' : 'Not a critical data element')
-                : (value ? 'All critical data elements' : 'Not all critical data elements'),
-        ),
+        Icon({ size: 20, classes: 'text-disabled' }, 'cancel'),
+        span({ class: 'text-secondary' }, isColumn ? 'Not a critical data element' : 'Not all critical data elements'),
         (isColumn && isInherited) ? InheritedIcon('table') : null,
     );
 }
 
 const XdeDisplay = (/** @type boolean */ value) => {
+    if (value) {
+        return div(
+            { style: `width: ${attributeWidth}px` },
+            span(
+                { class: 'flex-row fx-gap-1 metadata-badge xde' },
+                Icon({ size: 20, classes: 'text-brown' }, 'visibility_off'),
+                span('Excluded data element'),
+            ),
+        );
+    }
     return span(
         { class: 'flex-row fx-gap-1', style: `width: ${attributeWidth}px` },
-        Icon(
-            { size: 20, classes: value ? 'text-brown' : 'text-disabled' },
-            value ? 'visibility_off' : 'visibility',
-        ),
-        span(
-            { class: value ? '' : 'text-secondary' },
-            value ? 'Excluded data element' : 'Not an excluded data element',
-        ),
+        Icon({ size: 20, classes: 'text-disabled' }, 'visibility'),
+        span({ class: 'text-secondary' }, 'Not an excluded data element'),
     );
 }
 
@@ -273,13 +282,13 @@ const PiiDisplay = (/** @type string|null */ value) => {
             const typeLabel = pii_type_map[type];
             caption = `${pii_risk_map[risk] ?? 'Moderate'} Risk${typeLabel ? ' - ' + typeLabel : ''}${detail && detail !== typeLabel ? ' / ' + detail : ''}`;
         }
-        return span(
-            { class: 'flex-row fx-gap-1', style: `width: ${attributeWidth}px` },
-            Icon({ size: 24, classes: 'text-orange' }, 'shield_person'),
-            div(
-                { class: 'flex-column fx-gap-1' },
+        return div(
+            { style: `width: ${attributeWidth}px` },
+            span(
+                { class: 'flex-row fx-gap-1 metadata-badge pii' },
+                Icon({ size: 21, classes: 'text-orange' }, 'shield_person'),
                 span('PII data'),
-                caption ? span({ class: 'text-caption' }, caption) : null,
+                caption ? withTooltip(Icon({ size: 16 }, 'help'), { text: caption }) : null,
             ),
         );
     }
@@ -300,8 +309,8 @@ const MetadataTagsMultiEdit = (props, selectedItems) => {
 
     const attributes = [
         'critical_data_element',
-        'excluded_data_element',
         'pii_flag',
+        'excluded_data_element',
         ...TAG_KEYS,
     ].map(key => ({
         key,
@@ -450,5 +459,32 @@ const WarningDialog = (open, pendingAction, warnCde, warnPii) => {
         ),
     );
 };
+
+const stylesheet = new CSSStyleSheet();
+stylesheet.replace(`
+.metadata-badge {
+    display: inline-flex;
+    padding: 4px 12px 4px 6px;
+    border-radius: 15px;
+    height: 30px;
+    box-sizing: border-box;
+}
+
+.metadata-badge.cde {
+    background-color: rgba(171, 71, 188, 0.15);
+}
+
+.metadata-badge.cde i {
+    margin-top: -3px;
+}
+
+.metadata-badge.pii {
+    background-color: rgba(255, 152, 0, 0.15);
+}
+
+.metadata-badge.xde {
+    background-color: rgba(141, 110, 99, 0.15);
+}
+`);
 
 export { MetadataTagsCard, MetadataTagsMultiEdit, TAG_KEYS };
