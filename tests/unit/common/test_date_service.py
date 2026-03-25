@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from testgen.common.date_service import as_iso_timestamp, get_now_as_iso_timestamp
+from testgen.common.date_service import as_iso_timestamp, get_now_as_iso_timestamp, parse_fuzzy_date
 
 pytestmark = pytest.mark.unit
 
@@ -27,3 +27,30 @@ def test_get_now_as_iso_timestamp():
         result = get_now_as_iso_timestamp()
 
     assert result == "2024-06-15T12:00:00Z"
+
+
+class Test_parse_fuzzy_date:
+    def test_parses_string_date(self):
+        result = parse_fuzzy_date("2024-03-15 10:30:45")
+        assert result == datetime(2024, 3, 15, 10, 30, 45)
+
+    def test_parses_unix_timestamp_seconds(self):
+        result = parse_fuzzy_date(1710500000)
+        assert isinstance(result, datetime)
+        assert result.year == 2024
+
+    def test_parses_unix_timestamp_milliseconds(self):
+        result = parse_fuzzy_date(1710500000000)
+        assert isinstance(result, datetime)
+        assert result.year == 2024
+
+    def test_parses_float_timestamp(self):
+        result = parse_fuzzy_date(1710500000.0)
+        assert isinstance(result, datetime)
+
+    def test_returns_value_unchanged_for_other_types(self):
+        dt = datetime(2024, 1, 1)
+        assert parse_fuzzy_date(dt) is dt
+
+    def test_returns_none_for_none(self):
+        assert parse_fuzzy_date(None) is None

@@ -1,7 +1,8 @@
-"""PII masking utilities for redacting sensitive data in the UI."""
+"""PII masking utilities for redacting sensitive data."""
 import pandas as pd
+from sqlalchemy import text
 
-from testgen.ui.services.database_service import fetch_all_from_db
+from testgen.common.models import get_current_session
 
 PII_REDACTED = "[PII Redacted]"
 
@@ -29,8 +30,9 @@ def get_pii_columns(table_group_id: str, schema: str | None = None, table_name: 
         "table_name": table_name,
     }
 
-    results = fetch_all_from_db(query, params)
-    return {row.column_name for row in results}
+    session = get_current_session()
+    results = session.execute(text(query), params).mappings().all()
+    return {row["column_name"] for row in results}
 
 
 def mask_source_data_pii(df: pd.DataFrame, pii_columns: set[str]) -> None:

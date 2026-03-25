@@ -1,0 +1,373 @@
+"""Shared source data lookup service.
+
+Builds and executes lookup queries against target databases to retrieve
+rows that match (or violate) test result and hygiene issue criteria.
+Used by both the Streamlit UI and MCP tools.
+"""
+import logging
+from dataclasses import dataclass
+from typing import Literal
+
+import pandas as pd
+from sqlalchemy import text
+
+from testgen.common.clean_sql import concat_columns
+from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.date_service import parse_fuzzy_date
+from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection, SQLFlavor
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
+from testgen.common.read_file import replace_templated_functions
+from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.utils import to_dataframe, to_sql_timestamp
+
+LOG = logging.getLogger("testgen")
+DEFAULT_LIMIT = 500
+
+
+@dataclass
+class LookupData:
+    lookup_query: str
+    sql_flavor: SQLFlavor | None = None
+    lookup_redactable_columns: str | None = None
+
+
+@dataclass
+class SourceDataResult:
+    status: Literal["OK", "NA", "ND", "ERR"]
+    message: str | None
+    query: str | None
+    df: pd.DataFrame | None
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def build_test_result_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | None:
+    """Build the source data lookup SQL for a test result (standard or CUSTOM)."""
+    if issue_data.get("test_type") == "CUSTOM":
+        return _build_query_custom(issue_data)
+    return _build_query_standard(issue_data, limit)
+
+
+def fetch_test_result_source_data(
+    issue_data: dict,
+    limit: int | None = DEFAULT_LIMIT,
+    mask_pii: bool = False,
+) -> SourceDataResult:
+    """Fetch source data rows for a test result (standard or CUSTOM)."""
+    is_custom = issue_data.get("test_type") == "CUSTOM"
+    lookup_query = None
+    try:
+        test_definition = TestDefinition.get(issue_data["test_definition_id"])
+        if not test_definition:
+            return SourceDataResult("NA", "Test definition no longer exists.", None, None)
+
+        lookup_query = _build_query_custom(issue_data) if is_custom else _build_query_standard(issue_data, limit or 0)
+        if not lookup_query:
+            return SourceDataResult("NA", "Source data lookup is not available for this test.", None, None)
+
+        connection = Connection.get_by_table_group(issue_data["table_groups_id"])
+        results = fetch_from_target_db(connection, lookup_query)
+
+        if results:
+            df = to_dataframe(results)
+            if limit:
+                df = df.sample(n=min(len(df), limit)).sort_index()
+            if mask_pii:
+                if is_custom:
+                    _mask_lookup_pii(df, issue_data["table_groups_id"], issue_data["table_name"])
+                    # Mask user-defined redactable columns from the test definition
+                    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
+                    if lookup_data and lookup_data.lookup_redactable_columns:
+                        redactable = {col.strip() for col in lookup_data.lookup_redactable_columns.split(",")}
+                        mask_source_data_pii(df, redactable)
+                else:
+                    _mask_lookup_pii(
+                        df,
+                        issue_data["table_groups_id"],
+                        issue_data["table_name"],
+                        column_name=issue_data.get("column_names"),
+                        test_type_id=issue_data.get("test_type_id"),
+                        error_type="Test Results",
+                    )
+            return SourceDataResult("OK", None, lookup_query, df)
+        else:
+            return SourceDataResult(
+                "ND", "Data that violates test criteria is not present in the current dataset.", lookup_query, None,
+            )
+    except Exception as e:
+        LOG.exception("Source data lookup for test encountered an error.")
+        return SourceDataResult("ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None)
+
+
+def build_hygiene_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | None:
+    """Build the source data lookup SQL for a hygiene (profiling anomaly) issue."""
+    lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["anomaly_id"], "Profile Anomaly")
+    if not lookup_data:
+        return None
+
+    lookup_query = (
+        _generate_recency_lookup_query(
+            issue_data["anomaly_id"], issue_data["detail"], issue_data["column_name"], lookup_data.sql_flavor,
+        )
+        if lookup_data.lookup_query == "created_in_ui"
+        else lookup_data.lookup_query
+    )
+
+    if not lookup_query:
+        return None
+
+    params = {
+        "TARGET_SCHEMA": issue_data["schema_name"],
+        "TABLE_NAME": issue_data["table_name"],
+        "COLUMN_NAME": issue_data["column_name"],
+        "DETAIL_EXPRESSION": issue_data["detail"],
+        "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
+        "LIMIT": limit,
+        "LIMIT_2": int(limit / 2),
+        "LIMIT_4": int(limit / 4),
+    }
+
+    lookup_query = replace_params(lookup_query, params)
+    lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
+    return lookup_query
+
+
+def fetch_hygiene_source_data(
+    issue_data: dict,
+    limit: int = DEFAULT_LIMIT,
+    mask_pii: bool = False,
+) -> SourceDataResult:
+    """Fetch source data rows for a hygiene (profiling anomaly) issue."""
+    lookup_query = None
+    try:
+        lookup_query = build_hygiene_query(issue_data, limit)
+        if not lookup_query:
+            return SourceDataResult("NA", "Source data lookup is not available for this hygiene issue.", None, None)
+
+        connection = Connection.get_by_table_group(issue_data["table_groups_id"])
+        results = fetch_from_target_db(connection, lookup_query)
+
+        if results:
+            df = to_dataframe(results)
+            if limit:
+                df = df.sample(n=min(len(df), limit)).sort_index()
+            if mask_pii:
+                _mask_lookup_pii(
+                    df,
+                    issue_data["table_groups_id"],
+                    issue_data["table_name"],
+                    column_name=issue_data.get("column_name"),
+                    test_type_id=issue_data.get("anomaly_id"),
+                    error_type="Profile Anomaly",
+                )
+            return SourceDataResult("OK", None, lookup_query, df)
+        else:
+            return SourceDataResult(
+                "ND",
+                "Data that violates hygiene issue criteria is not present in the current dataset.",
+                lookup_query,
+                None,
+            )
+    except Exception as e:
+        LOG.exception("Source data lookup for hygiene issue encountered an error.")
+        return SourceDataResult("ERR", f"Source data lookup encountered an error:\n\n{e.args[0]}", lookup_query, None)
+
+
+# ---------------------------------------------------------------------------
+# Query builders
+# ---------------------------------------------------------------------------
+
+def _build_query_standard(issue_data: dict, limit: int) -> str | None:
+    """Build lookup SQL for a standard (non-CUSTOM) test result."""
+    lookup_data = _get_lookup_data(issue_data["table_groups_id"], issue_data["test_type_id"], "Test Results")
+    if not lookup_data or not lookup_data.lookup_query:
+        return None
+
+    test_definition = TestDefinition.get(issue_data["test_definition_id"])
+    if not test_definition:
+        return None
+
+    params = {
+        "TARGET_SCHEMA": issue_data["schema_name"],
+        "TABLE_NAME": issue_data["table_name"],
+        "COLUMN_NAME": issue_data["column_names"],
+        "COLUMN_TYPE": issue_data["column_type"],
+        "TEST_DATE": to_sql_timestamp(parsed_test_date)
+        if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
+        else None,
+        "CUSTOM_QUERY": test_definition.custom_query,
+        "BASELINE_VALUE": test_definition.baseline_value,
+        "BASELINE_CT": test_definition.baseline_ct,
+        "BASELINE_AVG": test_definition.baseline_avg,
+        "BASELINE_SD": test_definition.baseline_sd,
+        "LOWER_TOLERANCE": "NULL" if test_definition.lower_tolerance in (None, "") else test_definition.lower_tolerance,
+        "UPPER_TOLERANCE": "NULL" if test_definition.upper_tolerance in (None, "") else test_definition.upper_tolerance,
+        "THRESHOLD_VALUE": test_definition.threshold_value or 0,
+        # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
+        # since the latter may contain the former
+        "SUBSET_CONDITION": test_definition.subset_condition or "1=1",
+        "GROUPBY_NAMES": test_definition.groupby_names,
+        "HAVING_CONDITION": f"HAVING {test_definition.having_condition}" if test_definition.having_condition else "",
+        "MATCH_SCHEMA_NAME": test_definition.match_schema_name,
+        "MATCH_TABLE_NAME": test_definition.match_table_name,
+        "MATCH_COLUMN_NAMES": test_definition.match_column_names,
+        "MATCH_SUBSET_CONDITION": test_definition.match_subset_condition or "1=1",
+        "MATCH_GROUPBY_NAMES": test_definition.match_groupby_names,
+        "MATCH_HAVING_CONDITION": f"HAVING {test_definition.match_having_condition}"
+        if test_definition.having_condition
+        else "",
+        "COLUMN_NAME_NO_QUOTES": issue_data["column_names"],
+        "WINDOW_DATE_COLUMN": test_definition.window_date_column,
+        "WINDOW_DAYS": test_definition.window_days or 0,
+        "CONCAT_COLUMNS": concat_columns(issue_data["column_names"], "<NULL>"),
+        "CONCAT_MATCH_GROUPBY": concat_columns(test_definition.match_groupby_names, "<NULL>"),
+        "LIMIT": limit,
+        "LIMIT_2": int(limit / 2),
+        "LIMIT_4": int(limit / 4),
+    }
+
+    lookup_query = replace_params(lookup_data.lookup_query, params)
+    lookup_query = replace_templated_functions(lookup_query, lookup_data.sql_flavor)
+    return lookup_query
+
+
+def _build_query_custom(issue_data: dict) -> str | None:
+    """Build lookup SQL for a CUSTOM test result."""
+    lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
+    if not lookup_data or not lookup_data.lookup_query:
+        return None
+
+    params = {
+        "DATA_SCHEMA": issue_data["schema_name"],
+    }
+    return replace_params(lookup_data.lookup_query, params)
+
+
+def _generate_recency_lookup_query(
+    test_id: str, detail_exp: str, column_names: str, sql_flavor: SQLFlavor,
+) -> str:
+    """Build lookup SQL for hygiene anomalies 1019/1020 (recency checks)."""
+    if test_id not in {"1019", "1020"}:
+        return ""
+
+    start_index = detail_exp.find("Columns: ")
+    if start_index == -1:
+        columns = [col.strip() for col in column_names.split(",")]
+    else:
+        start_index += len("Columns: ")
+        column_names_str = detail_exp[start_index:]
+        columns = [col.strip() for col in column_names_str.split(",")]
+
+    quote = get_flavor_service(sql_flavor).quote_character
+    queries = [
+        f"""
+        SELECT
+            '{column}' AS column_name,
+            MAX({quote}{column}{quote}) AS max_date_available
+        FROM {quote}{{TARGET_SCHEMA}}{quote}.{quote}{{TABLE_NAME}}{quote}
+        """
+        for column in columns
+    ]
+    return " UNION ALL ".join(queries) + " ORDER BY max_date_available DESC;"
+
+
+# ---------------------------------------------------------------------------
+# Metadata DB helpers
+# ---------------------------------------------------------------------------
+
+def _get_lookup_data(
+    table_group_id: str,
+    test_type_id: str,
+    error_type: Literal["Profile Anomaly", "Test Results"],
+) -> LookupData | None:
+    session = get_current_session()
+    result = session.execute(
+        text("""
+            SELECT
+                t.lookup_query,
+                c.sql_flavor,
+                t.lookup_redactable_columns
+            FROM target_data_lookups t
+            INNER JOIN table_groups tg
+                ON (:table_group_id = tg.id)
+            INNER JOIN connections c
+                ON (tg.connection_id = c.connection_id)
+                AND (t.sql_flavor = c.sql_flavor)
+            WHERE t.error_type = :error_type
+                AND t.test_id = :test_type_id
+                AND t.lookup_query > '';
+        """),
+        {
+            "table_group_id": table_group_id,
+            "error_type": error_type,
+            "test_type_id": test_type_id,
+        },
+    ).mappings().first()
+    return LookupData(**result) if result else None
+
+
+def _get_lookup_data_custom(test_definition_id: str) -> LookupData | None:
+    session = get_current_session()
+    result = session.execute(
+        text("""
+            SELECT
+                d.custom_query as lookup_query,
+                d.match_column_names as lookup_redactable_columns
+            FROM test_definitions d
+            WHERE d.id = :test_definition_id;
+        """),
+        {"test_definition_id": test_definition_id},
+    ).mappings().first()
+    return LookupData(**result) if result else None
+
+
+# ---------------------------------------------------------------------------
+# PII masking
+# ---------------------------------------------------------------------------
+
+def _mask_lookup_pii(
+    df: pd.DataFrame,
+    table_group_id: str,
+    table_name: str,
+    column_name: str | None = None,
+    test_type_id: str | None = None,
+    error_type: Literal["Profile Anomaly", "Test Results"] | None = None,
+) -> None:
+    """Apply PII masking to a source data lookup DataFrame."""
+    pii_columns = get_pii_columns(table_group_id, table_name=table_name)
+    mask_source_data_pii(df, pii_columns)
+
+    # Row-level masking: if result has a column_name column listing which source column
+    # each row is about (e.g., table-level recency queries), mask value columns in rows
+    # where that source column is PII
+    if pii_columns and "column_name" in df.columns:
+        pii_lower = {c.lower() for c in pii_columns}
+        value_cols = [c for c in df.columns if c != "column_name"]
+        pii_rows = df["column_name"].str.lower().isin(pii_lower)
+        for col in value_cols:
+            if df[col].dtype != object:
+                df[col] = df[col].astype(object)
+            df.loc[pii_rows, col] = PII_REDACTED
+
+    # Also mask redactable columns if the test's target column is PII
+    if column_name and test_type_id and error_type and column_name.lower() in {c.lower() for c in pii_columns}:
+        session = get_current_session()
+        result = session.execute(
+            text("""
+                SELECT t.lookup_redactable_columns
+                FROM target_data_lookups t
+                INNER JOIN table_groups tg ON (:table_group_id = tg.id)
+                INNER JOIN connections c ON (tg.connection_id = c.connection_id AND t.sql_flavor = c.sql_flavor)
+                WHERE t.error_type = :error_type
+                    AND t.test_id = :test_type_id
+                    AND t.lookup_redactable_columns IS NOT NULL;
+            """),
+            {"table_group_id": table_group_id, "error_type": error_type, "test_type_id": test_type_id},
+        ).mappings().first()
+        if result and result["lookup_redactable_columns"]:
+            redactable = {col.strip() for col in result["lookup_redactable_columns"].split(",")}
+            mask_source_data_pii(df, redactable)

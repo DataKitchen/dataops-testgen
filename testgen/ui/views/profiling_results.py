@@ -8,6 +8,7 @@ import streamlit as st
 import testgen.ui.queries.profiling_queries as profiling_queries
 import testgen.ui.services.form_service as fm
 from testgen.common import date_service
+from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
@@ -23,7 +24,6 @@ from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.database_service import fetch_df_from_db
 from testgen.ui.session import session
-from testgen.ui.utils import parse_fuzzy_date
 from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
 
 FORM_DATA_WIDTH = 400
