@@ -160,3 +160,55 @@ def test_db_session_rolls_back_on_exception(mock_session_cls, mock_wrapper):
 
     mock_session.rollback.assert_called_once()
     mock_session.commit.assert_not_called()
+
+
+# --- has_project_permission ---
+
+DEPS_MODULE = "testgen.api.deps"
+
+
+@patch(f"{DEPS_MODULE}.PluginHook")
+@patch(f"{DEPS_MODULE}.ProjectMembership")
+def test_has_permission_returns_true_when_role_has_permission(mock_pm, mock_hook):
+    from testgen.api.deps import has_project_permission
+
+    user = MagicMock()
+    mock_pm.get_user_role_in_project.return_value = "data_quality"
+    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin", "data_quality"]
+
+    assert has_project_permission(user, "project_a", "edit") is True
+    mock_pm.get_user_role_in_project.assert_called_once_with(user.id, "project_a")
+
+
+@patch(f"{DEPS_MODULE}.PluginHook")
+@patch(f"{DEPS_MODULE}.ProjectMembership")
+def test_has_permission_returns_false_when_role_lacks_permission(mock_pm, mock_hook):
+    from testgen.api.deps import has_project_permission
+
+    user = MagicMock()
+    mock_pm.get_user_role_in_project.return_value = "business"
+    mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin", "data_quality"]
+
+    assert has_project_permission(user, "project_a", "edit") is False
+
+
+@patch(f"{DEPS_MODULE}.ProjectMembership")
+def test_has_permission_returns_false_when_no_membership(mock_pm):
+    from testgen.api.deps import has_project_permission
+
+    user = MagicMock()
+    mock_pm.get_user_role_in_project.return_value = None
+
+    assert has_project_permission(user, "project_a", "edit") is False
+
+
+@patch(f"{DEPS_MODULE}.ProjectMembership")
+def test_has_permission_checks_membership_even_for_global_admin(mock_pm):
+    from testgen.api.deps import has_project_permission
+
+    # is_global_admin only grants access to the admin area, not project-level RBAC bypass
+    user = MagicMock()
+    user.is_global_admin = True
+    mock_pm.get_user_role_in_project.return_value = None
+
+    assert has_project_permission(user, "project_a", "edit") is False

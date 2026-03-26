@@ -1009,6 +1009,7 @@ CREATE TABLE job_executions (
     kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
     source          VARCHAR(20)     NOT NULL,
     status          VARCHAR(20)     NOT NULL DEFAULT 'pending',
+    project_code    VARCHAR(30)     NOT NULL,
     job_schedule_id UUID            REFERENCES job_schedules(id) ON DELETE SET NULL,
     error_message   TEXT,
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),

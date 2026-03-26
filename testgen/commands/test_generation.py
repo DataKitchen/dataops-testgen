@@ -31,10 +31,12 @@ def run_test_generation_in_background(test_suite_id: str | UUID, generation_set:
     from testgen.common.models.job_execution import JobExecution
 
     LOG.info("Submitting test generation job for test suite %s", test_suite_id)
+    test_suite = TestSuite.get(test_suite_id)
     JobExecution.submit(
         job_key="run-test-generation",
         kwargs={"test_suite_id": str(test_suite_id), "generation_set": generation_set},
         source="ui",
+        project_code=test_suite.project_code,
     )
 
 

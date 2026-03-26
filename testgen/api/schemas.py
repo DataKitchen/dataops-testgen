@@ -6,21 +6,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-# --- Requests ---
-
-
-class SubmitProfilingRequest(BaseModel):
-    table_group_id: UUID
-
-
-class SubmitTestRunRequest(BaseModel):
-    test_suite_id: UUID
-
-
-class SubmitTestGenerationRequest(BaseModel):
-    test_suite_id: UUID
-
-
 # --- Responses ---
 
 

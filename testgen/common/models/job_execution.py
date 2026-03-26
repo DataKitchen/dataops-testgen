@@ -39,6 +39,7 @@ class JobExecution(Base):
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     source: str = Column(String(20), nullable=False)
     status: str = Column(String(20), nullable=False, default=JobStatus.PENDING, server_default=text("'pending'"))
+    project_code: str = Column(String(30), nullable=False)
     job_schedule_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
     error_message: str | None = Column(Text, nullable=True)
     created_at: datetime = Column(postgresql.TIMESTAMP(timezone=True), nullable=False, server_default=text("NOW()"))
@@ -52,6 +53,7 @@ class JobExecution(Base):
         job_key: str,
         kwargs: dict[str, Any],
         source: str,
+        project_code: str,
         job_schedule_id: UUID | None = None,
     ) -> Self:
         """Create a pending job execution row. Caller controls the commit."""
@@ -60,6 +62,7 @@ class JobExecution(Base):
             job_key=job_key,
             kwargs=kwargs,
             source=source,
+            project_code=project_code,
             job_schedule_id=job_schedule_id,
         )
         session.add(job_exec)
