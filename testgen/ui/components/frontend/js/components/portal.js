@@ -23,7 +23,7 @@ const Portal = (/** @type Options */ options, ...args) => {
     const { target, targetRelative, align = 'left', position = 'bottom' } = getValue(options);
     const id = `${target}-portal`;
 
-    window.testgen.portals[id] = { domId: id, targetId: target, opened: options.opened };
+    window.testgen.portals[id] = { domId: id, targetId: target, opened: options.opened, close: () => { options.opened.val = false; } };
 
     return () => {
         if (!getValue(options.opened)) {
