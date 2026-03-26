@@ -266,8 +266,8 @@ def get_excel_report_data(
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "critical_data_element": {"header": "Critical data element (CDE)"},
-        "excluded_data_element": {"header": "Excluded data element (XDE)"},
         "pii_flag": {"header": "PII"},
+        "excluded_data_element": {"header": "Excluded data element (XDE)"},
         "active_test_count": {"header": "Active tests"},
         "ordinal_position": {"header": "Position"},
         "general_type": {},
@@ -488,8 +488,8 @@ def export_metadata_csv(table_group: TableGroupMinimal) -> None:
                 "Column": row["column_name"],
                 "Description": row["description"] or "",
                 "Critical Data Element": "Yes" if row["critical_data_element"] is True else "No" if row["critical_data_element"] is False else "",
-                "Excluded Data Element": "Yes" if row.get("excluded_data_element") else "No",
                 "PII": "Yes" if row.get("pii_flag") else "No",
+                "Excluded Data Element": "Yes" if row.get("excluded_data_element") else "No",
             }
             for tag in TAG_FIELDS:
                 header = tag.replace("_", " ").title()

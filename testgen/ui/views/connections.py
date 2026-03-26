@@ -19,7 +19,7 @@ import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
@@ -441,6 +441,8 @@ class ConnectionsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(

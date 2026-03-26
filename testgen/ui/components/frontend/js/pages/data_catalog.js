@@ -379,7 +379,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
             icon: 'download',
             type: 'stroked',
             label: 'Export',
-            tooltip: 'Download columns to Excel',
+            tooltip: 'Download columns to Excel or CSV',
             tooltipPosition: 'left',
             width: 'fit-content',
             style: 'background: var(--button-generic-background-color);',

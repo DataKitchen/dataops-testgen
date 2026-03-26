@@ -41,6 +41,7 @@ class ScheduleDialog:
         self.init()
         return st.dialog(title=self.title)(self.render)()
 
+    @with_database_session
     def render(self) -> None:
         @with_database_session
         def on_delete_sched(item):
