@@ -146,33 +146,36 @@ const TableGroupWizard = (props) => {
         return '';
       }
 
-      return WizardProgressIndicator(
-        [
+      const allIndicators = [
           {
-            index: 1,
             title: 'Table Group',
             skipped: false,
             includedSteps: ['tableGroup', 'testTableGroup'],
           },
           {
-            index: 2,
             title: 'Profiling',
             skipped: !stepsState.runProfiling.rawVal,
             includedSteps: ['runProfiling'],
           },
           {
-            index: 3,
             title: 'Testing',
             skipped: !stepsState.testSuite.rawVal.generate,
             includedSteps: ['testSuite'],
           },
           {
-            index: 4,
             title: 'Monitors',
             skipped: !stepsState.monitorSuite.rawVal.generate,
             includedSteps: ['monitorSuite'],
           },
-        ],
+        ].filter(indicator => indicator.includedSteps.some(s => steps.includes(s)))
+         .map((indicator, i) => ({ ...indicator, index: i + 1 }));
+
+      if (allIndicators.length <= 1) {
+        return '';
+      }
+
+      return WizardProgressIndicator(
+        allIndicators,
         {
           index: stepIndex,
           name: steps[stepIndex],
