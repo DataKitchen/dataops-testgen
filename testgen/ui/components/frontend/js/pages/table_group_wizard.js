@@ -180,6 +180,7 @@ const TableGroupWizard = (props) => {
           index: stepIndex,
           name: steps[stepIndex],
         },
+        (stepName) => setStep(steps.indexOf(stepName)),
       );
     },
     WizardStep(0, currentStepIndex, () => {
