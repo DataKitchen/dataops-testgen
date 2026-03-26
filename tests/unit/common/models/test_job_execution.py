@@ -30,6 +30,7 @@ def test_submit_creates_pending_row(mock_session):
         job_key="run-profile",
         kwargs={"table_group_id": "abc-123"},
         source="ui",
+        project_code="DEFAULT",
     )
 
     mock_session.add.assert_called_once()
@@ -38,6 +39,7 @@ def test_submit_creates_pending_row(mock_session):
     assert result.job_key == "run-profile"
     assert result.kwargs == {"table_group_id": "abc-123"}
     assert result.source == "ui"
+    assert result.project_code == "DEFAULT"
     assert result.job_schedule_id is None
 
 
@@ -48,6 +50,7 @@ def test_submit_with_schedule_id(mock_session):
         job_key="run-tests",
         kwargs={"test_suite_id": "xyz"},
         source="scheduler",
+        project_code="DEFAULT",
         job_schedule_id=schedule_id,
     )
 
@@ -60,6 +63,7 @@ def test_submit_does_not_commit(mock_session):
         job_key="run-profile",
         kwargs={},
         source="ui",
+        project_code="DEFAULT",
     )
 
     mock_session.commit.assert_not_called()

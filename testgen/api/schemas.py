@@ -5,7 +5,6 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-
 # --- Responses ---
 
 
@@ -32,6 +31,15 @@ class JobResponse(BaseModel):
     error_message: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class JobListResponse(BaseModel):
+    """Paginated list of job executions."""
+
+    items: list[JobResponse]
+    page: int
+    limit: int
+    total: int
 
 
 # --- Errors ---

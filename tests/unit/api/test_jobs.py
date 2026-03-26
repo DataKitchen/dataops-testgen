@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from testgen.api.jobs import (
     cancel_job,
     get_job_status,
+    list_jobs,
     submit_profiling,
     submit_test_generation,
     submit_test_run,
@@ -169,3 +170,45 @@ def test_cancel_job_invalid_transition():
     with pytest.raises(HTTPException) as exc_info:
         cancel_job(job)
     assert exc_info.value.status_code == 409
+
+
+# --- list_jobs ---
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_returns_paginated_results(mock_je_cls):
+    jobs = [_mock_job(job_key="run-profile"), _mock_job(job_key="run-tests")]
+    mock_je_cls.list_for_project.return_value = (jobs, 2)
+
+    result = list_jobs(project_code="DEFAULT", job_key=None, status=None, page=1, limit=20)
+
+    mock_je_cls.list_for_project.assert_called_once_with(
+        project_code="DEFAULT", job_key=None, status=None, page=1, limit=20,
+    )
+    assert result.total == 2
+    assert result.page == 1
+    assert result.limit == 20
+    assert len(result.items) == 2
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_passes_filters(mock_je_cls):
+    mock_je_cls.list_for_project.return_value = ([], 0)
+
+    result = list_jobs(project_code="DEFAULT", job_key="run-profile", status="completed", page=2, limit=10)
+
+    mock_je_cls.list_for_project.assert_called_once_with(
+        project_code="DEFAULT", job_key="run-profile", status="completed", page=2, limit=10,
+    )
+    assert result.total == 0
+    assert result.items == []
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_empty_project(mock_je_cls):
+    mock_je_cls.list_for_project.return_value = ([], 0)
+
+    result = list_jobs(project_code="EMPTY", job_key=None, status=None, page=1, limit=20)
+
+    assert result.total == 0
+    assert result.items == []

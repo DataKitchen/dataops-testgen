@@ -81,6 +81,15 @@ _require_user = Depends(get_authorized_user)
 _not_found = api_error(404, "not_found", "Not found")
 
 
+def resolve_project_code(permission: str):
+    """Verify the user has ``permission`` on the project identified by ``project_code`` path param."""
+    def dependency(project_code: str, user: User = _require_user) -> str:
+        if has_project_permission(user, project_code, permission):
+            return project_code
+        raise _not_found
+    return Depends(dependency)
+
+
 def resolve_table_group(permission: str):
     """Resolve a TableGroup by ``table_group_id`` path param and verify project permission."""
     from testgen.common.models.table_group import TableGroup

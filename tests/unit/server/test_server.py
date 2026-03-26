@@ -55,7 +55,7 @@ def test_api_routes_when_mcp_disabled(_server_deps):
 
     route_paths = {getattr(r, "path", None) for r in app.routes}
     assert "/api/v1/health" in route_paths
-    assert "/api/v1/ping" in route_paths
+    assert "/api/v1/jobs/{job_id}" in route_paths
     assert "/.well-known/oauth-authorization-server" in route_paths
 
 

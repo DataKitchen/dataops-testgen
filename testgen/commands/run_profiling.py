@@ -39,7 +39,6 @@ LOG = logging.getLogger("testgen")
 @with_database_session
 def run_profiling_in_background(table_group_id: str | UUID) -> None:
     from testgen.common.models.job_execution import JobExecution
-
     from testgen.common.models.table_group import TableGroup
 
     LOG.info("Submitting profiling job for table group %s", table_group_id)

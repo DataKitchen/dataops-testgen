@@ -39,7 +39,6 @@ LOG = logging.getLogger("testgen")
 @with_database_session
 def run_test_execution_in_background(test_suite_id: str | UUID):
     from testgen.common.models.job_execution import JobExecution
-
     from testgen.common.models.test_suite import TestSuite
 
     LOG.info("Submitting test execution job for test suite %s", test_suite_id)

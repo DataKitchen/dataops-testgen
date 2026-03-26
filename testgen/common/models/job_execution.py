@@ -4,7 +4,7 @@ from enum import StrEnum
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, Text, case, select, text, update
+from sqlalchemy import Column, String, Text, case, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import Base, get_current_session
@@ -118,6 +118,26 @@ class JobExecution(Base):
         """Fetch a job execution by primary key."""
         session = get_current_session()
         return session.get(cls, execution_id)
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        job_key: str | None = None,
+        status: str | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """List job executions for a project with optional filters and pagination."""
+        session = get_current_session()
+        query = select(cls).where(cls.project_code == project_code)
+        if job_key:
+            query = query.where(cls.job_key == job_key)
+        if status:
+            query = query.where(cls.status == status)
+        total = session.scalar(select(func.count()).select_from(query.subquery()))
+        items = session.scalars(query.order_by(cls.created_at.desc()).offset((page - 1) * limit).limit(limit)).all()
+        return list(items), total or 0
 
     def _transition(self, *targets: JobStatus, **values: Any) -> bool:
         """Transition to a new status, guarded by the valid-transitions map.
