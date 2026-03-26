@@ -159,6 +159,7 @@ FROM (
       WHEN SUM(CASE WHEN REGEXP_LIKE("{COL_NAME}", '^(\+1|1)?[ .-]?(\([2-9][0-9]{2}\)|[2-9][0-9]{2})[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}$')
            THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'PHONE_USA'
       WHEN SUM(CASE WHEN REGEXP_LIKE("{COL_NAME}", '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+                AND "{COL_NAME}" NOT LIKE '%://%'
            THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'EMAIL'
       WHEN SUM(CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
            THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'ZIP_USA'
