@@ -176,6 +176,10 @@ class TestDefinitionsPage(Page):
             with st.spinner("Loading data ..."):
                 df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns, flagged)
 
+        if df.empty:
+            st.info("No test definitions found.")
+            return
+
         selected, selected_test_def = render_grid(df, multi_select, filters_changed)
 
         popover_container = table_actions_column.empty()
@@ -1306,6 +1310,9 @@ def get_test_definitions(
     )
 
     df = to_dataframe(test_definitions)
+    if df.empty:
+        return df
+
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
     for key in ["id", "table_groups_id", "profile_run_id", "test_suite_id"]:
         df[key] = df[key].apply(lambda value: str(value))
