@@ -64,9 +64,6 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                 border="0">
                 <tr>
                   <td class="summary__title">Anomalies Summary</td>
-                  <td align="right">
-                    <a class="link" href="{{view_in_testgen_url}}" target="_blank">View on TestGen &gt;</a>
-                  </td>
                 </tr>
                 <tr><td><div style="height: 8px;"></div></td></tr>
 
@@ -110,6 +107,11 @@ class MonitorEmailTemplate(BaseNotificationTemplate):
                     {{#if truncated}}
                     + {{truncated}} more
                     {{/if}}
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="3">
+                    <a class="link" href="{{view_in_testgen_url}}" target="_blank">View on TestGen &gt;</a>
                   </td>
                 </tr>
               </table>

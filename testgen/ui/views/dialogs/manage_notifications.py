@@ -143,7 +143,7 @@ class NotificationSettingsDialogBase:
         scope_options_labels = dict(component_props.get("scope_options", []))
         ns_json_list = sorted(
             self._mark_duplicates(ns_json_list),
-            key=lambda item: "0" if not item["scope"] else scope_options_labels.get(item["scope"], "ZZZ"),
+            key=lambda item: "0" if not item.get("scope") else scope_options_labels.get(item["scope"], "ZZZ"),
         )
         widgets.css_class("m-dialog")
         widgets.testgen_component(

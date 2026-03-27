@@ -15,10 +15,10 @@ RUN apk upgrade
 # Now install everything (hdbcli is pre-installed in the base image via manual wheel extraction)
 COPY . /tmp/dk/
 RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml /tmp/dk/testgen/pyproject.toml 2>/dev/null; \
-    python3 -m pip install --prefix=/dk /tmp/dk
+    python3 -m pip install --no-cache-dir --prefix=/dk /tmp/dk
 
 # Generate third-party license notices from installed packages
-RUN pip install pip-licenses \
+RUN pip install --no-cache-dir pip-licenses \
     && SCRIPT=$(find /tmp/dk -name generate_third_party_notices.py | head -1) \
     && PYTHONPATH=/dk/lib/python3.12/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
     && pip uninstall -y pip-licenses

@@ -341,6 +341,7 @@ class TableGroupsPage(Page):
                         safe_rerun()
 
                 except IntegrityError:
+                    get_current_session().rollback()
                     success = False
                     message = "A Table Group with the same name already exists."
             else:

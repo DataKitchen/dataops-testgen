@@ -45,9 +45,6 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
                 <tr>
                   <td class="summary__label">Project</td>
                   <td class="summary__value">{{project_name}}</td>
-                  <td align="right">
-                    <a class="link" href="{{scorecard_url}}" target="_blank">View on TestGen &gt;</a>
-                  </td>
                 </tr>
                 <tr>
                   <td class="summary__label">Scorecard</td>
@@ -60,6 +57,11 @@ class ScoreDropEmailTemplate(BaseNotificationTemplate):
                   <div>{{label}} score dropped below <u>{{threshold}}</u>.</div>
                   {{/if}}
                   {{/each}}
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2">
+                    <a class="link" href="{{scorecard_url}}" target="_blank">View on TestGen &gt;</a>
                   </td>
                 </tr>
               </table>

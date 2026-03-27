@@ -484,7 +484,7 @@ def source_data_dialog(selected_row):
     elif bad_data_status == "ERR":
         st.error(bad_data_msg)
     elif df_bad is None:
-        st.error("An unknown error was encountered.")
+        st.error("Something went wrong while loading the data.")
     else:
         if bad_data_msg:
             st.info(bad_data_msg)
