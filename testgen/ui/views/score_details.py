@@ -243,7 +243,7 @@ def recalculate_score_history(definition_id: str) -> None:
         st.toast("Scorecard trend recalculated", icon=":material/task_alt:")
     except:
         LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
-        st.toast("Recalculating the trend failed. Try again", icon=":material/error:")
+        st.toast("Something went wrong while recalculating the trend.", icon=":material/error:")
 
 
 class ScoreDropNotificationSettingsDialog(NotificationSettingsDialogBase):

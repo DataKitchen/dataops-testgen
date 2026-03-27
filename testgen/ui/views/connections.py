@@ -181,7 +181,7 @@ class ConnectionsPage(Page):
                 connection.save()
                 message = "Changes have been saved successfully."
             except Exception as error:
-                message = "Error creating connection"
+                message = "Something went wrong while creating the connection."
                 success = False
                 LOG.exception(message)
 
@@ -269,7 +269,7 @@ class ConnectionsPage(Page):
                 details = error.args[0]
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
         except Exception as error:
-            details = "Try again"
+            details = "Something went wrong while testing the connection."
             if connection.connect_by_key and not connection.private_key:
                 details = "The private key is missing."
             LOG.exception("Error testing database connection")
@@ -472,7 +472,7 @@ class ConnectionsPage(Page):
                         LOG.info("Table group %s created", table_group.id)
                         safe_rerun()
                 except Exception as error:
-                    message = "Error creating table group"
+                    message = "Something went wrong while creating the table group."
                     success = False
                     LOG.exception(message)
 

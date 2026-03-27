@@ -625,7 +625,7 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             LOG.exception("Failed to delete monitor suite")
             set_result({
                 "success": False,
-                "message": "Unable to delete monitors for the table group, try again.",
+                "message": "Something went wrong while deleting the monitors.",
             })
             safe_rerun(scope="fragment")
 
