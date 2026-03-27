@@ -118,16 +118,6 @@ const DataCatalog = (/** @type Properties */ props) => {
                 };
                 TAG_KEYS.forEach(key => tables[table_id][key] = item[`table_${key}`]);
             }
-            const prefixIcons = [];
-            if (item.critical_data_element ?? item.table_critical_data_element) {
-                prefixIcons.push(withTooltip(Icon({ size: 15, classes: 'text-purple' }, 'star'), { text: 'Critical data element', position: 'right' }));
-            }
-            if (item.excluded_data_element) {
-                prefixIcons.push(withTooltip(Icon({ size: 15, classes: 'text-brown' }, 'visibility_off'), { text: 'Excluded data element', position: 'right' }));
-            }
-            if (item.pii_flag) {
-                prefixIcons.push(withTooltip(Icon({ size: 15, classes: 'text-orange' }, 'shield_person'), { text: 'PII data', position: 'right' }));
-            }
             const columnNode = {
                 id: column_id,
                 label: column_name,
@@ -135,7 +125,19 @@ const DataCatalog = (/** @type Properties */ props) => {
                 ...getColumnIcon(item),
                 iconClass: value_ct === 0 ? 'text-error' : null,
                 iconTooltip: value_ct === 0 ? 'No non-null values detected' : null,
-                prefix: span({ class: 'tg-dh--column-prefix' }, ...prefixIcons),
+                prefix: () => {
+                    const icons = [];
+                    if (item.critical_data_element ?? item.table_critical_data_element) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-purple' }, 'star'), { text: 'Critical data element', position: 'right' }));
+                    }
+                    if (item.excluded_data_element) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-brown' }, 'visibility_off'), { text: 'Excluded data element', position: 'right' }));
+                    }
+                    if (item.pii_flag) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-orange' }, 'shield_person'), { text: 'PII data', position: 'right' }));
+                    }
+                    return span({ class: 'tg-dh--column-prefix' }, ...icons);
+                },
                 criticalDataElement: !!(item.critical_data_element ?? item.table_critical_data_element),
                 excludedDataElement: !!item.excluded_data_element,
                 piiFlag: !!item.pii_flag,
