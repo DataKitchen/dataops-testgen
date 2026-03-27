@@ -41,7 +41,7 @@ COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
 
 # Upgrading pip for security
-RUN python3 -m pip install --upgrade pip==26.0
+RUN python3 -m pip install --no-cache-dir --upgrade pip==26.0
 
 # hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
 # We download the wheel for the correct arch, then extract it directly into site-packages
@@ -60,7 +60,7 @@ RUN ARCH=$(uname -m) && \
 # pip 26+ would fail trying to resolve it from PyPI on musl
 RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml
 
-RUN python3 -m pip install --prefix=/dk /tmp/dk
+RUN python3 -m pip install --no-cache-dir --prefix=/dk /tmp/dk
 
 RUN apk del \
     gcc \

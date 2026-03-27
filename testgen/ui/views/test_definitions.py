@@ -176,6 +176,10 @@ class TestDefinitionsPage(Page):
             with st.spinner("Loading data ..."):
                 df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns, flagged)
 
+        if df.empty:
+            st.info("No test definitions found.")
+            return
+
         selected, selected_test_def = render_grid(df, multi_select, filters_changed)
 
         popover_container = table_actions_column.empty()
@@ -993,12 +997,15 @@ def copy_move_test_dialog(
 
     movable_test_definitions = []
     if target_table_group_id and target_test_suite_id:
-        collision_test_definitions = get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        collision_test_definitions = get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
+        overwrite_ids = []
         if not collision_test_definitions.empty:
             unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == False]
             locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == True]
             locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
             movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
+            selected_ids = {str(item["id"]) for item in selected_test_definitions}
+            overwrite_ids = [id_ for id_ in unlocked["id"].tolist() if str(id_) not in selected_ids]
 
             warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
             \nUnlocked tests that will be overwritten: {len(unlocked)}
@@ -1024,12 +1031,16 @@ def copy_move_test_dialog(
 
     test_definition_ids = [item["id"] for item in movable_test_definitions]
     if move:
+        if overwrite_ids:
+            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
         TestDefinition.move(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been moved."
         st.success(success_message)
         time.sleep(1)
         safe_rerun()
     elif copy:
+        if overwrite_ids:
+            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
         TestDefinition.copy(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been copied."
         st.success(success_message)
@@ -1306,6 +1317,9 @@ def get_test_definitions(
     )
 
     df = to_dataframe(test_definitions)
+    if df.empty:
+        return df
+
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
     for key in ["id", "table_groups_id", "profile_run_id", "test_suite_id"]:
         df[key] = df[key].apply(lambda value: str(value))
@@ -1340,9 +1354,11 @@ def get_test_definitions_collision(
     test_definitions: list[dict],
     target_table_group_id: str,
     target_test_suite_id: str,
+    target_table_name: str | None = None,
+    target_column_name: str | None = None,
 ) -> pd.DataFrame:
-    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
-    column_tests = [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
+    table_tests = [(target_table_name or item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
+    column_tests = [(target_table_name or item["table_name"], target_column_name or item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,

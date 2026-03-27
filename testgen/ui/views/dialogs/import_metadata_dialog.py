@@ -428,7 +428,7 @@ def import_metadata_dialog(table_group_id: str) -> None:
             LOG.exception("Metadata import failed")
             result = {
                 "success": False,
-                "message": "Import failed due to an unexpected error. Please try again.",
+                "message": "Something went wrong while importing the metadata.",
             }
 
         st.session_state.pop(PREVIEW_SESSION_KEY, None)
