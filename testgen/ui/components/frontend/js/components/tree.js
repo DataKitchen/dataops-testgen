@@ -8,7 +8,7 @@
  * @property {number?} iconSize
  * @property {string?} iconClass
  * @property {string?} iconTooltip
- * @property {Element?} prefix
+ * @property {Element|function?} prefix
  * @property {TreeNode[]?} children
  * @property {number?} level
  * @property {boolean?} expanded
