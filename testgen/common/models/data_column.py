@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, ForeignKey, String
+from sqlalchemy import Boolean, Column, ForeignKey, String, asc
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.entity import Entity
@@ -17,7 +17,7 @@ class DataColumnChars(Entity):
     excluded_data_element: bool | None = Column(Boolean, nullable=True)
     pii_flag: str | None = Column(String(50), nullable=True)
 
-    _default_order_by = (id,)
+    _default_order_by = (asc(id),)
 
     # Unmapped columns: table_id, ordinal_position, general_type, column_type,
     # db_data_type, functional_data_type, description, critical_data_element,
