@@ -23,6 +23,7 @@ from testgen.common.models.scores import (
     ScoreTypes,
     SelectedIssue,
 )
+from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -63,11 +64,18 @@ class ScoreDetailsPage(Page):
             )
             return
 
+        if not session.auth.user_has_project_access(score_definition.project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "quality-dashboard",
+            )
+            return
+
         session.set_sidebar_project(score_definition.project_code)
 
         testgen.page_header(
             "Score Details",
-            "view-score-details",
+            "quality-scores/view-score-details/",
             breadcrumbs=[
                 {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": score_definition.project_code}},
                 {"label": score_definition.name},
@@ -101,10 +109,10 @@ class ScoreDetailsPage(Page):
                 )
                 score_breakdown = format_score_card_breakdown([item.to_dict() for item in score_breakdown], category)
             else:
-                issues = format_score_card_issues(
-                    score_definition.get_score_card_issues(score_type, category, drilldown),
-                    category,
-                )
+                raw_issues = score_definition.get_score_card_issues(score_type, category, drilldown)
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_hygiene_detail(raw_issues)
+                issues = format_score_card_issues(raw_issues, category)
 
         testgen.testgen_component(
             "score_details",
@@ -127,7 +135,7 @@ class ScoreDetailsPage(Page):
                 "CategoryChanged": select_category,
                 "ScoreTypeChanged": select_score_type,
                 "IssueReportsExported": export_issue_reports,
-                "ColumnProflingClicked": lambda payload: profiling_results_dialog(
+                "ColumnProfilingClicked": lambda payload: profiling_results_dialog(
                     payload["column_name"],
                     payload["table_name"],
                     payload["table_group_id"],
@@ -170,15 +178,20 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
+    mask_pii = not session.auth.user_has_permission("view_pii")
+    if mask_pii:
+        issue = {**issue}
+        mask_hygiene_detail([issue])
+
     with BytesIO() as buffer:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            hygiene_issue_report.create_report(buffer, issue)
+            hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            test_result_report.create_report(buffer, issue)
+            test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
 
         update_progress(1.0)
         buffer.seek(0)
@@ -230,7 +243,7 @@ def recalculate_score_history(definition_id: str) -> None:
         st.toast("Scorecard trend recalculated", icon=":material/task_alt:")
     except:
         LOG.exception(f"Failure recalculating history for scorecard id={definition_id}")
-        st.toast("Recalculating the trend failed. Try again", icon=":material/error:")
+        st.toast("Something went wrong while recalculating the trend.", icon=":material/error:")
 
 
 class ScoreDropNotificationSettingsDialog(NotificationSettingsDialogBase):

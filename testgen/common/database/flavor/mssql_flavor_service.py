@@ -3,50 +3,48 @@ from urllib.parse import quote_plus
 from sqlalchemy.engine import URL
 
 from testgen import settings
-from testgen.common.database.flavor.flavor_service import FlavorService
+from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
 
 
 class MssqlFlavorService(FlavorService):
 
     concat_operator = "+"
     escaped_underscore = "[_]"
-    use_top = True
+    row_limiting_clause = "top"
+    url_scheme = "mssql+pyodbc"
 
-    def get_connection_string_head(self):
-        return f"mssql+pyodbc://{self.username}:{quote_plus(self.password)}@"
-
-    def get_connection_string_from_fields(self):
+    def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(
-            "mssql+pyodbc",
-            username=self.username,
-            password=quote_plus(self.password or ""),
-            host=self.host,
-            port=int(self.port or 1443),
-            database=self.dbname,
+            self.url_scheme,
+            username=params.username,
+            password=quote_plus(params.password or ""),
+            host=params.host,
+            port=int(params.port or 1443),
+            database=params.dbname,
             query={
                 "driver": "ODBC Driver 18 for SQL Server",
             },
         )
 
-        if self.connect_with_identity:
+        if params.connect_with_identity:
             connection_url = connection_url._replace(username=None, password=None).update_query_dict({
                 "encrypt": "yes",
                 "authentication": "ActiveDirectoryMsi",
             })
 
-        if self.sql_flavor_code == "synapse_mssql":
+        if params.sql_flavor_code == "synapse_mssql":
             connection_url = connection_url.update_query_dict({"autocommit": "True"})
 
         return connection_url.render_as_string(hide_password=False)
 
-    def get_pre_connection_queries(self):
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return [
             ("SET ANSI_DEFAULTS ON;", None),
             ("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;", None),
         ]
-    
-    def get_connect_args(self):
-        connect_args = super().get_connect_args()
+
+    def get_connect_args(self, params: ResolvedConnectionParams) -> dict:
+        connect_args = super().get_connect_args(params)
         if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
             connect_args["TrustServerCertificate"] = "yes"
         return connect_args

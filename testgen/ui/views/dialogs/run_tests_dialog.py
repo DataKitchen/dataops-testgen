@@ -6,6 +6,7 @@ from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.utils import to_dataframe
 
@@ -52,11 +53,13 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
     button_container = st.empty()
     status_container = st.empty()
 
+    link_clicked = st.session_state.get(LINK_KEY)
     run_test_button = None
-    with button_container:
-        _, button_column = st.columns([.8, .2])
-        with button_column:
-            run_test_button = st.button("Run Tests", use_container_width=True, disabled=not test_suite_id)
+    if not link_clicked:
+        with button_container:
+            _, button_column = st.columns([.8, .2])
+            with button_column:
+                run_test_button = st.button("Run Tests", use_container_width=True, disabled=not test_suite_id)
 
     if run_test_button:
         button_container.empty()
@@ -68,7 +71,7 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
             status_container.error(f"Test run encountered errors: {e!s}.")
 
     # The second condition is needed for the link to work
-    if run_test_button or st.session_state.get(LINK_KEY):
+    if run_test_button or link_clicked:
         with status_container.container():
             st.success(
                 f"Test run started for test suite **{test_suite_name}**."
@@ -87,5 +90,4 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
                 )
             else:
                 time.sleep(2)
-                st.cache_data.clear()
-                st.rerun()
+                safe_rerun()

@@ -101,6 +101,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8002'
+    test_type: Avg_Shift
+    sql_flavor: oracle
+    measure: |-
+      ABS( (AVG(CAST({COLUMN_NAME} AS NUMBER)) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})-1)*POWER(STDDEV({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}-1) * POWER({BASELINE_SD},2)) /NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8002'
+    test_type: Avg_Shift
+    sql_flavor: sap_hana
+    measure: |-
+      ABS( (AVG(CAST({COLUMN_NAME} AS DECIMAL)) - {BASELINE_AVG}) / SQRT(((COUNT({COLUMN_NAME})-1)*POWER(STDDEV({COLUMN_NAME}),2) + ({BASELINE_VALUE_CT}-1) * POWER({BASELINE_SD},2)) /NULLIF(COUNT({COLUMN_NAME}) + {BASELINE_VALUE_CT}, 0) ))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1365'
     test_id: '1005'
@@ -158,5 +174,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8002'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8002'
+    test_id: '1005'
+    test_type: Avg_Shift
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
     error_type: Test Results
   test_templates: []

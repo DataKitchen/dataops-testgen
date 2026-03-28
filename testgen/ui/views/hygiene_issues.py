@@ -12,6 +12,7 @@ from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.pii_masking import mask_hygiene_detail
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -59,12 +60,19 @@ class HygieneIssuesPage(Page):
             )
             return
 
+        if not session.auth.user_has_project_access(run.project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "profiling-runs",
+            )
+            return
+
         run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
         session.set_sidebar_project(run.project_code)
 
         testgen.page_header(
             "Hygiene Issues",
-            "data-hygiene-issues",
+            "data-profiling/data-hygiene-issues/",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },
@@ -176,6 +184,10 @@ class HygieneIssuesPage(Page):
             with st.spinner("Loading data ..."):
                 # Get hygiene issue list
                 df_pa = get_profiling_anomalies(run_id, likelihood, issue_type_id, table_name, column_name, action, sorting_columns)
+
+                # Mask detail for PII columns with redactable details
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_hygiene_detail(df_pa)
 
                 # Retrieve disposition action (cache refreshed)
                 df_action = get_anomaly_disposition(run_id)
@@ -302,8 +314,6 @@ class HygieneIssuesPage(Page):
                     int_data_width=700,
                 )
 
-        cached_functions = [get_anomaly_disposition, get_profiling_anomaly_summary, get_profiling_anomalies]
-
         disposition_actions = [
             { "icon": "✓", "help": "Confirm this issue as relevant for this run", "status": "Confirmed" },
             { "icon": "✘", "help": "Dismiss this issue as not relevant for this run", "status": "Dismissed" },
@@ -327,8 +337,6 @@ class HygieneIssuesPage(Page):
                     fm.reset_post_updates(
                         do_disposition_update(selected, d_action["status"]),
                         as_toast=True,
-                        clear_cache=True,
-                        lst_cached_functions=cached_functions,
                     )
 
         # Needs to be after all data loading/updating
@@ -434,6 +442,10 @@ def get_excel_report_data(
     if data is None:
         data = get_profiling_anomalies(run_id)
 
+    if not session.auth.user_has_permission("view_pii"):
+        data = data.copy()
+        mask_hygiene_detail(data)
+
     columns = {
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
@@ -464,14 +476,15 @@ def source_data_dialog(selected_row):
     st.markdown("#### Hygiene Issue Detail")
     st.caption(selected_row["detail"])
 
+    mask_pii = not session.auth.user_has_permission("view_pii")
     with st.spinner("Retrieving source data..."):
-        bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500)
+        bad_data_status, bad_data_msg, _, df_bad = get_hygiene_issue_source_data(selected_row, limit=500, mask_pii=mask_pii)
     if bad_data_status in {"ND", "NA"}:
         st.info(bad_data_msg)
     elif bad_data_status == "ERR":
         st.error(bad_data_msg)
     elif df_bad is None:
-        st.error("An unknown error was encountered.")
+        st.error("Something went wrong while loading the data.")
     else:
         if bad_data_msg:
             st.info(bad_data_msg)
@@ -508,7 +521,7 @@ def get_report_file_data(update_progress, tr_data) -> FILE_DATA_TYPE:
     file_name = f"testgen_hygiene_issue_report_{hi_id}_{profiling_time}.pdf"
 
     with BytesIO() as buffer:
-        create_report(buffer, tr_data)
+        create_report(buffer, tr_data, mask_pii=not session.auth.user_has_permission("view_pii"))
         update_progress(1.0)
         buffer.seek(0)
         return file_name, "application/pdf", buffer.read()

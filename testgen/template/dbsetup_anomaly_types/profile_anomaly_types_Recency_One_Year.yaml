@@ -9,6 +9,7 @@ profile_anomaly_types:
     MAX(p.max_date) < CURRENT_DATE - INTERVAL '1 year'
   detail_expression: |-
     'Most Recent Date: ' || MAX(p.max_date)::VARCHAR
+  detail_redactable: true
   issue_likelihood: Possible
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether dates in table should be more recent.
@@ -68,6 +69,22 @@ profile_anomaly_types:
     test_id: '1019'
     test_type: Recency_One_Year
     sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1518'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly
+  - id: '1518'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
       created_in_ui

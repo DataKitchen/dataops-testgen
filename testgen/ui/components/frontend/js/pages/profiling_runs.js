@@ -48,7 +48,7 @@ import { Link } from '../components/link.js';
 import { Button } from '../components/button.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { formatTimestamp, formatDuration, formatNumber } from '../display_utils.js';
+import { formatTimestamp, formatDuration, formatNumber, DISABLED_ACTION_TEXT } from '../display_utils.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
 import { Paginator } from '../components/paginator.js';
@@ -190,7 +190,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit)),
+                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit, projectSummary.project_code)),
                         ),
                     ),
                     Paginator({
@@ -280,6 +280,7 @@ const ProfilingRunItem = (
     /** @type string[] */ columns,
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
+    /** @type string */ projectCode,
 ) => {
     const runningStep = item.progress?.find((item) => item.status === 'Running');
 
@@ -363,7 +364,7 @@ const ProfilingRunItem = (
             item.status === 'Complete' && item.column_ct ? Link({
                 label: 'View results',
                 href: 'profiling-runs:results',
-                params: { 'run_id': item.id },
+                params: { 'run_id': item.id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
             }) : null,
@@ -381,7 +382,7 @@ const ProfilingRunItem = (
             item.anomaly_ct ? Link({
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
-                params: { 'run_id': item.id },
+                params: { 'run_id': item.id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 4px;',

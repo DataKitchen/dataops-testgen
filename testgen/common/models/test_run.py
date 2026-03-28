@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple, Self, TypedDict
+from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -49,6 +49,7 @@ class TestRunSummary(EntityMinimal):
     test_endtime: datetime
     table_groups_name: str
     test_suite: str
+    project_code: str
     project_name: str
     status: TestRunStatus
     progress: list[ProgressStep]
@@ -62,6 +63,15 @@ class TestRunSummary(EntityMinimal):
     log_ct: int
     dismissed_ct: int
     dq_score_testing: float
+
+    STATUS_LABEL: ClassVar[dict[str, str]] = {
+        "Complete": "Completed",
+        "Cancelled": "Canceled",
+    }
+
+    @property
+    def status_label(self) -> str:
+        return self.STATUS_LABEL.get(self.status, self.status)
 
 
 @dataclass
@@ -238,6 +248,7 @@ class TestRun(Entity):
             test_runs.test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
+            test_suites.project_code,
             projects.project_name,
             test_runs.status,
             test_runs.progress,
@@ -337,8 +348,7 @@ class TestRun(Entity):
         )
         db_session = get_current_session()
         rows = db_session.execute(query)
-        db_session.commit()
-        cls.clear_cache()
+        db_session.flush()
         return [r.id for r in rows]
 
     @classmethod
@@ -346,8 +356,6 @@ class TestRun(Entity):
         query = update(cls).where(cls.id == run_id).values(status="Cancelled", test_endtime=datetime.now(UTC))
         db_session = get_current_session()
         db_session.execute(query)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
@@ -357,7 +365,6 @@ class TestRun(Entity):
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"test_run_ids": tuple(ids)})
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod

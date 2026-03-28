@@ -1,20 +1,19 @@
-import base64
 import logging
-from datetime import UTC, datetime
 from typing import Literal
 
 import extra_streamlit_components as stx
-import jwt
 import streamlit as st
 
-from testgen import settings
+from testgen.common.auth import decode_jwt_token, get_jwt_signing_key
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models.project_membership import ProjectMembership, RoleType
 from testgen.common.models.user import User
 from testgen.ui.services.javascript_service import execute_javascript
+from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
-Permission = Literal["catalog", "view", "disposition", "edit", "administer"]
+Permission = Literal["catalog", "view", "disposition", "view_pii", "edit", "administer", "global_admin"]
 
 
 class Authentication:
@@ -23,6 +22,7 @@ class Authentication:
     jwt_cookie_expiry_days = 1
 
     user: User | None = None
+    role: RoleType | None = None
 
     # Intermediate state holders because auth cookie changes are not immediate
     cookies_ready: bool = False
@@ -38,16 +38,22 @@ class Authentication:
         return (self.user.name or self.user.username) if self.user else None
 
     @property
-    def default_page(self) -> str | None:
+    def current_project(self) -> str | None:
+        return session.sidebar_project
+
+    def get_default_page(self, project_code: str | None = None) -> str:  # noqa: ARG002
         return "project-dashboard" if self.user else ""
 
-    def user_has_permission(self, _permission: Permission) -> bool:
+    def user_has_permission(self, permission: Permission, /, project_code: str | None = None) -> bool:  # noqa: ARG002
+        return True
+
+    def user_has_project_access(self, project_code: str) -> bool:  # noqa: ARG002
         return True
 
     def get_jwt_hashing_key(self) -> bytes:
         try:
-            return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
-        except Exception as e:
+            return get_jwt_signing_key()
+        except Exception:
             st.error(
                 "Error reading the JWT signing key from settings.\n\n Make sure you have a valid "
                 "base64 string assigned to the TG_JWT_HASHING_KEY environment variable."
@@ -67,22 +73,31 @@ class Authentication:
     def login_user(self, username: str) -> None:
         self.user = User.get(username)
         self.user.save(update_latest_login=True)
-        MixpanelService().send_event("login", include_usage=True, role=self.user.role)
+        self.load_user_role()
+        MixpanelService().send_event("login", include_usage=True, role=self.role)
 
     def load_user_session(self) -> None:
         cookies = self._load_cookies()
         token = cookies.get(self.jwt_cookie_name)
         if token is not None:
             try:
-                token = jwt.decode(token, self.get_jwt_hashing_key(), algorithms=["HS256"])
-                if token["exp_date"] > datetime.now(UTC).timestamp():
-                    self.user = User.get(token["username"])
+                payload = decode_jwt_token(token)
+                self.user = User.get(payload["username"])
+                self.load_user_role()
             except Exception:
                 LOG.debug("Invalid auth token found on cookies", exc_info=True, stack_info=True)
+
+    def load_user_role(self) -> None:
+        if self.user and self.current_project:
+            membership = ProjectMembership.get_by_user_and_project(self.user.id, self.current_project)
+            self.role = membership.role if membership else None
+        else:
+            self.role = None
 
     def end_user_session(self) -> None:
         self._clear_jwt_cookie()
         self.user = None
+        self.role = None
 
     def _clear_jwt_cookie(self) -> None:
         execute_javascript(

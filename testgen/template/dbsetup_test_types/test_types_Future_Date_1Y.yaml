@@ -56,7 +56,7 @@ test_types:
     test_type: Future_Date_1Y
     sql_flavor: mssql
     measure: |-
-      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) >= DATEADD(DAY, 365, CONVERT(DATE, '{RUN_DATE}')) THEN 1 ELSE 0 END)
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) > DATEADD(DAY, 365, CONVERT(DATE, '{RUN_DATE}')) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -96,7 +96,23 @@ test_types:
     test_type: Future_Date_1Y
     sql_flavor: trino
     measure: |-
-      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) >= (FROM_ISO8601_DATE('{RUN_DATE}') + interval '365' day ) THEN 1 ELSE 0 END)
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) > (FROM_ISO8601_DATE('{RUN_DATE}') + interval '365' day ) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8011'
+    test_type: Future_Date_1Y
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN TRUNC({COLUMN_NAME}) > TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') + 365 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8011'
+    test_type: Future_Date_1Y
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) > ADD_DAYS(TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS'), 365) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -127,7 +143,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) >= DATEADD(DAY, 365, CONVERT(DATE, '{TEST_DATE}')) GROUP BY "{COLUMN_NAME}";
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) > DATEADD(DAY, 365, CONVERT(DATE, '{TEST_DATE}')) GROUP BY "{COLUMN_NAME}";
     error_type: Test Results
   - id: '1093'
     test_id: '1016'
@@ -160,5 +176,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8016'
+    test_id: '1016'
+    test_type: Future_Date_1Y
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRUNC("{COLUMN_NAME}") > TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') + 365 GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8016'
+    test_id: '1016'
+    test_type: Future_Date_1Y
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) > ADD_DAYS(TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS'), 365) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

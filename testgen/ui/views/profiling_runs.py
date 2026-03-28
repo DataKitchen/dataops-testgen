@@ -22,6 +22,7 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
@@ -49,7 +50,7 @@ class DataProfilingPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "data-profiling",
+            "data-profiling/",
         )
 
         with st.spinner("Loading data ..."):
@@ -223,11 +224,11 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
                             ProfilingRun.cancel_run(profiling_run.id)
                             send_profiling_run_notifications(ProfilingRun.get(profiling_run.id))
                 ProfilingRun.cascade_delete(profiling_run_ids)
-            st.rerun()
+            safe_rerun()
         except Exception:
             LOG.exception("Failed to delete profiling runs")
             set_result({
                 "success": False,
-                "message": "Unable to delete the selected profiling runs, try again.",
+                "message": "Something went wrong while deleting the profiling runs.",
             })
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")

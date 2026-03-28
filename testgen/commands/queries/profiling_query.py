@@ -2,7 +2,7 @@ import dataclasses
 from uuid import UUID
 
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
-from testgen.common import read_template_sql_file, read_template_yaml_file
+from testgen.common import read_template_sql_file
 from testgen.common.database.database_service import process_conditionals, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
@@ -17,6 +17,40 @@ class TableSampling:
     sample_count: int
     sample_ratio: float
     sample_percent: float
+
+
+def calculate_sampling_params(
+    table_name: str,
+    record_count: int,
+    sample_percent_raw: str | float,
+    min_sample: int,
+    max_sample: int = 999000,
+) -> TableSampling | None:
+    """Calculate sampling parameters for a table based on record count and sample percent.
+
+    Returns None if sampling is not applicable (invalid percent, or record_count <= min_sample).
+    """
+    if isinstance(sample_percent_raw, str):
+        cleaned = sample_percent_raw.replace(".", "", 1) if sample_percent_raw else ""
+        sample_percent = float(sample_percent_raw) if cleaned.isdigit() else 30
+    else:
+        sample_percent = float(sample_percent_raw) if sample_percent_raw is not None else 30
+
+    if not (0 < sample_percent < 100):
+        return None
+
+    if record_count <= min_sample:
+        return None
+
+    calc_sample = round(sample_percent * record_count / 100)
+    sample_count = min(max(calc_sample, min_sample), max_sample)
+
+    return TableSampling(
+        table_name=table_name,
+        sample_count=sample_count,
+        sample_ratio=record_count / sample_count,
+        sample_percent=round(100 * sample_count / record_count, 4),
+    )
 
 
 @dataclasses.dataclass
@@ -60,7 +94,6 @@ class ProfilingSQL:
         self.profiling_run = profiling_run
         self.run_date = profiling_run.profiling_starttime
         self.flavor = connection.sql_flavor
-        self._profiling_template: dict = None
 
     def _get_params(self, column_chars: ColumnChars | None = None, table_sampling: TableSampling | None = None) -> dict:
         params = {
@@ -116,14 +149,6 @@ class ProfilingSQL:
 
         return query, params
 
-    def _get_profiling_template(self) -> dict:
-        if not self._profiling_template:
-            self._profiling_template = read_template_yaml_file(
-                "project_profiling_query.yaml",
-                sub_directory=f"flavors/{self.flavor}/profiling",
-            )
-        return self._profiling_template
-
     def get_frequency_analysis_columns(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("secondary_profiling_columns.sql")
@@ -142,8 +167,10 @@ class ProfilingSQL:
             self._get_query("functional_datatype.sql"),
             self._get_query("functional_tabletype_stage.sql"),
             self._get_query("functional_tabletype_update.sql"),
-            self._get_query("pii_flag.sql"),
         ]
+        if self.table_group.profile_flag_pii:
+            queries.append(self._get_query("pii_flag.sql"))
+            queries.append(self._get_query("pii_flag_update.sql"))
         if self.table_group.profile_flag_cdes:
             queries.append(self._get_query("cde_flagger_query.sql"))
         return queries
@@ -194,42 +221,33 @@ class ProfilingSQL:
 
     def run_column_profiling(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
         # Runs on Target database
-        template = self._get_profiling_template()
         general_type = column_chars.general_type
+        do_sample = bool(table_sampling)
 
-        query = ""
-        query += template["01_sampling" if table_sampling else "01_else"]
-        query += template["01_all"]
-        query += template["02_X" if general_type == "X" else "02_else"]
-        query += template["03_ADN" if general_type in ["A", "D", "N"] else "03_else"]
+        extra_params = {
+            "do_sample": do_sample,
+            "is_type_A": general_type == "A",
+            "is_type_N": general_type == "N",
+            "is_type_D": general_type == "D",
+            "is_type_B": general_type == "B",
+            "is_type_ADN": general_type in ("A", "D", "N"),
+            "is_type_X": general_type == "X",
+            "is_A_sampling": general_type == "A" and do_sample,
+            "is_A_no_sampling": general_type == "A" and not do_sample,
+            "is_N_decimal": general_type == "N" and column_chars.is_decimal,
+            "is_N_sampling": general_type == "N" and do_sample,
+            "is_N_no_sampling": general_type == "N" and not do_sample,
+            "is_not_A": general_type != "A",
+            "is_not_A_not_N": general_type not in ("A", "N"),
+        }
 
-        if general_type == "A":
-            query += template["04_A"]
-        elif general_type == "N":
-            query += template["04_N"]
-        else:
-            query += template["04_else"]
-
-        query += template["05_A" if general_type == "A" else "05_else"]
-        query += template["06_A" if general_type == "A" else "06_else"]
-        query += template["08_N" if general_type == "N" else "08_else"]
-        query += template["10_N_dec" if general_type == "N" and column_chars.is_decimal == True else "10_else"]
-        query += template["11_D" if general_type == "D" else "11_else"]
-        query += template["12_B" if general_type == "B" else "12_else"]
-        query += template["14_A" if general_type == "A" else "14_else"]
-        query += template["16_all"]
-        query += template["98_all"]
-
-        if general_type == "N":
-            query += template["99_N_sampling" if table_sampling else "99_N"]
-        else:
-            query += template["99_else"]
-
-        params = self._get_params(column_chars, table_sampling)
-        query = replace_params(query, params)
-        query = replace_templated_functions(query, self.flavor)
-
-        return query, params
+        return self._get_query(
+            "project_profiling_query.sql",
+            f"flavors/{self.flavor}/profiling",
+            extra_params=extra_params,
+            column_chars=column_chars,
+            table_sampling=table_sampling,
+        )
 
     def get_profiling_errors(self, column_errors: list[tuple[ColumnChars, str]]) -> list[list[str | UUID | int]]:
         return [

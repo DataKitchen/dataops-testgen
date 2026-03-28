@@ -11,6 +11,7 @@ profile_anomaly_types:
         OR p.max_date > CURRENT_DATE + INTERVAL '30 year')
   detail_expression: |-
     'Date Range: ' || p.min_date::VARCHAR || ' thru ' || p.max_date::VARCHAR
+  detail_redactable: true
   issue_likelihood: Likely
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether this data needs to be corrected or removed.
@@ -80,4 +81,20 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", '{PROFILE_RUN_DATE}' :: DATE AS profile_run_date, COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < '1900-01-01'::DATE) OR ("{COLUMN_NAME}" > '{PROFILE_RUN_DATE}' :: DATE + INTERVAL '30 year' ) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly
+  - id: '1517'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1517'
+    test_id: '1018'
+    test_type: Unlikely_Date_Values
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD') AS profile_run_date, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a WHERE ("{COLUMN_NAME}" < TO_DATE('1900-01-01', 'YYYY-MM-DD')) OR ("{COLUMN_NAME}" > ADD_MONTHS(TO_DATE('{PROFILE_RUN_DATE}', 'YYYY-MM-DD'), 360)) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
     error_type: Profile Anomaly

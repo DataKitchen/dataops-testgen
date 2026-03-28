@@ -6,7 +6,12 @@ from uuid import UUID
 
 import testgen.common.process_service as process_service
 from testgen import settings
-from testgen.commands.queries.profiling_query import HygieneIssueType, ProfilingSQL, TableSampling
+from testgen.commands.queries.profiling_query import (
+    HygieneIssueType,
+    ProfilingSQL,
+    TableSampling,
+    calculate_sampling_params,
+)
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
@@ -21,8 +26,9 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import ThreadedProgress, empty_cache
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -73,10 +79,15 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     profiling_run.init_progress()
     profiling_run.set_progress("data_chars", "Running")
     profiling_run.save()
+    # This runs in a subprocess — commit after every save so progress is visible
+    # to the UI (separate session) and to execute_db_queries (independent connection).
+    get_current_session().commit()
 
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
         data_chars = run_data_chars_refresh(connection, table_group, profiling_run.profiling_starttime)
+        if table_group.profile_exclude_xde:
+            data_chars = _exclude_xde_columns(data_chars, table_group.id)
         distinct_tables = {(column.table_name, column.record_ct) for column in data_chars}
 
         profiling_run.set_progress("data_chars", "Completed")
@@ -104,6 +115,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
+        get_current_session().commit()
 
         send_profiling_run_notifications(profiling_run)
     else:
@@ -111,6 +123,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
+        get_current_session().commit()
 
         send_profiling_run_notifications(profiling_run)
         _rollup_profiling_scores(profiling_run, table_group)
@@ -134,33 +147,42 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     """
 
 
+def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:
+    """Filter out columns marked as excluded_data_element in data_column_chars."""
+    xde_columns = DataColumnChars.select_where(
+        DataColumnChars.table_groups_id == table_group_id,
+        DataColumnChars.excluded_data_element.is_(True),
+    )
+    if not xde_columns:
+        return data_chars
+
+    excluded = {(col.table_name, col.column_name) for col in xde_columns}
+    filtered = [col for col in data_chars if (col.table_name, col.column_name) not in excluded]
+    if len(filtered) < len(data_chars):
+        LOG.info(f"Excluding {len(data_chars) - len(filtered)} XDE columns from profiling")
+    return filtered
+
+
 def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnChars]) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     LOG.info(f"Running column profiling queries: {len(data_chars)}")
     table_group = sql_generator.table_group
     sampling_params: dict[str, TableSampling] = {}
-    sample_percent = (
-        float(table_group.profile_sample_percent)
-        if str(table_group.profile_sample_percent).replace(".", "", 1).isdigit()
-        else 30
-    )
-    if table_group.profile_use_sampling and 0 < sample_percent < 100:
-        min_sample = table_group.profile_sample_min_count
-        max_sample = 999000
+    if table_group.profile_use_sampling:
         for column in data_chars:
-            if not sampling_params.get(column.table_name) and column.record_ct > min_sample:
-                calc_sample = round(sample_percent * column.record_ct / 100)
-                sample_count = min(max(calc_sample, min_sample), max_sample)
-
-                sampling_params[column.table_name] = TableSampling(
+            if not sampling_params.get(column.table_name):
+                result = calculate_sampling_params(
                     table_name=column.table_name,
-                    sample_count=sample_count,
-                    sample_ratio=column.record_ct / sample_count,
-                    sample_percent=round(100 * sample_count / column.record_ct, 4),
+                    record_count=column.record_ct,
+                    sample_percent_raw=table_group.profile_sample_percent,
+                    min_sample=table_group.profile_sample_min_count,
                 )
+                if result:
+                    sampling_params[column.table_name] = result
 
     def update_column_progress(progress: ThreadedProgress) -> None:
         profiling_run.set_progress(
@@ -172,6 +194,7 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
             else None,
         )
         profiling_run.save()
+        get_current_session().commit()
 
     profiling_results, result_columns, error_data = fetch_from_db_threaded(
         [sql_generator.run_column_profiling(column, sampling_params.get(column.table_name)) for column in data_chars],
@@ -219,6 +242,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("freq_analysis", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     error_data = None
     try:
@@ -233,6 +257,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
                     "freq_analysis", "Running", detail=f"{progress['processed']} of {progress['total']}"
                 )
                 profiling_run.save()
+                get_current_session().commit()
 
             frequency_results, result_columns, error_data = fetch_from_db_threaded(
                 [sql_generator.run_frequency_analysis(ColumnChars(**column)) for column in frequency_columns],
@@ -265,6 +290,7 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("hygiene_issues", "Running")
     profiling_run.save()
+    get_current_session().commit()
 
     try:
         LOG.info("Detecting functional data types and critical data elements")

@@ -101,6 +101,22 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8007'
+    test_type: Distinct_Date_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8007'
+    test_type: Distinct_Date_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1370'
     test_id: '1012'
@@ -162,5 +178,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8012'
+    test_id: '1012'
+    test_type: Distinct_Date_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8012'
+    test_id: '1012'
+    test_type: Distinct_Date_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

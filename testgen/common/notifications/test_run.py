@@ -75,11 +75,6 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 border="0">
                 <tr>
                   <td class="summary__title">Results Summary</td>
-                  {{#if (eq test_run.status 'Complete')}}
-                  <td align="right">
-                    <a class="link" href="{{test_run_url}}" target="_blank">View on TestGen &gt;</a>
-                  </td>
-                  {{/if}}
                 </tr>
                 <tr>
                   <td class="summary__subtitle">
@@ -144,6 +139,13 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                   <td><div class="code">{{test_run.log_message}}</div></td>
                 </tr>
                 {{/if}}
+                {{#if (eq test_run.status 'Complete')}}
+                <tr>
+                  <td>
+                    <a class="link" href="{{test_run_url}}" target="_blank">View on TestGen &gt;</a>
+                  </td>
+                </tr>
+                {{/if}}
               </table>
             </div>
             {{#each test_result_summary}}
@@ -167,11 +169,6 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 {{#if (eq status 'Warning')}} text-orange {{/if}}
                 {{#if (eq status 'Error')}} text-brown {{/if}}
                 ">{{label}}</td>
-                <td colspan="2" align="right">
-                  <a class="link" href="{{test_run_url}}&status={{status}}" target="_blank">
-                    View {{format_number total}} {{label}} &gt;
-                  </a>
-                </td>
               </tr>
               <tr class="text-caption">
                 <td></td>
@@ -190,13 +187,18 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
               {{/each}}
               <tr>
-                <td></td>
-                <td colspan="2" class="summary__caption">
+                <td style="width: 4px;">
+                <td colspan="2">
+                  <a class="link" href="{{test_run_url}}&status={{status}}" target="_blank">
+                    View {{format_number total}} {{label}} &gt;
+                  </a>
+                </td>
+                <td class="summary__caption">
                   {{#if truncated}}
                   + {{truncated}} more
                   {{/if}}
                 </td>
-                <td colspan="2" align="right" class="summary__caption">
+                <td align="right" class="summary__caption">
                   <span class="text-purple" style="margin-right: 4px; font-style: normal;">&#9679;</span>
                   indicates new {{label}}
                 </td>
@@ -324,9 +326,11 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
     test_run_url = "".join(
         (
             PersistedSetting.get("BASE_URL", ""),
-            "/test-runs:results?run_id=",
+            "/test-runs:results?project_code=",
+            str(tr_summary.project_code),
+            "&run_id=",
             str(test_run.id),
-            "&source=email",
+            "&source=email"
         )
     )
 

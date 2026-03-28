@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, Self
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -19,7 +20,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
-from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson
@@ -27,7 +27,7 @@ from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinima
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks"]
+SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana"]
 
 
 @dataclass
@@ -119,15 +119,26 @@ class Connection(Entity):
 
     def save(self) -> None:
         if self.connect_by_url and self.url:
-            flavor_service = get_flavor_service(self.sql_flavor)
-            flavor_service.init(self.to_dict())
+            # When connect_by_url=True, the URL is the source of truth.
+            # Normalize it (strip scheme/credentials) and sync host/port/db fields from it.
+            url = self.url
+            if "://" in url:
+                url = url.split("://", 1)[1]
+            if "@" in url:
+                url = url.rsplit("@", 1)[1]
+            self.url = url
 
-            connection_parts = flavor_service.get_parts_from_connection_string()
-            if connection_parts:
-                self.project_host = connection_parts["host"]
-                self.project_port = connection_parts["port"]
-                self.project_db = connection_parts["dbname"]
-                self.http_path = connection_parts.get("http_path") or None
-                self.warehouse = connection_parts.get("warehouse") or None
+            parsed = urlparse(f"scheme://_@{url}")
+            location = parsed.netloc.split("@")[-1]
+            if ":" in location:
+                host, port = location.rsplit(":", 1)
+            else:
+                host, port = location, ""
+            self.project_host = host
+            self.project_port = port
+            self.project_db = parsed.path.strip("/").split("/")[0] if parsed.path.strip("/") else ""
+            extras = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+            self.http_path = extras.get("http_path") or None
+            self.warehouse = extras.get("warehouse") or None
 
         super().save()

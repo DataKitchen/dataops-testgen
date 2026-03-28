@@ -18,7 +18,7 @@
 import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { Tooltip } from './tooltip.js';
+import { withTooltip } from './tooltip.js';
 
 const { button, i, span } = van.tags;
 const BUTTON_TYPE = {
@@ -52,24 +52,16 @@ const Button = (/** @type Properties */ props) => {
     }
 
     const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
-    const showTooltip = van.state(false);
 
-    return button(
+    const buttonEl = button(
         {
             id: getValue(props.id) ?? undefined,
             class: () => `tg-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
             style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
             onclick: onClickHandler,
             disabled: props.disabled,
-            onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
-            onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
             'data-testid': getValue(props.testId) ?? '',
         },
-        () => window.testgen.isPage && getValue(props.tooltip) ? Tooltip({
-            text: props.tooltip,
-            show: showTooltip,
-            position: props.tooltipPosition,
-        }) : '',
         span({class: 'tg-button-focus-state-indicator'}, ''),
         props.icon ? i({
             class: 'material-symbols-rounded',
@@ -77,6 +69,10 @@ const Button = (/** @type Properties */ props) => {
         }, props.icon) : undefined,
         !isIconOnly ? span(props.label) : undefined,
     );
+
+    return getValue(props.tooltip)
+        ? withTooltip(buttonEl, { text: props.tooltip, position: props.tooltipPosition })
+        : buttonEl;
 };
 
 const stylesheet = new CSSStyleSheet();

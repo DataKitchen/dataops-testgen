@@ -101,6 +101,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: oracle
+    measure: |-
+      (MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8018'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      (MAX(<%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) - MIN(<%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) + 1) - COUNT(DISTINCT <%DATEDIFF_MONTH;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1381'
     test_id: '1023'
@@ -185,15 +201,13 @@ test_types:
                                           FROM check_periods c
                                         LEFT JOIN data_by_period d
                                           ON (c.check_period = d.data_period) )
-      SELECT TOP {LIMIT} check_period, record_ct,
+      SELECT TOP {LIMIT} check_period AS missing_period, record_ct,
              CASE
                WHEN record_ct = 0 THEN 'MISSING'
                ELSE 'Present'
              END as status
         FROM data_by_prd_with_prior_next
        WHERE record_ct = 0
-          OR last_record_ct = 0
-          OR next_record_ct = 0
       ORDER BY check_period DESC;
     error_type: Test Results
   - id: '1100'
@@ -227,5 +241,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH RECURSIVE daterange(all_dates) AS (SELECT DATE_TRUNC('month', MIN("{COLUMN_NAME}")) :: DATE AS all_dates  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"  UNION ALL  SELECT DATEADD(MONTH, 1, d.all_dates) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT DATE_TRUNC('month', MAX("{COLUMN_NAME}")) :: DATE FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS (SELECT DISTINCT DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY DATE_TRUNC('month',"{COLUMN_NAME}") :: DATE ) SELECT p.missing_period, p.prior_available_month, e.period_count as prior_available_month_count, p.next_available_month, f.period_count as next_available_month_count FROM (SELECT d.all_dates as missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND  d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_month = e.period) LEFT JOIN existing_periods f ON (p.next_available_month = f.period) ORDER BY p.missing_period LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8023'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (SELECT ADD_MONTHS((SELECT TRUNC(MIN("{COLUMN_NAME}"), 'MM') FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), LEVEL - 1) AS all_dates FROM DUAL CONNECT BY LEVEL <= MONTHS_BETWEEN((SELECT TRUNC(MAX("{COLUMN_NAME}"), 'MM') FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), (SELECT TRUNC(MIN("{COLUMN_NAME}"), 'MM') FROM "{TARGET_SCHEMA}"."{TABLE_NAME}")) + 1), existing_periods AS (SELECT DISTINCT TRUNC("{COLUMN_NAME}", 'MM') AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY TRUNC("{COLUMN_NAME}", 'MM')) SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_month = e.period) LEFT JOIN existing_periods f ON (p.next_available_month = f.period) ORDER BY p.missing_period FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8023'
+    test_id: '1023'
+    test_type: Monthly_Rec_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      WITH Pass0 AS (SELECT 1 C FROM DUMMY UNION ALL SELECT 1 FROM DUMMY), Pass1 AS (SELECT 1 C FROM Pass0 A, Pass0 B), Pass2 AS (SELECT 1 C FROM Pass1 A, Pass1 B), Pass3 AS (SELECT 1 C FROM Pass2 A, Pass2 B), nums AS (SELECT ROW_NUMBER() OVER (ORDER BY C) - 1 AS rn FROM Pass3), bounds AS (SELECT TO_DATE(YEAR(MIN("{COLUMN_NAME}")) || '-' || LPAD(MONTH(MIN("{COLUMN_NAME}")), 2, '0') || '-01', 'YYYY-MM-DD') AS min_month, TO_DATE(YEAR(MAX("{COLUMN_NAME}")) || '-' || LPAD(MONTH(MAX("{COLUMN_NAME}")), 2, '0') || '-01', 'YYYY-MM-DD') AS max_month FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), daterange AS (SELECT ADD_MONTHS(b.min_month, n.rn) AS all_dates FROM bounds b, nums n WHERE ADD_MONTHS(b.min_month, n.rn) <= b.max_month), existing_periods AS (SELECT DISTINCT TO_DATE(YEAR("{COLUMN_NAME}") || '-' || LPAD(MONTH("{COLUMN_NAME}"), 2, '0') || '-01', 'YYYY-MM-DD') AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY YEAR("{COLUMN_NAME}"), MONTH("{COLUMN_NAME}")) SELECT p.missing_period, p.prior_available_month, e.period_count AS prior_available_month_count, p.next_available_month, f.period_count AS next_available_month_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_month, MIN(c.period) AS next_available_month FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_month = e.period) LEFT JOIN existing_periods f ON (p.next_available_month = f.period) ORDER BY p.missing_period LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

@@ -28,6 +28,9 @@ class TableGroupMinimal(EntityMinimal):
     profile_use_sampling: bool
     profiling_delay_days: str
     monitor_test_suite_id: UUID | None
+    profile_flag_cdes: bool
+    profile_flag_pii: bool
+    profile_exclude_xde: bool
     last_complete_profile_run_id: UUID | None
 
 
@@ -112,6 +115,8 @@ class TableGroup(Entity):
     profile_sample_min_count: int = Column(BigInteger, default=100000)
     profiling_delay_days: str = Column(String, default="0")
     profile_flag_cdes: bool = Column(Boolean, default=True)
+    profile_flag_pii: bool = Column(Boolean, default=True)
+    profile_exclude_xde: bool = Column(Boolean, default=True)
     profile_do_pair_rules: bool = Column(YNString, default="N")
     profile_pair_rule_pct: int = Column(Integer, default=95)
     include_in_dashboard: bool = Column(Boolean, default=True)
@@ -420,7 +425,6 @@ class TableGroup(Entity):
         params = {"table_group_ids": tuple(ids)}
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod
@@ -440,9 +444,7 @@ class TableGroup(Entity):
             query = update(TableGroup).where(TableGroup.id == self.id).values(**values)
             db_session = get_current_session()
             db_session.execute(query)
-            db_session.commit()
         else:
             super().save()
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
-        TableGroup.clear_cache()

@@ -19,6 +19,8 @@
  * @property {string} table_drop_date
  * @property {boolean} critical_data_element
  * @property {boolean} table_critical_data_element
+ * @property {boolean} excluded_data_element
+ * @property {boolean} pii_flag
  * @property {string} data_source
  * @property {string} source_system
  * @property {string} source_process
@@ -40,6 +42,12 @@
  * @type {object}
  * @property {boolean} can_edit
  * @property {boolean} can_navigate
+ * @property {boolean} can_view_pii
+ * 
+ * @typedef AutoflagSettings
+ * @type {object}
+ * @property {boolean} profile_flag_cdes
+ * @property {boolean} profile_flag_pii
  *
  * @typedef Properties
  * @type {object}
@@ -50,24 +58,21 @@
  * @property {Object.<string, string[]>} tag_values
  * @property {string} last_saved_timestamp
  * @property {Permissions} permissions
+ * @property {AutoflagSettings} autoflag_settings
  */
 import van from '../van.min.js';
 import { Tree } from '../components/tree.js';
-import { EditableCard } from '../components/editable_card.js';
-import { Attribute } from '../components/attribute.js';
-import { Input } from '../components/input.js';
 import { Icon } from '../components/icon.js';
 import { withTooltip } from '../components/tooltip.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getRandomId, getValue, loadStylesheet } from '../utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
-import { PotentialPIICard, HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
+import { HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
 import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profiling/data_profiling_utils.js';
-import { RadioGroup } from '../components/radio_group.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from '../components/select.js';
-import { capitalize, caseInsensitiveIncludes } from '../display_utils.js';
+import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '../display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
 import { Card } from '../components/card.js';
 import { Button } from '../components/button.js';
@@ -75,33 +80,13 @@ import { Link } from '../components/link.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 import { Portal } from '../components/portal.js';
 import { TableCreateScriptCard } from '../data_profiling/table_create_script.js';
+import { MetadataTagsCard, MetadataTagsMultiEdit, TAG_KEYS } from '../data_profiling/metadata_tags.js';
 
 const { div, h2, span } = van.tags;
 
 // https://www.sam.today/blog/html5-dnd-globe-icon
 const EMPTY_IMAGE = new Image(1, 1);
 EMPTY_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
-
-const TAG_KEYS = [
-    'data_source',
-    'source_system',
-    'source_process',
-    'business_domain',
-    'stakeholder_group',
-    'transform_level',
-    'aggregation_level',
-    'data_product',
-];
-const TAG_HELP = {
-    data_source: 'Original source of the dataset',
-    source_system: 'Enterprise system source for the dataset',
-    source_process: 'Process, program, or data flow that produced the dataset',
-    business_domain: 'Business division responsible for the dataset, e.g., Finance, Sales, Manufacturing',
-    stakeholder_group: 'Data owners or stakeholders responsible for the dataset',
-    transform_level: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)',
-    aggregation_level: 'Data granularity of the dataset, e.g. atomic, historical, snapshot, aggregated, time-rollup, rolling, summary',
-    data_product: 'Data domain that comprises the dataset',
-};
 
 
 const DataCatalog = (/** @type Properties */ props) => {
@@ -126,7 +111,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     label: table_name,
                     classes: table_drop_date ? 'text-disabled' : (table_add_date && (Date.now() - new Date(table_add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
                     ...TABLE_ICON,
-                    iconColor: record_ct === 0 ? 'red' : null,
+                    iconClass: record_ct === 0 ? 'text-error' : null,
                     iconTooltip: record_ct === 0 ? 'No records detected' : null,
                     criticalDataElement: !!item.table_critical_data_element,
                     children: [],
@@ -136,11 +121,26 @@ const DataCatalog = (/** @type Properties */ props) => {
             const columnNode = {
                 id: column_id,
                 label: column_name,
-                classes: drop_date ? 'text-disabled' : (add_date && (Date.now() - new Date(add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : '',
+                classes: `column ${drop_date ? 'text-disabled' : (add_date && (Date.now() - new Date(add_date * 1000).getTime()) < 7 * 86400000) ? 'text-bold' : ''}`,
                 ...getColumnIcon(item),
-                iconColor: value_ct === 0 ? 'red' : null,
+                iconClass: value_ct === 0 ? 'text-error' : null,
                 iconTooltip: value_ct === 0 ? 'No non-null values detected' : null,
+                prefix: () => {
+                    const icons = [];
+                    if (item.critical_data_element ?? item.table_critical_data_element) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-purple' }, 'star'), { text: 'Critical data element', position: 'right' }));
+                    }
+                    if (item.excluded_data_element) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-brown' }, 'visibility_off'), { text: 'Excluded data element', position: 'right' }));
+                    }
+                    if (item.pii_flag) {
+                        icons.push(withTooltip(Icon({ size: 15, classes: 'text-orange' }, 'shield_person'), { text: 'PII data', position: 'right' }));
+                    }
+                    return span({ class: 'tg-dh--column-prefix' }, ...icons);
+                },
                 criticalDataElement: !!(item.critical_data_element ?? item.table_critical_data_element),
+                excludedDataElement: !!item.excluded_data_element,
+                piiFlag: !!item.pii_flag,
             };
             TAG_KEYS.forEach(key => columnNode[key] = item[key] ?? item[`table_${key}`]);
             tables[table_id].children.push(columnNode);
@@ -177,7 +177,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         tableName: van.state(true),
         columnName: van.state(true),
     };
-    const filters = { criticalDataElement: van.state(false) };
+    const filters = { criticalDataElement: van.state(false), piiFlag: van.state(false), showExcluded: van.state(false) };
     TAG_KEYS.forEach(key => filters[key] = van.state(null));
 
     // To hold temporary state within the portals, which might be discarded by clicking outside
@@ -193,6 +193,7 @@ const DataCatalog = (/** @type Properties */ props) => {
 
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
+    const userCanViewPii = getValue(props.permissions)?.can_view_pii ?? false;
     const projectSummary = getValue(props.project_summary);
 
     return projectSummary.table_group_count > 0
@@ -208,7 +209,22 @@ const DataCatalog = (/** @type Properties */ props) => {
                     testId: 'table-group-filter',
                     onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
                 }),
-                ExportOptions(treeNodes, multiSelectedItems),
+                div(
+                    { class: 'flex-row fx-gap-2' },
+                    userCanEdit
+                        ? Button({
+                            icon: 'upload',
+                            type: 'stroked',
+                            label: 'Import',
+                            tooltip: 'Import metadata from CSV',
+                            tooltipPosition: 'left',
+                            width: 'fit-content',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emitEvent('ImportClicked', {}),
+                        })
+                        : null,
+                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                ),
             ),
             () => treeNodes.val.length
                 ? div(
@@ -233,6 +249,8 @@ const DataCatalog = (/** @type Properties */ props) => {
                                     || (!!node.children && !searchOptions.tableName.val)
                                     || (!node.children && !searchOptions.columnName.val))
                                 || ![ node.criticalDataElement, false ].includes(filters.criticalDataElement.val)
+                                || ![ node.piiFlag, false ].includes(filters.piiFlag.val)
+                                || (node.excludedDataElement && !filters.showExcluded.val)
                                 || TAG_KEYS.some(key => ![ node[key], null ].includes(filters[key].val)),
                             onApplySearchOptions: () => {
                                 copyState(tempSearchOptions, searchOptions);
@@ -243,10 +261,12 @@ const DataCatalog = (/** @type Properties */ props) => {
                                     searchOptions.columnName.val = true;
                                 }
                             },
-                            hasActiveFilters: () => filters.criticalDataElement.val || TAG_KEYS.some(key => !!filters[key].val),
+                            hasActiveFilters: () => filters.criticalDataElement.val || filters.piiFlag.val || filters.showExcluded.val || TAG_KEYS.some(key => !!filters[key].val),
                             onApplyFilters: () => copyState(tempFilters, filters),
                             onResetFilters: () => {
                                 tempFilters.criticalDataElement.val = false;
+                                tempFilters.piiFlag.val = false;
+                                tempFilters.showExcluded.val = false;
                                 TAG_KEYS.forEach(key => tempFilters[key].val = null);
                             },
                         },
@@ -273,11 +293,24 @@ const DataCatalog = (/** @type Properties */ props) => {
                         () => {
                             copyState(filters, tempFilters);
                             return div(
-                                Checkbox({
-                                    label: 'Only critical data elements (CDEs)',
-                                    checked: tempFilters.criticalDataElement,
-                                    onChange: (checked) => tempFilters.criticalDataElement.val = checked,
-                                }),
+                                div(
+                                    { class: 'flex-column fx-gap-3' },
+                                    Checkbox({
+                                        label: span({ class: 'flex-row fx-gap-1' }, 'Only critical data elements (CDEs)', Icon({ size: 18, classes: 'text-purple' }, 'star')),
+                                        checked: tempFilters.criticalDataElement,
+                                        onChange: (checked) => tempFilters.criticalDataElement.val = checked,
+                                    }),
+                                    Checkbox({
+                                        label: span({ class: 'flex-row fx-gap-1' }, 'Only PII data', Icon({ size: 18, classes: 'text-orange' }, 'shield_person')),
+                                        checked: tempFilters.piiFlag,
+                                        onChange: (checked) => tempFilters.piiFlag.val = checked,
+                                    }),
+                                    Checkbox({
+                                        label: span({ class: 'flex-row fx-gap-1' }, 'Show excluded data elements (XDEs)', Icon({ size: 18, classes: 'text-brown' }, 'visibility_off')),
+                                        checked: tempFilters.showExcluded,
+                                        onChange: (checked) => tempFilters.showExcluded.val = checked,
+                                    }),
+                                ),
                                 div(
                                     {
                                         class: 'flex-row fx-flex-wrap fx-gap-4 fx-justify-space-between mt-4',
@@ -314,7 +347,23 @@ const DataCatalog = (/** @type Properties */ props) => {
                         },
                     ),
                     () => multiEditMode.val
-                        ? MultiEdit(props, multiSelectedItems, multiEditMode)
+                        ? div(
+                            { class: 'tg-dh--details flex-column' },
+                            () => multiSelectedItems.val?.length
+                                ? MetadataTagsMultiEdit(
+                                    {
+                                        tagOptions: getValue(props.tag_values),
+                                        piiEditable: userCanViewPii,
+                                        autoflagSettings: getValue(props.autoflag_settings) ?? {},
+                                        onCancel: () => multiEditMode.val = false,
+                                    },
+                                    multiSelectedItems,
+                                )
+                                : ItemEmptyState(
+                                    'Select tables or columns on the left to edit their tags.',
+                                    'edit_document',
+                                )
+                        )
                         : SelectedDetails(props, selectedItem.val),
                 )
                 : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
@@ -322,7 +371,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
 };
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes) => {
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, /** @type boolean */ userCanEdit) => {
     const exportOptionsDomId = `data-catalog-export-${getRandomId()}`;
     const exportOptionsOpened = van.state(false);
 
@@ -332,7 +381,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
             icon: 'download',
             type: 'stroked',
             label: 'Export',
-            tooltip: 'Download columns to Excel',
+            tooltip: 'Download columns to Excel or CSV',
             tooltipPosition: 'left',
             width: 'fit-content',
             style: 'background: var(--button-generic-background-color);',
@@ -399,6 +448,17 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                         'Selected columns',
                     )
                     : null,
+                div(
+                    {
+                        class: 'tg-dh--export-option',
+                        style: 'border-top: var(--button-stroked-border);',
+                        onclick: () => {
+                            emitEvent('ExportCsvClicked', {});
+                            exportOptionsOpened.val = false;
+                        },
+                    },
+                    'Metadata CSV',
+                ),
             ),
         ),
     ];
@@ -407,6 +467,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
+    const userCanViewPii = getValue(props.permissions)?.can_view_pii ?? false;
 
     return item
         ? div(
@@ -429,11 +490,18 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
             item.type === 'column'
                 ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
                 : TableSizeCard({}, item),
-            TagsCard({ tagOptions: getValue(props.tag_values), editable: userCanEdit }, item),
-            PotentialPIICard({ noLinks: !userCanNavigate }, item),
+            MetadataTagsCard(
+                {
+                    tagOptions: getValue(props.tag_values),
+                    editable: userCanEdit,
+                    piiEditable: userCanViewPii,
+                    autoflagSettings: getValue(props.autoflag_settings) ?? {},
+                },
+                item,
+            ),
             HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
             TestIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestSuitesCard(item),
+            TestSuitesCard({ noLinks: !userCanNavigate }, item),
             item.type === 'table'
                 ? TableCreateScriptCard({}, item)
                 : null,
@@ -444,273 +512,50 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
         );
 };
 
-/**
-* @typedef TagProperties
-* @type {object}
-* @property {Object.<string, string[]>} tagOptions
-* @property {boolean} editable
-*/
-const TagsCard = (/** @type TagProperties */ props, /** @type Table | Column */ item) => {
-    const title = `${item.type} Tags `;
-    const attributes = [
-        'description',
-        'critical_data_element',
-        ...TAG_KEYS,
-    ].map(key => ({
-        key,
-        help: TAG_HELP[key],
-        label: capitalize(key.replaceAll('_', ' ')),
-        state: van.state(item[key]),
-        inheritTableGroup: item[`table_group_${key}`] ?? null, // Table group values inherited by table or column
-        inheritTable: item[`table_${key}`] ?? null, // Table values inherited by column
-    }));
-
-    const InheritedIcon = (/** @type string */ inheritedFrom) => withTooltip(
-        Icon({ size: 18, classes: 'text-disabled' }, 'layers'),
-        { text: `Inherited from ${inheritedFrom} tags`, position: 'top-right'},
-    );
-    const width = 300;
-    const descriptionWidth = 932;
-
-    const content = div(
-        { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, help, state, inheritTable, inheritTableGroup }) => {
-            let value = state.rawVal ?? inheritTable ?? inheritTableGroup;
-
-            if (key === 'critical_data_element') {
-                return span(
-                    { class: 'flex-row fx-gap-1', style: `width: ${width}px` },
-                    Icon(
-                        { classes: value ? 'text-green' : 'text-disabled' },
-                        value ? 'check_circle' : 'cancel',
-                    ),
-                    span(
-                        { class: value ? '' : 'text-secondary' },
-                        item.type === 'column'
-                            ? (value ? 'Critical data element' : 'Not a critical data element')
-                            : (value ? 'All critical data elements' : 'Not all critical data elements'),
-                    ),
-                    (item.type === 'column' && state.rawVal === null) ? InheritedIcon('table') : null,
-                );
-            }
-
-            const inheritedFrom = state.rawVal !== null ? null
-                : inheritTable !== null ? 'table'
-                : inheritTableGroup !== null ? 'table group'
-                : null;
-
-            if (inheritedFrom && value) {
-                value = span(
-                    { class: 'flex-row fx-gap-1' },
-                    InheritedIcon(inheritedFrom),
-                    value,
-                );
-            }
-            return Attribute({ label, help, value, width: key === 'description' ? descriptionWidth : width });
-        }),
-    );
-
-    if (!props.editable) {
-        return Card({ title, content });
-    }
-
-    // Define as function so the block is re-rendered with reset values when re-editing after a cancel
-    const editingContent = () => div(
-        { class: 'flex-row fx-flex-wrap fx-gap-4' },
-        attributes.map(({ key, label, help, state, inheritTable, inheritTableGroup }) => {
-            if (key === 'critical_data_element') {
-                const options = [
-                    { label: 'Yes', value: true },
-                    { label: 'No', value: false },
-                    { label: 'Inherit', value: null },
-                ];
-                return RadioGroup({
-                    label, width, options,
-                    value: state.rawVal,
-                    onChange: (value) => state.val = value,
-                });
-            };
-
-            return Input({
-                label, help,
-                width: key === 'description' ? descriptionWidth : width,
-                height: 32,
-                value: state.rawVal,
-                placeholder: (inheritTable || inheritTableGroup) ? `Inherited: ${inheritTable ?? inheritTableGroup}` : null,
-                autocompleteOptions: props.tagOptions?.[key],
-                onChange: (value) => state.val = value || null,
-            });
-        }),
-    );
-
-    return EditableCard({
-        title: `${item.type} Tags `,
-        content, editingContent,
-        onSave: () => {
-            const items = [{ type: item.type, id: item.id }];
-            const tags = attributes.reduce((object, { key, state }) => {
-                object[key] = state.rawVal;
-                return object;
-            }, {});
-            emitEvent('TagsChanged', { payload: { items, tags } });
-        },
-        // Reset states to original values on cancel
-        onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),
-        hasChanges: () => attributes.some(({ key, state }) => state.val !== item[key]),
-    });
-};
-
-const TestSuitesCard = (/** @type Table | Column */ item) => {
+const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
     return Card({
         title: 'Related Test Suites',
         content: div(
             { class: 'flex-column fx-gap-2' },
             item.test_suites.map(({ id, name, test_count }) => div(
                 { class: 'flex-row fx-gap-1' },
-                Link({
-                    href: 'test-suites:definitions',
-                    params: {
-                        test_suite_id: id,
-                        table_name: item.table_name,
-                        column_name: item.column_name,
-                    },
-                    open_new: true,
-                    label: name,
-                }),
+                props.noLinks
+                    ? span(name)
+                    : Link({
+                        href: 'test-suites:definitions',
+                        params: {
+                            test_suite_id: id,
+                            table_name: item.table_name,
+                            column_name: item.column_name,
+                            project_code: item.project_code,
+                        },
+                        open_new: true,
+                        label: name,
+                    }),
                 span({ class: 'text-caption' }, `(${test_count} test definitions)`),
             ))
         ),
         actionContent: item.test_suites.length
-            ? null 
+            ? null
             : item.drop_date
             ? span({ class: 'text-secondary' }, `No test definitions for ${item.type}`)
             : span(
                 { class: 'text-secondary flex-row fx-gap-1 fx-justify-content-flex-end' },
                 `No test definitions yet for ${item.type}.`,
-                Link({
-                    href: 'test-suites',
-                    params: {
-                        project_code: item.project_code,
-                        table_group_id: item.table_group_id,
-                    },
-                    open_new: true,
-                    label: 'Go to Test Suites',
-                    right_icon: 'chevron_right',
-                }),
+                props.noLinks
+                    ? null
+                    : Link({
+                        href: 'test-suites',
+                        params: {
+                            project_code: item.project_code,
+                            table_group_id: item.table_group_id,
+                        },
+                        open_new: true,
+                        label: 'Go to Test Suites',
+                        right_icon: 'chevron_right',
+                    }),
             ),
     });
-};
-
-const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedItems, /** @type Object */ multiEditMode) => {
-    const hasSelection = van.derive(() => selectedItems.val?.length);
-    const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
-
-    const attributes = [
-        'critical_data_element',
-        ...TAG_KEYS,
-    ].map(key => ({
-        key,
-        help: TAG_HELP[key],
-        label: capitalize(key.replaceAll('_', ' ')),
-        checkedState: van.state(null),
-        valueState: van.state(null),
-    }));
-
-    const cdeOptions = [
-        { label: 'Yes', value: true },
-        { label: 'No', value: false },
-        { label: 'Inherit', value: null },
-    ];
-    const tagOptions = getValue(props.tag_values) ?? {};
-    const width = 400;
-
-    return div(
-        { class: 'tg-dh--details flex-column' },
-        () => hasSelection.val
-            ? Card({
-                title: 'Edit Tags for Selection',
-                actionContent: span(
-                    { class: 'text-secondary mr-4' },
-                    span({ style: 'font-weight: 500' }, columnCount),
-                    () => ` column${columnCount.val > 1 ? 's' : ''} selected`
-                ),
-                content: div(
-                    { class: 'flex-column' },
-                    attributes.map(({ key, label, help, checkedState, valueState }) => div(
-                        { class: 'flex-row fx-gap-3' },
-                        Checkbox({
-                            checked: checkedState,
-                            onChange: (checked) => checkedState.val = checked,
-                        }),
-                        div(
-                            {
-                                class: 'pb-4 flex-row',
-                                style: `min-width: ${width}px`,
-                                onclick: () => checkedState.val = true,
-                            },
-                            key === 'critical_data_element'
-                                ? RadioGroup({
-                                    label, width,
-                                    options: cdeOptions,
-                                    onChange: (value) => valueState.val = value,
-                                })
-                                : Input({
-                                    label, help, width,
-                                    height: 32,
-                                    placeholder: () => checkedState.val ? null : '(keep current values)',
-                                    autocompleteOptions: tagOptions[key],
-                                    onChange: (value) => valueState.val = value || null,
-                                }),
-                        ),
-                    )),
-                    div(
-                        { class: 'flex-row fx-justify-content-flex-end fx-gap-3 mt-4' },
-                        Button({
-                            type: 'stroked',
-                            label: 'Cancel',
-                            width: 'auto',
-                            onclick: () => multiEditMode.val = false,
-                        }),
-                        Button({
-                            type: 'stroked',
-                            color: 'primary',
-                            label: 'Save',
-                            width: 'auto',
-                            disabled: () => attributes.every(({ checkedState }) => !checkedState.val),
-                            onclick: () => {
-                                const items = selectedItems.val.reduce((array, table) => {
-                                    const [ type, id ] = table.id.split('_');
-                                    array.push({ type, id });
-
-                                    table.children.forEach(column => {
-                                        const [ type, id ] = column.id.split('_');
-                                        array.push({ type, id });
-                                    });
-
-                                    return array;
-                                }, []);
-
-                                const tags = attributes.reduce((object, { key, checkedState, valueState }) => {
-                                    if (checkedState.val) {
-                                        object[key] = valueState.rawVal;
-                                    }
-                                    return object;
-                                }, {});
-
-                                emitEvent('TagsChanged', { payload: { items, tags } });
-                                // Don't set multiEditMode to false here
-                                // Otherwise this event gets superseded by the ItemSelected event
-                                // Let the Streamlit rerun handle the state reset with 'last_saved_timestamp'
-                            },
-                        }),
-                    ),
-                ),
-            })
-            : ItemEmptyState(
-                'Select tables or columns on the left to edit their tags.',
-                'edit_document',
-            ),
-    );
 };
 
 const ItemEmptyState = (/** @type string */ message, /** @type string */ icon) => {
@@ -797,6 +642,18 @@ stylesheet.replace(`
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background-color: var(--sidebar-background-color);
+}
+
+.tg-dh--tree .tg-tree:not(.multi-select) .tg-tree--row.column {
+    margin-left: -30px;
+}
+
+.tg-dh--column-prefix {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    width: 34px;
+    flex-shrink: 0;
 }
 
 .tg-dh--details {

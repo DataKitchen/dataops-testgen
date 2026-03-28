@@ -113,6 +113,8 @@ CREATE TABLE table_groups
     profile_sample_min_count BIGINT DEFAULT 100000,
     profiling_delay_days     VARCHAR(3) DEFAULT '0',
     profile_flag_cdes        BOOLEAN DEFAULT TRUE,
+    profile_flag_pii         BOOLEAN DEFAULT TRUE,
+    profile_exclude_xde      BOOLEAN DEFAULT TRUE,
     profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
     profile_pair_rule_pct    INTEGER DEFAULT 95,
     include_in_dashboard     BOOLEAN DEFAULT TRUE,
@@ -236,9 +238,21 @@ CREATE TABLE test_definitions (
    profiling_as_of_date   TIMESTAMP,
    last_manual_update     TIMESTAMP DEFAULT NULL,
    export_to_observability VARCHAR(5),
+   flagged                BOOLEAN DEFAULT FALSE NOT NULL,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
+
+CREATE TABLE test_definition_notes (
+   id                   UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+   test_definition_id   UUID NOT NULL REFERENCES test_definitions ON DELETE CASCADE,
+   detail               TEXT NOT NULL,
+   created_by           VARCHAR(100) NOT NULL,
+   created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   updated_at           TIMESTAMP
+);
+
+CREATE INDEX ix_tdn_tdid ON test_definition_notes(test_definition_id, created_at DESC);
 
 CREATE TABLE profile_results (
    id                    UUID DEFAULT gen_random_uuid()
@@ -329,6 +343,7 @@ CREATE TABLE profile_anomaly_types (
    anomaly_description VARCHAR(500),
    anomaly_criteria    VARCHAR(2000),
    detail_expression   VARCHAR(2000),
+   detail_redactable   BOOLEAN DEFAULT FALSE,
    issue_likelihood    VARCHAR(50),  -- Potential, Likely, Certain
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
@@ -435,6 +450,8 @@ CREATE TABLE data_column_chars (
    functional_data_type   VARCHAR(50),
    description            VARCHAR(1000),
    critical_data_element  BOOLEAN,
+   excluded_data_element  BOOLEAN,
+   pii_flag               VARCHAR(50),
    data_source            VARCHAR(40),
    source_system          VARCHAR(40),
    source_process         VARCHAR(40),
@@ -485,6 +502,7 @@ CREATE TABLE test_types (
    default_parm_values           TEXT,
    default_parm_prompts          TEXT,
    default_parm_help             TEXT,
+   default_parm_required         TEXT,
    default_severity              VARCHAR(10),
    run_type                      VARCHAR(10),
    test_scope                    VARCHAR,
@@ -596,6 +614,7 @@ CREATE TABLE target_data_lookups (
    sql_flavor   VARCHAR(20)  NOT NULL,
    lookup_type  VARCHAR(10),
    lookup_query VARCHAR,
+   lookup_redactable_columns VARCHAR(100),
    error_type   VARCHAR(30)  NOT NULL,
    CONSTRAINT target_data_lookups_test_id_sql_flavor_error_type_pk
       PRIMARY KEY (test_id, sql_flavor, error_type)
@@ -620,13 +639,36 @@ CREATE TABLE auth_users (
 	email 		 VARCHAR(256),
 	name 			 VARCHAR(256),
 	password 	 VARCHAR(120),
-	role         VARCHAR(20),
+	is_global_admin BOOLEAN NOT NULL DEFAULT FALSE,
    latest_login TIMESTAMP
 );
 
 ALTER TABLE auth_users
 ADD CONSTRAINT unique_username
 UNIQUE (username);
+
+CREATE TABLE project_memberships (
+    id UUID DEFAULT gen_random_uuid()
+        CONSTRAINT pk_project_memberships_id
+            PRIMARY KEY,
+    user_id UUID NOT NULL
+        CONSTRAINT fk_project_memberships_auth_users
+            REFERENCES auth_users(id)
+            ON DELETE CASCADE,
+    project_code VARCHAR(30) NOT NULL
+        CONSTRAINT fk_project_memberships_projects
+            REFERENCES projects(project_code)
+            ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_project_memberships_user_project
+        UNIQUE (user_id, project_code)
+);
+
+CREATE INDEX ix_pm_user_id ON project_memberships(user_id);
+CREATE INDEX ix_pm_project_code ON project_memberships(project_code);
+CREATE INDEX ix_pm_role ON project_memberships(role);
 
 CREATE TABLE tg_revision (
    component     VARCHAR(50) NOT NULL
@@ -746,20 +788,20 @@ CREATE INDEX ix_td_ts_tc
 
 CREATE UNIQUE INDEX uix_td_autogen_schema
    ON test_definitions (test_suite_id, test_type, schema_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_table
    ON test_definitions (test_suite_id, test_type, schema_name, table_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NOT NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_column
    ON test_definitions (test_suite_id, test_type, schema_name, table_name, column_name)
-   WHERE last_auto_gen_date IS NOT NULL 
-      AND table_name IS NOT NULL 
+   WHERE last_auto_gen_date IS NOT NULL
+      AND table_name IS NOT NULL
       AND column_name IS NOT NULL;
 
 -- Index test_runs
@@ -795,7 +837,7 @@ CREATE INDEX ix_tr_ts_tctt
    ON test_results(test_suite_id, table_name, column_names, test_type);
 
 -- Index data_structure_log
-CREATE INDEX ix_dsl_tg_tcd 
+CREATE INDEX ix_dsl_tg_tcd
    ON data_structure_log (table_groups_id, table_name, change_date);
 
 -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

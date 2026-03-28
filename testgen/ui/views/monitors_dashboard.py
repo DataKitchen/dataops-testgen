@@ -8,7 +8,7 @@ import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -25,6 +25,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -75,7 +76,7 @@ class MonitorsDashboardPage(Page):
     ) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "monitor-tables",
+            "monitor-tables/",
         )
 
         project_summary = Project.get_summary(project_code)
@@ -557,9 +558,14 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 updated_table_group = TableGroup.get(table_group.id)
                 updated_table_group.monitor_test_suite_id = monitor_suite.id
                 updated_table_group.save()
-                run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
+                monitors: list[str] = ["Volume_Trend", "Schema_Drift"]
+                if updated_table_group.last_complete_profile_run_id:
+                    monitors.append("Freshness_Trend")
+                # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                get_current_session().commit()
+                run_monitor_generation(monitor_suite.id, monitors)
 
-            st.rerun()
+            safe_rerun()
 
         testgen.edit_monitor_settings(
             key="edit_monitor_settings",
@@ -614,15 +620,14 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             with st.spinner("Deleting monitors ..."):
                 monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
                 TestSuite.cascade_delete([monitor_suite.id])
-            st.cache_data.clear()
-            st.rerun()
+            safe_rerun()
         except Exception:
             LOG.exception("Failed to delete monitor suite")
             set_result({
                 "success": False,
-                "message": "Unable to delete monitors for the table group, try again.",
+                "message": "Something went wrong while deleting the monitors.",
             })
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
 
 def open_schema_changes(table_group: TableGroupMinimal, payload: dict):
@@ -1030,10 +1035,10 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                 )
 
             if should_close():
-                st.rerun()
+                safe_rerun()
 
             set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         metric_test_types = TestType.select_summary_where(TestType.test_type == "Metric_Trend")
         metric_test_type = metric_test_types[0] if metric_test_types else None

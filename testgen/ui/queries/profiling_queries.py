@@ -80,7 +80,7 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
 
     query = f"""
     SELECT
-        id::VARCHAR,
+        profile_results.id::VARCHAR,
         'column' AS type,
         schema_name,
         table_name,
@@ -107,8 +107,11 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
                 AND table_name = profile_results.table_name
                 AND column_name = profile_results.column_name
         ) THEN 'Yes' END AS hygiene_issues,
-        CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details
+        CASE WHEN query_error IS NOT NULL THEN 'Error: ' || query_error ELSE NULL END AS result_details,
+        tg.project_code,
+        tg.connection_id::VARCHAR AS connection_id
     FROM profile_results
+    LEFT JOIN table_groups tg ON (profile_results.table_groups_id = tg.id)
     WHERE profile_run_id = :profiling_run_id
         AND table_name ILIKE :table_name
         AND column_name ILIKE :column_name
@@ -242,16 +245,16 @@ def get_tables_by_condition(
         -- Profile Run
         table_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         profiling_starttime AS profile_run_date,
-        TRUE AS is_latest_profile
+        TRUE AS is_latest_profile,
+        table_groups.project_code,
+        table_groups.connection_id::VARCHAR AS connection_id
     FROM data_table_chars table_chars
         LEFT JOIN profiling_runs ON (
             table_chars.last_complete_profile_run_id = profiling_runs.id
         )
-        {"""
         LEFT JOIN table_groups ON (
             table_chars.table_groups_id = table_groups.id
         )
-        """ if include_tags else ""}
         {"""
         LEFT JOIN active_test_definitions active_tests ON (
             table_chars.table_groups_id = active_tests.table_groups_id
@@ -365,6 +368,8 @@ def get_columns_by_condition(
         -- Column Tags
         column_chars.description,
         column_chars.critical_data_element,
+        column_chars.excluded_data_element,
+        column_chars.pii_flag,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         -- Table Tags
         table_chars.critical_data_element AS table_critical_data_element,
@@ -404,16 +409,16 @@ def get_columns_by_condition(
         column_chars.dq_score_testing,
         """ if include_scores else ""}
         table_chars.approx_record_ct,
+        table_groups.project_code,
+        table_groups.connection_id::VARCHAR AS connection_id,
         {COLUMN_PROFILING_FIELDS}
     FROM data_column_chars column_chars
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
         )
-        {"""
         LEFT JOIN table_groups ON (
             column_chars.table_groups_id = table_groups.id
         )
-        """ if include_tags else ""}
         LEFT JOIN profile_results ON (
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.schema_name = profile_results.schema_name
@@ -446,6 +451,7 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
         anomaly_name,
         issue_likelihood,
         detail,
+        detail_redactable,
         pii_risk
     FROM profile_anomaly_results anomaly_results
         LEFT JOIN profile_anomaly_types anomaly_types ON (
@@ -514,14 +520,15 @@ def get_profiling_anomalies(
             WHEN t.issue_likelihood = 'Likely'   THEN 2
             WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
-        t.anomaly_description, r.detail, t.suggested_action,
+        t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-        tg.table_groups_name,
+        tg.table_groups_name, tg.project_code,
 
         -- These are used in the PDF report
         dcc.functional_data_type,
         dcc.description as column_description,
         COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+        dcc.pii_flag,
         COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
         COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
         COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,

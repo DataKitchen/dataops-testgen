@@ -1,6 +1,6 @@
 DATEDIFF_DAY: DATE({$2}) - DATE({$1})
 
-DATEDIFF_WEEK: (DATE({$2}) - DATE({$1})) / 7
+DATEDIFF_WEEK: (DATE_TRUNC('week', DATE({$2}))::DATE - DATE_TRUNC('week', DATE({$1}))::DATE) / 7
 
 DATEDIFF_MONTH: (DATE_PART('year', {$2}::TIMESTAMP) - DATE_PART('year', {$1}::TIMESTAMP)) * 12 + (DATE_PART('month', {$2}::TIMESTAMP) - DATE_PART('month', {$1}::TIMESTAMP))
 
@@ -106,4 +106,3 @@ IS_DATE: CASE
   END
   ELSE 0
   END
-

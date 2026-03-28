@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import dataclasses
+import importlib
 import importlib.metadata
 import inspect
 import json
@@ -6,7 +9,8 @@ import os
 import shutil
 from collections.abc import Generator
 from pathlib import Path
-from typing import ClassVar
+from types import ModuleType
+from typing import ClassVar, get_args
 
 from testgen.ui.assets import get_asset_path
 from testgen.ui.auth import Authentication
@@ -20,7 +24,7 @@ ui_plugins_provision_file = Path(__file__).parent.parent / "ui" / "components" /
 ui_plugins_entrypoint_prefix = "./plugin_pages"
 
 
-def discover() -> Generator["Plugin", None, None]:
+def discover() -> Generator[Plugin, None, None]:
     ui_plugins_provision_file.touch(exist_ok=True)
     for package_path, distribution_names in importlib.metadata.packages_distributions().items():
         if package_path.startswith(PLUGIN_PREFIX):
@@ -98,11 +102,57 @@ def _read_ui_plugin_spec() -> dict:
     return json.loads(contents.replace("export default ", "")[:-1])
 
 
+class RBACProvider:
+    """Base RBAC provider. OS default: all permissions granted."""
+
+    @staticmethod
+    def check_permission(_user: object, _permission: str) -> bool:
+        return True
+
+    @staticmethod
+    def get_roles_with_permission(_permission: str) -> list[str]:
+        """Return roles that have the given permission. OS default: all roles."""
+        from testgen.common.models.project_membership import RoleType
+
+        return list(get_args(RoleType))
+
+
 class PluginSpec:
+    rbac: ClassVar[type[RBACProvider]] = RBACProvider
     auth: ClassVar[type[Authentication] | None] = None
-    page: ClassVar[type[Page] | None] = None
+    pages: ClassVar[list[type[Page]]] = []
     logo: ClassVar[type[Logo] | None] = None
     component: ClassVar[ComponentSpec | None] = None
+
+    @classmethod
+    def configure_ui(cls) -> None:
+        """Populate UI-related class attributes (pages, auth, logo, component).
+
+        Override this in plugins to defer Streamlit-dependent imports until Streamlit
+        is actually running. Called by ``Plugin.load_streamlit()``, never by ``Plugin.load()``.
+        """
+
+
+class PluginHook:
+    """Singleton holding resolved plugin values, pre-loaded with defaults."""
+
+    _instance: PluginHook | None = None
+    rbac: type[RBACProvider] = RBACProvider
+
+    @classmethod
+    def instance(cls) -> PluginHook:
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+
+def _find_plugin_spec(module: ModuleType) -> type[PluginSpec] | None:
+    """Find the first concrete PluginSpec subclass in a module."""
+    for name in dir(module):
+        cls = getattr(module, name, None)
+        if inspect.isclass(cls) and issubclass(cls, PluginSpec) and cls is not PluginSpec:
+            return cls
+    return None
 
 
 @dataclasses.dataclass
@@ -110,30 +160,37 @@ class Plugin:
     package: str
     version: str
 
-    def load(self) -> PluginSpec:
-        plugin_page = None
-        plugin_auth = None
-        plugin_logo = None
-        plugin_component_spec = None
-
+    def load(self) -> type[PluginSpec]:
+        """Lightweight load: import plugin module and populate PluginHook."""
         module = importlib.import_module(self.package)
-        for property_name in dir(module):
-            if ((maybe_class := getattr(module, property_name, None)) and inspect.isclass(maybe_class)):
-                if issubclass(maybe_class, PluginSpec) and maybe_class != PluginSpec:
-                    return maybe_class
+        spec = _find_plugin_spec(module)
+        if spec is not None:
+            hook = PluginHook.instance()
+            if spec.rbac is not RBACProvider:
+                hook.rbac = spec.rbac
+        return spec or PluginSpec
 
-                if issubclass(maybe_class, Page):
-                    plugin_page = maybe_class
+    def load_streamlit(self) -> type[PluginSpec]:
+        """Full Streamlit load. Calls load() first, then configure_ui() for UI attributes."""
+        spec = self.load()
+        spec.configure_ui()
+        if spec is not PluginSpec:
+            return spec
 
-                elif issubclass(maybe_class, Authentication):
-                    plugin_auth = maybe_class
+        # Fallback: discover UI classes from module (backward compat for plugins without explicit PluginSpec)
+        _discoverable: dict[type, str] = {Page: "page", Authentication: "auth", Logo: "logo"}
+        attrs: dict[str, type] = {}
+        module = importlib.import_module(self.package)
 
-                elif issubclass(maybe_class, Logo):
-                    plugin_logo = maybe_class
+        for name in dir(module):
+            cls = getattr(module, name, None)
+            if not inspect.isclass(cls):
+                continue
+            for base, attr in _discoverable.items():
+                if issubclass(cls, base) and cls is not base:
+                    if attr == "page":
+                        attrs.setdefault("pages", []).append(cls)
+                    else:
+                        attrs[attr] = cls
 
-        return type("AnyPlugin", (PluginSpec,), {
-            "page": plugin_page,
-            "auth": plugin_auth,
-            "logo": plugin_logo,
-            "component": plugin_component_spec,
-        })
+        return type("AnyPlugin", (PluginSpec,), attrs) if attrs else PluginSpec

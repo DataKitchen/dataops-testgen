@@ -100,6 +100,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8021'
+    test_type: Pattern_Match
+    sql_flavor: oracle
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN REGEXP_LIKE(NULLIF(TO_CHAR({COLUMN_NAME}), ''), '{BASELINE_VALUE}') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8021'
+    test_type: Pattern_Match
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN NULLIF(TO_VARCHAR({COLUMN_NAME}), '') LIKE_REGEXPR '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1384'
     test_id: '1026'
@@ -160,5 +176,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REGEXP_LIKE(NULLIF("{COLUMN_NAME}"::VARCHAR, ''),'{BASELINE_VALUE}') != 1 GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8021'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT REGEXP_LIKE(NULLIF(TO_CHAR("{COLUMN_NAME}"), ''), '{BASELINE_VALUE}') GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8021'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT NULLIF(TO_VARCHAR("{COLUMN_NAME}"), '') LIKE_REGEXPR '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

@@ -23,7 +23,7 @@ from testgen.common import (
 )
 from testgen.common.database.database_service import ThreadedProgress, empty_cache
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
@@ -78,6 +78,10 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     test_run.init_progress()
     test_run.set_progress("data_chars", "Running")
     test_run.save()
+    # This runs in a subprocess — commit after every save so progress is visible
+    # to the UI (separate session) and to execute_db_queries (independent connection).
+    session = get_current_session()
+    session.commit()
 
     try:
         LOG.info(f"Test run: {test_run.id}, Test suite: {test_suite.test_suite}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
@@ -101,6 +105,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             LOG.info(f"Active test definitions: {len(test_defs)}")
             test_run.set_progress("validation", "Running")
             test_run.save()
+            session.commit()
 
             valid_test_defs = run_test_validation(sql_generator, test_defs)
             invalid_count = len(test_defs) - len(valid_test_defs)
@@ -134,6 +139,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
 
         LOG.info("Updating test results and test run")
         test_run.save()
+        session.commit()
         execute_db_queries(sql_generator.update_test_results())
         # Refresh needed because previous query updates the test run too
         test_run.refresh()
@@ -145,6 +151,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_run.test_endtime = datetime.now(UTC) + time_delta
         test_run.status = "Error"
         test_run.save()
+        session.commit()
 
         send_test_run_notifications(test_run)
     else:
@@ -152,10 +159,12 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_run.test_endtime = datetime.now(UTC) + time_delta
         test_run.status = "Complete"
         test_run.save()
+        session.commit()
 
         LOG.info("Updating latest run for test suite")
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
+        session.commit()
 
         if not test_suite.is_monitor:
             send_test_run_notifications(test_run)
@@ -196,6 +205,13 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
         # Freshness monitors will be inserted after profiling
         run_monitor_generation(test_suite_id, ["Volume_Trend"], mode="insert")
 
+    # Autogenerate missing freshness monitors if profiling data exists
+    if sql_generator.table_group.last_complete_profile_run_id:
+        missing_monitors = fetch_dict_from_db(*sql_generator.get_missing_freshness_monitors())
+        if missing_monitors:
+            table_names = [row["table_name"] for row in missing_monitors]
+            run_monitor_generation(test_suite_id, ["Freshness_Trend"], mode="insert", table_names=table_names)
+
     # Regenerate monitors that errored in previous run
     errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
     if errored_monitors:
@@ -215,6 +231,7 @@ def _run_tests(
     test_run = sql_generator.test_run
     test_run.set_progress(run_type, "Running")
     test_run.save()
+    get_current_session().commit()
 
     def update_test_progress(progress: ThreadedProgress) -> None:
         test_run.set_progress(
@@ -226,6 +243,7 @@ def _run_tests(
             else None,
         )
         test_run.save()
+        get_current_session().commit()
 
     LOG.info(f"Running {run_type} tests: {len(test_defs)}")
     test_results, result_columns, error_data = fetch_from_db_threaded(
@@ -265,6 +283,7 @@ def _run_cat_tests(
     test_run = sql_generator.test_run
     test_run.set_progress("CAT", "Running")
     test_run.save()
+    get_current_session().commit()
 
     total_count = len(test_defs)
     LOG.info(f"Aggregating CAT tests: {total_count}")
@@ -281,6 +300,7 @@ def _run_cat_tests(
             else None,
         )
         test_run.save()
+        get_current_session().commit()
 
     LOG.info(f"Running aggregated CAT test queries: {len(aggregate_queries)}")
     aggregate_results, _, aggregate_errors = fetch_from_db_threaded(
@@ -310,6 +330,7 @@ def _run_cat_tests(
             error="Rerunning errored tests singly",
         )
         test_run.save()
+        get_current_session().commit()
 
         def update_single_progress(progress: ThreadedProgress) -> None:
             test_run.set_progress(
@@ -321,6 +342,7 @@ def _run_cat_tests(
                 ),
             )
             test_run.save()
+            get_current_session().commit()
 
         LOG.info(f"Rerunning errored CAT tests singly: {len(single_test_defs)}")
         single_results, _, single_errors = fetch_from_db_threaded(

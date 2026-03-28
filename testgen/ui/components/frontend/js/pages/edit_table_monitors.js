@@ -78,6 +78,11 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         onclick: () => selectedItem.val = { type: key, id: null },
                     },
                     span(label),
+                    () => {
+                        const id = getValue(props.definitions).find(td => td.test_type === key)?.id;
+                        const state = formStates.val[id];
+                        return state && !state.valid ? span({ class: 'text-error' }, ' *') : '';
+                    },
                 )),
                 div({ class: 'edit-monitors--list-divider mt-3 mb-1' }),
                 div(
@@ -118,6 +123,10 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                                 span(
                                     { style: `text-overflow: ellipsis; ${!metric.column_name ? 'font-style: italic;' : ''}` },
                                     metric.column_name || '(Unnamed Metric)',
+                                    () => {
+                                        const state = formStates.val[id];
+                                        return state && !state.valid ? span({ class: 'text-error' }, ' *') : '';
+                                    },
                                 ),
                                 Button({
                                     type: 'icon',
@@ -167,22 +176,26 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                                     ...newMetrics.val,
                                     [id]: { ...newMetrics.val[id], ...changes },
                                 };
-                            } else {
+                                formStates.val = { ...formStates.val, [id]: state };
+                            } else if (state.dirty) {
                                 updatedDefinitions.val = {
                                     ...updatedDefinitions.val,
-                                    [id]: { ...changes, id },
+                                    [id]: { ...updatedDefinitions.rawVal[id], ...changes, id },
                                 };
+                                formStates.val = { ...formStates.val, [id]: state };
                             }
-                            formStates.val = { ...formStates.val, [id]: state };
                         },
                     });
                 }
 
                 const selectedDef = getValue(props.definitions).find(td => td.test_type === type);
                 if (!selectedDef) {
+                    const message = type === 'Freshness_Trend'
+                        ? 'Freshness monitor not yet configured. Run profiling to auto-generate.'
+                        : 'Monitor not configured for this table.';
                     return Card({
                         class: 'edit-monitors--empty flex-row fx-justify-center',
-                        content: 'Monitor not configured for this table.',
+                        content: message,
                     });
                 }
 
@@ -190,11 +203,13 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                     definition: { ...selectedDef, ...updatedDefinitions.rawVal[selectedDef.id] },
                     class: 'edit-monitors--form',
                     onChange: (changes, state) => {
-                        updatedDefinitions.val = {
-                            ...updatedDefinitions.val,
-                            [selectedDef.id]: { ...changes, id: selectedDef.id },
-                        };
-                        formStates.val = { ...formStates.val, [selectedDef.id]: state };
+                        if (state.dirty) {
+                            updatedDefinitions.val = {
+                                ...updatedDefinitions.val,
+                                [selectedDef.id]: { ...updatedDefinitions.rawVal[selectedDef.id], ...changes, id: selectedDef.id },
+                            };
+                            formStates.val = { ...formStates.val, [selectedDef.id]: state };
+                        }
                     },
                 });
             },

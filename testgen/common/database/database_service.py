@@ -26,7 +26,12 @@ from testgen.common.credentials import (
     get_tg_username,
 )
 from testgen.common.database import FilteredStringIO
-from testgen.common.database.flavor.flavor_service import ConnectionParams, FlavorService, SQLFlavor
+from testgen.common.database.flavor.flavor_service import (
+    ConnectionParams,
+    FlavorService,
+    SQLFlavor,
+    resolve_connection_params,
+)
 from testgen.common.read_file import get_template_files
 from testgen.utils import get_exception_message
 
@@ -407,27 +412,22 @@ def _init_target_db_connection() -> Connection:
         raise ValueError("Target database connection parameters were not set")
 
     flavor_service = get_flavor_service(target_db_params["sql_flavor"])
-    flavor_service.init(target_db_params)
+    params = resolve_connection_params(target_db_params)
 
     engine = engine_cache.target_db
     if not engine:
         try:
-            engine: Engine = create_engine(
-                flavor_service.get_connection_string(),
-                connect_args=flavor_service.get_connect_args(),
-                **flavor_service.get_engine_args(),
-            )
+            engine: Engine = flavor_service.create_engine(target_db_params)
         except SQLAlchemyError as e:
-            raise ValueError(f"Failed to create engine for Target database '{flavor_service.dbname}' (User type = normal)") from e
+            raise ValueError(f"Failed to create engine for Target database '{params.dbname}' (User type = normal)") from e
         else:
             engine_cache.target_db = engine
 
-
     connection: Connection = engine.connect()
 
-    for query, params in flavor_service.get_pre_connection_queries():
+    for query, query_params in flavor_service.get_pre_connection_queries(params):
         try:
-            connection.execute(text(query), params)
+            connection.execute(text(query), query_params)
         except Exception:
             LOG.warning(
                 f"Failed to execute preconnection query on Target database: {query}",

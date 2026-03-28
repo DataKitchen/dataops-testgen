@@ -20,6 +20,7 @@ test_types:
   default_parm_values: null
   default_parm_prompts: Record Subset Condition,Lower Bound,Upper Bound,History Lookback
   default_parm_help: Condition defining a subset of records in main table
+  default_parm_required: N,N,N,N
   default_severity: Fail
   run_type: CAT
   test_scope: table
@@ -84,6 +85,22 @@ test_types:
   - id: '2115'
     test_type: Volume_Trend
     sql_flavor: snowflake
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2815'
+    test_type: Volume_Trend
+    sql_flavor: oracle
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '2815'
+    test_type: Volume_Trend
+    sql_flavor: sap_hana
     measure: |-
       {CUSTOM_QUERY}
     test_operator: NOT BETWEEN
@@ -166,5 +183,27 @@ test_types:
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8015'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8015'
+    test_id: '1513'
+    test_type: Volume_Trend
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
     error_type: Test Results
   test_templates: []

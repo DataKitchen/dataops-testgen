@@ -24,6 +24,7 @@ test_types:
     Record Subset Condition,Lower Bound,Upper Bound,History Lookback
   default_parm_help: |-
     Condition defining a subset of records in main table
+  default_parm_required: N,N,N,N
   default_severity: Fail
   run_type: QUERY
   test_scope: table
@@ -45,7 +46,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          TO_HEX(MD5({CUSTOM_QUERY})) AS fingerprint,
           DATETIME_DIFF(DATETIME('{RUN_DATE}'), DATETIME(NULLIF('{BASELINE_SUM}', '')), MINUTE) AS interval_minutes
         FROM `{SCHEMA_NAME}.{TABLE_NAME}`
         WHERE {SUBSET_CONDITION}
@@ -95,7 +96,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, TO_TIMESTAMP(NULLIF('{BASELINE_SUM}', '')), TIMESTAMP '{RUN_DATE}') AS interval_minutes
         FROM `{SCHEMA_NAME}`.`{TABLE_NAME}`
         WHERE {SUBSET_CONDITION}
@@ -145,7 +146,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) AS fingerprint,
           DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS interval_minutes
         FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
         WHERE {SUBSET_CONDITION}
@@ -195,7 +196,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          MD5({CUSTOM_QUERY}) AS fingerprint,
           (EXTRACT(EPOCH FROM ('{RUN_DATE}'::TIMESTAMP - NULLIF('{BASELINE_SUM}', '')::TIMESTAMP)) / 60)::INTEGER AS interval_minutes
         FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
@@ -245,7 +246,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
         FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
@@ -295,7 +296,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
         FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
@@ -345,7 +346,7 @@ test_types:
     template: |-
       WITH test_data AS (
         SELECT
-          {CUSTOM_QUERY} AS fingerprint,
+          MD5({CUSTOM_QUERY}) AS fingerprint,
           DATEDIFF(MINUTE, NULLIF('{BASELINE_SUM}', '')::TIMESTAMP, '{RUN_DATE}'::TIMESTAMP) AS interval_minutes
         FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
@@ -387,5 +388,106 @@ test_types:
         CASE
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2817'
+    test_type: Freshness_Trend
+    sql_flavor: oracle
+    template: |-
+      WITH test_data AS (
+        SELECT
+          LOWER(RAWTOHEX(STANDARD_HASH({CUSTOM_QUERY}, 'MD5'))) AS fingerprint,
+          ROUND((CAST(TO_TIMESTAMP('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS DATE) -
+                 CAST(TO_TIMESTAMP('{BASELINE_SUM}', 'YYYY-MM-DD HH24:MI:SS') AS DATE)) * 24 * 60) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(TO_CHAR(interval_minutes), 'Unknown')
+        END AS result_signal
+      FROM test_data;
+  - id: '2817'
+    test_type: Freshness_Trend
+    sql_flavor: sap_hana
+    template: |-
+      WITH test_data AS (
+        SELECT
+          LOWER(BINTOHEX(HASH_MD5(TO_BINARY({CUSTOM_QUERY})))) AS fingerprint,
+          ROUND(SECONDS_BETWEEN(TO_TIMESTAMP('{BASELINE_SUM}', 'YYYY-MM-DD HH24:MI:SS'), TO_TIMESTAMP('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')) / 60.0) AS interval_minutes
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
+        WHERE {SUBSET_CONDITION}
+      )
+      SELECT '{TEST_TYPE}' AS test_type,
+        '{TEST_DEFINITION_ID}' AS test_definition_id,
+        '{TEST_SUITE_ID}' AS test_suite_id,
+        '{TEST_RUN_ID}' AS test_run_id,
+        '{RUN_DATE}' AS test_time,
+        '{SCHEMA_NAME}' AS schema_name,
+        '{TABLE_NAME}' AS table_name,
+        '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+        '{SKIP_ERRORS}' AS threshold_value,
+        {SKIP_ERRORS} AS skip_errors,
+        '{INPUT_PARAMETERS}' AS input_parameters,
+        fingerprint AS result_measure,
+        CASE
+          -- Training mode: tolerances not yet calculated
+          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          -- No change and excluded day: suppress
+          WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
+          -- No change, beyond time range (business time): LATE
+          WHEN fingerprint = '{BASELINE_VALUE}'
+            AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN 0
+          -- Table changed outside time range (business time): UNEXPECTED
+          WHEN fingerprint <> '{BASELINE_VALUE}'
+            AND NOT (interval_minutes - {EXCLUDED_MINUTES})
+              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+          ELSE 1
+        END AS result_code,
+        'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
+          || CASE
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
+            ELSE ''
+          END AS result_message,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(TO_VARCHAR(interval_minutes), 'Unknown')
         END AS result_signal
       FROM test_data;

@@ -138,7 +138,7 @@ def wait_for_call_count(mock, expected_count, timeout=0.5):
 
 @pytest.mark.parametrize("with_job", (True, False))
 def test_reloads_and_shutdowns_immediately(with_job, scheduler_instance, base_time):
-    jobs = [Job(cron_expr="0 0 * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.ALL)] if with_job else []
+    jobs = [Job(cron_expr="0 0 * * *", cron_tz="UTC", delayed_policy=DelayedPolicy.SKIP)] if with_job else []
     scheduler_instance.get_jobs.return_value = jobs
 
     scheduler_instance.start(base_time)
@@ -169,8 +169,8 @@ def test_job_start_is_called(start_side_effect, scheduler_instance, base_time, n
         scheduler_instance.start(base_time)
 
         for multiplier in (1, 2):
-            while scheduler_instance.start_job.call_count != 6 * multiplier:
-                time.sleep(0.01)
+            assert wait_for_call_count(scheduler_instance.start_job, 6 * multiplier, timeout=5.0), \
+                f"start_job call_count={scheduler_instance.start_job.call_count}, expected {6 * multiplier}"
 
             assert scheduler_instance.get_jobs.call_count == multiplier
             assert get_next_mock.call_count == multiplier

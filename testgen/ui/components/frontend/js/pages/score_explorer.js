@@ -435,7 +435,7 @@ const Toolbar = (
                     let params = {project_code: definition.project_code};
                     if (!isNew_) {
                         href = 'quality-dashboard:score-details';
-                        params = {definition_id: definition.id};
+                        params = {definition_id: definition.id, project_code: definition.project_code};
                     }
 
                     return Button({

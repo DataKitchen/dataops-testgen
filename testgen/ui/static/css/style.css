@@ -113,6 +113,10 @@ section.stSidebar > [data-testid="stSidebarContent"] {
 [data-testid="stSidebarUserContent"] {
     display: none;
 }
+
+.stAppViewContainer:has(.tg-no-project) > .stSidebar {
+    display: none;
+}
 /*  */
 
 /* Main content */

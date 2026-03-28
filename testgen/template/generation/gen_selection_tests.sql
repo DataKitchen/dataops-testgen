@@ -11,6 +11,14 @@ selected_columns AS (
   FROM profile_results p
   INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND NOT EXISTS (
+      SELECT 1 FROM data_column_chars dcc
+      WHERE dcc.table_groups_id = p.table_groups_id
+        AND dcc.schema_name = p.schema_name
+        AND dcc.table_name = p.table_name
+        AND dcc.column_name = p.column_name
+        AND dcc.excluded_data_element IS TRUE
+    )
     AND {SELECTION_CRITERIA}
 )
 INSERT INTO test_definitions (

@@ -11,12 +11,14 @@
  * @property {ProjectSummary} project_summary
  * @property {TestSuiteSummary} test_suites
  * @property {FilterOption[]} table_group_filter_options
+ * @property {string?} test_suite_name
  * @property {Permissions} permissions
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { formatTimestamp, DISABLED_ACTION_TEXT } from '../display_utils.js';
+import { Input } from '../components/input.js';
 import { Select } from '../components/select.js';
 import { Button } from '../components/button.js';
 import { Card } from '../components/card.js';
@@ -46,51 +48,77 @@ const TestSuites = (/** @type Properties */ props) => {
             return projectSummary.test_suite_count > 0
             ? div(
                 { class: 'tg-test-suites'},
-                () => div(
-                    { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 mb-4' },
-                    Select({
-                        label: 'Table Group',
-                        value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
-                        options: getValue(props.table_group_filter_options) ?? [],
-                        allowNull: true,
-                        style: 'font-size: 14px;',
-                        testId: 'table-group-filter',
-                        onChange: (value) => emitEvent('FilterApplied', {payload: value}),
-                    }),
-                    div(
-                        { class: 'flex-row fx-gap-3' },
-                        Button({
-                            icon: 'notifications',
-                            type: 'stroked',
-                            label: 'Notifications',
-                            tooltip: 'Configure email notifications for test runs',
-                            tooltipPosition: 'bottom',
-                            width: 'fit-content',
-                            style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('RunNotificationsClicked', {}),
-                        }),
-                        Button({
-                            icon: 'today',
-                            type: 'stroked',
-                            label: 'Schedules',
-                            tooltip: 'Manage when test suites should run',
-                            tooltipPosition: 'bottom',
-                            width: 'fit-content',
-                            style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('RunSchedulesClicked', {}),
-                        }),
-                        userCanEdit
-                            ? Button({
-                                icon: 'add',
+                () => {
+                    const initialTableGroup = getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null;
+                    const initialTestSuiteName = getValue(props.test_suite_name) || null;
+                    const selectedTableGroup = van.state(initialTableGroup);
+                    const testSuiteNameFilter = van.state(initialTestSuiteName);
+
+                    van.derive(() => {
+                        if (selectedTableGroup.val !== initialTableGroup || testSuiteNameFilter.val !== initialTestSuiteName) {
+                            emitEvent('FilterApplied', { payload: { table_group_id: selectedTableGroup.val, test_suite_name: testSuiteNameFilter.val } });
+                        }
+                    });
+
+                    return div(
+                        { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
+                        div(
+                            { class: 'flex-row fx-align-flex-end fx-gap-3' },
+                            Select({
+                                label: 'Table Group',
+                                value: selectedTableGroup,
+                                options: getValue(props.table_group_filter_options) ?? [],
+                                allowNull: true,
+                                style: 'font-size: 14px;',
+                                testId: 'table-group-filter',
+                                onChange: (value) => selectedTableGroup.val = value,
+                            }),
+                            Input({
+                                testId: 'test-suite-name-filter',
+                                icon: 'search',
+                                label: '',
+                                placeholder: 'Search test suite names',
+                                width: 300,
+                                clearable: true,
+                                value: testSuiteNameFilter,
+                                onChange: (value) => testSuiteNameFilter.val = value || null,
+                            }),
+                        ),
+                        div(
+                            { class: 'flex-row fx-gap-3' },
+                            Button({
+                                icon: 'notifications',
                                 type: 'stroked',
-                                label: 'Add Test Suite',
+                                label: 'Notifications',
+                                tooltip: 'Configure email notifications for test runs',
+                                tooltipPosition: 'bottom',
                                 width: 'fit-content',
                                 style: 'background: var(--button-generic-background-color);',
-                                onclick: () => emitEvent('AddTestSuiteClicked', {}),
-                            })
-                            : '',
-                    ),
-                ),
+                                onclick: () => emitEvent('RunNotificationsClicked', {}),
+                            }),
+                            Button({
+                                icon: 'today',
+                                type: 'stroked',
+                                label: 'Schedules',
+                                tooltip: 'Manage when test suites should run',
+                                tooltipPosition: 'bottom',
+                                width: 'fit-content',
+                                style: 'background: var(--button-generic-background-color);',
+                                onclick: () => emitEvent('RunSchedulesClicked', {}),
+                            }),
+                            userCanEdit
+                                ? Button({
+                                    icon: 'add',
+                                    type: 'stroked',
+                                    label: 'Add Test Suite',
+                                    width: 'fit-content',
+                                    style: 'background: var(--button-generic-background-color);',
+                                    onclick: () => emitEvent('AddTestSuiteClicked', {}),
+                                })
+                                : '',
+                        ),
+                    );
+                },
                 () => getValue(testSuites)?.length
                 ? div(
                     { class: 'flex-column' },
@@ -140,7 +168,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 { class: 'flex-column' },
                                 Link({
                                     href: 'test-suites:definitions',
-                                    params: { test_suite_id: testSuite.id },
+                                    params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
                                     label: `View ${testSuite.test_ct ?? 0} test definitions`,
                                     right_icon: 'chevron_right',
                                     right_icon_size: 20,
@@ -156,7 +184,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                     ? [
                                         Link({
                                             href: 'test-runs:results',
-                                            params: { run_id: testSuite.latest_run_id },
+                                            params: { run_id: testSuite.latest_run_id, project_code: projectSummary.project_code },
                                             label: formatTimestamp(testSuite.latest_run_start),
                                             class: 'mb-4',
                                         }),

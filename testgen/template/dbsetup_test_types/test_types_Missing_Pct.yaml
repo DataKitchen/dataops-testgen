@@ -101,6 +101,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8017'
+    test_type: Missing_Pct
+    sql_flavor: oracle
+    measure: |-
+      ABS(2.0 * ASIN(SQRT(CAST({BASELINE_VALUE_CT} AS NUMBER) / CAST({BASELINE_CT} AS NUMBER))) - 2 * ASIN(SQRT(CAST(COUNT({COLUMN_NAME}) AS NUMBER) / CAST(NULLIF(COUNT(*), 0) AS NUMBER))))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8017'
+    test_type: Missing_Pct
+    sql_flavor: sap_hana
+    measure: |-
+      ABS(2.0 * ASIN(SQRT(CAST({BASELINE_VALUE_CT} AS DECIMAL) / CAST({BASELINE_CT} AS DECIMAL))) - 2 * ASIN(SQRT(CAST(COUNT({COLUMN_NAME}) AS DECIMAL) / CAST(NULLIF(COUNT(*), 0) AS DECIMAL))))
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1380'
     test_id: '1022'
@@ -160,5 +176,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8017'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8017'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

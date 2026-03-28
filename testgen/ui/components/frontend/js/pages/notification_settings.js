@@ -66,7 +66,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
             class: 'notifications--empty',
             link: {
                 label: 'View documentation',
-                href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
+                href: 'https://docs.datakitchen.io/testgen/administer/configure-email-server/',
                 open_new: true,
             },
         });
@@ -209,8 +209,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
             ),
             duplicatedMessage
                 ? div(
-                    { class: 'flex-row fx-gap-1 text-caption warning-text' },
-                    Icon({ size: 12, classes: 'warning-text' }, 'warning'),
+                    { class: 'flex-row fx-gap-1 text-caption text-warning' },
+                    Icon({ size: 12, classes: 'text-warning' }, 'warning'),
                     span({}, duplicatedMessage),
                 )
                 : '',

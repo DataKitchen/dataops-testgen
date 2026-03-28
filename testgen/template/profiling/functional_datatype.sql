@@ -491,6 +491,9 @@ SET functional_data_type =
             WHEN general_type='N'
              AND (  column_type ILIKE '%int%'
                       OR
+                    (SPLIT_PART(column_type, ',', 2) > ''
+                       AND RTRIM(SPLIT_PART(column_type, ',', 2), ' )') = '0')
+                      OR
                     (RTRIM(SPLIT_PART(column_type, ',', 2), ')') > '0'
                        AND fractional_sum = 0) -- 0 implies integer;  null is float or non-numeric
                     ) THEN 'Measurement Discrete'

@@ -45,6 +45,8 @@
  * * Column Tags
  * @property {string?} description
  * @property {boolean?} critical_data_element
+ * @property {boolean?} excluded_data_element
+ * @property {boolean?} pii_flag
  * @property {string?} data_source
  * @property {string?} source_system
  * @property {string?} source_process
@@ -227,6 +229,7 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
             run_id: item.profile_run_id,
             table_name: item.table_name,
             column_name: item.column_name,
+            project_code: item.project_code,
         },
         open_new: true,
         label: formatTimestamp(item.profile_run_date),

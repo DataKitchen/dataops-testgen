@@ -101,6 +101,22 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: oracle
+    measure: |-
+      NVL(ABS(({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME}) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD}), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8012'
+    test_type: Incr_Avg_Shift
+    sql_flavor: sap_hana
+    measure: |-
+      COALESCE(ABS(({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME}) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD}), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1375'
     test_id: '1017'
@@ -160,5 +176,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8012'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8012'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS DECIMAL)) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}"), 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
     error_type: Test Results
   test_templates: []

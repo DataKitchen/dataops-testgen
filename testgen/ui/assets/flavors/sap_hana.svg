@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="30"
+   height="30"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="sap-hana.svg"
+   inkscape:version="1.4.3 (0d15f750, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs4" />
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="2.9588412"
+     inkscape:cx="30.417314"
+     inkscape:cy="41.401344"
+     inkscape:window-width="1313"
+     inkscape:window-height="708"
+     inkscape:window-x="76"
+     inkscape:window-y="30"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg4" />
+  <g
+     transform="matrix(0.04575263,0,0,0.04575263,2.545e-7,10.870825)"
+     id="g4">
+    <linearGradient
+       id="A"
+       gradientUnits="userSpaceOnUse"
+       x1="182.5065"
+       y1="0"
+       x2="182.5065"
+       y2="180.49451">
+      <stop
+         offset="0"
+         stop-color="#0ae"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#05a"
+         id="stop2" />
+    </linearGradient>
+    <path
+       d="M 365,0 H 0 v 180.5 h 184.5"
+       fill="url(#A)"
+       id="path2"
+       style="fill:url(#A)" />
+    <path
+       d="m 180.5,36.1 v 85 l -31.3,-85 H 117.9 L 91.4,106.7 C 88.2,89 69.8,82.6 55.3,77.8 45.7,74.6 35.2,70.6 35.2,65 c 0,-4 5.6,-8 16,-7.2 7.2,0.8 13.6,0.8 26.5,7.2 L 90.5,43.3 c -12,-6.4 -28.1,-9.6 -40.9,-9.6 -15.2,0 -28.1,4.8 -36.1,12.8 -5.6,5.6 -8,12.8 -8.8,20.9 0,11.2 4,19.3 12.8,25.7 7.2,4.8 16,8 24.1,10.4 10.4,3.2 18.4,6.4 18.4,12 -0.8,7.2 -8.8,8.8 -14.4,8.8 -9.6,0.8 -17.7,-0.8 -29.7,-8 L 4.8,138 c 12,7.2 24.9,10.4 40.1,10.4 10.4,0 26.5,-3.2 35.3,-11.2 l -1.6,7.2 h 30.5 l 5.6,-13.6 c 12,3.2 25.7,4 37.7,0 l 4,13.6 H 211 v -32.1 h 11.2 c 28.1,0 44.9,-13.6 44.9,-37.7 0,-27.3 -16,-38.5 -50.5,-38.5 z m -58.6,70.6 11.2,-36.1 h 0.8 l 11.2,36.1 c -7.9,2.4 -15.9,2.4 -23.2,0 z M 211,88.2 V 59.4 h 8 c 10.4,0 18.4,3.2 18.4,13.6 0,11.2 -8,15.2 -18.4,15.2 z"
+       fill="#ffffff"
+       id="path3" />
+    <path
+       d="M 305.2,145.6 V 32.4 h 12.3 v 46.5 h 48.3 V 32.4 H 378 V 145.6 H 365.7 V 92.3 h -48.3 v 53.4 h -12.2 z m 83.5,0 35.8,-113.2 h 13.1 l 38,113.2 h -14.1 l -10.8,-34.3 h -39.1 l -10.1,34.3 z m 26.6,-46.5 h 31.6 l -9.6,-31.4 c -3,-9.6 -5.2,-17.5 -6.6,-23.5 -1.2,7.3 -2.9,14.5 -5.1,21.6 z M 485,145.6 V 32.4 h 12.6 l 48.8,89.1 V 32.4 h 11.7 V 145.6 H 545.5 L 496.8,56.5 v 89.1 z m 83.8,0 35.8,-113.2 h 13.1 l 38,113.2 h -14.1 l -10.8,-34.3 h -39.1 l -10.1,34.3 z M 595.4,99.1 H 627 l -9.6,-31.4 c -3,-9.6 -5.2,-17.5 -6.6,-23.5 -1.2,7.3 -2.9,14.5 -5.1,21.6 z"
+       fill="#f7941f"
+       id="path4" />
+  </g>
+</svg>

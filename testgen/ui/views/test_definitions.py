@@ -7,7 +7,8 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import and_, asc, desc, func, or_, tuple_
+from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
+from sqlalchemy import select as sa_select
 from streamlit.delta_generator import DeltaGenerator
 from streamlit_extras.no_default_selectbox import selectbox
 
@@ -17,7 +18,7 @@ from testgen.common.database.database_service import get_flavor_service, replace
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal, TestDefinitionSummary
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal, TestDefinitionNote
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -29,10 +30,12 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
 from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
+from testgen.ui.views.dialogs.test_definition_notes_dialog import test_definition_notes_dialog
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
@@ -51,6 +54,7 @@ class TestDefinitionsPage(Page):
         table_name: str | None = None,
         column_name: str | None = None,
         test_type: str | None = None,
+        flagged: str | None = None,
         **_kwargs,
     ) -> None:
         test_suite = TestSuite.get(test_suite_id)
@@ -62,20 +66,28 @@ class TestDefinitionsPage(Page):
 
         table_group = TableGroup.get_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
+
+        if not session.auth.user_has_project_access(project_code):
+            self.router.navigate_with_warning(
+                "You don't have access to view this resource. Redirecting ...",
+                "test-suites",
+            )
+            return
+
         session.set_sidebar_project(project_code)
         user_can_edit = session.auth.user_has_permission("edit")
         user_can_disposition = session.auth.user_has_permission("disposition")
 
         testgen.page_header(
             "Test Definitions",
-            "test-definitions",
+            "generate-tests/test-definitions/",
             breadcrumbs=[
                 { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
                 { "label": test_suite.test_suite },
             ],
         )
 
-        table_filter_column, column_filter_column, test_filter_column, sort_column, table_actions_column = st.columns([.2, .2, .2, .1, .25], vertical_alignment="bottom")
+        table_filter_column, column_filter_column, test_filter_column, flagged_filter_column, sort_column, table_actions_column = st.columns([.2, .2, .15, .1, .1, .25], vertical_alignment="bottom")
         testgen.flex_row_end(table_actions_column)
 
         actions_column, disposition_column = st.columns([.5, .5])
@@ -83,7 +95,7 @@ class TestDefinitionsPage(Page):
         testgen.flex_row_end(disposition_column)
 
         filters_changed = False
-        current_filters = (table_name, column_name, test_type)
+        current_filters = (table_name, column_name, test_type, flagged)
         if (query_filters := st.session_state.get("test_definitions:filters")) != current_filters:
             if query_filters:
                 filters_changed = True
@@ -124,13 +136,23 @@ class TestDefinitionsPage(Page):
                 label="Test Type",
             )
 
+        with flagged_filter_column:
+            flagged = testgen.select(
+                options=["Flagged", "Not Flagged"],
+                default_value=flagged,
+                bind_to_query="flagged",
+                label="Flagged",
+            )
+
         with sort_column:
             sortable_columns = (
+                ("Flagged", "flagged"),
+                ("Has Notes", "notes_count"),
                 ("Table", "table_name"),
                 ("Column", "column_name"),
                 ("Test Type", "test_type"),
             )
-            default = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
+            default = [(sortable_columns[i][1], "ASC") for i in (2, 3, 4)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
         if user_can_disposition:
@@ -152,7 +174,11 @@ class TestDefinitionsPage(Page):
 
         with st.container():
             with st.spinner("Loading data ..."):
-                df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns)
+                df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns, flagged)
+
+        if df.empty:
+            st.info("No test definitions found.")
+            return
 
         selected, selected_test_def = render_grid(df, multi_select, filters_changed)
 
@@ -193,6 +219,11 @@ class TestDefinitionsPage(Page):
                     { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
                 ])
 
+            disposition_actions.extend([
+                { "icon": "🚩", "help": "Flag for attention", "attribute": "flagged", "value": True, "message": "Flagged" },
+                { "icon": "⌀", "help": "Clear flag", "attribute": "flagged", "value": False, "message": "Flag cleared" },
+            ])
+
             for action in disposition_actions:
                 action_disabled = not selected or all(sel[action["attribute"]] == action["value"] for sel in selected)
                 action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=action_disabled)
@@ -207,9 +238,18 @@ class TestDefinitionsPage(Page):
                         fm.reset_post_updates(
                             update_test_definition(selected, action["attribute"], action["value"], action["message"]),
                             as_toast=True,
-                            clear_cache=True,
-                            lst_cached_functions=[],
                         )
+
+        if actions_column.button(
+            ":material/sticky_note_2: Notes",
+            disabled=not selected or len(selected) != 1,
+            help="View and add notes for this test definition",
+        ):
+            row = selected[0]
+            test_definition_notes_dialog(
+                str(row["id"]),
+                {"table": row["table_name"], "column": row["column_name"], "test": row["test_name_short"]},
+            )
 
         if user_can_edit:
             if actions_column.button(
@@ -241,6 +281,8 @@ def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> 
         "test_name_short",
         "test_active_display",
         "lock_refresh_display",
+        "flagged_display",
+        "notes_display",
         "urgency",
         "export_to_observability_display",
         "profiling_as_of_date",
@@ -258,6 +300,8 @@ def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> 
             "Test Type",
             "Active",
             "Locked",
+            "Flagged",
+            "Notes",
             "Urgency",
             "Export to Observabilty",
             "Based on Profiling",
@@ -282,6 +326,7 @@ def render_selected_details(selected_test: dict, table_group: TableGroupMinimal)
         "test_active_display",
         "test_definition_status",
         "lock_refresh_display",
+        "flagged_display",
         "urgency",
         "export_to_observability",
     ]
@@ -294,6 +339,7 @@ def render_selected_details(selected_test: dict, table_group: TableGroupMinimal)
         "test_active",
         "test_definition_status",
         "lock_refresh",
+        "flagged",
         "urgency",
         "export_to_observability",
     ]
@@ -352,7 +398,7 @@ def delete_test_dialog(test_definitions: list[dict]):
         TestDefinition.delete_where(TestDefinition.id.in_([ item["id"] for item in test_definitions ]))
         st.success("Test definitions have been deleted.")
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
 
 def show_test_form_by_id(test_definition_id):
@@ -426,6 +472,7 @@ def show_test_form(
     skip_errors = selected_test_def["skip_errors"] or 0 if mode == "edit" else 0
     test_active = bool(selected_test_def["test_active"]) if mode == "edit" else True
     lock_refresh = bool(selected_test_def["lock_refresh"]) if mode == "edit" else False
+    test_flagged = bool(selected_test_def["flagged"]) if mode == "edit" else False
     test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
     column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else empty_if_null(column_name)
     last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
@@ -531,6 +578,7 @@ def show_test_form(
             help="Protects test parameters from being overwritten when tests in this Test Suite are regenerated.",
         ),
         "test_active": left_column.toggle(label="Test Active", value=test_active),
+        "flagged": left_column.toggle(label="Flagged", value=test_flagged, help="Flag this test for attention."),
         "custom_query": custom_query,
         "baseline_ct": baseline_ct,
         "baseline_unique_ct": baseline_unique_ct,
@@ -600,7 +648,7 @@ def show_test_form(
             with container:
                 testgen.link(
                     href="profiling-runs:results",
-                    params={"run_id": str(profile_run_id)},
+                    params={"run_id": str(profile_run_id), "project_code": table_group.project_code},
                     label=formatted_time,
                     open_new=True,
                 )
@@ -618,7 +666,7 @@ def show_test_form(
 
     st.divider()
 
-    has_match_attributes = any(attribute.startswith("match_") for attribute in dynamic_attributes)
+    has_match_attributes = "match_schema_name" in dynamic_attributes or "match_table_name" in dynamic_attributes
     left_column, right_column = st.columns([0.5, 0.5]) if has_match_attributes else (st.container(), None)
 
     test_definition["schema_name"] = left_column.text_input(
@@ -740,14 +788,14 @@ def show_test_form(
                     value = None
                     placeholder = "Max"
                     disabled = True
-                
+
                 if test_definition.get("history_calculation") == "Value" and (
                     "history_calculation_upper" not in dynamic_attributes
                     or test_definition.get("history_calculation_upper") == "Value"
                 ):
                     value = 1
                     disabled = True
-            
+
             test_definition[attribute] = container.number_input(
                 label=label_text,
                 step=1,
@@ -872,8 +920,7 @@ def show_test_form(
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
-            get_test_suite_columns.clear()
-            st.rerun()
+            safe_rerun()
 
 
 @st.dialog(title="Add Test")
@@ -950,12 +997,15 @@ def copy_move_test_dialog(
 
     movable_test_definitions = []
     if target_table_group_id and target_test_suite_id:
-        collision_test_definitions = get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id)
+        collision_test_definitions = get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
+        overwrite_ids = []
         if not collision_test_definitions.empty:
             unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == False]
             locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == True]
             locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
             movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
+            selected_ids = {str(item["id"]) for item in selected_test_definitions}
+            overwrite_ids = [id_ for id_ in unlocked["id"].tolist() if str(id_) not in selected_ids]
 
             warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
             \nUnlocked tests that will be overwritten: {len(unlocked)}
@@ -981,19 +1031,21 @@ def copy_move_test_dialog(
 
     test_definition_ids = [item["id"] for item in movable_test_definitions]
     if move:
+        if overwrite_ids:
+            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
         TestDefinition.move(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been moved."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
     elif copy:
+        if overwrite_ids:
+            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
         TestDefinition.copy(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
         success_message = "Test Definitions have been copied."
         st.success(success_message)
-        get_test_suite_columns.clear()
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
 def validate_form(test_scope, test_definition, column_name_label):
     if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
@@ -1052,7 +1104,7 @@ def confirm_unlocking_test_definition(test_definitions: list[dict]):
     if unlock_confirmed():
         update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
         time.sleep(1)
-        st.rerun()
+        safe_rerun()
 
     _, button_column = st.columns([.85, .15])
     with button_column:
@@ -1085,7 +1137,7 @@ def get_excel_report_data(
     else:
         data = get_test_definitions(test_suite)
 
-    for key in ["test_active_display", "lock_refresh_display"]:
+    for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
 
     for key in ["profiling_as_of_date", "last_manual_update"]:
@@ -1102,6 +1154,7 @@ def get_excel_report_data(
         "export_uom": {"header": "Unit of measure"},
         "test_active_display": {"header": "Active"},
         "lock_refresh_display": {"header": "Locked"},
+        "flagged_display": {"header": "Flagged"},
         "urgency": {"header": "Severity"},
         "profiling_as_of_date": {"header": "From profiling as-of (UTC)"},
         "last_manual_update": {"header": "Last manual update (UTC)"},
@@ -1222,6 +1275,7 @@ def get_test_definitions(
     column_name: str | None = None,
     test_type: str | None = None,
     sorting_columns: list[str] | None = None,
+    flagged_filter: str | None = None,
 ) -> pd.DataFrame:
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
@@ -1230,23 +1284,56 @@ def get_test_definitions(
         clauses.append(TestDefinition.column_name.ilike(column_name))
     if test_type:
         clauses.append(TestDefinition.test_type == test_type)
+    if flagged_filter == "Flagged":
+        clauses.append(TestDefinition.flagged == True)
+    elif flagged_filter == "Not Flagged":
+        clauses.append(TestDefinition.flagged == False)
 
     sort_funcs = {"ASC": asc, "DESC": desc}
-    test_definitions = TestDefinition.select_where(
-        *clauses,
-        order_by=tuple([
-            sort_funcs[direction](func.lower(getattr(TestDefinition, attribute)))
-            for (attribute, direction) in sorting_columns
-        ]) if sorting_columns else None,
+
+    notes_count_expr = (
+        sa_select(func.count(TestDefinitionNote.id))
+        .where(TestDefinitionNote.test_definition_id == TestDefinition.id)
+        .correlate(TestDefinition)
+        .scalar_subquery()
     )
 
-    df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
+    sort_expressions = {
+        "flagged": lambda d: sort_funcs[d](case((TestDefinition.flagged == True, 0), else_=1)),
+        "notes_count": lambda d: sort_funcs[d](case((notes_count_expr > 0, 0), else_=1)),
+    }
+
+    order_by = []
+    if sorting_columns:
+        for (attribute, direction) in sorting_columns:
+            if attribute in sort_expressions:
+                order_by.append(sort_expressions[attribute](direction))
+            else:
+                order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
+
+    test_definitions = TestDefinition.select_where(
+        *clauses,
+        order_by=tuple(order_by) if order_by else None,
+    )
+
+    df = to_dataframe(test_definitions)
+    if df.empty:
+        return df
+
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
     for key in ["id", "table_groups_id", "profile_run_id", "test_suite_id"]:
         df[key] = df[key].apply(lambda value: str(value))
 
     df["test_active_display"] = df["test_active"].apply(lambda value: "Yes" if value else "No")
     df["lock_refresh_display"] = df["lock_refresh"].apply(lambda value: "Yes" if value else "No")
+    df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+
+    if not df.empty:
+        notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in df["id"]])
+        df["notes_count"] = df["id"].map(notes_counts).fillna(0).astype(int)
+    else:
+        df["notes_count"] = pd.Series(dtype=int)
+    df["notes_display"] = df["notes_count"].apply(lambda x: f"📝 {x}" if x > 0 else "")
     df["urgency"] = df.apply(lambda row: row["severity"] or test_suite.severity or row["default_severity"], axis=1)
     df["final_test_description"] = df.apply(lambda row: row["test_description"] or row["default_test_description"], axis=1)
     df["export_uom"] = df.apply(lambda row: row["measure_uom_description"] or row["measure_uom"], axis=1)
@@ -1267,9 +1354,11 @@ def get_test_definitions_collision(
     test_definitions: list[dict],
     target_table_group_id: str,
     target_test_suite_id: str,
+    target_table_name: str | None = None,
+    target_column_name: str | None = None,
 ) -> pd.DataFrame:
-    table_tests = [(item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
-    column_tests = [(item["table_name"], item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
+    table_tests = [(target_table_name or item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
+    column_tests = [(target_table_name or item["table_name"], target_column_name or item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,

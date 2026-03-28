@@ -10,7 +10,7 @@ $$
         WHEN UPPER(difftype) IN ('DAY', 'DD')
               THEN DATE_PART('day', seconddate - firstdate)
         WHEN UPPER(difftype) IN ('WEEK','WK')
-              THEN TRUNC(DATE_PART('day', seconddate - firstdate)/7)
+              THEN (DATE_TRUNC('week', seconddate)::DATE - DATE_TRUNC('week', firstdate)::DATE) / 7
         WHEN UPPER(difftype) IN ('MON', 'MM')
               THEN 12 * (DATE_PART('year', seconddate) - DATE_PART('year', firstdate))
                     + (DATE_PART('month', seconddate) - DATE_PART('month', firstdate))

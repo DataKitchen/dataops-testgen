@@ -9,10 +9,11 @@ from testgen.common.clean_sql import concat_columns
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection, SQLFlavor
 from testgen.common.models.test_definition import TestDefinition
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db, fetch_one_from_db
 from testgen.ui.utils import parse_fuzzy_date
-from testgen.utils import to_dataframe
+from testgen.utils import to_dataframe, to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 DEFAULT_LIMIT = 500
@@ -78,6 +79,7 @@ def get_hygiene_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT)
 def get_hygiene_issue_source_data(
     issue_data: dict,
     limit: int = DEFAULT_LIMIT,
+    mask_pii: bool = False,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     lookup_query = None
     try:
@@ -92,6 +94,15 @@ def get_hygiene_issue_source_data(
             df = to_dataframe(results)
             if limit:
                 df = df.sample(n=min(len(df), limit)).sort_index()
+            if mask_pii:
+                _mask_lookup_pii(
+                    df,
+                    issue_data["table_groups_id"],
+                    issue_data["table_name"],
+                    column_name=issue_data.get("column_name"),
+                    test_type_id=issue_data.get("anomaly_id"),
+                    error_type="Profile Anomaly",
+                )
             return "OK", None, lookup_query, df
         else:
             return (
@@ -119,7 +130,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_names"], # Don't quote this - queries already have quotes
         "COLUMN_TYPE": issue_data["column_type"],
-        "TEST_DATE": str(parsed_test_date) if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
+        "TEST_DATE": to_sql_timestamp(parsed_test_date) if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
             else None,
         "CUSTOM_QUERY": test_definition.custom_query,
         "BASELINE_VALUE": test_definition.baseline_value,
@@ -159,6 +170,7 @@ def get_test_issue_source_query(issue_data: dict, limit: int = DEFAULT_LIMIT) ->
 def get_test_issue_source_data(
     issue_data: dict,
     limit: int = DEFAULT_LIMIT,
+    mask_pii: bool = False,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     lookup_query = None
     try:
@@ -177,6 +189,15 @@ def get_test_issue_source_data(
             df = to_dataframe(results)
             if limit:
                 df = df.sample(n=min(len(df), limit)).sort_index()
+            if mask_pii:
+                _mask_lookup_pii(
+                    df,
+                    issue_data["table_groups_id"],
+                    issue_data["table_name"],
+                    column_name=issue_data.get("column_names"),
+                    test_type_id=issue_data.get("test_type_id"),
+                    error_type="Test Results",
+                )
             return "OK", None, lookup_query, df
         else:
             return "ND", "Data that violates test criteria is not present in the current dataset.", lookup_query, None
@@ -203,6 +224,7 @@ def get_test_issue_source_query_custom(
 def get_test_issue_source_data_custom(
     issue_data: dict,
     limit: int | None = None,
+    mask_pii: bool = False,
 ) -> tuple[Literal["OK"], None, str, pd.DataFrame] | tuple[Literal["NA", "ND", "ERR"], str, str | None, None]:
     try:
         test_definition = TestDefinition.get(issue_data["test_definition_id"])
@@ -220,6 +242,17 @@ def get_test_issue_source_data_custom(
             df = to_dataframe(results)
             if limit:
                 df = df.sample(n=min(len(df), limit)).sort_index()
+            if mask_pii:
+                _mask_lookup_pii(
+                    df,
+                    issue_data["table_groups_id"],
+                    issue_data["table_name"],
+                )
+                # Mask user-defined redactable columns from the test definition
+                lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
+                if lookup_data and lookup_data.lookup_redactable_columns:
+                    redactable = {col.strip() for col in lookup_data.lookup_redactable_columns.split(",")}
+                    mask_source_data_pii(df, redactable)
             return "OK", None, lookup_query, df
         else:
             return "ND", "Data that violates test criteria is not present in the current dataset.", lookup_query, None
@@ -232,6 +265,50 @@ def get_test_issue_source_data_custom(
 class LookupData:
     lookup_query: str
     sql_flavor: SQLFlavor | None = None
+    lookup_redactable_columns: str | None = None
+
+
+def _mask_lookup_pii(
+    df: pd.DataFrame,
+    table_group_id: str,
+    table_name: str,
+    column_name: str | None = None,
+    test_type_id: str | None = None,
+    error_type: Literal["Profile Anomaly", "Test Results"] | None = None,
+) -> None:
+    """Apply PII masking to a source data lookup DataFrame."""
+    pii_columns = get_pii_columns(table_group_id, table_name=table_name)
+    mask_source_data_pii(df, pii_columns)
+
+    # Row-level masking: if result has a column_name column listing which source column
+    # each row is about (e.g., table-level recency queries), mask value columns in rows
+    # where that source column is PII
+    if pii_columns and "column_name" in df.columns:
+        pii_lower = {c.lower() for c in pii_columns}
+        value_cols = [c for c in df.columns if c != "column_name"]
+        pii_rows = df["column_name"].str.lower().isin(pii_lower)
+        for col in value_cols:
+            if df[col].dtype != object:
+                df[col] = df[col].astype(object)
+            df.loc[pii_rows, col] = PII_REDACTED
+
+    # Also mask redactable columns if the test's target column is PII
+    if column_name and test_type_id and error_type and column_name.lower() in {c.lower() for c in pii_columns}:
+        result = fetch_one_from_db(
+            """
+            SELECT t.lookup_redactable_columns
+            FROM target_data_lookups t
+            INNER JOIN table_groups tg ON (:table_group_id = tg.id)
+            INNER JOIN connections c ON (tg.connection_id = c.connection_id AND t.sql_flavor = c.sql_flavor)
+            WHERE t.error_type = :error_type
+                AND t.test_id = :test_type_id
+                AND t.lookup_redactable_columns IS NOT NULL;
+            """,
+            {"table_group_id": table_group_id, "error_type": error_type, "test_type_id": test_type_id},
+        )
+        if result and result["lookup_redactable_columns"]:
+            redactable = {col.strip() for col in result["lookup_redactable_columns"].split(",")}
+            mask_source_data_pii(df, redactable)
 
 
 def _get_lookup_data(
@@ -243,7 +320,8 @@ def _get_lookup_data(
         """
         SELECT
             t.lookup_query,
-            c.sql_flavor
+            c.sql_flavor,
+            t.lookup_redactable_columns
         FROM target_data_lookups t
         INNER JOIN table_groups tg
             ON (:table_group_id = tg.id)
@@ -269,7 +347,8 @@ def _get_lookup_data_custom(
     result = fetch_one_from_db(
         """
         SELECT
-            d.custom_query as lookup_query
+            d.custom_query as lookup_query,
+            d.match_column_names as lookup_redactable_columns
         FROM test_definitions d
         WHERE d.id = :test_definition_id;
         """,

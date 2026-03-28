@@ -8,6 +8,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import temp_value
 
 ResultsType = typing.TypeVar("ResultsType", bound=typing.Any | None)
@@ -175,7 +176,7 @@ class Wizard:
             do_rerun = self._on_complete(**kwargs)
             self._reset()
             if do_rerun:
-                st.rerun()
+                safe_rerun()
 
     def _reset(self) -> None:
         del st.session_state[self._key]

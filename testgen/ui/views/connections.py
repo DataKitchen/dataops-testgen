@@ -18,7 +18,8 @@ from sqlalchemy.exc import DatabaseError, DBAPIError
 import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
-from testgen.common.models import with_database_session
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
@@ -27,6 +28,7 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -65,7 +67,7 @@ class ConnectionsPage(Page):
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "manage-connections",
+            "connect-your-database/manage-connections/",
         )
 
         connections = Connection.select_where(Connection.project_code == project_code)
@@ -170,8 +172,8 @@ class ConnectionsPage(Page):
 
         connection_string: str | None = None
         flavor_service = get_flavor_service(connection.sql_flavor)
-        flavor_service.init({**connection.to_dict(), "project_pw_encrypted": "<password>"})
-        connection_string = flavor_service.get_connection_string().replace("%3E", ">").replace("%3C", "<")
+        params = resolve_connection_params({**connection.to_dict(), "project_pw_encrypted": "<password>"})
+        connection_string = flavor_service.get_connection_string(params).replace("%3E", ">").replace("%3C", "<")
 
         if should_save():
             success = True
@@ -179,7 +181,7 @@ class ConnectionsPage(Page):
                 connection.save()
                 message = "Changes have been saved successfully."
             except Exception as error:
-                message = "Error creating connection"
+                message = "Something went wrong while creating the connection."
                 success = False
                 LOG.exception(message)
 
@@ -238,8 +240,8 @@ class ConnectionsPage(Page):
     def test_connection(self, connection: Connection) -> "ConnectionStatus":
         empty_cache()
         try:
-            sql_query = "select 1;"
-            results = db.fetch_from_target_db(connection, sql_query)
+            flavor_service = get_flavor_service(connection.sql_flavor)
+            results = db.fetch_from_target_db(connection, flavor_service.test_query)
             connection_successful = len(results) == 1 and results[0][0] == 1
 
             if not connection_successful:
@@ -267,7 +269,7 @@ class ConnectionsPage(Page):
                 details = error.args[0]
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
         except Exception as error:
-            details = "Try again"
+            details = "Something went wrong while testing the connection."
             if connection.connect_by_key and not connection.private_key:
                 details = "The private key is missing."
             LOG.exception("Error testing database connection")
@@ -304,7 +306,7 @@ class ConnectionsPage(Page):
 
         get_close_dialog, set_close_dialog = temp_value(f"connections:{connection_id}:close", default=False)
         if (get_close_dialog()):
-            st.rerun()
+            safe_rerun()
 
         get_new_table_group, set_new_table_group = temp_value(
             f"connections:{connection_id}:table_group",
@@ -439,6 +441,8 @@ class ConnectionsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
@@ -466,9 +470,9 @@ class ConnectionsPage(Page):
                             LOG.exception(message)
                     else:
                         LOG.info("Table group %s created", table_group.id)
-                        st.rerun()
+                        safe_rerun()
                 except Exception as error:
-                    message = "Error creating table group"
+                    message = "Something went wrong while creating the table group."
                     success = False
                     LOG.exception(message)
 
@@ -495,6 +499,9 @@ class ConnectionsPage(Page):
             data={
                 "project_code": project_code,
                 "table_group": table_group.to_dict(json_safe=True),
+                "permissions": {
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
+                },
                 "table_group_preview": table_group_preview,
                 "steps": [
                     "tableGroup",
@@ -602,10 +609,22 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/mssql.svg"),
     ),
     ConnectionFlavor(
+        label="Oracle",
+        value="oracle",
+        flavor="oracle",
+        icon=get_asset_data_url("flavors/oracle.svg"),
+    ),
+    ConnectionFlavor(
         label="PostgreSQL",
         value="postgresql",
         flavor="postgresql",
         icon=get_asset_data_url("flavors/postgresql.svg"),
+    ),
+    ConnectionFlavor(
+        label="SAP HANA",
+        value="sap_hana",
+        flavor="sap_hana",
+        icon=get_asset_data_url("flavors/sap_hana.svg"),
     ),
     ConnectionFlavor(
         label="Snowflake",

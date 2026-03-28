@@ -10,6 +10,7 @@
  * @property {string?} id
  * @property {string} label
  * @property {string?|Array.<string>?} value
+* @property {string?} placeholder
  * @property {Array.<SelectOption>} options
  * @property {boolean} allowNull
  * @property {Function|null} onChange
@@ -168,6 +169,7 @@ const Select = (/** @type {Properties} */ props) => {
                             ? input({
                                 id: `tg-select--field--${getRandomId()}`,
                                 value: valueLabel.val,
+                                placeholder: props.placeholder,
                                 onkeyup: filterOptions,
                             })
                             : valueLabel.val,

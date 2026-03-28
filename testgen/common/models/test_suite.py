@@ -101,7 +101,7 @@ class TestSuite(Entity):
 
     @classmethod
     @st.cache_data(show_spinner=False)
-    def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TestSuiteSummary]:
+    def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None, test_suite_name: str | None = None) -> Iterable[TestSuiteSummary]:
         if table_group_id and not is_uuid4(table_group_id):
             return []
 
@@ -199,9 +199,10 @@ class TestSuite(Entity):
         WHERE suites.is_monitor IS NOT TRUE
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
+            {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}
         ORDER BY LOWER(suites.test_suite);
         """
-        params = {"project_code": project_code, "table_group_id": table_group_id}
+        params = {"project_code": project_code, "table_group_id": table_group_id, "test_suite_name": f"%{test_suite_name}%" if test_suite_name else None}
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
         return [TestSuiteSummary(**row) for row in results]
@@ -246,7 +247,6 @@ class TestSuite(Entity):
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
-        db_session.commit()
         cls.delete_where(cls.id.in_(ids))
 
     @classmethod

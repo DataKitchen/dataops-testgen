@@ -4,6 +4,10 @@
  * @import { TableGroup } from '../components/table_group_form.js'
  * @import { CronSample } from '../types.js'
  * 
+ * @typedef Permissions
+ * @type {object}
+ * @property {boolean} can_view_pii
+ * 
  * @typedef WizardResult
  * @type {object}
  * @property {boolean} success
@@ -20,6 +24,7 @@
  * @property {Connection[]} connections
  * @property {string[]?} steps
  * @property {boolean?} is_in_use
+ * @property {Permissions} permissions
  * @property {TableGroupPreview?} table_group_preview
  * @property {CronSample?} standard_cron_sample
  * @property {CronSample?} monitor_cron_sample
@@ -141,37 +146,41 @@ const TableGroupWizard = (props) => {
         return '';
       }
 
-      return WizardProgressIndicator(
-        [
+      const allIndicators = [
           {
-            index: 1,
             title: 'Table Group',
             skipped: false,
             includedSteps: ['tableGroup', 'testTableGroup'],
           },
           {
-            index: 2,
             title: 'Profiling',
             skipped: !stepsState.runProfiling.rawVal,
             includedSteps: ['runProfiling'],
           },
           {
-            index: 3,
             title: 'Testing',
             skipped: !stepsState.testSuite.rawVal.generate,
             includedSteps: ['testSuite'],
           },
           {
-            index: 4,
             title: 'Monitors',
             skipped: !stepsState.monitorSuite.rawVal.generate,
             includedSteps: ['monitorSuite'],
           },
-        ],
+        ].filter(indicator => indicator.includedSteps.some(s => steps.includes(s)))
+         .map((indicator, i) => ({ ...indicator, index: i + 1 }));
+
+      if (allIndicators.length <= 1) {
+        return '';
+      }
+
+      return WizardProgressIndicator(
+        allIndicators,
         {
           index: stepIndex,
           name: steps[stepIndex],
         },
+        (stepName) => setStep(steps.indexOf(stepName)),
       );
     },
     WizardStep(0, currentStepIndex, () => {
@@ -189,6 +198,7 @@ const TableGroupWizard = (props) => {
         showConnectionSelector: connections.length > 1,
         disableConnectionSelector: false,
         disableSchemaField: props.is_in_use ?? false,
+        disablePiiFlag: !getValue(props.permissions)?.can_view_pii,
         onChange: (updatedTableGroup, state) => {
           stepsState.tableGroup.val = updatedTableGroup;
           stepsValidity.tableGroup.val = state.valid;

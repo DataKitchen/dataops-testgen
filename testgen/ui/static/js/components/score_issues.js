@@ -159,7 +159,7 @@ const IssuesTable = (
                 category === 'column_name'
                     ? span({ class: 'ml-2' })
                     : ColumnProfilingButton(row.column, row.table, row.table_group_id),
-                columns.map((columnName) => TableCell(row, columnName)),
+                columns.map((columnName) => TableCell(row, columnName, score.project_code)),
             )),
             () => Paginator({
                 pageIndex,
@@ -192,7 +192,7 @@ const ColumnProfilingButton = (
         style: 'color: var(--secondary-text-color);',
         tooltip: 'View profiling for column',
         tooltipPosition: 'top-right',
-        onclick: () => emitEvent('ColumnProflingClicked', { payload: { column_name, table_name, table_group_id } }),
+        onclick: () => emitEvent('ColumnProfilingClicked', { payload: { column_name, table_name, table_group_id } }),
     });
 };
 
@@ -253,13 +253,13 @@ const Toolbar = (
  * @param {string} column
  * @returns {<string>}
  */
-const TableCell = (row, column) => {
+const TableCell = (row, column, projectCode) => {
     const componentByColumn = {
         column: IssueColumnCell,
         type: IssueCell,
         status: StatusCell,
         detail: DetailCell,
-        time: TimeCell,
+        time: (value, row) => TimeCell(value, row, projectCode),
     };
 
     if (componentByColumn[column]) {
@@ -306,7 +306,7 @@ const DetailCell = (value, row) => {
     );
 };
 
-const TimeCell = (value, row) => {
+const TimeCell = (value, row, projectCode) => {
     return div(
         { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.time}` },
         row.issue_type === 'test'
@@ -321,6 +321,7 @@ const TimeCell = (value, row) => {
                 table_name: row.table,
                 column_name: row.column,
                 selected: row.id,
+                project_code: projectCode,
             },
         }),
     );

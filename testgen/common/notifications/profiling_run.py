@@ -50,10 +50,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td class="summary__value">{{project_name}}</td>
                   <td class="summary__label">Schema</td>
                   <td class="summary__value">{{table_group_schema}}</td>
-                  <td align="right">
-                    <a class="link" href="{{profiling_run.results_url}}" target="_blank">View results on TestGen &gt;</a>
-                  </td>
-
                 </tr>
                 <tr>
                   <td class="summary__label">Table Group</td>
@@ -71,6 +67,11 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td class="summary__label">Duration</td>
                   <td class="summary__value">{{format_duration profiling_run.start_time profiling_run.end_time}}</td>
                 </tr>
+                <tr>
+                  <td colspan="4">
+                    <a class="link" href="{{profiling_run.results_url}}" target="_blank">View results on TestGen &gt;</a>
+                  </td>
+                </tr>
               </table>
             </div>
             <div class="summary">
@@ -81,11 +82,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 border="0">
                 <tr>
                   <td class="summary__title">Issues Summary</td>
-                  {{#if (eq profiling_run.status 'Complete')}}
-                  <td align="right">
-                    <a class="link" href="{{profiling_run.issues_url}}" target="_blank">View {{format_number issue_count}} issues &gt;</a>
-                  </td>
-                  {{/if}}
                 </tr>
                 <tr>
                   <td class="summary__subtitle">
@@ -140,6 +136,13 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   <td><div class="code">{{profiling_run.log_message}}</div></td>
                 </tr>
                 {{/if}}
+                {{#if (eq profiling_run.status 'Complete')}}
+                <tr>
+                  <td>
+                    <a class="link" href="{{profiling_run.issues_url}}" target="_blank">View {{format_number issue_count}} issues &gt;</a>
+                  </td>
+                </tr>
+                {{/if}}
               </table>
             </div>
             {{#each hygiene_issues_summary}}
@@ -165,11 +168,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 {{#if (eq priority 'High')}} text-red {{/if}}
                 {{#if (eq priority 'Moderate')}} text-orange {{/if}}
                 ">{{label}}</td>
-                <td colspan="2" align="right">
-                  <a class="link" href="{{url}}" target="_blank">
-                    View {{format_number count.total}} {{label}} &gt;
-                  </a>
-                </td>
               </tr>
               {{#if (len issues)}}
               <tr class="text-caption">
@@ -189,13 +187,18 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
               {{/each}}
               <tr>
-                <td></td>
-                <td colspan="2" class="summary__caption">
+                <td style="width: 4px;">
+                <td colspan="2">
+                  <a class="link" href="{{url}}" target="_blank">
+                    View {{format_number count.total}} {{label}} &gt;
+                  </a>
+                </td>
+                <td class="summary__caption">
                   {{#if truncated}}
                   + {{truncated}} more
                   {{/if}}
                 </td>
-                <td colspan="2" align="right" class="summary__caption">
+                <td align="right" class="summary__caption">
                   <span class="text-purple" style="margin-right: 4px; font-style: normal;">&#9679;</span>
                   indicates new issues
                 </td>
@@ -258,7 +261,13 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         return
 
     profiling_run_issues_url = "".join(
-        (PersistedSetting.get("BASE_URL", ""), "/profiling-runs:hygiene?run_id=", str(profiling_run.id), "&source=email")
+        (
+          PersistedSetting.get("BASE_URL", ""),
+          "/profiling-runs:hygiene?project_code=",
+          str(profiling_run.project_code),
+          "&run_id=", str(profiling_run.id),
+          "&source=email"
+        )
     )
 
     hygiene_issues_summary = []
@@ -304,7 +313,14 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             "id": str(profiling_run.id),
             "issues_url": profiling_run_issues_url,
             "results_url": "".join(
-                (PersistedSetting.get("BASE_URL", ""), "/profiling-runs:results?run_id=", str(profiling_run.id), "&source=email")
+                (
+                    PersistedSetting.get("BASE_URL", ""),
+                    "/profiling-runs:results?project_code=",
+                    str(profiling_run.project_code),
+                    "&run_id=",
+                    str(profiling_run.id),
+                    "&source=email"
+                )
             ),
             "start_time": profiling_run.profiling_starttime,
             "end_time": profiling_run.profiling_endtime,

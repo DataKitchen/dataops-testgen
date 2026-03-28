@@ -1,17 +1,19 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
-from uuid import UUID
+from typing import ClassVar, Literal
+from uuid import UUID, uuid4
 
 import streamlit as st
 from sqlalchemy import (
+    Boolean,
     Column,
     ForeignKey,
     String,
     Text,
     TypeDecorator,
     asc,
+    delete,
     func,
     insert,
     select,
@@ -22,7 +24,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.models import get_current_session
+from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestamp, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
@@ -41,6 +43,7 @@ class TestTypeSummary(EntityMinimal):
     default_parm_columns: str
     default_parm_prompts: str
     default_parm_help: str
+    default_parm_required: str
     default_severity: str
     test_scope: TestScope
     usage_notes: str
@@ -91,7 +94,8 @@ class TestDefinitionSummary(TestTypeSummary):
     profiling_as_of_date: datetime
     last_manual_update: datetime
     export_to_observability: bool
-    prediction: str | None
+    prediction: dict[str, dict[str, float]] | None
+    flagged: bool
 
 
 @dataclass
@@ -123,6 +127,8 @@ class QueryString(TypeDecorator):
 class TestType(Entity):
     __tablename__ = "test_types"
 
+    _get_by = "test_type"
+
     id: str = Column(String)
     test_type: str = Column(String, primary_key=True, nullable=False)
     test_name_short: str = Column(String)
@@ -140,6 +146,7 @@ class TestType(Entity):
     default_parm_values: str = Column(Text)
     default_parm_prompts: str = Column(Text)
     default_parm_help: str = Column(Text)
+    default_parm_required: str = Column(Text)
     default_severity: str = Column(String)
     run_type: TestRunType = Column(String)
     test_scope: TestScope = Column(String)
@@ -148,6 +155,8 @@ class TestType(Entity):
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
     active: str = Column(String)
+
+    # Unmapped columns: generation_template, result_visualization, result_visualization_params
 
     _summary_columns = (
         *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
@@ -211,6 +220,7 @@ class TestDefinition(Entity):
     last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
     export_to_observability: bool = Column(YNString)
     prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
+    flagged: bool = Column(Boolean, default=False, nullable=False)
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
@@ -276,10 +286,12 @@ class TestDefinition(Entity):
         )
         return [TestDefinitionMinimal(**row) for row in results]
 
+    _yn_columns: ClassVar = {"test_active", "lock_refresh"}
+
     @classmethod
     def set_status_attribute(
         cls,
-        status_type: Literal["test_active", "lock_refresh"],
+        status_type: Literal["test_active", "lock_refresh", "flagged"],
         test_definition_ids: list[str | UUID],
         value: bool,
     ) -> None:
@@ -296,13 +308,11 @@ class TestDefinition(Entity):
         """
         params = {
             "test_definition_ids": test_definition_ids,
-            "value": YNString().process_bind_param(value, None),
+            "value": YNString().process_bind_param(value, None) if status_type in cls._yn_columns else value,
         }
 
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def move(
@@ -318,7 +328,7 @@ class TestDefinition(Entity):
             SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
         )
         UPDATE test_definitions
-        SET 
+        SET
             {"table_name = :target_table_name," if target_table_name else ""}
             {"column_name = :target_column_name," if target_column_name else ""}
             table_groups_id = :target_table_group,
@@ -337,8 +347,6 @@ class TestDefinition(Entity):
 
         db_session = get_current_session()
         db_session.execute(text(query), params)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def copy(
@@ -379,8 +387,6 @@ class TestDefinition(Entity):
         )
         db_session = get_current_session()
         db_session.execute(query)
-        db_session.commit()
-        cls.clear_cache()
 
     @classmethod
     def clear_cache(cls) -> bool:
@@ -397,8 +403,69 @@ class TestDefinition(Entity):
             query = update(TestDefinition).where(TestDefinition.id == self.id).values(**values)
             db_session = get_current_session()
             db_session.execute(query)
-            db_session.commit()
         else:
             super().save()
 
-        TestDefinition.clear_cache()
+
+class TestDefinitionNote(Base):
+    __tablename__ = "test_definition_notes"
+
+    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    test_definition_id: UUID = Column(
+        postgresql.UUID(as_uuid=True), ForeignKey("test_definitions.id", ondelete="CASCADE"), nullable=False
+    )
+    detail: str = Column(Text, nullable=False)
+    created_by: str = Column(String(100), nullable=False)
+    created_at: datetime = Column(postgresql.TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: datetime = Column(postgresql.TIMESTAMP)
+
+    @classmethod
+    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> None:
+        db_session = get_current_session()
+        db_session.execute(
+            insert(cls).values(test_definition_id=test_definition_id, detail=detail, created_by=username)
+        )
+
+    @classmethod
+    def update_note(cls, note_id: str | UUID, detail: str) -> None:
+        db_session = get_current_session()
+        db_session.execute(
+            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now())
+        )
+
+    @classmethod
+    def delete_note(cls, note_id: str | UUID) -> None:
+        db_session = get_current_session()
+        db_session.execute(delete(cls).where(cls.id == note_id))
+
+    @classmethod
+    def get_notes_count_by_ids(cls, test_definition_ids: list[str]) -> dict[str, int]:
+        """Returns {test_definition_id: count} for all given IDs."""
+        db_session = get_current_session()
+        rows = db_session.execute(
+            text("""
+                SELECT test_definition_id::VARCHAR, COUNT(*) as cnt
+                FROM test_definition_notes
+                WHERE test_definition_id = ANY(:ids)
+                GROUP BY test_definition_id
+            """),
+            {"ids": [UUID(td_id) for td_id in test_definition_ids]},
+        ).all()
+        return {str(row[0]): row[1] for row in rows}
+
+    @classmethod
+    def get_notes(cls, test_definition_id: str | UUID) -> list[dict]:
+        db_session = get_current_session()
+        results = db_session.execute(
+            select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
+        ).scalars().all()
+        return [
+            {
+                "id": str(note.id),
+                "detail": note.detail,
+                "created_by": note.created_by,
+                "created_at": note.created_at.isoformat() if note.created_at else None,
+                "updated_at": note.updated_at.isoformat() if note.updated_at else None,
+            }
+            for note in results
+        ]

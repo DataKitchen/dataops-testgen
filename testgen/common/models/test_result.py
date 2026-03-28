@@ -1,13 +1,16 @@
 import enum
 from collections import defaultdict
+from datetime import datetime
+from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, or_, select
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, desc, func, or_, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
+from testgen.common.models.test_suite import TestSuite
 
 
 class TestResultStatus(enum.Enum):
@@ -40,8 +43,93 @@ class TestResult(Entity):
     status: TestResultStatus = Column("result_status", Enum(TestResultStatus))
     message: str = Column("result_message", String)
 
+    test_time: datetime = Column(postgresql.TIMESTAMP)
     result_code: int = Column(Integer)
-    # Note: not all table columns are implemented by this entity
+    disposition: str = Column(String)
+    result_measure: str = Column(String)
+    threshold_value: str = Column(String)
+
+    # Unmapped columns: result_id, skip_errors, input_parameters, severity,
+    # result_signal, test_description, table_groups_id, dq_prevalence,
+    # dq_record_ct, observability_status
+
+    @classmethod
+    def select_results(
+        cls,
+        test_run_id: UUID,
+        status: TestResultStatus | None = None,
+        table_name: str | None = None,
+        test_type: str | None = None,
+        project_codes: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[Self]:
+        clauses = [
+            cls.test_run_id == test_run_id,
+            func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
+        ]
+        if status:
+            clauses.append(cls.status == status)
+        if table_name:
+            clauses.append(cls.table_name == table_name)
+        if test_type:
+            clauses.append(cls.test_type == test_type)
+        query = select(cls).where(*clauses)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
+        return get_current_session().scalars(query).all()
+
+    @classmethod
+    def select_failures(
+        cls,
+        test_run_id: UUID,
+        project_codes: list[str] | None = None,
+        group_by: str = "test_type",
+    ) -> list[tuple]:
+        allowed = {"test_type", "table_name", "column_names"}
+        if group_by not in allowed:
+            raise ValueError(f"group_by must be one of {allowed}")
+
+        where = [
+            cls.test_run_id == test_run_id,
+            cls.status.in_([TestResultStatus.Failed, TestResultStatus.Warning]),
+            func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
+        ]
+
+        # Column grouping includes table_name for context → (table, column, count)
+        if group_by == "column_names":
+            group_cols = (cls.table_name, cls.column_names)
+        elif group_by == "test_type":
+            group_cols = (cls.test_type, cls.status)
+        else:
+            group_cols = (getattr(cls, group_by),)
+
+        query = select(*group_cols, func.count().label("failure_count")).where(*where)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.group_by(*group_cols).order_by(func.count().desc())
+        return get_current_session().execute(query).all()
+
+    @classmethod
+    def select_history(
+        cls,
+        test_definition_id: UUID,
+        project_codes: list[str] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[Self]:
+        query = select(cls).where(cls.test_definition_id == test_definition_id)
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        query = query.order_by(desc(cls.test_time)).offset(offset).limit(limit)
+        return get_current_session().scalars(query).all()
 
     @classmethod
     def diff(cls, test_run_id_a: UUID, test_run_id_b: UUID) -> list[TestResultDiffType]:

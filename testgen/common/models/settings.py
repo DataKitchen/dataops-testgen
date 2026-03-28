@@ -37,7 +37,7 @@ class PersistedSetting(Base):
             ps.value = value
         else:
             session.add(cls(key=key, value=value))
-        session.commit()
+        session.flush()
 
     def __repr__(self):
         return f"{self.__class__.__name__}(key={self.key!r} value={self.value!r})"

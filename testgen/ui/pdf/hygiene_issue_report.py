@@ -118,6 +118,10 @@ def build_summary_table(document, hi_data):
                     "<b>Critical data element</b>: Yes" if hi_data["critical_data_element"] else "<i>Critical data element</i>: No",
                     style=PARA_STYLE_CELL,
                 ),
+                Paragraph(
+                    "<b>PII</b>: Yes" if hi_data["pii_flag"] else "<i>PII</i>: No",
+                    style=PARA_STYLE_CELL,
+                ),
                 Paragraph(f"<i>Description</i>: {hi_data['column_description']}", style=PARA_STYLE_CELL)
                 if hi_data["column_description"]
                 else [],
@@ -139,7 +143,7 @@ def build_summary_table(document, hi_data):
         ),
         (
             Paragraph(
-                f"""<a href="{PersistedSetting.get("BASE_URL")}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}">
+                f"""<a href="{PersistedSetting.get("BASE_URL")}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}&project_code={hi_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,
@@ -178,7 +182,7 @@ def build_sql_query_content(sample_data_tuple):
         return Paragraph("No sample data lookup query registered for this issue.")
 
 
-def get_report_content(document, hi_data):
+def get_report_content(document, hi_data, mask_pii: bool = False):
     yield Paragraph("TestGen Hygiene Issue Report", PARA_STYLE_TITLE)
     yield build_summary_table(document, hi_data)
 
@@ -186,7 +190,7 @@ def get_report_content(document, hi_data):
     yield Paragraph("Suggested Action", style=PARA_STYLE_H1)
     yield Paragraph(hi_data["suggested_action"], style=PARA_STYLE_TEXT)
 
-    sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT)
+    sample_data_tuple = get_hygiene_issue_source_data(hi_data, limit=ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT, mask_pii=mask_pii)
 
     yield CondPageBreak(SECTION_MIN_AVAILABLE_HEIGHT)
     yield Paragraph("Sample Data", PARA_STYLE_H1)
@@ -198,6 +202,6 @@ def get_report_content(document, hi_data):
     ])
 
 
-def create_report(filename, hi_data):
+def create_report(filename, hi_data, mask_pii: bool = False):
     doc = DatakitchenTemplate(filename)
-    doc.build(flowables=list(get_report_content(doc, hi_data)))
+    doc.build(flowables=list(get_report_content(doc, hi_data, mask_pii=mask_pii)))

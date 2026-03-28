@@ -6,10 +6,11 @@ from testgen.common import version_service
 from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
 from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
 from testgen.ui.components.widgets.testgen_component import testgen_component
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.application_logs_dialog import application_logs_dialog
 
-UPGRADE_URL = "https://docs.datakitchen.io/articles/dataops-testgen-help/upgrade-testgen"
+UPGRADE_URL = "https://docs.datakitchen.io/testgen/administer/upgrade-testgen/"
 
 
 def page_header(
@@ -47,7 +48,7 @@ def help_menu(help_topic: str | None = None) -> None:
                 flex_row_end()
                 st.markdown("Help :material/keyboard_arrow_down:")
             if rerun:
-                st.rerun()
+                safe_rerun()
 
         def open_app_logs():
             close_help()

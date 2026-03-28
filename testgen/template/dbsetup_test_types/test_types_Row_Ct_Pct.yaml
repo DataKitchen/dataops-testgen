@@ -99,6 +99,22 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '8025'
+    test_type: Row_Ct_Pct
+    sql_flavor: oracle
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8025'
+    test_type: Row_Ct_Pct
+    sql_flavor: sap_hana
+    measure: |-
+      ABS(ROUND(100.0 * (COUNT(*) - {BASELINE_CT}) / {BASELINE_CT}, 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1388'
     test_id: '1032'
@@ -161,5 +177,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) :: FLOAT / {BASELINE_CT} :: FLOAT,2)) AS row_count_pct_difference FROM cte;
+    error_type: Test Results
+  - id: '8025'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
+    error_type: Test Results
+  - id: '8025'
+    test_id: '1032'
+    test_type: Row_Ct_Pct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
     error_type: Test Results
   test_templates: []

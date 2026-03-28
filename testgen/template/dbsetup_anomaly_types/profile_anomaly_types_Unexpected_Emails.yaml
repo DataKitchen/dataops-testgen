@@ -10,6 +10,7 @@ profile_anomaly_types:
            AND NOT (p.column_name ILIKE '%email%' OR p.column_name ILIKE '%addr%')
   detail_expression: |-
     'Value Range: ' || p.min_text || ' thru ' || max_text
+  detail_redactable: true
   issue_likelihood: Possible
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether column should be populated with email addresses.
@@ -76,4 +77,20 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly
+  - id: '1521'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Profile Anomaly
+  - id: '1521'
+    test_id: '1022'
+    test_type: Unexpected Emails
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT}
     error_type: Profile Anomaly

@@ -1,16 +1,15 @@
 from datetime import UTC, datetime
-from typing import Literal, Self
+from typing import Self
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import Column, String, asc, func, select, update
+from sqlalchemy import Boolean, Column, String, asc, func, select, update
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
-
-RoleType = Literal["admin", "data_quality", "analyst", "business", "catalog"]
+from testgen.common.models.project_membership import RoleType
 
 
 class User(Entity):
@@ -21,7 +20,7 @@ class User(Entity):
     email: str = Column(NullIfEmptyString)
     name: str = Column(NullIfEmptyString)
     password: str = Column(String)
-    role: RoleType = Column(String)
+    is_global_admin: bool = Column(Boolean, nullable=False, default=False)
     latest_login: datetime = Column(postgresql.TIMESTAMP)
 
     _get_by = "username"
@@ -37,8 +36,6 @@ class User(Entity):
             query = update(User).where(User.id == self.id).values(**values)
             db_session = get_current_session()
             db_session.execute(query)
-            db_session.commit()
-            User.clear_cache()
         else:
             if update_latest_login:
                 self.latest_login = datetime.now(UTC)
@@ -49,3 +46,18 @@ class User(Entity):
     def get(cls, identifier: str) -> Self | None:
         query = select(cls).where(func.lower(User.username) == func.lower(identifier))
         return get_current_session().scalars(query).first()
+
+    def get_accessible_projects(self) -> list[str]:
+        """Get all projects this user can access."""
+        from testgen.common.models.project_membership import ProjectMembership
+        return ProjectMembership.get_projects_for_user(self.id)
+
+    def get_role_in_project(self, project_code: str) -> RoleType | None:
+        """Get this user's role in a specific project."""
+        from testgen.common.models.project_membership import ProjectMembership
+        return ProjectMembership.get_user_role_in_project(self.id, project_code)
+
+    def has_project_access(self, project_code: str) -> bool:
+        """Check if user has access to a project."""
+        from testgen.common.models.project_membership import ProjectMembership
+        return ProjectMembership.user_has_project_access(self.id, project_code)

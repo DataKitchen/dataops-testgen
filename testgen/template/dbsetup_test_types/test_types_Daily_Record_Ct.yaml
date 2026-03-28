@@ -45,30 +45,30 @@ test_types:
     sql_flavor: bigquery
     measure: |-
       DATETIME_DIFF(DATETIME_TRUNC(SAFE_CAST(MAX({COLUMN_NAME}) AS DATE), DAY), DATETIME_TRUNC(SAFE_CAST(MIN({COLUMN_NAME}) AS DATE), DAY), DAY) + 1 - COUNT(DISTINCT DATETIME_TRUNC({COLUMN_NAME}, DAY))
-    test_operator: <
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '6005'
     test_type: Daily_Record_Ct
     sql_flavor: databricks
     measure: |-
-      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '3005'
     test_type: Daily_Record_Ct
     sql_flavor: mssql
     measure: |-
-      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '4005'
     test_type: Daily_Record_Ct
     sql_flavor: postgresql
     measure: |-
-      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT {COLUMN_NAME})
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -76,7 +76,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: redshift
     measure: |-
-      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -84,7 +84,7 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: redshift_spectrum
     measure: |-
-      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATEDIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -92,15 +92,31 @@ test_types:
     test_type: Daily_Record_Ct
     sql_flavor: snowflake
     measure: |-
-      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <
+      DATEDIFF(day, MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
+    test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
   - id: '5005'
     test_type: Daily_Record_Ct
     sql_flavor: trino
     measure: |-
-      DATE_DIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT {COLUMN_NAME})
+      DATE_DIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8005'
+    test_type: Daily_Record_Ct
+    sql_flavor: oracle
+    measure: |-
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT TRUNC({COLUMN_NAME}))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8005'
+    test_type: Daily_Record_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      <%DATEDIFF_DAY;MIN({COLUMN_NAME});MAX({COLUMN_NAME})%>+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -150,7 +166,7 @@ test_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      WITH date_bounds AS( SELECT MIN(`{COLUMN_NAME}`) AS min_date, MAX(`{COLUMN_NAME}`) AS max_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), all_dates AS ( SELECT EXPLODE(SEQUENCE(min_date, max_date, INTERVAL 1 DAY)) AS all_dates FROM date_bounds ), existing_periods AS ( SELECT DISTINCT CAST(`{COLUMN_NAME}` AS DATE) AS period, COUNT(1) AS period_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY CAST(`{COLUMN_NAME}` AS DATE) ), missing_dates AS ( SELECT d.all_dates AS missing_period FROM all_dates d LEFT JOIN existing_periods e ON d.all_dates = e.period WHERE e.period IS NULL ) SELECT m.missing_period, MAX(e1.period) AS prior_available_date, MAX(e1.period_count) AS prior_available_date_count, MIN(e2.period) AS next_available_date, MAX(e2.period_count) AS next_available_date_count FROM missing_dates m LEFT JOIN existing_periods e1 ON e1.period < m.missing_period LEFT JOIN existing_periods e2 ON e2.period > m.missing_period GROUP BY m.missing_period ORDER BY m.missing_period LIMIT {LIMIT};
+      WITH date_bounds AS( SELECT CAST(MIN(`{COLUMN_NAME}`) AS DATE) AS min_date, CAST(MAX(`{COLUMN_NAME}`) AS DATE) AS max_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`), all_dates AS ( SELECT EXPLODE(SEQUENCE(min_date, max_date, INTERVAL 1 DAY)) AS all_dates FROM date_bounds ), existing_periods AS ( SELECT DISTINCT CAST(`{COLUMN_NAME}` AS DATE) AS period, COUNT(1) AS period_count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` GROUP BY CAST(`{COLUMN_NAME}` AS DATE) ), missing_dates AS ( SELECT d.all_dates AS missing_period FROM all_dates d LEFT JOIN existing_periods e ON d.all_dates = e.period WHERE e.period IS NULL ) SELECT m.missing_period, MAX(e1.period) AS prior_available_date, MAX(e1.period_count) AS prior_available_date_count, MIN(e2.period) AS next_available_date, MAX(e2.period_count) AS next_available_date_count FROM missing_dates m LEFT JOIN existing_periods e1 ON e1.period < m.missing_period LEFT JOIN existing_periods e2 ON e2.period > m.missing_period GROUP BY m.missing_period ORDER BY m.missing_period LIMIT {LIMIT};
     error_type: Test Results
   - id: '1144'
     test_id: '1009'
@@ -189,15 +205,13 @@ test_types:
                                           FROM check_periods c
                                         LEFT JOIN data_by_period d
                                           ON (c.check_period = d.data_period) )
-      SELECT TOP {LIMIT} check_period, record_ct,
+      SELECT TOP {LIMIT} check_period AS missing_period, record_ct,
              CASE
                WHEN record_ct = 0 THEN 'MISSING'
                ELSE 'Present'
              END as status
         FROM data_by_prd_with_prior_next
        WHERE record_ct = 0
-          OR last_record_ct = 0
-          OR next_record_ct = 0
       ORDER BY check_period DESC;
     error_type: Test Results
   - id: '1087'
@@ -231,5 +245,21 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH RECURSIVE daterange(all_dates) AS (SELECT MIN("{COLUMN_NAME}") :: DATE AS all_dates  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"  UNION ALL  SELECT DATEADD(DAY, 1, d.all_dates) :: DATE AS all_dates  FROM daterange d  WHERE d.all_dates < (SELECT MAX("{COLUMN_NAME}") :: DATE FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") ), existing_periods AS ( SELECT DISTINCT "{COLUMN_NAME}" :: DATE AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" :: DATE ) SELECT p.missing_period, p.prior_available_date, e.period_count as prior_available_date_count, p.next_available_date, f.period_count as next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL  AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8009'
+    test_id: '1009'
+    test_type: Daily_Record_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      WITH daterange AS (SELECT (SELECT MIN(TRUNC("{COLUMN_NAME}")) FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") + LEVEL - 1 AS all_dates FROM DUAL CONNECT BY LEVEL <= (SELECT MAX(TRUNC("{COLUMN_NAME}")) - MIN(TRUNC("{COLUMN_NAME}")) + 1 FROM "{TARGET_SCHEMA}"."{TABLE_NAME}")), existing_periods AS (SELECT DISTINCT TRUNC("{COLUMN_NAME}") AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY TRUNC("{COLUMN_NAME}")) SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8009'
+    test_id: '1009'
+    test_type: Daily_Record_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      WITH Pass0 AS (SELECT 1 C FROM DUMMY UNION ALL SELECT 1 FROM DUMMY), Pass1 AS (SELECT 1 C FROM Pass0 A, Pass0 B), Pass2 AS (SELECT 1 C FROM Pass1 A, Pass1 B), Pass3 AS (SELECT 1 C FROM Pass2 A, Pass2 B), Pass4 AS (SELECT 1 C FROM Pass3 A, Pass3 B), nums AS (SELECT ROW_NUMBER() OVER (ORDER BY C) - 1 AS rn FROM Pass4), bounds AS (SELECT MIN(CAST("{COLUMN_NAME}" AS DATE)) AS min_date, MAX(CAST("{COLUMN_NAME}" AS DATE)) AS max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"), daterange AS (SELECT ADD_DAYS(b.min_date, n.rn) AS all_dates FROM bounds b, nums n WHERE ADD_DAYS(b.min_date, n.rn) <= b.max_date), existing_periods AS (SELECT DISTINCT CAST("{COLUMN_NAME}" AS DATE) AS period, COUNT(1) AS period_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY CAST("{COLUMN_NAME}" AS DATE)) SELECT p.missing_period, p.prior_available_date, e.period_count AS prior_available_date_count, p.next_available_date, f.period_count AS next_available_date_count FROM (SELECT d.all_dates AS missing_period, MAX(b.period) AS prior_available_date, MIN(c.period) AS next_available_date FROM daterange d LEFT JOIN existing_periods a ON d.all_dates = a.period LEFT JOIN existing_periods b ON b.period < d.all_dates LEFT JOIN existing_periods c ON c.period > d.all_dates WHERE a.period IS NULL AND d.all_dates BETWEEN b.period AND c.period GROUP BY d.all_dates) p LEFT JOIN existing_periods e ON (p.prior_available_date = e.period) LEFT JOIN existing_periods f ON (p.next_available_date = f.period) ORDER BY p.missing_period LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

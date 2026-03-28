@@ -6,9 +6,10 @@ import cron_descriptor
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.models import Session, with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.components import widgets as testgen
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -40,21 +41,22 @@ class ScheduleDialog:
         self.init()
         return st.dialog(title=self.title)(self.render)()
 
+    @with_database_session
     def render(self) -> None:
         @with_database_session
         def on_delete_sched(item):
             JobSchedule.delete(item["id"])
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         @with_database_session
         def on_pause_sched(item):
             JobSchedule.update_active(item["id"], False)
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         @with_database_session
         def on_resume_sched(item):
             JobSchedule.update_active(item["id"], True)
-            st.rerun(scope="fragment")
+            safe_rerun(scope="fragment")
 
         def on_add_schedule(payload: dict[str, str]):
             set_arg_value(payload["arg_value"])
@@ -98,7 +100,8 @@ class ScheduleDialog:
                         args=args,
                         kwargs=kwargs,
                     )
-                    with_database_session(sched_model.save)()
+                    with database_session():
+                        sched_model.save()
                 else:
                     success = False
                     message = "Complete all the fields before adding the schedule"
@@ -113,7 +116,7 @@ class ScheduleDialog:
                 message = "Error validating the Cron expression"
             results = {"success": success, "message": message}
 
-        with Session() as db_session:
+        with database_session() as db_session:
             scheduled_jobs = (
                 db_session.query(JobSchedule)
                 .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
