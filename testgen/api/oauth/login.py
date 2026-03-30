@@ -81,7 +81,7 @@ def render_login_page(
         .subtitle {{
             font-size: 14px;
             color: var(--text-secondary);
-            margin-bottom: 24px;
+            margin: 24px 0;
             line-height: 1.4;
         }}
         .error {{
@@ -115,6 +115,7 @@ def render_login_page(
             box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
         }}
         button {{
+            margin-top: 12px;
             width: 100%;
             padding: 12px;
             background: var(--primary);
@@ -132,7 +133,7 @@ def render_login_page(
 </head>
 <body>
     <div class="card">
-        <div class="logo">TestGen</div>
+        <div class="logo">DataKitchen DataOps TestGen</div>
         <p class="subtitle">{authorize_label}</p>
         {error_html}
         <form method="POST" action="/oauth/authorize">
