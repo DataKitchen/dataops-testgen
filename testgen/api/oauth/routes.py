@@ -6,15 +6,15 @@ is handled by async FastAPI dependencies that resolve before the sync handler
 is called in the threadpool.
 """
 
-import json
 import logging
+import secrets
 import time
 from urllib.parse import urlparse
 from uuid import uuid4
 
 from authlib.oauth2.rfc6749 import OAuth2Request
 from authlib.oauth2.rfc6749.requests import BasicOAuth2Payload
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from testgen import settings
@@ -23,6 +23,7 @@ from testgen.api.oauth.login import render_login_page
 from testgen.api.oauth.models import OAuth2Client
 from testgen.api.oauth.server import TestGenAuthorizationServer
 from testgen.common.auth import create_jwt_token, decode_jwt_token, verify_password
+from testgen.common.models import get_current_session
 from testgen.common.models.user import User
 
 LOG = logging.getLogger("testgen")
@@ -46,10 +47,13 @@ async def _form_body(request: Request) -> dict:
 
 async def _json_body(request: Request) -> dict:
     """Async dependency: extract JSON body as dict before the sync handler runs."""
+    body = await request.body()
+    if not body:
+        return {}
     try:
         return await request.json()
-    except Exception:
-        return {}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
 
 
 def _build_oauth2_request(request: Request, body: dict | None = None) -> OAuth2Request:
@@ -82,18 +86,10 @@ def _get_existing_user(request: Request) -> User | None:
 
 def _get_client_name(client_id: str) -> str:
     """Look up the OAuth client's display name from its metadata."""
-    from testgen.common.models import get_current_session
-
     session = get_current_session()
     client = session.query(OAuth2Client).filter_by(client_id=client_id).first()
     if client:
-        metadata = client.client_metadata if hasattr(client, "client_metadata") else None
-        if isinstance(metadata, dict):
-            return metadata.get("client_name", "")
-        try:
-            return json.loads(client._client_metadata).get("client_name", "")
-        except Exception:  # noqa: S110
-            pass
+        return client.client_metadata.get("client_name", "")
     return ""
 
 
@@ -255,10 +251,8 @@ def register_client(body: dict = Depends(_json_body)):  # noqa: B008
     Accepts JSON body with optional client_name, redirect_uris, grant_types, scope.
     Returns client_id and client_secret for the registered client.
     """
-    from testgen.common.models import get_current_session
-
     client_id = uuid4().hex[:24]
-    client_secret = uuid4().hex
+    client_secret = secrets.token_urlsafe(32)
 
     metadata = {
         "client_name": body.get("client_name", ""),
@@ -285,7 +279,7 @@ def register_client(body: dict = Depends(_json_body)):  # noqa: B008
             "client_secret": client_secret,
             "client_id_issued_at": client.client_id_issued_at,
             "client_secret_expires_at": 0,
-            **json.loads(client._client_metadata),
+            **client.client_metadata,
         },
         status_code=201,
     )

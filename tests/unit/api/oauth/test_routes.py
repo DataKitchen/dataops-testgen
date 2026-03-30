@@ -1,6 +1,5 @@
 """Tests for testgen.api.oauth.routes — OAuth endpoints and helpers."""
 
-import json
 import os
 from unittest.mock import MagicMock, patch
 
@@ -125,8 +124,8 @@ def test_get_existing_user_returns_none_when_no_cookies():
 # --- _get_client_name ---
 
 
-@patch("testgen.common.models.get_current_session")
-def test_get_client_name_returns_name_from_dict_metadata(mock_get_session):
+@patch("testgen.api.oauth.routes.get_current_session")
+def test_get_client_name_returns_name_from_metadata(mock_get_session):
     from testgen.api.oauth.routes import _get_client_name
 
     mock_session = MagicMock()
@@ -138,22 +137,7 @@ def test_get_client_name_returns_name_from_dict_metadata(mock_get_session):
     assert _get_client_name("client123") == "My App"
 
 
-@patch("testgen.common.models.get_current_session")
-def test_get_client_name_returns_name_from_json_metadata(mock_get_session):
-    from testgen.api.oauth.routes import _get_client_name
-
-    mock_session = MagicMock()
-    mock_get_session.return_value = mock_session
-
-    class _BareClient:
-        _client_metadata = json.dumps({"client_name": "JSON App"})
-
-    mock_session.query.return_value.filter_by.return_value.first.return_value = _BareClient()
-
-    assert _get_client_name("client123") == "JSON App"
-
-
-@patch("testgen.common.models.get_current_session")
+@patch("testgen.api.oauth.routes.get_current_session")
 def test_get_client_name_returns_empty_when_not_found(mock_get_session):
     from testgen.api.oauth.routes import _get_client_name
 
@@ -457,7 +441,7 @@ def test_revoke_endpoint_delegates_to_server(mock_server):
 # --- POST /oauth/register ---
 
 
-@patch("testgen.common.models.get_current_session")
+@patch("testgen.api.oauth.routes.get_current_session")
 def test_register_client_returns_201_with_credentials(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
@@ -478,7 +462,7 @@ def test_register_client_returns_201_with_credentials(mock_get_session):
     mock_session.add.assert_called_once()
 
 
-@patch("testgen.common.models.get_current_session")
+@patch("testgen.api.oauth.routes.get_current_session")
 def test_register_client_uses_defaults_for_missing_fields(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
