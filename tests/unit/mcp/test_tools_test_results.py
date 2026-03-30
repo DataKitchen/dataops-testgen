@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.test_result import TestResultStatus
+from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -98,14 +99,14 @@ def test_get_test_results_with_filters(mock_result, mock_tt_cls, db_session_mock
 def test_get_test_results_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.test_results import get_test_results
 
-    with pytest.raises(ValueError, match="not a valid UUID"):
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_test_results("not-a-uuid")
 
 
 def test_get_test_results_invalid_status(db_session_mock):
     from testgen.mcp.tools.test_results import get_test_results
 
-    with pytest.raises(ValueError, match="Invalid status"):
+    with pytest.raises(MCPUserError, match="Invalid status"):
         get_test_results(str(uuid4()), status="BadStatus")
 
 
@@ -196,7 +197,7 @@ def test_get_failure_summary_by_column(mock_result, db_session_mock):
 def test_get_failure_summary_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    with pytest.raises(ValueError, match="not a valid UUID"):
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_failure_summary("bad-uuid")
 
 
@@ -273,7 +274,7 @@ def test_get_test_result_history_empty(mock_result, db_session_mock):
 def test_get_test_result_history_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.test_results import get_test_result_history
 
-    with pytest.raises(ValueError, match="not a valid UUID"):
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_test_result_history("bad-uuid")
 
 

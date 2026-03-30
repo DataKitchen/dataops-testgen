@@ -122,7 +122,8 @@ class Scheduler:
                 try:
                     triggering_time, jobs = next(next_jobs)
                 except StopIteration:
-                    self._reload_event.wait()
+                    if not self._stopping.is_set():
+                        self._reload_event.wait()
                     break
 
                 if self._wait_until(triggering_time):

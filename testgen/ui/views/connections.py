@@ -19,7 +19,7 @@ import testgen.ui.services.database_service as db
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
@@ -181,7 +181,7 @@ class ConnectionsPage(Page):
                 connection.save()
                 message = "Changes have been saved successfully."
             except Exception as error:
-                message = "Error creating connection"
+                message = "Something went wrong while creating the connection."
                 success = False
                 LOG.exception(message)
 
@@ -269,7 +269,7 @@ class ConnectionsPage(Page):
                 details = error.args[0]
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
         except Exception as error:
-            details = "Try again"
+            details = "Something went wrong while testing the connection."
             if connection.connect_by_key and not connection.private_key:
                 details = "The private key is missing."
             LOG.exception("Error testing database connection")
@@ -441,6 +441,8 @@ class ConnectionsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
@@ -470,7 +472,7 @@ class ConnectionsPage(Page):
                         LOG.info("Table group %s created", table_group.id)
                         safe_rerun()
                 except Exception as error:
-                    message = "Error creating table group"
+                    message = "Something went wrong while creating the table group."
                     success = False
                     LOG.exception(message)
 
@@ -497,6 +499,9 @@ class ConnectionsPage(Page):
             data={
                 "project_code": project_code,
                 "table_group": table_group.to_dict(json_safe=True),
+                "permissions": {
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
+                },
                 "table_group_preview": table_group_preview,
                 "steps": [
                     "tableGroup",

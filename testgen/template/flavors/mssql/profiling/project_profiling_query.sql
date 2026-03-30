@@ -110,6 +110,7 @@ SELECT
                      OR ("{COL_NAME}" LIKE '[+]1%[0-9][0-9][0-9][-. ][0-9][0-9][0-9][-. ][0-9][0-9][0-9][0-9]' AND "{COL_NAME}" NOT LIKE '%[^0-9+-]%')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'PHONE_USA'
     WHEN CAST(SUM(CASE WHEN "{COL_NAME}" LIKE '%[_a-zA-Z0-9.-]%@%[a-zA-Z0-9.-]%.[a-zA-Z][a-zA-Z]%'
+              AND "{COL_NAME}" NOT LIKE '%://%'
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'EMAIL'
     WHEN CAST(SUM(CASE WHEN TRANSLATE("{COL_NAME}",'012345678','999999999') IN ('99999', '999999999', '99999-9999')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'ZIP_USA'
@@ -124,6 +125,7 @@ SELECT
                           OR "{COL_NAME}" COLLATE SQL_Latin1_General_CP1_CI_AS LIKE '%.xlsx')
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.9 THEN 'FILE_NAME'
     WHEN CAST(SUM(CASE WHEN "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9][- ][0-9][0-9][0-9][0-9]'
+                      OR "{COL_NAME}" LIKE '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
          THEN 1 END) AS FLOAT)/CAST(COUNT("{COL_NAME}") AS FLOAT) > 0.8 THEN 'CREDIT_CARD'
     WHEN CAST(SUM(CASE WHEN ( "{COL_NAME}" LIKE '%,%,%,%'
                             OR "{COL_NAME}" LIKE '%|%|%|%'

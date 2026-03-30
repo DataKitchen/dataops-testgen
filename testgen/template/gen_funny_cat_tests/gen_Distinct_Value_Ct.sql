@@ -13,7 +13,14 @@ latest_results AS (
   SELECT p.*
   FROM profile_results p
   INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  LEFT JOIN data_column_chars dcc ON (
+    p.table_groups_id = dcc.table_groups_id
+    AND p.schema_name = dcc.schema_name
+    AND p.table_name = dcc.table_name
+    AND p.column_name = dcc.column_name
+  )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND dcc.excluded_data_element IS NOT TRUE
 ),
 all_runs AS (
   SELECT DISTINCT table_groups_id, run_date,
@@ -45,7 +52,14 @@ selected_columns AS (
     rr.table_groups_id = p.table_groups_id
     AND rr.run_date = p.run_date
   )
+  LEFT JOIN data_column_chars dcc ON (
+    p.table_groups_id = dcc.table_groups_id
+    AND p.schema_name = dcc.schema_name
+    AND p.table_name = dcc.table_name
+    AND p.column_name = dcc.column_name
+  )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND dcc.excluded_data_element IS NOT TRUE
   GROUP BY p.schema_name, p.table_name, p.column_name
   HAVING SUM(CASE WHEN p.distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
     AND (

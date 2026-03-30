@@ -14,6 +14,8 @@ anomalies AS (
         types.anomaly_name AS type,
         types.issue_likelihood AS status,
         results.detail,
+        types.detail_redactable,
+        dcc.pii_flag,
         EXTRACT(
             EPOCH
             FROM runs.profiling_starttime
@@ -24,6 +26,12 @@ anomalies AS (
     FROM profile_anomaly_results AS results
         INNER JOIN profile_anomaly_types AS types ON (types.id = results.anomaly_id)
         INNER JOIN profiling_runs AS runs ON (runs.id = results.profile_run_id)
+        LEFT JOIN data_column_chars AS dcc ON (
+            results.table_groups_id = dcc.table_groups_id
+            AND results.schema_name = dcc.schema_name
+            AND results.table_name = dcc.table_name
+            AND results.column_name = dcc.column_name
+        )
         INNER JOIN score_profiling_runs ON (
             score_profiling_runs.profile_run_id = runs.id
             AND score_profiling_runs.table_name = results.table_name
@@ -48,6 +56,8 @@ tests AS (
         test_types.test_name_short AS type,
         result_status AS status,
         result_message AS detail,
+        NULL::BOOLEAN AS detail_redactable,
+        NULL AS pii_flag,
         EXTRACT(
             EPOCH
             FROM test_time

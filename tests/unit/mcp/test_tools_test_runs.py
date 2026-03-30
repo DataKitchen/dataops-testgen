@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
+from testgen.mcp.exceptions import MCPPermissionDenied
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -135,7 +138,7 @@ def test_get_recent_test_runs_empty_project_code(db_session_mock):
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_recent_test_runs_returns_not_found_for_inaccessible_project(
+def test_get_recent_test_runs_raises_not_found_for_inaccessible_project(
     mock_compute, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
@@ -145,13 +148,12 @@ def test_get_recent_test_runs_returns_not_found_for_inaccessible_project(
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
-    result = get_recent_test_runs("secret_project")
-
-    assert "No completed test runs found in project `secret_project`" in result
+    with pytest.raises(MCPPermissionDenied, match="No completed test runs found in project `secret_project`"):
+        get_recent_test_runs("secret_project")
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_recent_test_runs_returns_denial_for_insufficient_permission(
+def test_get_recent_test_runs_raises_denial_for_insufficient_permission(
     mock_compute, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
@@ -161,7 +163,5 @@ def test_get_recent_test_runs_returns_denial_for_insufficient_permission(
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
-    result = get_recent_test_runs("secret_project")
-
-    assert "necessary permission" in result
-    assert "role" in result.lower()
+    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
+        get_recent_test_runs("secret_project")

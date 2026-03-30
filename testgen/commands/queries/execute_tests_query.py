@@ -326,16 +326,21 @@ class TestExecutionSQL:
             # Freshness exclusion params — computed per test at execution time
             if test_def.test_type == "Freshness_Trend" and test_def.baseline_sum:
                 sched = get_schedule_params(test_def.prediction)
-                has_exclusions = self._exclude_weekends or sched.excluded_days or sched.window_start is not None
+                # Once the schedule is active (excluded_days derived from active_days),
+                # it supersedes exclude_weekends as the single source of truth for
+                # day exclusion — avoids conflicts where a detection day (e.g. Saturday)
+                # is active per schedule but excluded per exclude_weekends.
+                effective_exclude_weekends = False if sched.excluded_days else self._exclude_weekends
+                has_exclusions = effective_exclude_weekends or sched.excluded_days or sched.window_start is not None
                 if has_exclusions:
                     last_update = pd.Timestamp(test_def.baseline_sum)
-                    excluded = int(count_excluded_minutes(
-                        last_update, self.run_date, self._exclude_weekends, self._holiday_dates,
+                    excluded = round(count_excluded_minutes(
+                        last_update, self.run_date, effective_exclude_weekends, self._holiday_dates,
                         tz=self._schedule_tz, excluded_days=sched.excluded_days,
                         window_start=sched.window_start, window_end=sched.window_end,
                     ))
                     is_excl = 1 if is_excluded_day(
-                        pd.Timestamp(self.run_date), self._exclude_weekends, self._holiday_dates,
+                        pd.Timestamp(self.run_date), effective_exclude_weekends, self._holiday_dates,
                         tz=self._schedule_tz, excluded_days=sched.excluded_days,
                         window_start=sched.window_start, window_end=sched.window_end,
                     ) else 0

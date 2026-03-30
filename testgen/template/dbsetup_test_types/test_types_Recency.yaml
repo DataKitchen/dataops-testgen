@@ -123,6 +123,7 @@ test_types:
     test_type: Recency
     sql_flavor: bigquery
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, CAST(CAST('{TEST_DATE}' AS DATETIME) AS {COLUMN_TYPE}) AS test_run_date
       FROM (SELECT DATE_TRUNC(MAX(`{COLUMN_NAME}`), DAY) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`)
@@ -134,6 +135,7 @@ test_types:
     test_type: Recency
     sql_flavor: databricks
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX(`{COLUMN_NAME}`) AS col FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`) WHERE ABS(<%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%>) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
@@ -142,6 +144,7 @@ test_types:
     test_type: Recency
     sql_flavor: mssql
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT TOP {LIMIT} col AS latest_date_available, CAST('{TEST_DATE}' AS DATE) AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE DATEDIFF(day, col, CAST('{TEST_DATE}' AS DATE)) > {THRESHOLD_VALUE};
     error_type: Test Results
@@ -150,6 +153,7 @@ test_types:
     test_type: Recency
     sql_flavor: postgresql
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE <%DATEDIFF_DAY;col;'{TEST_DATE}'::DATE%> > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
@@ -158,6 +162,7 @@ test_types:
     test_type: Recency
     sql_flavor: redshift
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
@@ -166,6 +171,7 @@ test_types:
     test_type: Recency
     sql_flavor: redshift_spectrum
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
@@ -174,6 +180,7 @@ test_types:
     test_type: Recency
     sql_flavor: snowflake
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, '{TEST_DATE}' :: DATE as test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE DATEDIFF('D', col, '{TEST_DATE}'::DATE) > {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
@@ -182,6 +189,7 @@ test_types:
     test_type: Recency
     sql_flavor: oracle
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
@@ -190,6 +198,7 @@ test_types:
     test_type: Recency
     sql_flavor: sap_hana
     lookup_type: null
+    lookup_redactable_columns: latest_date_available
     lookup_query: |-
       SELECT DISTINCT col AS latest_date_available, TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS') AS test_run_date FROM (SELECT MAX("{COLUMN_NAME}") AS col FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") WHERE <%DATEDIFF_DAY;col;TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > {THRESHOLD_VALUE} LIMIT {LIMIT}
     error_type: Test Results

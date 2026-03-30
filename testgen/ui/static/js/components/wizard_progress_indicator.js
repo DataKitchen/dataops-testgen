@@ -14,14 +14,15 @@
  * 
  * @param {WizardStepMeta[]} steps
  * @param {CurrentStep} currentStep
- * @returns 
+ * @param {function(string)?} onStepClick
+ * @returns
  */
 import van from '../van.min.js';
 import { colorMap } from '../display_utils.js';
 
 const { div, i, span } = van.tags;
 
-const WizardProgressIndicator = (steps, currentStep) => {
+const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
   const currentPhysicalIndex = steps.findIndex(s => s.includedSteps.includes(currentStep.name));
   const progressWidth = van.state('0px');
 
@@ -50,8 +51,12 @@ const WizardProgressIndicator = (steps, currentStep) => {
     z-index: -4;
   `;
 
-  const currentStepIndicator = (title, stepIndex) => div(
-    { class: `flex-column fx-align-flex-center fx-gap-1 step-icon-current`, style: 'position: relative;' },
+  const currentStepIndicator = (title, stepIndex, step) => div(
+    {
+      class: `flex-column fx-align-flex-center fx-gap-1 step-icon-current`,
+      style: `position: relative; ${onStepClick ? 'cursor: pointer;' : ''}`,
+      onclick: () => onStepClick?.(step.includedSteps[0]),
+    },
     stepIndex === 0
       ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
       : '',
@@ -66,7 +71,10 @@ const WizardProgressIndicator = (steps, currentStep) => {
   );
 
   const pendingStepIndicator = (title, stepIndex) => div(
-    { class: `flex-column fx-align-flex-center fx-gap-1 ${currentPhysicalIndex === stepIndex ? 'step-icon-current' : 'text-secondary'}`, style: 'position: relative;' },
+    {
+      class: `flex-column fx-align-flex-center fx-gap-1 ${currentPhysicalIndex === stepIndex ? 'step-icon-current' : 'text-secondary'}`,
+      style: 'position: relative; cursor: default;',
+    },
     stepIndex === 0
       ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
       : '',
@@ -80,8 +88,12 @@ const WizardProgressIndicator = (steps, currentStep) => {
     span({}, title),
   );
 
-  const completedStepIndicator = (title, stepIndex) => div(
-    { class: `flex-column fx-align-flex-center fx-gap-1 ${currentPhysicalIndex === stepIndex ? 'step-icon-current' : 'text-secondary'}`, style: 'position: relative;' },
+  const completedStepIndicator = (title, stepIndex, step) => div(
+    {
+      class: `flex-column fx-align-flex-center fx-gap-1 ${currentPhysicalIndex === stepIndex ? 'step-icon-current' : 'text-secondary'}`,
+      style: `position: relative; ${onStepClick ? 'cursor: pointer;' : ''}`,
+      onclick: () => onStepClick?.(step.includedSteps[0]),
+    },
     stepIndex === 0
       ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
       : '',
@@ -134,9 +146,9 @@ const WizardProgressIndicator = (steps, currentStep) => {
     ...steps.map((step, physicalIdx) => {
       if (step.index < currentStep.index) {
         if (step.skipped) return skippedStepIndicator(step.title, physicalIdx);
-        return completedStepIndicator(step.title, physicalIdx);
+        return completedStepIndicator(step.title, physicalIdx, step);
       } else if (step.includedSteps.includes(currentStep.name)) {
-        return currentStepIndicator(step.title, physicalIdx);
+        return currentStepIndicator(step.title, physicalIdx, step);
       } else {
         return pendingStepIndicator(step.title, physicalIdx);
       }

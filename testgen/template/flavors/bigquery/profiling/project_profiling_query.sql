@@ -99,12 +99,13 @@ SELECT
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^(\\+1|1)?[ .-]?(\\([2-9][0-9]{2}\\)|[2-9][0-9]{2})[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}$')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.8 THEN 'PHONE_USA'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+              AND `{COL_NAME}` NOT LIKE '%://%'
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.9 THEN 'EMAIL'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN TRANSLATE(`{COL_NAME}`, '012345678', '999999999') IN ('99999', '999999999', '99999-9999')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.9 THEN 'ZIP_USA'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^[\w\s\-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.9 THEN 'FILE_NAME'
-    WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([0-9]{4}[- ]){3}[0-9]{4}$')
+    WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([0-9]{4}[- ]?){3}[0-9]{4}$')
     THEN 1 END), COUNT(`{COL_NAME}`)) > 0.8 THEN 'CREDIT_CARD'
     WHEN SAFE_DIVIDE(SUM(CASE WHEN REGEXP_CONTAINS(`{COL_NAME}`, r'^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$')
     AND NOT REGEXP_CONTAINS(`{COL_NAME}`, r'\s(and|but|or|yet)\s')

@@ -16,6 +16,7 @@ profile_anomaly_types:
   detail_expression: |-
     CASE WHEN p.top_freq_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text
                 ELSE 'Top Freq: ' || p.top_freq_values END
+  detail_redactable: true
   issue_likelihood: Likely
   suggested_action: "Review your source data and follow-up with data owners to determine\
     \ whether this data needs to be corrected. "

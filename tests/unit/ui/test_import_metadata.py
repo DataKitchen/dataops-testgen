@@ -126,58 +126,58 @@ def test_parse_csv_no_column_header_adds_empty():
 
 @pytest.mark.parametrize("val", ["Yes", "yes", "Y", "y", "True", "true", "1"])
 def test_extract_cde_true_values(val):
-    fields, bad_cde = _extract_metadata_fields(_make_series({"critical_data_element": val}), "keep")
+    fields, bad_cde, *_ = _extract_metadata_fields(_make_series({"critical_data_element": val}), "keep")
     assert fields["critical_data_element"] is True
     assert bad_cde == 0
 
 
 @pytest.mark.parametrize("val", ["No", "no", "N", "n", "False", "false", "0"])
 def test_extract_cde_false_values(val):
-    fields, bad_cde = _extract_metadata_fields(_make_series({"critical_data_element": val}), "keep")
+    fields, bad_cde, *_ = _extract_metadata_fields(_make_series({"critical_data_element": val}), "keep")
     assert fields["critical_data_element"] is False
     assert bad_cde == 0
 
 
 def test_extract_cde_blank_keep():
-    fields, bad_cde = _extract_metadata_fields(_make_series({"critical_data_element": ""}), "keep")
+    fields, bad_cde, *_ = _extract_metadata_fields(_make_series({"critical_data_element": ""}), "keep")
     assert "critical_data_element" not in fields
     assert bad_cde == 0
 
 
 def test_extract_cde_blank_clear():
-    fields, bad_cde = _extract_metadata_fields(_make_series({"critical_data_element": ""}), "clear")
+    fields, bad_cde, *_ = _extract_metadata_fields(_make_series({"critical_data_element": ""}), "clear")
     assert fields["critical_data_element"] is None
     assert bad_cde == 0
 
 
 def test_extract_cde_unrecognized():
-    fields, bad_cde = _extract_metadata_fields(_make_series({"critical_data_element": "Maybe"}), "keep")
+    fields, bad_cde, *_ = _extract_metadata_fields(_make_series({"critical_data_element": "Maybe"}), "keep")
     assert "critical_data_element" not in fields
     assert bad_cde == 1
 
 
 def test_extract_text_field_with_value():
-    fields, _ = _extract_metadata_fields(_make_series({"description": "test desc"}), "keep")
+    fields, *_ = _extract_metadata_fields(_make_series({"description": "test desc"}), "keep")
     assert fields["description"] == "test desc"
 
 
 def test_extract_text_field_blank_keep():
-    fields, _ = _extract_metadata_fields(_make_series({"description": ""}), "keep")
+    fields, *_ = _extract_metadata_fields(_make_series({"description": ""}), "keep")
     assert "description" not in fields
 
 
 def test_extract_text_field_blank_clear():
-    fields, _ = _extract_metadata_fields(_make_series({"description": ""}), "clear")
+    fields, *_ = _extract_metadata_fields(_make_series({"description": ""}), "clear")
     assert fields["description"] == ""
 
 
 def test_extract_missing_column_skipped():
-    fields, _ = _extract_metadata_fields(_make_series({"description": "test"}), "keep")
+    fields, *_ = _extract_metadata_fields(_make_series({"description": "test"}), "keep")
     assert "data_source" not in fields
 
 
 def test_extract_tag_field_with_value():
-    fields, _ = _extract_metadata_fields(_make_series({"data_source": "ERP"}), "keep")
+    fields, *_ = _extract_metadata_fields(_make_series({"data_source": "ERP"}), "keep")
     assert fields["data_source"] == "ERP"
 
 
@@ -224,7 +224,7 @@ def test_truncate_multiple_fields():
 
 def test_set_row_status_ok():
     row = {}
-    _set_row_status(row, bad_cde=0, truncated=[])
+    _set_row_status(row, bad_cde=False, bad_xde=False, bad_pii=False, truncated=[])
     assert row["_status"] == "ok"
     assert row["_status_detail"] == ""
     assert row["_truncated_fields"] == []
@@ -232,14 +232,14 @@ def test_set_row_status_ok():
 
 def test_set_row_status_error_bad_cde():
     row = {}
-    _set_row_status(row, bad_cde=1, truncated=[])
+    _set_row_status(row, bad_cde=True, bad_xde=False, bad_pii=False, truncated=[])
     assert row["_status"] == "error"
     assert "Unrecognized CDE" in row["_status_detail"]
 
 
 def test_set_row_status_warning_truncated():
     row = {}
-    _set_row_status(row, bad_cde=0, truncated=["data_source"])
+    _set_row_status(row, bad_cde=False, bad_xde=False, bad_pii=False, truncated=["data_source"])
     assert row["_status"] == "warning"
     assert "truncated" in row["_status_detail"]
     assert "data_source" in row["_status_detail"]
@@ -247,7 +247,7 @@ def test_set_row_status_warning_truncated():
 
 def test_set_row_status_error_precedence():
     row = {}
-    _set_row_status(row, bad_cde=1, truncated=["data_source"])
+    _set_row_status(row, bad_cde=True, bad_xde=False, bad_pii=False, truncated=["data_source"])
     assert row["_status"] == "error"
     assert "CDE" in row["_status_detail"]
     assert "truncated" in row["_status_detail"]

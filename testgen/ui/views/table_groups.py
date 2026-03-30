@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.commands.test_generation import run_monitor_generation
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
@@ -309,6 +309,8 @@ class TableGroupsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
@@ -335,7 +337,11 @@ class TableGroupsPage(Page):
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
 
+                    if table_group_id and success:
+                        safe_rerun()
+
                 except IntegrityError:
+                    get_current_session().rollback()
                     success = False
                     message = "A Table Group with the same name already exists."
             else:
@@ -349,6 +355,9 @@ class TableGroupsPage(Page):
                 "connections": connections,
                 "table_group": table_group.to_dict(json_safe=True),
                 "is_in_use": is_table_group_used,
+                "permissions": {
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
+                },
                 "table_group_preview": table_group_preview,
                 "steps": steps,
                 "results": {

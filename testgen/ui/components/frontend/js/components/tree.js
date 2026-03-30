@@ -6,8 +6,9 @@
  * @property {string?} classes
  * @property {string?} icon
  * @property {number?} iconSize
- * @property {'red'?} iconColor
+ * @property {string?} iconClass
  * @property {string?} iconTooltip
+ * @property {Element|function?} prefix
  * @property {TreeNode[]?} children
  * @property {number?} level
  * @property {boolean?} expanded
@@ -91,7 +92,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ searchOptionsCont
         },
         Toolbar(treeNodes, multiSelect, props, searchOptionsContent, filtersContent),
         div(
-            { class: 'tg-tree' },
+            { class: () => `tg-tree ${multiSelect.val ? 'multi-select' : ''}` },
             () => div(
                 {
                     class: 'tg-tree--nodes',
@@ -312,9 +313,10 @@ const TreeNode = (
                     span({ class: 'mr-1' }),
                 ]
                 : null,
+            !multiSelect && node.prefix ? node.prefix : null,
             () => {
                 if (node.icon) {
-                    const icon = Icon({ size: node.iconSize, classes: `tg-tree--row-icon ${node.iconColor}` }, node.icon);
+                    const icon = Icon({ size: node.iconSize, classes: `tg-tree--row-icon ${node.iconClass}` }, node.icon);
                     return node.iconTooltip ? withTooltip(icon, { text: node.iconTooltip, position: 'right' }) : icon;
                 }
                 return null;
@@ -518,10 +520,6 @@ stylesheet.replace(`
     width: 24px;
     color: #B0BEC5;
     text-align: center;
-}
-
-.tg-tree--row-icon.red {
-    color: var(--red);
 }
 `);
 

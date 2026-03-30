@@ -12,6 +12,7 @@ profile_anomaly_types:
   detail_expression: "'Value Range: ' || p.min_text || ' thru ' || max_text || CASE\
     \ WHEN p.top_freq_values > '' THEN ', Top Freq Values: ' || REPLACE(p.top_freq_values,\
     \ CHR(10), ' ; ') ELSE '' END "
+  detail_redactable: true
   issue_likelihood: Possible
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether column should be populated with US states.

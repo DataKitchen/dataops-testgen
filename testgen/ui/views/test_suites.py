@@ -38,7 +38,7 @@ class TestSuitesPage(Page):
         order=2,
     )
 
-    def render(self, project_code: str, table_group_id: str | None = None, **_kwargs) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, test_suite_name: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
             "connect-your-database/manage-test-suites/",
@@ -46,7 +46,7 @@ class TestSuitesPage(Page):
 
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
         user_can_edit = session.auth.user_has_permission("edit")
-        test_suites = TestSuite.select_summary(project_code, table_group_id)
+        test_suites = TestSuite.select_summary(project_code, table_group_id, test_suite_name)
         project_summary = Project.get_summary(project_code)
 
         testgen.testgen_component(
@@ -61,6 +61,7 @@ class TestSuitesPage(Page):
                         "selected": str(table_group_id) == str(table_group.id),
                     } for table_group in table_groups
                 ],
+                "test_suite_name": test_suite_name,
                 "permissions": {
                     "can_edit": user_can_edit,
                 }
@@ -79,8 +80,8 @@ class TestSuitesPage(Page):
         )
 
 
-def on_test_suites_filtered(table_group_id: str | None = None) -> None:
-    Router().set_query_params({ "table_group_id": table_group_id })
+def on_test_suites_filtered(params: dict) -> None:
+    Router().set_query_params(params)
 
 
 @st.dialog(title="Add Test Suite")

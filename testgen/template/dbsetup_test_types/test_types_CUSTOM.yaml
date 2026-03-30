@@ -19,12 +19,12 @@ test_types:
     Test Focus
   column_name_help: |-
     Specify a brief descriptor of the focus of this test that is unique within this Test Suite for the Table and Test Type. This distinguishes this test from others of the same type on the same table. Example: `Order Total Matches Detail` if you are testing that the total in one table matches the sum of lines in another.
-  default_parm_columns: custom_query
+  default_parm_columns: custom_query,match_column_names
   default_parm_values: null
   default_parm_prompts: |-
-    Custom SQL Query Returning Error Records
+    Custom SQL Query Returning Error Records,PII Redactable Columns
   default_parm_help: |-
-    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.
+    Query should return records indicating one or more errors. The test passes if no records are returned. Results of the query will be shown when you click `Review Source Data` for a failed test, so be sure to include enough data in your results to follow-up. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.|Comma-separated list of result column names that contain PII data and should be redacted for users without PII viewing permissions. Leave blank if no columns need redacting.
   default_severity: Fail
   run_type: QUERY
   test_scope: custom

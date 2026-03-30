@@ -167,8 +167,10 @@ class ProfilingSQL:
             self._get_query("functional_datatype.sql"),
             self._get_query("functional_tabletype_stage.sql"),
             self._get_query("functional_tabletype_update.sql"),
-            self._get_query("pii_flag.sql"),
         ]
+        if self.table_group.profile_flag_pii:
+            queries.append(self._get_query("pii_flag.sql"))
+            queries.append(self._get_query("pii_flag_update.sql"))
         if self.table_group.profile_flag_cdes:
             queries.append(self._get_query("cde_flagger_query.sql"))
         return queries

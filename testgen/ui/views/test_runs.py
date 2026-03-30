@@ -246,5 +246,5 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
             safe_rerun()
         except Exception:
             LOG.exception("Failed to delete test run")
-            result = {"success": False, "message": "Unable to delete the test run, try again."}
+            result = {"success": False, "message": "Something went wrong while deleting the test run."}
             safe_rerun(scope="fragment")

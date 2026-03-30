@@ -226,8 +226,24 @@ body {
     color: var(--error-color);
 }
 
+.text-warning {
+    color: var(--orange);
+}
+
 .text-green {
     color: var(--primary-color);
+}
+
+.text-purple {
+    color: var(--purple);
+}
+
+.text-orange {
+    color: var(--orange);
+}
+
+.text-brown {
+    color: var(--brown);
 }
 
 .text-capitalize {
@@ -743,10 +759,6 @@ input::-ms-clear {
 
 .notifications--empty.tg-empty-state {
     margin-top: 0;
-}
-
-.warning-text {
-    color: var(--orange);
 }
 
 /* Base Styles - Using standard system fonts for that Material feel */

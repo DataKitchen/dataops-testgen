@@ -8,7 +8,7 @@ import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -561,6 +561,8 @@ def edit_monitor_settings(table_group: TableGroupMinimal, schedule: JobSchedule 
                 monitors: list[str] = ["Volume_Trend", "Schema_Drift"]
                 if updated_table_group.last_complete_profile_run_id:
                     monitors.append("Freshness_Trend")
+                # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                get_current_session().commit()
                 run_monitor_generation(monitor_suite.id, monitors)
 
             safe_rerun()
@@ -623,7 +625,7 @@ def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
             LOG.exception("Failed to delete monitor suite")
             set_result({
                 "success": False,
-                "message": "Unable to delete monitors for the table group, try again.",
+                "message": "Something went wrong while deleting the monitors.",
             })
             safe_rerun(scope="fragment")
 

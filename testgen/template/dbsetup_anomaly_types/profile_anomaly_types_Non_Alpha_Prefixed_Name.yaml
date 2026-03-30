@@ -9,6 +9,7 @@ profile_anomaly_types:
     min_text < 'A' AND LEFT(min_text, 1) NOT IN ('"', ' ') AND RIGHT(min_text, 1) <> '''' AND functional_data_type IN ('City', 'Person Given Name', 'Person Last Name', 'Person Full Name')
   detail_expression: |-
     'Minimum Value: ' || min_text
+  detail_redactable: true
   issue_likelihood: Definite
   suggested_action: |-
     Values starting with a non-alphabetic character are highly likely to be invalid for this kind of column. This may indicate a file format change, error in an ingestion process, or incorrect source data. It could also indicate flagging or coding of some kind that can be broken out in a separate column in processed data. Review your pipeline process and source data to determine the root-cause. If this data accurately reflects source data, and upstream corrections are not possible, consider applying corrections directly to processed data where possible.

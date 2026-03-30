@@ -68,6 +68,7 @@ def get_test_results(
             dcc.description as column_description,
             dcc.column_type as column_type,
             COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+            dcc.pii_flag,
             COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
             COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
             COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,

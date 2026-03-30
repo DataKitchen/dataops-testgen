@@ -12,7 +12,7 @@ import { getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, loa
 import { ColumnDistributionCard } from './column_distribution.js';
 import { DataCharacteristicsCard } from './data_characteristics.js';
 import { LatestProfilingTime } from './data_profiling_utils.js';
-import { HygieneIssuesCard, PotentialPIICard } from './data_issues.js';
+import { HygieneIssuesCard } from './data_issues.js';
 
 const { div, h2, span } = van.tags;
 
@@ -51,10 +51,7 @@ const ColumnProfilingResults = (/** @type Properties */ props) => {
             ),
             DataCharacteristicsCard({ border: true }, column.val),
             ColumnDistributionCard({ border: true, dataPreview: !!props.data_preview?.val }, column.val),
-            column.val.hygiene_issues ? [
-                PotentialPIICard({ border: true }, column.val),
-                HygieneIssuesCard({ border: true }, column.val),
-            ] : null,
+            column.val.hygiene_issues ? HygieneIssuesCard({ border: true }, column.val) : null,
         ),
     );
 }
