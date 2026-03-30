@@ -387,6 +387,45 @@ class TestDefinition(Entity):
         db_session = get_current_session()
         db_session.execute(query)
 
+    @classmethod
+    def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
+        """Get the fields needed by the source data service for a given test definition."""
+        session = get_current_session()
+
+        sql = """
+            SELECT
+                d.table_groups_id,
+                tt.id AS test_type_id,
+                d.id AS test_definition_id,
+                d.test_type,
+                d.schema_name,
+                d.table_name,
+                d.column_name AS column_names,
+                dcc.column_type,
+                ts.project_code
+            FROM test_definitions d
+            INNER JOIN test_types tt ON d.test_type = tt.test_type
+            INNER JOIN test_suites ts ON d.test_suite_id = ts.id
+            LEFT JOIN data_column_chars dcc
+                ON d.table_groups_id = dcc.table_groups_id
+                AND d.schema_name = dcc.schema_name
+                AND d.table_name = dcc.table_name
+                AND d.column_name = dcc.column_name
+            WHERE d.id = :test_definition_id
+        """
+        params: dict = {"test_definition_id": str(test_definition_id)}
+
+        if project_codes is not None:
+            sql += " AND ts.project_code = ANY(:project_codes)"
+            params["project_codes"] = project_codes
+
+        result = session.execute(text(sql), params).first()
+        return dict(result._mapping) if result else None
+
+    @classmethod
+    def clear_cache(cls) -> bool:
+        super().clear_cache()
+        cls.select_minimal_where.clear()
     def save(self) -> None:
         if self.id:
             values = {
