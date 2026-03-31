@@ -88,7 +88,7 @@ def render_login_page(
             left: 20px;
         }}
         .page-logo svg {{
-            width: 40px;
+            width: 22px;
             height: auto;
         }}
         .card-title {{
