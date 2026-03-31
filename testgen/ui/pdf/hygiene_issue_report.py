@@ -4,7 +4,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
-from testgen.common.models.settings import PersistedSetting
+from testgen import settings
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -143,7 +143,7 @@ def build_summary_table(document, hi_data):
         ),
         (
             Paragraph(
-                f"""<a href="{PersistedSetting.get("BASE_URL")}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}&project_code={hi_data["project_code"]}">
+                f"""<a href="{settings.UI_BASE_URL}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}&project_code={hi_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

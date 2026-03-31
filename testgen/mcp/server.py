@@ -3,11 +3,11 @@ import logging
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.applications import Starlette
 
-from testgen import settings
 from testgen.common.auth import decode_jwt_token
-from testgen.common.models import with_database_session
-from testgen.mcp.permissions import set_mcp_username
+from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
 LOG = logging.getLogger("testgen")
 
@@ -43,26 +43,15 @@ class JWTTokenVerifier:
         try:
             payload = decode_jwt_token(token)
             set_mcp_username(payload["username"])
+            set_mcp_token(token)
             return AccessToken(
                 token=token,
                 client_id=payload["username"],
                 scopes=[],
-                expires_at=int(payload["exp_date"]),
+                expires_at=int(payload["exp"]),
             )
         except (ValueError, KeyError):
             return None
-
-
-# Uvicorn log config: strip default handlers so logs propagate to the testgen logger.
-_UVICORN_LOG_CONFIG: dict = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "loggers": {
-        "uvicorn": {"handlers": [], "propagate": True},
-        "uvicorn.access": {"handlers": [], "propagate": True},
-        "uvicorn.error": {"handlers": [], "propagate": True},
-    },
-}
 
 
 def _configure_mcp_logging() -> None:
@@ -77,29 +66,34 @@ def _configure_mcp_logging() -> None:
         logging.getLogger(name).parent = testgen_logger
 
 
-def run_mcp() -> None:
-    """Start the MCP server with streamable HTTP transport."""
-    from testgen.mcp import get_server_url
+def build_mcp_app(
+    api_base_url: str, server_url: str | None = None,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create the MCP Starlette app with tools, resources, and prompts registered.
+
+    Returns the Starlette app and its session manager. The caller must run
+    ``session_manager.run()`` as an async context manager (e.g. in the host
+    app's lifespan) to initialize the task group before requests arrive.
+
+    Args:
+        api_base_url: OAuth issuer URL (the API server).
+        server_url: MCP resource server URL. Defaults to ``{api_base_url}/mcp``.
+    """
     from testgen.mcp.exceptions import mcp_error_handler
     from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
     from testgen.mcp.tools.test_runs import get_recent_test_runs
-    from testgen.utils.plugins import discover
 
-    for plugin in discover():
-        plugin.load()
-
-    server_url = with_database_session(get_server_url)()
+    if server_url is None:
+        server_url = f"{api_base_url}/mcp"
 
     mcp = FastMCP(
         "TestGen",
-        host=settings.MCP_HOST,
-        port=settings.MCP_PORT,
         instructions=SERVER_INSTRUCTIONS,
         auth=AuthSettings(
-            issuer_url=server_url,
+            issuer_url=api_base_url,
             resource_server_url=server_url,
         ),
         token_verifier=JWTTokenVerifier(),
@@ -136,21 +130,5 @@ def run_mcp() -> None:
     safe_prompt(table_health)
     safe_prompt(compare_runs)
 
-    LOG.info("Starting MCP server on %s:%s (auth issuer: %s)", settings.MCP_HOST, settings.MCP_PORT, server_url)
-
-    import uvicorn
-
     app = mcp.streamable_http_app()
-
-    if settings.IS_DEBUG:
-        from starlette.middleware.cors import CORSMiddleware
-
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=["Mcp-Session-Id"],
-        )
-
-    uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT, log_config=_UVICORN_LOG_CONFIG)
+    return app, mcp.session_manager
