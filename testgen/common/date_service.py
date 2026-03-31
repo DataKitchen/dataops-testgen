@@ -3,6 +3,17 @@ from datetime import UTC, datetime
 import pandas as pd
 
 
+def parse_fuzzy_date(value: str | int) -> datetime | None:
+    if type(value) == str:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    elif type(value) == int or type(value) == float:
+        ts = int(value)
+        if ts >= 1e11:
+            ts /= 1000
+        return datetime.fromtimestamp(ts)
+    return value
+
+
 def get_now_as_iso_timestamp():
     return as_iso_timestamp(datetime.now(UTC))
 
