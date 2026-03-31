@@ -9,9 +9,10 @@ from testgen.mcp.permissions import (
     ProjectPermissions,
     _compute_project_permissions,
     _mcp_project_permissions,
-    get_current_mcp_user,
+    get_authorized_mcp_user,
     get_project_permissions,
     mcp_permission,
+    set_mcp_token,
     set_mcp_username,
 )
 
@@ -19,39 +20,58 @@ from testgen.mcp.permissions import (
 @pytest.fixture(autouse=True)
 def _reset_contextvars():
     set_mcp_username(None)
+    set_mcp_token(None)
     tok = _mcp_project_permissions.set(_NOT_SET)
     yield
     set_mcp_username(None)
+    set_mcp_token(None)
     _mcp_project_permissions.reset(tok)
 
 
-# --- get_current_mcp_user ---
+# --- get_authorized_mcp_user ---
 
 
-def test_get_current_mcp_user_raises_when_no_username():
+def test_get_authorized_mcp_user_raises_when_no_username():
     with pytest.raises(RuntimeError, match="No authenticated user"):
-        get_current_mcp_user()
+        get_authorized_mcp_user()
 
 
-@patch("testgen.mcp.permissions.User")
-def test_get_current_mcp_user_raises_when_user_not_found(mock_user):
-    mock_user.get.return_value = None
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_raises_when_user_not_found(mock_authorize, mock_get_session):
+    mock_authorize.side_effect = ValueError("User not found")
     set_mcp_username("ghost")
+    set_mcp_token("some_token")
 
-    with pytest.raises(ValueError, match="Authenticated user not found: ghost"):
-        get_current_mcp_user()
+    with pytest.raises(ValueError, match="User not found"):
+        get_authorized_mcp_user()
 
 
-@patch("testgen.mcp.permissions.User")
-def test_get_current_mcp_user_returns_user(mock_user):
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_returns_user(mock_authorize, mock_get_session):
     user = MagicMock()
-    mock_user.get.return_value = user
+    mock_authorize.return_value = user
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
     set_mcp_username("admin")
+    set_mcp_token("bearer_token")
 
-    result = get_current_mcp_user()
+    result = get_authorized_mcp_user()
 
     assert result is user
-    mock_user.get.assert_called_once_with("admin")
+    mock_authorize.assert_called_once_with("bearer_token", "admin", mock_session)
+
+
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_rejects_revoked_token(mock_authorize, mock_get_session):
+    mock_authorize.side_effect = ValueError("Token has been revoked")
+    set_mcp_username("admin")
+    set_mcp_token("revoked_token")
+
+    with pytest.raises(ValueError, match="Token has been revoked"):
+        get_authorized_mcp_user()
 
 
 # --- _compute_project_permissions ---

@@ -282,3 +282,15 @@ default: `dataset`
 
 When exporting to your instance of Observabilty, the key sent to the events API to identify the components.
 default: `default`
+
+### URL Configuration
+
+#### `TG_UI_BASE_URL`
+
+Externally-reachable base URL for the TestGen web UI. Used in email notification links and PDF report links so recipients can click through to the correct address.
+
+Must be set in production when TestGen is behind a reverse proxy or load balancer. If not set, defaults to `http://localhost:<STREAMLIT_SERVER_PORT>`.
+
+Example: `https://testgen.example.com`
+
+default: `http://localhost:8501`

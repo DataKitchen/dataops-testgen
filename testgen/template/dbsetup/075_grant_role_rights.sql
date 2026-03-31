@@ -42,7 +42,10 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.job_schedules,
     {SCHEMA_NAME}.settings,
     {SCHEMA_NAME}.notification_settings,
-    {SCHEMA_NAME}.test_definition_notes
+    {SCHEMA_NAME}.test_definition_notes,
+    {SCHEMA_NAME}.oauth2_clients,
+    {SCHEMA_NAME}.oauth2_authorization_codes,
+    {SCHEMA_NAME}.oauth2_tokens
     TO testgen_execute_role;
 
 

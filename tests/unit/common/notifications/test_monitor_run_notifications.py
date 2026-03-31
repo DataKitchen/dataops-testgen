@@ -77,9 +77,8 @@ def test_result_select_where_mock():
 
 @pytest.fixture
 def persisted_setting_mock():
-    with patch("testgen.common.notifications.monitor_run.PersistedSetting.get") as mock:
-        mock.return_value = "http://tg-base-url"
-        yield mock
+    with patch("testgen.settings.UI_BASE_URL", "http://tg-base-url"):
+        yield
 
 
 @pytest.mark.parametrize(
