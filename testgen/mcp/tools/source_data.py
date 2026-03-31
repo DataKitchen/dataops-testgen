@@ -1,7 +1,4 @@
 from datetime import datetime
-from uuid import UUID
-
-import pandas as pd
 
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestDefinition
@@ -12,18 +9,12 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-
-
-def _parse_uuid(value: str, label: str = "ID") -> UUID:
-    try:
-        return UUID(value)
-    except (ValueError, AttributeError) as err:
-        raise MCPUserError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
+from testgen.mcp.tools.common import dataframe_to_markdown, parse_uuid
 
 
 def _resolve_context(test_definition_id: str, reference_date: str | None) -> dict:
     """Look up the test definition context and validate permissions."""
-    td_uuid = _parse_uuid(test_definition_id, "test_definition_id")
+    td_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
 
     context = TestDefinition.get_source_data_context(td_uuid, project_codes=perms.allowed_codes)
@@ -44,20 +35,6 @@ def _resolve_context(test_definition_id: str, reference_date: str | None) -> dic
     context["test_date"] = test_date
 
     return context
-
-
-def _df_to_markdown(df: pd.DataFrame) -> str:
-    """Convert a DataFrame to a markdown table string."""
-    if df is None or df.empty:
-        return "_No rows._"
-    cols = list(df.columns)
-    header = "| " + " | ".join(str(c) for c in cols) + " |"
-    separator = "| " + " | ".join("---" for _ in cols) + " |"
-    rows = []
-    for _, row in df.iterrows():
-        cells = " | ".join(str(v) if pd.notna(v) else "" for v in row)
-        rows.append(f"| {cells} |")
-    return "\n".join([header, separator, *rows])
 
 
 @with_database_session
@@ -139,7 +116,7 @@ def get_source_data(
         if mask_pii:
             lines.append("- _PII columns have been redacted._")
         lines.append("")
-        lines.append(_df_to_markdown(result.df))
+        lines.append(dataframe_to_markdown(result.df))
         if result.query:
             lines.append(f"\n**Query used:**\n```sql\n{result.query}\n```")
     elif result.status == "NA":
