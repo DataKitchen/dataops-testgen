@@ -422,10 +422,6 @@ class TestDefinition(Entity):
         result = session.execute(text(sql), params).first()
         return dict(result._mapping) if result else None
 
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.select_minimal_where.clear()
     def save(self) -> None:
         if self.id:
             values = {
