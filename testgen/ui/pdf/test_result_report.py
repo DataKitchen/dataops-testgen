@@ -10,7 +10,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from testgen.common.models.settings import PersistedSetting
+from testgen import settings
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -159,7 +159,7 @@ def build_summary_table(document, tr_data):
         ),
         (
             Paragraph(
-                f"""<a href="{PersistedSetting.get("BASE_URL")}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}&project_code={tr_data["project_code"]}">
+                f"""<a href="{settings.UI_BASE_URL}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}&project_code={tr_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

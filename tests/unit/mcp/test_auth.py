@@ -23,11 +23,11 @@ def _make_user(username="testuser", role="admin"):
     return user
 
 
-def _make_token(username="testuser", exp_days=30):
+def _make_token(username="testuser", exp_seconds=86400 * 30):
     key = base64.b64decode(JWT_KEY.encode("ascii"))
     payload = {
         "username": username,
-        "exp_date": (datetime.now(UTC) + timedelta(days=exp_days)).timestamp(),
+        "exp": (datetime.now(UTC) + timedelta(seconds=exp_seconds)).timestamp(),
     }
     return jwt.encode(payload, key, algorithm="HS256")
 
@@ -43,7 +43,7 @@ def test_authenticate_user_returns_jwt(mock_user_cls, mock_settings):
     key = base64.b64decode(JWT_KEY.encode("ascii"))
     payload = jwt.decode(token, key, algorithms=["HS256"])
     assert payload["username"] == "testuser"
-    assert payload["exp_date"] > datetime.now(UTC).timestamp()
+    assert payload["exp"] > datetime.now(UTC).timestamp()
 
 
 @patch("testgen.common.auth.settings")
@@ -83,8 +83,8 @@ def test_validate_token_returns_user(mock_user_cls, mock_settings):
 def test_validate_token_raises_for_expired_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
 
-    with pytest.raises(ValueError, match="Token has expired"):
-        validate_token(_make_token(exp_days=-1))
+    with pytest.raises(ValueError, match="Invalid token"):
+        validate_token(_make_token(exp_seconds=-3600))
 
 
 @patch("testgen.common.auth.settings")
@@ -123,7 +123,7 @@ def test_token_verifier_returns_none_for_expired_jwt(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
     verifier = JWTTokenVerifier()
 
-    result = asyncio.run(verifier.verify_token(_make_token(exp_days=-1)))
+    result = asyncio.run(verifier.verify_token(_make_token(exp_seconds=-3600)))
 
     assert result is None
 
