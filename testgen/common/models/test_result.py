@@ -48,9 +48,10 @@ class TestResult(Entity):
     disposition: str = Column(String)
     result_measure: str = Column(String)
     threshold_value: str = Column(String)
+    table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("table_groups.id"))
 
     # Unmapped columns: result_id, skip_errors, input_parameters, severity,
-    # result_signal, test_description, table_groups_id, dq_prevalence,
+    # result_signal, test_description, dq_prevalence,
     # dq_record_ct, observability_status
 
     @classmethod
