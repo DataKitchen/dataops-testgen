@@ -1,14 +1,13 @@
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import Column, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.custom_types import NullIfEmptyString
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.user import User
 
@@ -45,7 +44,6 @@ class Project(Entity):
     _default_order_by = (asc(func.lower(project_name)),)
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_summary(cls, project_code: str) -> ProjectSummary | None:
         query = """
         SELECT
@@ -104,13 +102,6 @@ class Project(Entity):
         cls.delete_where(cls.project_code.in_(ids))
 
     @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_summary.clear()
-        cls.get_project_members.clear()
-
-    @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def get_project_members(
         cls,
         project_code: str,

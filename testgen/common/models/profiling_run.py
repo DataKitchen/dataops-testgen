@@ -148,7 +148,6 @@ class ProfilingRun(Entity):
         return [ProfilingRunMinimal(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_summary(
         cls,
         project_code: str,
@@ -273,13 +272,6 @@ class ProfilingRun(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), {"profiling_run_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_minimal_where.clear()
-        cls.select_summary.clear()
 
     def init_progress(self) -> None:
         self._progress = {

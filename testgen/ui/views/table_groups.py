@@ -11,7 +11,6 @@ from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_suite import TestSuite
@@ -19,6 +18,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries import table_group_queries
+from testgen.ui.services.query_cache import get_project_summary
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
@@ -53,7 +53,7 @@ class TableGroupsPage(Page):
         testgen.page_header(PAGE_TITLE, "connect-your-database/manage-table-groups/")
 
         user_can_edit = session.auth.user_has_permission("edit")
-        project_summary = Project.get_summary(project_code)
+        project_summary = get_project_summary(project_code)
         if connection_id and not connection_id.isdigit():
             connection_id = None
 

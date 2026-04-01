@@ -71,7 +71,6 @@ class ProjectSettingsPage(Page):
         self.project.observability_api_url = edited_project.get("observability_api_url")
         self.project.observability_api_key = edited_project.get("observability_api_key")
         self.project.save()
-        Project.clear_cache()
 
     def test_observability_connection(self, project_code: str, edited_project: dict) -> "ObservabilityConnectionStatus":
         try:

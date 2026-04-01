@@ -74,10 +74,6 @@ class JobSchedule(Base):
     def count(cls):
         return get_current_session().query(cls).count()
     
-    @classmethod
-    def clear_cache(cls) -> None:
-        cls.get.clear()
-
     def get_sample_triggering_timestamps(self, n=3) -> list[datetime]:
         schedule = Cron(cron_string=self.cron_expr).schedule(timezone_str=self.cron_tz)
         return [schedule.next() for _ in range(n)]

@@ -2,12 +2,10 @@ import typing
 
 import streamlit as st
 
-from testgen.common.models.project import Project
-from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.query_cache import get_project_summary, get_table_group_summaries, get_test_suite_summaries
 from testgen.ui.session import session
 from testgen.utils import friendly_score, make_json_safe, score
 
@@ -34,9 +32,9 @@ class ProjectDashboardPage(Page):
         )
 
         with st.spinner("Loading data ..."):
-            table_groups = TableGroup.select_summary(project_code, for_dashboard=True)
-            test_suites = TestSuite.select_summary(project_code)
-            project_summary = Project.get_summary(project_code)
+            table_groups = get_table_group_summaries(project_code, for_dashboard=True)
+            test_suites = get_test_suite_summaries(project_code)
+            project_summary = get_project_summary(project_code)
 
         table_groups_sort = st.session_state.get("overview_table_groups_sort") or "latest_activity_date"
 

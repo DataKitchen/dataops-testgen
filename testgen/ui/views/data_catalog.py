@@ -10,7 +10,6 @@ import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.common.models import with_database_session
-from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
@@ -35,6 +34,7 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.query_cache import get_project_summary
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
@@ -75,7 +75,7 @@ class DataCatalogPage(Page):
                 # (something to do with displaying the extra cache spinner next to the custom component)
                 # Enclosing the loading logic in a Streamlit container also fixes it
 
-                project_summary = Project.get_summary(project_code)
+                project_summary = get_project_summary(project_code)
                 user_can_navigate = session.auth.user_has_permission("view")
                 table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 

@@ -13,7 +13,6 @@ from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
 )
-from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
@@ -23,6 +22,7 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_project_summary, get_test_run_summaries
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -55,8 +55,8 @@ class TestRunsPage(Page):
         )
 
         with st.spinner("Loading data ..."):
-            project_summary = Project.get_summary(project_code)
-            test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id)
+            project_summary = get_project_summary(project_code)
+            test_runs = get_test_run_summaries(project_code, table_group_id, test_suite_id)
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
             test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
 
@@ -112,7 +112,7 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 
 def refresh_data(*_) -> None:
-    TestRun.select_summary.clear()
+    get_test_run_summaries.clear()
 
 
 def manage_notifications(project_code):
@@ -236,7 +236,7 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
     if delete_confirmed():
         try:
             with st.spinner("Deleting runs ..."):
-                test_runs = TestRun.select_summary(project_code, table_group_id, test_suite_id, test_run_ids)
+                test_runs = get_test_run_summaries(project_code, table_group_id, test_suite_id, test_run_ids)
                 for test_run in test_runs:
                     if test_run.status == "Running" and test_run.job_execution_id:
                         job_exec = JobExecution.get(test_run.job_execution_id)

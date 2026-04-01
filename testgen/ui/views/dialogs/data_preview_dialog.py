@@ -2,10 +2,10 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.models.connection import Connection
 from testgen.common.pii_masking import get_pii_columns, mask_source_data_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.services.query_cache import get_connection_by_table_group
 from testgen.ui.session import session
 from testgen.utils import to_dataframe
 
@@ -49,7 +49,7 @@ def get_preview_data(
     table_name: str,
     column_name: str | None = None,
 ) -> pd.DataFrame:
-    connection = Connection.get_by_table_group(table_group_id)
+    connection = get_connection_by_table_group(table_group_id)
 
     if connection:
         flavor_service = get_flavor_service(connection.sql_flavor)

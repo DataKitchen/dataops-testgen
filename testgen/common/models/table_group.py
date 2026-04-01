@@ -161,7 +161,6 @@ class TableGroup(Entity):
         return [TableGroupMinimal(**row) for row in results]
     
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_stats(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TableGroupStats]:
         query = f"""
         WITH stats AS (
@@ -196,7 +195,6 @@ class TableGroup(Entity):
         return [TableGroupStats(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_summary(cls, project_code: str, for_dashboard: bool = False) -> Iterable[TableGroupSummary]:
         query = f"""
         WITH stats AS (
@@ -426,13 +424,6 @@ class TableGroup(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), params)
         cls.delete_where(cls.id.in_(ids))
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_minimal_where.clear()
-        cls.select_summary.clear()
 
     def save(self, add_scorecard_definition: bool = False) -> None:
         if self.id:
