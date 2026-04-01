@@ -3,7 +3,6 @@ import time
 import streamlit as st
 
 from testgen.commands.run_test_execution import run_test_execution_in_background
-from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.rerun_service import safe_rerun
@@ -15,7 +14,6 @@ LINK_HREF = "test-runs"
 
 
 @st.dialog(title="Run Tests")
-@with_database_session
 def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = None, default_test_suite_id: str | None = None) -> None:
     if test_suite:
         test_suite_id: str = str(test_suite.id)

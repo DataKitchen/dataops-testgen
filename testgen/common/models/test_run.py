@@ -54,6 +54,7 @@ class TestRunSummary(EntityMinimal):
     status: TestRunStatus
     progress: list[ProgressStep]
     process_id: int
+    job_execution_id: UUID | None
     log_message: str
     test_ct: int
     passed_ct: int
@@ -116,6 +117,7 @@ class TestRun(Entity):
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)
     process_id: int = Column(Integer)
+    job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
 
     _default_order_by = (desc(test_starttime),)
     _minimal_columns = (
@@ -253,6 +255,7 @@ class TestRun(Entity):
             test_runs.status,
             test_runs.progress,
             test_runs.process_id,
+            test_runs.job_execution_id,
             test_runs.log_message,
             test_runs.test_ct,
             run_results.passed_ct,

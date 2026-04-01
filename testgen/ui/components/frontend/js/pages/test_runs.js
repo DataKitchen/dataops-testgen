@@ -19,6 +19,7 @@
  * @property {ProgressStep[]} progress
  * @property {string} log_message
  * @property {string} process_id
+ * @property {string} job_execution_id
  * @property {number} test_ct
  * @property {number} passed_ct
  * @property {number} warning_ct
@@ -321,11 +322,13 @@ const TestRunItem = (
             div(
                 { class: 'flex-row' },
                 TestRunStatus(item),
-                item.status === 'Running' && item.process_id && userCanEdit ? Button({
+                item.status === 'Running' && item.job_execution_id && userCanEdit ? Button({
                     type: 'stroked',
                     label: 'Cancel',
                     style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
-                    onclick: () => emitEvent('RunCanceled', { payload: item }),
+                    onclick: () => {
+                        emitEvent('RunCanceled', { payload: item });
+                    },
                 }) : null,
             ),
             item.test_endtime

@@ -48,6 +48,7 @@ class ProfilingRunSummary(EntityMinimal):
     status: ProfilingRunStatus
     progress: list[ProgressStep]
     process_id: int
+    job_execution_id: UUID | None
     log_message: str
     table_group_schema: str
     table_ct: int
@@ -90,6 +91,7 @@ class ProfilingRun(Entity):
     dq_total_data_points: int = Column(BigInteger)
     dq_score_profiling: float = Column(Float)
     process_id: int = Column(Integer)
+    job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
 
     _default_order_by = (desc(profiling_starttime),)
     _minimal_columns = (
@@ -201,6 +203,7 @@ class ProfilingRun(Entity):
             profiling_runs.status,
             profiling_runs.progress,
             profiling_runs.process_id,
+            profiling_runs.job_execution_id,
             profiling_runs.log_message,
             table_groups.table_group_schema,
             profiling_runs.table_ct,

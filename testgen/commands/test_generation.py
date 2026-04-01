@@ -12,6 +12,7 @@ from testgen.common.database.database_service import (
     replace_params,
 )
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -23,6 +24,19 @@ LOG = logging.getLogger("testgen")
 GenerationSet = Literal["Standard", "Monitor"]
 MonitorTestType = Literal["Freshness_Trend", "Volume_Trend", "Schema_Drift"]
 MonitorGenerationMode = Literal["upsert", "insert", "delete"]
+
+
+@with_database_session
+def run_test_generation_in_background(test_suite_id: str | UUID, generation_set: GenerationSet = "Standard") -> None:
+    from testgen.common.models.job_execution import JobExecution
+
+    LOG.info("Submitting test generation job for test suite %s", test_suite_id)
+    JobExecution.submit(
+        job_key="run-test-generation",
+        kwargs={"test_suite_id": str(test_suite_id), "generation_set": generation_set},
+        source="ui",
+    )
+
 
 @dataclasses.dataclass
 class TestTypeParams:

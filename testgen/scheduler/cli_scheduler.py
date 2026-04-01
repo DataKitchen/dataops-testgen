@@ -6,14 +6,17 @@ import sys
 import threading
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import chain
 from typing import Any
+from uuid import UUID
 
 from click import Command
 
-from testgen.common.models import with_database_session
+from testgen import settings
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 
@@ -26,15 +29,18 @@ class CliJob(Job):
     key: str
     args: Iterable[Any]
     kwargs: dict[str, Any]
+    job_schedule_id: UUID | None = field(default=None)
 
 
 class CliScheduler(Scheduler):
 
     def __init__(self):
-        self._running_jobs: set[subprocess.Popen] = set()
+        self._running_jobs: dict[UUID, subprocess.Popen] = {}
         self._running_jobs_cond = threading.Condition()
         self.reload_timer = None
         self._current_jobs = {}
+        self._poll_interval = settings.JOB_POLL_INTERVAL
+        self._poll_batch_size = 5
         LOG.info("Starting CLI Scheduler with registered jobs: %s", ", ".join(JOB_REGISTRY.keys()))
         super().__init__()
 
@@ -57,7 +63,8 @@ class CliScheduler(Scheduler):
                 delayed_policy=DelayedPolicy.SKIP,
                 key=job_model.key,
                 args=job_model.args,
-                kwargs=job_model.kwargs
+                kwargs=job_model.kwargs,
+                job_schedule_id=job_model.id,
             )
 
         for job_id in jobs.keys() - self._current_jobs.keys():
@@ -70,35 +77,115 @@ class CliScheduler(Scheduler):
 
         return jobs.values()
 
+    @with_database_session
     def start_job(self, job: CliJob, triggering_time: datetime) -> None:
-        cmd = JOB_REGISTRY[job.key]
+        LOG.info("Submitting job '%s' due '%s'", job.key, triggering_time)
+        JobExecution.submit(
+            job_key=job.key,
+            kwargs=job.kwargs,
+            source="scheduler",
+            job_schedule_id=job.job_schedule_id,
+        )
 
-        LOG.info("Starting job '%s' due '%s'", job.key, triggering_time)
+    def start(self, base_time):
+        self._poll_thread = threading.Thread(target=self._poll_loop, name="poll-loop")
+        self._poll_thread.start()
+        super().start(base_time)
 
+    def wait(self, timeout=None):
+        super().wait(timeout)
+        self._poll_thread.join(timeout)
+
+    def _poll_loop(self):
+        skip_wait = False
+        while skip_wait or not self._stopping.wait(timeout=self._poll_interval):
+            try:
+                with database_session():
+                    actionable = JobExecution.claim_actionable(limit=self._poll_batch_size)
+                skip_wait = len(actionable) >= self._poll_batch_size
+            except Exception:
+                LOG.exception("Error polling for actionable jobs")
+                skip_wait = False
+                continue
+            for job_exec in actionable:
+                try:
+                    match job_exec.status:
+                        case JobStatus.CLAIMED:
+                            self._dispatch(job_exec)
+                        case JobStatus.CANCEL_REQUESTED:
+                            self._handle_cancellation(job_exec)
+                        case _:
+                            LOG.error("Unexpected status '%s' for job %s", job_exec.status, job_exec.id)
+                except Exception:
+                    LOG.exception("Error processing job execution %s", job_exec.id)
+                    try:
+                        with database_session():
+                            job_exec.mark_interrupted("Processing failed")
+                    except Exception:
+                        LOG.exception("Error marking job execution %s as error", job_exec.id)
+
+    def _handle_cancellation(self, job_exec: JobExecution):
+        proc = self._running_jobs.get(job_exec.id)
+        if proc:
+            LOG.info("Terminating cancelled job %s (PID %d)", job_exec.id, proc.pid)
+            try:
+                proc.terminate()
+            except OSError:
+                pass  # Process already exited — _proc_wrapper will finalize
+        else:
+            with database_session():
+                job_exec.mark_cancelled()
+
+    def _dispatch(self, job_exec: JobExecution):
+        if job_exec.job_key not in JOB_REGISTRY:
+            with database_session():
+                job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
+            return
+
+        with database_session():
+            if not job_exec.mark_running():
+                return  # cancelled between claim and dispatch
+
+        cmd = JOB_REGISTRY[job_exec.job_key]
         exec_cmd = [
             sys.executable,
             sys.argv[0],
             cmd.name,
-            *map(str, job.args),
-            *chain(*chain((opt.opts[0], str(job.kwargs[opt.name])) for opt in cmd.params if opt.name in job.kwargs)),
+            *map(str, job_exec.args or []),
+            *chain(*chain(
+                (opt.opts[0], str(job_exec.kwargs[opt.name]))
+                for opt in cmd.params
+                if opt.name in (job_exec.kwargs or {})
+            )),
         ]
 
-        LOG.info("Executing  '%s'", " ".join(exec_cmd))
+        LOG.info("Dispatching job execution %s: %s", job_exec.id, " ".join(exec_cmd))
 
-        proc = subprocess.Popen(exec_cmd, start_new_session=True, env={**os.environ, "TG_JOB_SOURCE": "SCHEDULER"})  # noqa: S603
-        threading.Thread(target=self._proc_wrapper, args=(proc,)).start()
+        proc = subprocess.Popen(
+            exec_cmd,  # noqa: S603
+            start_new_session=True,
+            env={**os.environ, "TG_JOB_EXECUTION_ID": str(job_exec.id), "TG_JOB_SOURCE": job_exec.source.upper()},
+        )
+        threading.Thread(target=self._proc_wrapper, args=(proc, job_exec)).start()
 
-    def _proc_wrapper(self, proc: subprocess.Popen):
+    def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
         with self._running_jobs_cond:
-            self._running_jobs.add(proc)
+            self._running_jobs[job_exec.id] = proc
         try:
             ret_code = proc.wait()
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
+            with database_session():
+                if ret_code == 0:
+                    job_exec.mark_completed()
+                else:
+                    job_exec.mark_interrupted(f"Process {proc.pid} exited with code {ret_code}")
         except Exception:
             LOG.exception("Error running job PID %d", proc.pid)
+            with database_session():
+                job_exec.mark_interrupted(f"Process monitoring error for PID {proc.pid}")
         finally:
             with self._running_jobs_cond:
-                self._running_jobs.remove(proc)
+                del self._running_jobs[job_exec.id]
                 self._running_jobs_cond.notify()
 
     def run(self):
@@ -108,8 +195,8 @@ class CliScheduler(Scheduler):
             sig = signal.Signals(signum)
             if interrupted.is_set():
                 LOG.info("Received signal %s, propagating to %d running job(s)", sig.name, len(self._running_jobs))
-                for job in self._running_jobs:
-                    job.send_signal(signum)
+                for proc in self._running_jobs.values():
+                    proc.send_signal(signum)
             else:
                 LOG.info("Received signal %s for the first time, starting the shutdown process.", sig.name)
                 interrupted.set()
@@ -150,6 +237,12 @@ def check_db_is_ready() -> bool:
 def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
+
+    with database_session():
+        stale_count = JobExecution.cancel_all_stale()
+        if stale_count:
+            LOG.info("Cancelled %d stale job execution(s) from previous session", stale_count)
+
     scheduler = CliScheduler()
     scheduler.run()
 

@@ -2,7 +2,7 @@ import time
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_test_generation_in_background
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
@@ -11,7 +11,6 @@ from testgen.ui.services.rerun_service import safe_rerun
 
 
 @st.dialog(title="Generate Tests")
-@with_database_session
 def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
     test_suite_id = test_suite.id
     test_suite_name = test_suite.test_suite
@@ -68,18 +67,18 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
 
     if test_generation_button:
         button_container.empty()
-        status_container.info("Generating tests ...")
 
         try:
-            run_test_generation(test_suite_id, selected_set)
+            run_test_generation_in_background(test_suite_id, selected_set)
+            status_container.success(f"Test generation started for test suite **{test_suite_name}**.")
         except Exception as e:
-            status_container.error(f"Test generation encountered errors: {e!s}.")
+            status_container.error(f"Test generation could not be started: {e!s}.")
 
-        status_container.success(f"Test generation completed for test suite **{test_suite_name}**.")
         time.sleep(1)
         safe_rerun()
 
 
+@with_database_session
 def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     result = fetch_one_from_db(
         """
@@ -100,6 +99,7 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     return None, None, None
 
 
+@with_database_session
 def get_generation_set_choices() -> list[str]:
     results = fetch_all_from_db(
         """
@@ -111,6 +111,7 @@ def get_generation_set_choices() -> list[str]:
     return [ row.generation_set for row in results ]
 
 
+@with_database_session
 def lock_edited_tests(test_suite_id: str) -> None:
     execute_db_query(
         """
