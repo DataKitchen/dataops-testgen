@@ -14,10 +14,9 @@ from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
     NotificationEvent,
 )
-from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary, TestType
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -25,6 +24,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
@@ -79,7 +79,7 @@ class MonitorsDashboardPage(Page):
             "monitor-tables/",
         )
 
-        project_summary = Project.get_summary(project_code)
+        project_summary = get_project_summary(project_code)
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
         if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
@@ -1040,7 +1040,7 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
             set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
             safe_rerun(scope="fragment")
 
-        metric_test_types = TestType.select_summary_where(TestType.test_type == "Metric_Trend")
+        metric_test_types = get_test_type_summaries(test_type="Metric_Trend")
         metric_test_type = metric_test_types[0] if metric_test_types else None
 
         testgen.edit_table_monitors(

@@ -128,11 +128,6 @@ class Entity(Base):
         raise NotImplementedError
 
     @classmethod
-    def clear_cache(cls) -> None:
-        cls.get.clear()
-        cls.select_where.clear()
-
-    @classmethod
     def columns(cls) -> list[str]:
         return list(cls.__annotations__.keys())
     

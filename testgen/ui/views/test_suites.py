@@ -7,13 +7,13 @@ import streamlit as st
 
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.common.models import with_database_session
-from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_project_summary, get_test_suite_summaries
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.services.string_service import empty_if_null
 from testgen.ui.session import session
@@ -46,8 +46,8 @@ class TestSuitesPage(Page):
 
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
         user_can_edit = session.auth.user_has_permission("edit")
-        test_suites = TestSuite.select_summary(project_code, table_group_id, test_suite_name)
-        project_summary = Project.get_summary(project_code)
+        test_suites = get_test_suite_summaries(project_code, table_group_id, test_suite_name)
+        project_summary = get_project_summary(project_code)
 
         testgen.testgen_component(
             "test_suites",

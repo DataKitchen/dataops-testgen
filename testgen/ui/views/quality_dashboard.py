@@ -2,11 +2,11 @@ from typing import ClassVar
 
 import streamlit as st
 
-from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries.scoring_queries import get_all_score_cards
+from testgen.ui.services.query_cache import get_project_summary
 from testgen.ui.session import session
 from testgen.utils import format_score_card
 
@@ -26,7 +26,7 @@ class QualityDashboardPage(Page):
     )
 
     def render(self, *, project_code: str, **_kwargs) -> None:
-        project_summary = Project.get_summary(project_code)
+        project_summary = get_project_summary(project_code)
 
         testgen.page_header(PAGE_TITLE, "quality-scores/")
         testgen.testgen_component(
