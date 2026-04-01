@@ -164,7 +164,6 @@ class TestType(Entity):
     )
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_summary_where(cls, *clauses) -> Iterable[TestTypeSummary]:
         results = cls._select_columns_where(cls._summary_columns, *clauses)
         return [TestTypeSummary(**row) for row in results]
@@ -387,11 +386,6 @@ class TestDefinition(Entity):
         )
         db_session = get_current_session()
         db_session.execute(query)
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.select_minimal_where.clear()
 
     def save(self) -> None:
         if self.id:

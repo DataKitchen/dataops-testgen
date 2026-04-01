@@ -6,9 +6,10 @@ import streamlit as st
 
 from testgen.common.auth import decode_jwt_token, get_jwt_signing_key
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models.project_membership import ProjectMembership, RoleType
+from testgen.common.models.project_membership import RoleType
 from testgen.common.models.user import User
 from testgen.ui.services.javascript_service import execute_javascript
+from testgen.ui.services.query_cache import get_membership_by_user_and_project
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -89,7 +90,7 @@ class Authentication:
 
     def load_user_role(self) -> None:
         if self.user and self.current_project:
-            membership = ProjectMembership.get_by_user_and_project(self.user.id, self.current_project)
+            membership = get_membership_by_user_and_project(self.user.id, self.current_project)
             self.role = membership.role if membership else None
         else:
             self.role = None

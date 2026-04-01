@@ -13,7 +13,6 @@ from testgen.common.models.notification_settings import (
     ProfilingRunNotificationTrigger,
 )
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.ui.components import widgets as testgen
@@ -21,6 +20,7 @@ from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -53,8 +53,8 @@ class DataProfilingPage(Page):
         )
 
         with st.spinner("Loading data ..."):
-            project_summary = Project.get_summary(project_code)
-            profiling_runs = ProfilingRun.select_summary(project_code, table_group_id)
+            project_summary = get_project_summary(project_code)
+            profiling_runs = get_profiling_run_summaries(project_code, table_group_id)
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
         testgen_component(
@@ -100,7 +100,7 @@ def on_profiling_runs_filtered(filters: ProfilingRunFilters) -> None:
 
 
 def refresh_data(*_) -> None:
-    ProfilingRun.select_summary.clear()
+    get_profiling_run_summaries.clear()
 
 
 class ProfilingScheduleDialog(ScheduleDialog):
@@ -217,7 +217,7 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
     if delete_confirmed():
         try:
             with st.spinner("Deleting runs ..."):
-                profiling_runs = ProfilingRun.select_summary(project_code, table_group_id, profiling_run_ids)
+                profiling_runs = get_profiling_run_summaries(project_code, table_group_id, profiling_run_ids)
                 for profiling_run in profiling_runs:
                     if profiling_run.status == "Running" and profiling_run.job_execution_id:
                         job_exec = JobExecution.get(profiling_run.job_execution_id)

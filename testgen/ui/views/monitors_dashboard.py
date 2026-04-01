@@ -14,7 +14,6 @@ from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
     NotificationEvent,
 )
-from testgen.common.models.project import Project
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary, TestType
@@ -25,6 +24,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.query_cache import get_project_summary
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
@@ -79,7 +79,7 @@ class MonitorsDashboardPage(Page):
             "monitor-tables/",
         )
 
-        project_summary = Project.get_summary(project_code)
+        project_summary = get_project_summary(project_code)
         table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
         if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:

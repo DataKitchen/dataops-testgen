@@ -84,7 +84,12 @@ def render(log_level: int = logging.INFO):
         # before RerunException propagates and bypasses database_session()'s normal commit.
         db_session = get_current_session()
         if db_session:
-            db_session.commit()
+            try:
+                db_session.commit()
+            except Exception:
+                # Session may be in a bad state (e.g., broken connection from pool).
+                # Roll back so the connection is returned clean and the next rerun works.
+                db_session.rollback()
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)

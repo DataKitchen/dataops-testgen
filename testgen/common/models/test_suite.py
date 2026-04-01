@@ -100,7 +100,6 @@ class TestSuite(Entity):
         return [TestSuiteMinimal(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None, test_suite_name: str | None = None) -> Iterable[TestSuiteSummary]:
         if table_group_id and not is_uuid4(table_group_id):
             return []
@@ -249,9 +248,3 @@ class TestSuite(Entity):
         db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
 
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_minimal_where.clear()
-        cls.select_summary.clear()

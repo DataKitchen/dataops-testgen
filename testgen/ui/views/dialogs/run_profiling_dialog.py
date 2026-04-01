@@ -4,9 +4,9 @@ from uuid import UUID
 import streamlit as st
 
 from testgen.commands.run_profiling import run_profiling_in_background
-from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_table_group_stats
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 
@@ -32,7 +32,7 @@ def run_profiling_dialog(project_code: str, table_group_id: str | UUID | None = 
     should_run_profiling, set_run_profiling = temp_value("run_profiling_dialog:run_profiling", default=False)
     get_table_group, set_table_group = temp_value("run_profiling_dialog:table_group", default=None)
 
-    table_groups = TableGroup.select_stats(
+    table_groups = get_table_group_stats(
         project_code=project_code,
         table_group_id=table_group_id if not allow_selection else None,
     )
