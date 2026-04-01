@@ -17,6 +17,7 @@ from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummar
 from testgen.common.models.project import Project, ProjectSummary
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.table_group import TableGroup, TableGroupStats, TableGroupSummary
+from testgen.common.models.test_definition import TestType, TestTypeSummary
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite, TestSuiteSummary
 
@@ -54,6 +55,16 @@ def get_memberships_for_project(project_code: str) -> list[ProjectMembership]:
 @st.cache_data(show_spinner=False)
 def get_connection_by_table_group(table_group_id: str | UUID) -> Connection | None:
     return Connection.get_by_table_group(table_group_id)
+
+
+# -- TestType -----------------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def get_test_type_summaries(test_type: str | None = None) -> list[TestTypeSummary]:
+    clauses = []
+    if test_type is not None:
+        clauses.append(TestType.test_type == test_type)
+    return list(TestType.select_summary_where(*clauses))
 
 
 # -- TestSuite ----------------------------------------------------------------
