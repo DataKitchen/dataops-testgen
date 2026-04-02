@@ -4,7 +4,9 @@ from uuid import UUID
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.common import execute_db_queries, fetch_dict_from_db
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import write_to_app_db
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
 
 LOG = logging.getLogger("testgen")
 
@@ -79,6 +81,47 @@ def collect_test_identifiers(
     return identifiers_to_check, target_schemas, errors
 
 
+def get_target_identifiers(
+    sql_generator: TestExecutionSQL,
+    target_schemas: set[str],
+) -> tuple[set[tuple[str, str]], set[tuple[str, str, str]]]:
+    """Fetch (schema, table) and (schema, table, column) sets for validation.
+
+    Flavors with ``metadata_via_api=True`` (e.g., Salesforce Data 360)
+    use ``get_schema_columns()`` — these flavors have no ``information_schema``.
+    Other flavors use the SQL template path.
+    """
+    flavor_service = sql_generator.flavor_service
+
+    if flavor_service.metadata_via_api:
+        params = resolve_connection_params(sql_generator.connection.__dict__)
+        api_columns: list[ColumnChars] = []
+        for schema in target_schemas:
+            cols = flavor_service.get_schema_columns(params, schema) or []
+            api_columns.extend(cols)
+        LOG.info("Got tables and columns from flavor metadata API for validation")
+        target_tables = {(c.schema_name.lower(), c.table_name.lower()) for c in api_columns}
+        target_columns = {
+            (c.schema_name.lower(), c.table_name.lower(), c.column_name.lower()) for c in api_columns
+        }
+        return target_tables, target_columns
+
+    LOG.info("Getting tables and columns in target schemas for validation")
+    target_identifiers = fetch_dict_from_db(
+        *sql_generator.get_target_identifiers(target_schemas),
+        use_target_db=True,
+    )
+    if not target_identifiers:
+        LOG.info("No tables or columns present in target schemas")
+
+    target_tables = {(item["schema_name"].lower(), item["table_name"].lower()) for item in target_identifiers}
+    target_columns = {
+        (item["schema_name"].lower(), item["table_name"].lower(), item["column_name"].lower())
+        for item in target_identifiers
+    }
+    return target_tables, target_columns
+
+
 def check_identifiers(
     identifiers_to_check: dict[tuple[str, str, str | None], set[UUID]],
     target_tables: set[tuple[str, str]],
@@ -130,21 +173,7 @@ def run_test_validation(
         test_defs_by_id[test_id].errors = error_list
 
     if target_schemas:
-        LOG.info("Getting tables and columns in target schemas for validation")
-        target_identifiers = fetch_dict_from_db(
-            *sql_generator.get_target_identifiers(target_schemas),
-            use_target_db=True,
-        )
-        if not target_identifiers:
-            LOG.info("No tables or columns present in target schemas")
-
-        # Normalize identifiers before validating
-        target_tables = {(item["schema_name"].lower(), item["table_name"].lower()) for item in target_identifiers}
-        target_columns = {
-            (item["schema_name"].lower(), item["table_name"].lower(), item["column_name"].lower())
-            for item in target_identifiers
-        }
-
+        target_tables, target_columns = get_target_identifiers(sql_generator, target_schemas)
         check_errors = check_identifiers(identifiers_to_check, target_tables, target_columns)
         for test_id, error_list in check_errors.items():
             if not test_defs_by_id[test_id].errors:

@@ -98,3 +98,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE_REGEXPR('[0-9]' IN "{COLUMN_NAME}" WITH '9') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10053'
+    test_id: 1024
+    test_type: Invalid_Zip3_USA
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE REGEXP_REPLACE(CAST("{COLUMN_NAME}" AS VARCHAR), '[0-8]', '9', 'g') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Profile Anomaly

@@ -60,6 +60,7 @@
  * @type {object}
  * @property {TestDefinition} definition
  * @property {string?} class
+ * @property {boolean} qualifiesTableRefsWithSchema
  * @property {(changes: object, valid: boolean) => void} onChange
  */
 
@@ -83,7 +84,7 @@ const thresholdColumns = [
 ];
 
 // Columns using the default { type: 'text' } do not need to be specified here
-const PARAMETER_CONFIG = { 
+const PARAMETER_CONFIG = {
     custom_query: { type: 'textarea' },
     lower_tolerance: { type: 'number' },
     upper_tolerance: { type: 'number' },
@@ -94,6 +95,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
     loadStylesheet('test-definition-form', stylesheet);
 
     const definition = getValue(props.definition);
+    const qualifiesTableRefsWithSchema = getValue(props.qualifiesTableRefsWithSchema) ?? true;
 
     const paramColumns = (definition.default_parm_columns || '').split(',').map(v => v.trim());
     const paramLabels = (definition.default_parm_prompts || '').split(',').map(v => v.trim());
@@ -110,6 +112,8 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             validators: paramRequired[index] ? [required] : undefined,
         }))
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
+        // Drop the field for flavors whose SQL doesn't qualify table refs with a schema
+        .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name')
 
     const updatedDefinition = van.state({ ...definition });
     const validityPerField = van.state({});
@@ -258,9 +262,9 @@ const historyCalcOptions = [
  * @type {object}
  * @property {(updatedValues: object) => void} setFieldValues
  * @property {(field: string, valid: boolean) => void} setFieldValidity
- * 
- * @param {ThresholdFormOptions} options 
- * @param {TestDefinition} definition 
+ *
+ * @param {ThresholdFormOptions} options
+ * @param {TestDefinition} definition
  */
 const ThresholdForm = (options, definition) => {
     const { setFieldValues, setFieldValidity } = options;

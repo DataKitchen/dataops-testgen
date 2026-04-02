@@ -27,13 +27,14 @@ from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinima
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana"]
+SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 
 
 @dataclass
 class ConnectionMinimal(EntityMinimal):
     project_code: str
     connection_id: int
+    sql_flavor: SQLFlavor
     sql_flavor_code: SQLFlavorCode
     connection_name: str
 

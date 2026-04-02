@@ -9,7 +9,6 @@ from testgen.commands.queries.profiling_query import (
     TableSampling,
     calculate_sampling_params,
 )
-from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
@@ -19,6 +18,7 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import ThreadedProgress
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
