@@ -1020,6 +1020,7 @@ CREATE TABLE job_executions (
 
 CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
+CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, text, select
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
