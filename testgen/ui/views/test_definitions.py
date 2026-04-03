@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import typing
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import partial
 
 import pandas as pd
@@ -919,6 +919,7 @@ def show_test_form(
         if validate_form(test_scope, test_definition, column_name_label):
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
+            test_definition["last_manual_update"] = datetime.now(UTC)
             TestDefinition(**test_definition).save()
             safe_rerun()
 

@@ -25,14 +25,16 @@ class DataTable(Entity):
 
     @classmethod
     def select_table_names(
-        cls, table_groups_id: UUID, project_codes: list[str] | None = None, limit: int = 100, offset: int = 0,
+        cls, table_groups_id: UUID, project_codes: list[str] | None = None, limit: int | None = 100, offset: int = 0,
     ) -> list[str]:
         query = select(cls.table_name).where(cls.table_groups_id == table_groups_id)
         if project_codes is not None:
             query = query.join(TableGroup, cls.table_groups_id == TableGroup.id).where(
                 TableGroup.project_code.in_(project_codes)
             )
-        query = query.order_by(asc(func.lower(cls.table_name))).offset(offset).limit(limit)
+        query = query.order_by(asc(func.lower(cls.table_name))).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         return list(get_current_session().scalars(query).all())
 
     @classmethod

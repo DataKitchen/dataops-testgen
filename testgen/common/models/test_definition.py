@@ -25,7 +25,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
 from testgen.common.models import Base, get_current_session
-from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestamp, YNString, ZeroIfEmptyInteger
+from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
@@ -216,10 +216,11 @@ class TestDefinition(Entity):
     lock_refresh: bool = Column(YNString, default="N", nullable=False)
     last_auto_gen_date: datetime = Column(postgresql.TIMESTAMP)
     profiling_as_of_date: datetime = Column(postgresql.TIMESTAMP)
-    last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
+    last_manual_update: datetime = Column(postgresql.TIMESTAMP)
     export_to_observability: bool = Column(YNString)
     prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
     flagged: bool = Column(Boolean, default=False, nullable=False)
+    external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
 
     _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
     _summary_columns = (
@@ -241,6 +242,7 @@ class TestDefinition(Entity):
         last_auto_gen_date,
         profiling_as_of_date,
         prediction,
+        external_id,
     )
 
     @classmethod
