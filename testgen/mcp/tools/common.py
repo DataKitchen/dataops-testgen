@@ -25,11 +25,15 @@ def dataframe_to_markdown(df: pd.DataFrame, null_display: str = "_NULL_") -> str
     """Convert a DataFrame to a markdown table string."""
     if df is None or df.empty:
         return "_No rows._"
+
+    def _escape(value: str) -> str:
+        return value.replace("|", "\\|")
+
     cols = list(df.columns)
-    header = "| " + " | ".join(str(c) for c in cols) + " |"
+    header = "| " + " | ".join(_escape(str(c)) for c in cols) + " |"
     separator = "| " + " | ".join("---" for _ in cols) + " |"
     rows = []
     for _, row in df.iterrows():
-        cells = " | ".join(str(v) if pd.notna(v) else null_display for v in row)
+        cells = " | ".join(_escape(str(v)) if pd.notna(v) else null_display for v in row)
         rows.append(f"| {cells} |")
     return "\n".join([header, separator, *rows])

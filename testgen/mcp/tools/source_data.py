@@ -47,7 +47,7 @@ def get_source_data_query(
     """Get the SQL query that would be used to look up source data for a test definition, without executing it.
 
     Builds a lookup query using current test definition parameters (thresholds, conditions).
-    The query targets the connected database (Snowflake, BigQuery, Postgres, etc.).
+    The query targets the connected database.
     Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Args:

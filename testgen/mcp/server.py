@@ -116,7 +116,7 @@ def build_mcp_app(
     def safe_prompt(fn):
         mcp.prompt()(mcp_error_handler(fn))
 
-    # Tools (11)
+    # Tools
     safe_tool(get_data_inventory)
     safe_tool(list_projects)
     safe_tool(list_tables)

@@ -95,3 +95,19 @@ def test_dataframe_to_markdown_custom_null_display():
     result = dataframe_to_markdown(df, null_display="<null>")
 
     assert "| <null> |" in result
+
+
+def test_dataframe_to_markdown_escapes_pipes_in_values():
+    df = pd.DataFrame({"col": ['{"a"|"b"}', "no pipes"]})
+    result = dataframe_to_markdown(df)
+
+    lines = result.split("\n")
+    assert r'| {"a"\|"b"} |' == lines[2]
+    assert "| no pipes |" == lines[3]
+
+
+def test_dataframe_to_markdown_escapes_pipes_in_headers():
+    df = pd.DataFrame({"col|name": [1]})
+    result = dataframe_to_markdown(df)
+
+    assert r"| col\|name |" in result
