@@ -10,7 +10,7 @@ from testgen.api.deps import (
     resolve_table_group,
     resolve_test_suite,
 )
-from testgen.api.schemas import ErrorResponse, JobListResponse, JobResponse, JobSubmittedResponse
+from testgen.api.schemas import ErrorResponse, JobKey, JobListResponse, JobResponse, JobSource, JobSubmittedResponse
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -30,9 +30,9 @@ router = APIRouter(prefix="/api/v1", tags=["jobs"], dependencies=[Depends(db_ses
 def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # noqa: B008
     """Submit a profiling job for a table group."""
     job = JobExecution.submit(
-        job_key="run-profile",
+        job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
-        source="api",
+        source=JobSource.api,
         project_code=table_group.project_code,
     )
     return JobSubmittedResponse.model_validate(job, from_attributes=True)
@@ -42,17 +42,13 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
     "/test-suites/{test_suite_id}/test-runs",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={400: {"model": ErrorResponse, "description": "Invalid request"}},
 )
 def submit_test_run(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa: B008
     """Submit a test execution job for a test suite."""
-    if test_suite.is_monitor:
-        raise api_error(400, "monitor_suite_not_allowed", "Cannot run tests on a monitor suite")
-
     job = JobExecution.submit(
-        job_key="run-tests",
+        job_key=JobKey.run_tests,
         kwargs={"test_suite_id": str(test_suite.id)},
-        source="api",
+        source=JobSource.api,
         project_code=test_suite.project_code,
     )
     return JobSubmittedResponse.model_validate(job, from_attributes=True)
@@ -62,17 +58,13 @@ def submit_test_run(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa
     "/test-suites/{test_suite_id}/test-generation",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={400: {"model": ErrorResponse, "description": "Invalid request"}},
 )
 def submit_test_generation(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa: B008
     """Submit a test generation job for a test suite."""
-    if test_suite.is_monitor:
-        raise api_error(400, "monitor_suite_not_allowed", "Cannot generate tests for a monitor suite")
-
     job = JobExecution.submit(
-        job_key="run-test-generation",
+        job_key=JobKey.run_test_generation,
         kwargs={"test_suite_id": str(test_suite.id), "generation_set": "Standard"},
-        source="api",
+        source=JobSource.api,
         project_code=test_suite.project_code,
     )
     return JobSubmittedResponse.model_validate(job, from_attributes=True)
@@ -105,7 +97,7 @@ def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
 )
 def list_jobs(
     project_code: str = resolve_project_code("view"),
-    job_key: str | None = Query(default=None),
+    job_key: JobKey | None = Query(default=None),  # noqa: B008
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),

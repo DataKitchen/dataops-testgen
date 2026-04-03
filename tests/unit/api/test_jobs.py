@@ -100,15 +100,6 @@ def test_submit_test_run_success(mock_je_cls):
     assert result.id == job.id
 
 
-def test_submit_test_run_rejects_monitor_suite():
-    test_suite = _mock_test_suite(is_monitor=True)
-
-    with pytest.raises(HTTPException) as exc_info:
-        submit_test_run(test_suite)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["errors"][0]["code"] == "monitor_suite_not_allowed"
-
-
 # --- submit_test_generation ---
 
 
@@ -127,15 +118,6 @@ def test_submit_test_generation_success(mock_je_cls):
         project_code=test_suite.project_code,
     )
     assert result.id == job.id
-
-
-def test_submit_test_generation_rejects_monitor_suite():
-    test_suite = _mock_test_suite(is_monitor=True)
-
-    with pytest.raises(HTTPException) as exc_info:
-        submit_test_generation(test_suite)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["errors"][0]["code"] == "monitor_suite_not_allowed"
 
 
 # --- get_job_status ---

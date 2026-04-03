@@ -1,11 +1,28 @@
 """Pydantic request/response models for API v1 endpoints."""
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel
 
-# --- Responses ---
+from testgen.common.models.job_execution import JobStatus
+
+# --- Jobs ---
+
+
+class JobKey(StrEnum):
+    run_profile = "run-profile"
+    run_tests = "run-tests"
+    run_test_generation = "run-test-generation"
+
+
+class JobSource(StrEnum):
+    api = "api"
+    ui = "ui"
+    scheduler = "scheduler"
+    mcp = "mcp"
+    cli = "cli"
 
 
 class JobSubmittedResponse(BaseModel):
@@ -21,9 +38,9 @@ class JobResponse(BaseModel):
     """Full job execution record returned by status and cancel endpoints."""
 
     id: UUID
-    job_key: str
-    status: str
-    source: str
+    job_key: JobKey
+    status: JobStatus
+    source: JobSource
     created_at: datetime
     claimed_at: datetime | None = None
     started_at: datetime | None = None

@@ -102,11 +102,11 @@ def resolve_table_group(permission: str):
 
 
 def resolve_test_suite(permission: str):
-    """Resolve a TestSuite by ``test_suite_id`` path param and verify project permission."""
+    """Resolve a non-monitor TestSuite by ``test_suite_id`` path param and verify project permission."""
     from testgen.common.models.test_suite import TestSuite
 
     def dependency(test_suite_id: UUID, user: User = _require_user) -> TestSuite:
-        if (test_suite := TestSuite.get(test_suite_id)) and has_project_permission(user, test_suite.project_code, permission):
+        if (test_suite := TestSuite.get_regular(test_suite_id)) and has_project_permission(user, test_suite.project_code, permission):
             return test_suite
         raise _not_found
     return Depends(dependency)

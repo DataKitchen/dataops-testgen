@@ -21,3 +21,6 @@ UPDATE job_executions je
 UPDATE job_executions SET project_code = 'unknown' WHERE project_code IS NULL;
 
 ALTER TABLE job_executions ALTER COLUMN project_code SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_job_executions_project
+    ON job_executions (project_code, created_at DESC);
