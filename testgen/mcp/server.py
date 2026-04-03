@@ -30,6 +30,12 @@ into specific entities.
 Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess what a test checks.
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
+INVESTIGATING FAILURES
+
+Use get_test_results to find failures, then get_source_data to see relevant data from the connected database.
+Results reflect the current state of the data — values may have changed since the test ran.
+Use get_source_data_query to preview the SQL without executing it.
+
 CONVENTIONS
 - Identifiers are UUIDs passed as strings.
 - Dates are ISO 8601 format.
@@ -83,6 +89,7 @@ def build_mcp_app(
     from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
+    from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
     from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -109,7 +116,7 @@ def build_mcp_app(
     def safe_prompt(fn):
         mcp.prompt()(mcp_error_handler(fn))
 
-    # Tools (9)
+    # Tools
     safe_tool(get_data_inventory)
     safe_tool(list_projects)
     safe_tool(list_tables)
@@ -119,6 +126,8 @@ def build_mcp_app(
     safe_tool(get_test_result_history)
     safe_tool(get_failure_summary)
     safe_tool(get_test_type)
+    safe_tool(get_source_data)
+    safe_tool(get_source_data_query)
 
     # Resources (2)
     safe_resource("testgen://test-types", test_types_resource)
