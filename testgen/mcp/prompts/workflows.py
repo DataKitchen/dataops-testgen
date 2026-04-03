@@ -33,11 +33,13 @@ Please investigate test failures and identify root causes:{suite_filter}
 3. Call `get_failure_summary(test_run_id='...')` to see failures grouped by test type.
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
 5. Call `get_test_results(test_run_id='...', status='Failed')` to see individual failure details.
-6. Analyze the patterns:
+6. For key failures, call `get_source_data(test_definition_id='...')` to see the actual rows violating the test criteria.
+   This shows current data from the connected database — rows may have been fixed since the test ran.
+7. Analyze the patterns:
    - Are failures concentrated in specific tables or columns?
    - Do certain test types fail consistently?
    - What do the measured values vs thresholds tell us about the root cause?
-7. Provide a root cause analysis and recommended remediation steps.
+8. Provide a root cause analysis and recommended remediation steps.
 """
 
 

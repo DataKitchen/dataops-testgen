@@ -1,25 +1,9 @@
-from uuid import UUID
-
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
-from testgen.common.models.test_result import TestResult, TestResultStatus
+from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-
-
-def _parse_uuid(value: str, label: str = "ID") -> UUID:
-    try:
-        return UUID(value)
-    except (ValueError, AttributeError) as err:
-        raise MCPUserError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
-
-
-def _parse_status(value: str) -> TestResultStatus:
-    try:
-        return TestResultStatus(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in TestResultStatus)
-        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}") from err
+from testgen.mcp.tools.common import parse_result_status, parse_uuid
 
 
 def _resolve_test_type(short_name: str) -> str:
@@ -50,8 +34,8 @@ def get_test_results(
         limit: Maximum number of results per page (default 50).
         page: Page number, starting from 1 (default 1).
     """
-    run_uuid = _parse_uuid(test_run_id, "test_run_id")
-    status_enum = _parse_status(status) if status else None
+    run_uuid = parse_uuid(test_run_id, "test_run_id")
+    status_enum = parse_result_status(status) if status else None
     offset = (page - 1) * limit
 
     test_type_code = _resolve_test_type(test_type) if test_type else None
@@ -115,7 +99,7 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
         test_run_id: The UUID of the test run.
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
-    run_uuid = _parse_uuid(test_run_id, "test_run_id")
+    run_uuid = parse_uuid(test_run_id, "test_run_id")
 
     perms = get_project_permissions()
 
@@ -185,7 +169,7 @@ def get_test_result_history(
         limit: Maximum number of historical results per page (default 20).
         page: Page number, starting from 1 (default 1).
     """
-    def_uuid = _parse_uuid(test_definition_id, "test_definition_id")
+    def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     offset = (page - 1) * limit
 
     perms = get_project_permissions()

@@ -1,11 +1,9 @@
-from uuid import UUID
-
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
 from testgen.common.models.test_suite import TestSuite
-from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools.common import parse_uuid
 
 
 @with_database_session
@@ -102,10 +100,7 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
         limit: Maximum number of tables per page (default 200).
         page: Page number, starting from 1 (default 1).
     """
-    try:
-        group_uuid = UUID(table_group_id)
-    except (ValueError, AttributeError) as err:
-        raise MCPUserError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
+    group_uuid = parse_uuid(table_group_id, "table_group_id")
 
     perms = get_project_permissions()
     project_codes = perms.allowed_codes
