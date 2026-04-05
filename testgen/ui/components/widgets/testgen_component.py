@@ -23,6 +23,7 @@ AvailablePages = typing.Literal[
     "help_menu",
     "notification_settings",
     "import_metadata_dialog",
+    "data_contract",
 ]
 
 

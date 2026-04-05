@@ -23,6 +23,7 @@ from testgen.ui.views.table_groups import TableGroupsPage
 from testgen.ui.views.test_definitions import TestDefinitionsPage
 from testgen.ui.views.test_results import TestResultsPage
 from testgen.ui.views.test_runs import TestRunsPage
+from testgen.ui.views.data_contract import DataContractPage
 from testgen.ui.views.test_suites import TestSuitesPage
 from testgen.utils import plugins, singleton
 
@@ -44,6 +45,7 @@ BUILTIN_PAGES: list[type[Page]] = [
     TestDefinitionsPage,
     ProjectSettingsPage,
     MonitorsDashboardPage,
+    DataContractPage,
 ]
 
 LOG = logging.getLogger("testgen")

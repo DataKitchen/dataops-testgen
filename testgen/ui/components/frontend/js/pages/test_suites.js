@@ -131,7 +131,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
                         ),
                         actionContent: () => div(
-                            { class: 'flex-row' },
+                            { class: 'flex-row fx-align-center', style: 'gap: 4px;' },
                             userCanEdit
                                 ? [
                                     Button({

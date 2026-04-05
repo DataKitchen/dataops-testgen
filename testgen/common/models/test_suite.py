@@ -68,6 +68,7 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
+    include_in_contract: bool = Column(Boolean, default=True)
     is_monitor: bool = Column(Boolean, default=False)
     monitor_lookback: int | None = Column(Integer)
     monitor_regenerate_freshness: bool = Column(Boolean, default=True)

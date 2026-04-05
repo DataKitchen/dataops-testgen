@@ -96,6 +96,10 @@ class TableGroupsPage(Page):
                 "EditTableGroupClicked": on_edit_table_group_clicked,
                 "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
                 "RunProfilingClicked": partial(run_profiling_dialog, project_code),
+                "ViewContractClicked": lambda table_group_id: self.router.queue_navigation(
+                    to="data-contract",
+                    with_args={"table_group_id": table_group_id},
+                ),
                 "TableGroupsFiltered": lambda params: self.router.queue_navigation(
                     to="table-groups",
                     with_args={"project_code": project_code, **params},

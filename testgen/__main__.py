@@ -10,6 +10,8 @@ import click
 from click.core import Context
 
 from testgen import settings
+from testgen.commands.export_data_contract import run_export_data_contract
+from testgen.commands.import_data_contract import run_import_data_contract
 from testgen.commands.run_get_entities import (
     run_get_results,
     run_get_test_suite,
@@ -579,6 +581,137 @@ def export_data(configuration: Configuration, project_key: str, test_suite_key: 
     run_observability_exporter(project_key, test_suite_key)
     LOG.info("CurrentStep: Main Program - Observability Export - DONE")
     click.echo("\nexport-observability completed successfully.\n")
+
+
+@cli.command("export-data-contract", help="Exports a table group as an ODCS v3.1.0 data contract YAML document.")
+@click.option(
+    "-tg",
+    "--table-group-id",
+    required=True,
+    type=click.STRING,
+    help="ID of the table group to export. Use a table_group_id shown in list-table-groups.",
+)
+@click.option(
+    "-o",
+    "--output",
+    required=False,
+    type=click.Path(),
+    default=None,
+    help="Output file path. Defaults to stdout.",
+)
+def export_data_contract(table_group_id: str, output: str | None):
+    """Download the data contract for a table group as ODCS v3.1.0 YAML.
+
+    Writes to a file when --output is given, otherwise prints to stdout so the
+    output can be piped or redirected:
+
+        testgen export-data-contract -tg <id> -o contract.yaml
+        testgen export-data-contract -tg <id> > contract.yaml
+    """
+    if output:
+        click.echo(f"Exporting data contract for table group {table_group_id} ...", err=True)
+    run_export_data_contract(table_group_id, output)
+    if output:
+        click.secho(f"Contract written to {output}", fg="green", err=True)
+
+
+@cli.command("import-data-contract", help="Uploads a modified ODCS v3.1.0 contract YAML and applies changes to TestGen.")
+@click.option(
+    "-tg",
+    "--table-group-id",
+    required=True,
+    type=click.STRING,
+    help="ID of the table group to update. Use a table_group_id shown in list-table-groups.",
+)
+@click.option(
+    "-i",
+    "--input",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to the modified ODCS YAML contract file.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Preview what would change without writing to the database.",
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Apply changes without prompting for confirmation.",
+)
+def import_data_contract(table_group_id: str, input_path: str, dry_run: bool, yes: bool):
+    """Upload a modified contract YAML and apply changes back to TestGen.
+
+    Only writable fields are updated (see 'export-data-contract' output for
+    which fields are round-trippable). A diff preview is always shown before
+    any changes are written.
+
+    What gets updated:
+      - Contract metadata: version, status, description, domain, data product
+      - Latency SLA (profiling delay days)
+      - Quality rule thresholds, tolerances, severity, and description
+
+    What is ignored (manage in TestGen directly):
+      - Tables, columns, and data types
+      - Which quality rules exist
+      - Test suite settings and connections
+    """
+    with open(input_path) as fh:
+        yaml_content = fh.read()
+
+    # Always validate and compute diff first — same as UI dry-run step.
+    click.echo(f"Validating {input_path} against table group {table_group_id} ...", err=True)
+    diff = run_import_data_contract(yaml_content, table_group_id, dry_run=True)
+
+    if diff.errors:
+        click.secho("\nValidation errors:", fg="red", err=True)
+        for err in diff.errors:
+            click.secho(f"  ERROR: {err}", fg="red", err=True)
+        raise SystemExit(1)
+
+    for warn in diff.warnings:
+        click.secho(f"  WARNING: {warn}", fg="yellow", err=True)
+
+    if diff.total_changes == 0:
+        click.echo("\nNo changes detected — contract is already up to date.", err=True)
+        return
+
+    # Show the diff breakdown.
+    click.echo(f"\nPending changes ({diff.total_changes} total):", err=True)
+    if diff.contract_updates:
+        click.echo(f"  Contract fields  : {', '.join(diff.contract_updates)}", err=True)
+    if diff.table_group_updates:
+        click.echo(f"  Table group fields: {', '.join(diff.table_group_updates)}", err=True)
+    if diff.test_updates:
+        click.echo(f"  Quality rules    : {len(diff.test_updates)} test definition(s)", err=True)
+        for t in diff.test_updates:
+            changed_fields = [k for k in t if k != "id"]
+            click.echo(f"    [{t['id']}] {', '.join(changed_fields)}", err=True)
+
+    if dry_run:
+        click.echo("\n--dry-run: no changes written.", err=True)
+        return
+
+    # Confirm before applying — same gate as the UI's Apply button.
+    if not yes:
+        click.confirm(
+            click.style(f"\nApply {diff.total_changes} change(s) to table group {table_group_id}?", bold=True),
+            abort=True,
+        )
+
+    result = run_import_data_contract(yaml_content, table_group_id, dry_run=False)
+    if result.errors:
+        click.secho("\nErrors during apply:", fg="red", err=True)
+        for err in result.errors:
+            click.secho(f"  ERROR: {err}", fg="red", err=True)
+        raise SystemExit(1)
+
+    click.secho(f"\nApplied {result.total_changes} change(s): {result.summary()}", fg="green", err=True)
 
 
 @click.option(

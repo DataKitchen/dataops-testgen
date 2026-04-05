@@ -25,6 +25,7 @@ from testgen.utils import to_dataframe
 PAGE_ICON = "rule"
 PAGE_TITLE = "Test Suites"
 
+
 class TestSuitesPage(Page):
     path = "test-suites"
     can_activate: typing.ClassVar = [
@@ -114,6 +115,7 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
         severity_index = 0
     export_to_observability = selected_test_suite.export_to_observability if mode == "edit" else False
     dq_score_exclude = selected_test_suite.dq_score_exclude if mode == "edit" else False
+    include_in_contract = selected_test_suite.include_in_contract if mode == "edit" else True
     component_key = empty_if_null(selected_test_suite.component_key) if mode == "edit" else ""
     component_type = empty_if_null(selected_test_suite.component_type) if mode == "edit" else "dataset"
     component_name = empty_if_null(selected_test_suite.component_name) if mode == "edit" else ""
@@ -156,6 +158,11 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
             "dq_score_exclude": right_column.checkbox(
                 "Exclude from quality scoring",
                 value=dq_score_exclude,
+            ),
+            "include_in_contract": left_column.checkbox(
+                "Include in Data Contract",
+                value=include_in_contract,
+                help="When checked, tests from this suite are included in the table group's data contract export and completeness scoring.",
             ),
             "component_key": expander_left_column.text_input(
                 label="Component Key",

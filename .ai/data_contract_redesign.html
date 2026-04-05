@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Data Contract — Redesign Mockup</title>
+<style>
+  /* ── Design tokens matching TestGen's CSS variables ── */
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-2: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --border-accent: rgba(255,255,255,0.14);
+    --primary: #4f8ef7;
+    --primary-dim: rgba(79,142,247,0.15);
+    --text-primary: #e8eaf0;
+    --text-secondary: #8b90a8;
+    --text-caption: #5e6278;
+    --green: #22c55e;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --blue: #4f8ef7;
+    --grey: #64748b;
+    --orange: #f97316;
+    --purple: #a78bfa;
+    --font-ui: 'DM Sans', 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.2);
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-ui);
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  /* ── Layout ── */
+  .page { max-width: 1100px; margin: 0 auto; }
+
+  /* ── Header ── */
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header__left { flex: 1; }
+  .breadcrumb {
+    font-size: 12px;
+    color: var(--text-caption);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .breadcrumb a { color: var(--primary); text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .status-chip.active  { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+  .status-chip.draft   { background: rgba(249,115,22,0.15); color: #f97316; border: 1px solid rgba(249,115,22,0.3); }
+  .meta-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .pill {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 10px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .pill .icon { font-size: 13px; opacity: 0.7; }
+  .page-actions { display: flex; gap: 8px; align-items: center; padding-top: 4px; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid var(--border-accent);
+    background: var(--surface-2);
+    color: var(--text-secondary);
+  }
+  .btn:hover { background: var(--surface); color: var(--text-primary); }
+  .btn.primary { background: var(--primary-dim); color: var(--primary); border-color: rgba(79,142,247,0.3); }
+  .btn .material { font-size: 16px; font-family: 'Material Symbols Rounded', sans-serif; }
+
+  /* ── Health Dashboard ── */
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .health-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .health-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .health-card.coverage::before { background: linear-gradient(90deg, var(--primary), #818cf8); }
+  .health-card.tests::before    { background: linear-gradient(90deg, var(--green), #10b981); }
+  .health-card.hygiene::before  { background: linear-gradient(90deg, var(--yellow), var(--orange)); }
+  .health-card__label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-caption);
+    margin-bottom: 10px;
+  }
+  .health-card__value {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 8px;
+    letter-spacing: -1px;
+  }
+  .health-card__value.good   { color: var(--green); }
+  .health-card__value.warn   { color: var(--yellow); }
+  .health-card__value.bad    { color: var(--red); }
+  .health-card__value.neutral { color: var(--text-primary); }
+  .progress-track {
+    background: rgba(255,255,255,0.06);
+    border-radius: 4px;
+    height: 5px;
+    margin: 8px 0;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+  }
+  .progress-fill.good  { background: var(--green); }
+  .progress-fill.warn  { background: var(--yellow); }
+  .progress-fill.bad   { background: var(--red); }
+  .health-card__sub {
+    font-size: 12px;
+    color: var(--text-caption);
+    margin-top: 4px;
+  }
+
+  /* Summary bar (for tests) */
+  .summary-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 8px 0;
+    gap: 1px;
+  }
+  .summary-bar__seg { height: 100%; transition: width 0.6s ease; }
+  .summary-counts {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .count-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .count-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-caption);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* ── Section headers ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .section-title .material {
+    font-size: 16px;
+    color: var(--text-caption);
+    font-family: 'Material Symbols Rounded', sans-serif;
+  }
+
+  /* ── Coverage Matrix ── */
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .matrix-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-caption);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .matrix-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    vertical-align: middle;
+    color: var(--text-secondary);
+  }
+  .matrix-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .col-name { font-weight: 600; color: var(--text-primary); font-family: var(--font-mono); font-size: 17px; }
+  .type-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-caption);
+    background: rgba(255,255,255,0.04);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .status-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .status-icon.pass   { color: var(--green); background: rgba(34,197,94,0.1); }
+  .status-icon.warn   { color: var(--yellow); background: rgba(245,158,11,0.1); }
+  .status-icon.fail   { color: var(--red); background: rgba(239,68,68,0.1); }
+  .status-icon.none   { color: var(--text-caption); }
+  .tier-badges { display: flex; gap: 3px; }
+  .tier-badge {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 20px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .tier-badge.db    { color: #818cf8; border-color: rgba(129,140,248,0.3); background: rgba(129,140,248,0.08); }
+  .tier-badge.test  { color: var(--green); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.08); }
+  .tier-badge.mon   { color: var(--orange); border-color: rgba(249,115,22,0.3); background: rgba(249,115,22,0.08); }
+  .tier-badge.obs   { color: var(--grey); border-color: rgba(100,116,139,0.3); background: rgba(100,116,139,0.08); }
+  .key-badge        { font-size: 11px; color: var(--primary); }
+
+  /* ── Gap Analysis ── */
+  .gap-list { display: flex; flex-direction: column; gap: 6px; }
+  .gap-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+  }
+  .gap-item.error   { background: rgba(239,68,68,0.06); border-left: 3px solid var(--red); }
+  .gap-item.warning { background: rgba(245,158,11,0.06); border-left: 3px solid var(--yellow); }
+  .gap-item.info    { background: rgba(79,142,247,0.06); border-left: 3px solid var(--blue); }
+  .gap-icon { font-family: 'Material Symbols Rounded', sans-serif; font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .gap-item.error   .gap-icon { color: var(--red); }
+  .gap-item.warning .gap-icon { color: var(--yellow); }
+  .gap-item.info    .gap-icon { color: var(--blue); }
+  .gap-text { color: var(--text-secondary); line-height: 1.5; }
+  .gap-text code { font-family: var(--font-mono); font-size: 11px; background: rgba(255,255,255,0.06); padding: 1px 5px; border-radius: 3px; color: var(--text-primary); }
+
+  /* ── Claims ── */
+  .table-section { margin-bottom: 24px; }
+  .table-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 20px;
+  }
+  .table-section-header .material { font-family: 'Material Symbols Rounded', sans-serif; font-size: 22px; color: var(--text-caption); }
+  .table-section-header .count-badge { font-size: 11px; color: var(--text-caption); font-weight: 400; margin-left: auto; }
+  .col-row {
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-top: none;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .col-row:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
+  .col-row:hover { background: rgba(255,255,255,0.01); }
+  .col-header {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-top: 2px;
+  }
+  .col-name-link { font-family: var(--font-mono); font-size: 17px; color: var(--primary); font-weight: 600; }
+  .col-type      { font-size: 13px; color: var(--text-caption); font-family: var(--font-mono); }
+  .claims-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .claim-chip {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    min-width: 100px;
+    max-width: 180px;
+    transition: transform 0.1s;
+    cursor: default;
+  }
+  .claim-chip:hover { transform: translateY(-1px); }
+  .claim-chip.ddl  { border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.07); }
+  .claim-chip.prof { border-color: rgba(79,142,247,0.3); background: rgba(79,142,247,0.07); }
+  .claim-chip.test { border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.07); }
+  .claim-chip.gov  { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.07); }
+  .claim-chip__src {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.65;
+  }
+  .claim-chip.ddl  .claim-chip__src { color: #a78bfa; }
+  .claim-chip.prof .claim-chip__src { color: var(--primary); }
+  .claim-chip.test .claim-chip__src { color: var(--green); }
+  .claim-chip.gov  .claim-chip__src { color: var(--yellow); }
+  .claim-chip__val { font-size: 12px; font-weight: 600; color: var(--text-primary); word-break: break-word; }
+  .claim-chip__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    align-self: flex-start;
+    font-weight: 600;
+  }
+  .badge-enforced { background: rgba(129,140,248,0.2); color: #a78bfa; }
+  .badge-tested   { background: rgba(34,197,94,0.2); color: var(--green); }
+  .badge-obs      { background: rgba(100,116,139,0.2); color: var(--grey); }
+  .badge-decl     { background: rgba(245,158,11,0.2); color: var(--yellow); }
+  .edit-btn {
+    display: none;
+    padding: 1px 6px;
+    font-size: 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border-accent);
+    background: transparent;
+    color: var(--text-caption);
+    cursor: pointer;
+    margin-top: 2px;
+    font-family: var(--font-ui);
+    font-weight: 500;
+  }
+  .claim-chip:hover .edit-btn { display: inline-flex; }
+  .edit-btn:hover { color: var(--primary); border-color: rgba(79,142,247,0.4); }
+
+  /* ── Anomaly chip ── */
+  .anomaly-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid;
+  }
+  .anomaly-chip.definite { border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1); color: var(--red); }
+  .anomaly-chip.likely   { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.1); color: var(--yellow); }
+
+  /* ── Card container ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+
+  /* ── Divider ── */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* ── Description ── */
+  .purpose-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    font-style: italic;
+    line-height: 1.6;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  /* ── Fade-in animation ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .health-card { animation: fadeUp 0.3s ease both; }
+  .health-card:nth-child(1) { animation-delay: 0.05s; }
+  .health-card:nth-child(2) { animation-delay: 0.10s; }
+  .health-card:nth-child(3) { animation-delay: 0.15s; }
+
+  /* Material symbols fallback */
+  .material {
+    font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif;
+    font-style: normal;
+    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+    display: inline-block;
+    line-height: 1;
+    vertical-align: middle;
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap"/>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Page header ── -->
+  <div class="page-header">
+    <div class="page-header__left">
+      <div class="breadcrumb">
+        <span class="material" style="font-size:14px">table_view</span>
+        <a href="#">Table Groups</a>
+        <span>›</span>
+        <span>orders_group</span>
+        <span>›</span>
+        <span>Data Contract</span>
+      </div>
+      <div class="page-title">
+        <span class="material" style="color:#4f8ef7">contract</span>
+        orders_group
+        <span class="status-chip active">
+          <span class="material" style="font-size:12px">circle</span>
+          Active
+        </span>
+      </div>
+      <div class="purpose-text">Primary order transaction data for the Commerce domain — governs row count, freshness, and referential integrity.</div>
+      <div class="meta-pills">
+        <span class="pill"><span class="material icon">tag</span>v1.2.0</span>
+        <span class="pill"><span class="material icon">domain</span>Commerce</span>
+        <span class="pill"><span class="material icon">inventory_2</span>orders</span>
+        <span class="pill"><span class="material icon">storage</span>PostgreSQL</span>
+        <span class="pill"><span class="material icon">schema</span>public.orders</span>
+      </div>
+    </div>
+    <div class="page-actions">
+      <button class="btn"><span class="material">refresh</span> Refresh</button>
+      <button class="btn"><span class="material">download</span> Download YAML</button>
+      <button class="btn primary"><span class="material">upload</span> Import Changes</button>
+    </div>
+  </div>
+
+  <!-- ── Health dashboard ── -->
+  <div class="health-grid">
+    <!-- Coverage -->
+    <div class="health-card coverage">
+      <div class="health-card__label"><span class="material" style="font-size:13px;vertical-align:middle;margin-right:4px">verified</span>Coverage</div>
+      <div class="health-card__value good">87%</div>
+      <div class="progress-track"><div class="progress-fill good" style="width:87%"></div></div>
+      <div class="health-card__sub">52 of 60 columns have ≥1 non-schema claim</div>
+      <button class="btn" style="margin-top:10px;font-size:12px;padding:4px 10px">View 8 uncovered →</button>
+    </div>
+    <!-- Test health -->
+    <div class="health-card tests">
+      <div class="health-card__label"><span class="material" style="font-size:13px;vertical-align:middle;margin-right:4px">science</span>Test Health</div>
+      <div class="health-card__value neutral" style="font-size:24px;margin-bottom:6px">34 tests</div>
+      <div class="summary-bar">
+        <div class="summary-bar__seg" style="width:76%;background:#22c55e"></div>
+        <div class="summary-bar__seg" style="width:9%;background:#f59e0b"></div>
+        <div class="summary-bar__seg" style="width:6%;background:#ef4444"></div>
+        <div class="summary-bar__seg" style="width:9%;background:#475569"></div>
+      </div>
+      <div class="summary-counts">
+        <span class="count-item"><span class="count-dot" style="background:#22c55e"></span>26 passed</span>
+        <span class="count-item"><span class="count-dot" style="background:#f59e0b"></span>3 warn</span>
+        <span class="count-item"><span class="count-dot" style="background:#ef4444"></span>2 fail</span>
+        <span class="count-item"><span class="count-dot" style="background:#475569"></span>3 not run</span>
+      </div>
+      <button class="btn" style="margin-top:10px;font-size:12px;padding:4px 10px;color:#ef4444;border-color:rgba(239,68,68,0.3)">View 2 failures →</button>
+    </div>
+    <!-- Hygiene -->
+    <div class="health-card hygiene">
+      <div class="health-card__label"><span class="material" style="font-size:13px;vertical-align:middle;margin-right:4px">health_and_safety</span>Hygiene</div>
+      <div class="health-card__value warn">5 issues</div>
+      <div class="progress-track"><div class="progress-fill warn" style="width:40%"></div></div>
+      <div class="summary-counts" style="margin-top:8px">
+        <span class="count-item"><span class="count-dot" style="background:#ef4444"></span>1 definite</span>
+        <span class="count-item"><span class="count-dot" style="background:#f59e0b"></span>2 likely</span>
+        <span class="count-item"><span class="count-dot" style="background:#94a3b8"></span>2 possible</span>
+      </div>
+      <button class="btn" style="margin-top:10px;font-size:12px;padding:4px 10px">View 5 anomalies →</button>
+    </div>
+  </div>
+
+  <!-- ── Tabs ── -->
+  <div class="tabs">
+    <div class="tab active">Overview</div>
+    <div class="tab">Coverage Matrix</div>
+    <div class="tab">Gap Analysis</div>
+    <div class="tab">YAML</div>
+  </div>
+
+  <!-- ── Gap Analysis (collapsed card) ── -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="section-header" style="margin-bottom:12px">
+      <div class="section-title">
+        <span class="material">warning</span>
+        Gap Analysis
+      </div>
+      <span style="font-size:12px;color:#ef4444;background:rgba(239,68,68,0.1);padding:2px 8px;border-radius:4px;font-weight:600">1 error · 2 warnings</span>
+    </div>
+    <div class="gap-list">
+      <div class="gap-item error">
+        <span class="gap-icon">error</span>
+        <span class="gap-text"><code>orders.customer_id</code> is classified <strong>PII</strong> but has no quality test enforcing it</span>
+      </div>
+      <div class="gap-item warning">
+        <span class="gap-icon">warning</span>
+        <span class="gap-text"><code>orders.order_date</code> is a <strong>Critical Data Element</strong> with no test</span>
+      </div>
+      <div class="gap-item warning">
+        <span class="gap-icon">warning</span>
+        <span class="gap-text">Table <strong>order_items</strong> has no quality tests of any kind</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Claims detail ── -->
+  <div class="section-header">
+    <div class="section-title">
+      <span class="material">list_alt</span>
+      Claims Detail
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="font-size:11px;color:var(--text-caption)">Filter:</span>
+      <button class="btn" style="font-size:11px;padding:3px 9px">All</button>
+      <button class="btn" style="font-size:11px;padding:3px 9px;color:var(--red);border-color:rgba(239,68,68,0.3)">Failing</button>
+      <button class="btn" style="font-size:11px;padding:3px 9px">Uncovered</button>
+    </div>
+  </div>
+
+  <!-- Table: orders -->
+  <div class="table-section">
+    <div class="table-section-header">
+      <span class="material">table_rows</span>
+      orders
+      <span class="count-badge">4 columns shown</span>
+    </div>
+
+    <!-- Col: order_id -->
+    <div class="col-row">
+      <div class="col-header">
+        <span class="col-name-link">order_id</span>
+        <span class="col-type">INTEGER</span>
+        <span class="key-badge"><span class="material" style="font-size:13px">key</span> PK</span>
+      </div>
+      <div class="claims-row">
+        <div class="claim-chip ddl">
+          <span class="claim-chip__src">DDL</span>
+          <span class="claim-chip__val">INTEGER NOT NULL</span>
+          <span class="claim-chip__badge badge-enforced">🏛️ Enforced</span>
+        </div>
+        <div class="claim-chip prof">
+          <span class="claim-chip__src">Profiling</span>
+          <span class="claim-chip__val">Unique · 10,432 rows</span>
+          <span class="claim-chip__badge badge-obs">📸 Observed</span>
+        </div>
+        <div class="claim-chip test">
+          <span class="claim-chip__src">Test</span>
+          <span class="claim-chip__val">✅ Row_Ct ≥ 1000</span>
+          <span class="claim-chip__badge badge-tested">⚡ Tested</span>
+          <button class="edit-btn">✎ Edit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Col: customer_id -->
+    <div class="col-row">
+      <div class="col-header">
+        <span class="col-name-link">customer_id</span>
+        <span class="col-type">INTEGER</span>
+        <span style="font-size:11px;color:var(--red);background:rgba(239,68,68,0.1);padding:1px 5px;border-radius:3px;font-weight:600">PII</span>
+      </div>
+      <div class="claims-row">
+        <div class="claim-chip ddl">
+          <span class="claim-chip__src">DDL</span>
+          <span class="claim-chip__val">INTEGER NOT NULL</span>
+          <span class="claim-chip__badge badge-enforced">🏛️ Enforced</span>
+        </div>
+        <div class="claim-chip gov">
+          <span class="claim-chip__src">Governance</span>
+          <span class="claim-chip__val">Classification: PII</span>
+          <span class="claim-chip__badge badge-decl">🏷️ Declared</span>
+        </div>
+        <div class="anomaly-chip definite">
+          <span class="material" style="font-size:13px">error</span>
+          No test — PII unguarded
+        </div>
+      </div>
+    </div>
+
+    <!-- Col: order_date -->
+    <div class="col-row">
+      <div class="col-header">
+        <span class="col-name-link">order_date</span>
+        <span class="col-type">DATE</span>
+        <span style="font-size:11px;color:var(--primary);background:rgba(79,142,247,0.1);padding:1px 5px;border-radius:3px;font-weight:600">CDE</span>
+      </div>
+      <div class="claims-row">
+        <div class="claim-chip ddl">
+          <span class="claim-chip__src">DDL</span>
+          <span class="claim-chip__val">DATE</span>
+          <span class="claim-chip__badge badge-enforced">🏛️ Enforced</span>
+        </div>
+        <div class="claim-chip prof">
+          <span class="claim-chip__src">Profiling</span>
+          <span class="claim-chip__val">Range: 2022–2026</span>
+          <span class="claim-chip__badge badge-obs">📸 Observed</span>
+        </div>
+        <div class="claim-chip test">
+          <span class="claim-chip__src">Test</span>
+          <span class="claim-chip__val">⚠️ Freshness ≤ 2d</span>
+          <span class="claim-chip__badge badge-tested">⚡ Tested</span>
+          <button class="edit-btn">✎ Edit</button>
+        </div>
+        <div class="anomaly-chip likely">
+          <span class="material" style="font-size:13px">warning</span>
+          Stale 3d ago
+        </div>
+      </div>
+    </div>
+
+    <!-- Col: total_amount -->
+    <div class="col-row">
+      <div class="col-header">
+        <span class="col-name-link">total_amount</span>
+        <span class="col-type">NUMERIC(12,2)</span>
+      </div>
+      <div class="claims-row">
+        <div class="claim-chip ddl">
+          <span class="claim-chip__src">DDL</span>
+          <span class="claim-chip__val">NUMERIC(12,2)</span>
+          <span class="claim-chip__badge badge-enforced">🏛️ Enforced</span>
+        </div>
+        <div class="claim-chip prof">
+          <span class="claim-chip__src">Profiling</span>
+          <span class="claim-chip__val">Min: 0.01 · Max: 48,200</span>
+          <span class="claim-chip__badge badge-obs">📸 Observed</span>
+        </div>
+        <div class="claim-chip test">
+          <span class="claim-chip__src">Test</span>
+          <span class="claim-chip__val">✅ Avg ∈ [0.95, 1.05]</span>
+          <span class="claim-chip__badge badge-tested">⚡ Tested</span>
+          <button class="edit-btn">✎ Edit</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

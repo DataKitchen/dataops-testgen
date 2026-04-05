@@ -41,7 +41,7 @@
  */
 import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
-import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
+import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
 import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
 import { Card } from '../components/card.js';
 import { Select } from '../components/select.js';
@@ -52,6 +52,7 @@ import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { ScoreMetric } from '../components/score_metric.js';
 import { SummaryCounts } from '../components/summary_counts.js';
 import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
+import { Button } from '../components/button.js';
 
 const { div, h3, hr, span } = van.tags;
 
@@ -160,7 +161,19 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
                     ),
                     TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode),
                 ),
-                ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
+                div(
+                    { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
+                    Button({
+                        type: 'stroked',
+                        label: 'Data Contract',
+                        icon: 'contract',
+                        tooltip: 'View Data Contract',
+                        tooltipPosition: 'left',
+                        style: 'width: auto; white-space: nowrap; font-size: 12px;',
+                        onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
+                    }),
+                    ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
+                ),
             ),
             hr({ class: 'tg-overview--table-group-divider' }),
             TableGroupLatestProfile(tableGroup, projectCode),
@@ -201,7 +214,19 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
                     ),
                     AnomaliesSummary(tableGroup.monitoring_summary, 'Monitor anomalies'),
                 ),
-                ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
+                div(
+                    { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
+                    Button({
+                        type: 'stroked',
+                        label: 'Data Contract',
+                        icon: 'contract',
+                        tooltip: 'View Data Contract',
+                        tooltipPosition: 'left',
+                        style: 'width: auto; white-space: nowrap; font-size: 12px;',
+                        onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
+                    }),
+                    ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
+                ),
             ),
 
             hr({ class: 'tg-overview--table-group-divider' }),

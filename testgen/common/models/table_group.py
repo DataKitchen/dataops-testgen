@@ -132,6 +132,8 @@ class TableGroup(Entity):
     last_complete_profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float = Column(Float)
     dq_score_testing: float = Column(Float)
+    contract_version: str | None = Column(NullIfEmptyString)
+    contract_status: str | None = Column(String, default="draft")
 
     _default_order_by = (asc(func.lower(table_groups_name)),)
     _minimal_columns = TableGroupMinimal.__annotations__.keys()

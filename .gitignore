@@ -130,3 +130,13 @@ cython_debug/
 
 testgen/ui/components/frontend/js/plugins.js
 testgen/ui/components/frontend/js/plugin_pages/
+
+# Data contract development artifacts
+generate_contract_presentation.py
+*.pptx
+TestGen_Data_Contracts.pptx
+DATA_CONTRACT_SPEC.md
+DATA_CONTRACT_PLAN.md
+PRD.md
+PRD-SUMMARY.md
+PRD-DETAILED.md

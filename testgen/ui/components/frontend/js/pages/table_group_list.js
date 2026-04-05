@@ -161,10 +161,19 @@ const TableGroupList = (props) => {
                                     : '',
                             )
                         ),
-                        actionContent: permissions.can_edit
-                            ? div(
-                                { class: 'flex-row fx-align-center' },
-                                Button({
+                        actionContent: div(
+                            { class: 'flex-row fx-align-center' },
+                            Button({
+                                type: 'stroked',
+                                label: 'Data Contract',
+                                icon: 'contract',
+                                tooltip: 'View Data Contract',
+                                tooltipPosition: 'left',
+                                style: 'width: auto; white-space: nowrap; font-size: 12px; margin-right: 4px;',
+                                onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
+                            }),
+                            permissions.can_edit
+                                ? Button({
                                     type: 'icon',
                                     icon: 'edit',
                                     iconSize: 18,
@@ -172,8 +181,10 @@ const TableGroupList = (props) => {
                                     tooltipPosition: 'left',
                                     color: 'basic',
                                     onclick: () => emitEvent('EditTableGroupClicked', { payload: tableGroup.id }),
-                                }),
-                                Button({
+                                  })
+                                : '',
+                            permissions.can_edit
+                                ? Button({
                                     type: 'icon',
                                     icon: 'delete',
                                     iconSize: 18,
@@ -181,9 +192,9 @@ const TableGroupList = (props) => {
                                     tooltipPosition: 'left',
                                     color: 'basic',
                                     onclick: () => emitEvent('DeleteTableGroupClicked', { payload: tableGroup.id }),
-                                }),
-                            )
-                            : undefined,
+                                  })
+                                : '',
+                        ),
                     }))
                     : div(
                         { class: 'mt-7 text-secondary', style: 'text-align: center;' },

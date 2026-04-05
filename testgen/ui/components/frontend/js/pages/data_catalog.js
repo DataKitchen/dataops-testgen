@@ -224,6 +224,20 @@ const DataCatalog = (/** @type Properties */ props) => {
                         })
                         : null,
                     ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                    () => {
+                        const selectedTableGroupId = getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null;
+                        return Button({
+                            icon: 'contract',
+                            type: 'stroked',
+                            label: 'Data Contract',
+                            tooltip: selectedTableGroupId ? 'View Data Contract for this table group' : 'Please select a table group',
+                            tooltipPosition: 'left',
+                            width: 'fit-content',
+                            disabled: !selectedTableGroupId,
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => selectedTableGroupId && emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: selectedTableGroupId } }),
+                        });
+                    },
                 ),
             ),
             () => treeNodes.val.length
