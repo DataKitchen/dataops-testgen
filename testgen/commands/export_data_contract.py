@@ -141,9 +141,6 @@ def _pii_flag_to_classification(pii_flag: str | None) -> str:
     return "confidential" if prefix == "A" else "restricted"
 
 
-# Keep old name as alias so callers in this module can use either name.
-_pii_to_classification = _pii_flag_to_classification
-
 
 def _derive_origin(last_auto_gen_date: Any, last_manual_update: Any, lock_refresh: str | None, test_type: str) -> str:
     if test_type == "CUSTOM":
@@ -205,7 +202,8 @@ def _fetch_group_context(table_group_id: str, schema: str) -> dict:
             SUM(tr.failed_ct)          AS last_run_failed_ct,
             SUM(tr.warning_ct)         AS last_run_warning_ct,
             SUM(tr.error_ct)           AS last_run_error_ct,
-            AVG(tr.dq_score_test_run)  AS last_run_dq_score
+            AVG(tr.dq_score_test_run)  AS last_run_dq_score,
+            MAX(tr.test_starttime)     AS last_run_at
         FROM {schema}.table_groups g
         JOIN {schema}.connections c ON c.connection_id = g.connection_id
         LEFT JOIN {schema}.test_suites s ON s.table_groups_id = g.id
@@ -315,12 +313,12 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
             td.id,
             s.id::text                        AS suite_id,
             td.test_type,
-            td.test_description,
             td.schema_name,
             td.table_name,
             td.column_name,
             tt.test_scope,
             td.test_active,
+            td.test_description                   AS user_description,
             td.severity,
             td.threshold_value,
             td.baseline_value,
@@ -342,6 +340,7 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
             td.last_manual_update,
             tt.dq_dimension,
             tt.test_name_short,
+            tt.test_description                   AS type_description,
             tt.measure_uom,
             tr.result_status,
             tr.result_measure,
@@ -389,7 +388,7 @@ def _build_schema(columns: list[dict]) -> list[dict]:
                 "logicalType": logical_type,
                 "required": bool(col.get("record_ct") and col.get("null_value_ct") == 0),
                 "criticalDataElement": bool(col.get("critical_data_element")),
-                "classification": _pii_to_classification(col.get("pii_flag")),
+                "classification": _pii_flag_to_classification(col.get("pii_flag")),
             }
 
             # Primary key detection — ID-Unique functional type or profiling all-unique indicator
@@ -469,10 +468,19 @@ def _build_quality(tests: list[dict]) -> list[dict]:
         else:
             operator = odcs_meta.get("operator", "mustBeLessOrEqualTo")
 
+        # Build description: type description + optional user notes
+        type_desc  = (t.get("type_description") or "").strip()
+        user_desc  = (t.get("user_description") or "").strip()
+        if type_desc and user_desc:
+            description: str | None = f"{type_desc} — {user_desc}"
+        else:
+            description = type_desc or user_desc or None
+
         rule: dict[str, Any] = {
             "id": str(t["id"]),
             "suiteId": str(t["suite_id"]),
-            "name": _nonempty(t.get("test_description")) or t.get("test_name_short") or t["test_type"],
+            "name": _nonempty(t.get("user_description")) or t.get("test_name_short") or t["test_type"],
+            "description": description,
             "type": odcs_meta["odcs_type"],
             "dimension": dimension,
             "unit": odcs_meta.get("unit", "rows"),
@@ -581,7 +589,7 @@ def _build_compliance_summary(tests: list[dict]) -> dict:
         if status in ("error", "failing", "warning"):
             violated.append({
                 "testId": str(t["id"]),
-                "name": _nonempty(t.get("test_description")) or t.get("test_name_short") or t["test_type"],
+                "name": _nonempty(t.get("user_description")) or t.get("test_name_short") or t["test_type"],
                 "element": f"{t.get('table_name', '')}.{t.get('column_name', '')}".strip(".") or None,
                 "status": status,
                 "severity": t.get("severity") or "error",
@@ -707,6 +715,21 @@ def run_export_data_contract(table_group_id: str, output_path: str | None = None
             "limitations": None,
             "usage": None,
         }.items() if v}
+
+    if ctx.get("last_run_at"):
+        failed  = int(ctx.get("last_run_failed_ct") or 0)
+        warning = int(ctx.get("last_run_warning_ct") or 0)
+        error   = int(ctx.get("last_run_error_ct") or 0)
+        if error > 0:
+            run_status = "error"
+        elif failed > 0:
+            run_status = "failing"
+        elif warning > 0:
+            run_status = "warning"
+        else:
+            run_status = "passing"
+        contract["lastRunAt"]     = ctx["last_run_at"].isoformat()
+        contract["lastRunStatus"] = run_status
 
     contract["servers"] = _build_servers(ctx)
 

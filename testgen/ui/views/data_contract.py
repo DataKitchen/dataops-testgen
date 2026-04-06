@@ -26,10 +26,7 @@ from testgen.commands.contract_versions import (
     save_contract_version,
 )
 from testgen.commands.export_data_contract import run_export_data_contract
-from testgen.commands.import_data_contract import (  # ContractDiff re-exported for test compatibility
-    ContractDiff,
-    run_import_data_contract,
-)
+from testgen.commands.import_data_contract import ContractDiff  # re-exported for test compatibility
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
 from testgen.common.models import with_database_session
@@ -57,6 +54,23 @@ _STATUS_ICON: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Five-tier enforcement taxonomy
 # ---------------------------------------------------------------------------
+
+# Governance fields sourced directly from data_column_chars
+_GOV_FIELDS: list[tuple[str, str]] = [
+    # (claim label, db column name)
+    ("Critical Data Element", "critical_data_element"),
+    ("Excluded Data Element", "excluded_data_element"),
+    ("PII",                   "pii_flag"),
+    ("Description",           "description"),
+    ("Data Source",           "data_source"),
+    ("Source System",         "source_system"),
+    ("Source Process",        "source_process"),
+    ("Business Domain",       "business_domain"),
+    ("Stakeholder Group",     "stakeholder_group"),
+    ("Transform Level",       "transform_level"),
+    ("Aggregation Level",     "aggregation_level"),
+    ("Data Product",          "data_product"),
+]
 
 _TIERS: dict[str, tuple[str, str, str]] = {
     "db_enforced": ("🏛️", "Database Schema Enforced",
@@ -149,16 +163,6 @@ def _tier_badge(tiers: list[str]) -> str:
     return "".join(_TIERS[t][0] for t in tiers if t in _TIERS)
 
 
-def _render_tier_legend() -> None:
-    parts = "  ".join(f"{icon} **{name}**" for icon, name, _ in _TIERS.values())
-    st.caption(f"Coverage legend: {parts}")
-
-
-def _render_tier_legend_full() -> None:
-    st.markdown("### Enforcement Coverage Legend")
-    for _key, (icon, name, desc) in _TIERS.items():
-        st.markdown(f"**{icon} {name}** — {desc}")
-
 
 # ---------------------------------------------------------------------------
 # Claim card infrastructure — improvement #5: left-border stripe + single badge
@@ -209,27 +213,6 @@ def _claim_card_html(claim: dict) -> str:
         f'</div>'
     )
 
-
-def _render_contract_legend() -> None:
-    border_swatches = "&nbsp;&nbsp;".join(
-        f'<span style="display:inline-block;width:8px;height:14px;background:{border};'
-        f'border-radius:2px;vertical-align:middle;margin-right:3px;"></span>'
-        f'<span style="font-size:11px;color:#444;">{label}</span>'
-        for label, _, border in _SOURCE_META.values()
-    )
-    verif_pills = "&nbsp;".join(
-        f'<span style="font-size:10px;background:{badge};color:#fff;'
-        f'border-radius:3px;padding:1px 6px;">{icon} {label}</span>'
-        for icon, label, badge in _VERIF_META.values()
-    )
-    st.markdown(
-        f"<div style='margin-bottom:10px;line-height:2;'>"
-        f"<strong style='font-size:11px;'>Border&nbsp;(source):</strong>&nbsp; {border_swatches}"
-        f"&nbsp;&nbsp;&nbsp;&nbsp;"
-        f"<strong style='font-size:11px;'>Badge&nbsp;(verification):</strong>&nbsp; {verif_pills}"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -393,19 +376,32 @@ def _render_health_dashboard(
 # Static vs live split  +  border-stripe cards
 # ---------------------------------------------------------------------------
 
+def _format_pii_flag(pii_flag: str) -> str:  # noqa: ARG001
+    """Any non-empty pii_flag value means the column is PII."""
+    return "Yes"
+
+
 def _extract_column_claims(
     prop: dict,
     col_rules: list[dict],
     col_anomalies: list[dict],
     col_refs: list[dict],
+    gov: dict | None = None,
 ) -> list[dict]:
+    """Build claims for a single column.
+
+    gov — live governance dict from data_column_chars (keyed by db column name).
+    When provided it replaces the YAML-derived governance fields (classification,
+    criticalDataElement, description).  Each populated governance field becomes
+    one independent claim.
+    """
     claims: list[dict] = []
     opts = prop.get("logicalTypeOptions") or {}
     physical = (prop.get("physicalType") or "").strip()
     physical_lower = physical.lower()
     base = physical_lower.split("(")[0].strip()
 
-    # --- Static claims (schema + governance + profiling observations) ---
+    # --- Schema claims (DDL) ---
     if physical:
         db_enforced = bool(
             _CHAR_CONSTRAINED_RE.match(physical_lower)
@@ -425,18 +421,36 @@ def _extract_column_claims(
     for ref in col_refs:
         claims.append(_claim("Foreign Key", f"→ {ref.get('to', '')}", "ddl", "db_enforced", kind="static"))
 
-    if prop.get("classification"):
-        claims.append(_claim("Classification", prop["classification"], "governance", "declared", kind="static"))
+    # --- Governance claims (live from data_column_chars) ---
+    if gov:
+        if gov.get("critical_data_element"):
+            claims.append(_claim("Critical Data Element", "Yes", "governance", "declared", kind="static"))
+        if gov.get("excluded_data_element"):
+            claims.append(_claim("Excluded Data Element", "Yes", "governance", "declared", kind="static"))
+        pii = gov.get("pii_flag")
+        if pii:
+            claims.append(_claim("PII", _format_pii_flag(pii), "governance", "declared", kind="static"))
+        desc = gov.get("description") or ""
+        if desc:
+            short = desc if len(desc) <= 45 else desc[:42] + "…"
+            claims.append(_claim("Description", short, "governance", "declared", kind="static", full_value=desc))
+        for label, col_key in _GOV_FIELDS:
+            if col_key in ("critical_data_element", "excluded_data_element", "pii_flag", "description"):
+                continue  # handled above
+            val = gov.get(col_key) or ""
+            if val:
+                claims.append(_claim(label, val, "governance", "declared", kind="static"))
+    else:
+        # Fallback: use YAML-derived governance fields (legacy path)
+        if prop.get("criticalDataElement"):
+            claims.append(_claim("Critical Data Element", "Yes", "governance", "declared", kind="static"))
+        if prop.get("description"):
+            full_desc = str(prop["description"])
+            desc_short = full_desc if len(full_desc) <= 45 else full_desc[:42] + "…"
+            claims.append(_claim("Description", desc_short, "governance", "declared", kind="static",
+                                 full_value=full_desc))
 
-    if prop.get("criticalDataElement"):
-        claims.append(_claim("CDE", "Critical", "governance", "declared", kind="static"))
-
-    if prop.get("description"):
-        full_desc = str(prop["description"])
-        desc = full_desc if len(full_desc) <= 45 else full_desc[:42] + "…"
-        claims.append(_claim("Description", desc, "governance", "declared", kind="static",
-                              full_value=full_desc))
-
+    # --- Profiling observations ---
     if opts.get("minimum") is not None:
         claims.append(_claim("Min Value", opts["minimum"], "profiling", "observed", kind="static"))
     if opts.get("maximum") is not None:
@@ -541,96 +555,6 @@ def _render_live_claims_row(
                         else:
                             _edit_rule_dialog(rule, table_group_id, yaml_key)
 
-
-def _render_schema_claims(
-    schema: list[dict],
-    quality: list[dict],
-    references: list[dict],
-    anomalies: list[dict],
-    table_group_id: str,
-    yaml_key: str,
-    active_filter: str | None = None,
-) -> None:
-    rules_by_element, anomalies_by_col, refs_by_col = _build_lookups(quality, references, anomalies)
-
-    for table in schema:
-        table_name = table.get("name", "")
-        props = table.get("properties") or []
-
-        # Table-level rules: element matches the table name exactly
-        table_rules = rules_by_element.get(table_name, [])
-
-        with st.expander(f"**{table_name}** — {len(props)} column(s)", expanded=True):
-            if table_rules:
-                live_table = [
-                    _claim(
-                        "Test",
-                        f"{_STATUS_ICON.get((r.get('lastResult') or {}).get('status') or 'not run', '⏳')} "
-                        f"{r.get('name') or r.get('type') or 'Test'}",
-                        "test", "tested",
-                        kind="live", rule=r,
-                        status=(r.get("lastResult") or {}).get("status") or "not run",
-                    )
-                    for r in table_rules
-                ]
-                st.markdown(
-                    '<div style="font-size:11px;font-style:italic;color:#777;margin:6px 0 2px 0;">'
-                    'table-level</div>',
-                    unsafe_allow_html=True,
-                )
-                _render_live_claims_row(f"tbl_{table_name}", live_table, table_group_id, yaml_key)
-
-            for prop in props:
-                col_name = prop.get("name", "")
-                col_key = f"{table_name}.{col_name}"
-                col_rules = rules_by_element.get(col_key, []) + rules_by_element.get(col_name, [])
-                col_anomalies = anomalies_by_col.get((table_name, col_name), [])
-                col_refs = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
-
-                claims = _extract_column_claims(prop, col_rules, col_anomalies, col_refs)
-                if not claims:
-                    continue
-
-                static_claims = [c for c in claims if c.get("kind") == "static"]
-                live_claims = [c for c in claims if c.get("kind") == "live"]
-
-                # Apply active filter
-                has_failing = any(c.get("status") in ("failing", "error") for c in live_claims)
-                has_anomaly = any(c.get("name") == "Hygiene" for c in live_claims)
-                has_nontrivial = bool(
-                    col_rules
-                    or prop.get("classification")
-                    or prop.get("criticalDataElement")
-                    or prop.get("description")
-                    or (prop.get("logicalTypeOptions") or {}).get("format")
-                )
-                if active_filter == "uncovered" and has_nontrivial:
-                    continue
-                if active_filter == "failing" and not has_failing:
-                    continue
-                if active_filter == "anomalies" and not has_anomaly:
-                    continue
-
-                # Column header with inline status indicator
-                indicator = " ❌" if has_failing else (" ⚠️" if has_anomaly else "")
-                st.markdown(
-                    f'<div style="margin:12px 0 4px 0;font-size:13px;font-weight:600;color:#333;">'
-                    f'▸ {col_name}{indicator}'
-                    f'<span style="font-size:11px;font-weight:400;color:#999;margin-left:8px;">'
-                    f'{len(static_claims)} static · {len(live_claims)} live</span></div>',
-                    unsafe_allow_html=True,
-                )
-
-                if static_claims:
-                    cards_html = "".join(_claim_card_html(c) for c in static_claims)
-                    st.markdown(
-                        f'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">'
-                        f'{cards_html}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                if live_claims:
-                    _render_live_claims_row(col_key, live_claims, table_group_id, yaml_key)
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +685,140 @@ def _persist_governance_deletion(
     )])
 
 
+def _modal_header(verif: str, name: str, table_name: str, col_name: str, subtitle: str = "") -> None:
+    """Render a consistent modal header.
+
+    Line 1 (bold): {icon} {verif_label} — {name}
+    Line 2 (caption): table_name
+    Line 3 (caption mono): col_name
+    Optional subtitle below.
+    """
+    icon, label, _ = _VERIF_META.get(verif, ("", verif.replace("_", " ").title(), ""))
+    header_line = f"{icon} {label} \u2014 {html.escape(name)}" if label else html.escape(name)
+    if table_name and col_name:
+        location = f"{html.escape(table_name)} · {html.escape(col_name)}"
+    elif table_name:
+        location = html.escape(table_name)
+    else:
+        location = html.escape(col_name) if col_name else ""
+    location_html = (
+        f'<div style="font-size:12px;color:var(--caption-text-color);margin-top:3px;font-family:monospace;">{location}</div>'
+        if location else ""
+    )
+    subtitle_html = (
+        f'<p style="margin:8px 0 0 0;font-size:13px;color:var(--secondary-text-color);line-height:1.5;">'
+        f'{html.escape(subtitle)}</p>'
+        if subtitle else ""
+    )
+    st.markdown(
+        f"""
+        <div style="padding:4px 0 12px 0;border-bottom:1px solid var(--border-color);margin-bottom:14px;">
+          <div style="font-size:17px;font-weight:700;color:var(--primary-text-color);line-height:1.3;">
+            {header_line}
+          </div>
+          {location_html}
+          {subtitle_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+@st.dialog("Governance Metadata", width="large")
+def _governance_edit_dialog(
+    column_id: str,
+    table_name: str,
+    col_name: str,
+    table_group_id: str,
+    yaml_key: str,
+) -> None:
+    """Edit all governance metadata for a column, writing directly to data_column_chars."""
+    # Re-fetch current values so the dialog is always fresh
+    gov_map = _fetch_governance_data(table_group_id)
+    gov = gov_map.get((table_name, col_name)) or {}
+
+    # If still no column_id, try looking it up from gov_map or the passed-in id
+    effective_column_id = column_id or gov.get("column_id", "")
+
+    if not effective_column_id:
+        st.warning(
+            f"Column `{col_name}` in `{table_name}` has no governance record yet. "
+            "Run profiling first to create the column record, then you can set metadata here."
+        )
+        if st.button("Close"):
+            safe_rerun()
+        return
+
+    can_edit_pii = session.auth.user_has_permission("view_pii")
+
+    _modal_header("declared", "Governance Metadata", table_name, col_name)
+
+    updates: dict = {}
+
+    # ── Boolean flags ──────────────────────────────────────────────────────────
+    f1, f2 = st.columns(2)
+    updates["critical_data_element"] = f1.toggle(
+        "Critical Data Element",
+        value=bool(gov.get("critical_data_element")),
+        help="Mark this column as a Critical Data Element (CDE).",
+    )
+    updates["excluded_data_element"] = f2.toggle(
+        "Excluded Data Element",
+        value=bool(gov.get("excluded_data_element")),
+        help="Exclude this column from quality test generation.",
+    )
+
+    # ── PII ────────────────────────────────────────────────────────────────────
+    if can_edit_pii:
+        current_pii = gov.get("pii_flag")
+        is_pii = st.checkbox("Contains PII", value=bool(current_pii))
+        updates["pii_flag"] = "MANUAL" if is_pii else None
+    else:
+        st.caption("🔒 PII classification: requires view_pii permission to edit.")
+
+    st.divider()
+
+    # ── Description ────────────────────────────────────────────────────────────
+    updates["description"] = st.text_area(
+        "Description",
+        value=gov.get("description") or "",
+        height=80,
+        placeholder="Describe what this column contains…",
+    )
+
+    st.divider()
+
+    # ── Tag fields ─────────────────────────────────────────────────────────────
+    tag_labels = {
+        "data_source":      "Data Source",
+        "source_system":    "Source System",
+        "source_process":   "Source Process",
+        "business_domain":  "Business Domain",
+        "stakeholder_group": "Stakeholder Group",
+        "transform_level":  "Transform Level",
+        "aggregation_level": "Aggregation Level",
+        "data_product":     "Data Product",
+    }
+    c1, c2 = st.columns(2)
+    for i, (db_col, label) in enumerate(tag_labels.items()):
+        col_widget = c1 if i % 2 == 0 else c2
+        updates[db_col] = col_widget.text_input(
+            label,
+            value=gov.get(db_col) or "",
+            max_chars=40,
+        )
+
+    st.divider()
+    save_col, cancel_col = st.columns(2)
+    if save_col.button("Save", type="primary", use_container_width=True):
+        _save_governance_data(effective_column_id, updates)
+        # Clear cached contract so claims refresh on next render
+        st.session_state.pop(yaml_key, None)
+        safe_rerun()
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
 @st.dialog("Select Test Suite", width="small")
 def _suite_picker_dialog(suite_runs: list[dict]) -> None:
     """Let the user choose which suite's results to drill into."""
@@ -816,7 +874,7 @@ _MONITOR_DESCRIPTION: dict[str, str] = {
 
 
 @st.dialog("Monitor Claim Detail", width="small")
-def _monitor_claim_dialog(rule: dict, claim_name: str) -> None:  # noqa: ARG001
+def _monitor_claim_dialog(rule: dict, claim_name: str, table_name: str = "", col_name: str = "") -> None:  # noqa: ARG001
     test_type = rule.get("testType", "")
     icon = _MONITOR_ICON.get(test_type, "📡")
     description = _MONITOR_DESCRIPTION.get(test_type, "A continuous monitor watches this element for anomalies over time.")
@@ -825,8 +883,7 @@ def _monitor_claim_dialog(rule: dict, claim_name: str) -> None:  # noqa: ARG001
     status = last.get("status") or "not run"
     status_icon = _STATUS_ICON.get(status, "⏳")
 
-    st.markdown(f"**{icon} {monitor_name}**")
-    st.caption(description)
+    _modal_header("monitored", monitor_name, table_name, col_name, subtitle=description)
     st.divider()
     st.markdown(f"**Status** &nbsp; {status_icon} {status.title() if status else 'Not Run'}")
     if last.get("measuredValue") is not None:
@@ -872,26 +929,36 @@ def _test_claim_dialog(claim: dict, table_name: str, col_name: str, project_code
     else:
         last_run_display = None
 
-    st.markdown(f"**{test_name}**")
-    st.caption(f"{table_name} › `{col_name}`")
-    st.divider()
+    test_name_short  = live_info.get("test_name_short") or test_name
+    type_description = live_info.get("type_description") or ""
+    user_description = live_info.get("user_description") or ""
+    status_label = live_status.title() if live_status else "Not Run"
 
-    col1, col2 = st.columns(2)
-    col1.markdown(f"**Status**  \n{live_status_icon} {live_status.title() if live_status else 'Not Run'}")
-    if element:
-        col2.markdown(f"**Element**  \n`{element}`")
+    subtitle = type_description
+    if user_description:
+        subtitle = f"{subtitle}\n**Notes:** {user_description}" if subtitle else f"**Notes:** {user_description}"
 
-    if last_run_display:
-        st.markdown(f"**Last Run**  \n{last_run_display}")
-    else:
-        st.markdown("**Last Run**  \nNot run")
+    _modal_header("tested", test_name_short, table_name, col_name, subtitle=type_description)
+    if user_description:
+        st.caption(f"Notes: {user_description}")
 
-    if dimension or severity:
-        c1, c2 = st.columns(2)
-        if dimension:
-            c1.markdown(f"**Dimension**  \n{dimension.title()}")
-        if severity:
-            c2.markdown(f"**Severity**  \n{severity.title()}")
+    meta: list[tuple[str, str]] = [
+        ("Status", f"{live_status_icon} {status_label}"),
+        ("Last Run", last_run_display or "Not run"),
+    ]
+    if dimension:
+        meta.append(("Dimension", dimension.title()))
+    if severity:
+        meta.append(("Severity", severity.title()))
+
+    cols = st.columns(len(meta))
+    for col_st, (label, value) in zip(cols, meta):
+        col_st.markdown(
+            f'<div style="font-size:11px;color:var(--caption-text-color);font-weight:600;'
+            f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">{label}</div>'
+            f'<div style="font-size:13px;color:var(--primary-text-color);">{value}</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
     btn_col, close_col = st.columns(2)
@@ -919,11 +986,7 @@ def _claim_read_dialog(
     claim_name = claim.get("name", "")
     can_delete = claim_name in _DELETABLE_CLAIMS.get(src, set())
 
-    st.markdown(f"**{claim_name}**")
-    st.caption(
-        f"{table_name} › `{col_name}` · "
-        f"{_SRC_LABEL.get(src, src)} · {_VERIF_LABEL.get(verif, verif)}"
-    )
+    _modal_header(verif, claim_name, table_name, col_name)
     st.divider()
     st.write(claim.get("full_value") or claim.get("value", ""))
     note = _SRC_NOTE.get(src, "")
@@ -977,7 +1040,7 @@ def _claim_edit_dialog(
     claim_name = claim.get("name", "")
     current_value = claim.get("full_value") or claim.get("value", "")
 
-    st.caption(f"{table_name} › `{col_name}` · 🏷️ Declared governance metadata")
+    _modal_header("declared", claim_name, table_name, col_name)
 
     if claim_name == "CDE":
         new_cde: bool = st.checkbox("Mark as Critical Data Element", value=True)
@@ -1281,6 +1344,10 @@ def _build_contract_props(
         ],
     }
 
+    # ── Governance metadata (live from data_column_chars) — needed for matrix + claims ──
+    table_group_id_str = str(getattr(table_group, "id", "") or "")
+    gov_by_col = _fetch_governance_data(table_group_id_str)
+
     # ── Coverage matrix rows ──────────────────────────────────────────────────
     rules_by_element_full, anomalies_by_col, refs_by_col = _build_lookups(quality, references, anomalies)
     matrix_rows: list[dict] = []
@@ -1348,10 +1415,16 @@ def _build_contract_props(
                 # profiling hygiene anomalies
                 len(col_anomalies),
             ])
+            gov_col = gov_by_col.get((table_name, col_name)) or {}
             decl_ct = sum([
-                1 if prop.get("description") else 0,
-                1 if prop.get("classification") else 0,
-                1 if prop.get("criticalDataElement") else 0,
+                1 if (gov_col.get("description") or prop.get("description")) else 0,
+                1 if (gov_col.get("pii_flag") or prop.get("classification")) else 0,
+                1 if (gov_col.get("critical_data_element") or prop.get("criticalDataElement")) else 0,
+                # additional gov fields
+                sum(1 for _, db_col in _GOV_FIELDS
+                    if db_col not in ("description", "pii_flag", "critical_data_element",
+                                      "excluded_data_element")
+                    and gov_col.get(db_col)),
             ])
             matrix_rows.append({
                 "table":    table_name,
@@ -1426,7 +1499,8 @@ def _build_contract_props(
             col_rules = rules_by_element_full.get(col_key, []) + rules_by_element_full.get(col_name, [])
             col_anomalies = anomalies_by_col.get((table_name, col_name), [])
             col_refs = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
-            claims = _extract_column_claims(prop, col_rules, col_anomalies, col_refs)
+            gov = gov_by_col.get((table_name, col_name))
+            claims = _extract_column_claims(prop, col_rules, col_anomalies, col_refs, gov=gov)
             static_claims = [c for c in claims if c.get("kind") == "static"]
             live_claims   = [c for c in claims if c.get("kind") == "live"]
             worst_live = "clean"
@@ -1441,11 +1515,13 @@ def _build_contract_props(
                     worst_live = "warning"
             col_refs_full = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
             is_covered = _is_covered(prop, col_rules)
+            column_id = (gov or {}).get("column_id", "")
             cols_data.append({
                 "name":          col_name,
                 "type":          prop.get("physicalType") or "",
                 "is_pk":         bool((prop.get("logicalTypeOptions") or {}).get("primaryKey")),
                 "is_fk":         bool(col_refs_full),
+                "column_id":     column_id,
                 "covered":       is_covered,
                 "status":        worst_live,
                 "static_claims": [
@@ -1462,6 +1538,7 @@ def _build_contract_props(
                         "rule_id":     str(c.get("rule", {}).get("id", "") or ""),
                         "suite_id":    str(c.get("rule", {}).get("suiteId", "") or ""),
                         "test_name":   (c.get("rule", {}).get("name") or c.get("rule", {}).get("testType") or ""),
+                        "test_type":   (c.get("rule", {}).get("type") or c.get("rule", {}).get("testType") or ""),
                         "element":     (c.get("rule", {}).get("element") or ""),
                         "dimension":   (c.get("rule", {}).get("dimension") or ""),
                         "severity":    (c.get("rule", {}).get("severity") or ""),
@@ -1628,6 +1705,43 @@ def _render_staleness_banner(
 
 # ---------------------------------------------------------------------------
 # Save version dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Regenerate Contract", width="small")
+def _regenerate_dialog(table_group_id: str, current_version: int | None) -> None:
+    """Re-export the contract from the live database and save it as a new version."""
+    next_ver = (current_version + 1) if current_version is not None else 0
+    st.markdown(f"**Re-export and save as Version {next_ver}**")
+    st.caption(
+        "This will re-generate the full contract YAML from the current database state "
+        "(test definitions, profiling results, governance metadata) and save it as a new version. "
+        "Any in-memory edits not yet saved will be discarded."
+    )
+    label = st.text_input("Label (optional)", placeholder="e.g. Regenerated with test descriptions")
+    st.divider()
+    go_col, cancel_col = st.columns(2)
+    if go_col.button("Regenerate & Save", type="primary", use_container_width=True):
+        with st.spinner("Exporting from database…"):
+            import io as _io
+            buf = _io.StringIO()
+            _capture_yaml(table_group_id, buf)
+            fresh_yaml = buf.getvalue()
+        if not fresh_yaml.strip():
+            st.error("Export produced no output — check that profiling and test suites exist.")
+            return
+        with st.spinner("Saving new version…"):
+            new_version = save_contract_version(table_group_id, fresh_yaml, label or None)
+        st.success(f"Saved as version {new_version}.")
+        pending_key = f"dc_pending:{table_group_id}"
+        yaml_key    = f"dc_yaml:{table_group_id}"
+        version_key = f"dc_version:{table_group_id}"
+        for k in (pending_key, yaml_key, version_key):
+            st.session_state.pop(k, None)
+        safe_rerun()
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
 # ---------------------------------------------------------------------------
 
 @st.dialog("Save New Version", width="small")
@@ -1950,7 +2064,7 @@ class DataContractPage(Page):
             current_idx = next(
                 (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
             )
-            picker_col, save_col = st.columns([4, 1])
+            picker_col, regen_col, save_col = st.columns([4, 1, 1])
             with picker_col:
                 chosen_idx = st.selectbox(
                     "Contract version",
@@ -1960,6 +2074,10 @@ class DataContractPage(Page):
                     label_visibility="collapsed",
                 )
             if is_latest:
+                with regen_col:
+                    if st.button("↺ Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
+                                 help="Re-export from the database and save as a new version"):
+                        _regenerate_dialog(table_group_id, version_record["version"])
                 if pending_ct > 0:
                     pending_items = [
                         f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])
@@ -1991,8 +2109,12 @@ class DataContractPage(Page):
                     st.query_params["version"] = str(chosen_ver)
                     safe_rerun()
         elif is_latest:
-            # No version picker (only one version) — save button floats right
-            _, save_col = st.columns([4, 1])
+            # No version picker (only one version) — regen + save buttons float right
+            _, regen_col, save_col = st.columns([4, 1, 1])
+            with regen_col:
+                if st.button("↺ Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
+                             help="Re-export from the database and save as a new version"):
+                    _regenerate_dialog(table_group_id, version_record["version"])
             if pending_ct > 0:
                 pending_items = [
                     f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])
@@ -2071,7 +2193,7 @@ class DataContractPage(Page):
             if not is_latest:
                 _claim_read_dialog(claim, table_name, col_name, table_group_id, yaml_key)
             elif source == "monitor":
-                _monitor_claim_dialog(claim.get("rule", {}), claim_name)
+                _monitor_claim_dialog(claim.get("rule", {}), claim_name, table_name, col_name)
             elif source == "test":
                 _project_code = getattr(table_group, "project_code", "")
                 _test_claim_dialog(claim, table_name, col_name, _project_code)
@@ -2079,6 +2201,17 @@ class DataContractPage(Page):
                 _claim_edit_dialog(claim, table_name, col_name, table_group_id, yaml_key)
             else:
                 _claim_read_dialog(claim, table_name, col_name, table_group_id, yaml_key)
+
+        def on_governance_edit(payload: dict) -> None:
+            col_id     = payload.get("columnId", "")
+            table_name = payload.get("tableName", "")
+            col_name   = payload.get("colName", "")
+            if not is_latest:
+                return
+            # If column_id wasn't in props, look it up now
+            if not col_id:
+                col_id = _lookup_column_id(table_group_id, table_name, col_name)
+            _governance_edit_dialog(col_id, table_name, col_name, table_group_id, yaml_key)
 
         def on_edit_rule(payload: dict) -> None:
             if not is_latest:
@@ -2095,10 +2228,11 @@ class DataContractPage(Page):
             "data_contract",
             props=props,
             event_handlers={
-                "RefreshClicked":     on_refresh,
-                "EditRuleClicked":    on_edit_rule,
-                "ClaimDetailClicked": on_claim_detail,
-                "SuitePickerClicked": on_suite_picker,
+                "RefreshClicked":        on_refresh,
+                "EditRuleClicked":       on_edit_rule,
+                "ClaimDetailClicked":    on_claim_detail,
+                "SuitePickerClicked":    on_suite_picker,
+                "GovernanceEditClicked": on_governance_edit,
             },
         )
 
@@ -2179,15 +2313,99 @@ def _fetch_suite_scope(table_group_id: str) -> dict:
 
 
 @with_database_session
-def _fetch_test_live_info(test_def_id: str) -> dict:
-    """Return live suite_id, status, and last run timestamp for a test definition."""
+def _fetch_governance_data(table_group_id: str) -> dict[tuple[str, str], dict]:
+    """Return governance metadata keyed by (table_name, col_name) from data_column_chars."""
     schema = get_tg_schema()
     sql = f"""
         SELECT
-            td.test_suite_id::text AS suite_id,
+            column_id::text AS column_id,
+            table_name,
+            column_name,
+            critical_data_element,
+            excluded_data_element,
+            pii_flag,
+            description,
+            data_source,
+            source_system,
+            source_process,
+            business_domain,
+            stakeholder_group,
+            transform_level,
+            aggregation_level,
+            data_product
+        FROM {schema}.data_column_chars
+        WHERE table_groups_id = :tg_id
+    """
+    try:
+        rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
+        return {(r["table_name"], r["column_name"]): dict(r) for r in (rows or [])}
+    except Exception:
+        LOG.warning("_fetch_governance_data failed for tg_id=%s", table_group_id, exc_info=True)
+        return {}
+
+
+@with_database_session
+def _lookup_column_id(table_group_id: str, table_name: str, col_name: str) -> str:
+    """Return the column_id UUID string for a given table/column, or '' if not found."""
+    schema = get_tg_schema()
+    sql = f"""
+        SELECT column_id::text AS column_id
+        FROM {schema}.data_column_chars
+        WHERE table_groups_id = :tg_id
+          AND table_name = :tbl
+          AND column_name = :col
+        LIMIT 1
+    """
+    try:
+        rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id, "tbl": table_name, "col": col_name})
+        return (rows[0]["column_id"] or "") if rows else ""
+    except Exception:
+        LOG.warning("_lookup_column_id failed", exc_info=True)
+        return ""
+
+
+@with_database_session
+def _save_governance_data(column_id: str, updates: dict) -> None:
+    """Persist governance field updates to data_column_chars."""
+    schema = get_tg_schema()
+    set_clauses = []
+    params: dict = {"col_id": column_id}
+    bool_fields = {"critical_data_element", "excluded_data_element"}
+    for key, val in updates.items():
+        if key in bool_fields:
+            set_clauses.append(f"{key} = :{key}")
+            params[key] = val
+        elif key == "pii_flag":
+            set_clauses.append(f"{key} = :{key}")
+            params[key] = val  # None or string
+        else:
+            set_clauses.append(f"{key} = NULLIF(:{key}, '')")
+            params[key] = val or ""
+    if not set_clauses:
+        return
+    sql = (
+        f"UPDATE {schema}.data_column_chars "
+        f"SET {', '.join(set_clauses)} "
+        f"WHERE column_id = CAST(:col_id AS uuid)"
+    )
+    execute_db_queries([(sql, params)])
+
+
+@with_database_session
+def _fetch_test_live_info(test_def_id: str) -> dict:
+    """Return live suite_id, status, last run timestamp, test name, and descriptions."""
+    schema = get_tg_schema()
+    sql = f"""
+        SELECT
+            td.test_suite_id::text          AS suite_id,
+            td.test_description             AS user_description,
+            tt.test_name_short,
+            tt.test_name_long,
+            tt.test_description             AS type_description,
             tr.result_status,
             tr.test_time
         FROM {schema}.test_definitions td
+        LEFT JOIN {schema}.test_types tt ON tt.test_type = td.test_type
         LEFT JOIN LATERAL (
             SELECT result_status, test_time
             FROM   {schema}.test_results
@@ -2206,9 +2424,13 @@ def _fetch_test_live_info(test_def_id: str) -> dict:
         row = dict(rows[0])
         status_map = {"Passed": "passing", "Failed": "failing", "Warning": "warning", "Error": "error"}
         return {
-            "suite_id":   row.get("suite_id") or "",
-            "status":     status_map.get(row.get("result_status") or "", "") or "",
-            "test_time":  row.get("test_time"),
+            "suite_id":         row.get("suite_id") or "",
+            "status":           status_map.get(row.get("result_status") or "", "") or "",
+            "test_time":        row.get("test_time"),
+            "test_name_short":  row.get("test_name_short") or "",
+            "test_name_long":   row.get("test_name_long") or "",
+            "user_description": row.get("user_description") or "",
+            "type_description": row.get("type_description") or "",
         }
     except Exception:
         LOG.warning("_fetch_test_live_info failed for test_def_id=%s", test_def_id, exc_info=True)
@@ -2332,139 +2554,6 @@ def _fetch_last_run_dates(table_group_id: str) -> dict:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Header
-# ---------------------------------------------------------------------------
-
-def _render_meta_bar(table_group: object, doc: dict) -> None:
-    domain = doc.get("domain") or ""
-    data_product = doc.get("dataProduct") or ""
-    servers = doc.get("servers") or []
-    server_type = servers[0].get("type", "") if servers else ""
-
-    pills = []
-    if domain:
-        pills.append(f"Domain: {domain}")
-    if data_product:
-        pills.append(f"Product: {data_product}")
-    if server_type:
-        pills.append(f"Server: {server_type}")
-
-    tg_name = getattr(table_group, "table_groups_name", "")
-    suffix = " &nbsp;·&nbsp; " + " &nbsp;·&nbsp; ".join(pills) if pills else ""
-    st.markdown(f"**{tg_name}**{suffix}")
-
-    if isinstance(doc.get("description"), dict) and doc["description"].get("purpose"):
-        st.caption(doc["description"]["purpose"])
-
-
-# ---------------------------------------------------------------------------
-# SLA / Team / Compliance section
-# ---------------------------------------------------------------------------
-
-def _render_sla_team_compliance(sla: list[dict], team: dict, compliance: dict) -> None:
-    parts = []
-    if sla:
-        parts.append(f"{len(sla)} SLA propert(ies)")
-    if team:
-        parts.append(f"Team: {team.get('name', '')}")
-    if compliance:
-        overall = compliance.get("overall", "unknown")
-        parts.append(f"Overall: {_STATUS_ICON.get(overall, '')} {overall.capitalize()}")
-
-    with st.expander(f"ℹ️ **SLA · Team · Compliance** &nbsp;&nbsp;&nbsp; {' · '.join(parts)}", expanded=False):  # noqa: RUF001
-        if sla:
-            st.markdown("**SLA Properties**")
-            for item in sla:
-                st.markdown(
-                    f"- **{item.get('property', '')}**: {item.get('value', '')} "
-                    f"{item.get('unit', '')} — {item.get('description', '')}"
-                )
-
-        if team:
-            st.markdown(f"**Team:** {team.get('name', '')}")
-
-        if compliance:
-            overall = compliance.get("overall", "unknown")
-            st.markdown(f"**Overall Compliance:** {_STATUS_ICON.get(overall, '')} {overall.capitalize()}")
-            by_dim = compliance.get("byDimension") or {}
-            if by_dim:
-                cols = st.columns(min(len(by_dim), 6))
-                for col, (dim, s) in zip(cols, by_dim.items(), strict=False):
-                    col.metric(dim.capitalize(), f"{_STATUS_ICON.get(s, '')} {s.capitalize()}")
-            for v in compliance.get("violatedTests") or []:
-                st.warning(
-                    f"{v.get('name', '')} — {v.get('element', '')} — {v.get('status', '')} — {v.get('message', '')}",
-                    icon=":material/warning:",
-                )
-
-
-# ---------------------------------------------------------------------------
-# Table builders (used in detail dialogs)
-# ---------------------------------------------------------------------------
-
-def _props_to_rows(props: list[dict], quality: list[dict] | None = None) -> list[dict]:
-    all_rules = quality or []
-    rows = []
-    for p in props:
-        opts = p.get("logicalTypeOptions") or {}
-        tiers = _column_coverage_tiers(p, all_rules)
-        rows.append({
-            "Column": p.get("name", ""),
-            "Enforcement": _tier_badge(tiers),
-            "Description": p.get("description") or "",
-            "Physical Type": p.get("physicalType", ""),
-            "Logical Type": p.get("logicalType", ""),
-            "Required": "✓" if p.get("required") else "",
-            "CDE": "★" if p.get("criticalDataElement") else "",
-            "Classification": p.get("classification", ""),
-            "Min Len": opts["minLength"] if opts.get("minLength") is not None else "",
-            "Max Len": opts["maxLength"] if opts.get("maxLength") is not None else "",
-            "Format": opts.get("format", ""),
-            "Examples": ", ".join(p.get("examples") or []),
-        })
-    return rows
-
-
-def _rules_to_rows(rules: list[dict], show_origin: bool = False) -> list[dict]:
-    rows = []
-    for r in rules:
-        last = r.get("lastResult") or {}
-        status = last.get("status") or "not run"
-        icon = _STATUS_ICON.get(status, "")
-        row: dict = {
-            "Status": f"{icon} {status}",
-            "Name": r.get("name") or r.get("testType") or r.get("type", ""),
-            "Element": r.get("element", ""),
-            "Dimension": r.get("dimension", ""),
-            "Type": r.get("type", ""),
-            "Severity": r.get("severity", ""),
-        }
-        if show_origin:
-            origin = r.get("origin", "")
-            row["Origin"] = "✎ business rule" if origin == "business_rule" else "⚙ auto-generated"
-        if last.get("measuredValue") is not None:
-            row["Measured"] = str(last["measuredValue"])
-        if last.get("message"):
-            row["Message"] = str(last["message"])[:80]
-        rows.append(row)
-    return rows
-
-
-def _anomaly_rows(anomalies: list[dict]) -> list[dict]:
-    return [
-        {
-            "Likelihood": a.get("issue_likelihood", ""),
-            "Table": a.get("table_name", ""),
-            "Column": a.get("column_name", ""),
-            "Anomaly": a.get("anomaly_name", ""),
-            "Description": (a.get("anomaly_description") or "")[:120],
-            "Detail": (a.get("detail") or "")[:100],
-            "Suggested Action": (a.get("suggested_action") or "")[:100],
-        }
-        for a in anomalies
-    ]
-
 
 def _quality_counts(rules: list[dict]) -> dict[str, int]:
     counts: dict[str, int] = {}
@@ -2483,90 +2572,3 @@ def _worst_status(counts: dict[str, int]) -> str:
     return worst
 
 
-# ---------------------------------------------------------------------------
-# Upload tab
-# ---------------------------------------------------------------------------
-
-def _render_upload_section(table_group_id: str, yaml_key: str) -> None:
-    st.markdown(
-        "Upload a modified YAML to sync selected fields back to TestGen. "
-        "Only the fields listed below are writable — everything else is ignored.\n\n"
-        "**Updated on upload:** contract version, status, description, business domain, data product, "
-        "latency SLA (profiling delay days), and quality rule thresholds, tolerances, severity, and description.\n\n"
-        "**Not updated (manage in TestGen directly):** tables, columns, data types, "
-        "which quality rules exist, test suite settings, and connections."
-    )
-
-    uploaded = st.file_uploader(
-        "Choose a YAML file",
-        type=["yaml", "yml"],
-        key=f"contract_upload:{table_group_id}",
-        help="Must be a valid ODCS v3.1.0 data contract document.",
-    )
-
-    if uploaded is None:
-        return
-
-    yaml_content = uploaded.read().decode("utf-8")
-
-    diff_key = f"dc_diff:{table_group_id}"
-    uploaded_yaml_key = f"dc_uploaded_yaml:{table_group_id}"
-
-    if st.session_state.get(uploaded_yaml_key) != yaml_content:
-        with st.spinner("Validating contract…"):
-            diff: ContractDiff = run_import_data_contract(yaml_content, table_group_id, dry_run=True)
-        st.session_state[diff_key] = diff
-        st.session_state[uploaded_yaml_key] = yaml_content
-
-    diff = st.session_state.get(diff_key)
-    if diff is None:
-        return
-
-    if diff.errors:
-        for err in diff.errors:
-            st.error(err, icon=":material/error:")
-        return
-
-    for warn in diff.warnings:
-        st.warning(warn, icon=":material/warning:")
-
-    if diff.total_changes == 0:
-        st.info("No changes detected — the uploaded contract matches the current state.", icon=":material/check_circle:")
-        return
-
-    st.markdown(f"**Preview of changes ({diff.summary()}):**")
-
-    if diff.contract_updates:
-        st.markdown("*Contract fields:*")
-        for col, val in diff.contract_updates.items():
-            st.markdown(f"  - `{col}` → `{val}`")
-
-    if diff.table_group_updates:
-        st.markdown("*Table Group fields:*")
-        for col, val in diff.table_group_updates.items():
-            st.markdown(f"  - `{col}` → `{val}`")
-
-    if diff.test_updates:
-        st.markdown(f"*{len(diff.test_updates)} quality rule update(s):*")
-        for upd in diff.test_updates[:10]:
-            test_id = upd.get("id", "")
-            changes = {k: v for k, v in upd.items() if k != "id"}
-            st.markdown(f"  - Test `{test_id[:8]}…`: {changes}")
-        if len(diff.test_updates) > 10:
-            st.caption(f"  … and {len(diff.test_updates) - 10} more.")
-
-    if st.button(
-        f":material/upload: Apply {diff.total_changes} Change(s)",
-        type="primary",
-        key=f"apply_contract:{table_group_id}",
-    ):
-        with st.spinner("Applying changes…"):
-            result: ContractDiff = run_import_data_contract(yaml_content, table_group_id, dry_run=False)
-        if result.errors:
-            for err in result.errors:
-                st.error(err)
-        else:
-            st.success(f"Applied {result.total_changes} change(s) successfully.")
-            for k in (yaml_key, diff_key, uploaded_yaml_key):
-                st.session_state.pop(k, None)
-            safe_rerun()

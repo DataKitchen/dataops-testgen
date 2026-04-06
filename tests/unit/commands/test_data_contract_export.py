@@ -23,7 +23,7 @@ from testgen.commands.export_data_contract import (
     _build_servers,
     _build_sla,
     _derive_origin,
-    _pii_to_classification,
+    _pii_flag_to_classification as _pii_to_classification,
     _safe_float,
     run_export_data_contract,
 )
@@ -221,8 +221,10 @@ class Test_BuildQuality:
     def _test(self, test_type="Row_Ct", dq_dimension="Completeness", **kwargs):
         return {
             "id": str(uuid4()),
+            "suite_id": str(uuid4()),
             "test_type": test_type,
-            "test_description": None,
+            "user_description": None,
+            "type_description": None,
             "schema_name": "public",
             "table_name": "orders",
             "column_name": None,
@@ -420,7 +422,7 @@ class Test_BuildComplianceSummary:
             "test_type": "Row_Ct",
             "result_status": status,
             "dq_dimension": dim,
-            "test_description": "row count test",
+            "user_description": "row count test",
             "test_name_short": "Row Count",
             "table_name": "orders",
             "column_name": None,

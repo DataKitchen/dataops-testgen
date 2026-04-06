@@ -261,15 +261,27 @@ def _make_table_group(tg_id: str = "tg-001") -> MagicMock:
     return tg
 
 
-def _props_from_doc(doc: dict, anomalies: list | None = None) -> dict:
-    """Call _build_contract_props with minimal required arguments."""
+def _props_from_doc(
+    doc: dict,
+    anomalies: list | None = None,
+    gov_map: dict | None = None,
+) -> dict:
+    """Call _build_contract_props with minimal required arguments.
+
+    ``gov_map`` — optional dict keyed by (table_name, col_name) with governance
+    fields; passed to mock _fetch_governance_data so tests don't need a real DB.
+    """
     import yaml as _yaml
-    return _build_contract_props(
-        table_group=_make_table_group(),
-        doc=doc,
-        anomalies=anomalies or [],
-        contract_yaml=_yaml.dump(doc),
-    )
+    from unittest.mock import patch
+    from testgen.ui.views import data_contract as _dc
+
+    with patch.object(_dc, "_fetch_governance_data", return_value=gov_map or {}):
+        return _build_contract_props(
+            table_group=_make_table_group(),
+            doc=doc,
+            anomalies=anomalies or [],
+            contract_yaml=_yaml.dump(doc),
+        )
 
 
 def _claims_detail_total(props: dict) -> int:
@@ -374,24 +386,40 @@ class Test_ClaimCountConsistency:
         assert detail == 3  # Data Type + Not Null + Primary Key
 
     def test_governance_claims(self):
-        """description + classification + CDE → three declared claims."""
+        """Governance metadata from live DB → declared claims (description + CDE + PII)."""
         doc = self._doc([{
             "name": "customers",
             "properties": [{
                 "name": "email",
                 "physicalType": "text",
-                "description": "Customer email address",
-                "classification": "pii",
-                "criticalDataElement": True,
             }],
         }])
-        props = _props_from_doc(doc)
+        # Governance comes from live DB, not YAML — supply it via gov_map mock
+        gov_map = {
+            ("customers", "email"): {
+                "description": "Customer email address",
+                "critical_data_element": True,
+                "pii_flag": "MANUAL",
+                "excluded_data_element": None,
+                "data_source": None,
+                "source_system": None,
+                "source_process": None,
+                "business_domain": None,
+                "stakeholder_group": None,
+                "transform_level": None,
+                "aggregation_level": None,
+                "data_product": None,
+                "column_id": "00000000-0000-0000-0000-000000000001",
+            },
+        }
+        props = _props_from_doc(doc, gov_map=gov_map)
 
         detail = _claims_detail_total(props)
         by_src, by_verif = _claim_counts_bar_totals(props)
         matrix = _coverage_matrix_total(props)
 
         assert detail == by_src == by_verif == matrix
+        assert detail >= 3  # Data Type (DDL) + Description + CDE + PII (governance)
 
     def test_test_rule_claims(self):
         """One non-monitor quality rule → one tested live claim."""
@@ -529,8 +557,6 @@ class Test_ClaimCountConsistency:
                         {
                             "name": "email",
                             "physicalType": "text",
-                            "classification": "pii",
-                            "description": "Customer email",
                         },
                     ],
                 },
@@ -552,7 +578,19 @@ class Test_ClaimCountConsistency:
                 },
             ],
         )
-        props = _props_from_doc(doc)
+        gov_map = {
+            ("customers", "email"): {
+                "description": "Customer email",
+                "pii_flag": "MANUAL",
+                "critical_data_element": None,
+                "excluded_data_element": None,
+                "data_source": None, "source_system": None, "source_process": None,
+                "business_domain": None, "stakeholder_group": None,
+                "transform_level": None, "aggregation_level": None, "data_product": None,
+                "column_id": "00000000-0000-0000-0000-000000000002",
+            },
+        }
+        props = _props_from_doc(doc, gov_map=gov_map)
 
         detail = _claims_detail_total(props)
         by_src, by_verif = _claim_counts_bar_totals(props)

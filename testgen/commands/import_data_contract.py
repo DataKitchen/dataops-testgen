@@ -20,13 +20,12 @@ from typing import Any
 
 import yaml
 
+from testgen.commands.export_data_contract import VALID_STATUSES
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
 from testgen.common.models import with_database_session
 
 LOG = logging.getLogger("testgen")
-
-VALID_STATUSES = {"proposed", "draft", "active", "deprecated", "retired"}
 
 
 # ---------------------------------------------------------------------------

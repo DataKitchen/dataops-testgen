@@ -1,6 +1,6 @@
 # Data Contract — Implementation Plan
 
-> Created: 2026-04-05 | Last updated: 2026-04-05  
+> Created: 2026-04-05 | Last updated: 2026-04-06  
 > Design reference: `.ai/contract-lifecycle-design.md`
 
 Each phase is a shippable unit. Later phases depend on earlier ones as noted. Tests are written in the same phase as the code they cover.
@@ -11,19 +11,28 @@ Each phase is a shippable unit. Later phases depend on earlier ones as noted. Te
 |---|---|---|
 | 0 — Core UI (pre-plan) | ✅ Done | `data_contract.py`, `data_contract.js`, export/import commands, DB migrations 0180–0183 |
 | 0a — Coverage Matrix redesign | ✅ Done | 5-tier columns (DB/Tested/Mon/Obs/Decl), ClaimCountsBar at top, Gap Analysis tab removed, ts-name/ts-meta headers, table-level monitor rows |
-| 0b — Code review fixes (round 1–2) | ✅ Done | HTML escaping (`html.escape`), SQL injection in `_fetch_anomalies` fixed, shared `_pii_flag_to_classification`, staleness SQL column names fixed, composite FK ref matching fixed, logger standardized |
-| 1 — DB schema | 🔲 Not started | `0184_incremental_upgrade.sql` — `data_contracts` table + staleness columns |
-| 2 — Contract version data layer | 🔲 Not started | `contract_versions.py` |
-| 3 — Staleness detection hooks | 🔲 Not started | Hooks into profiling + test definition changes |
-| 4 — Staleness diff computation | 🔲 Not started | `contract_staleness.py` (structure exists but diff logic is stub) |
-| 5 — Pending edit model | 🔲 Not started | Edit dialogs write to session state only |
-| 6 — Page load from saved snapshot | 🔲 Not started | Replace `_capture_yaml` with `load_contract_version` |
-| 7 — First-time flow | 🔲 Not started | Prerequisites gate → preview → save as v0 |
-| 8 — Staleness banner + diff panel | 🔲 Not started | Banner + `_review_changes_panel` dialog |
-| 9 — Version picker + historic view | 🔲 Not started | Dropdown + read-only mode |
-| 10 — Remove old lifecycle artifacts | 🔲 Not started | Dead `_STATUS_COLOR`, old `contract_version`/`contract_status` writes |
-| 11 — Frontend (VanJS) updates | 🔲 Not started | Version display, picker, staleness indicator |
-| 12 — Full test suite | 🔲 Partial | `Test_ClaimCountConsistency` (8 tests) written; staleness diff tests started |
+| 0b — Code review fixes (round 1–2) | ✅ Done | HTML escaping, SQL injection fix, shared `_pii_flag_to_classification`, staleness SQL fixes, composite FK ref matching, logger standardized |
+| 0c — UI polish (session 2) | ✅ Done | Modal headers unified (`_modal_header`), governance metadata from live DB, PII binary model, claim chip `[SOURCE]·[attr]` design, filter pills strip by verif level, test name/description in modals, severity + description in YAML export, ↺ Regenerate button |
+| 1 — DB schema | ✅ Done | `0184_incremental_upgrade.sql` — `data_contracts` table + staleness columns on `table_groups` |
+| 2 — Contract version data layer | ✅ Done | `testgen/commands/contract_versions.py` — `save_contract_version`, `load_contract_version`, `list_contract_versions`, `has_any_version`, `mark_contract_not_stale` |
+| 3 — Staleness detection hooks | ✅ Done | `mark_contract_stale` added; hooked into profiling + test definition changes |
+| 4 — Staleness diff computation | ✅ Done | `contract_staleness.py` — `compute_staleness_diff`, `StaleDiff` dataclass with schema/quality/governance/suite scope diffs |
+| 5 — Pending edit model | ✅ Done | `dc_pending:{tg_id}` session state; governance + test edits buffered; YAML patched on edit; flushed to DB on version save |
+| 6 — Page load from saved snapshot | ✅ Done | `render()` loads from `load_contract_version`; first-time flow via `has_any_version` gate |
+| 7 — First-time flow | ✅ Done | Prerequisites check → Generate Contract Preview → Save as v0 |
+| 8 — Staleness banner + diff panel | ✅ Done | `_render_staleness_banner`, `_review_changes_panel` dialog, dismiss key |
+| 9 — Version picker + historic view | ✅ Done | Selectbox version picker; historic read-only banner; `?version=N` query param |
+| 10 — Remove old lifecycle artifacts | ✅ Done | `_STATUS_COLOR` removed; old `contract_version`/`contract_status` writes removed from active code |
+| 11 — Frontend (VanJS) updates | ✅ Done | Version display, staleness indicator, pending count badge, historic read-only mode |
+| 12 — Full test suite | 🔲 Partial | `Test_ClaimCountConsistency` (8 tests) written; staleness diff tests started; pending edit / first-time flow / historic view tests not yet written |
+
+## What's left
+
+| Item | Priority | Notes |
+|---|---|---|
+| Remaining unit tests (phases 5/7/8/9) | Medium | `test_contract_pending_edits.py`, `test_contract_first_time_flow.py`, `test_contract_staleness_ui.py`, `test_contract_historic_view.py` |
+| Staleness hooks — test definition changes | Medium | `mark_contract_stale` not yet called from all test definition write paths |
+| YAML: `dimension` field on quality rules | Low | Already mapped via `_DQ_DIMENSION_MAP`; verify rendering in downstream tools |
 
 ---
 

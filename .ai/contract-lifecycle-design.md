@@ -1,6 +1,6 @@
 # Data Contract — Design
 
-> Last updated: 2026-04-05 (coverage matrix redesign + code review fixes)
+> Last updated: 2026-04-06 (UI polish: modal headers, governance metadata, PII model, YAML description/severity, Regenerate button)
 
 ---
 
@@ -279,12 +279,15 @@ Clicking a chip opens a detail dialog. For governance claims (Classification, CD
 
 ### Filters
 
-Three filter buttons at the top of the section:
+Six filter buttons at the top of the Claims Detail section:
 - **All** — shows everything
-- **Failing** — only columns with at least one failing or error test
-- **Uncovered** — only columns with no non-schema claims
+- **DB Enforced** — shows only `db_enforced` claims
+- **Tested** — shows only `tested` claims
+- **Monitor** — shows only `monitored` claims
+- **Observed** — shows only `observed` claims
+- **Declared** — shows only `declared` claims
 
-Filters activated from the health dashboard cards set these automatically and vice versa — they share the same state.
+Filtering **strips non-matching claims from within each column** — it does not merely hide columns. A column row with no matching claims is hidden entirely. Filters activated from the health dashboard cards set these automatically and vice versa — they share the same state.
 
 ---
 
@@ -397,6 +400,40 @@ JS: emitEvent("ClaimDetailClicked", { claim, tableName, colName })
 ```
 
 Use `event_handlers` (not `on_change_handlers`) for any handler that calls `st.rerun()`.
+
+### Modal header design
+
+All five claim/governance dialogs share `_modal_header(verif, name, table_name, col_name, subtitle="")`:
+- **Line 1 (bold, 17px):** `{icon} {verif_label} — {name}` — e.g. `⚡ Tested — Null Check`
+- **Line 2 (caption, monospace):** `table_name · col_name` on a single line
+- **Optional subtitle:** test type description shown below the divider
+
+| Dialog | `verif` key | `name` |
+|---|---|---|
+| `_test_claim_dialog` | `"tested"` | `test_name_short` from `test_types` |
+| `_monitor_claim_dialog` | `"monitored"` | monitor rule name |
+| `_claim_read_dialog` | from `claim["verif"]` | claim name |
+| `_claim_edit_dialog` | `"declared"` | claim name |
+| `_governance_edit_dialog` | `"declared"` | `"Governance Metadata"` |
+
+### Governance metadata
+
+- Sourced live from `data_column_chars` on every render — NOT from the cached YAML
+- `_fetch_governance_data(table_group_id)` returns `{(table_name, col_name): dict}`
+- One claim chip per populated field: Critical Data Element, Excluded Data Element, PII, Description, Data Source, Source System, and 8 tag fields
+- **PII model is binary**: any truthy `pii_flag` = PII. Stored as `"MANUAL"` when set, `NULL` when cleared. Display always shows `"Yes"`. Edited via a simple checkbox ("Contains PII").
+- SQL: use `CAST(:col_id AS uuid)` — never `::uuid` (conflicts with SQLAlchemy `:param` binding)
+
+### YAML quality rule fields
+
+Each rule in `quality:` includes:
+- `name` — user's `test_description` from `test_definitions`, falling back to `test_name_short`
+- `description` — `test_types.test_description` (system explanation) combined with user notes if both present
+- `severity` — from `test_definitions.severity`, defaults to `"error"`
+
+### Regenerate contract
+
+`_regenerate_dialog(table_group_id, current_version)` — opens via **↺ Regenerate** button in toolbar (latest version only). Re-runs `_capture_yaml` → `run_export_data_contract` and immediately calls `save_contract_version`. Use this to pick up schema/test/governance changes that post-date the last saved version.
 
 ### HTML escaping
 

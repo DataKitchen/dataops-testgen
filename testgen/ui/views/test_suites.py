@@ -208,6 +208,12 @@ def show_test_suite(mode, project_code, table_groups: Iterable[TableGroupMinimal
                     test_suite.connection_id = int(selected_table_group["connection_id"])
                     test_suite.table_groups_id = selected_table_group["id"]
                     test_suite.save()
+                # Changing suite settings (including include_in_contract) may invalidate a saved contract
+                try:
+                    from testgen.commands.contract_versions import mark_contract_stale
+                    mark_contract_stale(str(test_suite.table_groups_id))
+                except Exception:
+                    pass
                 success_message = (
                     "Changes have been saved successfully. "
                     if mode == "edit"

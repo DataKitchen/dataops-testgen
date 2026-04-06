@@ -64,6 +64,12 @@ def run_test_generation(
             sql_flavor=connection.sql_flavor,
             generation_set=generation_set,
         )
+        if success:
+            try:
+                from testgen.commands.contract_versions import mark_contract_stale
+                mark_contract_stale(str(table_group.id))
+            except Exception:
+                LOG.debug("Could not mark contract stale after test generation.", exc_info=True)
 
     return "Test generation completed." if success else "Test generation encountered an error. Check log for details."
 
