@@ -134,11 +134,15 @@ VALID_STATUSES = {"proposed", "draft", "active", "deprecated", "retired"}
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _pii_to_classification(pii_flag: str | None) -> str:
+def _pii_flag_to_classification(pii_flag: str | None) -> str:
     if not pii_flag:
         return "public"
     prefix = pii_flag.split("/")[0]
     return "confidential" if prefix == "A" else "restricted"
+
+
+# Keep old name as alias so callers in this module can use either name.
+_pii_to_classification = _pii_flag_to_classification
 
 
 def _derive_origin(last_auto_gen_date: Any, last_manual_update: Any, lock_refresh: str | None, test_type: str) -> str:
@@ -309,6 +313,7 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
     sql = f"""
         SELECT
             td.id,
+            s.id::text                        AS suite_id,
             td.test_type,
             td.test_description,
             td.schema_name,
@@ -466,6 +471,7 @@ def _build_quality(tests: list[dict]) -> list[dict]:
 
         rule: dict[str, Any] = {
             "id": str(t["id"]),
+            "suiteId": str(t["suite_id"]),
             "name": _nonempty(t.get("test_description")) or t.get("test_name_short") or t["test_type"],
             "type": odcs_meta["odcs_type"],
             "dimension": dimension,

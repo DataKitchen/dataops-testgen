@@ -369,3 +369,81 @@ class Test_SuiteScopeDiff:
         saved = _make_saved_yaml(included_suites=["orders_suite"])
         diff = self._run(saved, [{"suite_name": "orders_suite"}])
         assert diff.suite_scope_changes == []
+
+
+# ---------------------------------------------------------------------------
+# Test_GovernanceDiff
+# ---------------------------------------------------------------------------
+
+class Test_GovernanceDiff:
+    """compute_staleness_diff — governance (classification / CDE / description) diffs."""
+
+    def _run(self, saved_yaml: str, governance_rows: list):
+        from testgen.commands.contract_staleness import compute_staleness_diff
+
+        side_effect = [
+            [],               # schema cols (no schema changes)
+            [],               # quality tests
+            governance_rows,  # governance
+            [],               # suites
+        ]
+        with patch(
+            "testgen.commands.contract_staleness.fetch_dict_from_db",
+            side_effect=side_effect,
+        ):
+            return compute_staleness_diff(TG_ID, saved_yaml)
+
+    def _make_yaml_with_classification(self, classification: str) -> str:
+        doc = {
+            "apiVersion": "v3.1.0",
+            "kind": "DataContract",
+            "id": "test-id",
+            "schema": [
+                {
+                    "name": "orders",
+                    "properties": [
+                        {
+                            "name": "email",
+                            "physicalType": "varchar",
+                            "classification": classification,
+                        }
+                    ],
+                }
+            ],
+            "quality": [],
+            "x-testgen": {"includedSuites": []},
+        }
+        return yaml.dump(doc)
+
+    def test_classification_changed_detected(self):
+        """Snapshot classification "public", DB pii_flag "A/PII" → governance_changes has 1 "changed"."""
+        saved = self._make_yaml_with_classification("public")
+        gov_rows = [
+            {
+                "table_name": "orders",
+                "column_name": "email",
+                "pii_flag": "A/PII",
+                "critical_data_element": False,
+                "description": "",
+            }
+        ]
+        diff = self._run(saved, gov_rows)
+        changed = [c for c in diff.governance_changes if c["field"] == "classification"]
+        assert len(changed) == 1
+        assert changed[0]["change"] == "changed"
+
+    def test_no_governance_change_when_identical(self):
+        """Snapshot classification matches DB → governance_changes empty."""
+        saved = self._make_yaml_with_classification("confidential")
+        gov_rows = [
+            {
+                "table_name": "orders",
+                "column_name": "email",
+                # A/ prefix → "confidential"
+                "pii_flag": "A/PII",
+                "critical_data_element": False,
+                "description": "",
+            }
+        ]
+        diff = self._run(saved, gov_rows)
+        assert diff.governance_changes == []

@@ -366,8 +366,10 @@ const CoverageMatrix = (matrix, suiteScope, tables) => {
         }),
         div(
             { class: 'matrix-grand-total' },
-            'All tables  ',
-            ...MATRIX_COLS.map((c) => span({ class: 'matrix-grand-item' }, `${c.label} ${grand[c.key]}`)),
+            span({ class: 'matrix-grand-label' }, 'All tables'),
+            div({ class: 'matrix-grand-items' },
+                ...MATRIX_COLS.map((c) => span({ class: 'matrix-grand-item' }, `${c.label} ${grand[c.key]}`)),
+            ),
         ),
     );
 };
@@ -1530,10 +1532,10 @@ stylesheet.replace(`
     border-radius: 6px;
     font-size: 13px;
     display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
     align-items: center;
 }
+.matrix-grand-label { font-weight: 600; }
+.matrix-grand-items { display: flex; gap: 16px; flex-wrap: wrap; margin-left: auto; }
 .matrix-grand-item { font-weight: 600; color: var(--primary-text-color); }
 .col-name { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 13px; }
 .type-tag {

@@ -1,6 +1,6 @@
 # Data Contract — Design
 
-> Last updated: 2026-04-05 (versioning lifecycle implemented)
+> Last updated: 2026-04-05 (coverage matrix redesign + code review fixes)
 
 ---
 
@@ -62,7 +62,7 @@ The Data Contract page lives at `?table_group_id=<uuid>`. It is reached from the
 │  │  View 8 →   │  │  View 2 fail │  │  View 5 →    │              │
 │  └──────────────┘  └──────────────┘  └──────────────┘              │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Overview │ Coverage Matrix │ Gap Analysis │ YAML                   │
+│  Overview │ Coverage Matrix │ YAML                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │  [Gap Analysis summary card — 1 error · 2 warnings]                │
 │                                                                     │
@@ -191,35 +191,27 @@ Color thresholds: green ≥ 80%, orange ≥ 50%, red < 50%.
 
 Shows the Gap Analysis summary card followed by the Claims Detail section. This is the primary working view.
 
-The Gap Analysis summary card on this tab shows only the total counts (e.g. "1 error · 2 warnings") and a "See all →" link that switches to the Gap Analysis tab. The card is a navigation entry point, not a duplicate of the full list.
+The Gap Analysis summary card on this tab shows only the total counts (e.g. "1 error · 2 warnings"). It is a navigation aid — the full gap list is not a separate tab but can be reached from the cards.
 
 ### Coverage Matrix
 
-A compact table with one row per column across all tables in the contract:
+A compact table with one row per column across all tables in the contract. The **ClaimCountsBar** sits at the top of this tab, showing total claim counts broken out by source (DDL / Profiling / Governance / Test) and by verification tier (DB Enforced / Tested / Monitored / Observed / Declared).
 
-| Column | Type | Key | Tests | Anomaly | Classification | Tiers |
-|---|---|---|---|---|---|---|
-| order_id | INTEGER | 🔑 PK | ✅ 3 | — | public | 🏛️ ⚡ |
-| customer_id | INTEGER | | — | ❌ 1 | confidential | 🏛️ 🏷️ |
-| order_date | DATE | | ⚠️ 1 | ⚠️ 1 | public | 🏛️ ⚡ 📸 |
+Below the bar, each table is a collapsible accordion section. When collapsed, the header shows the table name on the left and — right-justified — counts for each of the 5 tier columns.
 
-The filter from the health dashboard (uncovered / failing / anomalies) applies to this tab too.
+Each table section has one row per column plus one `(table-level)` row when table-level rules exist (e.g. monitor rules with `element = table_name`). The 5 tier columns are:
 
-Each table is its own collapsible section. Clicking a row navigates to that column in the Claims Detail tab (future: direct anchor link).
+| Column | Icon | What counts |
+|---|---|---|
+| DB Enforced | 🏛️ | Physical type claim (always 1 per column) |
+| Tested | ⚡ | Non-monitor active test definitions |
+| Monitored | 📡 | Monitor rules (Freshness_Trend, Volume_Trend, Schema_Drift, Metric_Trend) |
+| Observed | 📸 | Profiling stats: min/max, row count, uniqueness, format pattern, logical type |
+| Declared | 🏷️ | Governance annotations: classification, CDE flag, description |
 
-### Gap Analysis
+The grand-total row at the bottom of the matrix shows "All tables" on the left and all tier totals right-justified.
 
-A categorized list of structural quality problems found in the contract:
-
-| Severity | Condition |
-|---|---|
-| Error | PII/restricted column has no quality test |
-| Warning | CDE column has no quality test |
-| Warning | Table has no quality tests of any kind |
-| Info | Column has observed min/max but no range test configured |
-| Info | Column has no description |
-
-Each item is a colored card with a left-border stripe (red / yellow / blue) and inline code for the table.column reference.
+**Claim count consistency invariant**: the grand total in the Coverage Matrix must equal the ClaimCountsBar total (by source) and the ClaimCountsBar total (by verification tier), both of which must equal the total shown in the Claims Detail accordion header. This is enforced by unit tests in `Test_ClaimCountConsistency`.
 
 ### YAML
 
@@ -260,14 +252,20 @@ Claims Detail (247 total)          Filter: [All] [Failing] [Uncovered]
 
 **Table-level claims** are tests or annotations that apply to the whole table rather than a specific column — typically row count, freshness, or referential integrity. They appear in a "Table-level" sub-section above the column rows within each table block.
 
-Each table is a collapsible section. The first table opens by default; the rest are collapsed. The section header shows the table name, column count, and total claim count when collapsed.
+Each table is a collapsible section. The first table opens by default; the rest are collapsed.
+
+**Collapsed accordion header format** (using `ts-name` / `ts-meta` CSS pattern):
+- Left (`ts-name`): table name
+- Right (`ts-meta`): column count · N table-level claims · N column-level claims
+
+All metadata in the header is right-justified. The column count and claim counts make the closed header scannable without expanding.
 
 ### Claim chips
 
 Each chip shows three things:
 - **Source label** (small, uppercase): DDL / Profiling / Governance / Test
 - **Value**: the human-readable fact
-- **Verification badge**: 🏛️ Enforced / ⚡ Tested / 🔬 Monitored / 📸 Observed / 🏷️ Declared
+- **Verification badge**: 🏛️ DB Enforced / ⚡ Tested / 📡 Monitored / 📸 Observed / 🏷️ Declared
 
 Chip border and background color encodes the source:
 - DDL → purple tint
@@ -313,15 +311,21 @@ All other claims (DDL, Profiling) are read-only. DDL facts come from the physica
 
 ## 10. Coverage Tiers
 
-Every column is assigned one or more tiers that describe how its claims are enforced. These appear as small badges in the Coverage Matrix tab.
+Every column is assigned one or more tiers that describe how its claims are enforced. These appear as the 5 columns of the Coverage Matrix and as verification badges (🏛️ ⚡ 📡 📸 🏷️) on individual claim chips.
 
 | Tier | Badge | How earned |
 |---|---|---|
-| DB Enforced 🏛️ | purple | varchar(n), numeric(p,s), integer, boolean, date, timestamp — type itself rejects bad data |
-| Tested ⚡ | green | An active test definition references this column |
-| Monitored 🔬 | orange | Profile anomaly detection is active for this column type |
-| Observed 📸 | gray | Profiling captured stats (min/max, lengths, format) for this column |
-| Declared 🏷️ | amber | A governance annotation (classification, CDE flag, description) exists |
+| DB Enforced 🏛️ | purple | The column has a physical type (integer, varchar, date, etc.) — always 1 per column |
+| Tested ⚡ | green | At least one non-monitor active test definition references this column or table |
+| Monitored 📡 | orange | A monitor rule applies to this element — exclusively `Freshness_Trend`, `Volume_Trend`, `Schema_Drift`, or `Metric_Trend` test types. Profiling anomalies are **not** monitored; they are **observed**. |
+| Observed 📸 | gray | Profiling captured stats: row count, uniqueness, min/max values, format pattern, logical type, string length distributions |
+| Declared 🏷️ | amber | A governance annotation exists: classification, CDE flag, or description |
+
+**Important**: "Monitored" means only the four `_MONITOR_TEST_TYPES` above (`_MONITOR_TEST_TYPES = {"Freshness_Trend", "Volume_Trend", "Schema_Drift", "Metric_Trend"}`). Profiling anomaly results from `profile_anomaly_results` are sourced as `profiling` / `observed`. The badge icon for Monitored was changed from 🔬 to 📡.
+
+**Table-level monitor rules**: Monitor rules have `element = table_name` (no column suffix), so they appear in a `(table-level)` row in the Coverage Matrix rather than in a column row. The collapsed accordion header always shows the monitored count so table-level monitors are not invisible when the section is collapsed.
+
+**ClaimCountsBar source mapping**: The "by source" breakdown uses `{ddl, profiling, governance, test}`. Monitor rules are categorized under `test` (not a separate `monitor` bucket) because monitors are implemented as test definitions. The "by verification" breakdown uses `{db_enforced, tested, monitored, observed, declared}`.
 
 ---
 
@@ -393,6 +397,22 @@ JS: emitEvent("ClaimDetailClicked", { claim, tableName, colName })
 ```
 
 Use `event_handlers` (not `on_change_handlers`) for any handler that calls `st.rerun()`.
+
+### HTML escaping
+
+All user-sourced strings rendered inside claim cards (descriptions, classification values, test threshold expressions) must be escaped with `html.escape(value, quote=True)`. Do NOT use manual `.replace("<", "&lt;")` chains — they miss `&`, `"`, and `'`.
+
+### Logging
+
+Use `LOG = logging.getLogger(__name__)` consistently throughout `data_contract.py`. Do not mix `LOG` and `_log`. Silent exception swallowing (bare `except: pass` or `except: return`) must log at `WARNING` level with `exc_info=True` before returning.
+
+### SQL safety
+
+Never f-string-interpolate UUIDs or user-supplied values into SQL. Use parameterized queries (`%s` placeholders with a parameters tuple) even for UUID values such as `table_group_id`. This applies to `_fetch_anomalies` and all other query helpers in `data_contract.py`.
+
+### Shared utilities
+
+`_pii_flag_to_classification(pii_flag: str) -> str` lives in `export_data_contract.py` and is imported by `contract_staleness.py`. Do not duplicate PII mapping logic in both files.
 
 ---
 
@@ -466,7 +486,7 @@ User types an optional label and clicks **Save Version 0**.
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
 │  │ Coverage 72% │  │ 34 tests     │  │ 5 hygiene    │           │
 │  └──────────────┘  └──────────────┘  └──────────────┘           │
-│  Overview │ Coverage Matrix │ Gap Analysis │ YAML                │
+│  Overview │ Coverage Matrix │ YAML                                │
 │  …                                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -511,7 +531,7 @@ User selects **version 1**.
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
 │  │ Coverage 61% │  │ 22 tests     │  │ 5 hygiene    │           │
 │  └──────────────┘  └──────────────┘  └──────────────┘           │
-│  Overview │ Coverage Matrix │ Gap Analysis │ YAML                │
+│  Overview │ Coverage Matrix │ YAML                                │
 │  …claims rendered from the version 1 snapshot…                  │
 └─────────────────────────────────────────────────────────────────┘
 ```

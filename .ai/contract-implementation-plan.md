@@ -1,9 +1,31 @@
 # Data Contract — Implementation Plan
 
-> Created: 2026-04-05  
+> Created: 2026-04-05 | Last updated: 2026-04-05  
 > Design reference: `.ai/contract-lifecycle-design.md`
 
 Each phase is a shippable unit. Later phases depend on earlier ones as noted. Tests are written in the same phase as the code they cover.
+
+## Implementation Status
+
+| Phase | Status | Notes |
+|---|---|---|
+| 0 — Core UI (pre-plan) | ✅ Done | `data_contract.py`, `data_contract.js`, export/import commands, DB migrations 0180–0183 |
+| 0a — Coverage Matrix redesign | ✅ Done | 5-tier columns (DB/Tested/Mon/Obs/Decl), ClaimCountsBar at top, Gap Analysis tab removed, ts-name/ts-meta headers, table-level monitor rows |
+| 0b — Code review fixes (round 1–2) | ✅ Done | HTML escaping (`html.escape`), SQL injection in `_fetch_anomalies` fixed, shared `_pii_flag_to_classification`, staleness SQL column names fixed, composite FK ref matching fixed, logger standardized |
+| 1 — DB schema | 🔲 Not started | `0184_incremental_upgrade.sql` — `data_contracts` table + staleness columns |
+| 2 — Contract version data layer | 🔲 Not started | `contract_versions.py` |
+| 3 — Staleness detection hooks | 🔲 Not started | Hooks into profiling + test definition changes |
+| 4 — Staleness diff computation | 🔲 Not started | `contract_staleness.py` (structure exists but diff logic is stub) |
+| 5 — Pending edit model | 🔲 Not started | Edit dialogs write to session state only |
+| 6 — Page load from saved snapshot | 🔲 Not started | Replace `_capture_yaml` with `load_contract_version` |
+| 7 — First-time flow | 🔲 Not started | Prerequisites gate → preview → save as v0 |
+| 8 — Staleness banner + diff panel | 🔲 Not started | Banner + `_review_changes_panel` dialog |
+| 9 — Version picker + historic view | 🔲 Not started | Dropdown + read-only mode |
+| 10 — Remove old lifecycle artifacts | 🔲 Not started | Dead `_STATUS_COLOR`, old `contract_version`/`contract_status` writes |
+| 11 — Frontend (VanJS) updates | 🔲 Not started | Version display, picker, staleness indicator |
+| 12 — Full test suite | 🔲 Partial | `Test_ClaimCountConsistency` (8 tests) written; staleness diff tests started |
+
+---
 
 ---
 
@@ -160,6 +182,8 @@ In `testgen/ui/views/test_suites.py`, wherever `include_in_contract` is toggled,
 ---
 
 ## Phase 4 — Staleness diff computation
+
+> **Status**: File `contract_staleness.py` exists with basic structure. SQL column bugs fixed (`status`→`result_status`, `test_definition_id_fk`→`test_definition_id`). Composite FK ref matching fixed with `_ref_matches()` helper. Full diff logic still needed.
 
 **Goal:** When `contract_stale` is TRUE, compute a categorized diff so the banner can say exactly what changed.
 
@@ -599,23 +623,39 @@ Phase 11 can start once Phases 5, 6, and 9 are done.
 
 ## Files touched summary
 
+### Already changed (pre-plan + coverage matrix redesign + code review)
+
 | File | Change type |
 |---|---|
-| `testgen/template/dbupgrade/0184_incremental_upgrade.sql` | New |
+| `testgen/template/dbupgrade/0180_incremental_upgrade.sql` | New — `include_in_contract` on `test_suites` |
+| `testgen/template/dbupgrade/0181_incremental_upgrade.sql` | New — additional schema changes |
+| `testgen/template/dbupgrade/0182_incremental_upgrade.sql` | New — additional schema changes |
+| `testgen/template/dbupgrade/0183_incremental_upgrade.sql` | New — `is_monitor` on `test_suites` |
+| `testgen/ui/views/data_contract.py` | New — full page implementation |
+| `testgen/ui/components/frontend/js/pages/data_contract.js` | New — VanJS page (coverage matrix 5-tier, ClaimCountsBar, ts-name/ts-meta headers, table-level monitor rows) |
+| `testgen/commands/export_data_contract.py` | New — ODCS YAML export + `_pii_flag_to_classification` |
+| `testgen/commands/import_data_contract.py` | New — YAML import back to DB |
+| `testgen/commands/contract_staleness.py` | New — staleness diff structure (partial) |
+| `testgen/ui/views/test_suites.py` | Modify — link to data contract page |
+| `testgen/ui/views/table_groups.py` | Modify — link to data contract page |
+| `tests/unit/commands/test_data_contract_export.py` | New |
+| `tests/unit/commands/test_data_contract_import.py` | New |
+| `tests/unit/commands/test_staleness_diff.py` | New — `Test_GovernanceDiff` class |
+| `tests/unit/ui/test_data_contract_page.py` | New — `Test_ClaimCountConsistency` (8 tests) |
+
+### Still needed (phases 1–11)
+
+| File | Change type |
+|---|---|
+| `testgen/template/dbupgrade/0184_incremental_upgrade.sql` | New — `data_contracts` table + staleness columns |
 | `testgen/commands/contract_versions.py` | New |
-| `testgen/commands/contract_staleness.py` | New |
-| `testgen/commands/import_data_contract.py` | Modify — remove deprecated field updates |
 | `testgen/commands/run_profiling.py` | Modify — add staleness hook |
-| `testgen/common/models/table_group.py` | Modify — add two new fields |
-| `testgen/ui/views/data_contract.py` | Major rewrite — edit model, load path, flows, cleanup |
-| `testgen/ui/views/test_suites.py` | Modify — add staleness hooks |
-| `testgen/ui/components/frontend/js/pages/data_contract.js` | Modify — remove status pill, add version picker + props |
+| `testgen/common/models/table_group.py` | Modify — add `contract_stale`, `last_contract_save_date` |
+| `testgen/ui/views/data_contract.py` | Major additions — pending edit model, version load, first-time flow, staleness banner |
+| `testgen/ui/components/frontend/js/pages/data_contract.js` | Modify — remove status pill, add version picker |
 | `tests/unit/commands/test_contract_versions.py` | New |
 | `tests/unit/commands/test_staleness_detection.py` | New |
-| `tests/unit/commands/test_staleness_diff.py` | New |
 | `tests/unit/ui/test_contract_pending_edits.py` | New |
 | `tests/unit/ui/test_contract_first_time_flow.py` | New |
 | `tests/unit/ui/test_contract_staleness_ui.py` | New |
 | `tests/unit/ui/test_contract_historic_view.py` | New |
-| `tests/unit/commands/test_data_contract_export.py` | Modify — remove lifecycle test class |
-| `tests/unit/ui/test_data_contract_page.py` | Modify — add first-time flow and dirty-button tests |

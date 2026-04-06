@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from testgen.commands.export_data_contract import _pii_flag_to_classification
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import fetch_dict_from_db
 from testgen.common.models import with_database_session
@@ -75,19 +76,6 @@ class StaleDiff:
             parts.append(f"{removed_suites} suite{'s' if removed_suites != 1 else ''} removed from contract")
 
         return parts
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _pii_flag_to_classification(pii_flag: str | None) -> str:
-    """Map a TestGen pii_flag value to an ODCS classification string."""
-    if not pii_flag:
-        return "public"
-    if pii_flag.startswith("A/"):
-        return "confidential"
-    return "restricted"
 
 
 # ---------------------------------------------------------------------------
@@ -213,12 +201,12 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
         f"""
         SELECT td.id::text, td.test_type, td.table_name, td.column_name,
                td.threshold_value, td.test_description,
-               tr.status AS last_result_status
+               tr.result_status AS last_result_status
         FROM {schema}.test_definitions td
         JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
         LEFT JOIN LATERAL (
-            SELECT status FROM {schema}.test_results
-            WHERE test_definition_id_fk = td.id
+            SELECT result_status FROM {schema}.test_results
+            WHERE test_definition_id = td.id
             ORDER BY test_time DESC LIMIT 1
         ) tr ON TRUE
         WHERE ts.table_groups_id = :tg_id

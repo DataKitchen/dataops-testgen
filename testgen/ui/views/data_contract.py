@@ -5,6 +5,7 @@ Health dashboard · Coverage matrix · Gap analysis · Claims detail with inline
 """
 from __future__ import annotations
 
+import html
 import io
 import logging
 import re
@@ -193,8 +194,8 @@ def _claim_card_html(claim: dict) -> str:
     verif_key = claim["verif"]
     src_label, src_bg, border_color = _SOURCE_META.get(src_key, ("?", "#f5f5f5", "#999"))
     verif_icon, verif_label, badge_color = _VERIF_META.get(verif_key, ("", verif_key, "#666"))
-    name_esc = claim["name"].replace("<", "&lt;").replace(">", "&gt;")
-    val_esc = claim["value"].replace("<", "&lt;").replace(">", "&gt;")
+    name_esc = html.escape(claim["name"], quote=True)
+    val_esc = html.escape(claim["value"], quote=True)
     return (
         f'<div style="border:1px solid #e0e0e0;border-left:4px solid {border_color};'
         f'border-radius:0 6px 6px 0;padding:7px 10px;'
@@ -677,10 +678,13 @@ def _delete_claim_yaml_patch(
     if source == "ddl" and claim_name == "Foreign Key":
         refs = doc.get("references") or []
         before = len(refs)
-        doc["references"] = [
-            r for r in refs
-            if r.get("from") not in (col_key, col_name)
-        ]
+        def _ref_matches(r: dict) -> bool:
+            from_val = r.get("from")
+            if isinstance(from_val, list):
+                return col_key in from_val or col_name in from_val
+            return from_val in (col_key, col_name)
+
+        doc["references"] = [r for r in refs if not _ref_matches(r)]
         return len(doc["references"]) < before, "Foreign key reference not found."
 
     for tbl in (doc.get("schema") or []):
@@ -836,22 +840,52 @@ def _monitor_claim_dialog(rule: dict, claim_name: str) -> None:  # noqa: ARG001
 
 
 @st.dialog("Test Claim Detail", width="small")
-def _test_claim_dialog(claim: dict, table_name: str, col_name: str) -> None:
+def _test_claim_dialog(claim: dict, table_name: str, col_name: str, project_code: str) -> None:
     status = claim.get("status", "")
     status_icon = _STATUS_ICON.get(status, "⏳")
     test_name = claim.get("test_name") or "Test"
     element = claim.get("element") or f"{table_name}.{col_name}"
     dimension = claim.get("dimension", "")
     severity = claim.get("severity", "")
+    rule_id = claim.get("rule_id", "")
+
+    # Fetch live status + timestamp + suite_id from the DB
+    live_info = _fetch_test_live_info(rule_id) if rule_id else {}
+    suite_id  = live_info.get("suite_id", "")
+    live_status = live_info.get("status", "") or status  # fall back to claim status
+    live_status_icon = _STATUS_ICON.get(live_status, "⏳")
+    test_time = live_info.get("test_time")
+
+    # Format the last-run timestamp for display
+    if test_time:
+        try:
+            from datetime import timezone as _tz
+            dt = test_time if hasattr(test_time, "strftime") else None
+            if dt:
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_tz.utc)
+                last_run_display = dt.astimezone().strftime("%b %d, %Y %H:%M")
+            else:
+                last_run_display = str(test_time)
+        except Exception:
+            last_run_display = str(test_time)
+    else:
+        last_run_display = None
 
     st.markdown(f"**{test_name}**")
     st.caption(f"{table_name} › `{col_name}`")
     st.divider()
 
     col1, col2 = st.columns(2)
-    col1.markdown(f"**Status**  \n{status_icon} {status.title() if status else 'Not Run'}")
+    col1.markdown(f"**Status**  \n{live_status_icon} {live_status.title() if live_status else 'Not Run'}")
     if element:
         col2.markdown(f"**Element**  \n`{element}`")
+
+    if last_run_display:
+        st.markdown(f"**Last Run**  \n{last_run_display}")
+    else:
+        st.markdown("**Last Run**  \nNot run")
+
     if dimension or severity:
         c1, c2 = st.columns(2)
         if dimension:
@@ -859,9 +893,16 @@ def _test_claim_dialog(claim: dict, table_name: str, col_name: str) -> None:
         if severity:
             c2.markdown(f"**Severity**  \n{severity.title()}")
 
-    st.caption("Managed in TestGen test suites. To edit thresholds or run it, go to Test Suites.")
     st.divider()
-    if st.button("Close", key="test_claim_close", use_container_width=True):
+    btn_col, close_col = st.columns(2)
+    if suite_id and project_code:
+        if btn_col.button("Edit test", key="test_claim_goto", use_container_width=True):
+            Router().queue_navigation(
+                to="test-suites:definitions",
+                with_args={"test_suite_id": suite_id, "project_code": project_code},
+            )
+            safe_rerun()
+    if close_col.button("Close", key="test_claim_close", use_container_width=True):
         safe_rerun()
 
 
@@ -1362,16 +1403,18 @@ def _build_contract_props(
         tbl_rules = rules_by_element_full.get(table_name, [])
         table_claims: list[dict] = [
             {
-                "name":      "Monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "Test",
-                "value":     r.get("name") or r.get("testType") or "Test",
-                "source":    "monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "test",
-                "verif":     "monitored" if r.get("testType", "") in _MONITOR_TEST_TYPES else "tested",
-                "status":    (r.get("lastResult") or {}).get("status") or "not run",
-                "rule_id":   str(r.get("id", "") or ""),
-                "test_name": r.get("name") or r.get("testType") or "Test",
-                "element":   r.get("element") or table_name,
-                "dimension": r.get("dimension") or "",
-                "severity":  r.get("severity") or "",
+                "name":        "Monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "Test",
+                "value":       r.get("name") or r.get("testType") or "Test",
+                "source":      "monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "test",
+                "verif":       "monitored" if r.get("testType", "") in _MONITOR_TEST_TYPES else "tested",
+                "status":      (r.get("lastResult") or {}).get("status") or "not run",
+                "rule_id":     str(r.get("id", "") or ""),
+                "suite_id":    str(r.get("suiteId", "") or ""),
+                "test_name":   r.get("name") or r.get("testType") or "Test",
+                "element":     r.get("element") or table_name,
+                "dimension":   r.get("dimension") or "",
+                "severity":    r.get("severity") or "",
+                "executed_at": (r.get("lastResult") or {}).get("executedAt") or "",
             }
             for r in tbl_rules
         ]
@@ -1411,16 +1454,18 @@ def _build_contract_props(
                 ],
                 "live_claims": [
                     {
-                        "name":      c["name"],
-                        "value":     c["value"],
-                        "source":    c["source"],
-                        "verif":     c["verif"],
-                        "status":    c.get("status") or "",
-                        "rule_id":   str(c.get("rule", {}).get("id", "") or ""),
-                        "test_name": (c.get("rule", {}).get("name") or c.get("rule", {}).get("testType") or ""),
-                        "element":   (c.get("rule", {}).get("element") or ""),
-                        "dimension": (c.get("rule", {}).get("dimension") or ""),
-                        "severity":  (c.get("rule", {}).get("severity") or ""),
+                        "name":        c["name"],
+                        "value":       c["value"],
+                        "source":      c["source"],
+                        "verif":       c["verif"],
+                        "status":      c.get("status") or "",
+                        "rule_id":     str(c.get("rule", {}).get("id", "") or ""),
+                        "suite_id":    str(c.get("rule", {}).get("suiteId", "") or ""),
+                        "test_name":   (c.get("rule", {}).get("name") or c.get("rule", {}).get("testType") or ""),
+                        "element":     (c.get("rule", {}).get("element") or ""),
+                        "dimension":   (c.get("rule", {}).get("dimension") or ""),
+                        "severity":    (c.get("rule", {}).get("severity") or ""),
+                        "executed_at": ((c.get("rule", {}).get("lastResult") or {}).get("executedAt") or ""),
                     }
                     for c in live_claims
                 ],
@@ -2028,7 +2073,8 @@ class DataContractPage(Page):
             elif source == "monitor":
                 _monitor_claim_dialog(claim.get("rule", {}), claim_name)
             elif source == "test":
-                _test_claim_dialog(claim, table_name, col_name)
+                _project_code = getattr(table_group, "project_code", "")
+                _test_claim_dialog(claim, table_name, col_name, _project_code)
             elif source == "governance" and verif == "declared":
                 _claim_edit_dialog(claim, table_name, col_name, table_group_id, yaml_key)
             else:
@@ -2107,6 +2153,7 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
     try:
         return [dict(row) for row in fetch_dict_from_db(sql)]
     except Exception:
+        LOG.warning("_fetch_anomalies failed for tg_id=%s", table_group_id, exc_info=True)
         return []
 
 
@@ -2127,7 +2174,45 @@ def _fetch_suite_scope(table_group_id: str) -> dict:
         excluded = [r["test_suite"] for r in rows if not r["include_in_contract"]]
         return {"included": included, "excluded": excluded, "total": len(rows)}
     except Exception:
+        LOG.warning("_fetch_suite_scope failed for tg_id=%s", table_group_id, exc_info=True)
         return {"included": [], "excluded": [], "total": 0}
+
+
+@with_database_session
+def _fetch_test_live_info(test_def_id: str) -> dict:
+    """Return live suite_id, status, and last run timestamp for a test definition."""
+    schema = get_tg_schema()
+    sql = f"""
+        SELECT
+            td.test_suite_id::text AS suite_id,
+            tr.result_status,
+            tr.test_time
+        FROM {schema}.test_definitions td
+        LEFT JOIN LATERAL (
+            SELECT result_status, test_time
+            FROM   {schema}.test_results
+            WHERE  test_definition_id = td.id
+              AND  disposition IS DISTINCT FROM 'Inactive'
+            ORDER  BY test_time DESC
+            LIMIT  1
+        ) tr ON TRUE
+        WHERE td.id = :tid
+        LIMIT 1
+    """
+    try:
+        rows = fetch_dict_from_db(sql, params={"tid": test_def_id})
+        if not rows:
+            return {}
+        row = dict(rows[0])
+        status_map = {"Passed": "passing", "Failed": "failing", "Warning": "warning", "Error": "error"}
+        return {
+            "suite_id":   row.get("suite_id") or "",
+            "status":     status_map.get(row.get("result_status") or "", "") or "",
+            "test_time":  row.get("test_time"),
+        }
+    except Exception:
+        LOG.warning("_fetch_test_live_info failed for test_def_id=%s", test_def_id, exc_info=True)
+        return {}
 
 
 @with_database_session
@@ -2147,7 +2232,7 @@ def _fetch_test_statuses(table_group_id: str) -> dict[str, str]:
         FROM {schema}.test_definitions td
         JOIN {schema}.test_suites s      ON s.id  = td.test_suite_id
         LEFT JOIN {schema}.test_results tr ON tr.test_definition_id = td.id
-                                          AND tr.disposition != 'Inactive'
+                                          AND tr.disposition IS DISTINCT FROM 'Inactive'
         WHERE s.table_groups_id        = :tg_id
           AND s.include_in_contract    IS NOT FALSE
           AND COALESCE(s.is_monitor, FALSE) = FALSE
