@@ -1010,6 +1010,7 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                         merged["lower_tolerance"] = 0
                         merged["prediction"] = None
 
+                    merged["last_manual_update"] = datetime.now(UTC)
                     TestDefinition(**merged).save()
 
             for new_metric in get_new_metrics():
@@ -1025,6 +1026,7 @@ def edit_table_monitors(table_group: TableGroupMinimal, payload: dict):
                 for key, value in new_metric.items():
                     if key in valid_columns:
                         setattr(new_def, key, value)
+                new_def.last_manual_update = datetime.now(UTC)
                 new_def.save()
 
             deleted_ids = get_deleted_metric_ids()

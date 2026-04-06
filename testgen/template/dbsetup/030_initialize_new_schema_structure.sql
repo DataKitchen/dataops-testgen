@@ -240,6 +240,7 @@ CREATE TABLE test_definitions (
    last_manual_update     TIMESTAMP DEFAULT NULL,
    export_to_observability VARCHAR(5),
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
+   external_id            UUID,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -847,6 +848,10 @@ CREATE UNIQUE INDEX uix_td_autogen_column
    WHERE last_auto_gen_date IS NOT NULL
       AND table_name IS NOT NULL
       AND column_name IS NOT NULL;
+
+CREATE UNIQUE INDEX uix_td_external_id
+   ON test_definitions (test_suite_id, external_id)
+   WHERE external_id IS NOT NULL;
 
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk
