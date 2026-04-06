@@ -88,7 +88,7 @@ class TestSuite(Entity):
     @classmethod
     def get_regular(cls, identifier: str | UUID) -> "TestSuite | None":
         """Like get(), but returns None for monitor suites."""
-        query = select(cls).where(cls.id == identifier, cls.is_monitor.is_(False))
+        query = select(cls).where(cls.id == identifier, cls.is_monitor.isnot(True))
         return get_current_session().scalars(query).first()
 
 
