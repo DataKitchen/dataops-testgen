@@ -65,8 +65,8 @@ _TIERS: dict[str, tuple[str, str, str]] = {
                     "An active quality test checks this on every test run — hard pass/fail result"),
     "monitor":     ("📡", "Monitor",
                     "A continuous monitor (Freshness, Volume, Schema, or Metric) watches this column for anomalies over time"),
-    "monitored":   ("🔬", "Hygiene Monitored",
-                    "A profile anomaly detector fires during profiling runs — flagged but not blocking"),
+    "monitored":   ("📡", "Monitored",
+                    "A continuous monitor (Freshness, Volume, Schema, or Metric) watches this element for anomalies over time"),
     "observed":    ("📸", "Observed",
                     "Captured from profiling statistics — a snapshot of what we saw, not what we're watching"),
     "declared":    ("🏷️", "Declared",
@@ -178,7 +178,7 @@ _VERIF_META: dict[str, tuple[str, str, str]] = {
     "db_enforced": ("🏛️", "DB Enforced", "#283593"),
     "tested":      ("⚡", "Tested",       "#1b5e20"),
     "monitor":     ("📡", "Monitor",      "#00695c"),
-    "monitored":   ("🔬", "Monitored",    "#e65100"),
+    "monitored":   ("📡", "Monitored",    "#00695c"),
     "observed":    ("📸", "Observed",     "#546e7a"),
     "declared":    ("🏷️", "Declared",     "#795548"),
 }
@@ -641,7 +641,7 @@ _SRC_LABEL = {"ddl": "DDL", "profiling": "Profiling", "governance": "Governance"
 _VERIF_LABEL = {
     "db_enforced": "🏛️ DB Enforced",
     "tested":      "⚡ Tested",
-    "monitored":   "🔬 Monitored",
+    "monitored":   "📡 Monitored",
     "observed":    "📸 Observed",
     "declared":    "🏷️ Declared",
 }

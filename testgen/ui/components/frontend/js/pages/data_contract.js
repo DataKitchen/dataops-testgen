@@ -710,8 +710,8 @@ const HealthGrid = (health, activeFilter, activeTab) => {
         div(
             {
                 class: 'health-card coverage health-card--link',
-                onclick: () => { activeTab.val = 'gaps'; },
-                title: 'View Completeness Analysis',
+                onclick: () => { activeFilter.val = activeFilter.val === 'uncovered' ? 'all' : 'uncovered'; activeTab.val = 'overview'; },
+                title: 'Filter to uncovered columns',
             },
             div({ class: 'health-card__label' },
                 mat('verified', 13), ' Contract Completeness',
@@ -744,12 +744,8 @@ const HealthGrid = (health, activeFilter, activeTab) => {
                 ? [
                     div(
                         { class: 'health-card__value-row' },
-                        span({ class: 'health-card__value neutral', style: 'font-size:24px' }, `${totalRunTests} tests`),
-                        suiteRuns.length > 1
-                            ? span({ class: 'health-card__suite-inline' }, `${suiteRuns.length} suites`)
-                            : (health.suites_total > 0 && health.suites_included < health.suites_total
-                                ? span({ class: 'health-card__suite-inline' }, `${health.suites_included} of ${health.suites_total}`)
-                                : ''),
+                        span({ class: 'health-card__value neutral', style: 'font-size:24px' }, `${totalRunTests}`),
+                        span({ class: 'health-card__value-unit' }, suiteRuns.length > 1 ? ` tests · ${suiteRuns.length} suites` : ' tests'),
                     ),
                     div(
                         { class: 'summary-bar' },
@@ -813,8 +809,18 @@ const SuiteScope = (suiteScope, meta) => {
         span(
             {
                 class: `suite-chip ${isIncluded ? 'suite-chip--in' : 'suite-chip--out'} suite-chip--clickable`,
-                title: `Go to test suite: ${name}`,
+                role: 'link',
+                tabindex: '0',
+                title: `Go to ${name} in Test Suites`,
                 onclick: () => emitEvent('LinkClicked', {
+                    href: 'test-suites',
+                    params: {
+                        project_code: meta.project_code,
+                        table_group_id: meta.table_group_id,
+                        test_suite_name: name,
+                    },
+                }),
+                onkeydown: (e) => e.key === 'Enter' && emitEvent('LinkClicked', {
                     href: 'test-suites',
                     params: {
                         project_code: meta.project_code,
@@ -825,7 +831,7 @@ const SuiteScope = (suiteScope, meta) => {
             },
             span({ class: 'suite-chip__icon' }, isIncluded ? 'check' : 'remove'),
             name,
-            span({ class: 'suite-chip__arrow' }, mat('arrow_forward', 10)),
+            span({ class: 'suite-chip__arrow' }, mat('arrow_forward', 14)),
         );
 
     return div(
@@ -1211,7 +1217,8 @@ stylesheet.replace(`
     letter-spacing: -0.5px;
 }
 .health-card__value.neutral { color: var(--primary-text-color); font-size: 22px; }
-.health-card__value-row { display: flex; align-items: baseline; gap: 8px; }
+.health-card__value-row { display: flex; align-items: baseline; gap: 4px; }
+.health-card__value-unit { font-size: 13px; color: var(--caption-text-color); font-weight: 400; }
 .health-card__suite-inline {
     font-size: 11px;
     font-weight: 600;
@@ -1482,20 +1489,6 @@ stylesheet.replace(`
 .status-pill.pass { background: rgba(34,197,94,0.15);  color: #22c55e; }
 .status-pill.warn { background: rgba(245,158,11,0.15); color: #f59e0b; }
 .status-pill.fail { background: rgba(239,68,68,0.15);  color: #ef4444; }
-.edit-btn {
-    display: none;
-    padding: 1px 5px;
-    font-size: 10px;
-    border-radius: 3px;
-    border: 1px solid var(--border-color);
-    color: var(--caption-text-color);
-    cursor: pointer;
-    align-items: center;
-    gap: 2px;
-    background: transparent;
-}
-.claim-chip:hover .edit-btn { display: inline-flex; }
-.edit-btn:hover { color: var(--link-text-color); }
 
 /* ── Coverage matrix ── */
 .dc-matrix-wrap { overflow-x: auto; }
@@ -1982,9 +1975,9 @@ stylesheet.replace(`
 .suite-chip--in  { color: #16a34a; background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.3);  }
 .suite-chip--out { color: #94a3b8; background: rgba(100,116,139,0.06); border-color: rgba(100,116,139,0.2); text-decoration: line-through; opacity: 0.75; }
 .suite-chip--clickable { cursor: pointer; transition: filter 0.15s, box-shadow 0.15s; }
-.suite-chip--clickable:hover { filter: brightness(1.12); box-shadow: 0 1px 6px rgba(0,0,0,0.12); text-decoration: none; opacity: 1; }
-.suite-chip__arrow { opacity: 0; transition: opacity 0.15s; margin-left: 2px; }
-.suite-chip--clickable:hover .suite-chip__arrow { opacity: 0.7; }
+.suite-chip--clickable:hover { filter: brightness(1.08); box-shadow: 0 1px 6px rgba(0,0,0,0.12); text-decoration: underline; opacity: 1; }
+.suite-chip__arrow { opacity: 0.4; transition: opacity 0.15s; margin-left: 2px; }
+.suite-chip--clickable:hover .suite-chip__arrow { opacity: 1; }
 .suite-scope-hint {
     font-size: 11px;
     color: var(--caption-text-color);
