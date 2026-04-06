@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -84,6 +84,13 @@ class TestSuite(Entity):
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
+
+    @classmethod
+    def get_regular(cls, identifier: str | UUID) -> "TestSuite | None":
+        """Like get(), but returns None for monitor suites."""
+        query = select(cls).where(cls.id == identifier, cls.is_monitor.isnot(True))
+        return get_current_session().scalars(query).first()
+
 
     @classmethod
     @st.cache_data(show_spinner=False)

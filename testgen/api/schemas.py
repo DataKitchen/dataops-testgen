@@ -1,0 +1,75 @@
+"""Pydantic request/response models for API v1 endpoints."""
+
+from datetime import datetime
+from enum import StrEnum
+from uuid import UUID
+
+from pydantic import BaseModel
+
+from testgen.common.models.job_execution import JobStatus
+
+# --- Jobs ---
+
+
+class JobKey(StrEnum):
+    run_profile = "run-profile"
+    run_tests = "run-tests"
+    run_test_generation = "run-test-generation"
+
+
+class JobSource(StrEnum):
+    api = "api"
+    ui = "ui"
+    scheduler = "scheduler"
+    mcp = "mcp"
+    cli = "cli"
+
+
+class JobSubmittedResponse(BaseModel):
+    """Returned on 202 Accepted after successful job submission."""
+
+    id: UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class JobResponse(BaseModel):
+    """Full job execution record returned by status and cancel endpoints."""
+
+    id: UUID
+    job_key: JobKey
+    status: JobStatus
+    source: JobSource
+    created_at: datetime
+    claimed_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class JobListResponse(BaseModel):
+    """Paginated list of job executions."""
+
+    items: list[JobResponse]
+    page: int
+    limit: int
+    total: int
+
+
+# --- Errors ---
+
+
+class ErrorDetail(BaseModel):
+    """A single error entry."""
+
+    code: str
+    detail: str
+
+
+class ErrorResponse(BaseModel):
+    """Standardized error response for business logic errors (400, 404, 409)."""
+
+    errors: list[ErrorDetail]

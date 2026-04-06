@@ -1009,6 +1009,7 @@ CREATE TABLE job_executions (
     kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
     source          VARCHAR(20)     NOT NULL,
     status          VARCHAR(20)     NOT NULL DEFAULT 'pending',
+    project_code    VARCHAR(30)     NOT NULL,
     job_schedule_id UUID            REFERENCES job_schedules(id) ON DELETE SET NULL,
     error_message   TEXT,
     created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
@@ -1019,6 +1020,7 @@ CREATE TABLE job_executions (
 
 CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
+CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,
