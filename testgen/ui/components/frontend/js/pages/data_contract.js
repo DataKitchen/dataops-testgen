@@ -710,8 +710,8 @@ const HealthGrid = (health, activeFilter, activeTab) => {
         div(
             {
                 class: 'health-card coverage health-card--link',
-                onclick: () => { activeFilter.val = activeFilter.val === 'uncovered' ? 'all' : 'uncovered'; activeTab.val = 'overview'; },
-                title: 'Filter to uncovered columns',
+                onclick: () => { activeTab.val = 'matrix'; },
+                title: 'View Coverage Matrix',
             },
             div({ class: 'health-card__label' },
                 mat('verified', 13), ' Contract Completeness',
