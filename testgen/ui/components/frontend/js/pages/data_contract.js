@@ -74,7 +74,7 @@ const SOURCE_LABEL = { ddl: 'DDL', profiling: 'Profiling', governance: 'Governan
 const VERIF_META = {
     db_enforced: { icon: '🏛️', label: 'Enforced',  cls: 'badge-enforced' },
     tested:      { icon: '⚡',  label: 'Tested',    cls: 'badge-tested'   },
-    monitored:   { icon: '🔬', label: 'Monitored', cls: 'badge-mon'      },
+    monitored:   { icon: '📡', label: 'Monitored', cls: 'badge-mon'      },
     observed:    { icon: '📸', label: 'Observed',  cls: 'badge-obs'      },
     declared:    { icon: '🏷️', label: 'Declared',  cls: 'badge-decl'     },
 };
@@ -178,7 +178,7 @@ const TableClaimsRow = (tableClaims, tableName) => {
 const TableSection = (tableData, startOpen = false) => {
     const open = van.state(startOpen);
     const tblClaimCount = (tableData.table_claims || []).length;
-    const totalClaims = tblClaimCount + tableData.columns.reduce(
+    const colClaimCount = tableData.columns.reduce(
         (sum, col) => sum + col.static_claims.length + col.live_claims.length, 0,
     );
     return div(
@@ -189,14 +189,12 @@ const TableSection = (tableData, startOpen = false) => {
                 onclick: () => { open.val = !open.val; },
             },
             mat('table_rows', 22),
-            tableData.name,
-            span({ class: 'count-badge' }, `${tableData.column_count} column(s)`),
-            tblClaimCount
-                ? span({ class: 'count-badge count-badge--table' }, `${tblClaimCount} table-level`)
-                : '',
-            () => !open.val
-                ? span({ class: 'count-badge count-badge--claims' }, `${totalClaims} claim(s)`)
-                : '',
+            span({ class: 'ts-name' }, tableData.name),
+            div({ class: 'ts-meta' },
+                span({ class: 'count-badge' }, `${tableData.column_count} column${tableData.column_count !== 1 ? 's' : ''}`),
+                () => !open.val ? span({ class: 'count-badge count-badge--table' }, `${tblClaimCount} table-level claim${tblClaimCount !== 1 ? 's' : ''}`) : '',
+                () => !open.val ? span({ class: 'count-badge count-badge--claims' }, `${colClaimCount} column-level claim${colClaimCount !== 1 ? 's' : ''}`) : '',
+            ),
             span({ class: () => `table-section-chevron${open.val ? ' open' : ''}` }, 'expand_more'),
         ),
         () => open.val
@@ -267,7 +265,17 @@ const ClaimsDetail = (tables, activeFilter) => {
 
 // ── Coverage matrix tab ───────────────────────────────────────────────────────
 
-const MatrixTableSection = (tableName, rows, startOpen) => {
+const MATRIX_COLS = [
+    { key: 'db',     label: '🏛️ DB Enforced' },
+    { key: 'tested', label: '⚡ Tested'       },
+    { key: 'mon',    label: '📡 Monitored'    },
+    { key: 'obs',    label: '📸 Observed'     },
+    { key: 'decl',   label: '🏷️ Declared'    },
+];
+
+const fmtCount = (n) => (n > 0 ? String(n) : '—');
+
+const MatrixTableSection = (tableName, rows, startOpen, totals) => {
     const open = van.state(startOpen);
     return div(
         { class: 'table-section' },
@@ -277,54 +285,50 @@ const MatrixTableSection = (tableName, rows, startOpen) => {
                 onclick: () => { open.val = !open.val; },
             },
             mat('table_rows', 22),
-            tableName,
-            span({ class: 'count-badge' }, `${rows.length} column(s)`),
+            span({ class: 'ts-name' }, tableName),
+            div({ class: 'ts-meta' },
+                span({ class: 'count-badge' }, `${rows.length} col${rows.length !== 1 ? 's' : ''}`),
+                ...MATRIX_COLS
+                    .filter((c) => c.key === 'mon' || totals[c.key] > 0)
+                    .map((c) => () => open.val ? '' : span({ class: 'count-badge matrix-collapsed-summary' }, `${c.label} ${totals[c.key]}`)),
+            ),
             span({ class: () => `table-section-chevron${open.val ? ' open' : ''}` }, 'expand_more'),
         ),
         () => open.val
-            ? table(
-                { class: 'matrix-table' },
-                thead(tr(
-                    ...['Column', 'Type', 'Key', 'Tests', 'Anomaly', 'Classification', 'Tiers']
-                        .map((h) => th(h)),
-                )),
-                tbody(
-                    ...rows.map((row) => tr(
-                        td(span({ class: 'col-name' }, row.column)),
-                        td(span({ class: 'type-tag' }, row.type || '—')),
-                        td(row.key || ''),
-                        td(
-                            row.tests_count
-                                ? span({ class: `status-icon ${statusClass(row.tests_status)}` }, row.tests_count)
-                                : span({ class: 'status-icon none' }, '—'),
-                        ),
-                        td(
-                            row.anomaly_count
-                                ? span({ class: `anomaly-chip ${likelihoodClass(row.anomaly_likelihood)}` }, row.anomaly_count)
-                                : '—',
-                        ),
-                        td(row.classification || '—'),
-                        td(
-                            div(
-                                { class: 'tier-badges' },
-                                ...row.tiers.map((t) =>
-                                    TIER_META[t] ? span({ class: TIER_META[t].cls }, TIER_META[t].label) : '',
-                                ),
-                            ),
-                        ),
+            ? div(
+                { class: 'matrix-table-wrap' },
+                table(
+                    { class: 'matrix-table matrix-table--tiers' },
+                    thead(tr(
+                        th({ class: 'col-col' }, 'Column'),
+                        ...MATRIX_COLS.map((c) => th({ class: 'tier-col', title: c.label }, c.label)),
                     )),
+                    tbody(
+                        ...rows.map((row) => tr(
+                            td(span({ class: 'col-name' }, row.column)),
+                            ...MATRIX_COLS.map((c) => td(
+                                { class: `tier-cell ${row[c.key] > 0 ? 'has-claims' : 'no-claims'}` },
+                                fmtCount(row[c.key]),
+                            )),
+                        )),
+                        tr(
+                            { class: 'matrix-totals-row' },
+                            td('Total'),
+                            ...MATRIX_COLS.map((c) => td({ class: 'tier-cell' }, fmtCount(totals[c.key]))),
+                        ),
+                    ),
                 ),
               )
             : '',
     );
 };
 
-const CoverageMatrix = (matrix, suiteScope) => {
+const CoverageMatrix = (matrix, suiteScope, tables) => {
     if (!matrix.length) {
         return div({ class: 'dc-empty' }, 'No schema data available.');
     }
 
-    // Group rows by table name preserving order
+    // Group rows by table preserving order
     const tableMap = new Map();
     for (const row of matrix) {
         if (!tableMap.has(row.table)) tableMap.set(row.table, []);
@@ -342,12 +346,28 @@ const CoverageMatrix = (matrix, suiteScope) => {
           )
         : '';
 
-    const tables = [...tableMap.entries()];
+    // Grand totals
+    const grand = { db: 0, tested: 0, mon: 0, obs: 0, decl: 0 };
+    for (const row of matrix) {
+        for (const c of MATRIX_COLS) grand[c.key] += row[c.key] || 0;
+    }
+
+    const countsBar = (tables && tables.length) ? ClaimCountsBar(tables) : '';
+
+    const tableEntries = [...tableMap.entries()];
     return div(
         { class: 'dc-matrix-wrap' },
+        countsBar,
         scopeNote,
-        ...tables.map(([tableName, rows], idx) =>
-            MatrixTableSection(tableName, rows, idx === 0),
+        ...tableEntries.map(([tableName, rows], idx) => {
+            const totals = { db: 0, tested: 0, mon: 0, obs: 0, decl: 0 };
+            for (const r of rows) for (const c of MATRIX_COLS) totals[c.key] += r[c.key] || 0;
+            return MatrixTableSection(tableName, rows, idx === 0, totals);
+        }),
+        div(
+            { class: 'matrix-grand-total' },
+            'All tables  ',
+            ...MATRIX_COLS.map((c) => span({ class: 'matrix-grand-item' }, `${c.label} ${grand[c.key]}`)),
         ),
     );
 };
@@ -356,18 +376,21 @@ const CoverageMatrix = (matrix, suiteScope) => {
 
 const ClaimCountsBar = (tables) => {
     // Accumulate counts across all tables/columns for both static and live claims
+    // monitor source is grouped under test (monitors are a type of test, not a distinct origin)
     const bySrc  = { ddl: 0, profiling: 0, governance: 0, test: 0 };
     const byVerif = { db_enforced: 0, tested: 0, monitored: 0, observed: 0, declared: 0 };
 
     for (const t of tables) {
         for (const c of (t.table_claims || [])) {
-            if (c.source in bySrc)  bySrc[c.source]++;
-            if (c.verif  in byVerif) byVerif[c.verif]++;
+            const srcKey = c.source === 'monitor' ? 'test' : c.source;
+            if (srcKey in bySrc)     bySrc[srcKey]++;
+            if (c.verif in byVerif)  byVerif[c.verif]++;
         }
         for (const col of t.columns) {
             for (const c of [...col.static_claims, ...col.live_claims]) {
-                if (c.source in bySrc)   bySrc[c.source]++;
-                if (c.verif  in byVerif) byVerif[c.verif]++;
+                const srcKey = c.source === 'monitor' ? 'test' : c.source;
+                if (srcKey in bySrc)    bySrc[srcKey]++;
+                if (c.verif in byVerif) byVerif[c.verif]++;
             }
         }
     }
@@ -891,11 +914,10 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'overview',  label: 'Overview'              },
-    { id: 'matrix',    label: 'Coverage Matrix'       },
-    { id: 'gaps',      label: 'Completeness Analysis' },
-    { id: 'yaml',      label: 'YAML'                  },
-    { id: 'upload',    label: 'Upload Changes'        },
+    { id: 'overview',  label: 'Overview'        },
+    { id: 'matrix',    label: 'Coverage Matrix' },
+    { id: 'yaml',      label: 'YAML'            },
+    { id: 'upload',    label: 'Upload Changes'  },
 ];
 
 const TabBar = (activeTab) =>
@@ -1045,8 +1067,7 @@ const DataContract = (props) => {
                 () => {
                     const tab = activeTab.val;
                     if (tab === 'overview') return ClaimsDetail(tables, activeFilter);
-                    if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope);
-                    if (tab === 'gaps')     return GapAnalysis(gaps, tables);
+                    if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope, tables);
                     if (tab === 'yaml')     return YamlViewer(yaml);
                     if (tab === 'upload')   return UploadTab();
                     if (tab === 'help')     return ClaimsHelpPanel();
@@ -1334,14 +1355,19 @@ stylesheet.replace(`
     color: var(--primary-text-color);
     font-size: 14px;
 }
-.count-badge {
+.ts-name { flex: 1; }
+.ts-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-left: auto;
+}
+.count-badge {
     font-size: 11px;
     color: var(--caption-text-color);
     font-weight: 400;
 }
 .count-badge--claims {
-    margin-left: 6px;
     font-size: 11px;
     color: var(--link-text-color);
     font-weight: 500;
@@ -1351,7 +1377,6 @@ stylesheet.replace(`
     border-radius: 10px;
 }
 .count-badge--table {
-    margin-left: 6px;
     font-size: 11px;
     color: #d97706;
     font-weight: 500;
@@ -1472,7 +1497,10 @@ stylesheet.replace(`
 
 /* ── Coverage matrix ── */
 .dc-matrix-wrap { overflow-x: auto; }
+.matrix-table-wrap { overflow-x: auto; margin-top: 4px; }
 .matrix-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.matrix-table.matrix-table--tiers .col-col { min-width: 160px; }
+.matrix-table.matrix-table--tiers .tier-col { text-align: center; min-width: 110px; }
 .matrix-table th {
     text-align: left;
     font-size: 11px;
@@ -1490,6 +1518,23 @@ stylesheet.replace(`
     color: var(--secondary-text-color);
 }
 .matrix-table tr:hover td { background: rgba(128,128,128,0.03); }
+.tier-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.tier-cell.has-claims { font-weight: 600; color: var(--primary-text-color); }
+.tier-cell.no-claims  { color: var(--caption-text-color); }
+.matrix-totals-row td { font-weight: 700; background: rgba(128,128,128,0.04); border-top: 2px solid var(--border-color); }
+.matrix-grand-total {
+    margin-top: 16px;
+    padding: 10px 14px;
+    background: rgba(128,128,128,0.04);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.matrix-grand-item { font-weight: 600; color: var(--primary-text-color); }
 .col-name { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 13px; }
 .type-tag {
     font-family: monospace;

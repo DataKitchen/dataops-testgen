@@ -40,11 +40,11 @@ _mock_streamlit_components()
 from testgen.ui.bootstrap import BUILTIN_PAGES  # noqa: E402
 from testgen.ui.views.data_contract import (  # noqa: E402
     DataContractPage,
+    _build_contract_props,
     _column_coverage_tiers,
     _tier_badge,
     _quality_counts,
     _worst_status,
-    _render_gap_analysis,
     ContractDiff as _ContractDiff,  # re-exported for convenience
 )
 from testgen.commands.import_data_contract import ContractDiff  # noqa: E402
@@ -247,3 +247,315 @@ class Test_NavigationHandlers:
         ).read_text()
         assert "ViewContractClicked" in src
         assert "data-contract" in src
+
+
+# ---------------------------------------------------------------------------
+# 7. Claim count consistency — Overview == Coverage Matrix top == bottom
+# ---------------------------------------------------------------------------
+
+def _make_table_group(tg_id: str = "tg-001") -> MagicMock:
+    tg = MagicMock()
+    tg.id = tg_id
+    tg.table_groups_name = "Test TG"
+    tg.project_code = "proj"
+    return tg
+
+
+def _props_from_doc(doc: dict, anomalies: list | None = None) -> dict:
+    """Call _build_contract_props with minimal required arguments."""
+    import yaml as _yaml
+    return _build_contract_props(
+        table_group=_make_table_group(),
+        doc=doc,
+        anomalies=anomalies or [],
+        contract_yaml=_yaml.dump(doc),
+    )
+
+
+def _claims_detail_total(props: dict) -> int:
+    """Count every claim shown in the Claims Detail (Overview tab).
+
+    Mirrors the JS ClaimsDetail loop: table_claims + static_claims + live_claims
+    for every column in every table.
+    """
+    total = 0
+    for t in props["tables"]:
+        total += len(t.get("table_claims", []))
+        for col in t.get("columns", []):
+            total += len(col.get("static_claims", []))
+            total += len(col.get("live_claims", []))
+    return total
+
+
+def _claim_counts_bar_totals(props: dict) -> tuple[int, int]:
+    """Compute the by-source and by-verif totals that ClaimCountsBar shows.
+
+    Returns (total_by_source, total_by_verif) — both must equal the claims
+    detail total because they aggregate the same tables data.
+    """
+    # monitor source is grouped under test (mirrors JS ClaimCountsBar behaviour)
+    by_src  = {"ddl": 0, "profiling": 0, "governance": 0, "test": 0}
+    by_verif = {"db_enforced": 0, "tested": 0, "monitored": 0, "observed": 0, "declared": 0}
+
+    for t in props["tables"]:
+        for c in t.get("table_claims", []):
+            src_key = "test" if c["source"] == "monitor" else c["source"]
+            if src_key in by_src:
+                by_src[src_key] += 1
+            if c["verif"] in by_verif:
+                by_verif[c["verif"]] += 1
+        for col in t.get("columns", []):
+            for c in col.get("static_claims", []) + col.get("live_claims", []):
+                src_key = "test" if c["source"] == "monitor" else c["source"]
+                if src_key in by_src:
+                    by_src[src_key] += 1
+                if c["verif"] in by_verif:
+                    by_verif[c["verif"]] += 1
+
+    return sum(by_src.values()), sum(by_verif.values())
+
+
+def _coverage_matrix_total(props: dict) -> int:
+    """Sum db + tested + mon + obs + decl across every row of the coverage matrix.
+
+    This is the grand total shown at the bottom of the Coverage Matrix tab.
+    """
+    return sum(
+        row["db"] + row["tested"] + row["mon"] + row["obs"] + row["decl"]
+        for row in props["coverage_matrix"]
+    )
+
+
+class Test_ClaimCountConsistency:
+    """
+    The total number of claims must be equal across three UI locations:
+      1. Claims Detail (Overview tab)  — static_claims + live_claims per column
+      2. Claim Counts Bar (top of Coverage Matrix) — by source and by verif level
+      3. Coverage Matrix grand total (bottom) — sum of db+tested+mon+obs per column
+    """
+
+    def _doc(self, tables: list[dict], quality: list[dict] | None = None,
+             references: list[dict] | None = None) -> dict:
+        return {
+            "schema": tables,
+            "quality": quality or [],
+            "references": references or [],
+        }
+
+    def test_simple_column_no_claims(self):
+        """A plain untyped column with no rules or annotations: all three totals equal."""
+        doc = self._doc([{"name": "orders", "properties": [{"name": "id"}]}])
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_db_enforced_claims(self):
+        """varchar(50) + required + PK → three db_enforced claims."""
+        doc = self._doc([{
+            "name": "orders",
+            "properties": [{
+                "name": "order_id",
+                "physicalType": "varchar(50)",
+                "required": True,
+                "logicalTypeOptions": {"primaryKey": True},
+            }],
+        }])
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+        assert detail == 3  # Data Type + Not Null + Primary Key
+
+    def test_governance_claims(self):
+        """description + classification + CDE → three declared claims."""
+        doc = self._doc([{
+            "name": "customers",
+            "properties": [{
+                "name": "email",
+                "physicalType": "text",
+                "description": "Customer email address",
+                "classification": "pii",
+                "criticalDataElement": True,
+            }],
+        }])
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_test_rule_claims(self):
+        """One non-monitor quality rule → one tested live claim."""
+        doc = self._doc(
+            tables=[{
+                "name": "orders",
+                "properties": [{"name": "amount", "physicalType": "numeric(10,2)"}],
+            }],
+            quality=[{
+                "id": "rule-001",
+                "element": "orders.amount",
+                "testType": "Threshold_Numeric",
+                "name": "Amount positive",
+                "lastResult": {"status": "passing"},
+            }],
+        )
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_column_monitor_rule_claims(self):
+        """A column-level Freshness_Trend monitor rule → one monitored claim in all totals."""
+        doc = self._doc(
+            tables=[{
+                "name": "events",
+                "properties": [{"name": "event_date", "physicalType": "date"}],
+            }],
+            quality=[{
+                "id": "mon-001",
+                "element": "events.event_date",
+                "testType": "Freshness_Trend",
+                "name": "Events freshness",
+                "lastResult": {"status": "passing"},
+            }],
+        )
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_table_level_monitor_appears_in_matrix(self):
+        """Table-level monitor rules (Freshness_Trend, Volume_Trend) must appear
+        in the coverage matrix as a (table-level) row and be counted consistently."""
+        doc = self._doc(
+            tables=[{
+                "name": "orders",
+                "properties": [{"name": "order_id", "physicalType": "integer"}],
+            }],
+            quality=[
+                {
+                    "id": "mon-001",
+                    "element": "orders",          # table-level, not column-level
+                    "testType": "Freshness_Trend",
+                    "name": "Orders freshness",
+                    "lastResult": {"status": "passing"},
+                },
+                {
+                    "id": "mon-002",
+                    "element": "orders",
+                    "testType": "Volume_Trend",
+                    "name": "Orders volume",
+                    "lastResult": {"status": "passing"},
+                },
+            ],
+        )
+        props = _props_from_doc(doc)
+
+        # The (table-level) matrix row must exist with mon=2
+        tbl_rows = [r for r in props["coverage_matrix"] if r["column"] == "(table-level)"]
+        assert len(tbl_rows) == 1
+        assert tbl_rows[0]["mon"] == 2
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_anomaly_claims(self):
+        """A profiling anomaly on a column → one monitored live claim."""
+        doc = self._doc([{
+            "name": "customers",
+            "properties": [{"name": "age", "physicalType": "integer"}],
+        }])
+        anomalies = [{
+            "table_name": "customers",
+            "column_name": "age",
+            "anomaly_type": "Age_Out_Of_Range",
+            "anomaly_name": "Age Out Of Range",
+            "anomaly_description": "Age value exceeds expected range",
+            "issue_likelihood": "Likely",
+            "dq_dimension": "Validity",
+            "suggested_action": "Investigate",
+            "detail": "",
+            "disposition": "Confirmed",
+        }]
+        props = _props_from_doc(doc, anomalies=anomalies)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix
+
+    def test_mixed_multi_table(self):
+        """Multiple tables, multiple columns, mixed claim types — all totals equal."""
+        doc = self._doc(
+            tables=[
+                {
+                    "name": "orders",
+                    "properties": [
+                        {
+                            "name": "order_id",
+                            "physicalType": "integer",
+                            "required": True,
+                            "logicalTypeOptions": {"primaryKey": True},
+                        },
+                        {
+                            "name": "amount",
+                            "physicalType": "numeric(10,2)",
+                            "logicalTypeOptions": {"minimum": 0, "maximum": 1000000},
+                        },
+                    ],
+                },
+                {
+                    "name": "customers",
+                    "properties": [
+                        {
+                            "name": "email",
+                            "physicalType": "text",
+                            "classification": "pii",
+                            "description": "Customer email",
+                        },
+                    ],
+                },
+            ],
+            quality=[
+                {
+                    "id": "rule-001",
+                    "element": "orders.amount",
+                    "testType": "Threshold_Numeric",
+                    "name": "Amount positive",
+                    "lastResult": {"status": "passing"},
+                },
+                {
+                    "id": "mon-001",
+                    "element": "orders.order_id",
+                    "testType": "Volume_Trend",
+                    "name": "Order volume",
+                    "lastResult": {"status": "passing"},
+                },
+            ],
+        )
+        props = _props_from_doc(doc)
+
+        detail = _claims_detail_total(props)
+        by_src, by_verif = _claim_counts_bar_totals(props)
+        matrix = _coverage_matrix_total(props)
+
+        assert detail == by_src == by_verif == matrix

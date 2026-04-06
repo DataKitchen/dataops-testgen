@@ -11,12 +11,24 @@ import re
 import typing
 
 _log = logging.getLogger(__name__)
+LOG = logging.getLogger("testgen")
 
 import streamlit as st
 import yaml
 
+from testgen.commands.contract_staleness import StaleDiff, compute_staleness_diff
+from testgen.commands.contract_versions import (
+    has_any_version,
+    list_contract_versions,
+    load_contract_version,
+    mark_contract_not_stale,
+    save_contract_version,
+)
 from testgen.commands.export_data_contract import run_export_data_contract
-from testgen.commands.import_data_contract import ContractDiff, run_import_data_contract
+from testgen.commands.import_data_contract import (  # ContractDiff re-exported for test compatibility
+    ContractDiff,
+    run_import_data_contract,
+)
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
 from testgen.common.models import with_database_session
@@ -29,14 +41,6 @@ from testgen.ui.session import session
 
 PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
-
-_STATUS_COLOR: dict[str, str] = {
-    "active": "green",
-    "proposed": "blue",
-    "draft": "orange",
-    "deprecated": "red",
-    "retired": "gray",
-}
 
 # Emoji work everywhere (expander titles, dataframe cells, markdown).
 # Material icon syntax only works inside st.markdown / st.write.
@@ -58,6 +62,8 @@ _TIERS: dict[str, tuple[str, str, str]] = {
                     "The database DDL itself rejects violations at write time — no test needed"),
     "tested":      ("⚡", "Tested",
                     "An active quality test checks this on every test run — hard pass/fail result"),
+    "monitor":     ("📡", "Monitor",
+                    "A continuous monitor (Freshness, Volume, Schema, or Metric) watches this column for anomalies over time"),
     "monitored":   ("🔬", "Hygiene Monitored",
                     "A profile anomaly detector fires during profiling runs — flagged but not blocking"),
     "observed":    ("📸", "Observed",
@@ -65,6 +71,11 @@ _TIERS: dict[str, tuple[str, str, str]] = {
     "declared":    ("🏷️", "Declared",
                     "Manually annotated governance metadata — not derived from or checked against the data"),
 }
+
+# Test types that originate from the monitor suite — displayed as "Monitor" not "Test"
+_MONITOR_TEST_TYPES: frozenset[str] = frozenset({
+    "Freshness_Trend", "Volume_Trend", "Schema_Drift", "Metric_Trend",
+})
 
 _CHAR_CONSTRAINED_RE = re.compile(
     r"^(varchar|character varying|char|nchar|nvarchar|bpchar|string)\s*\(\d+\)",
@@ -158,12 +169,14 @@ _SOURCE_META: dict[str, tuple[str, str, str]] = {
     "profiling":  ("Profiling",  "#e8f4fd", "#1976d2"),
     "governance": ("Governance", "#fffde7", "#ffa000"),
     "test":       ("Test",       "#f1f8e9", "#388e3c"),
+    "monitor":    ("Monitor",    "#e8f5e9", "#00695c"),
 }
 
 _VERIF_META: dict[str, tuple[str, str, str]] = {
     # key: (icon, display label, badge color)
     "db_enforced": ("🏛️", "DB Enforced", "#283593"),
     "tested":      ("⚡", "Tested",       "#1b5e20"),
+    "monitor":     ("📡", "Monitor",      "#00695c"),
     "monitored":   ("🔬", "Monitored",    "#e65100"),
     "observed":    ("📸", "Observed",     "#546e7a"),
     "declared":    ("🏷️", "Declared",     "#795548"),
@@ -269,6 +282,7 @@ def _render_health_dashboard(
     doc: dict,
     anomalies: list[dict],
     table_group_id: str,
+    is_latest: bool = True,
 ) -> None:
     schema = doc.get("schema") or []
     quality = doc.get("quality") or []
@@ -363,6 +377,8 @@ def _render_health_dashboard(
                 if st.button(label, key=f"dc_filter_anom:{table_group_id}", type="tertiary"):
                     st.session_state[filter_key] = None if active == "anomalies" else "anomalies"
                     safe_rerun()
+            if not is_latest:
+                st.caption("⚠ Anomalies are always current — not from this snapshot.")
 
     if active:
         st.info(
@@ -373,159 +389,7 @@ def _render_health_dashboard(
 
 
 # ---------------------------------------------------------------------------
-# Improvement #2 — Coverage matrix
-# ---------------------------------------------------------------------------
-
-def _test_cell(counts: dict[str, int], n: int) -> str:
-    if n == 0:
-        return ""
-    worst = _worst_status(counts)
-    icon = _STATUS_ICON.get(worst, "⏳")
-    return f"{icon} {n}"
-
-
-def _anomaly_cell(col_anomalies: list[dict]) -> str:
-    if not col_anomalies:
-        return ""
-    worst = "Possible"
-    for a in col_anomalies:
-        lk = a.get("issue_likelihood", "")
-        if lk == "Definite":
-            worst = "Definite"
-            break
-        if lk == "Likely":
-            worst = "Likely"
-    icon = {"Definite": "❌", "Likely": "⚠️", "Possible": "🔵"}.get(worst, "⚠️")
-    return f"{icon} {len(col_anomalies)}"
-
-
-def _render_coverage_matrix(
-    schema: list[dict],
-    quality: list[dict],
-    references: list[dict],
-    anomalies: list[dict],
-    active_filter: str | None,
-) -> None:
-    rules_by_element, anomalies_by_col, refs_by_col = _build_lookups(quality, references, anomalies)
-    matrix: list[dict] = []
-
-    for table in schema:
-        table_name = table.get("name", "")
-        for prop in (table.get("properties") or []):
-            col_name = prop.get("name", "")
-            col_key = f"{table_name}.{col_name}"
-            opts = prop.get("logicalTypeOptions") or {}
-
-            col_rules = rules_by_element.get(col_key, []) + rules_by_element.get(col_name, [])
-            col_anomalies = anomalies_by_col.get((table_name, col_name), [])
-            col_refs = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
-
-            test_counts = _quality_counts(col_rules)
-            worst_test = _worst_status(test_counts) if col_rules else None
-            has_failing = worst_test in ("failing", "error")
-            has_anomaly = bool(col_anomalies)
-            has_any_nontrivial = bool(
-                col_rules
-                or prop.get("classification")
-                or prop.get("criticalDataElement")
-                or prop.get("description")
-                or opts.get("format")
-            )
-
-            if active_filter == "uncovered" and has_any_nontrivial:
-                continue
-            if active_filter == "failing" and not has_failing:
-                continue
-            if active_filter == "anomalies" and not has_anomaly:
-                continue
-
-            key_cell = "🔑 PK" if opts.get("primaryKey") else ("🔗 FK" if col_refs else "")
-
-            matrix.append({
-                "Table": table_name,
-                "Column": col_name,
-                "Type": prop.get("physicalType") or "",
-                "Not Null": "Req" if (prop.get("required") or prop.get("nullable") is False) else "",
-                "Key": key_cell,
-                "Tests": _test_cell(test_counts, len(col_rules)),
-                "Anomaly": _anomaly_cell(col_anomalies),
-                "Class": prop.get("classification") or "",
-                "CDE": "★" if prop.get("criticalDataElement") else "",
-            })
-
-    if not matrix:
-        msg = "No columns match the current filter." if active_filter else "No schema data available."
-        st.info(msg)
-        return
-
-    st.dataframe(matrix, use_container_width=True, hide_index=True)
-
-
-# ---------------------------------------------------------------------------
-# Improvement #3 — Gap analysis
-# ---------------------------------------------------------------------------
-
-def _render_gap_analysis(
-    schema: list[dict],
-    quality: list[dict],
-    references: list[dict],
-    anomalies: list[dict],
-) -> None:
-    rules_by_element, _, _ = _build_lookups(quality, references, anomalies)
-    errors: list[str] = []
-    warnings: list[str] = []
-    infos: list[str] = []
-
-    for table in schema:
-        table_name = table.get("name", "")
-        table_has_tests = False
-
-        for prop in (table.get("properties") or []):
-            col_name = prop.get("name", "")
-            col_key = f"{table_name}.{col_name}"
-            col_rules = rules_by_element.get(col_key, []) + rules_by_element.get(col_name, [])
-            opts = prop.get("logicalTypeOptions") or {}
-
-            if col_rules:
-                table_has_tests = True
-
-            cls = (prop.get("classification") or "").lower()
-            if cls in ("pii", "sensitive", "restricted") and not col_rules:
-                errors.append(f"`{table_name}.{col_name}` classified **{prop['classification']}** but has no quality test")
-
-            if prop.get("criticalDataElement") and not col_rules:
-                warnings.append(f"`{table_name}.{col_name}` is a **Critical Data Element** with no test enforcing it")
-
-            has_range = opts.get("minimum") is not None or opts.get("maximum") is not None
-            range_ops = ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
-                         "mustBeLessThan", "mustBeLessOrEqualTo", "mustBeBetween")
-            has_range_test = any(op in r for r in col_rules for op in range_ops)
-            if has_range and not has_range_test:
-                infos.append(f"`{table_name}.{col_name}` has observed min/max but no range test is configured")
-
-            if not prop.get("description"):
-                infos.append(f"`{table_name}.{col_name}` has no description (governance gap)")
-
-        if not table_has_tests:
-            warnings.append(f"Table **{table_name}** has no quality tests of any kind")
-
-    if not errors and not warnings and not infos:
-        st.success("No contract gaps detected.", icon=":material/check_circle:")
-        return
-
-    for msg in errors:
-        st.error(msg, icon=":material/error:")
-    for msg in warnings:
-        st.warning(msg, icon=":material/warning:")
-
-    if infos:
-        if st.toggle(f"Show {len(infos)} informational gap(s)", key="dc_show_info_gaps"):
-            for msg in infos:
-                st.info(msg, icon=":material/info:")
-
-
-# ---------------------------------------------------------------------------
-# Improvement #4 — Static vs live split  +  #5 — border-stripe cards
+# Static vs live split  +  border-stripe cards
 # ---------------------------------------------------------------------------
 
 def _extract_column_claims(
@@ -579,24 +443,32 @@ def _extract_column_claims(
     if opts.get("minLength") is not None:
         claims.append(_claim("Min Length", opts["minLength"], "profiling", "observed", kind="static"))
     if opts.get("maxLength") is not None:
-        verif = "monitored" if _CHAR_CONSTRAINED_RE.match(physical_lower) else "observed"
-        claims.append(_claim("Max Length", opts["maxLength"], "profiling", verif, kind="static"))
+        claims.append(_claim("Max Length", opts["maxLength"], "profiling", "observed", kind="static"))
     if opts.get("format"):
         claims.append(_claim("Format", opts["format"], "profiling", "observed", kind="static"))
     if prop.get("logicalType"):
         claims.append(_claim("Logical Type", prop["logicalType"], "profiling", "observed", kind="static"))
 
-    # --- Live claims (tests + anomalies) ---
+    # --- Live claims (tests + monitors) ---
     for rule in col_rules:
         test_name = rule.get("name") or rule.get("type") or rule.get("testType") or "Test"
+        test_type = rule.get("testType", "")
+        is_monitor_rule = test_type in _MONITOR_TEST_TYPES
         last = rule.get("lastResult") or {}
         status = last.get("status") or "not run"
         status_icon = _STATUS_ICON.get(status, "⏳")
-        claims.append(_claim(
-            "Test", f"{status_icon} {test_name}",
-            "test", "tested",
-            kind="live", rule=rule, status=status,
-        ))
+        if is_monitor_rule:
+            claims.append(_claim(
+                "Monitor", f"{status_icon} {test_name}",
+                "monitor", "monitored",
+                kind="live", rule=rule, status=status,
+            ))
+        else:
+            claims.append(_claim(
+                "Test", f"{status_icon} {test_name}",
+                "test", "tested",
+                kind="live", rule=rule, status=status,
+            ))
 
     for anomaly in col_anomalies:
         likelihood = anomaly.get("issue_likelihood", "")
@@ -604,7 +476,7 @@ def _extract_column_claims(
         likelihood_icon = {"Definite": "❌", "Likely": "⚠️", "Possible": "🔵"}.get(likelihood, "⚠️")
         claims.append(_claim(
             "Hygiene", f"{likelihood_icon} {aname}",
-            "profiling", "monitored",
+            "profiling", "observed",
             kind="live", anomaly=anomaly,
         ))
 
@@ -625,31 +497,48 @@ def _render_live_claims_row(
     cols = st.columns(min(n, 4))
     for i, claim in enumerate(live_claims):
         with cols[i % 4]:
-            is_test = claim.get("name") == "Test"
+            claim_name = claim.get("name", "Test")
+            is_test = claim_name == "Test"
+            is_monitor = claim_name == "Monitor"
             status = claim.get("status", "not run")
-            border_color = (
-                "#c62828" if status in ("failing", "error") else
-                "#f9a825" if status == "warning" or claim.get("name") == "Hygiene" else
-                "#2e7d32" if status == "passing" else
-                "#90a4ae"
-            )
+            if claim_name == "Hygiene":
+                border_color = "#f9a825"
+            elif is_monitor:
+                border_color = (
+                    "#c62828" if status in ("failing", "error") else
+                    "#f9a825" if status == "warning" else
+                    "#00695c" if status == "passing" else
+                    "#90a4ae"
+                )
+            else:
+                border_color = (
+                    "#c62828" if status in ("failing", "error") else
+                    "#f9a825" if status == "warning" else
+                    "#2e7d32" if status == "passing" else
+                    "#90a4ae"
+                )
+            label_text = "Monitor 📡" if is_monitor else ("Test" if is_test else "Hygiene")
             st.markdown(
                 f'<div style="border:1px solid #e0e0e0;border-left:4px solid {border_color};'
                 f'border-radius:0 6px 6px 0;padding:7px 10px;background:#fafafa;">'
                 f'<div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">'
-                f'{"Test" if is_test else "Hygiene"}</div>'
+                f'{label_text}</div>'
                 f'<div style="font-size:12px;font-weight:600;color:#1a1a1a;word-break:break-word;'
                 f'margin:2px 0 0 0;">{claim["value"]}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if is_test and claim.get("rule"):
+            if (is_test or is_monitor) and claim.get("rule"):
                 rule = claim["rule"]
                 rule_id = str(rule.get("id", ""))
                 if rule_id:
                     btn_key = f"edit_{col_key}_{rule_id[:8]}_{i}"
-                    if st.button("✏️ Edit", key=btn_key, type="tertiary", use_container_width=True):
-                        _edit_rule_dialog(rule, table_group_id, yaml_key)
+                    btn_label = "📡 Detail" if is_monitor else "✏️ Edit"
+                    if st.button(btn_label, key=btn_key, type="tertiary", use_container_width=True):
+                        if is_monitor:
+                            _monitor_claim_dialog(rule, claim_name)
+                        else:
+                            _edit_rule_dialog(rule, table_group_id, yaml_key)
 
 
 def _render_schema_claims(
@@ -907,6 +796,45 @@ def _suite_picker_dialog(suite_runs: list[dict]) -> None:
         safe_rerun()
 
 
+_MONITOR_ICON: dict[str, str] = {
+    "Freshness_Trend": "🕐",
+    "Volume_Trend":    "📊",
+    "Schema_Drift":    "🗂️",
+    "Metric_Trend":    "📈",
+}
+
+_MONITOR_DESCRIPTION: dict[str, str] = {
+    "Freshness_Trend": "Detects stale data — alerts when a table stops updating on its expected schedule.",
+    "Volume_Trend":    "Detects unusual row count changes — alerts when volume spikes or drops outside the expected range.",
+    "Schema_Drift":    "Detects schema changes — alerts when columns are added, dropped, or modified.",
+    "Metric_Trend":    "Detects anomalies in a numeric metric — alerts when the value drifts outside historical norms.",
+}
+
+
+@st.dialog("Monitor Claim Detail", width="small")
+def _monitor_claim_dialog(rule: dict, claim_name: str) -> None:  # noqa: ARG001
+    test_type = rule.get("testType", "")
+    icon = _MONITOR_ICON.get(test_type, "📡")
+    description = _MONITOR_DESCRIPTION.get(test_type, "A continuous monitor watches this element for anomalies over time.")
+    monitor_name = rule.get("name") or test_type or "Monitor"
+    last = rule.get("lastResult") or {}
+    status = last.get("status") or "not run"
+    status_icon = _STATUS_ICON.get(status, "⏳")
+
+    st.markdown(f"**{icon} {monitor_name}**")
+    st.caption(description)
+    st.divider()
+    st.markdown(f"**Status** &nbsp; {status_icon} {status.title() if status else 'Not Run'}")
+    if last.get("measuredValue") is not None:
+        st.markdown(f"**Last Measured** &nbsp; `{last['measuredValue']}`")
+    if last.get("executedAt"):
+        st.markdown(f"**Last Run** &nbsp; {last['executedAt']}")
+    st.divider()
+    st.caption("📡 Managed in TestGen Monitors. To configure or run it, go to Monitors.")
+    if st.button("Close", key="monitor_claim_close", use_container_width=True):
+        safe_rerun()
+
+
 @st.dialog("Test Claim Detail", width="small")
 def _test_claim_dialog(claim: dict, table_name: str, col_name: str) -> None:
     status = claim.get("status", "")
@@ -972,7 +900,8 @@ def _claim_read_dialog(
         if del_col.button("Delete Claim", key="claim_read_delete", use_container_width=True):
             current_yaml = st.session_state.get(yaml_key, "")
             try:
-                doc = yaml.safe_load(current_yaml) or {}
+                _parsed = yaml.safe_load(current_yaml)
+                doc = _parsed if isinstance(_parsed, dict) else {}
             except yaml.YAMLError:
                 st.error("Could not parse the contract YAML.")
                 return
@@ -1020,63 +949,46 @@ def _claim_edit_dialog(
     st.divider()
     save_col, cancel_col = st.columns(2)
 
+    st.caption("ℹ Changes are held until you save a new contract version.")
+
     if save_col.button("Save", type="primary", use_container_width=True):
         current_yaml = st.session_state.get(yaml_key, "")
         try:
-            doc = yaml.safe_load(current_yaml) or {}
+            _parsed = yaml.safe_load(current_yaml)
+            doc = _parsed if isinstance(_parsed, dict) else {}
         except yaml.YAMLError:
             st.error("Could not parse the contract YAML.")
             return
 
-        patched = False
-        for tbl in (doc.get("schema") or []):
-            if tbl.get("name") == table_name:
-                for prop in (tbl.get("properties") or []):
-                    if prop.get("name") == col_name:
-                        if claim_name == "Classification":
-                            if new_value:
-                                prop["classification"] = new_value
-                            else:
-                                prop.pop("classification", None)
-                        elif claim_name == "Description":
-                            if new_value:
-                                prop["description"] = new_value
-                            else:
-                                prop.pop("description", None)
-                        elif claim_name == "CDE":
-                            if new_cde:
-                                prop["criticalDataElement"] = True
-                            else:
-                                prop.pop("criticalDataElement", None)
-                        patched = True
-                        break
-            if patched:
-                break
+        edit_value: object = new_value
+        if claim_name == "CDE":
+            edit_value = new_cde
+
+        patched = _patch_yaml_governance(doc, table_name, col_name, claim_name, edit_value)
 
         if not patched:
             st.warning(f"Could not locate `{table_name}.{col_name}` in the contract — no changes made.")
             return
 
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        with st.spinner("Saving…"):
-            result: ContractDiff = run_import_data_contract(patched_yaml, table_group_id, dry_run=False)
+        st.session_state[yaml_key] = patched_yaml
+        pending_key = f"dc_pending:{table_group_id}"
+        LOG.debug("Pending governance edit: %s.%s %s = %r", table_name, col_name, claim_name, edit_value)
+        st.session_state[pending_key] = _apply_pending_governance_edit(
+            st.session_state.get(pending_key, {}),
+            table_name, col_name, claim_name, edit_value,
+        )
+        safe_rerun()
 
-        if result.errors:
-            for err in result.errors:
-                st.error(err)
-        else:
-            st.success("Saved.")
-            st.session_state.pop(yaml_key, None)
-            safe_rerun()
-
-    if cancel_col.button("Cancel", use_container_width=True):
+    if cancel_col.button("Close", use_container_width=True):
         safe_rerun()
 
     st.divider()
     if st.button("Delete Claim", key="claim_edit_delete", use_container_width=True):
         current_yaml = st.session_state.get(yaml_key, "")
         try:
-            doc = yaml.safe_load(current_yaml) or {}
+            _parsed = yaml.safe_load(current_yaml)
+            doc = _parsed if isinstance(_parsed, dict) else {}
         except yaml.YAMLError:
             st.error("Could not parse the contract YAML.")
             return
@@ -1087,9 +999,12 @@ def _claim_edit_dialog(
             st.error(err or "Could not remove this claim.")
             return
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        _persist_governance_deletion(claim_name, table_group_id, table_name, col_name)
-        # Store patched YAML — do NOT pop and re-export, which would restore the claim
         st.session_state[yaml_key] = patched_yaml
+        pending_key = f"dc_pending:{table_group_id}"
+        st.session_state[pending_key] = _apply_pending_governance_edit(
+            st.session_state.get(pending_key, {}),
+            table_name, col_name, claim_name, None,
+        )
         safe_rerun()
 
 
@@ -1150,41 +1065,50 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str) -> None:
         horizontal=True,
     )
 
+    st.caption("ℹ Changes are held until you save a new contract version.")
     st.divider()
     save_col, cancel_col = st.columns(2)
 
     if save_col.button("Save", type="primary", use_container_width=True):
         current_yaml = st.session_state.get(yaml_key, "")
         try:
-            doc = yaml.safe_load(current_yaml) or {}
+            _parsed = yaml.safe_load(current_yaml)
+            doc = _parsed if isinstance(_parsed, dict) else {}
         except yaml.YAMLError:
             st.error("Could not parse current contract YAML.")
             return
 
         quality = doc.get("quality") or []
         patched = False
+        test_updates: dict = {}
         for q in quality:
             if str(q.get("id", "")) == rule_id:
                 if op_key and new_threshold:
                     try:
                         q[op_key] = float(new_threshold) if "." in str(new_threshold) else int(new_threshold)
+                        test_updates[op_key] = q[op_key]
                     except ValueError:
                         q[op_key] = new_threshold
+                        test_updates[op_key] = new_threshold
                 if has_between and new_lo is not None and new_hi is not None:
                     try:
                         q["mustBeBetween"] = [
                             float(new_lo) if "." in new_lo else int(new_lo),
                             float(new_hi) if "." in new_hi else int(new_hi),
                         ]
+                        test_updates["mustBeBetween"] = q["mustBeBetween"]
                     except ValueError:
                         pass
                 if new_desc and new_desc != (rule.get("name") or ""):
                     q["name"] = new_desc
+                    test_updates["name"] = new_desc
                 if new_severity != current_sev:
                     if new_severity is None:
                         q.pop("severity", None)
+                        test_updates["severity"] = None
                     else:
                         q["severity"] = new_severity
+                        test_updates["severity"] = new_severity
                 patched = True
                 break
 
@@ -1193,63 +1117,18 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str) -> None:
             return
 
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        with st.spinner("Saving…"):
-            result: ContractDiff = run_import_data_contract(patched_yaml, table_group_id, dry_run=False)
-
-        if result.errors:
-            for err in result.errors:
-                st.error(err)
-        else:
-            st.success(f"Saved {result.total_changes} change(s).")
-            st.session_state.pop(yaml_key, None)
-            safe_rerun()
-
-    if cancel_col.button("Cancel", use_container_width=True):
+        st.session_state[yaml_key] = patched_yaml
+        pending_key = f"dc_pending:{table_group_id}"
+        LOG.debug("Pending test edit: rule %s updates %r", rule_id, test_updates)
+        st.session_state[pending_key] = _apply_pending_test_edit(
+            st.session_state.get(pending_key, {}),
+            rule_id,
+            test_updates,
+        )
         safe_rerun()
 
-
-# ---------------------------------------------------------------------------
-# Overview tab orchestrator
-# ---------------------------------------------------------------------------
-
-def _render_overview(
-    doc: dict,
-    anomalies: list[dict],
-    table_group_id: str,
-    yaml_key: str,
-) -> None:
-    schema = doc.get("schema") or []
-    quality = doc.get("quality") or []
-    references = doc.get("references") or []
-    sla = doc.get("slaProperties") or []
-    team = doc.get("team") or {}
-    compliance = doc.get("compliance") or {}
-
-    filter_key = f"dc_filter:{table_group_id}"
-    active_filter: str | None = st.session_state.get(filter_key)
-
-    # 1 — Health dashboard
-    _render_health_dashboard(doc, anomalies, table_group_id)
-
-    if not schema:
-        st.info("No schema data available. Run profiling to populate the contract.")
-        return
-
-    # 3 — Gap analysis
-    with st.expander("⚠️ **Completeness Analysis**", expanded=False):
-        _render_gap_analysis(schema, quality, references, anomalies)
-
-    # 2 — Coverage matrix
-    st.markdown("#### Coverage Matrix")
-    _render_coverage_matrix(schema, quality, references, anomalies, active_filter)
-
-    # 4 + 5 — Claims detail (static/live split, border-stripe cards)
-    st.markdown("#### Claims Detail")
-    _render_contract_legend()
-    _render_schema_claims(schema, quality, references, anomalies, table_group_id, yaml_key, active_filter)
-
-    if sla or team or compliance:
-        _render_sla_team_compliance(sla, team, compliance)
+    if cancel_col.button("Close", use_container_width=True):
+        safe_rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -1366,6 +1245,19 @@ def _build_contract_props(
     matrix_rows: list[dict] = []
     for table in schema:
         table_name = table.get("name", "")
+        tbl_rules_mx = rules_by_element_full.get(table_name, [])
+        if tbl_rules_mx:
+            tbl_mon  = sum(1 for r in tbl_rules_mx if r.get("testType", "") in _MONITOR_TEST_TYPES)
+            tbl_test = sum(1 for r in tbl_rules_mx if r.get("testType", "") not in _MONITOR_TEST_TYPES)
+            matrix_rows.append({
+                "table":  table_name,
+                "column": "(table-level)",
+                "db":     0,
+                "tested": tbl_test,
+                "mon":    tbl_mon,
+                "obs":    0,
+                "decl":   0,
+            })
         for prop in (table.get("properties") or []):
             col_name = prop.get("name", "")
             col_key = f"{table_name}.{col_name}"
@@ -1385,19 +1277,49 @@ def _build_contract_props(
                     worst_anomaly = "Likely"
                 elif not worst_anomaly:
                     worst_anomaly = "Possible"
+            physical = (prop.get("physicalType") or "").strip()
+            physical_lower = physical.lower()
+            base_type = physical_lower.split("(")[0].strip()
+            is_db_typed = bool(physical and (
+                _CHAR_CONSTRAINED_RE.match(physical_lower)
+                or _NUMERIC_PREC_RE.match(physical_lower)
+                or base_type in _INTEGER_TYPES
+                or base_type in _DB_TYPED
+            ))
+            db_ct = sum([
+                1 if is_db_typed else 0,
+                1 if (prop.get("required") or prop.get("nullable") is False) else 0,
+                1 if opts.get("primaryKey") else 0,
+                len(col_refs),
+            ])
+            tested_ct = sum(1 for r in col_rules if r.get("testType", "") not in _MONITOR_TEST_TYPES)
+            mon_ct = sum(1 for r in col_rules if r.get("testType", "") in _MONITOR_TEST_TYPES)
+            obs_ct = sum([
+                # unconstrained physicalType (TEXT, etc.) → observed
+                1 if (physical and not is_db_typed) else 0,
+                # profiling observations from logicalTypeOptions
+                1 if opts.get("minimum") is not None else 0,
+                1 if opts.get("maximum") is not None else 0,
+                1 if opts.get("minLength") is not None else 0,
+                1 if opts.get("maxLength") is not None else 0,
+                1 if opts.get("format") else 0,
+                1 if prop.get("logicalType") else 0,
+                # profiling hygiene anomalies
+                len(col_anomalies),
+            ])
+            decl_ct = sum([
+                1 if prop.get("description") else 0,
+                1 if prop.get("classification") else 0,
+                1 if prop.get("criticalDataElement") else 0,
+            ])
             matrix_rows.append({
-                "table":              table_name,
-                "column":             col_name,
-                "type":               prop.get("physicalType") or "",
-                "not_null":           "Req" if (prop.get("required") or prop.get("nullable") is False) else "",
-                "key":                "🔑 PK" if opts.get("primaryKey") else ("🔗 FK" if col_refs else ""),
-                "tests_status":       worst_test,
-                "tests_count":        len(col_rules),
-                "anomaly_likelihood": worst_anomaly,
-                "anomaly_count":      len(col_anomalies),
-                "classification":     prop.get("classification") or "",
-                "cde":                bool(prop.get("criticalDataElement")),
-                "tiers":              _column_coverage_tiers(prop, quality),
+                "table":    table_name,
+                "column":   col_name,
+                "db":       db_ct,
+                "tested":   tested_ct,
+                "mon":      mon_ct,
+                "obs":      obs_ct,
+                "decl":     decl_ct,
             })
 
     # ── Gap analysis ──────────────────────────────────────────────────────────
@@ -1426,7 +1348,7 @@ def _build_contract_props(
             if not prop.get("description"):
                 gap_items.append({"table": table_name, "msg": f"`{col_name}` has no description (governance gap)", "severity": "info"})
         if not table_has_tests:
-            gap_items.append({"table": table_name, "msg": f"Table has no quality tests of any kind", "severity": "warning"})
+            gap_items.append({"table": table_name, "msg": "Table has no quality tests of any kind", "severity": "warning"})
     errors   = [g["msg"] for g in gap_items if g["severity"] == "error"]
     warnings = [g["msg"] for g in gap_items if g["severity"] == "warning"]
     infos    = [g["msg"] for g in gap_items if g["severity"] == "info"]
@@ -1440,10 +1362,10 @@ def _build_contract_props(
         tbl_rules = rules_by_element_full.get(table_name, [])
         table_claims: list[dict] = [
             {
-                "name":      "Test",
+                "name":      "Monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "Test",
                 "value":     r.get("name") or r.get("testType") or "Test",
-                "source":    "test",
-                "verif":     "tested",
+                "source":    "monitor" if r.get("testType", "") in _MONITOR_TEST_TYPES else "test",
+                "verif":     "monitored" if r.get("testType", "") in _MONITOR_TEST_TYPES else "tested",
                 "status":    (r.get("lastResult") or {}).get("status") or "not run",
                 "rule_id":   str(r.get("id", "") or ""),
                 "test_name": r.get("name") or r.get("testType") or "Test",
@@ -1524,6 +1446,366 @@ def _build_contract_props(
 
 
 # ---------------------------------------------------------------------------
+# Pure helpers for pending edits (unit-testable without Streamlit)
+# ---------------------------------------------------------------------------
+
+def _apply_pending_governance_edit(
+    pending: dict,
+    table_name: str,
+    col_name: str,
+    field: str,
+    value: object,
+) -> dict:
+    """Add or replace a governance edit in the pending dict. Returns updated pending."""
+    gov = [
+        e for e in pending.get("governance", [])
+        if not (e["table"] == table_name and e["col"] == col_name and e["field"] == field)
+    ]
+    gov.append({"table": table_name, "col": col_name, "field": field, "value": value})
+    return {**pending, "governance": gov}
+
+
+def _apply_pending_test_edit(
+    pending: dict,
+    rule_id: str,
+    updates: dict,
+) -> dict:
+    """Add or replace a test edit in the pending dict. Returns updated pending."""
+    tests = [e for e in pending.get("tests", []) if e.get("rule_id") != rule_id]
+    tests.append({"rule_id": rule_id, **updates})
+    return {**pending, "tests": tests}
+
+
+def _pending_edit_count(pending: dict) -> int:
+    """Total number of pending edits across all categories."""
+    return len(pending.get("governance", [])) + len(pending.get("tests", []))
+
+
+def _patch_yaml_governance(doc: dict, table_name: str, col_name: str, field: str, value: object) -> bool:
+    """Patch a governance field in-place on the parsed YAML doc. Returns True if patched."""
+    field_map = {"Classification": "classification", "Description": "description", "CDE": "criticalDataElement"}
+    yaml_field = field_map.get(field, field)
+    for tbl in (doc.get("schema") or []):
+        if tbl.get("name") == table_name:
+            for prop in (tbl.get("properties") or []):
+                if prop.get("name") == col_name:
+                    if value is None or value == "" or value is False:
+                        prop.pop(yaml_field, None)
+                    else:
+                        prop[yaml_field] = value
+                    return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# First-time flow prerequisite check
+# ---------------------------------------------------------------------------
+
+@with_database_session
+def _check_contract_prerequisites(table_group_id: str) -> dict:
+    """Check whether the prerequisites for generating a first contract are met."""
+    from testgen.common.credentials import get_tg_schema
+    from testgen.common.database.database_service import fetch_dict_from_db
+    schema = get_tg_schema()
+
+    # Last profiling run
+    profiling_rows = fetch_dict_from_db(
+        f"SELECT MAX(profiling_starttime) AS last_run FROM {schema}.profiling_runs "
+        f"WHERE table_groups_id = :tg_id AND status = 'Complete'",
+        params={"tg_id": table_group_id},
+    )
+    last_profiling = dict(profiling_rows[0]).get("last_run") if profiling_rows else None
+
+    # Non-monitor suite count with active tests
+    suite_rows = fetch_dict_from_db(
+        f"SELECT COUNT(*) AS ct FROM {schema}.test_suites ts "
+        f"JOIN {schema}.test_definitions td ON td.test_suite_id = ts.id "
+        f"WHERE ts.table_groups_id = :tg_id AND ts.is_monitor IS NOT TRUE "
+        f"AND td.test_active = 'Y'",
+        params={"tg_id": table_group_id},
+    )
+    suite_ct = int(dict(suite_rows[0]).get("ct", 0)) if suite_rows else 0
+
+    # Column metadata coverage
+    meta_rows = fetch_dict_from_db(
+        f"SELECT COUNT(*) AS total, "
+        f"SUM(CASE WHEN description IS NOT NULL OR pii_flag IS NOT NULL THEN 1 ELSE 0 END) AS with_meta "
+        f"FROM {schema}.data_column_chars WHERE table_groups_id = :tg_id",
+        params={"tg_id": table_group_id},
+    )
+    if meta_rows:
+        mr = dict(meta_rows[0])
+        total = int(mr.get("total") or 0)
+        with_meta = int(mr.get("with_meta") or 0)
+        meta_pct = int(100 * with_meta / total) if total else 0
+    else:
+        meta_pct = 0
+
+    return {
+        "has_profiling": last_profiling is not None,
+        "last_profiling": last_profiling,
+        "has_suites": suite_ct > 0,
+        "suite_ct": suite_ct,
+        "meta_pct": meta_pct,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Staleness banner
+# ---------------------------------------------------------------------------
+
+def _render_staleness_banner(
+    version_record: dict,
+    stale_diff: StaleDiff,
+    table_group_id: str,
+    dismissed_key: str,
+) -> None:
+    """Render the staleness warning banner. Returns silently if not stale or dismissed."""
+    if st.session_state.get(dismissed_key):
+        return
+    parts = stale_diff.summary_parts()
+    saved_at = version_record.get("saved_at")
+    saved_str = saved_at.strftime("%b %d, %Y") if saved_at else "unknown date"
+    version_num = version_record.get("version", "?")
+    st.warning(
+        f"Contract version {version_num} was saved on {saved_str}. "
+        f"Since then: {', '.join(parts)}.",
+        icon="⚠️",
+    )
+    col1, col2 = st.columns([1, 8])
+    if col1.button("Review Changes", key=f"dc_review_changes:{table_group_id}"):
+        st.session_state[f"dc_show_review:{table_group_id}"] = True
+        safe_rerun()
+    if col2.button("Dismiss", key=f"dc_dismiss_stale:{table_group_id}"):
+        st.session_state[dismissed_key] = True
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# Save version dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Save New Version", width="small")
+def _save_version_dialog(
+    table_group_id: str,
+    pending: dict,
+    current_yaml: str,
+    current_version: int | None,
+) -> None:
+    gov_edits = pending.get("governance", [])
+    test_edits = pending.get("tests", [])
+    next_ver = (current_version + 1) if current_version is not None else 0
+
+    st.markdown(f"**Save as Version {next_ver}**")
+    if current_version is not None:
+        st.caption(f"Current latest: version {current_version}")
+
+    if gov_edits or test_edits:
+        st.markdown("**Changes to include:**")
+        for e in gov_edits:
+            st.markdown(f"  · {e['table']}.{e['col']} — {e['field']}: {e['value']}")
+        for e in test_edits:
+            st.markdown(f"  · Test `{e['rule_id'][:8]}…` updated")
+    else:
+        st.info("No edits pending — this will snapshot the current contract state without changes.", icon="ℹ️")
+
+    label = st.text_input("Label (optional)", placeholder="e.g. Added PII tests for orders table")
+    st.divider()
+    save_col, cancel_col = st.columns(2)
+
+    if save_col.button("Save Version", type="primary", use_container_width=True):
+        from testgen.common.credentials import get_tg_schema
+        from testgen.common.database.database_service import execute_db_queries
+        schema = get_tg_schema()
+
+        try:
+            with st.spinner("Saving…"):
+                # 1. Apply governance pending edits to DB
+                for e in gov_edits:
+                    field_map = {
+                        "Classification": ("pii_flag", e["value"]),
+                        "Description":    ("description", e["value"]),
+                        "CDE":            ("critical_data_element", bool(e["value"])),
+                    }
+                    db_col, db_val = field_map.get(e["field"], (None, None))
+                    if db_col:
+                        execute_db_queries([(
+                            f"UPDATE {schema}.data_column_chars SET {db_col} = :val "
+                            "WHERE table_groups_id = :tg_id AND table_name = :tbl AND column_name = :col",
+                            {"val": db_val, "tg_id": table_group_id, "tbl": e["table"], "col": e["col"]},
+                        )])
+
+                # 2. Apply test pending edits to DB
+                for e in test_edits:
+                    rule_id = e["rule_id"]
+                    updates = {k: v for k, v in e.items() if k != "rule_id"}
+                    if updates:
+                        from testgen.commands.import_data_contract import _ALLOWED_TEST_COLS
+                        safe_updates = {k: v for k, v in updates.items() if k in _ALLOWED_TEST_COLS}
+                        if safe_updates:
+                            params = {"test_id": rule_id, "lock_y": "Y"}
+                            set_parts = []
+                            for col, val in safe_updates.items():
+                                params[f"p_{col}"] = val
+                                set_parts.append(f"{col} = :p_{col}")
+                            execute_db_queries([(
+                                f"UPDATE {schema}.test_definitions SET {', '.join(set_parts)}, "
+                                "last_manual_update = NOW(), lock_refresh = :lock_y WHERE id = :test_id",
+                                params,
+                            )])
+
+                # 3. Save snapshot — use the current in-memory patched YAML (not a fresh export)
+                new_version = save_contract_version(table_group_id, current_yaml, label or None)
+
+            st.success(f"Saved as version {new_version}.")
+            # Clear pending and force reload of new version
+            pending_key = f"dc_pending:{table_group_id}"
+            yaml_key = f"dc_yaml:{table_group_id}"
+            version_key = f"dc_version:{table_group_id}"
+            for k in (pending_key, yaml_key, version_key):
+                st.session_state.pop(k, None)
+            safe_rerun()
+
+        except Exception as exc:
+            st.error(f"Save failed: {exc}")
+
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# First-time flow renderer
+# ---------------------------------------------------------------------------
+
+def _render_first_time_flow(table_group_id: str) -> None:
+    """Render the guided first-contract generation wizard."""
+    prereqs = _check_contract_prerequisites(table_group_id)
+    preview_key = f"dc_preview:{table_group_id}"
+    in_preview = preview_key in st.session_state
+
+    st.markdown("### No contract saved yet")
+    st.caption("Generate your first contract by completing the steps below.")
+
+    if not in_preview:
+        # Step 1: prerequisites
+        prof_ok = prereqs["has_profiling"]
+        suite_ok = prereqs["has_suites"]
+
+        st.markdown("**Before generating a contract we need:**")
+        if prof_ok:
+            last = prereqs["last_profiling"]
+            last_str = last.strftime("%b %d, %Y") if last else ""
+            st.success(f"✅  Profiling run complete   ({last_str})", icon=None)
+        else:
+            st.error("❌  No profiling run found — run profiling first.", icon=None)
+
+        if suite_ok:
+            st.success(f"✅  Test suites present   ({prereqs['suite_ct']} active tests, monitor suites excluded)", icon=None)
+        else:
+            st.error("❌  No non-monitor test suites with active tests found.", icon=None)
+
+        meta_pct = prereqs["meta_pct"]
+        if meta_pct < 25:
+            st.warning(
+                f"⚠️  Column metadata sparse ({meta_pct}% of columns have descriptions or PII flags). "
+                "You can add these now or later — they improve contract coverage.",
+                icon=None,
+            )
+
+        all_ok = prof_ok and suite_ok
+        if st.button("Generate Contract Preview →", disabled=not all_ok, type="primary"):
+            import io
+            buf = io.StringIO()
+            _capture_yaml(table_group_id, buf)
+            st.session_state[preview_key] = buf.getvalue()
+            safe_rerun()
+    else:
+        # Step 2: preview
+        preview_yaml = st.session_state[preview_key]
+        try:
+            _parsed = yaml.safe_load(preview_yaml)
+            preview_doc = _parsed if isinstance(_parsed, dict) else {}
+        except yaml.YAMLError:
+            preview_doc = {}
+
+        st.info("📋 Contract preview — not yet saved", icon=None)
+        anomalies: list[dict] = []
+        _render_health_dashboard(preview_doc, anomalies, table_group_id)
+
+        schema = preview_doc.get("schema") or []
+        quality = preview_doc.get("quality") or []
+        references = preview_doc.get("references") or []
+        if schema:
+            with st.expander("⚠️ Gap Analysis", expanded=True):
+                _render_gap_analysis(schema, quality, references, anomalies)
+
+        col1, col2 = st.columns([1, 3])
+        if col1.button("← Back"):
+            st.session_state.pop(preview_key, None)
+            safe_rerun()
+
+        if col2.button("Save as Version 0", type="primary"):
+            _save_version_dialog(table_group_id, {}, preview_yaml, None)
+
+
+# ---------------------------------------------------------------------------
+# Review changes panel dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Changes Since Last Save", width="large")
+def _review_changes_panel(
+    stale_diff: StaleDiff,
+    table_group_id: str,
+    version_record: dict,
+    current_yaml: str,
+) -> None:
+    version_num = version_record.get("version", "?")
+    saved_at = version_record.get("saved_at")
+    saved_str = saved_at.strftime("%b %d, %Y at %H:%M") if saved_at else ""
+    st.markdown(f"**Changes since version {version_num}** ({saved_str})")
+    st.divider()
+
+    def _section(title: str, items: list[dict], key_fn) -> None:
+        if items:
+            st.markdown(f"**{title}**")
+            for item in items:
+                icon = {"added": "➕", "removed": "➖", "changed": "✏️"}.get(item.get("change", ""), "·")
+                st.markdown(f"{icon} {key_fn(item)}")
+        else:
+            st.markdown(f"**{title}** — no changes")
+
+    _section(
+        "Schema",
+        stale_diff.schema_changes,
+        lambda i: f"`{i['table']}.{i['column']}` {i.get('detail', '')}",
+    )
+    _section(
+        "Quality rules",
+        stale_diff.quality_changes,
+        lambda i: f"`{i['element']}` {i['test_type']} {i.get('detail', '')} "
+                  f"{'  (' + i['last_result'] + ')' if i.get('last_result') else ''}",
+    )
+    _section(
+        "Governance",
+        stale_diff.governance_changes,
+        lambda i: f"`{i['table']}.{i['column']}` {i['field']} {i.get('detail', '')}",
+    )
+    _section(
+        "Suite scope",
+        stale_diff.suite_scope_changes,
+        lambda i: f"{i['suite_name']}",
+    )
+
+    st.divider()
+    close_col, save_col = st.columns([3, 1])
+    if close_col.button("Close", use_container_width=True):
+        safe_rerun()
+    if save_col.button("Save new version →", type="primary", use_container_width=True):
+        pending = st.session_state.get(f"dc_pending:{table_group_id}", {})
+        _save_version_dialog(table_group_id, pending, current_yaml, version_record.get("version"))
+
+
+# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 
@@ -1535,8 +1817,8 @@ class DataContractPage(Page):
     ]
     menu_item = None
 
-    def render(self, table_group_id: str, **_kwargs) -> None:  # noqa: PLR0912
-        from testgen.ui.components.widgets.testgen_component import testgen_component  # local import avoids circularity
+    def render(self, table_group_id: str, **_kwargs) -> None:
+        from testgen.ui.components.widgets.testgen_component import testgen_component
 
         table_group = TableGroup.get_minimal(table_group_id)
         if not table_group:
@@ -1545,23 +1827,160 @@ class DataContractPage(Page):
 
         testgen.page_header(PAGE_TITLE, "connect-your-database/manage-table-groups/")
 
-        yaml_key    = f"dc_yaml:{table_group_id}"
-        anomaly_key = f"dc_anomalies:{table_group_id}"
+        # ── First-time flow ───────────────────────────────────────────────────
+        if not has_any_version(table_group_id):
+            _render_first_time_flow(table_group_id)
+            return
 
+        # ── Session state keys ────────────────────────────────────────────────
+        yaml_key      = f"dc_yaml:{table_group_id}"
+        version_key   = f"dc_version:{table_group_id}"
+        pending_key   = f"dc_pending:{table_group_id}"
+        anomaly_key   = f"dc_anomalies:{table_group_id}"
+
+        # ── Version picker ────────────────────────────────────────────────────
+        versions = list_contract_versions(table_group_id)
+        requested_version: int | None = None
+        raw_ver = st.query_params.get("version")
+        if raw_ver is not None:
+            try:
+                requested_version = int(raw_ver)
+            except ValueError:
+                requested_version = None
+
+        # Load or reload version record
+        if version_key not in st.session_state or (
+            requested_version is not None
+            and st.session_state.get(version_key, {}).get("version") != requested_version
+        ):
+            record = load_contract_version(table_group_id, requested_version)
+            if record is None:
+                record = load_contract_version(table_group_id)
+            st.session_state[version_key] = record
+            st.session_state.pop(yaml_key, None)  # force YAML reload
+
+        version_record: dict = st.session_state[version_key]
+        is_latest = (version_record["version"] == versions[0]["version"]) if versions else True
+        dismissed_key = f"dc_stale_dismissed:{table_group_id}:v{version_record['version']}"
+
+        # Populate YAML from saved record (only once per version selection)
         if yaml_key not in st.session_state:
-            buf = io.StringIO()
-            _capture_yaml(table_group_id, buf)
-            st.session_state[yaml_key] = buf.getvalue()
+            st.session_state[yaml_key] = version_record["contract_yaml"]
 
         contract_yaml: str = st.session_state[yaml_key]
+        pending: dict = st.session_state.get(pending_key, {})
 
         doc: dict = {}
         if contract_yaml:
             try:
-                doc = yaml.safe_load(contract_yaml) or {}
+                parsed = yaml.safe_load(contract_yaml)
+                doc = parsed if isinstance(parsed, dict) else {}
             except yaml.YAMLError:
                 doc = {}
 
+        # ── Staleness check (latest version only) ─────────────────────────────
+        stale_diff: StaleDiff | None = None
+        if is_latest:
+            tg_full = TableGroup.get(table_group_id)
+            is_stale = bool(getattr(tg_full, "contract_stale", False))
+            if is_stale and not st.session_state.get(dismissed_key):
+                stale_diff = compute_staleness_diff(table_group_id, version_record["contract_yaml"])
+                if stale_diff.is_empty:
+                    mark_contract_not_stale(table_group_id)
+                    stale_diff = None
+
+        # ── Version picker UI + Save button (same row) ───────────────────────
+        pending_ct = _pending_edit_count(pending)
+        if len(versions) > 1:
+            version_labels = [
+                (
+                    f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
+                    f"{'— ' + v['label'] if v.get('label') else ''}  (latest)"
+                    if i == 0 else
+                    f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
+                    f"{'— ' + v['label'] if v.get('label') else ''}"
+                )
+                for i, v in enumerate(versions)
+            ]
+            current_idx = next(
+                (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
+            )
+            picker_col, save_col = st.columns([4, 1])
+            with picker_col:
+                chosen_idx = st.selectbox(
+                    "Contract version",
+                    options=range(len(versions)),
+                    index=current_idx,
+                    format_func=lambda i: version_labels[i],
+                    label_visibility="collapsed",
+                )
+            if is_latest:
+                if pending_ct > 0:
+                    pending_items = [
+                        f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])
+                    ] + [f"test {e['rule_id'][:8]}…" for e in pending.get("tests", [])]
+                    tip = f"{pending_ct} unsaved change(s): " + "; ".join(pending_items[:3])
+                    btn_label = f"Save new version ● ({pending_ct})"
+                else:
+                    tip = "Snapshot the current contract state as a new version"
+                    btn_label = "Save new version"
+                with save_col:
+                    if st.button(btn_label, type="secondary", help=tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
+                        _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+            if chosen_idx != current_idx:
+                chosen_ver = versions[chosen_idx]["version"]
+                if pending and _pending_edit_count(pending) > 0:
+                    st.warning("You have unsaved changes. Switch versions? Changes will be lost.")
+                    c1, c2 = st.columns(2)
+                    if c1.button("Switch anyway"):
+                        st.session_state.pop(pending_key, None)
+                        st.session_state.pop(yaml_key, None)
+                        st.session_state.pop(version_key, None)
+                        st.query_params["version"] = str(chosen_ver)
+                        safe_rerun()
+                    if c2.button("Stay"):
+                        safe_rerun()
+                else:
+                    st.session_state.pop(yaml_key, None)
+                    st.session_state.pop(version_key, None)
+                    st.query_params["version"] = str(chosen_ver)
+                    safe_rerun()
+        elif is_latest:
+            # No version picker (only one version) — save button floats right
+            _, save_col = st.columns([4, 1])
+            if pending_ct > 0:
+                pending_items = [
+                    f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])
+                ] + [f"test {e['rule_id'][:8]}…" for e in pending.get("tests", [])]
+                tip = f"{pending_ct} unsaved change(s): " + "; ".join(pending_items[:3])
+                btn_label = f"Save new version ● ({pending_ct})"
+            else:
+                tip = "Snapshot the current contract state as a new version"
+                btn_label = "Save new version"
+            with save_col:
+                if st.button(btn_label, type="secondary", help=tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
+                    _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+
+        # ── Historic read-only banner ─────────────────────────────────────────
+        if not is_latest:
+            saved_at = version_record.get("saved_at")
+            saved_str = saved_at.strftime("%b %d, %Y at %H:%M") if saved_at else ""
+            label_str = f' "{version_record["label"]}"' if version_record.get("label") else ""
+            st.info(
+                f"📋 Viewing version {version_record['version']}{label_str} — saved {saved_str}. "
+                f"This is a read-only snapshot. The latest is version {versions[0]['version']}.",
+                icon=None,
+            )
+
+        # ── Staleness banner (latest only) ────────────────────────────────────
+        if stale_diff and is_latest:
+            _render_staleness_banner(version_record, stale_diff, table_group_id, dismissed_key)
+
+        # ── Review changes panel ──────────────────────────────────────────────
+        if st.session_state.pop(f"dc_show_review:{table_group_id}", False) and stale_diff:
+            _review_changes_panel(stale_diff, table_group_id, version_record, contract_yaml)
+
+        # ── Anomalies ─────────────────────────────────────────────────────────
         if anomaly_key not in st.session_state:
             st.session_state[anomaly_key] = _fetch_anomalies(table_group_id)
         anomalies: list[dict] = st.session_state[anomaly_key]
@@ -1571,22 +1990,25 @@ class DataContractPage(Page):
         test_statuses = _fetch_test_statuses(table_group_id)
         props = _build_contract_props(table_group, doc, anomalies, contract_yaml, run_dates, suite_scope, test_statuses)
 
-        # ── Show import result banner if present ──────────────────────────────
-        import_result_key = f"dc_import_result:{table_group_id}"
-        if import_result_key in st.session_state:
-            result = st.session_state.pop(import_result_key)
-            if result.get("errors"):
-                for err in result["errors"]:
-                    st.error(err)
-            elif result.get("changes", 0) == 0:
-                st.info("No changes detected — the uploaded contract matches the current state.")
-            else:
-                st.success(f"Import successful: {result['changes']} change(s) applied.")
+        # Pass versioning state to VanJS
+        props["version_info"] = {
+            "version": version_record["version"],
+            "saved_at": version_record["saved_at"].isoformat() if version_record.get("saved_at") else None,
+            "label": version_record.get("label"),
+            "is_latest": is_latest,
+            "is_stale": stale_diff is not None,
+            "pending_count": pending_ct,
+        }
 
         # ── Event handlers ────────────────────────────────────────────────────
         def on_refresh(_payload: object) -> None:
+            if pending_ct > 0:
+                st.warning("You have unsaved changes. Refresh will discard them.")
+                # In practice the user can use the browser; this is a best-effort guard
             st.session_state.pop(yaml_key, None)
             st.session_state.pop(anomaly_key, None)
+            st.session_state.pop(version_key, None)
+            st.session_state.pop(pending_key, None)
             safe_rerun()
 
         def on_suite_picker(_payload: object) -> None:
@@ -1600,7 +2022,12 @@ class DataContractPage(Page):
             col_name   = payload.get("colName", "")
             source = claim.get("source", "")
             verif  = claim.get("verif", "")
-            if source == "test":
+            claim_name = claim.get("name", "")
+            if not is_latest:
+                _claim_read_dialog(claim, table_name, col_name, table_group_id, yaml_key)
+            elif source == "monitor":
+                _monitor_claim_dialog(claim.get("rule", {}), claim_name)
+            elif source == "test":
                 _test_claim_dialog(claim, table_name, col_name)
             elif source == "governance" and verif == "declared":
                 _claim_edit_dialog(claim, table_name, col_name, table_group_id, yaml_key)
@@ -1608,6 +2035,8 @@ class DataContractPage(Page):
                 _claim_read_dialog(claim, table_name, col_name, table_group_id, yaml_key)
 
         def on_edit_rule(payload: dict) -> None:
+            if not is_latest:
+                return
             rule_id = str(payload.get("rule_id", ""))
             rule = next(
                 (r for r in (doc.get("quality") or []) if str(r.get("id", "")) == rule_id),
@@ -1616,28 +2045,14 @@ class DataContractPage(Page):
             if rule:
                 _edit_rule_dialog(rule, table_group_id, yaml_key)
 
-        def on_import_contract(yaml_str: str) -> None:
-            try:
-                result: ContractDiff = run_import_data_contract(yaml_str, table_group_id, dry_run=False)
-                st.session_state[import_result_key] = {
-                    "errors":  result.errors,
-                    "changes": result.total_changes,
-                }
-                st.session_state.pop(yaml_key, None)
-                st.session_state.pop(anomaly_key, None)
-            except Exception as exc:  # noqa: BLE001
-                st.session_state[import_result_key] = {"errors": [str(exc)], "changes": 0}
-            safe_rerun()
-
         testgen_component(
             "data_contract",
             props=props,
             event_handlers={
-                "RefreshClicked":        on_refresh,
-                "EditRuleClicked":       on_edit_rule,
-                "ImportContractClicked": on_import_contract,
-                "ClaimDetailClicked":    on_claim_detail,
-                "SuitePickerClicked":    on_suite_picker,
+                "RefreshClicked":     on_refresh,
+                "EditRuleClicked":    on_edit_rule,
+                "ClaimDetailClicked": on_claim_detail,
+                "SuitePickerClicked": on_suite_picker,
             },
         )
 
@@ -1837,15 +2252,12 @@ def _fetch_last_run_dates(table_group_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _render_meta_bar(table_group: object, doc: dict) -> None:
-    status = doc.get("status", "draft")
-    color = _STATUS_COLOR.get(status, "gray")
-    version = doc.get("version") or "—"
     domain = doc.get("domain") or ""
     data_product = doc.get("dataProduct") or ""
     servers = doc.get("servers") or []
     server_type = servers[0].get("type", "") if servers else ""
 
-    pills = [f"v{version}", f":{color}[{status.capitalize()}]"]
+    pills = []
     if domain:
         pills.append(f"Domain: {domain}")
     if data_product:
@@ -1854,7 +2266,8 @@ def _render_meta_bar(table_group: object, doc: dict) -> None:
         pills.append(f"Server: {server_type}")
 
     tg_name = getattr(table_group, "table_groups_name", "")
-    st.markdown(f"**{tg_name}** &nbsp;·&nbsp; " + " &nbsp;·&nbsp; ".join(pills))
+    suffix = " &nbsp;·&nbsp; " + " &nbsp;·&nbsp; ".join(pills) if pills else ""
+    st.markdown(f"**{tg_name}**{suffix}")
 
     if isinstance(doc.get("description"), dict) and doc["description"].get("purpose"):
         st.caption(doc["description"]["purpose"])

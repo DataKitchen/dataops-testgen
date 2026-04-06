@@ -1,6 +1,6 @@
 # Data Contract — Design
 
-> Last updated: 2026-04-05
+> Last updated: 2026-04-05 (versioning lifecycle implemented)
 
 ---
 
@@ -296,9 +296,9 @@ Only two claim sources are editable in-place:
 
 **Governance claims** (Classification, CDE, Description):
 - Click the chip → dialog opens with the current value and an edit field
-- Clicking Save in the dialog holds the change **in memory only** — nothing is written to the DB yet
+- Clicking Apply in the dialog holds the change **in memory only** — nothing is written to the DB yet
 - The chip updates visually on the page to reflect the pending value
-- The "Save new version ●" button in the header activates to signal unsaved changes
+- The **"Save new version"** button is **always visible** on the latest version (right-aligned, secondary style). When there are pending changes it shows a dirty indicator: `Save new version ● (N)` and a tooltip listing the pending fields
 - All pending changes are written to `data_column_chars` atomically when the user saves a new contract version
 
 **Test claims** (threshold, tolerance, description, severity):
@@ -983,28 +983,32 @@ Test_SaveFromStaleness
 
 ## 14. Planned Work
 
-### Near-term
+### Implemented ✅
 
-| Item | Description |
+| Item | Status |
 |---|---|
-| `data_contracts` table | New DB table; `version` is a 0-based integer auto-incremented per table group; `saved_at` is a timestamp with time zone |
-| Save / version flow | "Save new version ●" button with dirty indicator, pending-change summary dialog, atomic DB write on confirm |
-| Staleness detection | Background job or triggers comparing `saved_at` against profiling run timestamps and test definition changes |
-| Staleness diff panel | Targeted diff by category (schema / quality / governance / suite scope) with current test results shown |
-| First-time generation wizard | Prerequisites check → preview → save as version 0 |
-| Version history dropdown | Version picker in the header showing integer + timestamp + label for each saved version; required for Flow B (viewing historic versions) |
+| `data_contracts` table (`0184_incremental_upgrade.sql`) | ✅ Done — `version` integer, `saved_at`, `label`, `contract_yaml`, `UNIQUE(table_group_id, version)` |
+| `contract_stale` + `last_contract_save_date` on `table_groups` | ✅ Done — `0184_incremental_upgrade.sql` |
+| Save / version flow — atomic `INSERT … SELECT MAX+1 … RETURNING version` | ✅ Done — `contract_versions.py` |
+| "Save new version" button — always visible on latest, dirty indicator when pending edits | ✅ Done — `data_contract.py` render() |
+| Staleness detection — profiling run hook in `run_profiling.py` | ✅ Done — calls `mark_contract_stale` after successful run |
+| Staleness diff computation — `StaleDiff` dataclass (schema / quality / governance / suite scope) | ✅ Done — `contract_staleness.py` |
+| Staleness banner + Review Changes diff panel | ✅ Done — `_render_staleness_banner`, `_review_changes_panel` |
+| First-time generation wizard — prerequisites → preview → save as version 0 | ✅ Done — `_render_first_time_flow` |
+| Version history dropdown — version picker in header row, right-aligned Save button | ✅ Done — `data_contract.py` render() |
+| Pending edit model — `dc_yaml` / `dc_pending` co-ownership, YAML patch-on-edit | ✅ Done — `_apply_pending_governance_edit`, `_apply_pending_test_edit`, `_patch_yaml_governance` |
+| 93 contract-specific unit tests (versioning + staleness + pending edits) | ✅ Done |
+| Navigation from Project Dashboard, Table Group list, and Test Suites | ✅ Done |
 
-### Medium-term
+### Backlog
 
-| Item | Description |
+| Priority | Item |
 |---|---|
-| Version diff view | Side-by-side comparison between any two saved versions |
-| Staleness notification | Email alert when a saved contract becomes stale |
-
-### Long-term
-
-| Item | Description |
-|---|---|
-| External catalog publish | Push saved YAML to Atlan, DataHub, or OpenMetadata on new version save |
-| Consumer registry | Track who relies on a contract; notify on new version |
-| Multi-table-group contracts | One contract spanning multiple table groups |
+| Medium | Confirm-on-navigate-away — warn the user when they have pending edits and click away from the page |
+| Medium | Column_Schema_Assert — per-column DDL assertion test complementing Schema_Drift |
+| Low | Version diff view — side-by-side comparison between any two saved versions |
+| Low | Staleness notification — email alert when a saved contract becomes stale |
+| Low | External catalog publish — push saved YAML to Atlan, DataHub, or OpenMetadata on new version save |
+| Low | ODPS v4.1 adapter — wrap ODCS output inside OpenDataProduct for catalog publishing |
+| Low | Consumer registry — track who relies on a contract; notify on new version |
+| Low | Multi-table-group contracts — one contract spanning multiple table groups |

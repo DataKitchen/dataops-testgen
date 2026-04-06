@@ -128,6 +128,12 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         send_profiling_run_notifications(profiling_run)
         _rollup_profiling_scores(profiling_run, table_group)
         _generate_tests(table_group)
+        # Mark the contract stale — profiling may have changed schema or observed stats.
+        try:
+            from testgen.commands.contract_versions import mark_contract_stale
+            mark_contract_stale(str(table_group.id))
+        except Exception:  # noqa: BLE001
+            LOG.warning("Could not mark contract stale after profiling run for %s", table_group.id)
     finally:
         MixpanelService().send_event(
             "run-profiling",
