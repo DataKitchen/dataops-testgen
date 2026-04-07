@@ -92,6 +92,70 @@ _PATTERN_TO_FORMAT: dict[str, str] = {
     "DELIMITED_DATA": "delimited",
 }
 
+# Documentation base URLs
+_DOCS_BASE = "https://docs.datakitchen.io/testgen/generate-tests/test-types"
+_DOCS_MONITOR_BASE = "https://docs.datakitchen.io/testgen/monitor-tables"
+
+# TestGen test_type → documentation URL (only types with confirmed docs pages are included)
+_TEST_TYPE_DOCS_URL: dict[str, str] = {
+    # Validity
+    "Alpha_Trunc":          f"{_DOCS_BASE}/validity-tests/#alpha-truncation",
+    "Combo_Match":          f"{_DOCS_BASE}/validity-tests/#pattern-match",
+    "Distinct_Value_Ct":    f"{_DOCS_BASE}/validity-tests/#value-count",
+    "Email_Format":         f"{_DOCS_BASE}/validity-tests/#email-format",
+    "Min_Date":             f"{_DOCS_BASE}/validity-tests/#minimum-date",
+    "Min_Val":              f"{_DOCS_BASE}/validity-tests/#minimum-value",
+    "Pattern_Match":        f"{_DOCS_BASE}/validity-tests/#pattern-match",
+    "Street_Addr_Pattern":  f"{_DOCS_BASE}/validity-tests/#street-address",
+    "US_State":             f"{_DOCS_BASE}/validity-tests/#us-state",
+    "Valid_Characters":     f"{_DOCS_BASE}/validity-tests/#valid-characters",
+    "Valid_Month":          f"{_DOCS_BASE}/validity-tests/#valid-month",
+    "Valid_US_Zip":         f"{_DOCS_BASE}/validity-tests/#valid-us-zip",
+    "Valid_US_Zip3":        f"{_DOCS_BASE}/validity-tests/#valid-us-zip-3",
+    # Completeness
+    "Daily_Record_Ct":      f"{_DOCS_BASE}/completeness-tests/#daily-records",
+    "Missing_Pct":          f"{_DOCS_BASE}/completeness-tests/#percent-missing",
+    "Monthly_Rec_Ct":       f"{_DOCS_BASE}/completeness-tests/#monthly-records",
+    "Required":             f"{_DOCS_BASE}/completeness-tests/#required-entry",
+    "Row_Ct":               f"{_DOCS_BASE}/completeness-tests/#row-count",
+    "Row_Ct_Pct":           f"{_DOCS_BASE}/completeness-tests/#row-range",
+    "Weekly_Rec_Ct":        f"{_DOCS_BASE}/completeness-tests/#weekly-records",
+    # Consistency
+    "Aggregate_Balance":         f"{_DOCS_BASE}/consistency-tests/#aggregate-balance",
+    "Aggregate_Balance_Percent": f"{_DOCS_BASE}/consistency-tests/#aggregate-balance-percent",
+    "Aggregate_Balance_Range":   f"{_DOCS_BASE}/consistency-tests/#aggregate-balance-range",
+    "Aggregate_Minimum":         f"{_DOCS_BASE}/consistency-tests/#aggregate-minimum",
+    "Avg_Shift":                 f"{_DOCS_BASE}/consistency-tests/#average-shift",
+    "Constant":                  f"{_DOCS_BASE}/consistency-tests/#constant-match",
+    "Condition_Flag":            f"{_DOCS_BASE}/consistency-tests/#custom-condition",
+    "Dec_Trunc":                 f"{_DOCS_BASE}/consistency-tests/#decimal-truncation",
+    "Distribution_Shift":        f"{_DOCS_BASE}/consistency-tests/#distribution-shift",
+    "LOV_All":                   f"{_DOCS_BASE}/consistency-tests/#value-match-all",
+    "Timeframe_Combo_Match":     f"{_DOCS_BASE}/consistency-tests/#timeframe-match",
+    "Timeframe_Combo_Gain":      f"{_DOCS_BASE}/consistency-tests/#timeframe-no-drops",
+    # Timeliness
+    "Distinct_Date_Ct":     f"{_DOCS_BASE}/timeliness-tests/#date-count",
+    "Future_Date_1Y":       f"{_DOCS_BASE}/timeliness-tests/#future-year",
+    "Recency":              f"{_DOCS_BASE}/timeliness-tests/#recency",
+    "Table_Freshness":      f"{_DOCS_BASE}/timeliness-tests/#table-freshness",
+    # Accuracy
+    "CUSTOM":               f"{_DOCS_BASE}/accuracy-tests/#custom-test",
+    "Incr_Avg_Shift":       f"{_DOCS_BASE}/accuracy-tests/#new-shift",
+    "Outlier_Pct_Above":    f"{_DOCS_BASE}/accuracy-tests/#outliers-above",
+    "Outlier_Pct_Below":    f"{_DOCS_BASE}/accuracy-tests/#outliers-below",
+    "Variability_Decrease": f"{_DOCS_BASE}/accuracy-tests/#variability-decrease",
+    "Variability_Increase": f"{_DOCS_BASE}/accuracy-tests/#variability-increase",
+    # Uniqueness
+    "Dupe_Rows":    f"{_DOCS_BASE}/uniqueness-tests/#duplicate-rows",
+    "Unique":       f"{_DOCS_BASE}/uniqueness-tests/#unique-values",
+    "Unique_Pct":   f"{_DOCS_BASE}/uniqueness-tests/#percent-unique",
+    # Monitors
+    "Freshness_Trend": f"{_DOCS_MONITOR_BASE}/#freshness",
+    "Metric_Trend":    f"{_DOCS_MONITOR_BASE}/#metric",
+    "Schema_Drift":    f"{_DOCS_MONITOR_BASE}/#schema",
+    "Volume_Trend":    f"{_DOCS_MONITOR_BASE}/#volume",
+}
+
 # TestGen dq_dimension → ODCS quality dimension
 _DQ_DIMENSION_MAP: dict[str, str] = {
     "Accuracy": "accuracy",
@@ -388,7 +452,7 @@ def _build_schema(columns: list[dict]) -> list[dict]:
                 "logicalType": logical_type,
                 "required": bool(col.get("record_ct") and col.get("null_value_ct") == 0),
                 "criticalDataElement": bool(col.get("critical_data_element")),
-                "classification": _pii_flag_to_classification(col.get("pii_flag")),
+                "classification": _pii_flag_to_classification(col.get("pii_flag")) if col.get("pii_flag") else None,
             }
 
             # Primary key detection — ID-Unique functional type or profiling all-unique indicator
@@ -415,11 +479,13 @@ def _build_schema(columns: list[dict]) -> list[dict]:
             if opts:
                 prop["logicalTypeOptions"] = opts
 
-            # examples from top_freq_values (stored as pipe-separated "value|count" pairs)
-            if col.get("top_freq_values"):
+            # examples from top_freq_values — omitted for PII columns to avoid leaking sensitive data
+            # DB format: "| value | count\n| value | count\n..." — value is at index 1 after split on "|"
+            if col.get("top_freq_values") and not col.get("pii_flag"):
                 raw = col["top_freq_values"]
-                examples = [pair.split("|")[0].strip() for pair in raw.split("\n") if "|" in pair][:5]
-                if examples:
+                parts = [p.split("|") for p in raw.split("\n") if "|" in p]
+                examples = [v for p in parts if len(p) >= 2 and (v := p[1].strip())][:5]
+                if len(examples) >= 2:
                     prop["examples"] = examples
 
             # strip None values
@@ -481,6 +547,7 @@ def _build_quality(tests: list[dict]) -> list[dict]:
             "suiteId": str(t["suite_id"]),
             "name": _nonempty(t.get("user_description")) or t.get("test_name_short") or t["test_type"],
             "description": description,
+            "documentationUrl": _TEST_TYPE_DOCS_URL.get(t["test_type"]),
             "type": odcs_meta["odcs_type"],
             "dimension": dimension,
             "unit": odcs_meta.get("unit", "rows"),

@@ -450,7 +450,7 @@ class DataContractPage(Page):
             current_idx = next(
                 (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
             )
-            picker_col, refresh_col, save_col = st.columns([4, 1, 1])
+            picker_col, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
             with picker_col:
                 chosen_idx = st.selectbox(
                     "Contract version",
@@ -478,17 +478,21 @@ class DataContractPage(Page):
                     st.query_params["version"] = str(chosen_ver)
                     safe_rerun()
         else:
-            _, refresh_col, save_col = st.columns([4, 1, 1])
+            _, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
 
         with refresh_col:
             if st.button("↺ Refresh", key=f"dc_refresh_btn:{table_group_id}", use_container_width=True,
-                         help="Reload data from the database"):
+                         help="Reload the saved data contract from the database"):
                 st.session_state.pop(yaml_key, None)
                 st.session_state.pop(anomaly_key, None)
                 st.session_state.pop(version_key, None)
                 st.session_state.pop(pending_key, None)
                 safe_rerun()
         if is_latest:
+            with regen_col:
+                if st.button("⟳ Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
+                             help="Re-export from the current database state and save as a new version"):
+                    _regenerate_dialog(table_group_id, version_record["version"], pending_ct)
             with save_col:
                 save_label = f"Save ● ({pending_ct})" if pending_ct > 0 else "Save version"
                 if st.button(save_label, type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):

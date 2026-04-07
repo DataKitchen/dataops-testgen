@@ -185,12 +185,13 @@ class Test_BuildSchema:
         assert opts["maxLength"] == 50
 
     def test_examples_from_top_freq_values(self):
-        prop = _build_schema([self._col(top_freq_values="alice@x.com|45\nbob@y.com|30\n")])[0]["properties"][0]
+        # DB format: "| value | count\n| value | count"
+        prop = _build_schema([self._col(top_freq_values="| alice@x.com | 45\n| bob@y.com | 30\n")])[0]["properties"][0]
         assert "examples" in prop
         assert "alice@x.com" in prop["examples"]
 
     def test_examples_capped_at_five(self):
-        freq = "\n".join(f"val{i}|{i}" for i in range(10))
+        freq = "\n".join(f"| val{i} | {i}" for i in range(10))
         prop = _build_schema([self._col(top_freq_values=freq)])[0]["properties"][0]
         assert len(prop.get("examples", [])) <= 5
 
