@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import logging
-import sys
 
 from testgen.commands.export_data_contract import run_export_data_contract
 from testgen.common.credentials import get_tg_schema
@@ -31,12 +30,7 @@ _GOVERNANCE_ALLOWED_FIELDS: frozenset[str] = COLUMN_GOVERNANCE_FIELDS
 @with_database_session
 def _capture_yaml(table_group_id: str, buf: io.StringIO) -> None:
     """Export the current contract YAML for a table group into *buf*."""
-    old = sys.stdout
-    sys.stdout = buf
-    try:
-        run_export_data_contract(table_group_id, output_path=None)
-    finally:
-        sys.stdout = old
+    run_export_data_contract(table_group_id, output_path=None, output_stream=buf)
 
 
 # ---------------------------------------------------------------------------
@@ -60,10 +54,10 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
             r.disposition
         FROM {schema}.profile_anomaly_results r
         INNER JOIN {schema}.profile_anomaly_types t ON r.anomaly_id = t.id
-        WHERE r.table_groups_id = '{table_group_id}'
+        WHERE r.table_groups_id = :tg_id
           AND r.profile_run_id = (
               SELECT id FROM {schema}.profiling_runs
-              WHERE  table_groups_id = '{table_group_id}'
+              WHERE  table_groups_id = :tg_id
                 AND  status = 'Complete'
               ORDER  BY profiling_starttime DESC
               LIMIT  1
@@ -76,7 +70,7 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
             r.table_name, r.column_name
     """
     try:
-        return [dict(row) for row in fetch_dict_from_db(sql)]
+        return [dict(row) for row in fetch_dict_from_db(sql, params={"tg_id": table_group_id})]
     except Exception:
         LOG.warning("_fetch_anomalies failed for tg_id=%s", table_group_id, exc_info=True)
         return []
@@ -288,7 +282,7 @@ def _fetch_last_run_dates(table_group_id: str) -> dict:
 
     all_runs   = [dict(r) for r in (suite_rows or [])]
     suite_runs = [r for r in all_runs if not r.get("is_monitor")]
-    _log.info(
+    _log.debug(
         "_fetch_last_run_dates: tg_id=%s all_runs=%d suite_runs=%d totals=%s",
         table_group_id, len(all_runs), len(suite_runs),
         [(r["suite_name"], r.get("test_ct")) for r in suite_runs],

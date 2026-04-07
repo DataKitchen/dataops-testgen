@@ -163,7 +163,7 @@ def _render_live_terms_row(
                 f'<div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">'
                 f'{label_text}</div>'
                 f'<div style="font-size:12px;font-weight:600;color:#1a1a1a;word-break:break-word;'
-                f'margin:2px 0 0 0;">{term["value"]}</div>'
+                f'margin:2px 0 0 0;">{html.escape(str(term["value"]))}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -307,7 +307,7 @@ def _suite_picker_dialog(suite_runs: list[dict], project_code: str = "", table_g
         with c_info:
             st.markdown(
                 f'<div style="border-left:3px solid {border_color};padding:5px 10px;margin:4px 0;">'
-                f'<div style="font-size:13px;font-weight:600;">{name}</div>'
+                f'<div style="font-size:13px;font-weight:600;">{html.escape(name)}</div>'
                 f'<div style="font-size:11px;color:#888;">{sub}</div>'
                 f'</div>',
                 unsafe_allow_html=True,

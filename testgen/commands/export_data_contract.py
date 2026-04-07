@@ -5,6 +5,7 @@ Spec reference: https://bitol-io.github.io/open-data-contract-standard/v3.1.0/
 """
 from __future__ import annotations
 
+import io
 import logging
 import sys
 from datetime import UTC, datetime
@@ -740,7 +741,11 @@ def _annotate_yaml(yaml_str: str) -> str:
 # ---------------------------------------------------------------------------
 
 @with_database_session
-def run_export_data_contract(table_group_id: str, output_path: str | None = None) -> None:
+def run_export_data_contract(
+    table_group_id: str,
+    output_path: str | None = None,
+    output_stream: io.StringIO | None = None,
+) -> None:
     schema = get_tg_schema()
 
     ctx = _fetch_group_context(table_group_id, schema)
@@ -857,5 +862,7 @@ def run_export_data_contract(table_group_id: str, output_path: str | None = None
         with open(output_path, "w") as fh:
             fh.write(output)
         LOG.info("Data contract written to %s", output_path)
+    elif output_stream is not None:
+        output_stream.write(output)
     else:
         sys.stdout.write(output)

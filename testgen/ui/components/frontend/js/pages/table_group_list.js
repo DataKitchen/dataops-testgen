@@ -29,12 +29,24 @@ import { Icon } from '../components/icon.js';
 import { Input } from '../components/input.js';
 import { TruncatedText } from '../components/truncated_text.js';
 
-const { div, h4, span } = van.tags;
+const { button, div, h4, i, span } = van.tags;
 
 /**
  * @param {Properties} props
  * @returns {HTMLElement}
  */
+const DcButton = ({ tableGroupId }) => button(
+    { class: 'tg-dc-pill', title: 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
+    i({ class: 'material-symbols-rounded' }, 'contract'),
+    span({ class: 'tg-dc-label' }, 'Data Contract'),
+);
+
+const ActionIcon = ({ icon, label, tooltip, onclick }) => button(
+    { class: 'tg-action-icon', title: tooltip, onclick },
+    i({ class: 'material-symbols-rounded' }, icon),
+    span({ class: 'tg-action-label' }, label),
+);
+
 const TableGroupList = (props) => {
     loadStylesheet('tablegrouplist', stylesheet);
     Streamlit.setFrameHeight(1);
@@ -162,35 +174,21 @@ const TableGroupList = (props) => {
                             )
                         ),
                         actionContent: div(
-                            { class: 'flex-row fx-align-center' },
-                            Button({
-                                type: 'stroked',
-                                label: 'Data Contract',
-                                icon: 'contract',
-                                tooltip: 'View Data Contract',
-                                tooltipPosition: 'left',
-                                style: 'width: auto; white-space: nowrap; font-size: 12px; margin-right: 4px;',
-                                onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
-                            }),
+                            { class: 'tg-action-group' },
+                            DcButton({ tableGroupId: tableGroup.id }),
                             permissions.can_edit
-                                ? Button({
-                                    type: 'icon',
+                                ? ActionIcon({
                                     icon: 'edit',
-                                    iconSize: 18,
+                                    label: 'Edit',
                                     tooltip: 'Edit table group',
-                                    tooltipPosition: 'left',
-                                    color: 'basic',
                                     onclick: () => emitEvent('EditTableGroupClicked', { payload: tableGroup.id }),
                                   })
                                 : '',
                             permissions.can_edit
-                                ? Button({
-                                    type: 'icon',
+                                ? ActionIcon({
                                     icon: 'delete',
-                                    iconSize: 18,
+                                    label: 'Delete',
                                     tooltip: 'Delete table group',
-                                    tooltipPosition: 'left',
-                                    color: 'basic',
                                     onclick: () => emitEvent('DeleteTableGroupClicked', { payload: tableGroup.id }),
                                   })
                                 : '',
@@ -318,6 +316,140 @@ stylesheet.replace(`
 
 .tg-empty-state.mt-4 {
     margin-top: 16px;
+}
+
+.tg-action-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Data Contract pill — always expanded */
+button.tg-dc-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    max-width: 180px;
+    border-radius: 20px;
+    border: 1.5px solid rgba(0, 0, 0, .3);
+    padding: 0 14px 0 10px;
+    background: transparent;
+    color: rgba(0, 0, 0, .87);
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+    transition:
+        max-width .25s ease,
+        border-radius .25s ease,
+        padding .25s ease,
+        border-color .2s ease,
+        color .2s ease;
+}
+
+button.tg-dc-pill .material-symbols-rounded {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+button.tg-dc-pill .tg-dc-label {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 140px;
+    opacity: 1;
+    margin-left: 6px;
+    pointer-events: none;
+    transition:
+        max-width .25s ease,
+        opacity .15s ease,
+        margin-left .25s ease;
+}
+
+button.tg-dc-pill:hover {
+    border-color: rgba(0, 0, 0, .7);
+    background: rgba(0, 0, 0, .04);
+}
+
+/* Collapse DC when hovering an action icon */
+.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill {
+    max-width: 36px;
+    border-radius: 50%;
+    padding: 0;
+    border-color: transparent;
+    color: rgba(0, 0, 0, .54);
+}
+
+.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill .tg-dc-label {
+    max-width: 0;
+    opacity: 0;
+    margin-left: 0;
+}
+
+/* Edit / Delete — icon circles, expand on hover */
+button.tg-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    width: 36px;
+    max-width: 36px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    background: transparent;
+    color: rgba(0, 0, 0, .54);
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+    transition:
+        max-width .25s ease,
+        width .25s ease,
+        border-radius .25s ease,
+        padding .25s ease,
+        color .2s ease,
+        background .2s ease;
+}
+
+button.tg-action-icon .material-symbols-rounded {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+button.tg-action-icon .tg-action-label {
+    display: inline-block;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    margin-left: 0;
+    pointer-events: none;
+    transition:
+        max-width .25s ease,
+        opacity .15s ease,
+        margin-left .25s ease;
+}
+
+button.tg-action-icon:hover {
+    max-width: 180px;
+    width: auto;
+    border-radius: 20px;
+    padding: 0 14px 0 10px;
+    color: rgba(0, 0, 0, .87);
+    background: rgba(0, 0, 0, .05);
+}
+
+button.tg-action-icon:hover .tg-action-label {
+    max-width: 100px;
+    opacity: 1;
+    margin-left: 6px;
 }
 `);
 

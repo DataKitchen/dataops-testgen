@@ -52,9 +52,8 @@ import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
 import { ScoreMetric } from '../components/score_metric.js';
 import { SummaryCounts } from '../components/summary_counts.js';
 import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
-import { Button } from '../components/button.js';
 
-const { div, h3, hr, span } = van.tags;
+const { button, div, h3, hr, i, span } = van.tags;
 
 const staleProfileDays = 60;
 
@@ -134,6 +133,12 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     );
 }
 
+const DcPill = ({ tableGroupId }) => button(
+    { class: 'tg-dc-pill', title: 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
+    i({ class: 'material-symbols-rounded' }, 'contract'),
+    span({}, 'Data Contract'),
+);
+
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
 
@@ -163,15 +168,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    Button({
-                        type: 'stroked',
-                        label: 'Data Contract',
-                        icon: 'contract',
-                        tooltip: 'View Data Contract',
-                        tooltipPosition: 'left',
-                        style: 'width: auto; white-space: nowrap; font-size: 12px;',
-                        onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
-                    }),
+                    DcPill({ tableGroupId: tableGroup.id }),
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -216,15 +213,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    Button({
-                        type: 'stroked',
-                        label: 'Data Contract',
-                        icon: 'contract',
-                        tooltip: 'View Data Contract',
-                        tooltipPosition: 'left',
-                        style: 'width: auto; white-space: nowrap; font-size: 12px;',
-                        onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroup.id } }),
-                    }),
+                    DcPill({ tableGroupId: tableGroup.id }),
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -403,6 +392,33 @@ hr.tg-overview--table-group-divider {
 
 .tg-overview--row > * {
     padding: 0 4px;
+}
+
+button.tg-dc-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;
+    border-radius: 20px;
+    border: 1.5px solid rgba(0, 0, 0, .3);
+    padding: 0 14px 0 10px;
+    background: transparent;
+    color: rgba(0, 0, 0, .87);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    gap: 6px;
+}
+
+button.tg-dc-pill:hover {
+    border-color: rgba(0, 0, 0, .7);
+    background: rgba(0, 0, 0, .04);
+}
+
+button.tg-dc-pill .material-symbols-rounded {
+    font-size: 18px;
 }
 `);
 

@@ -372,7 +372,7 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
 
     suite_rows = fetch_dict_from_db(
         f"""
-        SELECT suite_name FROM {schema}.test_suites
+        SELECT test_suite AS suite_name FROM {schema}.test_suites
         WHERE table_groups_id = :tg_id
           AND include_in_contract IS NOT FALSE
           AND is_monitor IS NOT TRUE
