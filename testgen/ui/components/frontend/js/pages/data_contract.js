@@ -357,7 +357,7 @@ const COVERAGE_TIERS = [
     { key: 'tg_enforced', label: '⚡ TestGen Enforced', color: '#22c55e', textColor: '#4ade80', tier: 'tg'  },
     { key: 'db_enforced', label: '🏛 DB Enforced',        color: '#818cf8', textColor: '#a5b4fc', tier: 'db'  },
     { key: 'unenforced',  label: '📋 Unenforced',         color: '#f59e0b', textColor: '#fbbf24', tier: 'unf' },
-    { key: 'uncovered',   label: '○ Uncovered',          color: '#4b5563', textColor: '#6b7280', tier: 'none'},
+    { key: 'uncovered',   label: '◯ Uncovered',          color: '#4b5563', textColor: '#6b7280', tier: 'none'},
 ];
 
 const TIER_DOT_COLOR = { tg: '#22c55e', db: '#818cf8', unf: '#f59e0b', none: '#374151' };
@@ -1122,7 +1122,7 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
 
 const TABS = [
     { id: 'overview',  label: 'Contract Terms'   },
-    { id: 'matrix',    label: 'Coverage Matrix' },
+    { id: 'matrix',    label: 'Contract Claim Completeness' },
     { id: 'yaml',      label: 'YAML'            },
     { id: 'upload',    label: 'Upload Changes'  },
 ];
