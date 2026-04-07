@@ -168,6 +168,69 @@ def _is_covered(prop: dict, col_rules: list[dict]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Enforcement-tier classification (replaces binary _is_covered for health/matrix)
+# ---------------------------------------------------------------------------
+
+def _has_meaningful_ddl_constraint(prop: dict, col_refs: list[dict] | None = None) -> bool:
+    """True when the column has a meaningful DDL constraint beyond bare data type.
+
+    Meaningful = NOT NULL, PK, FK, char-constrained (VARCHAR(n)), numeric precision.
+    Bare INTEGER, BOOLEAN, TEXT, TIMESTAMP etc. without additional constraints = False.
+    """
+    if prop.get("required") or prop.get("nullable") is False:
+        return True
+    opts = prop.get("logicalTypeOptions") or {}
+    if opts.get("primaryKey"):
+        return True
+    if col_refs:
+        return True
+    physical_lower = (prop.get("physicalType") or "").lower().strip()
+    return bool(
+        _CHAR_CONSTRAINED_RE.match(physical_lower)
+        or _NUMERIC_PREC_RE.match(physical_lower)
+    )
+
+
+def _has_unenforced_terms(prop: dict, gov_col: dict | None = None) -> bool:
+    """True when the column has observed stats or declared metadata (but no tests/DDL)."""
+    opts = prop.get("logicalTypeOptions") or {}
+    gov = gov_col or {}
+    return bool(
+        prop.get("classification")
+        or prop.get("criticalDataElement")
+        or prop.get("description")
+        or gov.get("description")
+        or gov.get("pii_flag")
+        or gov.get("critical_data_element")
+        or gov.get("excluded_data_element")
+        or opts.get("format")
+        or opts.get("minimum") is not None
+        or opts.get("maximum") is not None
+        or opts.get("minLength") is not None
+        or opts.get("maxLength") is not None
+    )
+
+
+def _classify_enforcement_tier(
+    prop: dict,
+    col_rules: list[dict],
+    gov_col: dict | None = None,
+    col_refs: list[dict] | None = None,
+) -> str:
+    """Assign the highest enforcement tier to a column/element.
+
+    Returns one of: "tg" | "db" | "unf" | "none".
+    """
+    if col_rules:
+        return "tg"
+    if _has_meaningful_ddl_constraint(prop, col_refs):
+        return "db"
+    if _has_unenforced_terms(prop, gov_col):
+        return "unf"
+    return "none"
+
+
+# ---------------------------------------------------------------------------
 # Term helpers
 # ---------------------------------------------------------------------------
 
@@ -429,6 +492,37 @@ def _build_contract_props(
     )
     coverage_pct = int(100 * covered / n_cols) if n_cols else 0
 
+    # Tier counts — one entry per column plus one per table (table-level element)
+    # We pre-compute effective_gov here for health before the full gov fetch below.
+    _early_gov = gov_by_col or {}
+    _tier_tg   = 0
+    _tier_db   = 0
+    _tier_unf  = 0
+    _tier_none = 0
+    for tbl_name, prop in all_props:
+        col_name_h = prop.get("name", "")
+        col_rules_h = (
+            rules_by_element.get(f"{tbl_name}.{col_name_h}", [])
+            + rules_by_element.get(col_name_h, [])
+        )
+        gov_col_h = _early_gov.get((tbl_name, col_name_h))
+        t = _classify_enforcement_tier(prop, col_rules_h, gov_col=gov_col_h)
+        if t == "tg":    _tier_tg   += 1
+        elif t == "db":  _tier_db   += 1
+        elif t == "unf": _tier_unf  += 1
+        else:            _tier_none += 1
+    # Table-level elements: one per table; tier is binary (tg | none).
+    # DDL and governance constraints apply to columns, not table-level rows,
+    # so db/unf tiers are not meaningful here.
+    for tbl in schema:
+        tbl_name_h = tbl.get("name", "")
+        tbl_rules_h = rules_by_element.get(tbl_name_h, [])
+        if tbl_rules_h:
+            _tier_tg += 1
+        else:
+            _tier_none += 1
+    _n_elements = n_cols + len(schema)
+
     counts = _quality_counts(quality)
     rd = run_dates or {}
 
@@ -445,6 +539,11 @@ def _build_contract_props(
         "coverage_pct":          coverage_pct,
         "covered":               covered,
         "n_cols":                n_cols,
+        "tg_enforced":           _tier_tg,
+        "db_enforced":           _tier_db,
+        "unenforced":            _tier_unf,
+        "uncovered":             _tier_none,
+        "n_elements":            _n_elements,
         "n_tests":               len(quality),
         "passing":               counts.get("passing", 0),
         "warning":               counts.get("warning", 0),
@@ -486,18 +585,19 @@ def _build_contract_props(
     for table in schema:
         table_name   = table.get("name", "")
         tbl_rules_mx = rules_by_element_full.get(table_name, [])
-        if tbl_rules_mx:
-            tbl_mon  = sum(1 for r in tbl_rules_mx if r.get("testType", "") in _MONITOR_TEST_TYPES)
-            tbl_test = sum(1 for r in tbl_rules_mx if r.get("testType", "") not in _MONITOR_TEST_TYPES)
-            matrix_rows.append({
-                "table":  table_name,
-                "column": "(table-level)",
-                "db":     0,
-                "tested": tbl_test,
-                "mon":    tbl_mon,
-                "obs":    0,
-                "decl":   0,
-            })
+        # Always emit the table-level row (even when no table-level rules exist)
+        tbl_mon  = sum(1 for r in tbl_rules_mx if r.get("testType", "") in _MONITOR_TEST_TYPES)
+        tbl_test = sum(1 for r in tbl_rules_mx if r.get("testType", "") not in _MONITOR_TEST_TYPES)
+        matrix_rows.append({
+            "table":  table_name,
+            "column": "(table-level)",
+            "db":     0,
+            "tested": tbl_test,
+            "mon":    tbl_mon,
+            "obs":    0,
+            "decl":   0,
+            "tier":   "tg" if tbl_rules_mx else "none",
+        })
         for prop in (table.get("properties") or []):
             col_name    = prop.get("name", "")
             col_key     = f"{table_name}.{col_name}"
@@ -550,6 +650,7 @@ def _build_contract_props(
                 "mon":    mon_ct,
                 "obs":    obs_ct,
                 "decl":   decl_ct,
+                "tier":   _classify_enforcement_tier(prop, col_rules, gov_col=gov_col, col_refs=col_refs),
             })
 
     # ── Gap analysis ──────────────────────────────────────────────────────────

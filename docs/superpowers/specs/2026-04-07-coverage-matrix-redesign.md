@@ -37,7 +37,7 @@ def _classify_tier(prop: dict, col_rules: list[dict]) -> str:
     return "none"             # bare data type only
 ```
 
-Where `_has_meaningful_ddl` = NOT NULL, PK, FK, char-constrained types (VARCHAR(n)), numeric precision, or integer types. Bare `TEXT`, `JSONB`, `TIMESTAMP` without constraints = not meaningful DDL.  
+Where `_has_meaningful_ddl` = NOT NULL, PK, FK, char-constrained types (VARCHAR(n)), or numeric precision (DECIMAL(p,s)). Bare `INTEGER`, `BOOLEAN`, `TEXT`, `JSONB`, `TIMESTAMP` without additional constraints = not meaningful DDL (bare type alone is not an enforcement constraint).  
 Where `_has_unenforced_terms` = any of: `classification`, `criticalDataElement`, `description`, `format`, min/max observations.
 
 **N (denominator):** Columns + table-level elements. Each table contributes one `(table-level)` row to N.

@@ -352,18 +352,87 @@ const TermsDetail = (tables, activeFilter) => {
 
 // ── Coverage matrix tab ───────────────────────────────────────────────────────
 
+// Tier definitions — order: most enforced first
+const COVERAGE_TIERS = [
+    { key: 'tg_enforced', label: '⚡ TestGen Enforced', color: '#22c55e', textColor: '#4ade80', tier: 'tg'  },
+    { key: 'db_enforced', label: '🏛 DB Enforced only',  color: '#818cf8', textColor: '#a5b4fc', tier: 'db'  },
+    { key: 'unenforced',  label: '📋 Unenforced only',   color: '#f59e0b', textColor: '#fbbf24', tier: 'unf' },
+    { key: 'uncovered',   label: '○ Uncovered',          color: '#4b5563', textColor: '#6b7280', tier: 'none'},
+];
+
+const TIER_DOT_COLOR = { tg: '#22c55e', db: '#818cf8', unf: '#f59e0b', none: '#374151' };
+
+// Sub-columns inside each enforcement group — determines matrix table columns
 const MATRIX_COLS = [
-    { key: 'db',     label: '🏛️ DB Enforced' },
-    { key: 'tested', label: '⚡ Tested'       },
-    { key: 'mon',    label: '📡 Monitored'    },
-    { key: 'obs',    label: '📸 Observed'     },
-    { key: 'decl',   label: '🏷️ Declared'    },
+    { key: 'tested', label: 'Tests',    group: 'tg',  groupLabel: '⚡ TestGen' },
+    { key: 'mon',    label: 'Monitors', group: 'tg',  groupLabel: null },
+    { key: 'db',     label: 'DDL',      group: 'db',  groupLabel: '🏛 DB Enforced' },
+    { key: 'obs',    label: 'Observed', group: 'unf', groupLabel: '📋 Unenforced' },
+    { key: 'decl',   label: 'Declared', group: 'unf', groupLabel: null },
 ];
 
 const fmtCount = (n) => (n > 0 ? String(n) : '—');
 
-const MatrixTableSection = (tableName, rows, startOpen, totals) => {
+// Shared four-tier progress bars component — used in HealthGrid card and matrix top
+const CoverageTierBars = (health, activeFilter) => {
+    const n = health.n_elements || 1;
+    return div(
+        { class: 'tier-bars' },
+        ...COVERAGE_TIERS.map((t) => {
+            const count = health[t.key] || 0;
+            const pct   = Math.round(100 * count / n);
+            const rowStyle = activeFilter
+                ? () => `opacity:${activeFilter.val === 'all' || activeFilter.val === t.tier ? 1 : 0.3};transition:opacity 0.15s`
+                : '';
+            return div(
+                {
+                    class: 'tier-bar-row',
+                    style: rowStyle,
+                    onclick: activeFilter
+                        ? () => { activeFilter.val = activeFilter.val === t.tier ? 'all' : t.tier; }
+                        : null,
+                    title: activeFilter ? `Filter to ${t.label}` : '',
+                },
+                span({ class: 'tier-bar-label', style: `color:${t.textColor}` }, t.label),
+                div({ class: 'tier-bar-track' },
+                    div({ class: 'tier-bar-fill', style: `width:${pct}%;background:${t.color}` }),
+                ),
+                span({ class: 'tier-bar-count', style: `color:${t.textColor}` }, `${count} / ${health.n_elements || 0}`),
+            );
+        }),
+    );
+};
+
+const MatrixTableSection = (tableName, rows, startOpen, totals, tierCounts, activeMatrixTier) => {
     const open = van.state(startOpen);
+
+    // Tier pills scoped to this table (shown only when closed)
+    const TierPills = () => div(
+        { class: 'ts-tier-pills', style: () => open.val ? 'visibility:hidden' : 'visibility:visible' },
+        ...COVERAGE_TIERS.map((t) =>
+            span({ class: 'tier-pill', style: `color:${t.textColor};border-color:${t.color}33` },
+                `${t.label} ${tierCounts[t.tier] || 0}`),
+        ),
+    );
+
+    // Group headers row
+    const GroupHeaderRow = () => {
+        const groups = [
+            { label: '⚡ TestGen Enforced', span: 2, color: '#22c55e' },
+            { label: '🏛 DB Enforced',      span: 1, color: '#818cf8' },
+            { label: '📋 Unenforced',        span: 2, color: '#f59e0b' },
+            { label: 'Uncovered',            span: 1, color: '#ef4444' },
+        ];
+        return tr(
+            { class: 'matrix-group-header-row' },
+            th({ class: 'col-col' }),
+            ...groups.map((g) => th(
+                { class: 'matrix-group-header', colspan: g.span, style: `color:${g.color}` },
+                g.label,
+            )),
+        );
+    };
+
     return div(
         { class: 'table-section' },
         div(
@@ -373,12 +442,7 @@ const MatrixTableSection = (tableName, rows, startOpen, totals) => {
             },
             mat('table_rows', 22),
             span({ class: 'ts-name' }, tableName),
-            div({ class: 'ts-meta' },
-                span({ class: 'count-badge' }, `${rows.length} col${rows.length !== 1 ? 's' : ''}`),
-                ...MATRIX_COLS
-                    .filter((c) => c.key === 'mon' || totals[c.key] > 0)
-                    .map((c) => () => open.val ? '' : span({ class: 'count-badge matrix-collapsed-summary' }, `${c.label} ${totals[c.key]}`)),
-            ),
+            TierPills(),
             span({ class: () => `table-section-chevron${open.val ? ' open' : ''}` }, 'expand_more'),
         ),
         () => open.val
@@ -386,22 +450,50 @@ const MatrixTableSection = (tableName, rows, startOpen, totals) => {
                 { class: 'matrix-table-wrap' },
                 table(
                     { class: 'matrix-table matrix-table--tiers' },
-                    thead(tr(
-                        th({ class: 'col-col' }, 'Column'),
-                        ...MATRIX_COLS.map((c) => th({ class: 'tier-col', title: c.label }, c.label)),
-                    )),
+                    thead(
+                        GroupHeaderRow(),
+                        tr(
+                            th({ class: 'col-col' }, 'Column / Table'),
+                            ...MATRIX_COLS.map((c) => th({ class: 'tier-col', title: c.label }, c.label)),
+                            th({ class: 'unc-col', style: 'color:#ef4444' }, 'Uncovered'),
+                        ),
+                    ),
                     tbody(
-                        ...rows.map((row) => tr(
-                            td(span({ class: 'col-name' }, row.column)),
-                            ...MATRIX_COLS.map((c) => td(
-                                { class: `tier-cell ${row[c.key] > 0 ? 'has-terms' : 'no-terms'}` },
-                                fmtCount(row[c.key]),
-                            )),
-                        )),
+                        ...rows.map((row) => {
+                            const isTableLevel = row.column === '(table-level)';
+                            const rowVisible = !activeMatrixTier
+                                ? () => true
+                                : () => activeMatrixTier.val === 'all' || activeMatrixTier.val === row.tier;
+                            return tr(
+                                {
+                                    class: isTableLevel ? 'matrix-row--table-level' : '',
+                                    'data-tier': row.tier,
+                                    style: activeMatrixTier
+                                        ? () => rowVisible() ? '' : 'display:none'
+                                        : '',
+                                },
+                                td(
+                                    span({ class: 'tier-dot', style: `background:${TIER_DOT_COLOR[row.tier] || '#374151'};${row.tier === 'none' ? 'border:1px solid #6b7280' : ''}` }),
+                                    span({
+                                        class: isTableLevel ? 'col-name col-name--table-level' : 'col-name',
+                                    }, row.column),
+                                ),
+                                ...MATRIX_COLS.map((c) => td(
+                                    { class: `tier-cell tier-cell--${c.group} ${row[c.key] > 0 ? 'has-terms' : 'no-terms'}` },
+                                    fmtCount(row[c.key]),
+                                )),
+                                td({ class: 'unc-cell' },
+                                    row.tier === 'none'
+                                        ? span({ class: 'uncovered-pill' }, 'Yes')
+                                        : '—',
+                                ),
+                            );
+                        }),
                         tr(
                             { class: 'matrix-totals-row' },
                             td('Total'),
                             ...MATRIX_COLS.map((c) => td({ class: 'tier-cell' }, fmtCount(totals[c.key]))),
+                            td(),
                         ),
                     ),
                 ),
@@ -410,9 +502,17 @@ const MatrixTableSection = (tableName, rows, startOpen, totals) => {
     );
 };
 
-const CoverageMatrix = (matrix, suiteScope, tables) => {
+const CoverageMatrix = (matrix, suiteScope, tables, health, activeTab) => {
     if (!matrix.length) {
         return div({ class: 'dc-empty' }, 'No schema data available.');
+    }
+
+    // Cross-filter state — 'all' means no filter; resets whenever tab changes away and back
+    const activeMatrixTier = van.state('all');
+    if (activeTab) {
+        van.derive(() => {
+            if (activeTab.val !== 'matrix') activeMatrixTier.val = 'all';
+        });
     }
 
     // Group rows by table preserving order
@@ -441,15 +541,32 @@ const CoverageMatrix = (matrix, suiteScope, tables) => {
 
     const countsBar = (tables && tables.length) ? TermCountsBar(tables) : '';
 
+    // Contract completeness section at top of matrix tab
+    const completenessSection = health
+        ? div(
+            { class: 'matrix-completeness-section' },
+            div({ class: 'matrix-section-label' }, 'Contract Completeness'),
+            div({ class: 'matrix-completeness-subtitle' },
+                `${health.n_elements || 0} elements · each assigned to its highest enforcement tier`,
+            ),
+            CoverageTierBars(health, activeMatrixTier),
+          )
+        : '';
+
     const tableEntries = [...tableMap.entries()];
     return div(
         { class: 'dc-matrix-wrap' },
+        completenessSection,
         countsBar,
         scopeNote,
+        health ? div({ class: 'matrix-section-label' }, 'Coverage by table') : '',
         ...tableEntries.map(([tableName, rows], idx) => {
             const totals = { db: 0, tested: 0, mon: 0, obs: 0, decl: 0 };
             for (const r of rows) for (const c of MATRIX_COLS) totals[c.key] += r[c.key] || 0;
-            return MatrixTableSection(tableName, rows, idx === 0, totals);
+            // Per-table tier counts
+            const tierCounts = { tg: 0, db: 0, unf: 0, none: 0 };
+            for (const r of rows) if (r.tier) tierCounts[r.tier] = (tierCounts[r.tier] || 0) + 1;
+            return MatrixTableSection(tableName, rows, idx === 0, totals, tierCounts, activeMatrixTier);
         }),
         div(
             { class: 'matrix-grand-total' },
@@ -821,14 +938,14 @@ const HealthGrid = (health, activeFilter, activeTab) => {
                 mat('verified', 13), ' Contract Completeness',
                 span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
             ),
-            div({ class: `health-card__value ${coverageCls}` }, `${health.coverage_pct}%`),
-            div({ class: 'progress-track' },
-                div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
-            ),
-            div({ class: 'health-card__sub' }, `${health.covered} of ${health.n_cols} columns have ≥1 non-schema term`),
-            health.n_cols - health.covered > 0
-                ? filterButton(`View ${health.n_cols - health.covered} uncovered →`, 'uncovered')
-                : '',
+            health.n_elements != null
+                ? CoverageTierBars(health, null)
+                : [
+                    div({ class: `health-card__value ${coverageCls}` }, `${health.coverage_pct}%`),
+                    div({ class: 'progress-track' },
+                        div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
+                    ),
+                  ],
         ),
         // — Test health card
         div(
@@ -1092,11 +1209,16 @@ const TermsHelpPanel = () => {
         div(
             { class: 'help-footer' },
             span({ class: 'help-em' }, 'Contract Completeness'),
-            ' measures what percentage of columns have at least one non-schema term ',
-            '(classification, description, format pattern, or a quality test rule). ',
-            'Columns with only DDL terms — and nothing richer — appear in the ',
-            span({ class: 'help-em' }, 'Uncovered'),
-            ' filter on the Overview tab.',
+            ' assigns each column and table-level element to its highest enforcement tier: ',
+            span({ class: 'help-em' }, '⚡ TestGen Enforced'),
+            ' (active test or monitor), ',
+            span({ class: 'help-em' }, '🏛 DB Enforced'),
+            ' (NOT NULL, PK, FK, or constrained type — no active test), ',
+            span({ class: 'help-em' }, '📋 Unenforced'),
+            ' (observed stats or declared metadata only), or ',
+            span({ class: 'help-em' }, '○ Uncovered'),
+            ' (bare data type with no additional constraints or metadata). ',
+            'Click a tier bar in the Coverage Matrix to cross-filter the table rows below.',
         ),
     );
 };
@@ -1134,7 +1256,7 @@ const DataContract = (props) => {
                 () => {
                     const tab = activeTab.val;
                     if (tab === 'overview') return TermsDetail(tables, activeFilter);
-                    if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope, tables);
+                    if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
                     if (tab === 'yaml')     return YamlViewer(yaml, tgName);
                     if (tab === 'upload')   return UploadTab();
                     if (tab === 'help')     return TermsHelpPanel();
@@ -1604,6 +1726,82 @@ stylesheet.replace(`
 .tier-cell.has-terms { font-weight: 600; color: var(--primary-text-color); }
 .tier-cell.no-terms  { color: var(--caption-text-color); }
 .matrix-totals-row td { font-weight: 700; background: rgba(128,128,128,0.04); border-top: 2px solid var(--border-color); }
+
+/* Tier bars — shared between HealthGrid card and matrix completeness section */
+.tier-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.tier-bar-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 64px;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+}
+.tier-bar-row[title] { cursor: pointer; }
+.tier-bar-label { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tier-bar-track { height: 8px; background: rgba(128,128,128,0.15); border-radius: 4px; overflow: hidden; }
+.tier-bar-fill  { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.tier-bar-count { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Matrix completeness section at top of matrix tab */
+.matrix-completeness-section {
+    background: rgba(128,128,128,0.04);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 16px 14px;
+    margin-bottom: 16px;
+}
+.matrix-completeness-subtitle { font-size: 12px; color: var(--caption-text-color); margin-top: 2px; margin-bottom: 4px; }
+.matrix-section-label { font-size: 13px; font-weight: 600; color: var(--primary-text-color); margin: 12px 0 8px; }
+
+/* Tier dot in column name cell */
+.tier-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+.col-name--table-level { font-style: italic; color: var(--caption-text-color); font-family: inherit; }
+
+/* Uncovered flag column */
+.unc-col { text-align: center; min-width: 80px; }
+.unc-cell { text-align: center; }
+.uncovered-pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(239,68,68,0.18);
+    color: #f87171;
+    border: 1px solid rgba(239,68,68,0.35);
+}
+
+/* Per-table tier pills (shown when accordion closed) */
+.ts-tier-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; margin-right: 8px; }
+.tier-pill {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid;
+    white-space: nowrap;
+}
+
+/* Matrix group header row */
+.matrix-group-header-row th { padding: 4px 6px 2px; }
+.matrix-group-header { text-align: center; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; border-bottom: 2px solid currentColor; }
+
+/* Per-group cell tinting */
+.tier-cell--tg  { background: rgba(34,197,94,0.04); }
+.tier-cell--db  { background: rgba(129,140,248,0.04); }
+.tier-cell--unf { background: rgba(245,158,11,0.04); }
+
+/* Matrix table-level row */
+.matrix-row--table-level td { background: rgba(128,128,128,0.03); }
+
 .matrix-grand-total {
     margin-top: 16px;
     padding: 10px 14px;

@@ -43,6 +43,7 @@ from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.ui.views.data_contract_props import (
     _build_contract_props,
+    _classify_enforcement_tier,
     _column_coverage_tiers,
     _quality_counts,
     _tier_badge,
