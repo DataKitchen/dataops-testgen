@@ -14,6 +14,7 @@ from testgen.common.models.job_execution import JobStatus
 class JobKey(StrEnum):
     run_profile = "run-profile"
     run_tests = "run-tests"
+    run_monitors = "run-monitors"
     run_test_generation = "run-test-generation"
 
 
@@ -23,6 +24,7 @@ class JobSource(StrEnum):
     scheduler = "scheduler"
     mcp = "mcp"
     cli = "cli"
+    backfill = "backfill"
 
 
 class JobSubmittedResponse(BaseModel):
@@ -57,6 +59,69 @@ class JobListResponse(BaseModel):
     page: int
     limit: int
     total: int
+
+
+# --- Test Runs ---
+
+
+class TestBreakdown(BaseModel):
+    """Counts of test results by outcome status."""
+
+    passed: int = 0
+    failed: int = 0
+    warning: int = 0
+    error: int = 0
+    log: int = 0
+    dismissed: int = 0
+
+
+class TestRunResult(BaseModel):
+    """Run-specific data populated when execution completes."""
+
+    score: float | None = None
+    tests: TestBreakdown
+
+
+class TestRunResponse(BaseModel):
+    """Test run returned by GET /test-runs/{id}."""
+
+    id: UUID
+    status: JobStatus
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    result: TestRunResult | None = None
+
+
+# --- Profiling Runs ---
+
+
+class IssueBreakdown(BaseModel):
+    """Counts of hygiene issues by likelihood category."""
+
+    definite: int = 0
+    likely: int = 0
+    possible: int = 0
+    dismissed: int = 0
+
+
+class ProfilingRunResult(BaseModel):
+    """Run-specific data populated when profiling completes."""
+
+    score: float | None = None
+    table_ct: int | None = None
+    column_ct: int | None = None
+    record_ct: int | None = None
+    issues: IssueBreakdown
+
+
+class ProfilingRunResponse(BaseModel):
+    """Profiling run returned by GET /profiling-runs/{id}."""
+
+    id: UUID
+    status: JobStatus
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    result: ProfilingRunResult | None = None
 
 
 # --- Errors ---

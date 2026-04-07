@@ -212,3 +212,5 @@ def test_has_permission_checks_membership_even_for_global_admin(mock_pm):
     mock_pm.get_user_role_in_project.return_value = None
 
     assert has_project_permission(user, "project_a", "edit") is False
+
+
