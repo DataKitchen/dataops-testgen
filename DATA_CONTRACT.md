@@ -1,7 +1,7 @@
 # Data Contract — Requirements & Implementation Reference
 
 **Standard:** Open Data Contract Standard (ODCS) v3.1.0  
-**Status:** Core feature complete; 196 unit tests passing
+**Status:** Core feature complete; 219 data-contract unit tests passing (663 total unit tests)
 
 ---
 
@@ -65,8 +65,8 @@ A single table group maps to a single data contract. That table group can have m
 | `testgen/ui/views/data_contract.py` | **Controller** (588 lines): `DataContractPage`, `_render_health_dashboard`, `_render_staleness_banner`, `_check_contract_prerequisites`, `_render_first_time_flow`; imports from all sub-modules; re-exports test-compat symbols |
 | `testgen/ui/views/data_contract_props.py` | **Pure props/term builder** — no Streamlit, no DB calls; all shared constants (`_STATUS_ICON`, `_TIERS`, `_VERIF_META`, etc.); `_build_contract_props` (accepts `gov_by_col` to avoid internal DB round-trip); `_column_coverage_tiers`, `_tier_badge`, `_quality_counts`, `_worst_status`, `_extract_column_terms`, `_is_covered` |
 | `testgen/ui/views/data_contract_yaml.py` | **Pure YAML/pending-edit helpers** — no Streamlit, no DB; `_delete_term_yaml_patch`, `_patch_yaml_governance`, `_apply_pending_governance_edit`, `_apply_pending_test_edit`, `_pending_edit_count` |
-| `testgen/ui/queries/data_contract_queries.py` | **All DB query/write functions** — `_capture_yaml`, `_fetch_anomalies`, `_fetch_suite_scope`, `_fetch_governance_data`, `_lookup_column_id`, `_fetch_test_live_info`, `_fetch_test_statuses`, `_fetch_last_run_dates`, `_save_governance_data`, `_persist_governance_deletion`; all decorated `@with_database_session` |
-| `testgen/ui/views/dialogs/data_contract_dialogs.py` | **All `@st.dialog` functions** — `_governance_edit_dialog`, `_suite_picker_dialog`, `_monitor_term_dialog`, `_test_term_dialog`, `_term_read_dialog`, `_term_edit_dialog`, `_edit_rule_dialog`, `_regenerate_dialog`, `_save_version_dialog`, `_review_changes_panel`; also `_modal_header`, `_render_live_terms_row` |
+| `testgen/ui/queries/data_contract_queries.py` | **All DB query/write functions** — `_capture_yaml`, `_fetch_anomalies`, `_fetch_suite_scope`, `_fetch_governance_data`, `_lookup_column_id`, `_fetch_test_live_info`, `_fetch_test_statuses`, `_fetch_last_run_dates`, `_save_governance_data`, `_persist_governance_deletion`, `_dismiss_hygiene_anomaly`; all decorated `@with_database_session` |
+| `testgen/ui/views/dialogs/data_contract_dialogs.py` | **All `@st.dialog` functions** — `_governance_edit_dialog`, `_suite_picker_dialog`, `_monitor_term_dialog`, `_test_term_dialog`, `_term_read_dialog`, `_term_edit_dialog`, `_edit_rule_dialog`, `_regenerate_dialog`, `_save_version_dialog`, `_review_changes_panel`, `cancel_all_changes_dialog`; also `_modal_header` |
 | `testgen/ui/views/test_suites.py` | "Data Contract" button in actionContent; "Include in Data Contract" checkbox in Edit dialog; `mark_contract_stale` hook |
 | `testgen/ui/bootstrap.py` | `DataContractPage` registered in `BUILTIN_PAGES` |
 | `testgen/ui/components/widgets/testgen_component.py` | `"data_contract"` in `AvailablePages` literal |
@@ -104,6 +104,7 @@ A single table group maps to a single data contract. That table group can have m
 | `tests/unit/commands/test_data_contract_import.py` | 41 | Import validation, diff, apply, round-trip |
 | `tests/unit/ui/test_data_contract_page.py` | 39 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
 | `tests/unit/ui/test_contract_pending_edits.py` | 18 | Pending edit accumulation, YAML patching, persistence helpers |
+| `tests/unit/ui/test_contract_term_deletion.py` | 23 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases; sibling-column isolation |
 | `tests/unit/commands/test_contract_staleness.py` | Started | `compute_staleness_diff` — governance diff; schema/quality/scope diffs in progress |
 
 ---
@@ -157,6 +158,8 @@ Default TRUE means all existing and newly created suites are automatically inclu
 | 1034 | Decimal_In_Integer_Column | Validity | INTEGER column with `datatype_suggestion` suggesting NUMERIC |
 
 Anomaly findings are UI-only (fetched from `profile_anomaly_results` at render time). They are not exported to the contract YAML and not modifiable via import.
+
+Hygiene terms (profiling anomalies shown as live chips in the contract UI) can be dismissed from the contract by clicking **"Delete term from contract"** in the chip modal. This sets `disposition = 'Inactive'` on the matching `profile_anomaly_results` row (identified by `table_groups_id + table_name + column_name + anomaly_type` against the latest complete profiling run). Dismissed anomalies are excluded by the existing `COALESCE(r.disposition, 'Confirmed') != 'Inactive'` filter in `_fetch_anomalies`. The anomaly session cache (`dc_anomalies:{tg_id}`) is cleared on dismissal so the chip disappears immediately on the next render.
 
 ---
 
@@ -312,10 +315,26 @@ The Upload tab handles import inline (no JS event): Python reads uploaded YAML v
     { "name": "email",        "value": "...", "source": "governance", "verif": "declared" }
   ],
   "live_terms": [
-    { "name": "Email Format", "source": "test", "verif": "tested", "status": "passing", "rule_id": "..." }
+    {
+      "name": "Email Format", "source": "test", "verif": "tested",
+      "status": "passing", "rule_id": "...",
+      "anomaly_type": ""
+    },
+    {
+      "name": "Hygiene", "source": "profiling", "verif": "observed",
+      "status": "", "rule_id": "",
+      "anomaly_type": "Personally_Identifiable_Information"
+    }
+  ],
+  "pending_delete_terms": [
+    { "name": "PII", "source": "governance", "verif": "declared" }
   ]
 }
 ```
+
+`pending_delete_terms` is injected at render time from `dc_pending` session state. Each entry is a snapshot dict `{name, source, verif}`. The VanJS `DeletedTermChip` renders these as grayed-out (opacity 0.45), non-clickable chips with a red "deleted" label.
+
+`anomaly_type` is populated only for Hygiene (`name="Hygiene"`) live terms — it carries the DB `anomaly_type` key used to identify the specific anomaly for dismissal.
 
 ### Page Header
 
@@ -388,14 +407,46 @@ All five term/governance dialogs share `_modal_header(verif, name, table_name, c
 Term edits are held in Streamlit session state until the user explicitly saves a new version. Two keys must stay in sync:
 
 - `dc_yaml:{table_group_id}` — the in-memory YAML doc, patched on each edit. Rendering source of truth.
-- `dc_pending:{table_group_id}` — list of pending edits. Drives the dirty button and save dialog summary.
+- `dc_pending:{table_group_id}` — dict of pending edits. Drives the unsaved-changes banner and save dialog summary.
 
-Every "Apply" click must patch both keys before `safe_rerun()`. `dc_yaml` must never be reloaded from DB while `dc_pending` is non-empty.
+```python
+# Pending dict structure
+{
+  "governance": [
+    {"table": "orders", "col": "email", "field": "Classification", "value": None,
+     "snapshot": {"name": "Classification", "source": "governance", "verif": "declared"}},
+    # value=None means deletion; snapshot present → ghost chip rendered in JS
+    {"table": "orders", "col": "amount", "field": "Min Value", "value": None,
+     "snapshot": {"name": "Min Value", "source": "profiling", "verif": "observed"}},
+  ],
+  "tests": [
+    {"rule_id": "...", "_removed": True, "_table": "orders", "_col": "email",
+     "_snapshot": {"name": "Test", "source": "test", "verif": "tested"}},
+  ]
+}
+```
+
+Every delete click must:
+1. Patch `dc_yaml` (YAML mutation via `_delete_term_yaml_patch`)
+2. Persist to DB immediately (governance: `_persist_governance_deletion`; hygiene: `_dismiss_hygiene_anomaly`)
+3. Add entry to `dc_pending` with `value=None` and a `snapshot` dict
+4. Clear `dc_anomalies:{tg_id}` from session state when dismissing a Hygiene anomaly (forces fresh fetch)
+5. Call `safe_rerun()`
+
+`dc_yaml` must never be reloaded from DB while `dc_pending` is non-empty.
+
+**Unsaved changes banner** appears at the top of the page whenever `pending_ct > 0`. It lists each change in plain English (e.g. "deleted email · Classification") and offers a **Cancel all changes** button that opens `cancel_all_changes_dialog`. Cancel restores `dc_yaml` from `version_record["contract_yaml"]` and clears `dc_pending`.
+
+**Ghost chips**: pending entries with `value=None` and a `snapshot` are injected into `col["pending_delete_terms"]` at render time. The VanJS `DeletedTermChip` renders them as grayed-out (opacity 0.45), non-interactive chips with a red "deleted" label.
+
+**Term deletion button label**: All dialogs use the label **"Delete term from contract"** consistently. Monitor terms show a caption instead: "To delete the term from the contract go to the monitors page."
+
+**`_delete_term_yaml_patch` alias support**: `"PII"` is treated as `"Classification"` (removes `classification` from YAML); `"Critical Data Element"` is treated as `"CDE"` (removes `criticalDataElement`). Same aliases apply in `_persist_governance_deletion`.
 
 On version save:
 1. Write governance pending edits → `data_column_chars`
 2. Write test pending edits → `test_definitions`
-3. Build snapshot YAML from the current **in-memory patched doc** — NOT from a fresh export (a fresh export would pull in new anomalies or test results that occurred after the user started editing)
+3. Build snapshot YAML from the current **in-memory patched doc** — NOT from a fresh export
 4. Call `save_contract_version(table_group_id, snapshot_yaml, label)`
 5. Clear both session keys; next render loads the newly saved version from DB
 
@@ -523,20 +574,20 @@ Import only applies quality-rule changes to suites with `include_in_contract = T
 | Contract version data layer | `contract_versions.py` — save, load, list, `has_any_version` |
 | Staleness detection hooks | `mark_contract_stale` wired into profiling and test definition changes |
 | Staleness diff computation | `contract_staleness.py` — `StaleDiff` dataclass; SQL column bugs fixed; composite FK ref matching |
-| Pending edit model | `dc_pending:{tg_id}` session state; YAML patched on edit; flushed to DB on version save |
+| Pending edit model | `dc_pending:{tg_id}` session state; YAML patched on edit; flushed to DB on version save; unsaved-changes banner with "Cancel all changes"; ghost chip rendering for pending deletions |
 | Page load from saved snapshot | `render()` loads from `load_contract_version`; first-time flow via `has_any_version` gate |
 | First-time flow | Prerequisites check → Generate Contract Preview → Save as v0 |
 | Staleness banner + diff panel | `_render_staleness_banner`, `_review_changes_panel` dialog |
 | Version picker + historic view | Selectbox version picker; historic read-only banner; `?version=N` query param |
 | Old lifecycle artifacts removed | `_STATUS_COLOR` removed; old `contract_version`/`contract_status` writes removed from active code |
 | Frontend updates | Version display, staleness indicator, pending count badge, historic read-only mode |
-| Unit tests (export, import, page) | 196 tests total (91 export, 41 import, 39 UI, 25 staleness) — all passing |
+| Unit tests (export, import, page) | 219 data-contract tests (91 export, 41 import, 39 UI, 23 term-deletion, 18 pending-edits, 7 staleness) — all passing; 663 total unit tests |
 
 ### Backlog / Partial
 
 | Item | Priority | Notes |
 |---|---|---|
-| Remaining unit tests (phases 5/7/8/9) | Medium | `test_contract_pending_edits.py`, `test_contract_first_time_flow.py`, `test_contract_staleness_ui.py`, `test_contract_historic_view.py` |
+| Remaining unit tests | Medium | `test_contract_first_time_flow.py`, `test_contract_staleness_ui.py`, `test_contract_historic_view.py` |
 | Staleness hooks — test definition changes | Medium | `mark_contract_stale` not yet called from all test definition write paths |
 | YAML `dimension` field on quality rules | Low | Already mapped via `_DQ_DIMENSION_MAP`; verify rendering in downstream tools |
 | `Column_Schema_Assert` test type | Medium | Per-column DDL assertion complementing table-group-level `Schema_Drift` |
